@@ -71,7 +71,7 @@ spendingAndForecastByRace :: SL.Connection
                           -> FEC.Office
                           -> Maybe FEC.State
                           -> Maybe FEC.District
-                          -> IO [(FEC.CandidateID, T.Text, LocalTime, Double, Double, FEC.Amount, FEC.Amount, FEC.Amount, FEC.Amount)]
+                          -> IO [(FEC.CandidateID, FEC.State, FEC.District, FEC.Party, T.Text, LocalTime, Double, Double, FEC.Amount, FEC.Amount, FEC.Amount, FEC.Amount)]
 spendingAndForecastByRace dbConn office stateM districtM = do
   let allCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
       allForecasts = B.all_ (FEC._openFEC_DB_forecast538 FEC.openFEC_DB)
@@ -106,22 +106,28 @@ spendingAndForecastByRace dbConn office stateM districtM = do
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,date,_) -> (id `B.references_` candidate) B.&&. (date B.==. forecast ^. FEC.forecast538_forecast_date))
     B.guard_ ((FEC._forecast538_candidate_id forecast `B.references_` candidate)
               B.&&. (forecast ^. FEC.forecast538_model B.==. B.val_ "deluxe"))
-    pure ( (candidate ^. FEC.candidate_id --forecast ^. FEC.forecast538_candidate_id
-         , forecast ^. FEC.forecast538_candidate_name)
+    pure ( (candidate ^. FEC.candidate_id
+           , candidate ^. FEC.candidate_state
+           , candidate ^. FEC.candidate_district
+           , candidate ^. FEC.candidate_party)
+         , (forecast ^. FEC.forecast538_candidate_name
          , forecast ^. FEC.forecast538_forecast_date
          , forecast ^. FEC.forecast538_winP
-         , forecast ^. FEC.forecast538_voteshare
-         , sel3 disbursement
+         , forecast ^. FEC.forecast538_voteshare)
+         , (sel3 disbursement
          , sel4 indSupport
          , sel4 indOppose
-         , sel3 partyExpenditures)
+         , sel3 partyExpenditures))
   let g = maybe 0 (maybe 0 id)
-  return $ fmap (\((x0, x1), x2, x3, x4, x5, x6, x7, x8) -> (x0, x1, x2, x3, x4, g x5, g x6, g x7, g x8)) forecasts'
+  return $ fmap (\((c1, c2, c3, c4), (f1, f2, f3, f4), (s1, s2, s3, s4)) -> (c1, c2, c3, c4, f1, f2, f3, f4, g s1, g s2, g s3, g s4)) forecasts'
 
 allHouseCSV :: IO ()
 allHouseCSV = do
-  let tupleToCSV (id,n,d,wp,vs,db,is,io,pe)
+  let tupleToCSV (id,s,dst,p,n,d,wp,vs,db,is,io,pe)
         = id <> ","
+          <> s <> ","
+          <> T.pack (show dst) <> ","
+          <> T.pack (show p) <> ","
           <> n <> ","
           <> T.pack (show $ localDay d) <> ","
           <> T.pack (TP.printf "%.2g" wp) <> ","

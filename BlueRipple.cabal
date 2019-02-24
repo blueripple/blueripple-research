@@ -45,6 +45,22 @@ library
   default-language:    Haskell2010
 
 
+executable dataLoader
+  hs-source-dirs: dataLoader
+  main-is:        dataLoader.hs
+  build-depends: base >= 4.11
+               , BlueRipple
+               , beam-core
+               , beam-sqlite               
+               , Frames
+               , Frames-utils
+               , foldl
+               , OpenFEC-beam
+               , sqlite-simple
+               , vinyl
+  default-language: Haskell2010               
+           
+  
 executable mission
   hs-source-dirs: mission
   main-is:        mission.hs
