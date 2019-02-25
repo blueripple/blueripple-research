@@ -4,24 +4,37 @@ module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Data/FromDB.hs,1026
+./dataLoader/dataLoader.hs,52
+module Main Main0,1
+main main4,5
+main main5,6
+
+./src/BlueRipple/Data/FromDB.hs,1488
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14
 import import29,30
-data Forecast Forecast51,52
-data Forecast = Forecast Forecast51,52
-data Forecast = Forecast { winP winP51,52
-data Forecast = Forecast { winP :: Double, voteShare voteShare51,52
-data Spending Spending52,53
-data Spending = Spending Spending52,53
-data Spending = Spending { disbursement disbursement52,53
-data Spending = Spending { disbursement :: FEC.Amount, indSupport indSupport52,53
-data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose indOppose52,53
-data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party party52,53
-allRaces allRaces54,55
-allRaces allRaces55,56
-electionResults electionResults62,63
-electionResults electionResults63,64
-spendingAndForecastByRace spendingAndForecastByRace69,70
-spendingAndForecastByRace spendingAndForecastByRace74,75
-allHouseCSV allHouseCSV120,121
-allHouseCSV allHouseCSV121,122
+data Forecast Forecast54,55
+data Forecast = Forecast Forecast54,55
+data Forecast = Forecast { winP winP54,55
+data Forecast = Forecast { winP :: Double, voteShare voteShare54,55
+data Spending Spending55,56
+data Spending = Spending Spending55,56
+data Spending = Spending { disbursement disbursement55,56
+data Spending = Spending { disbursement :: FEC.Amount, indSupport indSupport55,56
+data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose indOppose55,56
+data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party party55,56
+allRaces allRaces57,58
+allRaces allRaces58,59
+electionResults electionResults65,66
+electionResults electionResults66,67
+endOfDayOn endOfDayOn72,73
+startOfDayOn startOfDayOn73,74
+netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates74,75
+netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates81,82
+spendingAndForecastByRace spendingAndForecastByRace132,133
+spendingAndForecastByRace spendingAndForecastByRace137,138
+allHouseCSV allHouseCSV186,187
+allHouseCSV allHouseCSV187,188
+beforeForecast beforeForecast210,211
+electionDay electionDay211,212
+netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV213,214
+netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV214,215

@@ -38,8 +38,11 @@ import qualified Data.Sequence                            as Seq
 import qualified Data.Set                                 as S
 import qualified Data.Text                                as T
 import qualified Data.Text.IO                             as T
+import           Data.Time.Calendar                       (Day, fromGregorian,
+                                                           toGregorian)
 import           Data.Time.Calendar.WeekDate              (toWeekDate)
-import           Data.Time.LocalTime                      (LocalTime (..))
+import           Data.Time.LocalTime                      (LocalTime (..),
+                                                           TimeOfDay (..))
 import           Data.Tuple.Select                        (sel1, sel2, sel3,
                                                            sel4, sel5, sel6,
                                                            sel7, sel8, sel9)
@@ -66,6 +69,66 @@ electionResults dbConn = do
     result <- B.all_ (FEC._openFEC_DB_electionResult FEC.openFEC_DB)
     pure (result ^. FEC.electionResult_candidate_id, result ^. FEC.electionResult_voteshare)
   return $ M.fromList asList
+
+endOfDayOn d = LocalTime d (TimeOfDay 23 59 59)
+startOfDayOn d = LocalTime d (TimeOfDay 0 0 0)
+netSpendingByCandidateBetweenDates :: SL.Connection
+                                   -> FEC.Office
+                                   -> Maybe Day -- start date to aggregate, Nothing for from the beginning
+                                   -> Day -- end date
+                                   -> Maybe FEC.State
+                                   -> Maybe FEC.District
+                                   -> IO [(FEC.CandidateID, FEC.State, FEC.District, FEC.Party, FEC.Amount, FEC.Amount, FEC.Amount, FEC.Amount)]
+netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM districtM = do
+  let allCandidates = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
+      allDisbursements = B.all_ (FEC._openFEC_DB_disbursement FEC.openFEC_DB)
+      allIndExpenditures = B.all_ (FEC._openFEC_DB_indExpenditure FEC.openFEC_DB)
+      allPartyExpenditures = B.all_ (FEC._openFEC_DB_partyExpenditure FEC.openFEC_DB)
+      districtM' = if office /= FEC.House then Just 0 else districtM -- the 0 default here is bad.  I should throw an error...
+      stateFilter c = maybe (B.val_ True) (\state -> (FEC._candidate_state c B.==. B.val_ state)) stateM
+      districtFilter c = maybe (B.val_ True) (\district -> (FEC._candidate_district c B.==. B.val_ district)) districtM'
+      candidatesInElection = B.filter_ (\c -> ((stateFilter c)
+                                               B.&&. (FEC._candidate_office c B.==. B.val_ office)
+                                               B.&&. (districtFilter c))) $ allCandidates
+{-      dateFilter df c = case startDayM of
+        Nothing -> df c B.<. (B.val_ $ endOfDayOn endDay)
+        Just startDay -> (df c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (df c B.<. (B.val_ $ endOfDayOn endDay)) -}
+      aggregatedDisbursements = B.aggregate_ (\(id, amount) -> (B.group_ id, B.sum_ amount)) $ do
+        d <- flip B.filter_ allDisbursements $ \c -> case startDayM of
+          Nothing -> FEC._disbursement_date c B.<. (B.val_ $ endOfDayOn endDay)
+          Just startDay -> (FEC._disbursement_date c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (FEC._disbursement_date c B.<. (B.val_ $ endOfDayOn endDay))
+        pure (FEC._disbursement_candidate_id d, FEC._disbursement_amount_adj d)
+      aggregatedIndExpenditures = B.aggregate_ (\(id, supportOpposeFlag, amount) -> (B.group_ id, B.group_ supportOpposeFlag, B.sum_ amount)) $ do
+        ie <- flip B.filter_ allIndExpenditures $ \c -> case startDayM of
+          Nothing -> FEC._indExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay)
+          Just startDay -> (FEC._indExpenditure_date c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (FEC._indExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay))
+        pure (FEC._indExpenditure_candidate_id ie, FEC._indExpenditure_support_oppose_indicator ie, FEC._indExpenditure_amount ie)
+      aggregatedIESupport = B.filter_ (\x -> sel2 x B.==. B.val_ FEC.Support) $  aggregatedIndExpenditures
+      aggregatedIEOppose = B.filter_ (\x -> sel2 x B.==. B.val_ FEC.Oppose) $  aggregatedIndExpenditures
+      aggregatedPartyExpenditures = B.aggregate_ (\(id, amount) -> (B.group_ id, B.sum_ amount)) $ do
+        pe <- flip B.filter_ allPartyExpenditures $ \c -> case startDayM of
+          Nothing -> FEC._partyExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay)
+          Just startDay -> (FEC._partyExpenditure_date c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (FEC._partyExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay))
+        pure (FEC._partyExpenditure_candidate_id pe, FEC._partyExpenditure_amount pe)
+  netSpending <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
+    candidate <- candidatesInElection
+    disbursement <- B.leftJoin_ aggregatedDisbursements (\(id,_) -> (id `B.references_` candidate))
+    indSupport <- B.leftJoin_ aggregatedIESupport (\(id,_,_) -> (id `B.references_` candidate))
+    indOppose <- B.leftJoin_ aggregatedIEOppose (\(id,_,_) -> (id `B.references_` candidate))
+    partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,_) -> (id `B.references_` candidate))
+    pure (
+      (candidate ^. FEC.candidate_id
+      , candidate ^. FEC.candidate_state
+      , candidate ^. FEC.candidate_district
+      , candidate ^. FEC.candidate_party)
+      , (snd disbursement
+        , sel3 indSupport
+        , sel3 indOppose
+        , snd partyExpenditures)
+      )
+  let g = maybe 0 (maybe 0 id)
+  return $ fmap (\((c, s, d, p), (db, is, io, pe)) -> (c, s, d, p, g db, g is, g io, g pe)) netSpending
+
 
 spendingAndForecastByRace :: SL.Connection
                           -> FEC.Office
@@ -138,13 +201,36 @@ allHouseCSV = do
           <> T.pack (TP.printf "%.0g" pe)
 
   dbConn <- SL.open "/Users/adam/Google Drive/FEC.db"
-  let header = "id,name,date,win_percentage,voteshare,disbursement,ind_support,ind_oppose,party_expenditures"
+  let header = "candidate_id,state_abbreviation,congressional_district,candidate_party,candidate_name,date,win_percentage,voteshare,disbursement,ind_support,ind_oppose,party_expenditures"
   rows <- spendingAndForecastByRace dbConn FEC.House Nothing Nothing -- this will be BIG
-  handle <- Sys.openFile "/Users/adam/DataScience/FEC/BlueRipple/data/allSpending.csv" Sys.WriteMode
+  handle <- Sys.openFile "/Users/adam/DataScience/FEC/BlueRipple/data/forecastAndSpending.csv" Sys.WriteMode
   T.hPutStrLn handle header
   mapM (T.hPutStrLn handle . tupleToCSV) rows
   Sys.hClose handle
 
+beforeForecast = fromGregorian 2018 07 31
+electionDay = fromGregorian 2018 11 06
+
+netSpendingByHouseCandidatesBeforeCSV :: Day -> IO ()
+netSpendingByHouseCandidatesBeforeCSV endDay = do
+  let tupleToCSV (id, s, dst, p, db, is, io, pe)
+        = id <> ","
+          <> s <> ","
+          <> T.pack (show dst) <> ","
+          <> T.pack (show p) <> ","
+          <> T.pack (TP.printf "%.0g" db) <> ","
+          <> T.pack (TP.printf "%.0g" is) <> ","
+          <> T.pack (TP.printf "%.0g" io) <> ","
+          <> T.pack (TP.printf "%.0g" pe)
+  dbConn <- SL.open "/Users/adam/Google Drive/FEC.db"
+  let header = "candidate_id,state_abbrevation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
+      wZero n = (if n < 10 then "0" else "") ++ show n
+      toYYYYMMDD day = let (y,m,d) = toGregorian day in show y ++ wZero m ++ wZero d
+  rows <- netSpendingByCandidateBetweenDates dbConn FEC.House Nothing endDay Nothing Nothing
+  handle <- Sys.openFile ("/Users/adam/DataScience/FEC/BlueRipple/data/allSpendingThrough"  ++ toYYYYMMDD endDay ++ ".csv") Sys.WriteMode
+  T.hPutStrLn handle header
+  mapM (T.hPutStrLn handle . tupleToCSV) rows
+  Sys.hClose handle
 
 
 
