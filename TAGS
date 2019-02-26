@@ -1,13 +1,22 @@
 
-./mission/mission.hs,52
-module Main Main0,1
-main main4,5
-main main5,6
+./mission/mission.hs,263
+module Main Main9,10
+templateVars templateVars41,42
+main main50,51
+main main51,52
+type AllSpending AllSpending84,85
+sumSpending sumSpending85,86
+totalSpendingHistogram totalSpendingHistogram91,92
+totalSpendingHistogram totalSpendingHistogram93,94
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
+
+./src/BlueRipple/Data/DataFrames.hs,100
+module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
+F.tableTypes' F.tableTypes'30,31
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,541
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
@@ -44,15 +53,11 @@ endOfDayOn endOfDayOn72,73
 startOfDayOn startOfDayOn73,74
 netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates74,75
 netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates81,82
-spendingAndForecastByRace spendingAndForecastByRace132,133
-spendingAndForecastByRace spendingAndForecastByRace137,138
-allHouseCSV allHouseCSV186,187
-allHouseCSV allHouseCSV187,188
-beforeForecast beforeForecast210,211
-electionDay electionDay211,212
-netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV213,214
-netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV214,215
-
-./src/BlueRipple/Data/DataFramesTH.hs,104
-module BlueRipple.Data.DataFramesTHBlueRipple.Data.DataFramesTH7,8
-F.tableTypes' F.tableTypes'25,26
+spendingAndForecastByRace spendingAndForecastByRace135,136
+spendingAndForecastByRace spendingAndForecastByRace140,141
+allHouseCSV allHouseCSV189,190
+allHouseCSV allHouseCSV190,191
+beforeForecast beforeForecast213,214
+electionDay electionDay214,215
+netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV216,217
+netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV217,218

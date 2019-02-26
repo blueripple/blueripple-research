@@ -26,11 +26,16 @@ import qualified Frames.CSV                      as F
 --import qualified Frames.InCore                   as F
 import qualified Pipes                           as P
 import qualified Pipes.Prelude                   as P
+
+import qualified Html.Blaze.Report            as H
 import qualified Text.Pandoc.Report              as P
 import qualified Text.Blaze.Html.Renderer.Text   as BH
 import           Control.Monad.Freer.Html        (Blaze, blaze, blazeToText, blazeHtml)
 
 import qualified Frames.ParseableTypes as FP
+import qualified Frames.VegaLiteTemplates as FV
+import qualified Frames.Transform as FT
+
 
 import           BlueRipple.Data.DataFrames
 
@@ -72,7 +77,26 @@ main = do
     reportRows electionResultsFrame "electionResults"
     demographicsFrame <- liftIO $ F.inCoreAoS demographicsP
     reportRows demographicsFrame "demographics"
-    return ()
+    totalSpendingHistogram totalSpendingFrame
   case htmlAsTextE of
     Right htmlAsText -> T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
+
+type AllSpending = "all_spending" F.:-> Double
+sumSpending r =
+  let db = realToFrac $ F.rgetField @Disbursement r
+      is = realToFrac $ F.rgetField @IndSupport r      
+      pe = realToFrac $ F.rgetField @PartyExpenditures r
+  in FT.recordSingleton @AllSpending (db + is + pe)
+      
+totalSpendingHistogram :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+  => F.Frame TotalSpending -> FR.Eff effs ()
+totalSpendingHistogram tsFrame = do
+  let frameWithSum = F.filterFrame ((>0). F.rgetField @AllSpending) $ fmap (FT.mutate sumSpending) tsFrame
+--  Log.log Log.Diagnostic $ T.pack $ show $ fmap (show . F.rcast @[CandidateId, AllSpending]) $ FL.fold FL.list frameWithSum
+  P.addBlaze $ H.placeVisualization "SpendingHistogramAll" $
+    FV.singleHistogram @AllSpending "Distribution of Spending (last col includes all >10MM)" (Just "# Candidates") 10 (Just 0) (Just 1e7) True frameWithSum
+  P.addBlaze $ H.placeVisualization "SpendingHistogramSmall1"  $
+    FV.singleHistogram @AllSpending "Distribution of Spending (< $1,000,000)" (Just "# Candidates") 10 (Just 0) (Just 1e6) False frameWithSum
+  P.addBlaze $ H.placeVisualization "SpendingHistogramSmall2"  $
+    FV.singleHistogram @AllSpending "Distribution of Spending (< $100,000)" (Just "# Candidates") 10 (Just 0) (Just 1e5) False frameWithSum

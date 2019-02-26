@@ -64,7 +64,7 @@ library
 
 executable dataLoader
   import: deps
-  ghc-opts: -O0
+  ghc-optionss: -O0
   hs-source-dirs: dataLoader
   main-is:        dataLoader.hs
   build-depends: base >= 4.11
@@ -78,7 +78,7 @@ executable dataLoader
   
 executable mission
   import: deps
-  ghc-opts:       -O0
+  ghc-options:    -O0
   hs-source-dirs: mission
   main-is:        mission.hs
   build-depends: base >= 4.11

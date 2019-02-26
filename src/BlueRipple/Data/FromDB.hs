@@ -84,6 +84,7 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
       allDisbursements = B.all_ (FEC._openFEC_DB_disbursement FEC.openFEC_DB)
       allIndExpenditures = B.all_ (FEC._openFEC_DB_indExpenditure FEC.openFEC_DB)
       allPartyExpenditures = B.all_ (FEC._openFEC_DB_partyExpenditure FEC.openFEC_DB)
+      allCandsWithForecasts = B.nub_ $ fmap FEC._forecast538_candidate_id $ B.all_ (FEC._openFEC_DB_forecast538 FEC.openFEC_DB)
       districtM' = if office /= FEC.House then Just 0 else districtM -- the 0 default here is bad.  I should throw an error...
       stateFilter c = maybe (B.val_ True) (\state -> (FEC._candidate_state c B.==. B.val_ state)) stateM
       districtFilter c = maybe (B.val_ True) (\district -> (FEC._candidate_district c B.==. B.val_ district)) districtM'
@@ -111,11 +112,13 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
           Just startDay -> (FEC._partyExpenditure_date c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (FEC._partyExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay))
         pure (FEC._partyExpenditure_candidate_id pe, FEC._partyExpenditure_amount pe)
   netSpending <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
-    candidate <- candidatesInElection
+    candidateWithForecast <- allCandsWithForecasts
+    candidate <- candidatesInElection --B.leftJoin_ allCandidates (\c -> FEC._candidate_id c `B.references_` candidateWithForecasts)
     disbursement <- B.leftJoin_ aggregatedDisbursements (\(id,_) -> (id `B.references_` candidate))
     indSupport <- B.leftJoin_ aggregatedIESupport (\(id,_,_) -> (id `B.references_` candidate))
     indOppose <- B.leftJoin_ aggregatedIEOppose (\(id,_,_) -> (id `B.references_` candidate))
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,_) -> (id `B.references_` candidate))
+    B.guard_ ((candidateWithForecast `B.references_` candidate)) -- make sure we only include candidates for whom we have fcast data
     pure (
       (candidate ^. FEC.candidate_id
       , candidate ^. FEC.candidate_state

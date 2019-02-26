@@ -28,7 +28,246 @@ body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-colo
 
 <!-- page content begins here -->
 
-
+<figure id="SpendingHistogramAll">
+<script type="text/javascript">var vlSpec=
+{
+    "config": {
+        "view": {
+            "height": 800,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "mark": {
+        "binSpacing": 0,
+        "size": 79,
+        "type": "bar"
+    },
+    "data": {
+        "values": [
+            {
+                "all_spending": 500000,
+                "count": 415
+            },
+            {
+                "all_spending": 1500000,
+                "count": 199
+            },
+            {
+                "all_spending": 2500000,
+                "count": 72
+            },
+            {
+                "all_spending": 3500000,
+                "count": 35
+            },
+            {
+                "all_spending": 4500000,
+                "count": 33
+            },
+            {
+                "all_spending": 5500000,
+                "count": 19
+            },
+            {
+                "all_spending": 6500000,
+                "count": 11
+            },
+            {
+                "all_spending": 7500000,
+                "count": 11
+            },
+            {
+                "all_spending": 8500000,
+                "count": 4
+            },
+            {
+                "all_spending": 9500000,
+                "count": 22
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Distribution of Spending (last col includes all >10MM)",
+    "encoding": {
+        "x": {
+            "field": "all_spending",
+            "type": "quantitative",
+            "axis": {
+                "format": ".0f"
+            }
+        },
+        "y": {
+            "field": "count",
+            "type": "quantitative",
+            "axis": {
+                "title": "# Candidates"
+            }
+        }
+    }
+};
+vegaEmbed('#SpendingHistogramAll',vlSpec);</script>
+</figure>
+<figure id="SpendingHistogramSmall1">
+<script type="text/javascript">var vlSpec=
+{
+    "config": {
+        "view": {
+            "height": 800,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "mark": {
+        "binSpacing": 0,
+        "size": 79,
+        "type": "bar"
+    },
+    "data": {
+        "values": [
+            {
+                "all_spending": 50000,
+                "count": 162
+            },
+            {
+                "all_spending": 150000,
+                "count": 37
+            },
+            {
+                "all_spending": 250000,
+                "count": 30
+            },
+            {
+                "all_spending": 350000,
+                "count": 20
+            },
+            {
+                "all_spending": 450000,
+                "count": 28
+            },
+            {
+                "all_spending": 550000,
+                "count": 24
+            },
+            {
+                "all_spending": 650000,
+                "count": 25
+            },
+            {
+                "all_spending": 750000,
+                "count": 28
+            },
+            {
+                "all_spending": 850000,
+                "count": 31
+            },
+            {
+                "all_spending": 950000,
+                "count": 30
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Distribution of Spending (< $1,000,000)",
+    "encoding": {
+        "x": {
+            "field": "all_spending",
+            "type": "quantitative",
+            "axis": {
+                "format": ".0f"
+            }
+        },
+        "y": {
+            "field": "count",
+            "type": "quantitative",
+            "axis": {
+                "title": "# Candidates"
+            }
+        }
+    }
+};
+vegaEmbed('#SpendingHistogramSmall1',vlSpec);</script>
+</figure>
+<figure id="SpendingHistogramSmall2">
+<script type="text/javascript">var vlSpec=
+{
+    "config": {
+        "view": {
+            "height": 800,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "mark": {
+        "binSpacing": 0,
+        "size": 79,
+        "type": "bar"
+    },
+    "data": {
+        "values": [
+            {
+                "all_spending": 5000,
+                "count": 45
+            },
+            {
+                "all_spending": 15000,
+                "count": 24
+            },
+            {
+                "all_spending": 25000,
+                "count": 19
+            },
+            {
+                "all_spending": 35000,
+                "count": 20
+            },
+            {
+                "all_spending": 45000,
+                "count": 16
+            },
+            {
+                "all_spending": 55000,
+                "count": 8
+            },
+            {
+                "all_spending": 65000,
+                "count": 8
+            },
+            {
+                "all_spending": 75000,
+                "count": 8
+            },
+            {
+                "all_spending": 85000,
+                "count": 8
+            },
+            {
+                "all_spending": 95000,
+                "count": 6
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Distribution of Spending (< $100,000)",
+    "encoding": {
+        "x": {
+            "field": "all_spending",
+            "type": "quantitative",
+            "axis": {
+                "format": ".0f"
+            }
+        },
+        "y": {
+            "field": "count",
+            "type": "quantitative",
+            "axis": {
+                "title": "# Candidates"
+            }
+        }
+    }
+};
+vegaEmbed('#SpendingHistogramSmall2',vlSpec);</script>
+</figure>
 
 <!-- page content ends here -->
 
