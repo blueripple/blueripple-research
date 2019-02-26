@@ -112,13 +112,13 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
           Just startDay -> (FEC._partyExpenditure_date c B.>. (B.val_ $ startOfDayOn startDay)) B.&&. (FEC._partyExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay))
         pure (FEC._partyExpenditure_candidate_id pe, FEC._partyExpenditure_amount pe)
   netSpending <- B.runBeamSqlite dbConn $ B.runSelectReturningList $ B.select $ do
-    candidateWithForecast <- allCandsWithForecasts
-    candidate <- candidatesInElection --B.leftJoin_ allCandidates (\c -> FEC._candidate_id c `B.references_` candidateWithForecasts)
+    candidateWithForecast <- allCandsWithForecasts -- this has only candidateID col
+    candidate <- candidatesInElection
+    B.guard_ ((candidateWithForecast `B.references_` candidate)) -- only include candidates for whom we have fcast data
     disbursement <- B.leftJoin_ aggregatedDisbursements (\(id,_) -> (id `B.references_` candidate))
     indSupport <- B.leftJoin_ aggregatedIESupport (\(id,_,_) -> (id `B.references_` candidate))
     indOppose <- B.leftJoin_ aggregatedIEOppose (\(id,_,_) -> (id `B.references_` candidate))
     partyExpenditures <- B.leftJoin_ aggregatedPartyExpenditures (\(id,_) -> (id `B.references_` candidate))
-    B.guard_ ((candidateWithForecast `B.references_` candidate)) -- make sure we only include candidates for whom we have fcast data
     pure (
       (candidate ^. FEC.candidate_id
       , candidate ^. FEC.candidate_state
