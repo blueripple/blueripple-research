@@ -26,6 +26,8 @@ cabal-version:       >=1.10
 
 library
   exposed-modules: BlueRipple.Data.FromDB
+                 , BlueRipple.Data.DataSourcePaths
+                 , BlueRipple.Data.DataFramesTH
   build-depends:       base >=4.11 
                      , beam-core
                      , beam-sqlite

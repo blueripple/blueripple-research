@@ -9,6 +9,20 @@ module Main Main0,1
 main main4,5
 main main5,6
 
+./src/BlueRipple/Data/DataSourcePaths.hs,541
+module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
+dataDir dataDir3,4
+totalSpendingCSV totalSpendingCSV5,6
+totalSpendingCSV totalSpendingCSV5,6
+forecastAndSpendingCSV forecastAndSpendingCSV6,7
+forecastAndSpendingCSV forecastAndSpendingCSV6,7
+electionResultsCSV electionResultsCSV7,8
+electionResultsCSV electionResultsCSV7,8
+totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
+totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
+demographicsCSV demographicsCSV9,10
+demographicsCSV demographicsCSV9,10
+
 ./src/BlueRipple/Data/FromDB.hs,1488
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14
 import import29,30
@@ -38,3 +52,7 @@ beforeForecast beforeForecast210,211
 electionDay electionDay211,212
 netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV213,214
 netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV214,215
+
+./src/BlueRipple/Data/DataFramesTH.hs,104
+module BlueRipple.Data.DataFramesTHBlueRipple.Data.DataFramesTH7,8
+F.tableTypes' F.tableTypes'25,26
