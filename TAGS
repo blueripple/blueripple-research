@@ -1,13 +1,15 @@
 
-./mission/mission.hs,263
+./mission/mission.hs,344
 module Main Main9,10
-templateVars templateVars41,42
-main main50,51
+templateVars templateVars43,44
 main main51,52
-type AllSpending AllSpending84,85
-sumSpending sumSpending85,86
-totalSpendingHistogram totalSpendingHistogram92,93
-totalSpendingHistogram totalSpendingHistogram94,95
+main main52,53
+spendingHistNotesspendingHistNotes95,96
+[FECDefs]: [FECDefs]:104,105
+type AllSpending AllSpending107,108
+sumSpending sumSpending108,109
+totalSpendingHistogram totalSpendingHistogram115,116
+totalSpendingHistogram totalSpendingHistogram117,118
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

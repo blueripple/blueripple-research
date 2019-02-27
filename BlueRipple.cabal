@@ -30,6 +30,7 @@ common deps
                , Frames-utils
                , foldl
                , freer-simple
+               , here
                , hmatrix
                , lucid
                , pipes
