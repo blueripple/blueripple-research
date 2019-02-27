@@ -6,8 +6,8 @@ main main50,51
 main main51,52
 type AllSpending AllSpending84,85
 sumSpending sumSpending85,86
-totalSpendingHistogram totalSpendingHistogram91,92
-totalSpendingHistogram totalSpendingHistogram93,94
+totalSpendingHistogram totalSpendingHistogram92,93
+totalSpendingHistogram totalSpendingHistogram94,95
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

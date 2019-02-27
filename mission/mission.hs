@@ -88,11 +88,21 @@ sumSpending r =
       is = realToFrac $ F.rgetField @IndSupport r      
       pe = realToFrac $ F.rgetField @PartyExpenditures r
   in FT.recordSingleton @AllSpending (db + is + pe)
-      
+
+     
 totalSpendingHistogram :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> FR.Eff effs ()
 totalSpendingHistogram tsFrame = do
   let frameWithSum = F.filterFrame ((>0). F.rgetField @AllSpending) $ fmap (FT.mutate sumSpending) tsFrame
+      mergeOtherParties :: F.Record '[CandidateParty] -> F.Record '[CandidateParty]
+      mergeOtherParties r =
+        let p = F.rgetField @CandidateParty r
+            np = case p of
+              "Republican" -> "Republican"
+              "Democrat" -> "Democrat"
+              _ -> "_AllOthers"
+        in FT.recordSingleton @CandidateParty np
+      frameWithMergedOtherParties = fmap (FT.transform mergeOtherParties) frameWithSum 
 --  Log.log Log.Diagnostic $ T.pack $ show $ fmap (show . F.rcast @[CandidateId, AllSpending]) $ FL.fold FL.list frameWithSum
   P.addBlaze $ H.placeVisualization "SpendingHistogramAll" $
     FV.singleHistogram @AllSpending "Distribution of Spending (last col includes all >10MM)" (Just "# Candidates") 10 (Just 0) (Just 1e7) True frameWithSum
@@ -100,3 +110,6 @@ totalSpendingHistogram tsFrame = do
     FV.singleHistogram @AllSpending "Distribution of Spending (< $1,000,000)" (Just "# Candidates") 10 (Just 0) (Just 1e6) False frameWithSum
   P.addBlaze $ H.placeVisualization "SpendingHistogramSmall2"  $
     FV.singleHistogram @AllSpending "Distribution of Spending (< $100,000)" (Just "# Candidates") 10 (Just 0) (Just 1e5) False frameWithSum
+  P.addBlaze $ H.placeVisualization "SpendingHistogramByParty"  $
+    FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party" (Just "# Candidates") 10 (Just 0) (Just 1e7) True FV.AdjacentBar frameWithMergedOtherParties
+  
