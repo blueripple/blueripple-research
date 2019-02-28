@@ -14,12 +14,12 @@ type ResultVsForecast ResultVsForecast116,117
 differentialSpendNotesdifferentialSpendNotes118,119
 spendVsChangeInVoteShare spendVsChangeInVoteShare126,127
 spendVsChangeInVoteShare spendVsChangeInVoteShare128,129
-spendingHistNotesspendingHistNotes182,183
-[FECDefs]: [FECDefs]:191,192
-type AllSpending AllSpending194,195
-sumSpending sumSpending195,196
-totalSpendingHistograms totalSpendingHistograms201,202
-totalSpendingHistograms totalSpendingHistograms203,204
+spendingHistNotesspendingHistNotes183,184
+[FECDefs]: [FECDefs]:192,193
+type AllSpending AllSpending195,196
+sumSpending sumSpending196,197
+totalSpendingHistograms totalSpendingHistograms202,203
+totalSpendingHistograms totalSpendingHistograms204,205
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

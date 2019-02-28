@@ -167,17 +167,18 @@ spendVsChangeInVoteShare totalSpendingFrame fcastAndSpendFrame eResultsFrame = L
         candAgainst = spendAgainst r
         candSpend = candFor + (allCandsAgainst - realToFrac candAgainst)/realToFrac nCands
         totalSpend = allCandsFor + allCandsAgainst
-      addResultVsForecast r = FT.recordSingleton @ResultVsForecast $ (resVS - fVS) where
-        fVS = F.rgetField @Voteshare r
-        resVS = F.rgetField @FinalVoteshare r
+      addResultVsForecast r = FT.recordSingleton @ResultVsForecast $ (finalVS - forecastVS) where
+        forecastVS = F.rgetField @Voteshare r
+        finalVS = F.rgetField @FinalVoteshare r
       addAll r = addCandDiff r <+> addResultVsForecast r
-      allTogetherFrame = fmap (FT.mutate addAll) fRTDFrame
+      candidatesInContestedRacesFrame = F.filterFrame ((> 1) . F.rgetField @RaceTotalCands) $ fmap (FT.mutate addAll) fRTDFrame
+      candidatesInCloseRacesFrame = F.filterFrame ((\x -> x<60 && x>40) . F.rgetField @Voteshare) candidatesInContestedRacesFrame
   Log.log Log.Info "Added normalized differential spend."
   P.addBlaze $ H.placeVisualization "DiffSpendHistogram"  $
-    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending" (Just "# Candidates") 10 Nothing Nothing True allTogetherFrame
-  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] allTogetherFrame
+    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending" (Just "# Candidates") 10 Nothing Nothing True candidatesInCloseRacesFrame
+  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] candidatesInCloseRacesFrame  
   P.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Explaining " <> y) diffSpendVsdiffVs S.cl95 
-  P.addBlaze $ H.placeVisualization ("dsVsdvsfit") $ FV.frameScatterWithFit "title" (Just "title") diffSpendVsdiffVs S.cl95 allTogetherFrame
+  P.addBlaze $ H.placeVisualization ("dsVsdvsfit") $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare" (Just "regression") diffSpendVsdiffVs S.cl95 candidatesInCloseRacesFrame
   P.addBlaze $ H.placeVisualization ("dsVsdvsRegresssionCoeffs") $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
 -- Spending histograms
 spendingHistNotes
