@@ -1,4 +1,4 @@
-candidate_id,state_abbrevation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures
+candidate_id,state_abbreviation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures
 H0AL02087,AL,2,Republican,2165535,399040,900,0
 H0AL05163,AL,5,Republican,944393,5895,862,0
 H0AL07086,AL,7,Democrat,886236,0,0,0

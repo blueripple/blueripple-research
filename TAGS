@@ -1,15 +1,25 @@
 
-./mission/mission.hs,344
+./mission/mission.hs,804
 module Main Main9,10
-templateVars templateVars43,44
-main main51,52
-main main52,53
-spendingHistNotesspendingHistNotes95,96
-[FECDefs]: [FECDefs]:104,105
-type AllSpending AllSpending107,108
-sumSpending sumSpending108,109
-totalSpendingHistogram totalSpendingHistogram115,116
-totalSpendingHistogram totalSpendingHistogram117,118
+templateVars templateVars53,54
+main main61,62
+main main62,63
+spendFor spendFor109,110
+--type --type111,112
+type RaceTotalFor RaceTotalFor112,113
+type RaceTotalAgainst RaceTotalAgainst113,114
+type RaceTotalCands RaceTotalCands114,115
+type CandidateDiffSpend CandidateDiffSpend115,116
+type ResultVsForecast ResultVsForecast116,117
+differentialSpendNotesdifferentialSpendNotes118,119
+spendVsChangeInVoteShare spendVsChangeInVoteShare126,127
+spendVsChangeInVoteShare spendVsChangeInVoteShare128,129
+spendingHistNotesspendingHistNotes182,183
+[FECDefs]: [FECDefs]:191,192
+type AllSpending AllSpending194,195
+sumSpending sumSpending195,196
+totalSpendingHistograms totalSpendingHistograms201,202
+totalSpendingHistograms totalSpendingHistograms203,204
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

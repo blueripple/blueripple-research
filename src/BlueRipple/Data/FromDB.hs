@@ -226,7 +226,7 @@ netSpendingByHouseCandidatesBeforeCSV endDay = do
           <> T.pack (TP.printf "%.0g" io) <> ","
           <> T.pack (TP.printf "%.0g" pe)
   dbConn <- SL.open "/Users/adam/Google Drive/FEC.db"
-  let header = "candidate_id,state_abbrevation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
+  let header = "candidate_id,state_abbreviation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
       wZero n = (if n < 10 then "0" else "") ++ show n
       toYYYYMMDD day = let (y,m,d) = toGregorian day in show y ++ wZero m ++ wZero d
   rows <- netSpendingByCandidateBetweenDates dbConn FEC.House Nothing endDay Nothing Nothing

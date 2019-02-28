@@ -9,6 +9,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 module Main where
 
+import           Control.Lens                    ((^.))
 import qualified Control.Foldl                   as FL
 import           Control.Monad.IO.Class          (MonadIO(liftIO))
 import qualified Control.Monad.Freer.Logger      as Log
@@ -17,17 +18,24 @@ import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc      as P
 import           Control.Monad.Freer.Random      (runRandomIOPureMT)
 import           Control.Monad.Freer.Docs        (toNamedDocListWithM)
+import           Data.Functor.Identity           (Identity(..))
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
+import           Data.Maybe                      (catMaybes)
+import           Data.Proxy                      (Proxy(..))
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
 import qualified Data.Time.Calendar              as Time
+import qualified Data.Vinyl                      as V
+import qualified Data.Vinyl.Class.Method         as V
 import qualified Frames                          as F
+import           Frames                          ((:->),(<+>),(&:))
 import qualified Frames.CSV                      as F
 --import qualified Frames.InCore                   as F
 import qualified Pipes                           as P
 import qualified Pipes.Prelude                   as P
+import qualified Statistics.Types               as S
 
 import qualified Html.Blaze.Report            as H
 import qualified Text.Pandoc.Report              as P
@@ -37,6 +45,8 @@ import           Control.Monad.Freer.Html        (Blaze, blaze, blazeToText, bla
 import qualified Frames.ParseableTypes as FP
 import qualified Frames.VegaLite as FV
 import qualified Frames.Transform as FT
+import qualified Frames.Aggregations as FA 
+import qualified Frames.Regression as FR
 import           Data.String.Here (here)
 
 import           BlueRipple.Data.DataFrames
@@ -88,11 +98,88 @@ main = do
     Log.log Log.Info "Knitting..."
     P.newPandoc "mission" $ do
       P.addMarkDown spendingHistNotes
-      totalSpendingHistogram totalSpendingFrame
+      totalSpendingHistograms totalSpendingFrame
+      P.addMarkDown differentialSpendNotes
+      spendVsChangeInVoteShare totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
+
+-- 
+spendFor r = (r ^. disbursement) + (r ^. indSupport) + (realToFrac $ r ^. partyExpenditures)
+--
+--type CandidateTotalSpend = "candidate_total_spend" :-> Double
+type RaceTotalFor = "race_total_for" :-> Double
+type RaceTotalAgainst = "race_total_against" :-> Double
+type RaceTotalCands = "race_total_cands" :-> Int
+type CandidateDiffSpend  = "candidate_diff_spend" :-> Double
+type ResultVsForecast = "result_vs_forecast" :-> Double
+
+differentialSpendNotes
+  = [here|
+## Differential Spending and changes in the race
+* Candidates, committees and parties spend money on behalf of candidates.  But Committees (Super-PACs) etc. can also spend money *against* candidates.  That makes it confusing to define exactly how much was spent on behalf of each candidate.  In the below, when analyzing differences in spending, we take the simplistic approach of assuming that money spend against a candidate is exactly like money spent for the opposing candidate(s).  If there is more than one opposing candidate, we divide it evenly among them.
+* In order to look at races with very different overall levels of spending, we divide each candidates total spending by the total spent on the entire race by all candidates.  This number varies between 0 (none of the money spent in the race was for this candidate) to 1 (all of the money spent in the race was for this candidate.)
+|]         
+
+-- differential spend vs (result - 8/1 forecast)
+spendVsChangeInVoteShare :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+  => F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> FR.Eff effs ()
+spendVsChangeInVoteShare totalSpendingFrame fcastAndSpendFrame eResultsFrame = Log.wrapPrefix "spendVsChangeInVoteShare" $ do
+  -- create a Frame with each candidate, candidate total, race total, candidate differential
+  -- use aggregateFs by aggregating by [StateAbbreviation,CongressionalDistrict] and then use extract to turn those records into the ones we want
+  Log.log Log.Info "Transforming spending before, forecasts and spending during, and election results..."
+  let firstForecastFrame = fmap (F.rcast @[CandidateId, StateAbbreviation, CongressionalDistrict, Voteshare]) $
+        F.filterFrame (\r -> r ^. date == FP.FrameDay (Time.fromGregorian 2018 08 01)) fcastAndSpendFrame
+  Log.log Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
+  
+  let foldAllSpending = FA.aggregateFs (Proxy @'[CandidateId]) Identity addSpending (0 &: 0 &: 0 &: 0 &: V.RNil) Identity where
+        addSpending = flip $ V.recAdd . F.rcast @[Disbursement, IndSupport, IndOppose, PartyExpenditures]
+      spendingDuringFrame = FL.fold foldAllSpending fcastAndSpendFrame
+  Log.log Log.Info "Summed spending during forecasting period to get spending 8/1/2018 - election day by candidateId"
+  
+  let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
+      spendAgainst r = (r ^. indOppose)      
+      raceTotalsF = FL.Fold (\(n,for,against) r -> (n+1, for + spendFor r, against + spendAgainst r)) (0 :: Int ,0 :: Double ,0 :: Double) id
+--      addRaceTotal (_, for, against) = FT.recordSingleton @RaceTotalSpend $ realToFrac (for + against)
+      raceTotalFrameF = FA.aggregateFs proxyRace Identity (flip (:)) [] extract where
+        extract candsInRace =
+          let (n :: Int , for :: Double , against :: Double) = FL.fold raceTotalsF candsInRace
+              addF = FT.recordSingleton @RaceTotalFor for
+              addA = FT.recordSingleton @RaceTotalAgainst against
+              addN = FT.recordSingleton @RaceTotalCands n
+              addAll _ = addF <+> addA <+> addN
+          in fmap (F.rcast @[CandidateId, RaceTotalFor, RaceTotalAgainst, RaceTotalCands] . FT.mutate addAll) candsInRace
+      raceTotalFrame = FL.fold raceTotalFrameF totalSpendingFrame 
+  Log.log Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId"
+  -- all ur joins belong to us
+  let selectResults = fmap (F.rcast @[CandidateId, FinalVoteshare])
+      fRFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] firstForecastFrame (selectResults eResultsFrame)
+      fRTFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRFrame raceTotalFrame
+      fRTDFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRTFrame spendingDuringFrame
+  Log.log Log.Info $ "Did all the joins. Final frame has " <> (T.pack $ show $ FL.fold FL.length fRTDFrame) <> " rows."
+  let addCandDiff r = FT.recordSingleton @CandidateDiffSpend $ candSpend/totalSpend where
+        allCandsFor = F.rgetField @RaceTotalFor r
+        allCandsAgainst = F.rgetField @RaceTotalAgainst r
+        nCands = F.rgetField @RaceTotalCands r
+        candFor = spendFor r
+        candAgainst = spendAgainst r
+        candSpend = candFor + (allCandsAgainst - realToFrac candAgainst)/realToFrac nCands
+        totalSpend = allCandsFor + allCandsAgainst
+      addResultVsForecast r = FT.recordSingleton @ResultVsForecast $ (resVS - fVS) where
+        fVS = F.rgetField @Voteshare r
+        resVS = F.rgetField @FinalVoteshare r
+      addAll r = addCandDiff r <+> addResultVsForecast r
+      allTogetherFrame = fmap (FT.mutate addAll) fRTDFrame
+  Log.log Log.Info "Added normalized differential spend."
+  P.addBlaze $ H.placeVisualization "DiffSpendHistogram"  $
+    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending" (Just "# Candidates") 10 Nothing Nothing True allTogetherFrame
+  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] allTogetherFrame
+  P.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Explaining " <> y) diffSpendVsdiffVs S.cl95 
+  P.addBlaze $ H.placeVisualization ("dsVsdvsfit") $ FV.frameScatterWithFit "title" (Just "title") diffSpendVsdiffVs S.cl95 allTogetherFrame
+  P.addBlaze $ H.placeVisualization ("dsVsdvsRegresssionCoeffs") $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
+-- Spending histograms
 spendingHistNotes
   = [here|
 ## Spending By Party in 2018 House Races
@@ -111,11 +198,10 @@ sumSpending r =
       is = realToFrac $ F.rgetField @IndSupport r      
       pe = realToFrac $ F.rgetField @PartyExpenditures r
   in FT.recordSingleton @AllSpending (db + is + pe)
-
      
-totalSpendingHistogram :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+totalSpendingHistograms :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> FR.Eff effs ()
-totalSpendingHistogram tsFrame = do
+totalSpendingHistograms tsFrame = do
   let frameWithSum = F.filterFrame ((>0). F.rgetField @AllSpending) $ fmap (FT.mutate sumSpending) tsFrame
       mergeOtherParties :: F.Record '[CandidateParty] -> F.Record '[CandidateParty]
       mergeOtherParties r =

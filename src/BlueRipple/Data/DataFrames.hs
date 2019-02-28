@@ -21,7 +21,7 @@ import qualified Frames                          as F
 import qualified Frames.CSV                      as F
 import qualified Frames.TH                       as F
 
-import qualified Frames.ParseableTypes as FP
+import qualified Frames.ParseableTypes           as FP
 
 -- pre-declare cols with non-standard types
 F.declareColumn "Date" ''FP.FrameDay
@@ -31,7 +31,7 @@ F.tableTypes "TotalSpending" totalSpendingCSV
 F.tableTypes' (F.rowGen forecastAndSpendingCSV) { F.rowTypeName = "ForecastAndSpending"
                                                 , F.columnUniverse = Proxy :: Proxy FP.ColumnsWithDayAndLocalTime
                                                 }
-                                                
+
 F.tableTypes "ElectionResults" electionResultsCSV
 F.tableTypes "TotalSpendingBefore" totalSpendingBeforeCSV
 F.tableTypes "Demographics" demographicsCSV
