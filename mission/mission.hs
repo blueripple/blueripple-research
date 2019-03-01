@@ -124,28 +124,28 @@ differentialSpendNotes
 |]         
 
 -- differential spend vs (result - 8/1 forecast)
-spendVsChangeInVoteShare :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+spendVsChangeInVoteShare :: (MonadIO (FR.Eff effs), FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> FR.Eff effs ()
 spendVsChangeInVoteShare totalSpendingFrame fcastAndSpendFrame eResultsFrame = Log.wrapPrefix "spendVsChangeInVoteShare" $ do
   -- create a Frame with each candidate, candidate total, race total, candidate differential
   -- use aggregateFs by aggregating by [StateAbbreviation,CongressionalDistrict] and then use extract to turn those records into the ones we want
   Log.log Log.Info "Transforming spending before, forecasts and spending during, and election results..."
-  let firstForecastFrame = fmap (F.rcast @[CandidateId, StateAbbreviation, CongressionalDistrict, Voteshare]) $
+  let firstForecastFrame = fmap (F.rcast @[CandidateId, StateAbbreviation, CongressionalDistrict, CandidateParty, Voteshare]) $
         F.filterFrame (\r -> r ^. date == FP.FrameDay (Time.fromGregorian 2018 08 01)) fcastAndSpendFrame
   Log.log Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
   
   let foldAllSpending = FA.aggregateFs (Proxy @'[CandidateId]) Identity addSpending (0 &: 0 &: 0 &: 0 &: V.RNil) Identity where
         addSpending = flip $ V.recAdd . F.rcast @[Disbursement, IndSupport, IndOppose, PartyExpenditures]
       spendingDuringFrame = FL.fold foldAllSpending fcastAndSpendFrame
-  Log.log Log.Info "Summed spending during forecasting period to get spending 8/1/2018 - election day by candidateId"
+  Log.log Log.Info "Summed spending during forecasting period to get spending 8/1/2018-election day by candidateId"
   
   let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
       spendAgainst r = (r ^. indOppose)      
-      raceTotalsF = FL.Fold (\(n,for,against) r -> (n+1, for + spendFor r, against + spendAgainst r)) (0 :: Int ,0 :: Double ,0 :: Double) id
+      raceTotalsF = FL.Fold (\(n,for,against) r -> (n+1, for + spendFor r, against + spendAgainst r)) (0, 0, 0) id
 --      addRaceTotal (_, for, against) = FT.recordSingleton @RaceTotalSpend $ realToFrac (for + against)
       raceTotalFrameF = FA.aggregateFs proxyRace Identity (flip (:)) [] extract where
         extract candsInRace =
-          let (n :: Int , for :: Double , against :: Double) = FL.fold raceTotalsF candsInRace
+          let (n , for, against) = FL.fold raceTotalsF candsInRace
               addF = FT.recordSingleton @RaceTotalFor for
               addA = FT.recordSingleton @RaceTotalAgainst against
               addN = FT.recordSingleton @RaceTotalCands n
@@ -165,20 +165,27 @@ spendVsChangeInVoteShare totalSpendingFrame fcastAndSpendFrame eResultsFrame = L
         nCands = F.rgetField @RaceTotalCands r
         candFor = spendFor r
         candAgainst = spendAgainst r
-        candSpend = candFor + (allCandsAgainst - realToFrac candAgainst)/realToFrac nCands
+        candSpend = candFor + (allCandsAgainst - realToFrac candAgainst)/(realToFrac nCands - 1)
         totalSpend = allCandsFor + allCandsAgainst
       addResultVsForecast r = FT.recordSingleton @ResultVsForecast $ (finalVS - forecastVS) where
         forecastVS = F.rgetField @Voteshare r
         finalVS = F.rgetField @FinalVoteshare r
       addAll r = addCandDiff r <+> addResultVsForecast r
       candidatesInContestedRacesFrame = F.filterFrame ((> 1) . F.rgetField @RaceTotalCands) $ fmap (FT.mutate addAll) fRTDFrame
-      candidatesInCloseRacesFrame = F.filterFrame ((\x -> x<60 && x>40) . F.rgetField @Voteshare) candidatesInContestedRacesFrame
-  Log.log Log.Info "Added normalized differential spend."
+  liftIO $ F.writeCSV "data/allTogetherFrame.csv" candidatesInContestedRacesFrame
+  let filterCloseAndCheap r =
+        let vs = F.rgetField @Voteshare r
+            rtf = F.rgetField @RaceTotalFor r
+            rta = F.rgetField @RaceTotalAgainst r
+            party = F.rgetField @CandidateParty r
+        in (vs > 30) && (vs < 70) && ((rtf + rta) < 1000000) -- && (party == "Republican")
+      toAnalyzeFrame = F.filterFrame filterCloseAndCheap candidatesInContestedRacesFrame
+  Log.log Log.Info $ "Added normalized differential spend and filtered to cheap and close races. " <> (T.pack $ show (FL.fold FL.length toAnalyzeFrame)) <> " rows left."
   P.addBlaze $ H.placeVisualization "DiffSpendHistogram"  $
-    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending" (Just "# Candidates") 10 Nothing Nothing True candidatesInCloseRacesFrame
-  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] candidatesInCloseRacesFrame  
+    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending" (Just "# Candidates") 10 Nothing Nothing True toAnalyzeFrame
+  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] toAnalyzeFrame
   P.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Explaining " <> y) diffSpendVsdiffVs S.cl95 
-  P.addBlaze $ H.placeVisualization ("dsVsdvsfit") $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare" (Just "regression") diffSpendVsdiffVs S.cl95 candidatesInCloseRacesFrame
+  P.addBlaze $ H.placeVisualization ("dsVsdvsfit") $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare" (Just "regression") diffSpendVsdiffVs S.cl95 toAnalyzeFrame
   P.addBlaze $ H.placeVisualization ("dsVsdvsRegresssionCoeffs") $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
 -- Spending histograms
 spendingHistNotes
