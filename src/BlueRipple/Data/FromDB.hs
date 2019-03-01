@@ -33,7 +33,7 @@ import           Data.Default                             (Default)
 import qualified Data.Foldable                            as F
 import qualified Data.List                                as L
 import qualified Data.Map                                 as M
-import           Data.Maybe                               (fromMaybe)
+import           Data.Maybe                               (fromMaybe, maybe)
 import qualified Data.Sequence                            as Seq
 import qualified Data.Set                                 as S
 import qualified Data.Text                                as T
@@ -212,10 +212,11 @@ allHouseCSV = do
   Sys.hClose handle
 
 beforeForecast = fromGregorian 2018 07 31
+startForecast = fromGregorian 2018 08 01
 electionDay = fromGregorian 2018 11 06
 
-netSpendingByHouseCandidatesBeforeCSV :: Day -> IO ()
-netSpendingByHouseCandidatesBeforeCSV endDay = do
+netSpendingByHouseCandidatesBetweenCSV :: Maybe Day -> Day -> IO ()
+netSpendingByHouseCandidatesBetweenCSV startDayM endDay = do
   let tupleToCSV (id, s, dst, p, db, is, io, pe)
         = id <> ","
           <> s <> ","
@@ -229,8 +230,10 @@ netSpendingByHouseCandidatesBeforeCSV endDay = do
   let header = "candidate_id,state_abbreviation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
       wZero n = (if n < 10 then "0" else "") ++ show n
       toYYYYMMDD day = let (y,m,d) = toGregorian day in show y ++ wZero m ++ wZero d
-  rows <- netSpendingByCandidateBetweenDates dbConn FEC.House Nothing endDay Nothing Nothing
-  handle <- Sys.openFile ("/Users/adam/DataScience/FEC/BlueRipple/data/allSpendingThrough"  ++ toYYYYMMDD endDay ++ ".csv") Sys.WriteMode
+  rows <- netSpendingByCandidateBetweenDates dbConn FEC.House startDayM endDay Nothing Nothing
+  let startDayNamePart = maybe "" (\sd -> "From" ++ toYYYYMMDD sd) startDayM
+      fname = "/Users/adam/DataScience/FEC/BlueRipple/data/allSpending" ++ startDayNamePart ++ "Through" ++ toYYYYMMDD endDay ++ ".csv"
+  handle <- Sys.openFile fname Sys.WriteMode
   T.hPutStrLn handle header
   mapM (T.hPutStrLn handle . tupleToCSV) rows
   Sys.hClose handle

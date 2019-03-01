@@ -5,5 +5,6 @@ import           BlueRipple.Data.FromDB
 main :: IO ()
 main = do
   allHouseCSV
-  netSpendingByHouseCandidatesBeforeCSV beforeForecast
-  netSpendingByHouseCandidatesBeforeCSV electionDay
+  netSpendingByHouseCandidatesBetweenCSV Nothing beforeForecast
+  netSpendingByHouseCandidatesBetweenCSV Nothing electionDay
+  netSpendingByHouseCandidatesBetweenCSV (Just startForecast) electionDay

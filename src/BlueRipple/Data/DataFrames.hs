@@ -31,7 +31,6 @@ F.tableTypes "TotalSpending" totalSpendingCSV
 F.tableTypes' (F.rowGen forecastAndSpendingCSV) { F.rowTypeName = "ForecastAndSpending"
                                                 , F.columnUniverse = Proxy :: Proxy FP.ColumnsWithDayAndLocalTime
                                                 }
-
 F.tableTypes "ElectionResults" electionResultsCSV
-F.tableTypes "TotalSpendingBefore" totalSpendingBeforeCSV
 F.tableTypes "Demographics" demographicsCSV
+F.tableTypes "AngryDems" angryDemsCSV

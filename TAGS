@@ -1,25 +1,28 @@
 
-./mission/mission.hs,804
-module Main Main9,10
-templateVars templateVars53,54
-main main61,62
-main main62,63
-spendFor spendFor109,110
---type --type111,112
-type RaceTotalFor RaceTotalFor112,113
-type RaceTotalAgainst RaceTotalAgainst113,114
-type RaceTotalCands RaceTotalCands114,115
-type CandidateDiffSpend CandidateDiffSpend115,116
-type ResultVsForecast ResultVsForecast116,117
-differentialSpendNotesdifferentialSpendNotes118,119
-spendVsChangeInVoteShare spendVsChangeInVoteShare126,127
-spendVsChangeInVoteShare spendVsChangeInVoteShare128,129
-spendingHistNotesspendingHistNotes190,191
-[FECDefs]: [FECDefs]:199,200
-type AllSpending AllSpending202,203
-sumSpending sumSpending203,204
-totalSpendingHistograms totalSpendingHistograms209,210
-totalSpendingHistograms totalSpendingHistograms211,212
+./mission/mission.hs,920
+module Main Main12,13
+templateVars templateVars59,60
+loadCSVToFrame loadCSVToFrame67,68
+loadCSVToFrame loadCSVToFrame73,74
+main main81,82
+main main82,83
+spendFor spendFor113,114
+spendAgainst spendAgainst114,115
+proxyRace proxyRace115,116
+type RaceTotalFor RaceTotalFor117,118
+type RaceTotalAgainst RaceTotalAgainst118,119
+type RaceTotalCands RaceTotalCands119,120
+type CandidateDiffSpend CandidateDiffSpend120,121
+type ResultVsForecast ResultVsForecast121,122
+differentialSpendNotesdifferentialSpendNotes123,124
+spendVsChangeInVoteShare spendVsChangeInVoteShare136,137
+spendVsChangeInVoteShare spendVsChangeInVoteShare138,139
+spendingHistNotesspendingHistNotes211,212
+[FECDefs]: [FECDefs]:220,221
+type AllSpending AllSpending223,224
+sumSpending sumSpending224,225
+totalSpendingHistograms totalSpendingHistograms230,231
+totalSpendingHistograms totalSpendingHistograms232,233
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -30,7 +33,7 @@ main main5,6
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
 F.tableTypes' F.tableTypes'30,31
 
-./src/BlueRipple/Data/DataSourcePaths.hs,541
+./src/BlueRipple/Data/DataSourcePaths.hs,713
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
 dataDir dataDir3,4
 totalSpendingCSV totalSpendingCSV5,6
@@ -41,10 +44,14 @@ electionResultsCSV electionResultsCSV7,8
 electionResultsCSV electionResultsCSV7,8
 totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
 totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
-demographicsCSV demographicsCSV9,10
-demographicsCSV demographicsCSV9,10
+totalSpendingDuringCSV totalSpendingDuringCSV9,10
+totalSpendingDuringCSV totalSpendingDuringCSV9,10
+demographicsCSV demographicsCSV10,11
+demographicsCSV demographicsCSV10,11
+angryDemsCSV angryDemsCSV11,12
+angryDemsCSV angryDemsCSV11,12
 
-./src/BlueRipple/Data/FromDB.hs,1488
+./src/BlueRipple/Data/FromDB.hs,1529
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14
 import import29,30
 data Forecast Forecast54,55
@@ -70,6 +77,7 @@ spendingAndForecastByRace spendingAndForecastByRace140,141
 allHouseCSV allHouseCSV189,190
 allHouseCSV allHouseCSV190,191
 beforeForecast beforeForecast213,214
-electionDay electionDay214,215
-netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV216,217
-netSpendingByHouseCandidatesBeforeCSV netSpendingByHouseCandidatesBeforeCSV217,218
+startForecast startForecast214,215
+electionDay electionDay215,216
+netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV217,218
+netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV218,219

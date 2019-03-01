@@ -1,0 +1,909 @@
+Receipt ID,GiveDate,Amount,Recipient,Donor First Name,Donor Last Name
+AB67299318,10/29/18 14:53,38.47,Danny O'Connor,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.47,Nancy Soderberg,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Kristen Carlson,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Lizzie Fletcher,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Carolyn Bourdeaux,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,David Shapiro,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Gina Ortiz Jones,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Lucy McBath,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Colin Allred,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Kara Eastman,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Debbie Mucarsel-Powell,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Aftab Pureval,Pradeep,Bista
+AB67299318,10/29/18 14:53,38.46,Sri Kulkarni,Pradeep,Bista
+AB67302728,10/29/18 15:11,7.7,Kristen Carlson,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.7,Kara Eastman,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.7,Lizzie Fletcher,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Sri Kulkarni,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Carolyn Bourdeaux,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Aftab Pureval,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Gina Ortiz Jones,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,David Shapiro,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Debbie Mucarsel-Powell,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Lucy McBath,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Colin Allred,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Nancy Soderberg,Elizabeth,Henske
+AB67302728,10/29/18 15:11,7.69,Danny O'Connor,Elizabeth,Henske
+AB67310715,10/29/18 15:59,76.93,Kara Eastman,Leslie,Price
+AB67310715,10/29/18 15:59,76.93,Lizzie Fletcher,Leslie,Price
+AB67310715,10/29/18 15:59,76.93,Carolyn Bourdeaux,Leslie,Price
+AB67310715,10/29/18 15:59,76.93,Colin Allred,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Kristen Carlson,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Debbie Mucarsel-Powell,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Nancy Soderberg,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,David Shapiro,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Sri Kulkarni,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Gina Ortiz Jones,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Lucy McBath,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Danny O'Connor,Leslie,Price
+AB67310715,10/29/18 15:59,76.92,Aftab Pureval,Leslie,Price
+AB67315239,10/29/18 16:26,76.93,Gina Ortiz Jones,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.93,Danny O'Connor,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.93,Kristen Carlson,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.93,Kara Eastman,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Aftab Pureval,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Nancy Soderberg,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Sri Kulkarni,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Debbie Mucarsel-Powell,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,David Shapiro,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Lizzie Fletcher,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Lucy McBath,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Colin Allred,Adam,Conner-Sax
+AB67315239,10/29/18 16:26,76.92,Carolyn Bourdeaux,Adam,Conner-Sax
+AB67320460,10/29/18 16:57,50,Nancy Soderberg,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Debbie Mucarsel-Powell,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Lizzie Fletcher,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Carolyn Bourdeaux,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Colin Allred,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Lucy McBath,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,David Shapiro,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Kara Eastman,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Danny O'Connor,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Gina Ortiz Jones,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Sri Kulkarni,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Aftab Pureval,USHA,THAKRAR
+AB67320460,10/29/18 16:57,50,Kristen Carlson,USHA,THAKRAR
+AB67321871,10/29/18 17:05,7.7,Nancy Soderberg,Paul,Berman
+AB67321871,10/29/18 17:05,7.7,Debbie Mucarsel-Powell,Paul,Berman
+AB67321871,10/29/18 17:05,7.7,Aftab Pureval,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Lucy McBath,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Kristen Carlson,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Danny O'Connor,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Colin Allred,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Sri Kulkarni,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,David Shapiro,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Lizzie Fletcher,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Carolyn Bourdeaux,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Gina Ortiz Jones,Paul,Berman
+AB67321871,10/29/18 17:05,7.69,Kara Eastman,Paul,Berman
+AB67324523,10/29/18 17:20,38.47,Lizzie Fletcher,Marah,Gubar
+AB67324523,10/29/18 17:20,38.47,Gina Ortiz Jones,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Sri Kulkarni,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,David Shapiro,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Nancy Soderberg,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Kristen Carlson,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Carolyn Bourdeaux,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Aftab Pureval,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Danny O'Connor,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Kara Eastman,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Debbie Mucarsel-Powell,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Lucy McBath,Marah,Gubar
+AB67324523,10/29/18 17:20,38.46,Colin Allred,Marah,Gubar
+AB67328037,10/29/18 17:39,13.85,Kristen Carlson,Carl,David
+AB67328037,10/29/18 17:39,13.85,Lizzie Fletcher,Carl,David
+AB67328037,10/29/18 17:39,13.85,Debbie Mucarsel-Powell,Carl,David
+AB67328037,10/29/18 17:39,13.85,Colin Allred,Carl,David
+AB67328037,10/29/18 17:39,13.85,Sri Kulkarni,Carl,David
+AB67328037,10/29/18 17:39,13.85,Lucy McBath,Carl,David
+AB67328037,10/29/18 17:39,13.85,Nancy Soderberg,Carl,David
+AB67328037,10/29/18 17:39,13.85,David Shapiro,Carl,David
+AB67328037,10/29/18 17:39,13.84,Kara Eastman,Carl,David
+AB67328037,10/29/18 17:39,13.84,Carolyn Bourdeaux,Carl,David
+AB67328037,10/29/18 17:39,13.84,Aftab Pureval,Carl,David
+AB67328037,10/29/18 17:39,13.84,Gina Ortiz Jones,Carl,David
+AB67328037,10/29/18 17:39,13.84,Danny O'Connor,Carl,David
+AB67331580,10/29/18 17:59,7.7,Gina Ortiz Jones,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.7,Kristen Carlson,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.7,Colin Allred,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Lizzie Fletcher,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Nancy Soderberg,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Aftab Pureval,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Danny O'Connor,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Kara Eastman,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Lucy McBath,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Carolyn Bourdeaux,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,David Shapiro,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Sri Kulkarni,Carolyn,Van Zante
+AB67331580,10/29/18 17:59,7.69,Debbie Mucarsel-Powell,Carolyn,Van Zante
+AB67333307,10/29/18 18:10,76.93,Lucy McBath,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.93,Kristen Carlson,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.93,Sri Kulkarni,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.93,Debbie Mucarsel-Powell,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Kara Eastman,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Nancy Soderberg,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Carolyn Bourdeaux,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Lizzie Fletcher,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Gina Ortiz Jones,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,David Shapiro,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Aftab Pureval,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Colin Allred,Carolyn,Williams
+AB67333307,10/29/18 18:10,76.92,Danny O'Connor,Carolyn,Williams
+AB67336073,10/29/18 18:27,38.47,David Shapiro,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.47,Lucy McBath,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Carolyn Bourdeaux,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Colin Allred,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Aftab Pureval,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Kara Eastman,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Gina Ortiz Jones,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Danny O'Connor,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Nancy Soderberg,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Sri Kulkarni,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Kristen Carlson,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Debbie Mucarsel-Powell,Daniel,Balderston
+AB67336073,10/29/18 18:27,38.46,Lizzie Fletcher,Daniel,Balderston
+AB67345129,10/29/18 19:27,38.47,Lizzie Fletcher,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.47,Kristen Carlson,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Sri Kulkarni,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Carolyn Bourdeaux,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Aftab Pureval,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,David Shapiro,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Colin Allred,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Danny O'Connor,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Debbie Mucarsel-Powell,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Kara Eastman,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Lucy McBath,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Nancy Soderberg,Nancy,Glazener
+AB67345129,10/29/18 19:27,38.46,Gina Ortiz Jones,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.93,Nancy Soderberg,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.93,Sri Kulkarni,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.93,Debbie Mucarsel-Powell,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.93,Danny O'Connor,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Kara Eastman,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Gina Ortiz Jones,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Colin Allred,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Kristen Carlson,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Lucy McBath,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Lizzie Fletcher,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Aftab Pureval,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,David Shapiro,Nancy,Glazener
+AB67345201,10/29/18 19:25,76.92,Carolyn Bourdeaux,Nancy,Glazener
+AB67345952,10/29/18 19:30,50,Lizzie Fletcher,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Kara Eastman,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Carolyn Bourdeaux,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Nancy Soderberg,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Gina Ortiz Jones,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Debbie Mucarsel-Powell,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Lucy McBath,Kitty,Sahin
+AB67345952,10/29/18 19:30,50,Kristen Carlson,Kitty,Sahin
+AB67352395,10/29/18 20:08,1,Colin Allred,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Aftab Pureval,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Kara Eastman,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Kristen Carlson,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Lizzie Fletcher,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Lucy McBath,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Nancy Soderberg,Emily,Arkin
+AB67352395,10/29/18 20:08,1,David Shapiro,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Debbie Mucarsel-Powell,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Gina Ortiz Jones,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Sri Kulkarni,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Danny O'Connor,Emily,Arkin
+AB67352395,10/29/18 20:08,1,Carolyn Bourdeaux,Emily,Arkin
+AB67354470,10/29/18 20:19,20,Carolyn Bourdeaux,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Kara Eastman,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Sri Kulkarni,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Debbie Mucarsel-Powell,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Lucy McBath,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Gina Ortiz Jones,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Kristen Carlson,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Aftab Pureval,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Danny O'Connor,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Colin Allred,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,David Shapiro,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Nancy Soderberg,Jennifer,Vickery
+AB67354470,10/29/18 20:19,20,Lizzie Fletcher,Jennifer,Vickery
+AB67368114,10/29/18 21:33,30,Colin Allred,Scott,Innis
+AB67368114,10/29/18 21:33,35,Lizzie Fletcher,Scott,Innis
+AB67368114,10/29/18 21:33,40,Kara Eastman,Scott,Innis
+AB67368114,10/29/18 21:33,50,Carolyn Bourdeaux,Scott,Innis
+AB67368114,10/29/18 21:33,25,Nancy Soderberg,Scott,Innis
+AB67368114,10/29/18 21:33,30,Gina Ortiz Jones,Scott,Innis
+AB67368114,10/29/18 21:33,40,Debbie Mucarsel-Powell,Scott,Innis
+AB67368114,10/29/18 21:33,25,David Shapiro,Scott,Innis
+AB67368114,10/29/18 21:33,40,Sri Kulkarni,Scott,Innis
+AB67368114,10/29/18 21:33,50,Aftab Pureval,Scott,Innis
+AB67368114,10/29/18 21:33,50,Danny O'Connor,Scott,Innis
+AB67368114,10/29/18 21:33,50,Lucy McBath,Scott,Innis
+AB67368114,10/29/18 21:33,35,Kristen Carlson,Scott,Innis
+AB67368821,10/29/18 21:37,38.47,Lucy McBath,John,Christman
+AB67368821,10/29/18 21:37,38.47,Nancy Soderberg,John,Christman
+AB67368821,10/29/18 21:37,38.46,Aftab Pureval,John,Christman
+AB67368821,10/29/18 21:37,38.46,David Shapiro,John,Christman
+AB67368821,10/29/18 21:37,38.46,Carolyn Bourdeaux,John,Christman
+AB67368821,10/29/18 21:37,38.46,Gina Ortiz Jones,John,Christman
+AB67368821,10/29/18 21:37,38.46,Kara Eastman,John,Christman
+AB67368821,10/29/18 21:37,38.46,Lizzie Fletcher,John,Christman
+AB67368821,10/29/18 21:37,38.46,Colin Allred,John,Christman
+AB67368821,10/29/18 21:37,38.46,Danny O'Connor,John,Christman
+AB67368821,10/29/18 21:37,38.46,Kristen Carlson,John,Christman
+AB67368821,10/29/18 21:37,38.46,Sri Kulkarni,John,Christman
+AB67368821,10/29/18 21:37,38.46,Debbie Mucarsel-Powell,John,Christman
+AB67369532,10/29/18 21:40,19.24,Danny O'Connor,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Lizzie Fletcher,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Gina Ortiz Jones,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Colin Allred,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Aftab Pureval,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Sri Kulkarni,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Debbie Mucarsel-Powell,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Kara Eastman,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Kristen Carlson,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,David Shapiro,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Nancy Soderberg,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Carolyn Bourdeaux,Steven,Lipsitt
+AB67369532,10/29/18 21:40,19.23,Lucy McBath,Steven,Lipsitt
+AB67376927,10/29/18 22:26,20,Colin Allred,Karla,Lang
+AB67376927,10/29/18 22:26,20,Lizzie Fletcher,Karla,Lang
+AB67376927,10/29/18 22:26,20,Kara Eastman,Karla,Lang
+AB67376927,10/29/18 22:26,20,Carolyn Bourdeaux,Karla,Lang
+AB67376927,10/29/18 22:26,20,Nancy Soderberg,Karla,Lang
+AB67376927,10/29/18 22:26,20,Gina Ortiz Jones,Karla,Lang
+AB67376927,10/29/18 22:26,20,Debbie Mucarsel-Powell,Karla,Lang
+AB67376927,10/29/18 22:26,20,David Shapiro,Karla,Lang
+AB67376927,10/29/18 22:26,20,Sri Kulkarni,Karla,Lang
+AB67376927,10/29/18 22:26,20,Aftab Pureval,Karla,Lang
+AB67376927,10/29/18 22:26,20,Danny O'Connor,Karla,Lang
+AB67376927,10/29/18 22:26,20,Lucy McBath,Karla,Lang
+AB67376927,10/29/18 22:26,20,Kristen Carlson,Karla,Lang
+AB67378170,10/29/18 22:35,7.7,Lizzie Fletcher,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.7,Aftab Pureval,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.7,Gina Ortiz Jones,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Kara Eastman,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Sri Kulkarni,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Colin Allred,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Nancy Soderberg,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Danny O'Connor,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Debbie Mucarsel-Powell,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,David Shapiro,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Kristen Carlson,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Lucy McBath,Ellen,Elmore
+AB67378170,10/29/18 22:35,7.69,Carolyn Bourdeaux,Ellen,Elmore
+AB67380361,10/29/18 22:49,20,Carolyn Bourdeaux,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Aftab Pureval,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Sri Kulkarni,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Danny O'Connor,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Kara Eastman,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Debbie Mucarsel-Powell,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Kristen Carlson,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Gina Ortiz Jones,Angela,Rogers
+AB67380361,10/29/18 22:49,20,David Shapiro,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Nancy Soderberg,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Lizzie Fletcher,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Lucy McBath,Angela,Rogers
+AB67380361,10/29/18 22:49,20,Colin Allred,Angela,Rogers
+AB67381280,10/29/18 22:57,3.85,Nancy Soderberg,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,David Shapiro,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Carolyn Bourdeaux,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Gina Ortiz Jones,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Aftab Pureval,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Lizzie Fletcher,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Colin Allred,Matthew,Moran
+AB67381280,10/29/18 22:57,3.85,Debbie Mucarsel-Powell,Matthew,Moran
+AB67381280,10/29/18 22:57,3.84,Danny O'Connor,Matthew,Moran
+AB67381280,10/29/18 22:57,3.84,Sri Kulkarni,Matthew,Moran
+AB67381280,10/29/18 22:57,3.84,Kara Eastman,Matthew,Moran
+AB67381280,10/29/18 22:57,3.84,Lucy McBath,Matthew,Moran
+AB67381280,10/29/18 22:57,3.84,Kristen Carlson,Matthew,Moran
+AB67385757,10/29/18 23:32,3.85,Lucy McBath,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Nancy Soderberg,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Danny O'Connor,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Carolyn Bourdeaux,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Kara Eastman,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Lizzie Fletcher,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Debbie Mucarsel-Powell,Me,Hutchens
+AB67385757,10/29/18 23:32,3.85,Kristen Carlson,Me,Hutchens
+AB67385757,10/29/18 23:32,3.84,Colin Allred,Me,Hutchens
+AB67385757,10/29/18 23:32,3.84,Gina Ortiz Jones,Me,Hutchens
+AB67385757,10/29/18 23:32,3.84,Sri Kulkarni,Me,Hutchens
+AB67385757,10/29/18 23:32,3.84,Aftab Pureval,Me,Hutchens
+AB67385757,10/29/18 23:32,3.84,David Shapiro,Me,Hutchens
+AB67402591,10/30/18 6:20,38.47,Danny O'Connor,dan,milch
+AB67402591,10/30/18 6:20,38.47,Debbie Mucarsel-Powell,dan,milch
+AB67402591,10/30/18 6:20,38.46,Aftab Pureval,dan,milch
+AB67402591,10/30/18 6:20,38.46,Gina Ortiz Jones,dan,milch
+AB67402591,10/30/18 6:20,38.46,Sri Kulkarni,dan,milch
+AB67402591,10/30/18 6:20,38.46,Lucy McBath,dan,milch
+AB67402591,10/30/18 6:20,38.46,Nancy Soderberg,dan,milch
+AB67402591,10/30/18 6:20,38.46,Colin Allred,dan,milch
+AB67402591,10/30/18 6:20,38.46,Kristen Carlson,dan,milch
+AB67402591,10/30/18 6:20,38.46,David Shapiro,dan,milch
+AB67402591,10/30/18 6:20,38.46,Lizzie Fletcher,dan,milch
+AB67402591,10/30/18 6:20,38.46,Carolyn Bourdeaux,dan,milch
+AB67402591,10/30/18 6:20,38.46,Kara Eastman,dan,milch
+AB67403442,10/30/18 6:54,76.93,Lizzie Fletcher,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.93,Kara Eastman,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.93,Danny O'Connor,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.93,Debbie Mucarsel-Powell,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Aftab Pureval,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Sri Kulkarni,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Carolyn Bourdeaux,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Lucy McBath,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Kristen Carlson,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Nancy Soderberg,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,David Shapiro,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Gina Ortiz Jones,Martin,Wattenberg
+AB67403442,10/30/18 6:54,76.92,Colin Allred,Martin,Wattenberg
+AB67406388,10/30/18 7:55,7.69,Colin Allred,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Lizzie Fletcher,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Kara Eastman,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Carolyn Bourdeaux,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Nancy Soderberg,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Gina Ortiz Jones,Sima,Toussi
+AB67406388,10/30/18 7:55,7.7,Debbie Mucarsel-Powell,Sima,Toussi
+AB67406388,10/30/18 7:55,7.7,David Shapiro,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Sri Kulkarni,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Aftab Pureval,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Danny O'Connor,Sima,Toussi
+AB67406388,10/30/18 7:55,7.69,Lucy McBath,Sima,Toussi
+AB67406388,10/30/18 7:55,7.7,Kristen Carlson,Sima,Toussi
+AB67408069,10/30/18 8:20,3.85,Aftab Pureval,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Gina Ortiz Jones,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Danny O'Connor,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Debbie Mucarsel-Powell,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Lizzie Fletcher,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Sri Kulkarni,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Kristen Carlson,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.85,Lucy McBath,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.84,Kara Eastman,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.84,Nancy Soderberg,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.84,Carolyn Bourdeaux,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.84,David Shapiro,Ondine,Brent Eysseric
+AB67408069,10/30/18 8:20,3.84,Colin Allred,Ondine,Brent Eysseric
+AB67409448,10/30/18 8:37,5,Lizzie Fletcher,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Nancy Soderberg,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Kristen Carlson,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Sri Kulkarni,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Lucy McBath,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,David Shapiro,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Kara Eastman,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Debbie Mucarsel-Powell,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Carolyn Bourdeaux,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Aftab Pureval,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Danny O'Connor,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Colin Allred,Jeffrey,Dwoskin
+AB67409448,10/30/18 8:37,5,Gina Ortiz Jones,Jeffrey,Dwoskin
+AB67414136,10/30/18 9:23,50,Lizzie Fletcher,Mindy,Lo
+AB67414136,10/30/18 9:23,50,Nancy Soderberg,Mindy,Lo
+AB67414136,10/30/18 9:23,50,Gina Ortiz Jones,Mindy,Lo
+AB67414136,10/30/18 9:23,50,Lucy McBath,Mindy,Lo
+AB67414136,10/30/18 9:23,50,Kristen Carlson,Mindy,Lo
+AB67417775,10/30/18 9:52,3.85,Sri Kulkarni,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Gina Ortiz Jones,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Carolyn Bourdeaux,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Danny O'Connor,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Kristen Carlson,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Debbie Mucarsel-Powell,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Lizzie Fletcher,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.85,Aftab Pureval,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.84,Colin Allred,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.84,David Shapiro,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.84,Kara Eastman,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.84,Nancy Soderberg,Beverley,Daniel
+AB67417775,10/30/18 9:52,3.84,Lucy McBath,Beverley,Daniel
+AB67418023,10/30/18 9:53,19.24,Gina Ortiz Jones,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Nancy Soderberg,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Carolyn Bourdeaux,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Kara Eastman,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Danny O'Connor,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Colin Allred,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,David Shapiro,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Sri Kulkarni,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Aftab Pureval,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Kristen Carlson,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Debbie Mucarsel-Powell,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Lizzie Fletcher,Theresa,Saxton-Fox
+AB67418023,10/30/18 9:53,19.23,Lucy McBath,Theresa,Saxton-Fox
+AB67421656,10/30/18 10:17,7.7,Kristen Carlson,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.7,Lizzie Fletcher,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.7,Gina Ortiz Jones,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Kara Eastman,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,David Shapiro,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Sri Kulkarni,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Lucy McBath,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Carolyn Bourdeaux,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Aftab Pureval,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Nancy Soderberg,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Danny O'Connor,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Colin Allred,Elizabeth,Kwan
+AB67421656,10/30/18 10:17,7.69,Debbie Mucarsel-Powell,Elizabeth,Kwan
+AB67457202,10/30/18 13:16,15.39,Carolyn Bourdeaux,Angela,Bryan
+AB67457202,10/30/18 13:16,15.39,Nancy Soderberg,Angela,Bryan
+AB67457202,10/30/18 13:16,15.39,Lizzie Fletcher,Angela,Bryan
+AB67457202,10/30/18 13:16,15.39,Danny O'Connor,Angela,Bryan
+AB67457202,10/30/18 13:16,15.39,Kristen Carlson,Angela,Bryan
+AB67457202,10/30/18 13:16,15.39,David Shapiro,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Sri Kulkarni,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Kara Eastman,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Debbie Mucarsel-Powell,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Gina Ortiz Jones,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Lucy McBath,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Colin Allred,Angela,Bryan
+AB67457202,10/30/18 13:16,15.38,Aftab Pureval,Angela,Bryan
+AB67460931,10/30/18 13:35,1,David Shapiro,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Aftab Pureval,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Kristen Carlson,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Lizzie Fletcher,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Gina Ortiz Jones,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Lucy McBath,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Kara Eastman,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Nancy Soderberg,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Debbie Mucarsel-Powell,Sanjay,Chandriani
+AB67460931,10/30/18 13:35,1,Colin Allred,Sanjay,Chandriani
+AB67465924,10/30/18 13:59,7.7,Aftab Pureval,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.7,Debbie Mucarsel-Powell,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.7,David Shapiro,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Danny O'Connor,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Sri Kulkarni,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Nancy Soderberg,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Carolyn Bourdeaux,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Kristen Carlson,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Gina Ortiz Jones,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Kara Eastman,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Lucy McBath,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Colin Allred,Naomi,Feingold
+AB67465924,10/30/18 13:59,7.69,Lizzie Fletcher,Naomi,Feingold
+AB67479301,10/30/18 15:02,50,Debbie Mucarsel-Powell,James,Liu
+AB67479301,10/30/18 15:02,50,Lizzie Fletcher,James,Liu
+AB67479301,10/30/18 15:02,50,Kristen Carlson,James,Liu
+AB67479301,10/30/18 15:02,50,Sri Kulkarni,James,Liu
+AB67479301,10/30/18 15:02,50,Nancy Soderberg,James,Liu
+AB67479301,10/30/18 15:02,50,Carolyn Bourdeaux,James,Liu
+AB67479301,10/30/18 15:02,50,Aftab Pureval,James,Liu
+AB67479301,10/30/18 15:02,50,Danny O'Connor,James,Liu
+AB67479301,10/30/18 15:02,50,Kara Eastman,James,Liu
+AB67479301,10/30/18 15:02,50,Lucy McBath,James,Liu
+AB67479301,10/30/18 15:02,50,David Shapiro,James,Liu
+AB67479301,10/30/18 15:02,50,Colin Allred,James,Liu
+AB67479301,10/30/18 15:02,50,Gina Ortiz Jones,James,Liu
+AB67480145,10/30/18 15:05,1,Kristen Carlson,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Debbie Mucarsel-Powell,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Colin Allred,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Gina Ortiz Jones,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Aftab Pureval,Julie,Yeh
+AB67480145,10/30/18 15:05,1,David Shapiro,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Kara Eastman,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Sri Kulkarni,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Carolyn Bourdeaux,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Danny O'Connor,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Lucy McBath,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Lizzie Fletcher,Julie,Yeh
+AB67480145,10/30/18 15:05,1,Nancy Soderberg,Julie,Yeh
+AB67481218,10/30/18 15:10,10,Sri Kulkarni,Gay,Armsden
+AB67481218,10/30/18 15:10,10,Aftab Pureval,Gay,Armsden
+AB67481218,10/30/18 15:10,10,Kristen Carlson,Gay,Armsden
+AB67493808,10/30/18 16:10,25,Debbie Mucarsel-Powell,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Colin Allred,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Aftab Pureval,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Lucy McBath,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Carolyn Bourdeaux,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,David Shapiro,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Nancy Soderberg,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Gina Ortiz Jones,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Lizzie Fletcher,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Kara Eastman,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Kristen Carlson,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Danny O'Connor,Mitchell,Goldwater
+AB67493808,10/30/18 16:10,25,Sri Kulkarni,Mitchell,Goldwater
+AB67499997,10/30/18 16:40,1000,Colin Allred,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Lizzie Fletcher,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Kara Eastman,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Carolyn Bourdeaux,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Nancy Soderberg,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Gina Ortiz Jones,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Debbie Mucarsel-Powell,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,David Shapiro,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Sri Kulkarni,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Aftab Pureval,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Danny O'Connor,Rebecca,Mayne
+AB67499997,10/30/18 16:40,1000,Lucy McBath,Rebecca,Mayne
+AB67533173,10/30/18 19:38,7.7,Gina Ortiz Jones,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.7,Kara Eastman,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.7,Aftab Pureval,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Debbie Mucarsel-Powell,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Sri Kulkarni,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Kristen Carlson,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Carolyn Bourdeaux,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Lizzie Fletcher,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Lucy McBath,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Nancy Soderberg,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,David Shapiro,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Danny O'Connor,Ellen,Wormser
+AB67533173,10/30/18 19:38,7.69,Colin Allred,Ellen,Wormser
+AB67537498,10/30/18 20:00,50,Colin Allred,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,David Shapiro,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Danny O'Connor,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Carolyn Bourdeaux,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Lucy McBath,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Debbie Mucarsel-Powell,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Kristen Carlson,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Nancy Soderberg,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Gina Ortiz Jones,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Aftab Pureval,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Sri Kulkarni,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Lizzie Fletcher,Jennifer,Zaslow
+AB67537498,10/30/18 20:00,50,Kara Eastman,Jennifer,Zaslow
+AB67543445,10/30/18 20:28,5,Carolyn Bourdeaux,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Aftab Pureval,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Gina Ortiz Jones,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Sri Kulkarni,Kristina,Rath
+AB67543445,10/30/18 20:28,5,David Shapiro,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Lucy McBath,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Lizzie Fletcher,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Debbie Mucarsel-Powell,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Colin Allred,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Kristen Carlson,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Danny O'Connor,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Nancy Soderberg,Kristina,Rath
+AB67543445,10/30/18 20:28,5,Kara Eastman,Kristina,Rath
+AB67544829,10/30/18 20:35,10,Carolyn Bourdeaux,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Lizzie Fletcher,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Kara Eastman,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Kristen Carlson,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Danny O'Connor,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Gina Ortiz Jones,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,David Shapiro,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Sri Kulkarni,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Colin Allred,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Debbie Mucarsel-Powell,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Aftab Pureval,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Nancy Soderberg,Laura,Tadvalkar
+AB67544829,10/30/18 20:35,10,Lucy McBath,Laura,Tadvalkar
+AB67552657,10/30/18 21:11,7.7,Lucy McBath,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.7,Kara Eastman,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.7,Carolyn Bourdeaux,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Kristen Carlson,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Debbie Mucarsel-Powell,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Lizzie Fletcher,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Gina Ortiz Jones,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,David Shapiro,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Danny O'Connor,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Aftab Pureval,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Sri Kulkarni,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Nancy Soderberg,Zoe,Crowe
+AB67552657,10/30/18 21:11,7.69,Colin Allred,Zoe,Crowe
+AB67556819,10/30/18 21:31,46.16,Carolyn Bourdeaux,Ellen,Martins
+AB67556819,10/30/18 21:31,46.16,Colin Allred,Ellen,Martins
+AB67556819,10/30/18 21:31,46.16,Lucy McBath,Ellen,Martins
+AB67556819,10/30/18 21:31,46.16,Sri Kulkarni,Ellen,Martins
+AB67556819,10/30/18 21:31,46.16,David Shapiro,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Kristen Carlson,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Kara Eastman,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Aftab Pureval,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Gina Ortiz Jones,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Lizzie Fletcher,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Nancy Soderberg,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Debbie Mucarsel-Powell,Ellen,Martins
+AB67556819,10/30/18 21:31,46.15,Danny O'Connor,Ellen,Martins
+AB67574928,10/30/18 23:11,780,Aftab Pureval,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Sri Kulkarni,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Lizzie Fletcher,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Colin Allred,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Carolyn Bourdeaux,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Kristen Carlson,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Gina Ortiz Jones,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Danny O'Connor,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Nancy Soderberg,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Kara Eastman,Shauna,Peet
+AB67574928,10/30/18 23:11,780,David Shapiro,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Lucy McBath,Shauna,Peet
+AB67574928,10/30/18 23:11,780,Debbie Mucarsel-Powell,Shauna,Peet
+AB67583411,10/31/18 0:20,7.7,Lizzie Fletcher,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.7,David Shapiro,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.7,Debbie Mucarsel-Powell,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Nancy Soderberg,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Colin Allred,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Kara Eastman,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Danny O'Connor,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Carolyn Bourdeaux,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Gina Ortiz Jones,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Sri Kulkarni,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Lucy McBath,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Kristen Carlson,Timothy,Shaw
+AB67583411,10/31/18 0:20,7.69,Aftab Pureval,Timothy,Shaw
+AB67594786,10/31/18 5:43,15.39,Gina Ortiz Jones,Melanie,Stein
+AB67594786,10/31/18 5:43,15.39,Kristen Carlson,Melanie,Stein
+AB67594786,10/31/18 5:43,15.39,Nancy Soderberg,Melanie,Stein
+AB67594786,10/31/18 5:43,15.39,Debbie Mucarsel-Powell,Melanie,Stein
+AB67594786,10/31/18 5:43,15.39,Aftab Pureval,Melanie,Stein
+AB67594786,10/31/18 5:43,15.39,Carolyn Bourdeaux,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Lucy McBath,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Colin Allred,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,David Shapiro,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Lizzie Fletcher,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Kara Eastman,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Danny O'Connor,Melanie,Stein
+AB67594786,10/31/18 5:43,15.38,Sri Kulkarni,Melanie,Stein
+AB67597018,10/31/18 7:08,100,Colin Allred,Frank,David
+AB67597018,10/31/18 7:08,100,Lizzie Fletcher,Frank,David
+AB67597018,10/31/18 7:08,100,Kara Eastman,Frank,David
+AB67597018,10/31/18 7:08,100,Nancy Soderberg,Frank,David
+AB67597018,10/31/18 7:08,100,Gina Ortiz Jones,Frank,David
+AB67597018,10/31/18 7:08,100,Debbie Mucarsel-Powell,Frank,David
+AB67597018,10/31/18 7:08,100,David Shapiro,Frank,David
+AB67597018,10/31/18 7:08,100,Sri Kulkarni,Frank,David
+AB67597018,10/31/18 7:08,100,Danny O'Connor,Frank,David
+AB67597018,10/31/18 7:08,100,Lucy McBath,Frank,David
+AB67597018,10/31/18 7:08,100,Kristen Carlson,Frank,David
+AB67597035,10/31/18 7:08,100,Aftab Pureval,Frank,David
+AB67605740,10/31/18 8:54,20,Nancy Soderberg,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Lucy McBath,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Debbie Mucarsel-Powell,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,David Shapiro,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Carolyn Bourdeaux,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Colin Allred,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Aftab Pureval,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Danny O'Connor,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Sri Kulkarni,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Gina Ortiz Jones,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Kristen Carlson,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Lizzie Fletcher,MEGHAN,SWEENEY
+AB67605740,10/31/18 8:54,20,Kara Eastman,MEGHAN,SWEENEY
+AB67626018,10/31/18 10:54,38.47,Debbie Mucarsel-Powell,Barbara,Merz
+AB67626018,10/31/18 10:54,38.47,Aftab Pureval,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Colin Allred,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Nancy Soderberg,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Gina Ortiz Jones,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Sri Kulkarni,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Lucy McBath,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,David Shapiro,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Lizzie Fletcher,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Carolyn Bourdeaux,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Kristen Carlson,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Danny O'Connor,Barbara,Merz
+AB67626018,10/31/18 10:54,38.46,Kara Eastman,Barbara,Merz
+AB67643890,10/31/18 12:23,3.85,Kara Eastman,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Colin Allred,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Aftab Pureval,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Danny O'Connor,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Carolyn Bourdeaux,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Lizzie Fletcher,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,Sri Kulkarni,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.85,David Shapiro,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.84,Lucy McBath,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.84,Nancy Soderberg,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.84,Gina Ortiz Jones,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.84,Kristen Carlson,Katherine,Kruser
+AB67643890,10/31/18 12:23,3.84,Debbie Mucarsel-Powell,Katherine,Kruser
+AB67647317,10/31/18 12:39,19.24,Nancy Soderberg,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Lizzie Fletcher,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Carolyn Bourdeaux,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Gina Ortiz Jones,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Danny O'Connor,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Lucy McBath,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Kristen Carlson,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Colin Allred,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Sri Kulkarni,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,David Shapiro,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Kara Eastman,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Aftab Pureval,Sarah,Petri
+AB67647317,10/31/18 12:39,19.23,Debbie Mucarsel-Powell,Sarah,Petri
+AB67659019,10/31/18 13:35,15.38,Colin Allred,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Lizzie Fletcher,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,Kara Eastman,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,Carolyn Bourdeaux,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Nancy Soderberg,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Gina Ortiz Jones,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,Debbie Mucarsel-Powell,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,David Shapiro,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Sri Kulkarni,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Aftab Pureval,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.38,Danny O'Connor,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,Lucy McBath,Wanda,Luettgen
+AB67659019,10/31/18 13:35,15.39,Kristen Carlson,Wanda,Luettgen
+AB67674825,10/31/18 14:51,8.77,Lizzie Fletcher,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Danny O'Connor,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Colin Allred,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Sri Kulkarni,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Nancy Soderberg,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Carolyn Bourdeaux,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Kristen Carlson,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Debbie Mucarsel-Powell,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Aftab Pureval,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Gina Ortiz Jones,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Kara Eastman,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.77,Lucy McBath,Kimberly,Hoffman
+AB67674825,10/31/18 14:51,8.76,David Shapiro,Kimberly,Hoffman
+AB67800491,10/31/18 23:47,15.39,Lucy McBath,Renee,Charnas
+AB67800491,10/31/18 23:47,15.39,Kristen Carlson,Renee,Charnas
+AB67800491,10/31/18 23:47,15.39,Aftab Pureval,Renee,Charnas
+AB67800491,10/31/18 23:47,15.39,Debbie Mucarsel-Powell,Renee,Charnas
+AB67800491,10/31/18 23:47,15.39,Kara Eastman,Renee,Charnas
+AB67800491,10/31/18 23:47,15.39,Carolyn Bourdeaux,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Nancy Soderberg,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Lizzie Fletcher,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,David Shapiro,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Gina Ortiz Jones,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Danny O'Connor,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Colin Allred,Renee,Charnas
+AB67800491,10/31/18 23:47,15.38,Sri Kulkarni,Renee,Charnas
+AB67814291,11/1/18 2:19,1.54,Carolyn Bourdeaux,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Aftab Pureval,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,David Shapiro,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Lucy McBath,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Sri Kulkarni,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Nancy Soderberg,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Colin Allred,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Lizzie Fletcher,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Danny O'Connor,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Kara Eastman,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.54,Gina Ortiz Jones,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.53,Debbie Mucarsel-Powell,Deirdre,Dreslough
+AB67814291,11/1/18 2:19,1.53,Kristen Carlson,Deirdre,Dreslough
+AB67828544,11/1/18 9:05,7.7,David Shapiro,Martin,Pollak
+AB67828544,11/1/18 9:05,7.7,Kara Eastman,Martin,Pollak
+AB67828544,11/1/18 9:05,7.7,Gina Ortiz Jones,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Nancy Soderberg,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Carolyn Bourdeaux,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Debbie Mucarsel-Powell,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Danny O'Connor,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Aftab Pureval,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Sri Kulkarni,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Kristen Carlson,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Colin Allred,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Lizzie Fletcher,Martin,Pollak
+AB67828544,11/1/18 9:05,7.69,Lucy McBath,Martin,Pollak
+AB67843962,11/1/18 11:06,7.7,Sri Kulkarni,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.7,Colin Allred,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.7,Debbie Mucarsel-Powell,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Danny O'Connor,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Nancy Soderberg,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Gina Ortiz Jones,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Carolyn Bourdeaux,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Lizzie Fletcher,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,David Shapiro,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Kara Eastman,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Aftab Pureval,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Kristen Carlson,Elizabeth,Henske
+AB67843962,11/1/18 11:06,7.69,Lucy McBath,Elizabeth,Henske
+AB67858327,11/1/18 12:25,7.7,Colin Allred,Emily,Harrington
+AB67858327,11/1/18 12:25,7.7,Debbie Mucarsel-Powell,Emily,Harrington
+AB67858327,11/1/18 12:25,7.7,Aftab Pureval,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Lizzie Fletcher,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,David Shapiro,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Sri Kulkarni,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Kara Eastman,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Danny O'Connor,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Kristen Carlson,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Gina Ortiz Jones,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Nancy Soderberg,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Lucy McBath,Emily,Harrington
+AB67858327,11/1/18 12:25,7.69,Carolyn Bourdeaux,Emily,Harrington
+AB67870020,11/1/18 13:39,7.7,Gina Ortiz Jones,Alison,Hayward
+AB67870020,11/1/18 13:39,7.7,Sri Kulkarni,Alison,Hayward
+AB67870020,11/1/18 13:39,7.7,Debbie Mucarsel-Powell,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Colin Allred,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Kara Eastman,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Lizzie Fletcher,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,David Shapiro,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Aftab Pureval,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Nancy Soderberg,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Kristen Carlson,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Lucy McBath,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Danny O'Connor,Alison,Hayward
+AB67870020,11/1/18 13:39,7.69,Carolyn Bourdeaux,Alison,Hayward
+AB67901303,11/1/18 16:34,46.16,Kristen Carlson,alyson,berliner
+AB67901303,11/1/18 16:34,46.16,Aftab Pureval,alyson,berliner
+AB67901303,11/1/18 16:34,46.16,Lizzie Fletcher,alyson,berliner
+AB67901303,11/1/18 16:34,46.16,Carolyn Bourdeaux,alyson,berliner
+AB67901303,11/1/18 16:34,46.16,Debbie Mucarsel-Powell,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Colin Allred,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,David Shapiro,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Nancy Soderberg,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Danny O'Connor,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Sri Kulkarni,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Lucy McBath,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Kara Eastman,alyson,berliner
+AB67901303,11/1/18 16:34,46.15,Gina Ortiz Jones,alyson,berliner
+AB67976754,11/1/18 23:41,11.53,Colin Allred,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Lizzie Fletcher,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Kara Eastman,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Carolyn Bourdeaux,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.53,Nancy Soderberg,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Gina Ortiz Jones,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Debbie Mucarsel-Powell,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,David Shapiro,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Sri Kulkarni,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Aftab Pureval,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Danny O'Connor,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Lucy McBath,deon,wolpowitz
+AB67976754,11/1/18 23:41,11.54,Kristen Carlson,deon,wolpowitz
+AB67994522,11/2/18 7:06,5.77,Danny O'Connor,David,Osler
+AB67994522,11/2/18 7:06,5.77,Gina Ortiz Jones,David,Osler
+AB67994522,11/2/18 7:06,5.77,Debbie Mucarsel-Powell,David,Osler
+AB67994522,11/2/18 7:06,5.77,Carolyn Bourdeaux,David,Osler
+AB67994522,11/2/18 7:06,5.77,Kara Eastman,David,Osler
+AB67994522,11/2/18 7:06,5.77,Lucy McBath,David,Osler
+AB67994522,11/2/18 7:06,5.77,Lizzie Fletcher,David,Osler
+AB67994522,11/2/18 7:06,5.77,Aftab Pureval,David,Osler
+AB67994522,11/2/18 7:06,5.77,Nancy Soderberg,David,Osler
+AB67994522,11/2/18 7:06,5.77,Colin Allred,David,Osler
+AB67994522,11/2/18 7:06,5.77,Kristen Carlson,David,Osler
+AB67994522,11/2/18 7:06,5.77,David Shapiro,David,Osler
+AB67994522,11/2/18 7:06,5.76,Sri Kulkarni,David,Osler
+AB68017244,11/2/18 10:56,15.39,Aftab Pureval,Jen,Waldron
+AB68017244,11/2/18 10:56,15.39,Kara Eastman,Jen,Waldron
+AB68017244,11/2/18 10:56,15.39,Sri Kulkarni,Jen,Waldron
+AB68017244,11/2/18 10:56,15.39,Debbie Mucarsel-Powell,Jen,Waldron
+AB68017244,11/2/18 10:56,15.39,Gina Ortiz Jones,Jen,Waldron
+AB68017244,11/2/18 10:56,15.39,Lucy McBath,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Lizzie Fletcher,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Kristen Carlson,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Colin Allred,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Carolyn Bourdeaux,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Danny O'Connor,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,David Shapiro,Jen,Waldron
+AB68017244,11/2/18 10:56,15.38,Nancy Soderberg,Jen,Waldron
+AB68052169,11/2/18 14:43,3.85,Colin Allred,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Debbie Mucarsel-Powell,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Gina Ortiz Jones,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Sri Kulkarni,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Kara Eastman,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Kristen Carlson,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,Nancy Soderberg,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.85,David Shapiro,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.84,Lucy McBath,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.84,Danny O'Connor,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.84,Carolyn Bourdeaux,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.84,Aftab Pureval,Jacob,Blecher
+AB68052169,11/2/18 14:43,3.84,Lizzie Fletcher,Jacob,Blecher
+AB68126771,11/2/18 23:06,100,Colin Allred,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Lizzie Fletcher,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Kara Eastman,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Carolyn Bourdeaux,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Nancy Soderberg,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Gina Ortiz Jones,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Debbie Mucarsel-Powell,Linda,Rockett
+AB68126771,11/2/18 23:06,100,David Shapiro,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Sri Kulkarni,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Aftab Pureval,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Danny O'Connor,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Lucy McBath,Linda,Rockett
+AB68126771,11/2/18 23:06,100,Kristen Carlson,Linda,Rockett
+AB68147123,11/3/18 8:26,76.93,Nancy Soderberg,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.93,Lucy McBath,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.93,Colin Allred,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.93,Lizzie Fletcher,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Kristen Carlson,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Carolyn Bourdeaux,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Danny O'Connor,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Aftab Pureval,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Kara Eastman,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,David Shapiro,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Sri Kulkarni,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Gina Ortiz Jones,Fernanda,Viegas
+AB68147123,11/3/18 8:26,76.92,Debbie Mucarsel-Powell,Fernanda,Viegas
+AB68201034,11/3/18 15:06,7.7,Danny O'Connor,Emma,Kerins
+AB68201034,11/3/18 15:06,7.7,David Shapiro,Emma,Kerins
+AB68201034,11/3/18 15:06,7.7,Kristen Carlson,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Kara Eastman,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Sri Kulkarni,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Aftab Pureval,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Debbie Mucarsel-Powell,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Gina Ortiz Jones,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Lizzie Fletcher,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Nancy Soderberg,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Colin Allred,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Carolyn Bourdeaux,Emma,Kerins
+AB68201034,11/3/18 15:06,7.69,Lucy McBath,Emma,Kerins
+AB68625422,11/6/18 9:10,7.69,Colin Allred,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Lizzie Fletcher,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Kara Eastman,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Carolyn Bourdeaux,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Nancy Soderberg,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Gina Ortiz Jones,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.7,Debbie Mucarsel-Powell,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.7,David Shapiro,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Sri Kulkarni,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Aftab Pureval,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Danny O'Connor,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.69,Lucy McBath,Susan,Witkowski
+AB68625422,11/6/18 9:10,7.7,Kristen Carlson,Susan,Witkowski
