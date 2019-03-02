@@ -85,10 +85,10 @@ main = do
       writeAllHtml = fmap (const ()) . traverse writeNamedHtml
       pandocToBlaze = fmap BH.renderHtml . P.toBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF
   let runAll = FR.runPandocAndLoggingToIO Log.logAll
---               . runRandomIOPureMT (pureMT 1)
+--               . runRandomIOPureMT (pureMT 1) -- nothing uses Random so far so might as well skip the dep
                . toNamedDocListWithM pandocToBlaze
                . Log.wrapPrefix "Main" 
-  eitherDocs <- runAll $ do --  P.pandocWriterToBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF $ do
+  eitherDocs <- runAll $ do
     -- load the data   
     let parserOptions = F.defaultParser { F.quotingMode =  F.RFC4180Quoting ' ' }
     Log.log Log.Info "Loading data..."
@@ -104,11 +104,36 @@ main = do
     P.newPandoc "mission" $ do
       totalSpendingHistograms totalSpendingFrame
       spendVsChangeInVoteShare totalSpendingDuringFrame totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
---      angryDems agryDemsFrame
+      angryDemsAnalysis angryDemsFrame
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
+--
+angryDemsNotes
+  = [here|
+## Angry Democrats Donations
+* The [angry democrats post][AngryDemPost] generated a variety of donation size.
+* As the histogram below shows, donations were mostly small with a few much larger ones.
+
+[AngryDemPost]: <https://medium.com/@frank_s_david/angrydems-cc7e8caefe7b>
+|]
+  
+angryDemsAnalysis :: (MonadIO (FR.Eff effs), FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+  => F.Frame AngryDems -> FR.Eff effs ()
+angryDemsAnalysis angryDemsFrame = do
+  -- aggregate by ReceiptID
+  P.addMarkDown angryDemsNotes
+  let byDonationFrame = FL.fold (FA.aggregateF (Proxy @'[ReceiptID]) Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
+  P.addBlaze $ do
+    H.placeVisualization "AngryDemsDonationsHistogram"  $
+      FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
+    H.placeVisualization "AngryDemsDonationsHistogramZoom"  $
+      FV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 Nothing (Just 3000) True byDonationFrame
+    H.placeVisualization "AngryDemsDonationsHistogramZoom2"  $
+      FV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 Nothing (Just 200) True byDonationFrame
+  return ()
+  
 
 -- 
 spendFor r = (r ^. disbursement) + (r ^. indSupport) + (realToFrac $ r ^. partyExpenditures)
