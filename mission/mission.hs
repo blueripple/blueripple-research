@@ -66,7 +66,7 @@ templateVars = M.fromList
   ]
 
 loadCSVToFrame :: forall rs effs. ( MonadIO (FR.Eff effs)
-                                  , FR.Member Log.Logger effs
+                                  , Log.LogWithPrefixes effs
                                   , F.ReadRec rs
                                   , F.RecVec rs
                                   , V.RMap rs)
@@ -75,7 +75,7 @@ loadCSVToFrame po fp filterF = do
   let --producer :: F.MonadSafe m => P.Producer rs m ()
       producer = F.readTableOpt po fp P.>-> P.filter filterF 
   frame <- liftIO $ F.inCoreAoS producer
-  let reportRows f fn = Log.log Log.Diagnostic $ (T.pack $ show $ FL.fold FL.length f) <> " rows in " <> (T.pack fn)
+  let reportRows f fn = Log.logLE Log.Diagnostic $ (T.pack $ show $ FL.fold FL.length f) <> " rows in " <> (T.pack fn)
   reportRows frame fp
   return frame
   
@@ -91,7 +91,7 @@ main = do
   eitherDocs <- runAll $ do
     -- load the data   
     let parserOptions = F.defaultParser { F.quotingMode =  F.RFC4180Quoting ' ' }
-    Log.log Log.Info "Loading data..."
+    Log.logLE Log.Info "Loading data..."
     totalSpendingFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingCSV (const True)
     totalSpendingBeforeFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingBeforeCSV (const True)
     totalSpendingDuringFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingDuringCSV (const True)
@@ -100,7 +100,7 @@ main = do
     demographicsFrame :: F.Frame Demographics <- loadCSVToFrame parserOptions demographicsCSV (const True)
     angryDemsFrame :: F.Frame AngryDems <- loadCSVToFrame parserOptions angryDemsCSV (const True)
 --    reportRows angryDemsFrame "angryDems"
-    Log.log Log.Info "Knitting..."
+    Log.logLE Log.Info "Knitting..."
     P.newPandoc "mission" $ do
       totalSpendingHistograms totalSpendingFrame
       spendVsChangeInVoteShare totalSpendingDuringFrame totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
@@ -119,12 +119,12 @@ angryDemsNotes
 [AngryDemPost]: <https://medium.com/@frank_s_david/angrydems-cc7e8caefe7b>
 |]
   
-angryDemsAnalysis :: (MonadIO (FR.Eff effs), FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
   => F.Frame AngryDems -> FR.Eff effs ()
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   P.addMarkDown angryDemsNotes
-  let byDonationFrame = FL.fold (FA.aggregateF (Proxy @'[ReceiptID]) Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
+  let byDonationFrame = FL.fold (FA.aggregateF @'[ReceiptID] Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
   P.addBlaze $ do
     H.placeVisualization "AngryDemsDonationsHistogram"  $
       FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
@@ -159,19 +159,19 @@ differentialSpendNotes
 |]         
 
 -- differential spend vs (result - 8/1 forecast)
-spendVsChangeInVoteShare :: (MonadIO (FR.Eff effs), FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+spendVsChangeInVoteShare :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> FR.Eff effs ()
 spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFrame eResultsFrame = Log.wrapPrefix "spendVsChangeInVoteShare" $ do
   -- create a Frame with each candidate, candidate total, race total, candidate differential
   -- use aggregateFs by aggregating by [StateAbbreviation,CongressionalDistrict] and then use extract to turn those records into the ones we want
-  Log.log Log.Info "Transforming spending before, forecasts and spending during, and election results..."
+  Log.logLE Log.Info "Transforming spending before, forecasts and spending during, and election results..."
   let firstForecastFrame = fmap (F.rcast @[CandidateId, StateAbbreviation, CongressionalDistrict, CandidateParty, Voteshare]) $
         F.filterFrame (\r -> r ^. date == FP.FrameDay (Time.fromGregorian 2018 08 01)) fcastAndSpendFrame
-  Log.log Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
+  Log.logLE Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
   let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
       spendAgainst r = (r ^. indOppose)      
       raceTotalsF = FL.Fold (\(n,for,against) r -> (n+1, for + spendFor r, against + spendAgainst r)) (0, 0, 0) id
-      raceTotalFrameF = FA.aggregateFs proxyRace Identity (flip (:)) [] extract where
+      raceTotalFrameF = FA.aggregateFs @[StateAbbreviation, CongressionalDistrict] Identity (flip (:)) [] extract where
         extract candsInRace =
           let (n , for, against) = FL.fold raceTotalsF candsInRace
               addF = FT.recordSingleton @RaceTotalFor for
@@ -184,13 +184,13 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
                    . FT.retypeColumn @RaceTotalAgainst @("race_during_against" :-> Double)
       raceDuringFrame = fmap (retypeCols . F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,Disbursement,IndSupport,IndOppose,PartyExpenditures])
                         $ FL.fold raceTotalFrameF spendingDuringFrame
-  Log.log Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId"
+  Log.logLE Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId"
   -- all ur joins belong to us
   let selectResults = fmap (F.rcast @[CandidateId, FinalVoteshare])
       fRFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] firstForecastFrame (selectResults eResultsFrame)
       fRTFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRFrame raceTotalFrame      
       fRTBFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRTFrame raceDuringFrame
-  Log.log Log.Info $ "Did all the joins. Final frame has " <> (T.pack $ show $ FL.fold FL.length fRTBFrame) <> " rows."
+  Log.logLE Log.Info $ "Did all the joins. Final frame has " <> (T.pack $ show $ FL.fold FL.length fRTBFrame) <> " rows."
   let addCandDiff r = FT.recordSingleton @CandidateDiffSpend $ 100*candSpend/totalSpend where
         allCandsFor = F.rgetField @RaceTotalFor r
         allCandsAgainst = F.rgetField @RaceTotalAgainst r
@@ -206,7 +206,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
         finalVS = F.rgetField @FinalVoteshare r
       addAll r = addCandDiff r <+> addResultVsForecast r
       contestedRacesFrame = F.filterFrame ((==2) . F.rgetField @RaceTotalCands) $ fmap (FT.mutate addAll) fRTBFrame
-  Log.log Log.Info $ "Added normalized differential spend and filtered to cheap and close races. " <> (T.pack $ show (FL.fold FL.length contestedRacesFrame)) <> " rows left."
+  Log.logLE Log.Info $ "Added normalized differential spend and filtered to cheap and close races. " <> (T.pack $ show (FL.fold FL.length contestedRacesFrame)) <> " rows left."
   P.addMarkDown differentialSpendNotes
   P.addMarkDown "### All Races With 2 or more candidates"
   P.addBlaze $ H.placeVisualization "DiffSpendHistogram1"  $
@@ -253,7 +253,7 @@ sumSpending r =
       pe = realToFrac $ F.rgetField @PartyExpenditures r
   in FT.recordSingleton @AllSpending (db + is + pe)
      
-totalSpendingHistograms :: (FR.Members '[Log.Logger, P.ToPandoc] effs, FR.PandocEffects effs)
+totalSpendingHistograms :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> FR.Eff effs ()
 totalSpendingHistograms tsFrame = do
   P.addMarkDown spendingHistNotes
