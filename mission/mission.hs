@@ -8,8 +8,8 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
-{-# LANGUAGE KindSignatures           #-}
-{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE KindSignatures            #-}
+{-# LANGUAGE PolyKinds                 #-}
 module Main where
 
 import           Control.Lens                    ((^.))
@@ -25,6 +25,7 @@ import           Data.Functor.Identity           (Identity(..))
 import qualified Data.List                       as List
 import qualified Data.Map                        as M
 import           Data.Maybe                      (catMaybes)
+import qualified Data.Monoid                     as MO
 import           Data.Proxy                      (Proxy(..))
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as T
@@ -33,6 +34,7 @@ import qualified Data.Time.Calendar              as Time
 import qualified Data.Vinyl                      as V
 import qualified Data.Vinyl.TypeLevel            as V
 import qualified Data.Vinyl.Class.Method         as V
+import qualified Data.Vinyl.Functor              as V
 import qualified Frames                          as F
 import           Frames                          ((:->),(<+>),(&:))
 import qualified Frames.CSV                      as F
@@ -124,7 +126,9 @@ angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.Pa
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   P.addMarkDown angryDemsNotes
-  let byDonationFrame = FL.fold (FA.aggregateF @'[ReceiptID] Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
+--  let byDonationFrame = FL.fold (FA.aggregateMonoidalF @'[ReceiptID] Identity (V.rmap (V.Compose . MO.Sum) . F.rcast @'[Amount]) (V.rmap (MO.getSum . V.getCompose))) angryDemsFrame
+--  let byDonationFrame = FL.fold (FA.aggregateF @'[ReceiptID] Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
+  let byDonationFrame = FL.fold (FA.aggregateAndFoldSubsetF @'[ReceiptID] @'[Amount] (FA.foldAllMonoid @MO.Sum)) angryDemsFrame
   P.addBlaze $ do
     H.placeVisualization "AngryDemsDonationsHistogram"  $
       FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame

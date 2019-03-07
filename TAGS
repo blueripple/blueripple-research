@@ -1,28 +1,31 @@
 
-./mission/mission.hs,920
+./mission/mission.hs,1048
 module Main Main12,13
-templateVars templateVars59,60
-loadCSVToFrame loadCSVToFrame67,68
-loadCSVToFrame loadCSVToFrame73,74
-main main81,82
-main main82,83
-spendFor spendFor113,114
-spendAgainst spendAgainst114,115
-proxyRace proxyRace115,116
-type RaceTotalFor RaceTotalFor117,118
-type RaceTotalAgainst RaceTotalAgainst118,119
-type RaceTotalCands RaceTotalCands119,120
-type CandidateDiffSpend CandidateDiffSpend120,121
-type ResultVsForecast ResultVsForecast121,122
-differentialSpendNotesdifferentialSpendNotes123,124
-spendVsChangeInVoteShare spendVsChangeInVoteShare136,137
-spendVsChangeInVoteShare spendVsChangeInVoteShare138,139
-spendingHistNotesspendingHistNotes211,212
-[FECDefs]: [FECDefs]:220,221
-type AllSpending AllSpending223,224
-sumSpending sumSpending224,225
-totalSpendingHistograms totalSpendingHistograms230,231
-totalSpendingHistograms totalSpendingHistograms232,233
+templateVars templateVars61,62
+loadCSVToFrame loadCSVToFrame69,70
+loadCSVToFrame loadCSVToFrame75,76
+main main83,84
+main main84,85
+angryDemsNotesangryDemsNotes114,115
+angryDemsAnalysis angryDemsAnalysis123,124
+angryDemsAnalysis angryDemsAnalysis125,126
+spendFor spendFor142,143
+spendAgainst spendAgainst143,144
+proxyRace proxyRace144,145
+type RaceTotalFor RaceTotalFor146,147
+type RaceTotalAgainst RaceTotalAgainst147,148
+type RaceTotalCands RaceTotalCands148,149
+type CandidateDiffSpend CandidateDiffSpend149,150
+type ResultVsForecast ResultVsForecast150,151
+differentialSpendNotesdifferentialSpendNotes152,153
+spendVsChangeInVoteShare spendVsChangeInVoteShare165,166
+spendVsChangeInVoteShare spendVsChangeInVoteShare167,168
+spendingHistNotesspendingHistNotes240,241
+[FECDefs]: [FECDefs]:249,250
+type AllSpending AllSpending252,253
+sumSpending sumSpending253,254
+totalSpendingHistograms totalSpendingHistograms259,260
+totalSpendingHistograms totalSpendingHistograms261,262
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
