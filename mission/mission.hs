@@ -27,6 +27,7 @@ import qualified Data.Map                        as M
 import           Data.Maybe                      (catMaybes)
 import qualified Data.Monoid                     as MO
 import           Data.Proxy                      (Proxy(..))
+import qualified Data.Profunctor                 as PF
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
@@ -55,6 +56,8 @@ import qualified Frames.VegaLite as FV
 import qualified Frames.Transform as FT
 import qualified Frames.Aggregations as FA 
 import qualified Frames.Regression as FR
+import qualified Frames.MapReduce as MR
+
 import           Data.String.Here (here)
 
 import           BlueRipple.Data.DataFrames
@@ -126,9 +129,11 @@ angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.Pa
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   P.addMarkDown angryDemsNotes
---  let byDonationFrame = FL.fold (FA.aggregateMonoidalF @'[ReceiptID] Identity (V.rmap (V.Compose . MO.Sum) . F.rcast @'[Amount]) (V.rmap (MO.getSum . V.getCompose))) angryDemsFrame
---  let byDonationFrame = FL.fold (FA.aggregateF @'[ReceiptID] Identity (\s r -> V.recAdd s (F.rcast @'[Amount] r)) (0 &: V.RNil) id) angryDemsFrame
-  let byDonationFrame = FL.fold (FA.aggregateAndFoldSubsetF @'[ReceiptID] @'[Amount] (FA.foldAllMonoid @MO.Sum)) angryDemsFrame
+  let byDonationFrame = FL.fold (MR.mapRListF
+                                  MR.noUnpack
+                                  (MR.assignFrame @'[ReceiptID] @'[Amount])
+                                  (MR.foldAndAddKey (FA.foldAllMonoid @MO.Sum)))
+                        angryDemsFrame
   P.addBlaze $ do
     H.placeVisualization "AngryDemsDonationsHistogram"  $
       FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
@@ -162,6 +167,9 @@ differentialSpendNotes
 [538_electionMoney]: <https://fivethirtyeight.com/features/money-and-elections-a-complicated-love-story/>
 |]         
 
+setF :: V.KnownField t => V.Snd t -> V.ElField t
+setF = V.Field
+  
 -- differential spend vs (result - 8/1 forecast)
 spendVsChangeInVoteShare :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
   => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> FR.Eff effs ()
@@ -173,20 +181,20 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
         F.filterFrame (\r -> r ^. date == FP.FrameDay (Time.fromGregorian 2018 08 01)) fcastAndSpendFrame
   Log.logLE Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
   let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
-      spendAgainst r = (r ^. indOppose)      
-      raceTotalsF = FL.Fold (\(n,for,against) r -> (n+1, for + spendFor r, against + spendAgainst r)) (0, 0, 0) id
-      raceTotalFrameF = FA.aggregateFs @[StateAbbreviation, CongressionalDistrict] Identity (flip (:)) [] extract where
-        extract candsInRace =
-          let (n , for, against) = FL.fold raceTotalsF candsInRace
-              addF = FT.recordSingleton @RaceTotalFor for
-              addA = FT.recordSingleton @RaceTotalAgainst against
-              addN = FT.recordSingleton @RaceTotalCands n
-              addAll _ = addF <+> addA <+> addN
-          in fmap (FT.mutate addAll) candsInRace
-      raceTotalFrame = fmap (F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,RaceTotalCands]) $ FL.fold raceTotalFrameF totalSpendingFrame
+      spendAgainst r = (r ^. indOppose)
+      -- this seems more complex than it needs to be.  Some work in Frames.Aggregations.Folds might help?
+      raceTotalsF = FA.sequenceRecFold (FA.FoldRecord (fmap (setF @RaceTotalCands) FL.length)
+                                        V.:& FA.FoldRecord (PF.dimap spendFor (setF @RaceTotalFor) FL.sum)
+                                        V.:& FA.FoldRecord (PF.dimap spendAgainst (setF @RaceTotalAgainst) FL.sum)
+                                        V.:& V.RNil) 
+      raceTotalFrameF = (MR.mapRListF
+                          MR.noUnpack
+                          (MR.assignFrame @[StateAbbreviation, CongressionalDistrict] @[CandidateId,Disbursement,IndSupport,IndOppose,PartyExpenditures])
+                          (MR.Reduce (\_ cands -> let totals = FL.fold raceTotalsF cands in fmap (V.rappend totals) cands))) -- drop keys, add totals to each row
+      raceTotalFrame = F.toFrame $ fmap (F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,RaceTotalCands]) $ FL.fold raceTotalFrameF totalSpendingFrame
       retypeCols = FT.retypeColumn @RaceTotalFor @("race_during_for" :-> Double)
                    . FT.retypeColumn @RaceTotalAgainst @("race_during_against" :-> Double)
-      raceDuringFrame = fmap (retypeCols . F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,Disbursement,IndSupport,IndOppose,PartyExpenditures])
+      raceDuringFrame = F.toFrame $ fmap (retypeCols . F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,Disbursement,IndSupport,IndOppose,PartyExpenditures])
                         $ FL.fold raceTotalFrameF spendingDuringFrame
   Log.logLE Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId"
   -- all ur joins belong to us

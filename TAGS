@@ -1,31 +1,33 @@
 
-./mission/mission.hs,1048
+./mission/mission.hs,1086
 module Main Main12,13
-templateVars templateVars61,62
-loadCSVToFrame loadCSVToFrame69,70
-loadCSVToFrame loadCSVToFrame75,76
-main main83,84
-main main84,85
-angryDemsNotesangryDemsNotes114,115
-angryDemsAnalysis angryDemsAnalysis123,124
-angryDemsAnalysis angryDemsAnalysis125,126
-spendFor spendFor142,143
-spendAgainst spendAgainst143,144
-proxyRace proxyRace144,145
-type RaceTotalFor RaceTotalFor146,147
-type RaceTotalAgainst RaceTotalAgainst147,148
-type RaceTotalCands RaceTotalCands148,149
-type CandidateDiffSpend CandidateDiffSpend149,150
-type ResultVsForecast ResultVsForecast150,151
-differentialSpendNotesdifferentialSpendNotes152,153
-spendVsChangeInVoteShare spendVsChangeInVoteShare165,166
-spendVsChangeInVoteShare spendVsChangeInVoteShare167,168
-spendingHistNotesspendingHistNotes240,241
-[FECDefs]: [FECDefs]:249,250
-type AllSpending AllSpending252,253
-sumSpending sumSpending253,254
-totalSpendingHistograms totalSpendingHistograms259,260
-totalSpendingHistograms totalSpendingHistograms261,262
+templateVars templateVars64,65
+loadCSVToFrame loadCSVToFrame72,73
+loadCSVToFrame loadCSVToFrame78,79
+main main86,87
+main main87,88
+angryDemsNotesangryDemsNotes117,118
+angryDemsAnalysis angryDemsAnalysis126,127
+angryDemsAnalysis angryDemsAnalysis128,129
+spendFor spendFor147,148
+spendAgainst spendAgainst148,149
+proxyRace proxyRace149,150
+type RaceTotalFor RaceTotalFor151,152
+type RaceTotalAgainst RaceTotalAgainst152,153
+type RaceTotalCands RaceTotalCands153,154
+type CandidateDiffSpend CandidateDiffSpend154,155
+type ResultVsForecast ResultVsForecast155,156
+differentialSpendNotesdifferentialSpendNotes157,158
+setF setF169,170
+setF setF170,171
+spendVsChangeInVoteShare spendVsChangeInVoteShare173,174
+spendVsChangeInVoteShare spendVsChangeInVoteShare175,176
+spendingHistNotesspendingHistNotes248,249
+[FECDefs]: [FECDefs]:257,258
+type AllSpending AllSpending260,261
+sumSpending sumSpending261,262
+totalSpendingHistograms totalSpendingHistograms267,268
+totalSpendingHistograms totalSpendingHistograms269,270
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
