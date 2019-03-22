@@ -86,6 +86,7 @@ executable mission
   main-is:        mission.hs
   build-depends: base >= 4.11
                , BlueRipple
+               , Frames-map-reduce
                , lens
                , map-reduce-folds
                , time
