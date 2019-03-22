@@ -8,7 +8,6 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
-{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE PolyKinds                 #-}
 module Main where
 
@@ -21,42 +20,42 @@ import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc      as P
 import           Control.Monad.Freer.Random      (runRandomIOPureMT)
 import           Control.Monad.Freer.Docs        (toNamedDocListWithM)
-import           Data.Functor.Identity           (Identity(..))
-import qualified Data.List                       as List
+--import qualified Data.List                       as List
 import qualified Data.Map                        as M
 import           Data.Maybe                      (catMaybes)
 import qualified Data.Monoid                     as MO
 import           Data.Proxy                      (Proxy(..))
-import qualified Data.Profunctor                 as PF
+--import qualified Data.Profunctor                 as PF
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
 import qualified Data.Time.Calendar              as Time
 import qualified Data.Vinyl                      as V
 import qualified Data.Vinyl.TypeLevel            as V
-import qualified Data.Vinyl.Class.Method         as V
-import qualified Data.Vinyl.Functor              as V
+--import qualified Data.Vinyl.Class.Method         as V
+--import qualified Data.Vinyl.Functor              as V
 import qualified Frames                          as F
 import           Frames                          ((:->),(<+>),(&:))
 import qualified Frames.CSV                      as F
-import qualified Frames.Melt                     as F
+--import qualified Frames.Melt                     as F
 import qualified Frames.InCore                   as F hiding (inCoreAoS)
 import qualified Pipes                           as P
 import qualified Pipes.Prelude                   as P
 import qualified Statistics.Types               as S
-import           GHC.TypeLits (Symbol)
-import           Data.Kind (Type)
+--import           GHC.TypeLits (Symbol)
+--import           Data.Kind (Type)
 import qualified Html.Blaze.Report            as H
 import qualified Text.Pandoc.Report              as P
 import qualified Text.Blaze.Html.Renderer.Text   as BH
-import           Control.Monad.Freer.Html        (Blaze, blaze, blazeToText, blazeHtml)
+--import           Control.Monad.Freer.Html        (Blaze, blaze, blazeToText, blazeHtml)
 
 import qualified Frames.ParseableTypes as FP
 import qualified Frames.VegaLite as FV
 import qualified Frames.Transform as FT
-import qualified Frames.Aggregations as FA 
+import qualified Frames.Folds as FF 
 import qualified Frames.Regression as FR
 import qualified Frames.MapReduce as MR
+import qualified Frames.Table as Table
 
 import           Data.String.Here (here)
 
@@ -80,7 +79,7 @@ loadCSVToFrame po fp filterF = do
   let --producer :: F.MonadSafe m => P.Producer rs m ()
       producer = F.readTableOpt po fp P.>-> P.filter filterF 
   frame <- liftIO $ F.inCoreAoS producer
-  let reportRows f fn = Log.logLE Log.Diagnostic $ (T.pack $ show $ FL.fold FL.length f) <> " rows in " <> (T.pack fn)
+  let reportRows f fn = Log.logLE Log.Diagnostic $ T.pack (show $ FL.fold FL.length f) <> " rows in " <> T.pack fn
   reportRows frame fp
   return frame
   
@@ -131,8 +130,8 @@ angryDemsAnalysis angryDemsFrame = do
   P.addMarkDown angryDemsNotes
   let byDonationFrame = FL.fold (MR.mapRListF
                                   MR.noUnpack
-                                  (MR.assignFrame @'[ReceiptID] @'[Amount])
-                                  (MR.foldAndAddKey (FA.foldAllMonoid @MO.Sum)))
+                                  (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
+                                  (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
                         angryDemsFrame
   P.addBlaze $ do
     H.placeVisualization "AngryDemsDonationsHistogram"  $
@@ -145,8 +144,8 @@ angryDemsAnalysis angryDemsFrame = do
   
 
 -- 
-spendFor r = (r ^. disbursement) + (r ^. indSupport) + (realToFrac $ r ^. partyExpenditures)
-spendAgainst r = (r ^. indOppose)      
+spendFor r = (r ^. disbursement) + (r ^. indSupport) + realToFrac (r ^. partyExpenditures)
+spendAgainst r = r ^. indOppose     
 proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
 
 type RaceTotalFor = "race_total_for" :-> Double
@@ -183,26 +182,28 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
       spendAgainst r = (r ^. indOppose)
       -- this seems more complex than it needs to be.  Some work in Frames.Aggregations.Folds might help?
-      raceTotalsF = FA.sequenceRecFold (FA.FoldRecord (fmap (setF @RaceTotalCands) FL.length)
-                                        V.:& FA.FoldRecord (PF.dimap spendFor (setF @RaceTotalFor) FL.sum)
-                                        V.:& FA.FoldRecord (PF.dimap spendAgainst (setF @RaceTotalAgainst) FL.sum)
+      raceTotalsF = FF.sequenceRecFold (FF.recFieldF @RaceTotalCands FL.length id 
+                                        V.:& FF.recFieldF @RaceTotalFor FL.sum spendFor
+                                        V.:& FF.recFieldF @RaceTotalAgainst FL.sum spendAgainst 
                                         V.:& V.RNil) 
       raceTotalFrameF = (MR.mapRListF
                           MR.noUnpack
-                          (MR.assignFrame @[StateAbbreviation, CongressionalDistrict] @[CandidateId,Disbursement,IndSupport,IndOppose,PartyExpenditures])
+                          (MR.assignKeys @[StateAbbreviation, CongressionalDistrict])
                           (MR.Reduce (\_ cands -> let totals = FL.fold raceTotalsF cands in fmap (V.rappend totals) cands))) -- drop keys, add totals to each row
+
       raceTotalFrame = F.toFrame $ fmap (F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,RaceTotalCands]) $ FL.fold raceTotalFrameF totalSpendingFrame
+
       retypeCols = FT.retypeColumn @RaceTotalFor @("race_during_for" :-> Double)
                    . FT.retypeColumn @RaceTotalAgainst @("race_during_against" :-> Double)
       raceDuringFrame = F.toFrame $ fmap (retypeCols . F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,Disbursement,IndSupport,IndOppose,PartyExpenditures])
                         $ FL.fold raceTotalFrameF spendingDuringFrame
-  Log.logLE Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId"
-  -- all ur joins belong to us
+  Log.logLE Log.Info "aggregated by race (state and district) to get total spending by race and then attached that to each candidateId" 
+  -- all ur joins r belong to us
   let selectResults = fmap (F.rcast @[CandidateId, FinalVoteshare])
       fRFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] firstForecastFrame (selectResults eResultsFrame)
       fRTFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRFrame raceTotalFrame      
       fRTBFrame = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[CandidateId] fRTFrame raceDuringFrame
-  Log.logLE Log.Info $ "Did all the joins. Final frame has " <> (T.pack $ show $ FL.fold FL.length fRTBFrame) <> " rows."
+  Log.logLE Log.Info $ "Did all the joins. Final frame has " <> T.pack (show $ FL.fold FL.length fRTBFrame) <> " rows."
   let addCandDiff r = FT.recordSingleton @CandidateDiffSpend $ 100*candSpend/totalSpend where
         allCandsFor = F.rgetField @RaceTotalFor r
         allCandsAgainst = F.rgetField @RaceTotalAgainst r
