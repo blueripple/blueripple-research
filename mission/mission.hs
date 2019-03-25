@@ -20,34 +20,26 @@ import qualified Control.Monad.Freer.PandocMonad as FR
 import qualified Control.Monad.Freer.Pandoc      as P
 import           Control.Monad.Freer.Random      (runRandomIOPureMT)
 import           Control.Monad.Freer.Docs        (toNamedDocListWithM)
---import qualified Data.List                       as List
 import qualified Data.Map                        as M
 import           Data.Maybe                      (catMaybes)
 import qualified Data.Monoid                     as MO
 import           Data.Proxy                      (Proxy(..))
---import qualified Data.Profunctor                 as PF
 import qualified Data.Text                       as T
 import qualified Data.Text.IO                    as T
 import qualified Data.Text.Lazy                  as TL
 import qualified Data.Time.Calendar              as Time
 import qualified Data.Vinyl                      as V
 import qualified Data.Vinyl.TypeLevel            as V
---import qualified Data.Vinyl.Class.Method         as V
---import qualified Data.Vinyl.Functor              as V
 import qualified Frames                          as F
 import           Frames                          ((:->),(<+>),(&:))
 import qualified Frames.CSV                      as F
---import qualified Frames.Melt                     as F
 import qualified Frames.InCore                   as F hiding (inCoreAoS)
 import qualified Pipes                           as P
 import qualified Pipes.Prelude                   as P
 import qualified Statistics.Types               as S
---import           GHC.TypeLits (Symbol)
---import           Data.Kind (Type)
 import qualified Html.Blaze.Report            as H
 import qualified Text.Pandoc.Report              as P
 import qualified Text.Blaze.Html.Renderer.Text   as BH
---import           Control.Monad.Freer.Html        (Blaze, blaze, blazeToText, blazeHtml)
 
 import qualified Frames.ParseableTypes as FP
 import qualified Frames.VegaLite as FV
@@ -128,7 +120,7 @@ angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.Pa
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   P.addMarkDown angryDemsNotes
-  let byDonationFrame = FL.fold (MR.mapRListF
+  let byDonationFrame = FL.fold (MR.basicListFold @Ord
                                   MR.noUnpack
                                   (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
                                   (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
@@ -186,7 +178,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
                                         V.:& FF.recFieldF @RaceTotalFor FL.sum spendFor
                                         V.:& FF.recFieldF @RaceTotalAgainst FL.sum spendAgainst 
                                         V.:& V.RNil) 
-      raceTotalFrameF = (MR.mapRListF
+      raceTotalFrameF = (MR.basicListFold @Ord
                           MR.noUnpack
                           (MR.assignKeys @[StateAbbreviation, CongressionalDistrict])
                           (MR.Reduce (\_ cands -> let totals = FL.fold raceTotalsF cands in fmap (V.rappend totals) cands))) -- drop keys, add totals to each row
