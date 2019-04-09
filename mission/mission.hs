@@ -120,7 +120,7 @@ angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.Pa
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   P.addMarkDown angryDemsNotes
-  let byDonationFrame = FL.fold (MR.basicListFold @Ord
+  let byDonationFrame = FL.fold (MR.concatFold $ MR.mapReduceFold
                                   MR.noUnpack
                                   (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
                                   (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
@@ -173,15 +173,14 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   Log.logLE Log.Info "Filtered forecasts for first voteshare forecast on 8/1/2018 to get first forecast by candidateId"
   let proxyRace = Proxy :: Proxy '[StateAbbreviation, CongressionalDistrict]
       spendAgainst r = (r ^. indOppose)
-      -- this seems more complex than it needs to be.  Some work in Frames.Aggregations.Folds might help?
       raceTotalsF = FF.sequenceRecFold (FF.recFieldF @RaceTotalCands FL.length id 
                                         V.:& FF.recFieldF @RaceTotalFor FL.sum spendFor
                                         V.:& FF.recFieldF @RaceTotalAgainst FL.sum spendAgainst 
-                                        V.:& V.RNil) 
-      raceTotalFrameF = (MR.basicListFold @Ord
+                                        V.:& V.RNil)             
+      raceTotalFrameF = (MR.concatFold $ MR.mapReduceFold
                           MR.noUnpack
                           (MR.assignKeys @[StateAbbreviation, CongressionalDistrict])
-                          (MR.Reduce (\_ cands -> let totals = FL.fold raceTotalsF cands in fmap (V.rappend totals) cands))) -- drop keys, add totals to each row
+                          (MR.ReduceFold $ \_ -> let f t c = fmap (V.rappend t) c in f <$> raceTotalsF <*> FL.list ))
 
       raceTotalFrame = F.toFrame $ fmap (F.rcast @[CandidateId,RaceTotalFor,RaceTotalAgainst,RaceTotalCands]) $ FL.fold raceTotalFrameF totalSpendingFrame
 

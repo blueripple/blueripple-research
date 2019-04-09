@@ -22,12 +22,12 @@ setF setF160,161
 setF setF161,162
 spendVsChangeInVoteShare spendVsChangeInVoteShare164,165
 spendVsChangeInVoteShare spendVsChangeInVoteShare166,167
-spendingHistNotesspendingHistNotes241,242
-[FECDefs]: [FECDefs]:250,251
-type AllSpending AllSpending253,254
-sumSpending sumSpending254,255
-totalSpendingHistograms totalSpendingHistograms260,261
-totalSpendingHistograms totalSpendingHistograms262,263
+spendingHistNotesspendingHistNotes240,241
+[FECDefs]: [FECDefs]:249,250
+type AllSpending AllSpending252,253
+sumSpending sumSpending253,254
+totalSpendingHistograms totalSpendingHistograms259,260
+totalSpendingHistograms totalSpendingHistograms261,262
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -56,33 +56,31 @@ demographicsCSV demographicsCSV10,11
 angryDemsCSV angryDemsCSV11,12
 angryDemsCSV angryDemsCSV11,12
 
-./src/BlueRipple/Data/FromDB.hs,1529
+./src/BlueRipple/Data/FromDB.hs,1397
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14
-import import29,30
-data Forecast Forecast54,55
-data Forecast = Forecast Forecast54,55
-data Forecast = Forecast { winP winP54,55
-data Forecast = Forecast { winP :: Double, voteShare voteShare54,55
-data Spending Spending55,56
-data Spending = Spending Spending55,56
-data Spending = Spending { disbursement disbursement55,56
-data Spending = Spending { disbursement :: FEC.Amount, indSupport indSupport55,56
-data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose indOppose55,56
-data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party party55,56
-allRaces allRaces57,58
-allRaces allRaces58,59
-electionResults electionResults65,66
-electionResults electionResults66,67
-endOfDayOn endOfDayOn72,73
-startOfDayOn startOfDayOn73,74
-netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates74,75
-netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates81,82
-spendingAndForecastByRace spendingAndForecastByRace135,136
-spendingAndForecastByRace spendingAndForecastByRace140,141
-allHouseCSV allHouseCSV189,190
-allHouseCSV allHouseCSV190,191
-beforeForecast beforeForecast213,214
-startForecast startForecast214,215
-electionDay electionDay215,216
-netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV217,218
-netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV218,219
+import import32,33
+data Forecast Forecast78,79
+data Forecast = Forecast Forecast78,79
+data Forecast = Forecast { winP winP78,79
+data Forecast = Forecast { winP :: Double, voteShare voteShare78,79
+data Spending Spending79,80
+data Spending = Spending Spending79,80
+data Spending = Spending { disbursement disbursement79,80
+data Spending = Spending { disbursement :: FEC.Amount, indSupport indSupport79,80
+data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose indOppose79,80
+data Spending = Spending { disbursement :: FEC.Amount, indSupport :: FEC.Amount, indOppose :: FEC.Amount, party party79,80
+allRaces allRaces81,82
+allRaces allRaces82,83
+electionResults electionResults94,95
+electionResults electionResults95,96
+endOfDayOn endOfDayOn104,105
+startOfDayOn startOfDayOn105,106
+netSpendingByCandidateBetweenDates netSpendingByCandidateBetweenDates124,125
+spendingAndForecastByRace spendingAndForecastByRace271,272
+allHouseCSV allHouseCSV405,406
+allHouseCSV allHouseCSV406,407
+beforeForecast beforeForecast444,445
+startForecast startForecast445,446
+electionDay electionDay446,447
+netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV448,449
+netSpendingByHouseCandidatesBetweenCSV netSpendingByHouseCandidatesBetweenCSV449,450
