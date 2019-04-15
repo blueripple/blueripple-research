@@ -89,5 +89,6 @@ executable mission
                , Frames-map-reduce
                , lens
                , map-reduce-folds
+               , polysemy >= 0.1.1.0 && < 0.2.0.0
                , time
   default-language: Haskell2010               

@@ -9,17 +9,12 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE PartialTypeSignatures     #-}
 module Main where
 
 import           Control.Lens                    ((^.))
 import qualified Control.Foldl                   as FL
 import           Control.Monad.IO.Class          (MonadIO(liftIO))
-import qualified Control.Monad.Freer.Logger      as Log
-import qualified Control.Monad.Freer             as FR
-import qualified Control.Monad.Freer.PandocMonad as FR
-import qualified Control.Monad.Freer.Pandoc      as P
-import           Control.Monad.Freer.Random      (runRandomIOPureMT)
-import           Control.Monad.Freer.Docs        (toNamedDocListWithM)
 import qualified Data.Map                        as M
 import           Data.Maybe                      (catMaybes)
 import qualified Data.Monoid                     as MO
@@ -37,8 +32,7 @@ import qualified Frames.InCore                   as F hiding (inCoreAoS)
 import qualified Pipes                           as P
 import qualified Pipes.Prelude                   as P
 import qualified Statistics.Types               as S
-import qualified Html.Blaze.Report            as H
-import qualified Text.Pandoc.Report              as P
+
 import qualified Text.Blaze.Html.Renderer.Text   as BH
 
 import qualified Frames.ParseableTypes as FP
@@ -48,6 +42,16 @@ import qualified Frames.Folds as FF
 import qualified Frames.Regression as FR
 import qualified Frames.MapReduce as MR
 import qualified Frames.Table as Table
+
+
+import qualified Polysemy             as PS
+import qualified Knit.Effects.Logger      as Log
+import qualified Knit.Effects.PandocMonad as PM
+import qualified Knit.Effects.Pandoc      as PE
+import           Knit.Effects.RandomFu      (runRandomIOPureMT)
+import           Knit.Effects.Docs        (toNamedDocListWithM)
+import qualified Knit.Report.Blaze            as RB
+import qualified Knit.Report.Pandoc              as RP
 
 import           Data.String.Here (here)
 
@@ -61,26 +65,28 @@ templateVars = M.fromList
 --  , ("tufte","True")
   ]
 
-loadCSVToFrame :: forall rs effs. ( MonadIO (FR.Eff effs)
-                                  , Log.LogWithPrefixes effs
+loadCSVToFrame :: forall rs effs. ( MonadIO (PS.Semantic effs)
+                                  , Log.LogWithPrefixesLE effs
                                   , F.ReadRec rs
                                   , F.RecVec rs
                                   , V.RMap rs)
-               => F.ParserOptions -> FilePath -> (F.Record rs -> Bool) -> FR.Eff effs (F.FrameRec rs)
+               => F.ParserOptions -> FilePath -> (F.Record rs -> Bool) -> PS.Semantic effs (F.FrameRec rs)
 loadCSVToFrame po fp filterF = do
   let --producer :: F.MonadSafe m => P.Producer rs m ()
       producer = F.readTableOpt po fp P.>-> P.filter filterF 
   frame <- liftIO $ F.inCoreAoS producer
-  let reportRows f fn = Log.logLE Log.Diagnostic $ T.pack (show $ FL.fold FL.length f) <> " rows in " <> T.pack fn
+  let reportRows :: Foldable f => f x -> FilePath -> PS.Semantic effs ()
+      reportRows f fn = Log.logLE Log.Diagnostic $ T.pack (show $ FL.fold FL.length f) <> " rows in " <> T.pack fn
   reportRows frame fp
   return frame
   
 main :: IO ()
 main = do
-  let writeNamedHtml (P.NamedDoc n lt) = T.writeFile (T.unpack $ "mission/html/" <> n <> ".html") $ TL.toStrict lt
+  let writeNamedHtml (PE.NamedDoc n lt) = T.writeFile (T.unpack $ "mission/html/" <> n <> ".html") $ TL.toStrict lt
       writeAllHtml = fmap (const ()) . traverse writeNamedHtml
-      pandocToBlaze = fmap BH.renderHtml . P.toBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars P.mindocOptionsF
-  let runAll = FR.runPandocAndLoggingToIO Log.logAll
+      pandocToBlaze :: _ 
+      pandocToBlaze = fmap BH.renderHtml . RP.toBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars RP.mindocOptionsF
+  let runAll = PM.runPandocAndLoggingToIO Log.logAll
 --               . runRandomIOPureMT (pureMT 1) -- nothing uses Random so far so might as well skip the dep
                . toNamedDocListWithM pandocToBlaze
                . Log.wrapPrefix "Main" 
@@ -97,15 +103,26 @@ main = do
     angryDemsFrame :: F.Frame AngryDems <- loadCSVToFrame parserOptions angryDemsCSV (const True)
 --    reportRows angryDemsFrame "angryDems"
     Log.logLE Log.Info "Knitting..."
-    P.newPandoc "mission" $ do
+    PE.newPandoc "mission" $ do
       totalSpendingHistograms totalSpendingFrame
       spendVsChangeInVoteShare totalSpendingDuringFrame totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
       angryDemsAnalysis angryDemsFrame
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
-
 --
+{-
+TODO
+* Turnout
+** Trends
+** Registration (see Census)
+* Repeat Runners
+* local races?
+* Ballot initiatives?
+* GOTV
+-}
+--
+angryDemsNotes :: T.Text
 angryDemsNotes
   = [here|
 ## Angry Democrats Donations
@@ -115,22 +132,22 @@ angryDemsNotes
 [AngryDemPost]: <https://medium.com/@frank_s_david/angrydems-cc7e8caefe7b>
 |]
   
-angryDemsAnalysis :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
-  => F.Frame AngryDems -> FR.Eff effs ()
+angryDemsAnalysis :: (Log.LogWithPrefixesLE effs, PS.Member PE.ToPandoc effs, PM.PandocEffects effs)
+  => F.Frame AngryDems -> PS.Semantic effs ()
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
-  P.addMarkDown angryDemsNotes
+  RP.addMarkDown angryDemsNotes
   let byDonationFrame = FL.fold (MR.concatFold $ MR.mapReduceFold
                                   MR.noUnpack
                                   (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
                                   (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
                         angryDemsFrame
-  P.addBlaze $ do
-    H.placeVisualization "AngryDemsDonationsHistogram"  $
+  RP.addBlaze $ do
+    RB.placeVisualization "AngryDemsDonationsHistogram"  $
       FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
-    H.placeVisualization "AngryDemsDonationsHistogramZoom"  $
+    RB.placeVisualization "AngryDemsDonationsHistogramZoom"  $
       FV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 Nothing (Just 3000) True byDonationFrame
-    H.placeVisualization "AngryDemsDonationsHistogramZoom2"  $
+    RB.placeVisualization "AngryDemsDonationsHistogramZoom2"  $
       FV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 Nothing (Just 200) True byDonationFrame
   return ()
   
@@ -146,6 +163,7 @@ type RaceTotalCands = "race_total_cands" :-> Int
 type CandidateDiffSpend  = "candidate_diff_spend" :-> Double
 type ResultVsForecast = "result_vs_forecast" :-> Double
 
+differentialSpendNotes :: T.Text
 differentialSpendNotes
   = [here|
 ## Differential Spending and changes in the race
@@ -162,8 +180,8 @@ setF :: V.KnownField t => V.Snd t -> V.ElField t
 setF = V.Field
   
 -- differential spend vs (result - 8/1 forecast)
-spendVsChangeInVoteShare :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
-  => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> FR.Eff effs ()
+spendVsChangeInVoteShare :: (Log.LogWithPrefixesLE effs, PS.Member PE.ToPandoc effs, PM.PandocEffects effs)
+  => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> PS.Semantic effs ()
 spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFrame eResultsFrame = Log.wrapPrefix "spendVsChangeInVoteShare" $ do
   -- create a Frame with each candidate, candidate total, race total, candidate differential
   -- use aggregateFs by aggregating by [StateAbbreviation,CongressionalDistrict] and then use extract to turn those records into the ones we want
@@ -211,14 +229,14 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
       addAll r = addCandDiff r <+> addResultVsForecast r
       contestedRacesFrame = F.filterFrame ((==2) . F.rgetField @RaceTotalCands) $ fmap (FT.mutate addAll) fRTBFrame
   Log.logLE Log.Info $ "Added normalized differential spend and filtered to cheap and close races. " <> (T.pack $ show (FL.fold FL.length contestedRacesFrame)) <> " rows left."
-  P.addMarkDown differentialSpendNotes
-  P.addMarkDown "### All Races With 2 or more candidates"
-  P.addBlaze $ H.placeVisualization "DiffSpendHistogram1"  $
+  RP.addMarkDown differentialSpendNotes
+  RP.addMarkDown "### All Races With 2 or more candidates"
+  RP.addHvega "DiffSpendHistogram1"  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True contestedRacesFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] contestedRacesFrame
-  P.addBlaze $ H.placeVisualization "dsVsdvsfit1" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
-  P.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
-  P.addBlaze $ H.placeVisualization "dsVsdvsRegresssionCoeffs1" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
+  RP.addHvega "dsVsdvsfit1" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
+  RP.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
+  RP.addHvega "dsVsdvsRegresssionCoeffs1" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
   let filterCloseAndCheap r =
         let vs = F.rgetField @Voteshare r
             rtf = F.rgetField @RaceTotalFor r
@@ -226,14 +244,14 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
             party = F.rgetField @CandidateParty r
         in (vs > 40) && (vs < 60) && ((rtf + rta) < 2000000) -- && (party == "Republican")
       cheapAndCloseFrame = F.filterFrame filterCloseAndCheap  contestedRacesFrame
-  P.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
-  P.addBlaze $ H.placeVisualization "DiffSpendHistogram2"  $
+  RP.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
+  RP.addHvega "DiffSpendHistogram2"  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True cheapAndCloseFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] cheapAndCloseFrame
-  P.addBlaze $ H.placeVisualization ("dsVsdvsfit2") $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
-  P.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
-  P.addBlaze $ H.placeVisualization ("dsVsdvsRegresssionCoeffs2") $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
-  P.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
+  RP.addHvega "dsVsdvsfit2" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
+  RP.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
+  RP.addHvega "dsVsdvsRegresssionCoeffs2" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
+  RP.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
   
   
 
@@ -257,10 +275,10 @@ sumSpending r =
       pe = realToFrac $ F.rgetField @PartyExpenditures r
   in FT.recordSingleton @AllSpending (db + is + pe)
      
-totalSpendingHistograms :: (Log.LogWithPrefixes effs, FR.Member P.ToPandoc effs, FR.PandocEffects effs)
-  => F.Frame TotalSpending -> FR.Eff effs ()
+totalSpendingHistograms :: (Log.LogWithPrefixesLE effs, PS.Member PE.ToPandoc effs, PM.PandocEffects effs)
+  => F.Frame TotalSpending -> PS.Semantic effs ()
 totalSpendingHistograms tsFrame = do
-  P.addMarkDown spendingHistNotes
+  RP.addMarkDown spendingHistNotes
   let frameWithSum = F.filterFrame ((>0). F.rgetField @AllSpending) $ fmap (FT.mutate sumSpending) tsFrame
       mergeOtherParties :: F.Record '[CandidateParty] -> F.Record '[CandidateParty]
       mergeOtherParties r =
@@ -272,10 +290,10 @@ totalSpendingHistograms tsFrame = do
         in FT.recordSingleton @CandidateParty np
       frameWithMergedOtherParties = fmap (FT.transform mergeOtherParties) frameWithSum 
 --  Log.log Log.Diagnostic $ T.pack $ show $ fmap (show . F.rcast @[CandidateId, AllSpending]) $ FL.fold FL.list frameWithSum
-  P.addBlaze $ H.placeVisualization "SpendingHistogramByPartyAll"  $
+  RP.addHvega "SpendingHistogramByPartyAll"  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party" (Just "# Candidates") 10 (Just 0) (Just 1e7) True FV.AdjacentBar frameWithMergedOtherParties
-  P.addBlaze $ H.placeVisualization "SpendingHistogramByParty1MM"  $
+  RP.addHvega "SpendingHistogramByParty1MM"  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $1,000,000)" (Just "# Candidates") 10 (Just 0) (Just 1e6) False FV.AdjacentBar frameWithMergedOtherParties
-  P.addBlaze $ H.placeVisualization "SpendingHistogramByParty1M"  $
+  RP.addHvega "SpendingHistogramByParty1M"  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $100,000)" (Just "# Candidates") 10 (Just 0) (Just 1e5) False FV.AdjacentBar frameWithMergedOtherParties
   
