@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
+--{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
@@ -86,6 +86,7 @@ main = do
       writeAllHtml = fmap (const ()) . traverse writeNamedHtml
       pandocToBlaze :: _ 
       pandocToBlaze = fmap BH.renderHtml . RP.toBlazeDocument (Just "pandoc-templates/minWithVega-pandoc.html") templateVars RP.mindocOptionsF
+      
   let runAll = PM.runPandocAndLoggingToIO Log.logAll
 --               . runRandomIOPureMT (pureMT 1) -- nothing uses Random so far so might as well skip the dep
                . toNamedDocListWithM pandocToBlaze
@@ -233,7 +234,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   RP.addMarkDown "### All Races With 2 or more candidates"
   RP.addHvega "DiffSpendHistogram1"  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True contestedRacesFrame
-  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] contestedRacesFrame
+  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] contestedRacesFrame
   RP.addHvega "dsVsdvsfit1" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
   RP.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
   RP.addHvega "dsVsdvsRegresssionCoeffs1" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
@@ -247,7 +248,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   RP.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
   RP.addHvega "DiffSpendHistogram2"  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True cheapAndCloseFrame
-  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @ResultVsForecast @True @'[CandidateDiffSpend] cheapAndCloseFrame
+  diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] cheapAndCloseFrame
   RP.addHvega "dsVsdvsfit2" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
   RP.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
   RP.addHvega "dsVsdvsRegresssionCoeffs2" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
@@ -256,6 +257,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   
 
 -- Spending histograms
+spendingHistNotes :: T.Text
 spendingHistNotes
   = [here|
 ## Spending By Party in 2018 House Races
