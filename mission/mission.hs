@@ -46,15 +46,6 @@ import qualified Frames.Table as Table
 import qualified Knit.Report                    as K
 import qualified Knit.Report.Other.Blaze        as KB
 import qualified Knit.Effect.Pandoc             as K (newPandoc, NamedDoc (..))
-{-
-import qualified Polysemy             as PS
-import qualified Knit.Effects.Logger      as Log
-import qualified Knit.Effects.PandocMonad as PM
-import qualified Knit.Effects.Pandoc      as PE
-
-import           Knit.Effects.Docs        (toNamedDocListWithM)
-import qualified Knit.Report.Pandoc              as RP
--}
 
 import           Data.String.Here (here)
 

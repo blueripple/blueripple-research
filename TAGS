@@ -1,36 +1,36 @@
 
 ./mission/mission.hs,1225
 module Main Main12,13
-templateVars templateVars62,63
-loadCSVToFrame loadCSVToFrame70,71
-loadCSVToFrame loadCSVToFrame76,77
-main main85,86
-main main86,87
-angryDemsNotes angryDemsNotes122,123
-angryDemsNotesangryDemsNotes123,124
-angryDemsAnalysis angryDemsAnalysis132,133
-angryDemsAnalysis angryDemsAnalysis134,135
-spendFor spendFor153,154
-spendAgainst spendAgainst154,155
-proxyRace proxyRace155,156
-type RaceTotalFor RaceTotalFor157,158
-type RaceTotalAgainst RaceTotalAgainst158,159
-type RaceTotalCands RaceTotalCands159,160
-type CandidateDiffSpend CandidateDiffSpend160,161
-type ResultVsForecast ResultVsForecast161,162
-differentialSpendNotes differentialSpendNotes163,164
-differentialSpendNotesdifferentialSpendNotes164,165
-setF setF176,177
-setF setF177,178
-spendVsChangeInVoteShare spendVsChangeInVoteShare180,181
-spendVsChangeInVoteShare spendVsChangeInVoteShare182,183
-spendingHistNotes spendingHistNotes256,257
-spendingHistNotesspendingHistNotes257,258
-[FECDefs]: [FECDefs]:266,267
-type AllSpending AllSpending269,270
-sumSpending sumSpending270,271
-totalSpendingHistograms totalSpendingHistograms276,277
-totalSpendingHistograms totalSpendingHistograms278,279
+templateVars templateVars53,54
+loadCSVToFrame loadCSVToFrame61,62
+loadCSVToFrame loadCSVToFrame67,68
+main main76,77
+main main77,78
+angryDemsNotes angryDemsNotes113,114
+angryDemsNotesangryDemsNotes114,115
+angryDemsAnalysis angryDemsAnalysis123,124
+angryDemsAnalysis angryDemsAnalysis125,126
+spendFor spendFor144,145
+spendAgainst spendAgainst145,146
+proxyRace proxyRace146,147
+type RaceTotalFor RaceTotalFor148,149
+type RaceTotalAgainst RaceTotalAgainst149,150
+type RaceTotalCands RaceTotalCands150,151
+type CandidateDiffSpend CandidateDiffSpend151,152
+type ResultVsForecast ResultVsForecast152,153
+differentialSpendNotes differentialSpendNotes154,155
+differentialSpendNotesdifferentialSpendNotes155,156
+setF setF167,168
+setF setF168,169
+spendVsChangeInVoteShare spendVsChangeInVoteShare171,172
+spendVsChangeInVoteShare spendVsChangeInVoteShare173,174
+spendingHistNotes spendingHistNotes247,248
+spendingHistNotesspendingHistNotes248,249
+[FECDefs]: [FECDefs]:257,258
+type AllSpending AllSpending260,261
+sumSpending sumSpending261,262
+totalSpendingHistograms totalSpendingHistograms267,268
+totalSpendingHistograms totalSpendingHistograms269,270
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
