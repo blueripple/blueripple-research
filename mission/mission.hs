@@ -59,17 +59,17 @@ templateVars = M.fromList
 --  , ("tufte","True")
   ]
 
-loadCSVToFrame :: forall rs effs. ( MonadIO (K.Semantic effs)
+loadCSVToFrame :: forall rs effs. ( MonadIO (K.Sem effs)
                                   , K.LogWithPrefixesLE effs
                                   , F.ReadRec rs
                                   , F.RecVec rs
                                   , V.RMap rs)
-               => F.ParserOptions -> FilePath -> (F.Record rs -> Bool) -> K.Semantic effs (F.FrameRec rs)
+               => F.ParserOptions -> FilePath -> (F.Record rs -> Bool) -> K.Sem effs (F.FrameRec rs)
 loadCSVToFrame po fp filterF = do
   let --producer :: F.MonadSafe m => P.Producer rs m ()
       producer = F.readTableOpt po fp P.>-> P.filter filterF 
   frame <- liftIO $ F.inCoreAoS producer
-  let reportRows :: Foldable f => f x -> FilePath -> K.Semantic effs ()
+  let reportRows :: Foldable f => f x -> FilePath -> K.Sem effs ()
       reportRows f fn = K.logLE K.Diagnostic $ T.pack (show $ FL.fold FL.length f) <> " rows in " <> T.pack fn
   reportRows frame fp
   return frame
@@ -88,7 +88,7 @@ main = do
     totalSpendingDuringFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingDuringCSV (const True)
     forecastAndSpendingFrame :: F.Frame ForecastAndSpending <- loadCSVToFrame parserOptions forecastAndSpendingCSV (const True)
     electionResultsFrame :: F.Frame ElectionResults <- loadCSVToFrame parserOptions electionResultsCSV (const True)
-    demographicsFrame :: F.Frame Demographics <- loadCSVToFrame parserOptions demographicsCSV (const True)
+    contextDemographicsFrame :: F.Frame ContextDemographics <- loadCSVToFrame parserOptions contextDemographicsCSV (const True)
     angryDemsFrame :: F.Frame AngryDems <- loadCSVToFrame parserOptions angryDemsCSV (const True)
 --    reportRows angryDemsFrame "angryDems"
     K.logLE K.Info "Knitting..."
@@ -122,7 +122,7 @@ angryDemsNotes
 |]
   
 angryDemsAnalysis :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
-  => F.Frame AngryDems -> K.Semantic effs ()
+  => F.Frame AngryDems -> K.Sem effs ()
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   K.addMarkDown angryDemsNotes
@@ -170,7 +170,7 @@ setF = V.Field
   
 -- differential spend vs (result - 8/1 forecast)
 spendVsChangeInVoteShare :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
-  => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> K.Semantic effs ()
+  => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> K.Sem effs ()
 spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFrame eResultsFrame = K.wrapPrefix "spendVsChangeInVoteShare" $ do
   -- create a Frame with each candidate, candidate total, race total, candidate differential
   -- use aggregateFs by aggregating by [StateAbbreviation,CongressionalDistrict] and then use extract to turn those records into the ones we want
@@ -266,7 +266,7 @@ sumSpending r =
   in FT.recordSingleton @AllSpending (db + is + pe)
      
 totalSpendingHistograms :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
-  => F.Frame TotalSpending -> K.Semantic effs ()
+  => F.Frame TotalSpending -> K.Sem effs ()
 totalSpendingHistograms tsFrame = do
   K.addMarkDown spendingHistNotes
   let frameWithSum = F.filterFrame ((>0). F.rgetField @AllSpending) $ fmap (FT.mutate sumSpending) tsFrame

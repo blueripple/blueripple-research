@@ -32,6 +32,14 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
+./reports/turnout.hs,163
+module Main Main10,11
+templateVars templateVars58,59
+loadCSVToFrame loadCSVToFrame77,78
+main main89,90
+main main90,91
+turnoutModel turnoutModel139,140
+
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
@@ -41,7 +49,7 @@ main main5,6
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
 F.tableTypes' F.tableTypes'30,31
 
-./src/BlueRipple/Data/DataSourcePaths.hs,713
+./src/BlueRipple/Data/DataSourcePaths.hs,1013
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
 dataDir dataDir3,4
 totalSpendingCSV totalSpendingCSV5,6
@@ -52,12 +60,18 @@ electionResultsCSV electionResultsCSV7,8
 electionResultsCSV electionResultsCSV7,8
 totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
 totalSpendingBeforeCSV totalSpendingBeforeCSV8,9
-totalSpendingDuringCSV totalSpendingDuringCSV9,10
-totalSpendingDuringCSV totalSpendingDuringCSV9,10
-demographicsCSV demographicsCSV10,11
-demographicsCSV demographicsCSV10,11
-angryDemsCSV angryDemsCSV11,12
-angryDemsCSV angryDemsCSV11,12
+totalSpendingDuringCSV totalSpendingDuringCSV10,11
+totalSpendingDuringCSV totalSpendingDuringCSV10,11
+contextDemographicsCSV contextDemographicsCSV12,13
+contextDemographicsCSV contextDemographicsCSV12,13
+identityDemographicsCSV identityDemographicsCSV14,15
+identityDemographicsCSV identityDemographicsCSV14,15
+angryDemsCSV angryDemsCSV16,17
+angryDemsCSV angryDemsCSV16,17
+houseElectionsCSV houseElectionsCSV17,18
+houseElectionsCSV houseElectionsCSV17,18
+turnout2016CSV turnout2016CSV18,19
+turnout2016CSV turnout2016CSV18,19
 
 ./src/BlueRipple/Data/FromDB.hs,1397
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14

@@ -32,14 +32,14 @@ common deps
                , freer-simple
                , here
                , hmatrix
-               , knit-haskell
+               , knit-haskell >= 0.2.0.0
                , lucid
                , pipes
+               , polysemy >= 0.1.2.0 && < 0.2.0.0
                , profunctors
                , random-fu
                , random-source
                , statistics
-               , freer-simple
                , text
                , vector
                , vinyl >= 0.10.0.1
@@ -89,6 +89,18 @@ executable mission
                , Frames-map-reduce
                , lens
                , map-reduce-folds
-               , polysemy >= 0.1.1.0 && < 0.2.0.0
+               , time
+  default-language: Haskell2010
+
+executable turnout
+  import: deps
+  ghc-options: -Wall -O0
+  hs-source-dirs: reports
+  main-is:        turnout.hs
+  build-depends: base >= 4.11
+               , BlueRipple
+               , Frames-map-reduce
+               , lens
+               , map-reduce-folds
                , time
   default-language: Haskell2010               
