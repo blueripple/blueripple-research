@@ -46,7 +46,8 @@ common deps
                      
 
 library
-  import: deps      
+  import: deps
+  ghc-options: -fforce-recomp     
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames

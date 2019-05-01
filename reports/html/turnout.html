@@ -43,6 +43,7 @@ table td {
 }
 </style>
 
+<script src="" type="text/javascript"></script>
 </head>
 <body>
 <section id="page-content">
@@ -51,7 +52,240 @@ table td {
 
 <!-- page content begins here -->
 
-
+<section id="demographic-identity-turnout-model" class="level2">
+<h2>Demographic identity turnout model</h2>
+<p>Our goal is to use the 2016 house results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as the F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
+<p>For each congressional district where both major parties ran candidates (369 out of 438), we have census estimates of the number of people in each of our demographic categories. And from the census we have national-level turnout estimates for each of these groups as well. What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.</p>
+<p>We label our identity groups by a subscript <span class="math inline">\(i\)</span> and so, for each district, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), <span class="math inline">\(\{V_i\}\)</span>, the number of democratic votes, <span class="math inline">\(D\)</span>, republican votes, <span class="math inline">\(R\)</span> and total votes, <span class="math inline">\(T\)</span>, which may exceed <span class="math inline">\(D + R\)</span> since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter in the <span class="math inline">\(i\)</span>th group--who votes for a republican or democrat!!--will vote for the democratic candidate. Given <span class="math inline">\(T&#39; = \Sigma_i V_i\)</span>, the predicted number of votes in the district and that <span class="math inline">\(\frac{D+R}{T}\)</span> is the probability that a voter in this district will vote for either major party candidate, we define <span class="math inline">\(Q=\frac{T}{T&#39;}\frac{D+R}{T} = \frac{D+R}{T&#39;}\)</span> and have:</p>
+<p><span class="math inline">\(\begin{equation} D = Q\Sigma_i p_i V_i\\ R = Q\Sigma_i (1-p_i) V_i \end{equation}\)</span></p>
+<p>combining then simplfying:</p>
+<p><span class="math inline">\(\begin{equation} D - R = Q\Sigma_i p_i V_i - Q\Sigma_i (1-p_i) V_i\\ \frac{D-R}{Q} = \Sigma_i (2p_i - 1) V_i\\ \frac{D-R}{Q} = 2\Sigma_i p_i V_i - \Sigma_i V_i\\ \frac{D-R}{Q} = 2\Sigma_i p_i V_i - T&#39;\\ \frac{D-R}{Q} + T&#39; = 2\Sigma_i p_i V_i \end{equation}\)</span></p>
+<p>and substituting <span class="math inline">\(\frac{D+R}{T&#39;}\)</span> for <span class="math inline">\(Q\)</span> and simplifying, we get</p>
+<p><span class="math inline">\(\begin{equation} \Sigma_i p_i V_i = \frac{T&#39;}{2}(\frac{D-R}{D+R} + 1) \end{equation}\)</span></p>
+<p>We can simplify this a bit more if we define <span class="math inline">\(d\)</span> and <span class="math inline">\(r\)</span> as the percentage of the major party vote that goes for each party, that is <span class="math inline">\(d = D/(D+R)\)</span> and <span class="math inline">\(r = R/(D+R)\)</span>. Now <span class="math inline">\(\frac{D-R}{D+R} = d-r\)</span> and so <span class="math inline">\(\Sigma_i p_i V_i = \frac{T&#39;}{2}(1 + (d-r))\)</span></p>
+<p>This is now in a form amenable for regression, estimating the <span class="math inline">\(p_i\)</span> that best fit the 369 results in 2016.</p>
+<div style="display: inline-block; padding: 7px; border-collapse: collapse">
+<span>Regression Details</span>
+<table>
+<thead>
+<tr class="header">
+<th>parameter</th>
+<th>estimate</th>
+<th>95% confidence</th>
+<th>p-value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>YoungWhiteMale</td>
+<td>1.327</td>
+<td>4.398</td>
+<td>0.118</td>
+</tr>
+<tr class="even">
+<td>OldWhiteMale</td>
+<td>-1.606</td>
+<td>3.901</td>
+<td>0.053</td>
+</tr>
+<tr class="odd">
+<td>YoungWhiteFemale</td>
+<td>-0.483</td>
+<td>4.148</td>
+<td>0.324</td>
+</tr>
+<tr class="even">
+<td>OldWhiteFemale</td>
+<td>1.941</td>
+<td>3.423</td>
+<td>0.013</td>
+</tr>
+<tr class="odd">
+<td>YoungNonWhiteMale</td>
+<td>1.321</td>
+<td>9.646</td>
+<td>0.295</td>
+</tr>
+<tr class="even">
+<td>OldNonWhiteMale</td>
+<td>0.455</td>
+<td>10.007</td>
+<td>0.429</td>
+</tr>
+<tr class="odd">
+<td>YoungNonWhiteFemale</td>
+<td>1.369</td>
+<td>7.080</td>
+<td>0.224</td>
+</tr>
+<tr class="even">
+<td>OldNonWhiteFemale</td>
+<td>1.238</td>
+<td>7.116</td>
+<td>0.247</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th>Summary Stat.</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R-Squared</td>
+<td>0.297</td>
+</tr>
+<tr class="even">
+<td>Adj. R-squared</td>
+<td>0.282</td>
+</tr>
+<tr class="odd">
+<td>F-stat</td>
+<td>21.837</td>
+</tr>
+<tr class="even">
+<td>p-value</td>
+<td>0.000</td>
+</tr>
+<tr class="odd">
+<td>Mean Squared Error</td>
+<td>2961466832.183</td>
+</tr>
+</tbody>
+</table>
+</div>
+<figure id="turnoutRegressionCoeffs">
+<script type="text/javascript">var vlSpec=
+{
+    "transform": [
+        {
+            "as": "estLo",
+            "calculate": "datum.Estimate - datum.Confidence/2"
+        },
+        {
+            "as": "estHi",
+            "calculate": "datum.Estimate + datum.Confidence/2"
+        }
+    ],
+    "config": {
+        "view": {
+            "height": 400,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "data": {
+        "values": [
+            {
+                "Confidence": 4.397883605655653,
+                "Key": "",
+                "Estimate": 1.3271121393621679,
+                "Parameter": "YWM"
+            },
+            {
+                "Confidence": 3.901485309813411,
+                "Key": "",
+                "Estimate": -1.6062392336402371,
+                "Parameter": "OWM"
+            },
+            {
+                "Confidence": 4.148357360150986,
+                "Key": "",
+                "Estimate": -0.4831751161854496,
+                "Parameter": "YWF"
+            },
+            {
+                "Confidence": 3.422879803858133,
+                "Key": "",
+                "Estimate": 1.9410171333896262,
+                "Parameter": "OWF"
+            },
+            {
+                "Confidence": 9.646336519014216,
+                "Key": "",
+                "Estimate": 1.3214975360949328,
+                "Parameter": "YNWM"
+            },
+            {
+                "Confidence": 10.006661585548908,
+                "Key": "",
+                "Estimate": 0.4546606727040245,
+                "Parameter": "ONWM"
+            },
+            {
+                "Confidence": 7.08043449139153,
+                "Key": "",
+                "Estimate": 1.3693000316114596,
+                "Parameter": "YNWF"
+            },
+            {
+                "Confidence": 7.115761185550205,
+                "Key": "",
+                "Estimate": 1.2375678643603132,
+                "Parameter": "ONWF"
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Parameters",
+    "layer": [
+        {
+            "mark": "point",
+            "encoding": {
+                "color": {
+                    "field": "Key",
+                    "type": "nominal",
+                    "legend": null
+                },
+                "x": {
+                    "field": "Estimate",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": "Estimate (with 95% confidence error bars)"
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        },
+        {
+            "mark": "rule",
+            "encoding": {
+                "x2": {
+                    "field": "estHi",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "color": {
+                    "field": "Key",
+                    "type": "nominal",
+                    "legend": null
+                },
+                "x": {
+                    "field": "estLo",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        }
+    ]
+};
+vegaEmbed('#turnoutRegressionCoeffs',vlSpec);</script>
+</figure>
+</section>
 
 <!-- page content ends here -->
 

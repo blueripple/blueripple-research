@@ -32,13 +32,26 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,163
+./reports/turnout.hs,469
 module Main Main10,11
-templateVars templateVars58,59
-loadCSVToFrame loadCSVToFrame77,78
-main main89,90
-main main90,91
-turnoutModel turnoutModel139,140
+templateVars templateVars66,67
+loadCSVToFrame loadCSVToFrame85,86
+main main97,98
+main main98,99
+type DVotes DVotes141,142
+type RVotes RVotes142,143
+flattenVotes flattenVotes147,148
+type X X171,172
+modelNotes modelNotes173,174
+modelNotes modelNotes174,175
+a a185,186
+D D188,189
+R R189,190
+\frac{D-R}{Q} \frac{D-R}{Q}196,197
+\Sigma_i \Sigma_i205,206
+We We208,209
+Now Now209,210
+turnoutModel turnoutModel220,221
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

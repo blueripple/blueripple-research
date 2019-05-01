@@ -10,11 +10,19 @@
 {-# LANGUAGE PolyKinds                 #-}
 module Main where
 
-import           Control.Lens                   ( (^.) )
+import           Control.Lens                   ( (^.)
+                                                , over
+                                                , (&)
+                                                , (%~)
+                                                )
 import qualified Control.Foldl                 as FL
+import           Control.Monad                  ( when )
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( catMaybes )
+import           Data.Maybe                     ( catMaybes
+                                                , fromMaybe
+                                                , isNothing
+                                                )
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
@@ -131,6 +139,79 @@ main = do
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
 
+type DVotes = "DVotes" F.:-> Int
+type RVotes = "RVotes" F.:-> Int
+flattenVotes
+  :: FL.Fold
+       (F.Record '[Party, Candidatevotes, Totalvotes])
+       (F.Record '[DVotes, RVotes, Totalvotes])
+flattenVotes =
+  FF.sequenceRecFold
+    $    FF.recFieldF
+           FL.sum
+           (\r -> if F.rgetField @Party r == "democrat"
+             then F.rgetField @Candidatevotes r
+             else 0
+           )
+    V.:& FF.recFieldF
+           FL.sum
+           (\r -> if F.rgetField @Party r == "republican"
+             then F.rgetField @Candidatevotes r
+             else 0
+           )
+    V.:& FF.recFieldF (fmap (fromMaybe 0) $ FL.last) (F.rgetField @Totalvotes)
+    V.:& V.RNil
+
+
+{-
+We'll be using expected voters to explain vote difference.  But if overall expected vote is less than actual D+R,
+we had high turnout and we need to scale up or else that difference will cause probs to be artificially elevated
+-}
+
+
+type X = "X" F.:-> Double
+
+modelNotes :: T.Text
+modelNotes = [here|
+## Demographic identity turnout model
+Our goal is to use the 2016 house results to fit a very simple model of the electorate.  We consider the electorate as having eight
+"identity" groups, split by sex (the census only records this as the F/M binary), age, young (<45) and old (>45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.
+
+For each congressional district where both major parties ran candidates (369 out of 438), we have census estimates of the number of people in each of our demographic categories.  And from the census we have national-level turnout estimates for each of these groups as well.
+What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.
+
+We label our identity groups by a subscript $i$ and so, for each district, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), $\{V_i\}$, the number of democratic votes, $D$,
+republican votes, $R$ and total votes, $T$, which may exceed $D + R$ since there may be third party candidates. 
+For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate $p_i$, the probability that
+a voter in the $i$th group--who votes for a republican or democrat!!--will vote for the democratic candidate. Given $T' = \Sigma_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
+
+$\begin{equation}
+D = Q\Sigma_i p_i V_i\\
+R = Q\Sigma_i (1-p_i) V_i
+\end{equation}$
+
+combining then simplfying:
+
+$\begin{equation}
+D - R =  Q\Sigma_i p_i V_i - Q\Sigma_i (1-p_i) V_i\\
+\frac{D-R}{Q} = \Sigma_i (2p_i - 1) V_i\\
+\frac{D-R}{Q} = 2\Sigma_i p_i V_i - \Sigma_i V_i\\
+\frac{D-R}{Q} = 2\Sigma_i p_i V_i - T'\\
+\frac{D-R}{Q} + T' = 2\Sigma_i p_i V_i
+\end{equation}$
+
+and substituting $\frac{D+R}{T'}$ for $Q$ and simplifying, we get
+
+$\begin{equation}
+\Sigma_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
+\end{equation}$
+
+We can simplify this a bit more if we define $d$ and $r$ as the percentage of the major party vote that goes for each party, that is $d = D/(D+R)$ and $r = R/(D+R)$.
+Now $\frac{D-R}{D+R} = d-r$ and so $\Sigma_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
+
+This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
+|]
+
 turnoutModel
   :: (K.Member K.ToPandoc r, K.PandocEffects r)
   => F.Frame IdentityDemographics
@@ -139,16 +220,109 @@ turnoutModel
   -> K.Sem r ()
 turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
   -- rename some cols in houseElex
-  let houseElexF = fmap
-        ( F.rcast @[Year, StateFIPS, StateAbbreviation, District, Party, Candidatevotes, Totalvotes] 
-          . FT.retypeColumn @StateFips @StateFIPS
-          . FT.retypeColumn @StatePo @StateAbbreviation
-        )
-        houseElexFrame
---      unpack = MR.unpackFilterOnField @Year (==2016)
---      assign = MR.splitOnKeys @'[District]
-  K.logLE K.Diagnostic $ T.pack $ show (take 5 $ FL.fold FL.list houseElexF)
+  K.addMarkDown modelNotes
+  let
+    houseElexF = fmap
+      ( F.rcast
+        @'[Year, StateAbbreviation, CongressionalDistrict, Party, Candidatevotes, Totalvotes]
+      . FT.retypeColumn @District @CongressionalDistrict
+      . FT.retypeColumn @StatePo @StateAbbreviation
+      )
+      houseElexFrame
+    unpack = MR.unpackFilterOnField @Year (== 2016)
+    assign =
+      MR.assignKeysAndData @'[StateAbbreviation, CongressionalDistrict]
+        @'[Party, Candidatevotes, Totalvotes]
+    reduce = MR.foldAndAddKey flattenVotes
+    houseElexFlattenedF
+      :: F.FrameRec
+           '[StateAbbreviation, CongressionalDistrict, DVotes, RVotes, Totalvotes]
+    houseElexFlattenedF =
+      FL.fold (MR.concatFold $ MR.mapReduceFold unpack assign reduce) houseElexF
+  K.logLE K.Diagnostic
+    $  "before mapReduce: "
+    <> (T.pack $ show (take 5 $ reverse $ FL.fold FL.list houseElexF))
+  K.logLE K.Diagnostic
+    $  "after mapReduce: "
+    <> (T.pack $ show (take 5 $ FL.fold FL.list houseElexFlattenedF))
   K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list turnout2016Frame)
--- start from identityDFrame and add D vs R outcome in district.
+  K.logLE K.Diagnostic
+    $  "Before scaling by turnout: "
+    <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
 -- Use turnout so we have # voters of each type.
--- regress!
+  let scaleInt :: Double -> Int -> Int
+      scaleInt s = round . (* s) . realToFrac
+      scaleMap = FL.fold
+        (FL.Fold
+          (\m r -> M.insert (F.rgetField @Identity r)
+                            (scaleInt (F.rgetField @VotedFraction r))
+                            m
+          )
+          M.empty
+          id
+        )
+        turnout2016Frame
+      popToVotedM = do -- Maybe Monad
+        scaleYWM  <- M.lookup "YoungWhiteMale" scaleMap
+        scaleOWM  <- M.lookup "OldWhiteMale" scaleMap
+        scaleYWF  <- M.lookup "YoungWhiteFemale" scaleMap
+        scaleOWF  <- M.lookup "OldWhiteFemale" scaleMap
+        scaleYNWM <- M.lookup "YoungNonWhiteMale" scaleMap
+        scaleONWM <- M.lookup "OldNonWhiteMale" scaleMap
+        scaleYNWF <- M.lookup "YoungNonWhiteFemale" scaleMap
+        scaleONWF <- M.lookup "OldNonWhiteFemale" scaleMap
+        return
+          $ (\r ->
+              r
+                & (youngWhiteMale %~ scaleYWM)
+                & (oldWhiteMale %~ scaleOWM)
+                & (youngWhiteFemale %~ scaleYWF)
+                & (oldWhiteFemale %~ scaleOWM)
+                & (youngNonWhiteMale %~ scaleYNWM)
+                & (oldNonWhiteMale %~ scaleONWM)
+                & (youngNonWhiteFemale %~ scaleYNWF)
+                & (oldNonWhiteFemale %~ scaleONWF)
+            )
+  when (isNothing popToVotedM)
+    $ K.logLE K.Error "popToVoted was not constructed!" -- we should throw something here
+  let popToVoted       = fromMaybe id popToVotedM
+      votedByIdentityF = fmap popToVoted identityDFrame
+  K.logLE K.Diagnostic
+    $  "After scaling by turnout: "
+    <> (T.pack $ show (take 5 $ FL.fold FL.list votedByIdentityF))
+  let votedByIdentityAndResultsF =
+        F.toFrame
+          $ catMaybes
+          $ fmap F.recMaybe
+          $ F.leftJoin @'[StateAbbreviation, CongressionalDistrict]
+              votedByIdentityF
+              houseElexFlattenedF
+  K.logLE K.Diagnostic
+    $  "After joining: "
+    <> (T.pack $ show (take 5 $ FL.fold FL.list votedByIdentityAndResultsF))
+  K.logLE K.Info
+    $  "Joined identity and result data has "
+    <> (T.pack $ show $ FL.fold FL.length votedByIdentityAndResultsF)
+    <> " rows."
+  let opposedVBIRF = F.filterFrame
+        (\r -> (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0))
+        votedByIdentityAndResultsF
+  K.logLE K.Info
+    $  "After removing races where someone is running unopposed we have "
+    <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
+    <> " rows."
+  let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
+                         + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
+      scaledDVotes r =
+        let vD = F.rgetField @DVotes r
+            vR = F.rgetField @RVotes r
+        in FT.recordSingleton @X $ 0.5 * (realToFrac $ predictedVotes r) * (1+ (realToFrac $ vD - vR)/(realToFrac $ vD + vR))
+      opposedVBIRWithTargetF = fmap (FT.mutate scaledDVotes) opposedVBIRF
+  K.logLE K.Diagnostic
+    $  "Final frame: "
+    <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
+-- AARGH!  WE need logistic regression or something because these p's are probabilities.    
+  turnoutRegression <- FR.ordinaryLeastSquares @_ @X @False @[YoungWhiteMale,OldWhiteMale,YoungWhiteFemale,OldWhiteFemale,YoungNonWhiteMale,OldNonWhiteMale,YoungNonWhiteFemale,OldNonWhiteFemale] opposedVBIRWithTargetF
+  K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") turnoutRegression S.cl95 
+  K.addHvega "turnoutRegressionCoeffs" $ FV.regressionCoefficientPlot "Parameters" ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"] (FR.regressionResult turnoutRegression) S.cl95
+  
