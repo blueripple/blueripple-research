@@ -140,9 +140,15 @@ turnoutModel
 turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
   -- rename some cols in houseElex
   let houseElexF = fmap
-        ( FT.retypeColumn @StateFips @StateFIPS
-        . FT.retypeColumn @StatePo @StateAbbreviation
+        ( F.rcast @[Year, StateFIPS, StateAbbreviation, District, Party, Candidatevotes, Totalvotes] 
+          . FT.retypeColumn @StateFips @StateFIPS
+          . FT.retypeColumn @StatePo @StateAbbreviation
         )
         houseElexFrame
+--      unpack = MR.unpackFilterOnField @Year (==2016)
+--      assign = MR.splitOnKeys @'[District]
   K.logLE K.Diagnostic $ T.pack $ show (take 5 $ FL.fold FL.list houseElexF)
   K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list turnout2016Frame)
+-- start from identityDFrame and add D vs R outcome in district.
+-- Use turnout so we have # voters of each type.
+-- regress!
