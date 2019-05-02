@@ -47,16 +47,19 @@ common deps
 
 library
   import: deps
-  ghc-options: -fforce-recomp     
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
+                 , BlueRipple.Model.TurnoutBayes
   build-depends:       base >=4.11 
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default
+                     , flat-mcmc
                      , formattable
+                     , gamma
                      , lens
+                     , math-functions
                      , OpenFEC-beam
                      , sqlite-simple
                      , template-haskell

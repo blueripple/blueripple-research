@@ -32,31 +32,59 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,469
+./reports/turnout.hs,699
 module Main Main10,11
-templateVars templateVars66,67
-loadCSVToFrame loadCSVToFrame85,86
-main main97,98
+templateVars templateVars67,68
+loadCSVToFrame loadCSVToFrame86,87
 main main98,99
-type DVotes DVotes141,142
-type RVotes RVotes142,143
-flattenVotes flattenVotes147,148
-type X X171,172
-modelNotes modelNotes173,174
-modelNotes modelNotes174,175
-a a185,186
-D D188,189
-R R189,190
-\frac{D-R}{Q} \frac{D-R}{Q}196,197
-\Sigma_i \Sigma_i205,206
-We We208,209
-Now Now209,210
-turnoutModel turnoutModel220,221
+main main99,100
+type DVotes DVotes142,143
+type RVotes RVotes143,144
+flattenVotes flattenVotes148,149
+type X X172,173
+modelNotesPreface modelNotesPreface175,176
+modelNotesPreface modelNotesPreface176,177
+modelNotesRegression modelNotesRegression191,192
+modelNotesRegression modelNotesRegression192,193
+Given Given194,195
+D D197,198
+R R198,199
+\frac{D-R}{Q} \frac{D-R}{Q}205,206
+\sum_i \sum_i214,215
+We We217,218
+Now Now218,219
+modelNotesBayes modelNotesBayes225,226
+modelNotesBayes modelNotesBayes226,227
+P(P230,231
+turnoutModel turnoutModel250,251
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
+
+./src/BlueRipple/Model/TurnoutBayes.hs,685
+module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes0,1
+data ObservedVote ObservedVote11,12
+data ObservedVote = ObservedVote ObservedVote11,12
+data ObservedVote = ObservedVote { dem dem11,12
+data Pair Pair13,14
+data Pair a b = Pair Pair13,14
+logProbObservedVote logProbObservedVote15,16
+logProbObservedVote logProbObservedVote16,17
+logProbObservedVotes logProbObservedVotes27,28
+logProbObservedVotes logProbObservedVotes28,29
+betaDist betaDist31,32
+betaDist betaDist32,33
+betaPrior betaPrior38,39
+betaPrior betaPrior39,40
+origin origin41,42
+origin origin42,43
+f f47,48
+f f48,49
+fLog fLog52,53
+fLog fLog53,54
+runMCMC runMCMC56,57
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8

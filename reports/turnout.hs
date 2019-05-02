@@ -63,6 +63,7 @@ import qualified Knit.Effect.Pandoc            as K
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Model.TurnoutBayes (runMCMC)
 
 templateVars = M.fromList
   [ ("lang"     , "English")
@@ -171,9 +172,10 @@ we had high turnout and we need to scale up or else that difference will cause p
 
 type X = "X" F.:-> Double
 
-modelNotes :: T.Text
-modelNotes = [here|
-## Demographic identity turnout model
+
+modelNotesPreface :: T.Text
+modelNotesPreface = [here|
+## Model Notes
 Our goal is to use the 2016 house results to fit a very simple model of the electorate.  We consider the electorate as having eight
 "identity" groups, split by sex (the census only records this as the F/M binary), age, young (<45) and old (>45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.
 
@@ -183,44 +185,72 @@ What we want to estimate, is how likely a voter in each group is of voting for t
 We label our identity groups by a subscript $i$ and so, for each district, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), $\{V_i\}$, the number of democratic votes, $D$,
 republican votes, $R$ and total votes, $T$, which may exceed $D + R$ since there may be third party candidates. 
 For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate $p_i$, the probability that
-a voter in the $i$th group--who votes for a republican or democrat!!--will vote for the democratic candidate. Given $T' = \Sigma_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
+a voter in the $i$th group--who votes for a republican or democrat!!--will vote for the democratic candidate.                     
+
+|]
+
+modelNotesRegression :: T.Text
+modelNotesRegression = modelNotesPreface <> [here|
+
+Given $T' = \sum_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
 
 $\begin{equation}
-D = Q\Sigma_i p_i V_i\\
-R = Q\Sigma_i (1-p_i) V_i
+D = Q\sum_i p_i V_i\\
+R = Q\sum_i (1-p_i) V_i
 \end{equation}$
 
 combining then simplfying:
 
 $\begin{equation}
-D - R =  Q\Sigma_i p_i V_i - Q\Sigma_i (1-p_i) V_i\\
-\frac{D-R}{Q} = \Sigma_i (2p_i - 1) V_i\\
-\frac{D-R}{Q} = 2\Sigma_i p_i V_i - \Sigma_i V_i\\
-\frac{D-R}{Q} = 2\Sigma_i p_i V_i - T'\\
-\frac{D-R}{Q} + T' = 2\Sigma_i p_i V_i
+D - R =  Q\sum_i p_i V_i - Q\sum_i (1-p_i) V_i\\
+\frac{D-R}{Q} = \sum_i (2p_i - 1) V_i\\
+\frac{D-R}{Q} = 2\sum_i p_i V_i - \sum_i V_i\\
+\frac{D-R}{Q} = 2\sum_i p_i V_i - T'\\
+\frac{D-R}{Q} + T' = 2\sum_i p_i V_i
 \end{equation}$
 
 and substituting $\frac{D+R}{T'}$ for $Q$ and simplifying, we get
 
 $\begin{equation}
-\Sigma_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
+\sum_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
 \end{equation}$
 
 We can simplify this a bit more if we define $d$ and $r$ as the percentage of the major party vote that goes for each party, that is $d = D/(D+R)$ and $r = R/(D+R)$.
-Now $\frac{D-R}{D+R} = d-r$ and so $\Sigma_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
+Now $\frac{D-R}{D+R} = d-r$ and so $\sum_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
 
 This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
+
+Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
 
+modelNotesBayes :: T.Text
+modelNotesBayes = modelNotesPreface <> "\n\n" <> [here|
+
+* Bayes theorem relates the probability of a model (our probabilities $\{p_i\}$), given the observed data (the number of democratic votes recorded in each district, $\{D_k\}$) to the likelihood of observing that data given the model and our prior knowledge about the model:
+$\begin{equation}
+P(\{p_i\}|\{D_k\}) = \frac{P(\{D_k\}|\{p_i\})P(\{p_i\})}{P(\{D_k\})}
+\end{equation}$
+
+* What makes this useful is that $P(\{D_k\}|\{p_i\})$ is a thing we can compute. More on that later. $P(\{p_i\})$ is called a "prior" and amounts to an assumption about what we think we know about the parameters before we have seen any data.  In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any $p_i \in [0,1]$ is equally likely.
+
+* $P(\{D_k\})$ is the unconditional probability that we observed our data.  This is difficult to compute! But, thankfully, what we are usually interested in is just finding the $\{p_i\}$ which maximize $P(\{p_i\}|\{D_k\})$ and, since $P(\{D_k\})$ doesn't depend on $\{p_i\}$, we don't need to know what it is.
+
+* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we observed our evidence, given a specific set of $\{p_i\}$.  Our $p_i$ are the probability that one voter of type $i$ votes for the democrat.  Given $V_i$ voters of that type, the distribution of democratic votes *from that type of voter* is Bernoulli, with $V_i$ trials and $p_i$ probability of success.  But $V_i$ is quite large! So we can approximate this with a normal distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$ (See [Wikipedia][WP:Binomial]).  However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types.  Luckily, the sum of normally distributed random variables is also normal.  So the distribution of democratic votes across all types of voters is also normal, with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$ (See [Wikipedia][WP:SumNormal]). Thus we have $P(\{D_k\}|\{p_i\})$, or, what amounts to the same thing, its density.
+
+[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
+[WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
+
+|]
+  
 turnoutModel
-  :: (K.Member K.ToPandoc r, K.PandocEffects r)
+  :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
   => F.Frame IdentityDemographics
   -> F.Frame HouseElections
   -> F.Frame Turnout
   -> K.Sem r ()
 turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
   -- rename some cols in houseElex
-  K.addMarkDown modelNotes
+  K.addMarkDown modelNotesBayes
   let
     houseElexF = fmap
       ( F.rcast
@@ -321,6 +351,21 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
   K.logLE K.Diagnostic
     $  "Final frame: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
+{-
+  let forMCMC r = (F.rgetField @DVotes r,
+                   [
+                     F.rgetField @YoungWhiteMale r
+                   , F.rgetField @OldWhiteMale r
+                   , F.rgetField @YoungWhiteFemale r
+                   , F.rgetField @OldWhiteFemale r
+                   , F.rgetField @YoungNonWhiteMale r
+                   , F.rgetField @OldNonWhiteMale r
+                   , F.rgetField @YoungNonWhiteFemale r
+                   , F.rgetField @OldNonWhiteFemale r
+                   ])
+      mcmcData = take 5 $ fmap forMCMC $ FL.fold FL.list opposedVBIRF
+  liftIO $ runMCMC mcmcData   
+ -}  
 -- AARGH!  WE need logistic regression or something because these p's are probabilities.    
   turnoutRegression <- FR.ordinaryLeastSquares @_ @X @False @[YoungWhiteMale,OldWhiteMale,YoungWhiteFemale,OldWhiteFemale,YoungNonWhiteMale,OldNonWhiteMale,YoungNonWhiteFemale,OldNonWhiteFemale] opposedVBIRWithTargetF
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") turnoutRegression S.cl95 
