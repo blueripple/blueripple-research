@@ -63,7 +63,7 @@ import qualified Knit.Effect.Pandoc            as K
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
-import           BlueRipple.Model.TurnoutBayes (runMCMC)
+import qualified BlueRipple.Model.TurnoutBayes as TB
 
 templateVars = M.fromList
   [ ("lang"     , "English")
@@ -171,7 +171,7 @@ we had high turnout and we need to scale up or else that difference will cause p
 
 
 type X = "X" F.:-> Double
-
+type PredictedVotes = "PredictedVotes" F.:-> Int
 
 modelNotesPreface :: T.Text
 modelNotesPreface = [here|
@@ -235,7 +235,15 @@ P(\{p_i\}|\{D_k\}) = \frac{P(\{D_k\}|\{p_i\})P(\{p_i\})}{P(\{D_k\})}
 
 * $P(\{D_k\})$ is the unconditional probability that we observed our data.  This is difficult to compute! But, thankfully, what we are usually interested in is just finding the $\{p_i\}$ which maximize $P(\{p_i\}|\{D_k\})$ and, since $P(\{D_k\})$ doesn't depend on $\{p_i\}$, we don't need to know what it is.
 
-* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we observed our evidence, given a specific set of $\{p_i\}$.  Our $p_i$ are the probability that one voter of type $i$ votes for the democrat.  Given $V_i$ voters of that type, the distribution of democratic votes *from that type of voter* is Bernoulli, with $V_i$ trials and $p_i$ probability of success.  But $V_i$ is quite large! So we can approximate this with a normal distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$ (See [Wikipedia][WP:Binomial]).  However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types.  Luckily, the sum of normally distributed random variables is also normal.  So the distribution of democratic votes across all types of voters is also normal, with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$ (See [Wikipedia][WP:SumNormal]). Thus we have $P(\{D_k\}|\{p_i\})$, or, what amounts to the same thing, its density.
+* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we observed our evidence, given a specific set of $\{p_i\}$.  Our $p_i$ are the probability that one voter of type $i$ votes for the democrat.  Given $V_i$ voters of that type, the distribution of democratic votes *from that type of voter* is Bernoulli, with $V_i$ trials and $p_i$ probability of success.  But $V_i$ is quite large! So we can approximate this with a normal distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$ (See [Wikipedia][WP:Binomial]).  However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types.  Luckily, the sum of normally distributed random variables is also normal.  So the distribution of democratic votes across all types of voters is also normal, with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$ (See [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or, what amounts to the same thing, its density. But that means we also know $P(\{D_k\}|\{p_i\})$ since that is just the product of the normal distribution for each $D_k$:
+
+$\begin{equation}
+\mu_k(\{p_i\}) = \sum_i V_i p_i\\
+v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
+p(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\
+p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\})
+\end{equation}$
+
 
 [WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
 [WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
@@ -347,25 +355,33 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
         let vD = F.rgetField @DVotes r
             vR = F.rgetField @RVotes r
         in FT.recordSingleton @X $ 0.5 * (realToFrac $ predictedVotes r) * (1+ (realToFrac $ vD - vR)/(realToFrac $ vD + vR))
-      opposedVBIRWithTargetF = fmap (FT.mutate scaledDVotes) opposedVBIRF
+      opposedVBIRWithTargetF = fmap (FT.mutate scaledDVotes . FT.mutate (\r -> FT.recordSingleton @PredictedVotes $ predictedVotes r)) opposedVBIRF      
   K.logLE K.Diagnostic
     $  "Final frame: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
-{-
-  let forMCMC r = (F.rgetField @DVotes r,
-                   [
-                     F.rgetField @YoungWhiteMale r
-                   , F.rgetField @OldWhiteMale r
-                   , F.rgetField @YoungWhiteFemale r
-                   , F.rgetField @OldWhiteFemale r
-                   , F.rgetField @YoungNonWhiteMale r
-                   , F.rgetField @OldNonWhiteMale r
-                   , F.rgetField @YoungNonWhiteFemale r
-                   , F.rgetField @OldNonWhiteFemale r
-                   ])
-      mcmcData = take 5 $ fmap forMCMC $ FL.fold FL.list opposedVBIRF
-  liftIO $ runMCMC mcmcData   
- -}  
+  let forMCMC r =
+        let dVotes = F.rgetField @DVotes r
+            totalVotes = F.rgetField @Totalvotes r
+            predictedVotes = F.rgetField @PredictedVotes r
+            scaledDVotes = realToFrac dVotes * (realToFrac predictedVotes/realToFrac totalVotes)
+        in (round scaledDVotes,
+             [
+               F.rgetField @YoungWhiteMale r
+             , F.rgetField @OldWhiteMale r
+             , F.rgetField @YoungWhiteFemale r
+             , F.rgetField @OldWhiteFemale r
+             , F.rgetField @YoungNonWhiteMale r
+             , F.rgetField @OldNonWhiteMale r
+             , F.rgetField @YoungNonWhiteFemale r
+             , F.rgetField @OldNonWhiteFemale r
+             ])
+      mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
+--  K.logLE K.Diagnostic $ "mcmcData = " <> (T.pack $ show mcmcData)
+  K.logLE K.Diagnostic $ "fLog mcmcData . replicate 8 <$> [0.1..0.9] = " <> (T.pack $ show $ (fmap (TB.fLog mcmcData . (replicate 8)) [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]))
+  mcmcResults' <- liftIO $ TB.runMCMC mcmcData 1200 0.3 0.2
+  let mcmcResults = drop 1000 mcmcResults'
+  K.logLE K.Diagnostic $ "mcmc trace:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) mcmcResults)
+    
 -- AARGH!  WE need logistic regression or something because these p's are probabilities.    
   turnoutRegression <- FR.ordinaryLeastSquares @_ @X @False @[YoungWhiteMale,OldWhiteMale,YoungWhiteFemale,OldWhiteFemale,YoungNonWhiteMale,OldNonWhiteMale,YoungNonWhiteFemale,OldNonWhiteFemale] opposedVBIRWithTargetF
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") turnoutRegression S.cl95 

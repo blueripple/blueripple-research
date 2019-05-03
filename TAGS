@@ -32,7 +32,7 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,699
+./reports/turnout.hs,794
 module Main Main10,11
 templateVars templateVars67,68
 loadCSVToFrame loadCSVToFrame86,87
@@ -42,6 +42,7 @@ type DVotes DVotes142,143
 type RVotes RVotes143,144
 flattenVotes flattenVotes148,149
 type X X172,173
+type PredictedVotes PredictedVotes173,174
 modelNotesPreface modelNotesPreface175,176
 modelNotesPreface modelNotesPreface176,177
 modelNotesRegression modelNotesRegression191,192
@@ -56,35 +57,36 @@ Now Now218,219
 modelNotesBayes modelNotesBayes225,226
 modelNotesBayes modelNotesBayes226,227
 P(P230,231
-turnoutModel turnoutModel250,251
+\mu_k(\mu_k240,241
+v_k(v_k241,242
+p(p242,243
+turnoutModel turnoutModel258,259
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/TurnoutBayes.hs,685
-module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes0,1
-data ObservedVote ObservedVote11,12
-data ObservedVote = ObservedVote ObservedVote11,12
-data ObservedVote = ObservedVote { dem dem11,12
-data Pair Pair13,14
-data Pair a b = Pair Pair13,14
-logProbObservedVote logProbObservedVote15,16
-logProbObservedVote logProbObservedVote16,17
-logProbObservedVotes logProbObservedVotes27,28
-logProbObservedVotes logProbObservedVotes28,29
-betaDist betaDist31,32
-betaDist betaDist32,33
-betaPrior betaPrior38,39
-betaPrior betaPrior39,40
-origin origin41,42
-origin origin42,43
-f f47,48
-f f48,49
-fLog fLog52,53
-fLog fLog53,54
-runMCMC runMCMC56,57
+./src/BlueRipple/Model/TurnoutBayes.hs,643
+module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes1,2
+data ObservedVote ObservedVote13,14
+data ObservedVote = ObservedVote ObservedVote13,14
+data ObservedVote = ObservedVote { dem dem13,14
+data Pair Pair15,16
+data Pair a b = Pair Pair15,16
+logProbObservedVote logProbObservedVote17,18
+logProbObservedVote logProbObservedVote18,19
+logProbObservedVotes logProbObservedVotes29,30
+logProbObservedVotes logProbObservedVotes30,31
+betaDist betaDist33,34
+betaDist betaDist34,35
+betaPrior betaPrior40,41
+betaPrior betaPrior41,42
+f f51,52
+f f52,53
+fLog fLog56,57
+fLog fLog57,58
+runMCMC runMCMC61,62
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8

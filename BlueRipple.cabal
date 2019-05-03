@@ -55,7 +55,7 @@ library
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default
-                     , flat-mcmc
+                     , declarative
                      , formattable
                      , gamma
                      , lens

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module BlueRipple.Model.TurnoutBayes where
 
 import qualified Data.Vector.Unboxed           as V
@@ -6,7 +7,8 @@ import qualified Statistics.Distribution.Binomial
 import qualified Control.Foldl                 as FL
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
-import qualified Numeric.MCMC.Flat             as MC
+--import qualified Numeric.MCMC.Flat             as MC
+import qualified Numeric.MCMC                  as MC
 import           Math.Gamma                     ( gamma )
 
 data ObservedVote = ObservedVote { dem :: Int}
@@ -14,7 +16,7 @@ data ObservedVote = ObservedVote { dem :: Int}
 data Pair a b = Pair !a !b
 
 logProbObservedVote :: V.Vector Double -> Int -> [Int] -> Double
-logProbObservedVote demProbs demVote turnoutCounts =
+logProbObservedVote !demProbs !demVote !turnoutCounts =
   let np          = zip turnoutCounts (V.toList demProbs)
       foldMeanVar = FL.Fold
         (\(Pair m v) (n, p) ->
@@ -23,7 +25,7 @@ logProbObservedVote demProbs demVote turnoutCounts =
         (Pair 0 0)
         id
       Pair m v = FL.fold foldMeanVar np
-  in  negate $ m_ln_sqrt_2_pi + log v + ((realToFrac demVote - m) / 2 * v)
+  in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
 
 logProbObservedVotes :: [(Int, [Int])] -> V.Vector Double -> Double
 logProbObservedVotes votesAndTurnout demProbs =
@@ -39,23 +41,30 @@ betaDist alpha beta x =
 betaPrior :: Double -> Double -> V.Vector Double -> Double
 betaPrior a b xs = V.product $ V.map (betaDist a b) xs
 
+{-
 origin :: MC.Ensemble
 origin = MC.ensemble
   [ MC.particle [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25]
   , MC.particle [0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 0.75]
   ]
+-}
 
-f :: [(Int, [Int])] -> MC.Particle -> Double
+f :: [(Int, [Int])] -> [Double] -> Double
 f votesAndTurnout demProbs =
-  (exp $ logProbObservedVotes votesAndTurnout demProbs)
-    * (betaPrior 2 2 demProbs)
+  let v = V.fromList demProbs
+  in  (exp $ logProbObservedVotes votesAndTurnout v) * (betaPrior 2 2 v)
 
-fLog :: [(Int, [Int])] -> MC.Particle -> Double
+fLog :: [(Int, [Int])] -> [Double] -> Double
 fLog votesAndTurnout demProbs =
-  logProbObservedVotes votesAndTurnout demProbs + log (betaPrior 2 2 demProbs)
+  let v = V.fromList demProbs
+  in  logProbObservedVotes votesAndTurnout v + log (betaPrior 2 2 v)
 
-runMCMC votesAndTurnout =
-  MC.withSystemRandom . MC.asGenIO $ MC.mcmc 10 origin (fLog votesAndTurnout)
+runMCMC votesAndTurnout numIters initialProb stepSize =
+  MC.withSystemRandom . MC.asGenIO $ MC.chain
+    numIters
+    (replicate 8 initialProb)
+    (MC.metropolis stepSize)
+    (MC.Target (fLog votesAndTurnout) Nothing)
 
 
 
