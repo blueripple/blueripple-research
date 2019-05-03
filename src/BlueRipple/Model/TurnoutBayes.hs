@@ -9,6 +9,7 @@ import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 --import qualified Numeric.MCMC.Flat             as MC
 import qualified Numeric.MCMC                  as MC
+--import Numeric.AD (grad)
 import           Math.Gamma                     ( gamma )
 
 data ObservedVote = ObservedVote { dem :: Int}
@@ -59,13 +60,12 @@ fLog votesAndTurnout demProbs =
   let v = V.fromList demProbs
   in  logProbObservedVotes votesAndTurnout v + log (betaPrior 2 2 v)
 
-runMCMC votesAndTurnout numIters initialProb stepSize =
+--gFLog :: [(Int, [Int])] -> [Double] -> [Double]
+--gFLog votesAndTurnout = grad (\x -> fLog votesAndTurnout x)
+
+runMCMC votesAndTurnout numIters initialProb stepSize invTemp =
   MC.withSystemRandom . MC.asGenIO $ MC.chain
     numIters
     (replicate 8 initialProb)
-    (MC.anneal 0.99 $ MC.metropolis stepSize)
+    (MC.anneal invTemp $ MC.metropolis stepSize)
     (MC.Target (fLog votesAndTurnout) Nothing)
-
-
-
-

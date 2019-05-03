@@ -378,8 +378,8 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
 --  K.logLE K.Diagnostic $ "mcmcData = " <> (T.pack $ show mcmcData)
   K.logLE K.Diagnostic $ "fLog mcmcData . replicate 8 <$> [0.1..0.9] = " <> (T.pack $ show $ (fmap (TB.fLog mcmcData . (replicate 8)) [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]))
-  mcmcResults' <- liftIO $ TB.runMCMC mcmcData 1200 0.3 0.2
-  let mcmcResults = drop 1000 mcmcResults'
+  mcmcResults' <- liftIO $ TB.runMCMC mcmcData 20000 0.5 0.001 0.5
+  let mcmcResults = mcmcResults'
   K.logLE K.Diagnostic $ "mcmc trace:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) mcmcResults)
     
 -- AARGH!  WE need logistic regression or something because these p's are probabilities.    
