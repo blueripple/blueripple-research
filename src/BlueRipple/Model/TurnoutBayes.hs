@@ -63,7 +63,7 @@ runMCMC votesAndTurnout numIters initialProb stepSize =
   MC.withSystemRandom . MC.asGenIO $ MC.chain
     numIters
     (replicate 8 initialProb)
-    (MC.metropolis stepSize)
+    (MC.anneal 0.99 $ MC.metropolis stepSize)
     (MC.Target (fLog votesAndTurnout) Nothing)
 
 
