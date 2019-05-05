@@ -53,7 +53,7 @@ library
                  , BlueRipple.Data.DataFrames
                  , BlueRipple.Model.TurnoutBayes
   build-depends:       base >=4.11
---                     , ad
+                     , ad
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default

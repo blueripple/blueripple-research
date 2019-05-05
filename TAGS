@@ -67,26 +67,28 @@ module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/TurnoutBayes.hs,643
+./src/BlueRipple/Model/TurnoutBayes.hs,709
 module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes1,2
-data ObservedVote ObservedVote13,14
-data ObservedVote = ObservedVote ObservedVote13,14
-data ObservedVote = ObservedVote { dem dem13,14
-data Pair Pair15,16
-data Pair a b = Pair Pair15,16
-logProbObservedVote logProbObservedVote17,18
-logProbObservedVote logProbObservedVote18,19
-logProbObservedVotes logProbObservedVotes29,30
-logProbObservedVotes logProbObservedVotes30,31
-betaDist betaDist33,34
-betaDist betaDist34,35
-betaPrior betaPrior40,41
-betaPrior betaPrior41,42
-f f51,52
-f f52,53
-fLog fLog56,57
-fLog fLog57,58
-runMCMC runMCMC61,62
+data ObservedVote ObservedVote14,15
+data ObservedVote = ObservedVote ObservedVote14,15
+data ObservedVote = ObservedVote { dem dem14,15
+data Pair Pair16,17
+data Pair a b = Pair Pair16,17
+--logProbObservedVote --logProbObservedVote18,19
+logProbObservedVote logProbObservedVote19,20
+--logProbObservedVotes --logProbObservedVotes30,31
+logProbObservedVotes logProbObservedVotes31,32
+--betaDist --betaDist34,35
+betaDist betaDist35,36
+--betaPrior --betaPrior41,42
+betaPrior betaPrior42,43
+--f --f52,53
+f f53,54
+--fLog --fLog57,58
+fLog fLog58,59
+--gFLog --gFLog62,63
+gFLog gFLog63,64
+runMCMC runMCMC65,66
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
