@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module BlueRipple.Model.TurnoutBayes where
 
-import qualified Data.Vector.Unboxed           as V
+--import qualified Data.Vector.Unboxed           as V
 import qualified Statistics.Distribution.Binomial
                                                as SB
 import qualified Control.Foldl                 as FL
@@ -9,15 +9,16 @@ import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 --import qualified Numeric.MCMC.Flat             as MC
 import qualified Numeric.MCMC                  as MC
-import           Numeric.AD                     ( grad )
+--import           Numeric.AD                     ( grad )
 import           Math.Gamma                     ( gamma )
 
 data ObservedVote = ObservedVote { dem :: Int}
 
 data Pair a b = Pair !a !b
 
---logProbObservedVote :: V.Vector Double -> Int -> [Int] -> Double
-logProbObservedVote !demProbs !demVote !turnoutCounts =
+
+observedVoteNormalParams :: [Int] -> [Double] -> (Double, Double)
+observedVoteNormalParams turnoutCounts demProbs =
   let np          = zip turnoutCounts (demProbs)
       foldMeanVar = FL.Fold
         (\(Pair m v) (n, p) ->
@@ -26,11 +27,33 @@ logProbObservedVote !demProbs !demVote !turnoutCounts =
         (Pair 0 0)
         id
       Pair m v = FL.fold foldMeanVar np
+  in (m, v, np)
+
+logProbObservedVote :: (Int, [Int]) -> [Double] -> Double
+logProbObservedVote (demVote,turnoutCounts) demProbs  =
+  let (m,v,_) = observedVoteNormalParams turnoutCounts demProbs
   in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
 
---logProbObservedVotes :: [(Int, [Int])] -> V.Vector Double -> Double
+
+gradLogProbObservedVote :: (Int, [Int]) -> [Double] -> [Double]
+gradLogProbObservedVote (demVote, turnoutCounts) demProbs =
+  let (m,v,np) = observedVoteNormalParams turnoutCounts demProbs
+      dv = fmap (\(n,p)-> n*(1-n2*p)) np
+      dm = turnoutCounts
+      dmv = zip dm dv
+      a1 = negate (1/v) -- d (log v)
+      a2 = (demVote - m)
+      a3 = (a2 * a2)/(2 * v * v)
+      a4 = (a2/v)
+  in fmap (\(dm,dv) -> (a1 + a3)*dv + a4*dm) dmv
+  
+logProbObservedVotes :: [(Int, [Int])] -> [Double] -> Double
 logProbObservedVotes votesAndTurnout demProbs =
-  FL.fold FL.sum $ fmap (uncurry $ logProbObservedVote demProbs) votesAndTurnout
+  FL.fold FL.sum $ fmap (flip logProbObservedVote demProbs) votesAndTurnout
+
+gradLogProbObservedVotes :: [(Int, [Int])] -> [Double] -> [Double]
+gradLogProbObservedVotes votesAndTurnout demProbs =
+  FL.fold $ 
 
 --betaDist :: Double -> Double -> Double -> Double
 betaDist alpha beta x =
