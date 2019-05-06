@@ -42,6 +42,8 @@ import qualified Frames.InCore                 as F
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
+import           System.Random (randomRIO)
+
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
@@ -361,9 +363,11 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
   let forMCMC r =
         let dVotes = F.rgetField @DVotes r
+            rVotes = F.rgetField @RVotes r
             totalVotes = F.rgetField @Totalvotes r
             predictedVotes = F.rgetField @PredictedVotes r
             scaledDVotes = realToFrac dVotes * (realToFrac predictedVotes/realToFrac totalVotes)
+            scaledRVotes = realToFrac rVotes * (realToFrac predictedVotes/realToFrac totalVotes)
         in (round scaledDVotes,
              [
                F.rgetField @YoungWhiteMale r
@@ -378,12 +382,16 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
 --  K.logLE K.Diagnostic $ "mcmcData = " <> (T.pack $ show mcmcData)
   K.logLE K.Diagnostic $ "fLog mcmcData . replicate 8 <$> [0.1..0.9] = " <> (T.pack $ show $ (fmap (TB.fLog mcmcData . (replicate 8)) [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]))
-  mcmcResults' <- liftIO $ TB.runMCMC mcmcData 2000 0.5 0.001 0.5
-  let mcmcResults = mcmcResults'
-  K.logLE K.Diagnostic $ "mcmc trace:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) mcmcResults)
+  K.logLE K.Diagnostic $ "gradient (by hand) @ 0.5 = " <> (T.pack $ show $ TB.gradLogProbObservedVotes mcmcData (replicate 8 0.5))
+--  K.logLE K.Diagnostic $ "gradient (via ad ) @ 0.5 = " <> (T.pack $ show $ TB.gradLogProbObservedVotes2 mcmcData (replicate 8 0.5))
+  -- generate some random starting points
+  let randomStart :: Int -> IO [Double]
+      randomStart n = sequence $ replicate n (randomRIO (0,1))
+      randomStarts :: Int -> Int -> IO [[Double]]
+      randomStarts n m = sequence $ replicate m (randomStart n)
+  starts <- liftIO $ randomStarts 8 10
+  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts 
+--  K.logLE K.Diagnostic $ "mcmc trace:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) mcmcResults)
+  let summaries = fmap (\n->TB.summarize (!!n) mcmcResults) [0..7]
+  K.logLE K.Diagnostic $ "YWM summary: " <> (T.pack $ show summaries)
     
--- AARGH!  WE need logistic regression or something because these p's are probabilities.    
-  turnoutRegression <- FR.ordinaryLeastSquares @_ @X @False @[YoungWhiteMale,OldWhiteMale,YoungWhiteFemale,OldWhiteFemale,YoungNonWhiteMale,OldNonWhiteMale,YoungNonWhiteFemale,OldNonWhiteFemale] opposedVBIRWithTargetF
-  K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") turnoutRegression S.cl95 
-  K.addHvega "turnoutRegressionCoeffs" $ FV.regressionCoefficientPlot "Parameters" ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"] (FR.regressionResult turnoutRegression) S.cl95
-  

@@ -47,13 +47,14 @@ common deps
 
 library
   import: deps
---  ghc-options: -fforce-recomp
+  ghc-options: -O1
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
                  , BlueRipple.Model.TurnoutBayes
   build-depends:       base >=4.11
                      , ad
+--                     , backprop
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default
@@ -108,5 +109,6 @@ executable turnout
                , Frames-map-reduce
                , lens
                , map-reduce-folds
+               , random
                , time
   default-language: Haskell2010               

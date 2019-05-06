@@ -32,69 +32,81 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,794
+./reports/turnout.hs,797
 module Main Main10,11
-templateVars templateVars67,68
-loadCSVToFrame loadCSVToFrame86,87
-main main98,99
-main main99,100
-type DVotes DVotes142,143
-type RVotes RVotes143,144
-flattenVotes flattenVotes148,149
-type X X172,173
-type PredictedVotes PredictedVotes173,174
-modelNotesPreface modelNotesPreface175,176
-modelNotesPreface modelNotesPreface176,177
-modelNotesRegression modelNotesRegression191,192
-modelNotesRegression modelNotesRegression192,193
-Given Given194,195
-D D197,198
-R R198,199
-\frac{D-R}{Q} \frac{D-R}{Q}205,206
-\sum_i \sum_i214,215
-We We217,218
-Now Now218,219
-modelNotesBayes modelNotesBayes225,226
-modelNotesBayes modelNotesBayes226,227
-P(P230,231
-\mu_k(\mu_k240,241
-v_k(v_k241,242
-p(p242,243
-turnoutModel turnoutModel258,259
+templateVars templateVars69,70
+loadCSVToFrame loadCSVToFrame88,89
+main main100,101
+main main101,102
+type DVotes DVotes144,145
+type RVotes RVotes145,146
+flattenVotes flattenVotes150,151
+type X X174,175
+type PredictedVotes PredictedVotes175,176
+modelNotesPreface modelNotesPreface177,178
+modelNotesPreface modelNotesPreface178,179
+modelNotesRegression modelNotesRegression193,194
+modelNotesRegression modelNotesRegression194,195
+Given Given196,197
+D D199,200
+R R200,201
+\frac{D-R}{Q} \frac{D-R}{Q}207,208
+\sum_i \sum_i216,217
+We We219,220
+Now Now220,221
+modelNotesBayes modelNotesBayes227,228
+modelNotesBayes modelNotesBayes228,229
+P(P232,233
+\mu_k(\mu_k242,243
+v_k(v_k243,244
+p(p244,245
+turnoutModel turnoutModel260,261
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/TurnoutBayes.hs,1039
-module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes1,2
-data ObservedVote ObservedVote14,15
-data ObservedVote = ObservedVote ObservedVote14,15
-data ObservedVote = ObservedVote { dem dem14,15
-data Pair Pair16,17
-data Pair a b = Pair Pair16,17
-observedVoteNormalParams observedVoteNormalParams19,20
+./src/BlueRipple/Model/TurnoutBayes.hs,1532
+module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes2,3
+data ObservedVote ObservedVote15,16
+data ObservedVote = ObservedVote ObservedVote15,16
+data ObservedVote = ObservedVote { dem dem15,16
+data Pair Pair17,18
+data Pair a b = Pair Pair17,18
 observedVoteNormalParams observedVoteNormalParams20,21
-logProbObservedVote logProbObservedVote31,32
+observedVoteNormalParams observedVoteNormalParams21,22
 logProbObservedVote logProbObservedVote32,33
-gradLogProbObservedVote gradLogProbObservedVote37,38
+logProbObservedVote logProbObservedVote33,34
 gradLogProbObservedVote gradLogProbObservedVote38,39
-logProbObservedVotes logProbObservedVotes49,50
-logProbObservedVotes logProbObservedVotes50,51
-gradLogProbObservedVotes gradLogProbObservedVotes53,54
-gradLogProbObservedVotes gradLogProbObservedVotes54,55
---betaDist --betaDist57,58
-betaDist betaDist58,59
---betaPrior --betaPrior64,65
-betaPrior betaPrior65,66
---f --f75,76
-f f76,77
---fLog --fLog80,81
-fLog fLog81,82
---gFLog --gFLog85,86
-gFLog gFLog86,87
-runMCMC runMCMC88,89
+gradLogProbObservedVote gradLogProbObservedVote39,40
+logProbObservedVotes logProbObservedVotes51,52
+logProbObservedVotes logProbObservedVotes52,53
+gradLogProbObservedVotes gradLogProbObservedVotes55,56
+gradLogProbObservedVotes gradLogProbObservedVotes56,57
+betaDist betaDist70,71
+betaDist betaDist71,72
+logBetaDist logBetaDist77,78
+logBetaDist logBetaDist78,79
+betaPrior betaPrior82,83
+betaPrior betaPrior83,84
+--logBetaPrior --logBetaPrior85,86
+--logBetaPrior --logBetaPrior86,87
+f f88,89
+f f89,90
+fLog fLog93,94
+fLog fLog94,95
+type Sample Sample98,99
+type Chain Chain99,100
+--runMCMC --runMCMC101,102
+runMCMC runMCMC102,103
+data VPSummary VPSummary114,115
+data VPSummary = VPSummary VPSummary114,115
+data VPSummary = VPSummary { mean mean114,115
+data VPSummary = VPSummary { mean :: Double, stDev stDev114,115
+data VPSummary = VPSummary { mean :: Double, stDev :: Double, rHat rHat114,115
+summarize summarize116,117
+summarize summarize117,118
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
