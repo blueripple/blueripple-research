@@ -36,5 +36,5 @@ F.tableTypes "ElectionResults" electionResultsCSV
 F.tableTypes "AngryDems" angryDemsCSV
 F.tableTypes "HouseElections" houseElectionsCSV
 F.tableTypes "ContextDemographics" contextDemographicsCSV
-F.tableTypes "IdentityDemographics" identityDemographicsCSV
-F.tableTypes "Turnout"          turnout2016CSV
+F.tableTypes "IdentityDemographics" identityDemographics2016CSV
+F.tableTypes "Turnout"          turnoutCSV

@@ -34,33 +34,33 @@ totalSpendingHistograms totalSpendingHistograms269,270
 
 ./reports/turnout.hs,797
 module Main Main10,11
-templateVars templateVars69,70
-loadCSVToFrame loadCSVToFrame88,89
-main main100,101
-main main101,102
-type DVotes DVotes144,145
-type RVotes RVotes145,146
-flattenVotes flattenVotes150,151
-type X X174,175
-type PredictedVotes PredictedVotes175,176
-modelNotesPreface modelNotesPreface177,178
-modelNotesPreface modelNotesPreface178,179
-modelNotesRegression modelNotesRegression193,194
-modelNotesRegression modelNotesRegression194,195
-Given Given196,197
-D D199,200
-R R200,201
-\frac{D-R}{Q} \frac{D-R}{Q}207,208
-\sum_i \sum_i216,217
-We We219,220
-Now Now220,221
-modelNotesBayes modelNotesBayes227,228
-modelNotesBayes modelNotesBayes228,229
-P(P232,233
-\mu_k(\mu_k242,243
-v_k(v_k243,244
-p(p244,245
-turnoutModel turnoutModel260,261
+templateVars templateVars75,76
+loadCSVToFrame loadCSVToFrame94,95
+main main106,107
+main main107,108
+type DVotes DVotes161,162
+type RVotes RVotes162,163
+flattenVotes flattenVotes167,168
+type X X191,192
+type PredictedVotes PredictedVotes192,193
+modelNotesPreface modelNotesPreface194,195
+modelNotesPreface modelNotesPreface195,196
+modelNotesBayes modelNotesBayes211,212
+modelNotesBayes modelNotesBayes212,213
+P(P216,217
+\mu_k(\mu_k226,227
+v_k(v_k227,228
+p(p228,229
+turnoutModel turnoutModel245,246
+modelNotesRegression modelNotesRegression381,382
+modelNotesRegression modelNotesRegression382,383
+Given Given384,385
+D D387,388
+R R388,389
+\frac{D-R}{Q} \frac{D-R}{Q}395,396
+\sum_i \sum_i404,405
+We We407,408
+Now Now408,409
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -112,7 +112,7 @@ summarize summarize117,118
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
 F.tableTypes' F.tableTypes'30,31
 
-./src/BlueRipple/Data/DataSourcePaths.hs,1013
+./src/BlueRipple/Data/DataSourcePaths.hs,1287
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
 dataDir dataDir3,4
 totalSpendingCSV totalSpendingCSV5,6
@@ -127,14 +127,20 @@ totalSpendingDuringCSV totalSpendingDuringCSV10,11
 totalSpendingDuringCSV totalSpendingDuringCSV10,11
 contextDemographicsCSV contextDemographicsCSV12,13
 contextDemographicsCSV contextDemographicsCSV12,13
-identityDemographicsCSV identityDemographicsCSV14,15
-identityDemographicsCSV identityDemographicsCSV14,15
-angryDemsCSV angryDemsCSV16,17
-angryDemsCSV angryDemsCSV16,17
-houseElectionsCSV houseElectionsCSV17,18
-houseElectionsCSV houseElectionsCSV17,18
-turnout2016CSV turnout2016CSV18,19
-turnout2016CSV turnout2016CSV18,19
+identityDemographics2016CSV identityDemographics2016CSV14,15
+identityDemographics2016CSV identityDemographics2016CSV14,15
+identityDemographics2017CSV identityDemographics2017CSV16,17
+identityDemographics2017CSV identityDemographics2017CSV16,17
+angryDemsCSV angryDemsCSV18,19
+angryDemsCSV angryDemsCSV18,19
+houseElectionsCSV houseElectionsCSV19,20
+houseElectionsCSV houseElectionsCSV19,20
+turnout2016CSV turnout2016CSV20,21
+turnout2016CSV turnout2016CSV20,21
+turnout2018CSV turnout2018CSV21,22
+turnout2018CSV turnout2018CSV21,22
+turnoutCSV turnoutCSV22,23
+turnoutCSV turnoutCSV22,23
 
 ./src/BlueRipple/Data/FromDB.hs,1397
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14

@@ -106,6 +106,7 @@ executable turnout
   main-is:        turnout.hs
   build-depends: base >= 4.11
                , BlueRipple
+               , data-science-utils
                , Frames-map-reduce
                , lens
                , map-reduce-folds

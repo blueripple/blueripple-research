@@ -22,6 +22,8 @@ import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 , isNothing
+                                                , isJust
+                                                , fromJust
                                                 )
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
@@ -43,9 +45,12 @@ import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
 import           System.Random (randomRIO)
-
+import qualified Statistics.Types              as S
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
+
+import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..))
+import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, parameterPlotMany)
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.VegaLite               as FV
@@ -56,6 +61,7 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Table                  as Table
 
 import qualified Knit.Report                   as K
+import           Polysemy.Error (throw)
 import qualified Knit.Report.Other.Blaze       as KB
 import qualified Knit.Effect.Pandoc            as K
                                                 ( newPandoc
@@ -114,30 +120,41 @@ main = do
       let parserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       K.logLE K.Info "Loading data..."
-  --    totalSpendingFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingCSV (const True)
-  --    totalSpendingBeforeFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingBeforeCSV (const True)
-  --    totalSpendingDuringFrame :: F.Frame TotalSpending <- loadCSVToFrame parserOptions totalSpendingDuringCSV (const True)
-  --    forecastAndSpendingFrame :: F.Frame ForecastAndSpending <- loadCSVToFrame parserOptions forecastAndSpendingCSV (const True)
-  --    electionResultsFrame :: F.Frame ElectionResults <- loadCSVToFrame parserOptions electionResultsCSV (const True)
-  --    angryDemsFrame :: F.Frame AngryDems <- loadCSVToFrame parserOptions angryDemsCSV (const True)
       contextDemographicsFrame :: F.Frame ContextDemographics <- loadCSVToFrame
         parserOptions
         contextDemographicsCSV
         (const True)
-      identityDemographicsFrame :: F.Frame IdentityDemographics <-
-        loadCSVToFrame parserOptions identityDemographicsCSV (const True)
+      identityDemographics2016Frame :: F.Frame IdentityDemographics <-
+        loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
+      identityDemographics2017Frame :: F.Frame IdentityDemographics <-
+        loadCSVToFrame parserOptions identityDemographics2017CSV (const True)
       houseElectionsFrame :: F.Frame HouseElections <- loadCSVToFrame
         parserOptions
         houseElectionsCSV
         (const True)
-      turnout2016Frame :: F.Frame Turnout <- loadCSVToFrame parserOptions
-                                                            turnout2016CSV
-                                                            (const True)
+      turnoutFrame :: F.Frame Turnout <- loadCSVToFrame parserOptions
+                                         turnoutCSV
+                                         (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        turnoutModel identityDemographicsFrame
-                     houseElectionsFrame
-                     turnout2016Frame
+--        let maybeResult msg = maybe (throw $ K.PandocError $ "Bad Result from " <> msg) return
+        results2016M <- turnoutModel 2016 identityDemographics2016Frame
+                        houseElectionsFrame
+                        turnoutFrame
+        
+        results2018M <- turnoutModel 2018 identityDemographics2017Frame
+                       houseElectionsFrame
+                       turnoutFrame
+        let names = ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"]
+            toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
+        when (isJust results2016M && isJust results2018M) $ do
+          let pds2016 = fmap toPD $ zip names (fromJust results2016M)
+              pds2018 = fmap toPD $ zip (fmap (<> "'") names) (fromJust results2018M)
+          K.addHvega "VoteProbs" $ parameterPlotMany id
+            "Modeled Probability of Voting Democratic in competitive house races"
+            S.cl95
+            (concat $ [fmap (\pd -> ("2016",pd)) pds2016] ++ [fmap (\pd -> ("2018",pd)) pds2018])
+        K.addMarkDown modelNotesBayes
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
@@ -191,39 +208,6 @@ a voter in the $i$th group--who votes for a republican or democrat!!--will vote 
 
 |]
 
-modelNotesRegression :: T.Text
-modelNotesRegression = modelNotesPreface <> [here|
-
-Given $T' = \sum_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
-
-$\begin{equation}
-D = Q\sum_i p_i V_i\\
-R = Q\sum_i (1-p_i) V_i
-\end{equation}$
-
-combining then simplfying:
-
-$\begin{equation}
-D - R =  Q\sum_i p_i V_i - Q\sum_i (1-p_i) V_i\\
-\frac{D-R}{Q} = \sum_i (2p_i - 1) V_i\\
-\frac{D-R}{Q} = 2\sum_i p_i V_i - \sum_i V_i\\
-\frac{D-R}{Q} = 2\sum_i p_i V_i - T'\\
-\frac{D-R}{Q} + T' = 2\sum_i p_i V_i
-\end{equation}$
-
-and substituting $\frac{D+R}{T'}$ for $Q$ and simplifying, we get
-
-$\begin{equation}
-\sum_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
-\end{equation}$
-
-We can simplify this a bit more if we define $d$ and $r$ as the percentage of the major party vote that goes for each party, that is $d = D/(D+R)$ and $r = R/(D+R)$.
-Now $\frac{D-R}{D+R} = d-r$ and so $\sum_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
-
-This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
-
-Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
-|]
 
 modelNotesBayes :: T.Text
 modelNotesBayes = modelNotesPreface <> "\n\n" <> [here|
@@ -254,13 +238,14 @@ p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\})
   
 turnoutModel
   :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-  => F.Frame IdentityDemographics
+  => Int
+  -> F.Frame IdentityDemographics
   -> F.Frame HouseElections
   -> F.Frame Turnout
-  -> K.Sem r ()
-turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
+  -> K.Sem r (Maybe [ExpectationSummary Double])
+turnoutModel year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
-  K.addMarkDown modelNotesBayes
+
   let
     houseElexF = fmap
       ( F.rcast
@@ -269,7 +254,7 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
       . FT.retypeColumn @StatePo @StateAbbreviation
       )
       houseElexFrame
-    unpack = MR.unpackFilterOnField @Year (== 2016)
+    unpack = MR.unpackFilterOnField @Year (== year)
     assign =
       MR.assignKeysAndData @'[StateAbbreviation, CongressionalDistrict]
         @'[Party, Candidatevotes, Totalvotes]
@@ -285,7 +270,8 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
   K.logLE K.Diagnostic
     $  "after mapReduce: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list houseElexFlattenedF))
-  K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list turnout2016Frame)
+  let filteredTurnoutFrame = F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
+  K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list filteredTurnoutFrame)
   K.logLE K.Diagnostic
     $  "Before scaling by turnout: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
@@ -301,7 +287,7 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
           M.empty
           id
         )
-        turnout2016Frame
+        filteredTurnoutFrame
       popToVotedM = do -- Maybe Monad
         scaleYWM  <- M.lookup "YoungWhiteMale" scaleMap
         scaleOWM  <- M.lookup "OldWhiteMale" scaleMap
@@ -380,18 +366,49 @@ turnoutModel identityDFrame houseElexFrame turnout2016Frame = do
              , F.rgetField @OldNonWhiteFemale r
              ])
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
---  K.logLE K.Diagnostic $ "mcmcData = " <> (T.pack $ show mcmcData)
-  K.logLE K.Diagnostic $ "fLog mcmcData . replicate 8 <$> [0.1..0.9] = " <> (T.pack $ show $ (fmap (TB.fLog mcmcData . (replicate 8)) [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]))
-  K.logLE K.Diagnostic $ "gradient (by hand) @ 0.5 = " <> (T.pack $ show $ TB.gradLogProbObservedVotes mcmcData (replicate 8 0.5))
---  K.logLE K.Diagnostic $ "gradient (via ad ) @ 0.5 = " <> (T.pack $ show $ TB.gradLogProbObservedVotes2 mcmcData (replicate 8 0.5))
   -- generate some random starting points
   let randomStart :: Int -> IO [Double]
       randomStart n = sequence $ replicate n (randomRIO (0,1))
       randomStarts :: Int -> Int -> IO [[Double]]
       randomStarts n m = sequence $ replicate m (randomStart n)
-  starts <- liftIO $ randomStarts 8 10
-  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts 
---  K.logLE K.Diagnostic $ "mcmc trace:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) mcmcResults)
-  let summaries = fmap (\n->TB.summarize (!!n) mcmcResults) [0..7]
-  K.logLE K.Diagnostic $ "YWM summary: " <> (T.pack $ show summaries)
-    
+  starts <- liftIO $ randomStarts 8 50
+  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts
+  let conf = S.cl95
+      summaries = traverse (\n->summarize conf (!!n) mcmcResults) [0..7]         
+  K.logLE K.Diagnostic $ "summaries: " <> (T.pack $ show summaries)
+  return summaries
+
+
+modelNotesRegression :: T.Text
+modelNotesRegression = modelNotesPreface <> [here|
+
+Given $T' = \sum_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
+
+$\begin{equation}
+D = Q\sum_i p_i V_i\\
+R = Q\sum_i (1-p_i) V_i
+\end{equation}$
+
+combining then simplfying:
+
+$\begin{equation}
+D - R =  Q\sum_i p_i V_i - Q\sum_i (1-p_i) V_i\\
+\frac{D-R}{Q} = \sum_i (2p_i - 1) V_i\\
+\frac{D-R}{Q} = 2\sum_i p_i V_i - \sum_i V_i\\
+\frac{D-R}{Q} = 2\sum_i p_i V_i - T'\\
+\frac{D-R}{Q} + T' = 2\sum_i p_i V_i
+\end{equation}$
+
+and substituting $\frac{D+R}{T'}$ for $Q$ and simplifying, we get
+
+$\begin{equation}
+\sum_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
+\end{equation}$
+
+We can simplify this a bit more if we define $d$ and $r$ as the percentage of the major party vote that goes for each party, that is $d = D/(D+R)$ and $r = R/(D+R)$.
+Now $\frac{D-R}{D+R} = d-r$ and so $\sum_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
+
+This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
+
+Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
+|]

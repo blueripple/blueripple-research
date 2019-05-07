@@ -52,6 +52,186 @@ table td {
 
 <!-- page content begins here -->
 
+<figure id="VoteProbs">
+<script type="text/javascript">var vlSpec=
+{
+    "config": {
+        "view": {
+            "height": 400,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "data": {
+        "values": [
+            {
+                "ConfHi": 0.4197609311214188,
+                "Key": "2016",
+                "ConfLo": 0.3910559392445541,
+                "Estimate": 0.3983964485359013,
+                "Parameter": "YWM"
+            },
+            {
+                "ConfHi": 0.37255628944677655,
+                "Key": "2016",
+                "ConfLo": 0.3428196931478247,
+                "Estimate": 0.35390392930385073,
+                "Parameter": "OWM"
+            },
+            {
+                "ConfHi": 0.42362765375117195,
+                "Key": "2016",
+                "ConfLo": 0.39706660609553074,
+                "Estimate": 0.4017561804437446,
+                "Parameter": "YWF"
+            },
+            {
+                "ConfHi": 0.38461875788344113,
+                "Key": "2016",
+                "ConfLo": 0.3540758665565488,
+                "Estimate": 0.3588410276497144,
+                "Parameter": "OWF"
+            },
+            {
+                "ConfHi": 0.8240427886953887,
+                "Key": "2016",
+                "ConfLo": 0.7795846728667665,
+                "Estimate": 0.8060583575115755,
+                "Parameter": "YNWM"
+            },
+            {
+                "ConfHi": 0.8493909056561977,
+                "Key": "2016",
+                "ConfLo": 0.7347362727313886,
+                "Estimate": 0.8388864300802623,
+                "Parameter": "ONWM"
+            },
+            {
+                "ConfHi": 0.8510696208488543,
+                "Key": "2016",
+                "ConfLo": 0.7821636557718444,
+                "Estimate": 0.8207234912059408,
+                "Parameter": "YNWF"
+            },
+            {
+                "ConfHi": 0.873510246780388,
+                "Key": "2016",
+                "ConfLo": 0.5720017961116234,
+                "Estimate": 0.8573622855858638,
+                "Parameter": "ONWF"
+            },
+            {
+                "ConfHi": 0.5628427302563961,
+                "Key": "2018",
+                "ConfLo": 0.4075028503194846,
+                "Estimate": 0.4427860624945067,
+                "Parameter": "YWM'"
+            },
+            {
+                "ConfHi": 0.49932967604761325,
+                "Key": "2018",
+                "ConfLo": 0.3813537236770154,
+                "Estimate": 0.4151331455370778,
+                "Parameter": "OWM'"
+            },
+            {
+                "ConfHi": 0.5077861663529464,
+                "Key": "2018",
+                "ConfLo": 0.3556033134052922,
+                "Estimate": 0.43318519375546477,
+                "Parameter": "YWF'"
+            },
+            {
+                "ConfHi": 0.5265232405644551,
+                "Key": "2018",
+                "ConfLo": 0.39443110073505394,
+                "Estimate": 0.4174306231491818,
+                "Parameter": "OWF'"
+            },
+            {
+                "ConfHi": 0.8489259416848313,
+                "Key": "2018",
+                "ConfLo": 0.4563919134208702,
+                "Estimate": 0.7970333449705191,
+                "Parameter": "YNWM'"
+            },
+            {
+                "ConfHi": 0.8710289825156761,
+                "Key": "2018",
+                "ConfLo": 0.4147327677487771,
+                "Estimate": 0.8373702190301728,
+                "Parameter": "ONWM'"
+            },
+            {
+                "ConfHi": 0.9462520558498597,
+                "Key": "2018",
+                "ConfLo": 0.6451197186816349,
+                "Estimate": 0.8309714641641586,
+                "Parameter": "YNWF'"
+            },
+            {
+                "ConfHi": 0.8945694615324413,
+                "Key": "2018",
+                "ConfLo": 0.5771683997985169,
+                "Estimate": 0.8680995956257841,
+                "Parameter": "ONWF'"
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Modeled Probability of Voting Democratic in competitive house races",
+    "layer": [
+        {
+            "mark": "point",
+            "encoding": {
+                "color": {
+                    "field": "Key",
+                    "type": "nominal"
+                },
+                "x": {
+                    "field": "Estimate",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": "Estimate (with 95% confidence error bars)"
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        },
+        {
+            "mark": "rule",
+            "encoding": {
+                "x2": {
+                    "field": "ConfHi",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "color": {
+                    "field": "Key",
+                    "type": "nominal"
+                },
+                "x": {
+                    "field": "ConfLo",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        }
+    ]
+};
+vegaEmbed('#VoteProbs',vlSpec);</script>
+</figure>
 <section id="model-notes" class="level2">
 <h2>Model Notes</h2>
 <p>Our goal is to use the 2016 house results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as the F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
