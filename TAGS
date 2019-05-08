@@ -32,94 +32,101 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,1012
+./reports/turnout.hs,1447
 module Main Main10,11
-templateVars templateVars75,76
-loadCSVToFrame loadCSVToFrame94,95
-beforeProbs beforeProbs106,107
+templateVars templateVars76,77
+loadCSVToFrame loadCSVToFrame95,96
 beforeProbs beforeProbs107,108
-[^1]: [^1]:147,148
-afterProbs afterProbs154,155
-afterProbs afterProbs155,156
-whatMatters whatMatters169,170
-whatMatters whatMatters170,171
-main main179,180
-main main180,181
-type DVotes DVotes236,237
-type RVotes RVotes237,238
-flattenVotes flattenVotes242,243
-type X X266,267
-type PredictedVotes PredictedVotes267,268
-modelNotesPreface modelNotesPreface269,270
-modelNotesPreface modelNotesPreface270,271
-modelNotesBayes modelNotesBayes286,287
-modelNotesBayes modelNotesBayes287,288
-P(P291,292
-\mu_k(\mu_k301,302
-v_k(v_k302,303
-p(p303,304
-turnoutModel turnoutModel320,321
-modelNotesRegression modelNotesRegression456,457
-modelNotesRegression modelNotesRegression457,458
-Given Given459,460
-D D462,463
-R R463,464
-\frac{D-R}{Q} \frac{D-R}{Q}470,471
-\sum_i \sum_i479,480
-We We482,483
-Now Now483,484
+beforeProbs beforeProbs108,109
+[^1]: [^1]:151,152
+afterProbs afterProbs159,160
+afterProbs afterProbs160,161
+whatMatters whatMatters174,175
+whatMatters whatMatters175,176
+quick quick184,185
+notAsQuick notAsQuick185,186
+thorough thorough186,187
+goToTown goToTown187,188
+main main190,191
+main main191,192
+type DVotes DVotes268,269
+type RVotes RVotes269,270
+flattenVotes flattenVotes274,275
+type X X298,299
+type PredictedVotes PredictedVotes299,300
+modelNotesPreface modelNotesPreface301,302
+modelNotesPreface modelNotesPreface302,303
+modelNotesBayes modelNotesBayes318,319
+modelNotesBayes modelNotesBayes319,320
+P(P323,324
+\mu_k(\mu_k333,334
+v_k(v_k334,335
+p(p335,336
+data RunParams RunParams355,356
+data RunParams = RunParams RunParams355,356
+data RunParams = RunParams { nChains nChains355,356
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain355,356
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain355,356
+turnoutModel turnoutModel364,365
+modelNotesRegression modelNotesRegression496,497
+modelNotesRegression modelNotesRegression497,498
+Given Given499,500
+D D502,503
+R R503,504
+\frac{D-R}{Q} \frac{D-R}{Q}510,511
+\sum_i \sum_i519,520
+We We522,523
+Now Now523,524
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/TurnoutBayes.hs,1532
+./src/BlueRipple/Model/TurnoutBayes.hs,1413
 module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes2,3
-data ObservedVote ObservedVote15,16
-data ObservedVote = ObservedVote ObservedVote15,16
-data ObservedVote = ObservedVote { dem dem15,16
-data Pair Pair17,18
-data Pair a b = Pair Pair17,18
-observedVoteNormalParams observedVoteNormalParams20,21
-observedVoteNormalParams observedVoteNormalParams21,22
-logProbObservedVote logProbObservedVote32,33
-logProbObservedVote logProbObservedVote33,34
-gradLogProbObservedVote gradLogProbObservedVote38,39
-gradLogProbObservedVote gradLogProbObservedVote39,40
-logProbObservedVotes logProbObservedVotes51,52
-logProbObservedVotes logProbObservedVotes52,53
-gradLogProbObservedVotes gradLogProbObservedVotes55,56
-gradLogProbObservedVotes gradLogProbObservedVotes56,57
-betaDist betaDist70,71
-betaDist betaDist71,72
-logBetaDist logBetaDist77,78
-logBetaDist logBetaDist78,79
-betaPrior betaPrior82,83
-betaPrior betaPrior83,84
---logBetaPrior --logBetaPrior85,86
---logBetaPrior --logBetaPrior86,87
-f f88,89
-f f89,90
-fLog fLog93,94
-fLog fLog94,95
-type Sample Sample98,99
-type Chain Chain99,100
---runMCMC --runMCMC101,102
-runMCMC runMCMC102,103
-data VPSummary VPSummary114,115
-data VPSummary = VPSummary VPSummary114,115
-data VPSummary = VPSummary { mean mean114,115
-data VPSummary = VPSummary { mean :: Double, stDev stDev114,115
-data VPSummary = VPSummary { mean :: Double, stDev :: Double, rHat rHat114,115
-summarize summarize116,117
-summarize summarize117,118
+data ObservedVote ObservedVote22,23
+data ObservedVote = ObservedVote ObservedVote22,23
+data ObservedVote = ObservedVote { dem dem22,23
+data Pair Pair24,25
+data Pair a b = Pair Pair24,25
+observedVoteNormalParams observedVoteNormalParams27,28
+observedVoteNormalParams observedVoteNormalParams28,29
+logProbObservedVote logProbObservedVote39,40
+logProbObservedVote logProbObservedVote40,41
+gradLogProbObservedVote gradLogProbObservedVote45,46
+gradLogProbObservedVote gradLogProbObservedVote46,47
+logProbObservedVotes logProbObservedVotes58,59
+logProbObservedVotes logProbObservedVotes59,60
+gradLogProbObservedVotes gradLogProbObservedVotes62,63
+gradLogProbObservedVotes gradLogProbObservedVotes63,64
+betaDist betaDist77,78
+betaDist betaDist78,79
+logBetaDist logBetaDist84,85
+logBetaDist logBetaDist85,86
+betaPrior betaPrior89,90
+betaPrior betaPrior90,91
+--logBetaPrior --logBetaPrior92,93
+--logBetaPrior --logBetaPrior93,94
+f f95,96
+f f96,97
+fLog fLog100,101
+fLog fLog101,102
+type Sample Sample105,106
+type Chain Chain106,107
+--runMCMC --runMCMC108,109
+runMCMC runMCMC109,110
+sequenceConcurrently sequenceConcurrently119,120
+sequenceConcurrently sequenceConcurrently120,121
+runMany runMany133,134
+mannWhitneyUs mannWhitneyUs148,149
+mannWhitneyUTest mannWhitneyUTest158,159
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8
 F.tableTypes' F.tableTypes'30,31
 
-./src/BlueRipple/Data/DataSourcePaths.hs,1287
+./src/BlueRipple/Data/DataSourcePaths.hs,1391
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
 dataDir dataDir3,4
 totalSpendingCSV totalSpendingCSV5,6
@@ -134,20 +141,20 @@ totalSpendingDuringCSV totalSpendingDuringCSV10,11
 totalSpendingDuringCSV totalSpendingDuringCSV10,11
 contextDemographicsCSV contextDemographicsCSV12,13
 contextDemographicsCSV contextDemographicsCSV12,13
-identityDemographics2016CSV identityDemographics2016CSV14,15
-identityDemographics2016CSV identityDemographics2016CSV14,15
-identityDemographics2017CSV identityDemographics2017CSV16,17
-identityDemographics2017CSV identityDemographics2017CSV16,17
-angryDemsCSV angryDemsCSV18,19
-angryDemsCSV angryDemsCSV18,19
-houseElectionsCSV houseElectionsCSV19,20
-houseElectionsCSV houseElectionsCSV19,20
-turnout2016CSV turnout2016CSV20,21
-turnout2016CSV turnout2016CSV20,21
-turnout2018CSV turnout2018CSV21,22
-turnout2018CSV turnout2018CSV21,22
-turnoutCSV turnoutCSV22,23
-turnoutCSV turnoutCSV22,23
+identityDemographics2012CSV identityDemographics2012CSV14,15
+identityDemographics2012CSV identityDemographics2012CSV14,15
+identityDemographics2014CSV identityDemographics2014CSV16,17
+identityDemographics2014CSV identityDemographics2014CSV16,17
+identityDemographics2016CSV identityDemographics2016CSV18,19
+identityDemographics2016CSV identityDemographics2016CSV18,19
+identityDemographics2017CSV identityDemographics2017CSV20,21
+identityDemographics2017CSV identityDemographics2017CSV20,21
+angryDemsCSV angryDemsCSV22,23
+angryDemsCSV angryDemsCSV22,23
+houseElectionsCSV houseElectionsCSV23,24
+houseElectionsCSV houseElectionsCSV23,24
+turnoutCSV turnoutCSV24,25
+turnoutCSV turnoutCSV24,25
 
 ./src/BlueRipple/Data/FromDB.hs,1397
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14

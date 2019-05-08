@@ -5,13 +5,20 @@ module BlueRipple.Model.TurnoutBayes where
 --import qualified Data.Vector.Unboxed           as V
 import qualified Statistics.Distribution.Binomial
                                                as SB
+import qualified Statistics.Test.MannWhitneyU  as S
+import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
+import           Control.Monad                  ( sequence )
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 --import qualified Numeric.MCMC.Flat             as MC
 import qualified Numeric.MCMC                  as MC
 --import           Numeric.AD                     ( grad )
 import           Math.Gamma                     ( gamma )
+import           System.Random                  ( randomRIO )
+import           Control.Concurrent            as CC
+import           Control.Concurrent.MVar       as CC
+import qualified Data.Vector.Unboxed           as VU
 
 data ObservedVote = ObservedVote { dem :: Int}
 
@@ -110,8 +117,50 @@ runMCMC votesAndTurnout numIters start =
                (Just $ gradLogProbObservedVotes votesAndTurnout)
     )
 
--- look at marginals, both for information but also for diagnostics of the chain
+sequenceConcurrently :: Traversable t => t (IO a) -> IO (t a)
+sequenceConcurrently actions = do
+  let f :: IO a -> IO (CC.MVar a, CC.ThreadId)
+      f action = do
+        mvar     <- CC.newEmptyMVar
+--        result   <- action
+        threadId <- forkIO $ (action >>= CC.putMVar mvar)
+        return (mvar, threadId)
+      g :: (CC.MVar a, CC.ThreadId) -> IO a
+      g (mvar, _) = takeMVar mvar
+  forked <- traverse f actions -- IO (t (MVar a, ThreadId))
+  traverse g forked
 
+
+runMany votesAndTurnout nParams nChains nSamplesPerChain nBurnPerChain = do
+  let
+    randomStart :: Int -> IO [Double]
+    randomStart n = sequence $ replicate n (randomRIO (0, 1))
+    randomStarts :: Int -> Int -> IO [[Double]]
+    randomStarts n m = sequence $ replicate m (randomStart n)
+    doEach =
+      fmap (drop nBurnPerChain) . runMCMC votesAndTurnout nSamplesPerChain
+  starts <- randomStarts nParams nChains
+--  traverse doEach starts
+  sequenceConcurrently $ fmap doEach starts
+
+-- look at marginals, both for information but also for diagnostics of the chain
+mannWhitneyUs
+  :: (Ord b, VU.Unbox b) => (a -> b) -> [a] -> [a] -> (Double, Double)
+mannWhitneyUs f c1 c2 =
+  let vOfF = VU.fromList . fmap f in S.mannWhitneyU (vOfF c1) (vOfF c2)
+
+mannWhitneyUTest
+  :: (Ord b, VU.Unbox b)
+  => S.PValue Double
+  -> (a -> b)
+  -> [a]
+  -> [a]
+  -> Maybe S.TestResult
+mannWhitneyUTest p f c1 c2 =
+  let vOfF = VU.fromList . fmap f
+  in  S.mannWhitneyUtest S.SamplesDiffer p (vOfF c1) (vOfF c2)
+
+{-
 data VPSummary = VPSummary { mean :: Double, stDev :: Double, rHat :: Double } deriving (Show)
 
 summarize :: (Sample -> Double) -> [Chain] -> VPSummary -- FL.Fold Chain VPSummary
@@ -133,3 +182,4 @@ summarize integrandF chains =
 
 
 -- . foldTo (meanOfVariances, varianceOfMeans) . fmap (compute meanVar . fmap integrandF) . splitChains
+-}

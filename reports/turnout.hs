@@ -18,13 +18,14 @@ import           Control.Lens                   ( (^.)
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( when )
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import qualified Data.List as L
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 , isNothing
                                                 , isJust
                                                 , fromJust
-                                                )
+                                                )                 
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
@@ -49,7 +50,7 @@ import qualified Statistics.Types              as S
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
-import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..))
+import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf)
 import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, parameterPlotMany)
 
 import qualified Frames.ParseableTypes         as FP
@@ -109,13 +110,16 @@ beforeProbs = [here|
 ## Explaining the Blue Wave of 2018
 The 2018 house races were generally good for Democrats and Progressives.
 As we look to hold those gains and build on them there are an assortment of questions to ask about
-the 2018 results.  As an example, what can we figure out about how much of the 2016 -> 2018 changes were the result of
-changes in voter turnout vs. voters changing their minds?  This is a difficult question to answer since we don't have
-very granular turnout data and we only have exit poll and post-election survey data to look at for data about how people
+the 2018 results.  As an example, how much of the change from 2016 to 2018 were the result of
+changes in voter turnout vs. voters changing their minds?  Answering this is difficult since we don't have
+very granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people
 voted in each election.  Here, we attempt to use the election results themselves combined with demographic data about the
 populations in each district and turnout of various demographic groups to *infer* the likelihood of a given person voting
-for the democratic candidate in a house race.  We perform this inference using election results[^1] and demographic data[^2] from 2016 and then
-repeat for 2018[^3].
+for the democratic candidate in a house race.  We'll use changes in that inferred probability as a proxy for the idea of people
+"changing their minds".
+
+We perform this inference using election results[^1], demographic data[^2] and turnout data[^3] from 2012, 2014, 2016 and then
+for 2018[^4].  
 
 * In each year, we consider only districts that had a democrat and republican candidates.
 In 2018 that was 369 (of 438) districts, growing to 382 districts in 2018.
@@ -147,7 +151,8 @@ substantially across all ages and sexes, though it remains below 50%.
 
 [^1]: Source: Mit Election Lab <https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2> 
 [^2]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
-[^3]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
+[^3]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
+[^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
 We will update this whenever the census publishes updated 2018 American Community Survey data.  
 |]
 
@@ -176,6 +181,12 @@ Nationally, 2018 house races[^7] moved about 9 points towards the democrats in p
 [^7]: <https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html>
 [^8]: <https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html>
 |]
+
+quick = RunParams 5 500 50
+notAsQuick = RunParams 10 500 100
+thorough = RunParams 5 1500 100
+goToTown = RunParams 10 30000 300
+
   
 main :: IO ()
 main = do
@@ -188,7 +199,7 @@ main = do
         templateVars
         K.mindocOptionsF
   eitherDocs <-
-    K.knitHtmls (Just "turnout.Main") K.logAll pandocWriterConfig $ do
+    K.knitHtmls (Just "turnout.Main") K.nonDiagnostic pandocWriterConfig $ do
     -- load the data   
       let parserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
@@ -197,6 +208,10 @@ main = do
         parserOptions
         contextDemographicsCSV
         (const True)
+      identityDemographics2012Frame :: F.Frame IdentityDemographics <-
+        loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
+      identityDemographics2014Frame :: F.Frame IdentityDemographics <-
+        loadCSVToFrame parserOptions identityDemographics2017CSV (const True)        
       identityDemographics2016Frame :: F.Frame IdentityDemographics <-
         loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
       identityDemographics2017Frame :: F.Frame IdentityDemographics <-
@@ -210,23 +225,40 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
+        let rp = quick
         K.addMarkDown beforeProbs
-        results2016M <- turnoutModel 2016 identityDemographics2016Frame
-                        houseElectionsFrame
-                        turnoutFrame
-        
-        results2018M <- turnoutModel 2018 identityDemographics2017Frame
-                       houseElectionsFrame
-                       turnoutFrame
+        K.logLE K.Info $ "inferring for 2012"
+        (results2012M, c2012) <- turnoutModel rp 2012 identityDemographics2012Frame
+                                 houseElectionsFrame
+                                 turnoutFrame
+        K.logLE K.Info $ "inferring for 2014"
+        (results2014M, c2014) <- turnoutModel rp 2014 identityDemographics2014Frame
+                                 houseElectionsFrame
+                                 turnoutFrame
+        K.logLE K.Info $ "inferring for 2016"
+        (results2016M, c2016) <- turnoutModel rp 2016 identityDemographics2016Frame
+                                 houseElectionsFrame
+                                 turnoutFrame
+        K.logLE K.Info $ "inferring for 2016"
+        (results2018M, c2018) <- turnoutModel rp 2018 identityDemographics2017Frame
+                                 houseElectionsFrame
+                                 turnoutFrame
         let names = ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"]
             toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
-        when (isJust results2016M && isJust results2018M) $ do
-          let pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust results2016M)
+        when (isJust results2012M && isJust results2014M && isJust results2016M && isJust results2018M) $ do
+          let pds2012 = fmap toPD $ zip (fmap (<> "-2012") names) (fromJust results2012M)
+              pds2014 = fmap toPD $ zip (fmap (<> "-2014") names) (fromJust results2014M)
+              pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust results2016M)
               pds2018 = fmap toPD $ zip (fmap (<> "-2018") names) (fromJust results2018M)
+              f x = fmap (\y -> (x,y))
           K.addHvega "VoteProbs" $ parameterPlotMany id
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
-            (concat $ [fmap (\pd -> ("2016",pd)) pds2016] ++ [fmap (\pd -> ("2018",pd)) pds2018])
+            (concat $ [f "2012" pds2012] ++ [f "2014" pds2014] ++ [f "2016" pds2016] ++ [f "2018" pds2018])
+          -- analyze results
+          -- Mann-Whitney
+          let mwU = fmap (\f -> TB.mannWhitneyUTest (S.mkPValue 0.05) f c2016 c2018) $ fmap (\n-> (!!n)) [0..7]
+          K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)
         K.addMarkDown afterProbs
         K.addMarkDown whatMatters
         K.addMarkDown modelNotesBayes
@@ -306,19 +338,31 @@ p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\})
 \end{equation}$
 
 
+* MCMC creates chains of samples from the posterior distribution.  Those samples are then used to compute expectations of various quantities of interest.
+In practice, it's hard to know when you have "enough" samples to have confidence in your expectations.
+Here we use a "potential scale reduction factor" ([PSRF][Ref:Convergence]), which entails starting many chains from different starting locations,
+computing the, e.g., 95%, confidence band on the combined chain and then the mean of those intervals on each chain
+and looking at the ratio. This converges to one as the chains converge[^rhat] and a value below 1.1 is,
+conventionally, taken to indicate that the chains have converged "enough" for the expectation in question.
+
 [WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
 [WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
-
+[Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
+[^rhat]: The details of this convergence are beyond our scope but just to get an intuition, imagine looking at some expectation on the entire chain.
+The interval on each chain is the maximum minus the mimumum and the mean of these intervals is also the mean maximum minus the mean minimum.
+And the mean maximum is clearly less than the maximum across all chains while the mean minimum is clearly larger than than the absolute minimum across
+all chains. So their ratio gets closer to 1 as the individual chains look more and more like the combined chain.
 |]
-  
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }  
 turnoutModel
   :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-  => Int
+  => RunParams
+  -> Int
   -> F.Frame IdentityDemographics
   -> F.Frame HouseElections
   -> F.Frame Turnout
-  -> K.Sem r (Maybe [ExpectationSummary Double])
-turnoutModel year identityDFrame houseElexFrame turnoutFrame = do
+  -> K.Sem r (Maybe [ExpectationSummary Double], TB.Chain)
+turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
 
   let
@@ -411,7 +455,7 @@ turnoutModel year identityDFrame houseElexFrame turnoutFrame = do
   K.logLE K.Info
     $  "After removing races where someone is running unopposed we have "
     <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
-    <> " rows."
+    <> " rows. (contested races)"
   let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
                          + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
       scaledDVotes r =
@@ -442,16 +486,12 @@ turnoutModel year identityDFrame houseElexFrame turnoutFrame = do
              ])
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
   -- generate some random starting points
-  let randomStart :: Int -> IO [Double]
-      randomStart n = sequence $ replicate n (randomRIO (0,1))
-      randomStarts :: Int -> Int -> IO [[Double]]
-      randomStarts n m = sequence $ replicate m (randomStart n)
-  starts <- liftIO $ randomStarts 8 50 -- should be 8 50
-  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts -- should be 1500
+  mcmcResults <- liftIO $ TB.runMany mcmcData 8 (nChains runParams) (nSamplesPerChain runParams) (nBurnPerChain runParams)
   let conf = S.cl95
       summaries = traverse (\n->summarize conf (!!n) mcmcResults) [0..7]         
-  K.logLE K.Diagnostic $ "summaries: " <> (T.pack $ show summaries)
-  return summaries
+  K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
+  K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..7]) mcmcResults)
+  return (summaries, L.concat mcmcResults)
 
 
 modelNotesRegression :: T.Text
