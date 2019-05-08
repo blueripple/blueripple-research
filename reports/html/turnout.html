@@ -52,6 +52,59 @@ table td {
 
 <!-- page content begins here -->
 
+<section id="explaining-the-blue-wave-of-2018" class="level2">
+<h2>Explaining the Blue Wave of 2018</h2>
+<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them there are an assortment of questions to ask about the 2018 results. As an example, what can we figure out about how much of the 2016 -&gt; 2018 changes were the result of changes in voter turnout vs. voters changing their minds? This is a difficult question to answer since we don't have very granular turnout data and we only have exit poll and post-election survey data to look at for data about how people voted in each election. Here, we attempt to use the election results themselves combined with demographic data about the populations in each district and turnout of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We perform this inference using election results<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> and demographic data<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> from 2016 and then repeat for 2018<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>.</p>
+<ul>
+<li><p>In each year, we consider only districts that had a democrat and republican candidates. In 2018 that was 369 (of 438) districts, growing to 382 districts in 2018.</p></li>
+<li><p>Our demographic groupings are limited by the the categories recognized by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old. Those categories are denoted below as in the following table:</p></li>
+</ul>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Label</th>
+<th style="text-align: left;">Group</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">ONWF</td>
+<td style="text-align: left;">Old Non-White Females</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">YNWF</td>
+<td style="text-align: left;">Young Non-White Females</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">ONWM</td>
+<td style="text-align: left;">Old Non-White Males</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">YNWM</td>
+<td style="text-align: left;">Young Non-White Males</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">OWF</td>
+<td style="text-align: left;">Old White Females</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">YWF</td>
+<td style="text-align: left;">Young White Females</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">OWM</td>
+<td style="text-align: left;">Old White Males</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">YWM</td>
+<td style="text-align: left;">Young White Males</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>More detail about the model and the techniques used to perform inference are in the "Model Notes" section below.</li>
+</ul>
+<p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters. Support from white voters is substantially lower, about 40% across all ages and sexes. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%.</p>
 <figure id="VoteProbs">
 <script type="text/javascript">var vlSpec=
 {
@@ -65,116 +118,116 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.4197609311214188,
+                "ConfHi": 0.43309219504693325,
                 "Key": "2016",
-                "ConfLo": 0.3910559392445541,
-                "Estimate": 0.3983964485359013,
-                "Parameter": "YWM"
+                "ConfLo": 0.3239552046785343,
+                "Estimate": 0.3966416280641889,
+                "Parameter": "YWM-2016"
             },
             {
-                "ConfHi": 0.37255628944677655,
+                "ConfHi": 0.44050352621087063,
                 "Key": "2016",
-                "ConfLo": 0.3428196931478247,
-                "Estimate": 0.35390392930385073,
-                "Parameter": "OWM"
+                "ConfLo": 0.3464379165439123,
+                "Estimate": 0.35919970940704804,
+                "Parameter": "OWM-2016"
             },
             {
-                "ConfHi": 0.42362765375117195,
+                "ConfHi": 0.49822890738255043,
                 "Key": "2016",
-                "ConfLo": 0.39706660609553074,
-                "Estimate": 0.4017561804437446,
-                "Parameter": "YWF"
+                "ConfLo": 0.3624113500149213,
+                "Estimate": 0.401803713166753,
+                "Parameter": "YWF-2016"
             },
             {
-                "ConfHi": 0.38461875788344113,
+                "ConfHi": 0.42846224181521725,
                 "Key": "2016",
-                "ConfLo": 0.3540758665565488,
-                "Estimate": 0.3588410276497144,
-                "Parameter": "OWF"
+                "ConfLo": 0.3534987112185605,
+                "Estimate": 0.36253624082577557,
+                "Parameter": "OWF-2016"
             },
             {
-                "ConfHi": 0.8240427886953887,
+                "ConfHi": 0.918336119728819,
                 "Key": "2016",
-                "ConfLo": 0.7795846728667665,
-                "Estimate": 0.8060583575115755,
-                "Parameter": "YNWM"
+                "ConfLo": 0.511760156103465,
+                "Estimate": 0.8062626270540212,
+                "Parameter": "YNWM-2016"
             },
             {
-                "ConfHi": 0.8493909056561977,
+                "ConfHi": 0.8543976168759446,
                 "Key": "2016",
-                "ConfLo": 0.7347362727313886,
-                "Estimate": 0.8388864300802623,
-                "Parameter": "ONWM"
+                "ConfLo": 0.6268814926237242,
+                "Estimate": 0.828645533851498,
+                "Parameter": "ONWM-2016"
             },
             {
-                "ConfHi": 0.8510696208488543,
+                "ConfHi": 0.8469981629129695,
                 "Key": "2016",
-                "ConfLo": 0.7821636557718444,
-                "Estimate": 0.8207234912059408,
-                "Parameter": "YNWF"
+                "ConfLo": 0.6936755501282093,
+                "Estimate": 0.8146840229923873,
+                "Parameter": "YNWF-2016"
             },
             {
-                "ConfHi": 0.873510246780388,
+                "ConfHi": 0.8832702759731116,
                 "Key": "2016",
-                "ConfLo": 0.5720017961116234,
-                "Estimate": 0.8573622855858638,
-                "Parameter": "ONWF"
+                "ConfLo": 0.5017063795085477,
+                "Estimate": 0.8377016200317944,
+                "Parameter": "ONWF-2016"
             },
             {
-                "ConfHi": 0.5628427302563961,
+                "ConfHi": 0.5825481011855563,
                 "Key": "2018",
-                "ConfLo": 0.4075028503194846,
-                "Estimate": 0.4427860624945067,
-                "Parameter": "YWM'"
+                "ConfLo": 0.3923122909592369,
+                "Estimate": 0.4600679738777912,
+                "Parameter": "YWM-2018"
             },
             {
-                "ConfHi": 0.49932967604761325,
+                "ConfHi": 0.4796335411789693,
                 "Key": "2018",
-                "ConfLo": 0.3813537236770154,
-                "Estimate": 0.4151331455370778,
-                "Parameter": "OWM'"
+                "ConfLo": 0.2832952722263957,
+                "Estimate": 0.40749230670248193,
+                "Parameter": "OWM-2018"
             },
             {
-                "ConfHi": 0.5077861663529464,
+                "ConfHi": 0.5608848726638037,
                 "Key": "2018",
-                "ConfLo": 0.3556033134052922,
-                "Estimate": 0.43318519375546477,
-                "Parameter": "YWF'"
+                "ConfLo": 0.3799276606742677,
+                "Estimate": 0.44708410790355263,
+                "Parameter": "YWF-2018"
             },
             {
-                "ConfHi": 0.5265232405644551,
+                "ConfHi": 0.4914815919248469,
                 "Key": "2018",
-                "ConfLo": 0.39443110073505394,
-                "Estimate": 0.4174306231491818,
-                "Parameter": "OWF'"
+                "ConfLo": 0.354523895014519,
+                "Estimate": 0.4117843584613142,
+                "Parameter": "OWF-2018"
             },
             {
-                "ConfHi": 0.8489259416848313,
+                "ConfHi": 0.9312624431478547,
                 "Key": "2018",
-                "ConfLo": 0.4563919134208702,
-                "Estimate": 0.7970333449705191,
-                "Parameter": "YNWM'"
+                "ConfLo": 0.7032615525003658,
+                "Estimate": 0.8117263673829928,
+                "Parameter": "YNWM-2018"
             },
             {
-                "ConfHi": 0.8710289825156761,
+                "ConfHi": 0.878254992178997,
                 "Key": "2018",
-                "ConfLo": 0.4147327677487771,
-                "Estimate": 0.8373702190301728,
-                "Parameter": "ONWM'"
+                "ConfLo": 0.4703674069035823,
+                "Estimate": 0.8028874946915605,
+                "Parameter": "ONWM-2018"
             },
             {
-                "ConfHi": 0.9462520558498597,
+                "ConfHi": 0.9433293195694308,
                 "Key": "2018",
-                "ConfLo": 0.6451197186816349,
-                "Estimate": 0.8309714641641586,
-                "Parameter": "YNWF'"
+                "ConfLo": 0.7669922356977156,
+                "Estimate": 0.8425527617365375,
+                "Parameter": "YNWF-2018"
             },
             {
-                "ConfHi": 0.8945694615324413,
+                "ConfHi": 0.9112069834834722,
                 "Key": "2018",
-                "ConfLo": 0.5771683997985169,
-                "Estimate": 0.8680995956257841,
-                "Parameter": "ONWF'"
+                "ConfLo": 0.4105684051024958,
+                "Estimate": 0.8020672221917801,
+                "Parameter": "ONWF-2018"
             }
         ]
     },
@@ -232,6 +285,13 @@ table td {
 };
 vegaEmbed('#VoteProbs',vlSpec);</script>
 </figure>
+<p>These results are broadly consistent with exit-polling from 2016 and 2018<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>. But there is one confusing thing about these results:</p>
+<ul>
+<li>The numbers are not always consistent with exit-polling<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a> and after-election surveys[^6], especially when it comes to young white females. Exit-polls and after-election surveys show YWF voting for Hillary Clinton at slightly over 50% (??). but this model shows a much lower number, closer to 40%. The model may be wrong, YWF's may have been more likely to split their ticket, voting for Clinton but also for a Republican for the house seat, or the exit-poll or after-election survey data may be incorrect.</li>
+</ul>
+<p>[^6] : <a href="http://www.rasmussenreports.com/public_content/political_commentary/commentary_by_geoffrey_skelley/another_look_back_at_2016" class="uri">http://www.rasmussenreports.com/public_content/political_commentary/commentary_by_geoffrey_skelley/another_look_back_at_2016</a></p>
+<p>Now we have an estimate of how people's choices changed between 2016 and 2018. But that's only one part of the story. The other change is voter turnout. Nationally, 2018 house races<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a> moved about 9 points towards the democrats in polls<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a> and XX points in the electoral results. Was that driven more by turnout (lower turnout by whites and more by non-whites, e.g.,) or by changing minds (e.g., the move in white democratic voting probability we see in the above results)?</p>
+</section>
 <section id="model-notes" class="level2">
 <h2>Model Notes</h2>
 <p>Our goal is to use the 2016 house results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as the F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
@@ -244,6 +304,18 @@ vegaEmbed('#VoteProbs',vlSpec);</script>
 <li><p>Back to the computation of <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, the probability that we observed our evidence, given a specific set of <span class="math inline">\(\{p_i\}\)</span>. Our <span class="math inline">\(p_i\)</span> are the probability that one voter of type <span class="math inline">\(i\)</span> votes for the democrat. Given <span class="math inline">\(V_i\)</span> voters of that type, the distribution of democratic votes <em>from that type of voter</em> is Bernoulli, with <span class="math inline">\(V_i\)</span> trials and <span class="math inline">\(p_i\)</span> probability of success. But <span class="math inline">\(V_i\)</span> is quite large! So we can approximate this with a normal distribution with mean <span class="math inline">\(V_i p_i\)</span> and variance <span class="math inline">\(V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation">Wikipedia</a>). However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types. Luckily, the sum of normally distributed random variables is also normal. So the distribution of democratic votes across all types of voters is also normal, with mean <span class="math inline">\(\sum_i V_i p_i\)</span> and variance <span class="math inline">\(\sum_i V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables">Wikipedia</a>). Thus we have <span class="math inline">\(P(D_k|\{p_i\})\)</span>, or, what amounts to the same thing, its density. But that means we also know <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> since that is just the product of the normal distribution for each <span class="math inline">\(D_k\)</span>:</p></li>
 </ul>
 <p><span class="math inline">\(\begin{equation} \mu_k(\{p_i\}) = \sum_i V_i p_i\\ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\ p(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\ p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\}) \end{equation}\)</span></p>
+</section>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p>Source: Mit Election Lab <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2" class="uri">https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2</a><a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn2" role="doc-endnote"><p>Source: US Census, American Community Survey <a href="https://www.census.gov/programs-surveys/acs.html" class="uri">https://www.census.gov/programs-surveys/acs.html</a><a href="#fnref2" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn3" role="doc-endnote"><p>We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census. We will update this whenever the census publishes updated 2018 American Community Survey data.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn4" role="doc-endnote"><p><a href="https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/" class="uri">https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/</a><a href="#fnref4" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn5" role="doc-endnote"><p><a href="https://www.nbcnews.com/storyline/2016-election-day/election-polls-nbc-news-analysis-2016-votes-voters-n680466" class="uri">https://www.nbcnews.com/storyline/2016-election-day/election-polls-nbc-news-analysis-2016-votes-voters-n680466</a><a href="#fnref5" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn6" role="doc-endnote"><p><a href="https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html" class="uri">https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html</a><a href="#fnref6" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn7" role="doc-endnote"><p><a href="https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html" class="uri">https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html</a><a href="#fnref7" class="footnote-back" role="doc-backlink">↩</a></p></li>
+</ol>
 </section>
 
 <!-- page content ends here -->

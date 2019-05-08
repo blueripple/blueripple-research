@@ -104,6 +104,79 @@ loadCSVToFrame po fp filterF = do
   reportRows frame fp
   return frame
 
+beforeProbs :: T.Text
+beforeProbs = [here|
+## Explaining the Blue Wave of 2018
+The 2018 house races were generally good for Democrats and Progressives.
+As we look to hold those gains and build on them there are an assortment of questions to ask about
+the 2018 results.  As an example, what can we figure out about how much of the 2016 -> 2018 changes were the result of
+changes in voter turnout vs. voters changing their minds?  This is a difficult question to answer since we don't have
+very granular turnout data and we only have exit poll and post-election survey data to look at for data about how people
+voted in each election.  Here, we attempt to use the election results themselves combined with demographic data about the
+populations in each district and turnout of various demographic groups to *infer* the likelihood of a given person voting
+for the democratic candidate in a house race.  We perform this inference using election results[^1] and demographic data[^2] from 2016 and then
+repeat for 2018[^3].
+
+* In each year, we consider only districts that had a democrat and republican candidates.
+In 2018 that was 369 (of 438) districts, growing to 382 districts in 2018.
+
+* Our demographic groupings are limited by the the categories recognized by the census
+and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with
+a need to keep the model small enough to make inference possible.  Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
+Male and Female and Young (<45) and Old. Those categories are denoted below as in the following table:
+
+Label  Group
+------ ------------------------
+ONWF   Old Non-White Females
+YNWF   Young Non-White Females
+ONWM   Old Non-White Males
+YNWM   Young Non-White Males
+OWF    Old White Females
+YWF    Young White Females
+OWM    Old White Males
+YWM    Young White Males
+
+* More detail about the model and the techniques used to perform inference are in the "Model Notes" section below.
+
+The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates,
+running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters.
+Support from white voters is substantially lower, about 40% across all ages and sexes.
+As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support *grows*
+substantially across all ages and sexes, though it remains below 50%.
+
+
+[^1]: Source: Mit Election Lab <https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2> 
+[^2]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
+[^3]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
+We will update this whenever the census publishes updated 2018 American Community Survey data.  
+|]
+
+
+afterProbs :: T.Text
+afterProbs = [here|
+These results are broadly consistent with exit-polling from 2016 and 2018[^4]. But there is one confusing thing about these results:
+
+* The numbers are not always consistent with exit-polling[^5] and after-election surveys[^6], especially when it comes to young white females.
+Exit-polls and after-election surveys show YWF voting for Hillary Clinton at slightly over 50% (??).
+but this model shows a much lower number, closer to 40%.  The model may be wrong, YWF's may have been more likely to split their ticket,
+voting for Clinton but also for a Republican for the house seat, or the exit-poll or after-election survey data may be incorrect.
+
+
+[^4]: <https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
+[^5]: <https://www.nbcnews.com/storyline/2016-election-day/election-polls-nbc-news-analysis-2016-votes-voters-n680466>
+[^6]: <http://www.rasmussenreports.com/public_content/political_commentary/commentary_by_geoffrey_skelley/another_look_back_at_2016>
+|]
+
+whatMatters :: T.Text
+whatMatters = [here|
+Now we have an estimate of how people's choices changed between 2016 and 2018.  But that's only one part of the story.  The other change is voter turnout.
+Nationally, 2018 house races[^7] moved about 9 points towards the democrats in polls[^8] and XX points in the electoral results.  Was that driven more by turnout
+ (lower turnout by whites and more by non-whites, e.g.,) or by changing minds (e.g., the move in white democratic voting probability we see in the above results)?
+
+[^7]: <https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html>
+[^8]: <https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html>
+|]
+  
 main :: IO ()
 main = do
   let writeNamedHtml (K.NamedDoc n lt) =
@@ -137,7 +210,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
---        let maybeResult msg = maybe (throw $ K.PandocError $ "Bad Result from " <> msg) return
+        K.addMarkDown beforeProbs
         results2016M <- turnoutModel 2016 identityDemographics2016Frame
                         houseElectionsFrame
                         turnoutFrame
@@ -148,12 +221,14 @@ main = do
         let names = ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"]
             toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
         when (isJust results2016M && isJust results2018M) $ do
-          let pds2016 = fmap toPD $ zip names (fromJust results2016M)
-              pds2018 = fmap toPD $ zip (fmap (<> "'") names) (fromJust results2018M)
+          let pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust results2016M)
+              pds2018 = fmap toPD $ zip (fmap (<> "-2018") names) (fromJust results2018M)
           K.addHvega "VoteProbs" $ parameterPlotMany id
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
             (concat $ [fmap (\pd -> ("2016",pd)) pds2016] ++ [fmap (\pd -> ("2018",pd)) pds2018])
+        K.addMarkDown afterProbs
+        K.addMarkDown whatMatters
         K.addMarkDown modelNotesBayes
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
@@ -371,8 +446,8 @@ turnoutModel year identityDFrame houseElexFrame turnoutFrame = do
       randomStart n = sequence $ replicate n (randomRIO (0,1))
       randomStarts :: Int -> Int -> IO [[Double]]
       randomStarts n m = sequence $ replicate m (randomStart n)
-  starts <- liftIO $ randomStarts 8 50
-  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts
+  starts <- liftIO $ randomStarts 8 50 -- should be 8 50
+  mcmcResults <- liftIO $ traverse (fmap (drop 100) . TB.runMCMC mcmcData 1500) starts -- should be 1500
   let conf = S.cl95
       summaries = traverse (\n->summarize conf (!!n) mcmcResults) [0..7]         
   K.logLE K.Diagnostic $ "summaries: " <> (T.pack $ show summaries)

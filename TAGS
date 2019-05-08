@@ -32,35 +32,42 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,797
+./reports/turnout.hs,1012
 module Main Main10,11
 templateVars templateVars75,76
 loadCSVToFrame loadCSVToFrame94,95
-main main106,107
-main main107,108
-type DVotes DVotes161,162
-type RVotes RVotes162,163
-flattenVotes flattenVotes167,168
-type X X191,192
-type PredictedVotes PredictedVotes192,193
-modelNotesPreface modelNotesPreface194,195
-modelNotesPreface modelNotesPreface195,196
-modelNotesBayes modelNotesBayes211,212
-modelNotesBayes modelNotesBayes212,213
-P(P216,217
-\mu_k(\mu_k226,227
-v_k(v_k227,228
-p(p228,229
-turnoutModel turnoutModel245,246
-modelNotesRegression modelNotesRegression381,382
-modelNotesRegression modelNotesRegression382,383
-Given Given384,385
-D D387,388
-R R388,389
-\frac{D-R}{Q} \frac{D-R}{Q}395,396
-\sum_i \sum_i404,405
-We We407,408
-Now Now408,409
+beforeProbs beforeProbs106,107
+beforeProbs beforeProbs107,108
+[^1]: [^1]:147,148
+afterProbs afterProbs154,155
+afterProbs afterProbs155,156
+whatMatters whatMatters169,170
+whatMatters whatMatters170,171
+main main179,180
+main main180,181
+type DVotes DVotes236,237
+type RVotes RVotes237,238
+flattenVotes flattenVotes242,243
+type X X266,267
+type PredictedVotes PredictedVotes267,268
+modelNotesPreface modelNotesPreface269,270
+modelNotesPreface modelNotesPreface270,271
+modelNotesBayes modelNotesBayes286,287
+modelNotesBayes modelNotesBayes287,288
+P(P291,292
+\mu_k(\mu_k301,302
+v_k(v_k302,303
+p(p303,304
+turnoutModel turnoutModel320,321
+modelNotesRegression modelNotesRegression456,457
+modelNotesRegression modelNotesRegression457,458
+Given Given459,460
+D D462,463
+R R463,464
+\frac{D-R}{Q} \frac{D-R}{Q}470,471
+\sum_i \sum_i479,480
+We We482,483
+Now Now483,484
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
