@@ -3,9 +3,8 @@
 module BlueRipple.Model.TurnoutBayes where
 
 --import qualified Data.Vector.Unboxed           as V
-import qualified Statistics.Distribution.Binomial
-                                               as SB
-import qualified Statistics.Test.MannWhitneyU  as S
+--import qualified Statistics.Distribution.Binomial
+--                                               as SB
 import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( sequence )
@@ -25,8 +24,8 @@ data ObservedVote = ObservedVote { dem :: Int}
 data Pair a b = Pair !a !b
 
 
-observedVoteNormalParams :: [Int] -> [Double] -> (Double, Double)
-observedVoteNormalParams turnoutCounts demProbs =
+binomialNormalParams :: [Int] -> [Double] -> (Double, Double)
+binomialNormalParams turnoutCounts demProbs =
   let np          = zip turnoutCounts demProbs
       foldMeanVar = FL.Fold
         (\(Pair m v) (n, p) ->
@@ -37,15 +36,15 @@ observedVoteNormalParams turnoutCounts demProbs =
       Pair m v = FL.fold foldMeanVar np
   in  (m, v)
 
-logProbObservedVote :: [Double] -> (Int, [Int]) -> Double
-logProbObservedVote demProbs (demVote, turnoutCounts) =
-  let (m, v) = observedVoteNormalParams turnoutCounts demProbs
+logBinomialObservedVote :: [Double] -> (Int, [Int]) -> Double
+logBinomialObservedVote demProbs (demVote, turnoutCounts) =
+  let (m, v) = binomialNormalParams turnoutCounts demProbs
   in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
 
 
-gradLogProbObservedVote :: [Double] -> (Int, [Int]) -> [Double]
-gradLogProbObservedVote demProbs (demVote, turnoutCounts) =
-  let (m, v) = observedVoteNormalParams turnoutCounts demProbs
+gradLogBinomialObservedVote :: [Double] -> (Int, [Int]) -> [Double]
+gradLogBinomialObservedVote demProbs (demVote, turnoutCounts) =
+  let (m, v) = binomialNormalParams turnoutCounts demProbs
       np     = zip turnoutCounts demProbs
       dv     = fmap (\(n, p) -> let n' = realToFrac n in n' * (1 - 2 * p)) np
       dm     = turnoutCounts
@@ -56,18 +55,18 @@ gradLogProbObservedVote demProbs (demVote, turnoutCounts) =
       a4     = (a2 / v)
   in  fmap (\(dm, dv) -> (a1 + a3) * dv + a4 * realToFrac dm) dmv
 
-logProbObservedVotes :: [(Int, [Int])] -> [Double] -> Double
-logProbObservedVotes votesAndTurnout demProbs =
-  FL.fold FL.sum $ fmap (logProbObservedVote demProbs) votesAndTurnout
+logBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> Double
+logBinomialObservedVotes votesAndTurnout demProbs =
+  FL.fold FL.sum $ fmap (logBinomialObservedVote demProbs) votesAndTurnout
 
-gradLogProbObservedVotes :: [(Int, [Int])] -> [Double] -> [Double]
-gradLogProbObservedVotes votesAndTurnout demProbs =
+gradLogBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> [Double]
+gradLogBinomialObservedVotes votesAndTurnout demProbs =
   let n = length demProbs
       sumEach =
         sequenceA
           $ fmap (\n -> FL.premap (!! n) (FL.sum @Double))
           $ [0 .. (n - 1)]
-  in  FL.fold sumEach $ fmap (gradLogProbObservedVote demProbs) votesAndTurnout
+  in  FL.fold sumEach $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
 
 {-
 --gradLogProbObservedVotes2 :: [(Int, [Int])] -> [Double] -> [Double]
@@ -90,6 +89,7 @@ logBetaDist alpha beta x =
 betaPrior :: Double -> Double -> [Double] -> Double
 betaPrior a b xs = FL.fold FL.product $ fmap (betaDist a b) xs
 
+{-
 --logBetaPrior :: Double -> Double -> [Double] -> Double
 --logBetaPrior = FL.fold FL.product $ fmap (logBetabDist a b) xs
 
@@ -97,11 +97,12 @@ f :: [(Int, [Int])] -> [Double] -> Double
 f votesAndTurnout demProbs =
   let v = demProbs
   in  (exp $ logProbObservedVotes votesAndTurnout v) * (betaPrior 2 2 v)
+-}
 
-fLog :: [(Int, [Int])] -> [Double] -> Double
-fLog votesAndTurnout demProbs =
+logBinomialWithPrior :: [(Int, [Int])] -> [Double] -> Double
+logBinomialWithPrior votesAndTurnout demProbs =
   let v = demProbs
-  in  logProbObservedVotes votesAndTurnout v + log (betaPrior 2 2 v)
+  in  logBinomialObservedVotes votesAndTurnout v + log (betaPrior 2 2 v)
 
 type Sample = [Double]
 type Chain = [Sample]
@@ -113,8 +114,8 @@ runMCMC votesAndTurnout numIters start =
     start
     (MC.frequency [(1, MC.hamiltonian 0.0001 10), (1, MC.hamiltonian 0.00001 5)]
     )
-    (MC.Target (fLog votesAndTurnout)
-               (Just $ gradLogProbObservedVotes votesAndTurnout)
+    (MC.Target (logBinomialWithPrior votesAndTurnout)
+               (Just $ gradLogBinomialObservedVotes votesAndTurnout)
     )
 
 sequenceConcurrently :: Traversable t => t (IO a) -> IO (t a)
@@ -122,7 +123,6 @@ sequenceConcurrently actions = do
   let f :: IO a -> IO (CC.MVar a, CC.ThreadId)
       f action = do
         mvar     <- CC.newEmptyMVar
---        result   <- action
         threadId <- forkIO $ (action >>= CC.putMVar mvar)
         return (mvar, threadId)
       g :: (CC.MVar a, CC.ThreadId) -> IO a
@@ -143,22 +143,52 @@ runMany votesAndTurnout nParams nChains nSamplesPerChain nBurnPerChain = do
 --  traverse doEach starts
   sequenceConcurrently $ fmap doEach starts
 
--- look at marginals, both for information but also for diagnostics of the chain
-mannWhitneyUs
-  :: (Ord b, VU.Unbox b) => (a -> b) -> [a] -> [a] -> (Double, Double)
-mannWhitneyUs f c1 c2 =
-  let vOfF = VU.fromList . fmap f in S.mannWhitneyU (vOfF c1) (vOfF c2)
+{-
+data Normal = Normal { m :: Double, v :: Double } deriving (Show)
 
-mannWhitneyUTest
-  :: (Ord b, VU.Unbox b)
-  => S.PValue Double
-  -> (a -> b)
-  -> [a]
-  -> [a]
-  -> Maybe S.TestResult
-mannWhitneyUTest p f c1 c2 =
-  let vOfF = VU.fromList . fmap f
-  in  S.mannWhitneyUtest S.SamplesDiffer p (vOfF c1) (vOfF c2)
+instance Semigroup Normal where
+  (Normal m1 v1) <> (Normal m2 v2) = Normal (m1 + m2) (v1 + v2)
+  
+logNormalObservedVote :: [Normal] -> (Int, [Int]) -> Double
+logNormalObservedVote demProbs (demVote, turnoutCounts) =
+  let Normal m' v' = mconcat $ fmap (\(t,Normal m v) -> Normal (t*m) (v*m))$ zip turnoutCounts demProbs
+  in  negate $ log v'  + ((realToFrac demVote - m')) ^ 2 / (2 * v'))
+
+
+gradLogNormalObservedVote :: [Normal] -> (Int, [Int]) -> [Normal]
+gradLogNormalObservedVote demProbs (demVote, turnoutCounts) =
+  let Normal m' v' = mconcat $ fmap (\(t,Normal m v) -> Normal (t*m) (v*m))$ zip turnoutCounts demProbs
+      np     = zip turnoutCounts demProbs
+      dv     = fmap (\(n, p) -> let n' = realToFrac n in n' * (1 - 2 * p)) np
+      dm     = turnoutCounts
+      dmv    = zip dm dv
+      a1     = negate (1 / v) -- d (log v)
+      a2     = (realToFrac demVote - m)
+      a3     = (a2 * a2) / (2 * v * v)
+      a4     = (a2 / v)
+  in  fmap (\(dm, dv) -> (a1 + a3) * dv + a4 * realToFrac dm) dmv
+
+logBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> Double
+logBinomialObservedVotes votesAndTurnout demProbs =
+  FL.fold FL.sum $ fmap (logBinomialObservedVote demProbs) votesAndTurnout
+
+gradLogBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> [Double]
+gradLogBinomialObservedVotes votesAndTurnout demProbs =
+  let n = length demProbs
+      sumEach =
+        sequenceA
+          $ fmap (\n -> FL.premap (!! n) (FL.sum @Double))
+          $ [0 .. (n - 1)]
+  in  FL.fold sumEach $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
+
+-}
+{-
+--gradLogProbObservedVotes2 :: [(Int, [Int])] -> [Double] -> [Double]
+gradLogProbObservedVotes2 votesAndTurnout =
+  grad (logProbObservedVotes votesAndTurnout)
+-}
+
+
 
 {-
 data VPSummary = VPSummary { mean :: Double, stDev :: Double, rHat :: Double } deriving (Show)

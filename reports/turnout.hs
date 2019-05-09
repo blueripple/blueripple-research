@@ -50,7 +50,7 @@ import qualified Statistics.Types              as S
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
-import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf)
+import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
 import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, parameterPlotMany)
 
 import qualified Frames.ParseableTypes         as FP
@@ -257,7 +257,7 @@ main = do
             (concat $ [f "2012" pds2012] ++ [f "2014" pds2014] ++ [f "2016" pds2016] ++ [f "2018" pds2018])
           -- analyze results
           -- Mann-Whitney
-          let mwU = fmap (\f -> TB.mannWhitneyUTest (S.mkPValue 0.05) f c2016 c2018) $ fmap (\n-> (!!n)) [0..7]
+          let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f c2016 c2018) $ fmap (\n-> (!!n)) [0..7]
           K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)
         K.addMarkDown afterProbs
         K.addMarkDown whatMatters
