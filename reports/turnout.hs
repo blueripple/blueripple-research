@@ -225,7 +225,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = quick
+        let rp = goToTown
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
         (results2012M, c2012) <- turnoutModel rp 2012 identityDemographics2012Frame
