@@ -170,7 +170,7 @@ though it remains below 50%.
 [^2]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
 [^3]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
 [^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
-We will update this whenever the census publishes updated 2018 American Community Survey data.  
+We will update this once the census publishes updated 2018 American Community Survey data.  
 |]
 --------------------------------------------------------------------------------
 
@@ -204,7 +204,14 @@ Nationally, 2018 house races[^7] moved about 9 points towards the democrats in
 polls[^8] and XX points in the electoral results.
 Was that driven more by turnout (lower turnout by whites and more by
 non-whites, e.g.,) or by changing minds (e.g., the move in white democratic
-voting probability we see in the above results)?
+voting probability we see in the above results)?  In this simplistic model,
+The total change in votes from any group is a product of three factors, the
+change in the number of voters in that group, the change in turnout of that
+group and the change in the probability of voting for the democratic candidate.
+Below, we compare these changes for each group for
+2012 -> 2016 (both presidential elections),
+2014 -> 2018 (both midterm elections) and
+2016 -> 2018 (to look at the "Trump" effect).
 
 [^7]: <https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html>
 [^8]: <https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html>
@@ -294,6 +301,13 @@ main = do
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
+
+
+deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
+           =>([ParameterDetails], [Int], [Int]) -> ([ParameterDetails], [Int], [Int]) -> K.Sem r ()
+deltaTable = do
+  
+
 
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
@@ -396,15 +410,15 @@ P(\{D_k\}) = \sum_{\{p_i\}} P(\{D_k\}|{p_i}) P(\{p_i\})
 \end{equation}$
 
 
-* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we
-observed our evidence, *given* a specific set of $\{p_i\}$.
+* $P(\{D_k\}|\{p_i\})$, the probability that we
+observed our evidence, *given* a specific set of $\{p_i\}$ is a thing
+we can calculate:
 Our $p_i$ are the probability that one voter of type $i$ votes for
 the democrat.  We *assume*, for the sake of simplicity,
 that for each demographic group $i$, each voter's vote is like a coin
 flip where the coin comes up "Democrat" with probability $p_i$ and
 "Republican" with probability $1-p_i$. This distribution of single
 voter outcomes is known as the [Bernoulli distribution.][WP:Bernoulli].
-
 
 Given $V_i$ voters of that type, the distribution of democratic votes
 *from that type of voter*
@@ -437,25 +451,32 @@ various quantities of interest.
 In practice, it's hard to know when you have "enough" samples
 to have confidence in your expectations.
 Here we use an interval based "potential scale reduction factor"
-([PSRF][Ref:Convergence]), and a
-"multivariate potential scale reduction factor" ([MPRSF][Ref:MPRSF])
-each of which which entails starting many chains from
-different starting locations, computing something on each chain and on the
-combined chain and using longer chains until they are similar.
+([PSRF][Ref:Convergence]) to check the convergence of any one
+expectation, e,g, each $p_i$ in $\{p_i\}$, and a
+"multivariate potential scale reduction factor" ([MPSRF][Ref:MPSRF]) to
+make sure that the convergence holds for all possible linear combinations
+of the $\{p_i\}$.
+Calculation either PSRF or MPSRF entails starting several chains from
+different (random) starting locations, and comparing something like
+a variance on each chain to the same quantity on the combined chains. 
 This converges to one as the chains converge[^rhat] and a value below 1.1 is,
 conventionally, taken to indicate that the chains have converged
-"enough" for the expectation in question.
+"enough".
 
 [WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
 [WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
 [WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
 [WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
 [Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
-[Ref:MPRSF]: <https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf>
-[^rhat]: The details of this convergence are beyond our scope but just to get an intuition, imagine looking at some expectation on the entire chain.
-The interval on each chain is the maximum minus the mimumum and the mean of these intervals is also the mean maximum minus the mean minimum.
-And the mean maximum is clearly less than the maximum across all chains while the mean minimum is clearly larger than than the absolute minimum across
-all chains. So their ratio gets closer to 1 as the individual chains look more and more like the combined chain.
+[Ref:MPSRF]: <https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf>
+[^rhat]: The details of this convergence are beyond our scope but just to get an intuition:
+consider a PSRF computed by using (maximum - minimum) of some quantity.
+The mean of these intervals is also the mean maximum minus the mean minimum.
+And the mean maximum is clearly less than the maximum across all chains while the
+mean minimum is clearly larger than than the absolute minimum across
+all chains. So their ratio gets closer to 1 as the individual chains
+look more and more like the combined chain, which we take to mean that the chains
+have converged.
 |]
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }  
 turnoutModel

@@ -32,7 +32,7 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,1473
+./reports/turnout.hs,1535
 module Main Main10,11
 templateVars templateVars76,77
 loadCSVToFrame loadCSVToFrame95,96
@@ -43,41 +43,43 @@ afterProbs afterProbs177,178
 afterProbs afterProbs178,179
 whatMatters whatMatters198,199
 whatMatters whatMatters199,200
-quick quick213,214
-notAsQuick notAsQuick214,215
-thorough thorough215,216
-goToTown goToTown216,217
-main main219,220
-main main220,221
-type DVotes DVotes297,298
-type RVotes RVotes298,299
-flattenVotes flattenVotes303,304
-type X X327,328
-type PredictedVotes PredictedVotes328,329
-modelNotesPreface modelNotesPreface330,331
-modelNotesPreface modelNotesPreface331,332
-data about about353,354
-modelNotesBayes modelNotesBayes371,372
-modelNotesBayes modelNotesBayes372,373
-P(P379,380
-\mu_k(\mu_k424,425
-v_k(v_k425,426
-p(p426,427
-data RunParams RunParams459,460
-data RunParams = RunParams RunParams459,460
-data RunParams = RunParams { nChains nChains459,460
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain459,460
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain459,460
-turnoutModel turnoutModel468,469
-modelNotesRegression modelNotesRegression600,601
-modelNotesRegression modelNotesRegression601,602
-Given Given603,604
-D D606,607
-R R607,608
-\frac{D-R}{Q} \frac{D-R}{Q}614,615
-\sum_i \sum_i623,624
-We We626,627
-Now Now627,628
+quick quick220,221
+notAsQuick notAsQuick221,222
+thorough thorough222,223
+goToTown goToTown223,224
+main main226,227
+main main227,228
+deltaTable deltaTable305,306
+deltaTable deltaTable307,308
+type DVotes DVotes311,312
+type RVotes RVotes312,313
+flattenVotes flattenVotes317,318
+type X X341,342
+type PredictedVotes PredictedVotes342,343
+modelNotesPreface modelNotesPreface344,345
+modelNotesPreface modelNotesPreface345,346
+data about about367,368
+modelNotesBayes modelNotesBayes385,386
+modelNotesBayes modelNotesBayes386,387
+P(P393,394
+\mu_k(\mu_k438,439
+v_k(v_k439,440
+p(p440,441
+data RunParams RunParams480,481
+data RunParams = RunParams RunParams480,481
+data RunParams = RunParams { nChains nChains480,481
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain480,481
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain480,481
+turnoutModel turnoutModel489,490
+modelNotesRegression modelNotesRegression621,622
+modelNotesRegression modelNotesRegression622,623
+Given Given624,625
+D D627,628
+R R628,629
+\frac{D-R}{Q} \frac{D-R}{Q}635,636
+\sum_i \sum_i644,645
+We We647,648
+Now Now648,649
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -101,21 +103,21 @@ logBinomialObservedVotes logBinomialObservedVotes57,58
 logBinomialObservedVotes logBinomialObservedVotes58,59
 gradLogBinomialObservedVotes gradLogBinomialObservedVotes61,62
 gradLogBinomialObservedVotes gradLogBinomialObservedVotes62,63
-betaDist betaDist76,77
 betaDist betaDist77,78
-logBetaDist logBetaDist83,84
+betaDist betaDist78,79
 logBetaDist logBetaDist84,85
-betaPrior betaPrior88,89
+logBetaDist logBetaDist85,86
 betaPrior betaPrior89,90
-logBinomialWithPrior logBinomialWithPrior101,102
+betaPrior betaPrior90,91
 logBinomialWithPrior logBinomialWithPrior102,103
-type Sample Sample106,107
-type Chain Chain107,108
---runMCMC --runMCMC109,110
-runMCMC runMCMC110,111
-sequenceConcurrently sequenceConcurrently120,121
+logBinomialWithPrior logBinomialWithPrior103,104
+type Sample Sample107,108
+type Chain Chain108,109
+--runMCMC --runMCMC110,111
+runMCMC runMCMC111,112
 sequenceConcurrently sequenceConcurrently121,122
-runMany runMany133,134
+sequenceConcurrently sequenceConcurrently122,123
+runMany runMany134,135
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8

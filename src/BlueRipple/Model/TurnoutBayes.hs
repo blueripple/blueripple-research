@@ -66,7 +66,8 @@ gradLogBinomialObservedVotes votesAndTurnout demProbs =
         sequenceA
           $ fmap (\n -> FL.premap (!! n) (FL.sum @Double))
           $ [0 .. (n - 1)]
-  in  FL.fold sumEach $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
+  in  FL.fold sumEach
+        $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
 
 {-
 --gradLogProbObservedVotes2 :: [(Int, [Int])] -> [Double] -> [Double]
