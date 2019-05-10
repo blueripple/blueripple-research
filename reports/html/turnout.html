@@ -54,11 +54,11 @@ table td {
 
 <section id="explaining-the-blue-wave-of-2018" class="level2">
 <h2>Explaining the Blue Wave of 2018</h2>
-<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 were the result of changes in voter turnout vs. voters changing their minds? Answering this is difficult since we don't have very granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. Here, we attempt to use the election results themselves combined with demographic data about the populations in each district and turnout of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll use changes in that inferred probability as a proxy for the idea of people "changing their minds".</p>
+<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 was the result of changes in voter turnout vs. voters changing their minds? Answering this is difficult since we don't have granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. Here, we attempt to use the election results themselves combined with demographic data about the populations in each house district and turnout of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll use changes in that inferred probability as a proxy for the idea of people "changing their minds".</p>
 <p>We perform this inference using election results<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, demographic data<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> and turnout data<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> from 2012, 2014, 2016 and then for 2018<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>.</p>
 <ul>
-<li><p>In each year, we consider only districts that had a democrat and republican candidates. In 2018 that was 369 (of 438) districts, growing to 382 districts in 2018.</p></li>
-<li><p>Our demographic groupings are limited by the the categories recognized by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old. Those categories are denoted below as in the following table:</p></li>
+<li><p>In each year, we consider only districts that had a democrat and republican candidates. In 2010 that was 385 districts, in 2014 that was 351 districts, in 2016 that was 369 (of 438) districts, and it was 382 districts in 2018.</p></li>
+<li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old. Those categories are labeled below as in the following table:</p></li>
 </ul>
 <table>
 <thead>
@@ -103,7 +103,7 @@ table td {
 </tbody>
 </table>
 <ul>
-<li>More detail about the model and the techniques used to perform inference are in the "Model Notes" section below.</li>
+<li>More detail about the model and the techniques used to perform inference are in the <a href="#model-notes">Model Notes</a> section below.</li>
 </ul>
 <p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters. Support from white voters is substantially lower, about 40% across all ages and sexes. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%.</p>
 <figure id="VoteProbs">
@@ -119,227 +119,227 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.4156069404915732,
+                "ConfHi": 0.42073778748391766,
                 "Key": "2012",
-                "ConfLo": 0.414551295878636,
-                "Estimate": 0.4150795516779438,
+                "ConfLo": 0.40656322733211897,
+                "Estimate": 0.41448329985691057,
                 "Parameter": "YWM-2012"
             },
             {
-                "ConfHi": 0.3805698180659057,
+                "ConfHi": 0.5304937983662339,
                 "Key": "2012",
-                "ConfLo": 0.3795245927157585,
-                "Estimate": 0.38004886606168564,
+                "ConfLo": 0.3622247707626188,
+                "Estimate": 0.39627372005017747,
                 "Parameter": "OWM-2012"
             },
             {
-                "ConfHi": 0.41529563087485055,
+                "ConfHi": 0.4170928568972773,
                 "Key": "2012",
-                "ConfLo": 0.41428087203885966,
-                "Estimate": 0.4147887148347121,
+                "ConfLo": 0.412147982789383,
+                "Estimate": 0.4149134502168829,
                 "Parameter": "YWF-2012"
             },
             {
-                "ConfHi": 0.38690950204389657,
+                "ConfHi": 0.3998724178135979,
                 "Key": "2012",
-                "ConfLo": 0.3859409051981142,
-                "Estimate": 0.38642466896661093,
+                "ConfLo": 0.37555702507882915,
+                "Estimate": 0.3863276951345686,
                 "Parameter": "OWF-2012"
             },
             {
-                "ConfHi": 0.7861427520361963,
+                "ConfHi": 0.8935179989406249,
                 "Key": "2012",
-                "ConfLo": 0.7845343385155709,
-                "Estimate": 0.7853396304065415,
+                "ConfLo": 0.7839949541165229,
+                "Estimate": 0.8008572106297626,
                 "Parameter": "YNWM-2012"
             },
             {
-                "ConfHi": 0.8148698564152218,
+                "ConfHi": 0.815102550115535,
                 "Key": "2012",
-                "ConfLo": 0.8127436735434301,
-                "Estimate": 0.8138035370907403,
+                "ConfLo": 0.5001068098830358,
+                "Estimate": 0.7742544507836716,
                 "Parameter": "ONWM-2012"
             },
             {
-                "ConfHi": 0.8025062232783386,
+                "ConfHi": 0.8061358647619626,
                 "Key": "2012",
-                "ConfLo": 0.8010676121681614,
-                "Estimate": 0.8017862485940008,
+                "ConfLo": 0.7285171310262383,
+                "Estimate": 0.7966708572588879,
                 "Parameter": "YNWF-2012"
             },
             {
-                "ConfHi": 0.8491381118915087,
+                "ConfHi": 0.8498252766003083,
                 "Key": "2012",
-                "ConfLo": 0.8473025037967806,
-                "Estimate": 0.8482213778274642,
+                "ConfLo": 0.42063631889560926,
+                "Estimate": 0.7955777315391759,
                 "Parameter": "ONWF-2012"
             },
             {
-                "ConfHi": 0.38915247871506364,
+                "ConfHi": 0.5085433432167458,
                 "Key": "2014",
-                "ConfLo": 0.38767527522380857,
-                "Estimate": 0.38841443962331684,
+                "ConfLo": 0.37016002744468957,
+                "Estimate": 0.39886602207930977,
                 "Parameter": "YWM-2014"
             },
             {
-                "ConfHi": 0.36887705876425064,
+                "ConfHi": 0.49509765978384496,
                 "Key": "2014",
-                "ConfLo": 0.367694248175847,
-                "Estimate": 0.3682856323198188,
+                "ConfLo": 0.24948865602561154,
+                "Estimate": 0.3689447780757919,
                 "Parameter": "OWM-2014"
             },
             {
-                "ConfHi": 0.3866377771112947,
+                "ConfHi": 0.4075584398898058,
                 "Key": "2014",
-                "ConfLo": 0.38519668262725043,
-                "Estimate": 0.3859177844527414,
+                "ConfLo": 0.36600119888887606,
+                "Estimate": 0.3877120203965083,
                 "Parameter": "YWF-2014"
             },
             {
-                "ConfHi": 0.3726360569511813,
+                "ConfHi": 0.5044917210613905,
                 "Key": "2014",
-                "ConfLo": 0.3715358910464722,
-                "Estimate": 0.3720865492508117,
+                "ConfLo": 0.23112038559256295,
+                "Estimate": 0.3790104442502135,
                 "Parameter": "OWF-2014"
             },
             {
-                "ConfHi": 0.7473350902168616,
+                "ConfHi": 0.7499394186320776,
                 "Key": "2014",
-                "ConfLo": 0.7448470860001527,
-                "Estimate": 0.7460930752084919,
+                "ConfLo": 0.7277911422111363,
+                "Estimate": 0.7450704946937177,
                 "Parameter": "YNWM-2014"
             },
             {
-                "ConfHi": 0.780026366828204,
+                "ConfHi": 0.9437147554633275,
                 "Key": "2014",
-                "ConfLo": 0.777497561710199,
-                "Estimate": 0.7787630272525015,
+                "ConfLo": 0.7717935306743189,
+                "Estimate": 0.7936750013293846,
                 "Parameter": "ONWM-2014"
             },
             {
-                "ConfHi": 0.7667477333055606,
+                "ConfHi": 0.7713983011100848,
                 "Key": "2014",
-                "ConfLo": 0.7646479077453369,
-                "Estimate": 0.7656951900197135,
+                "ConfLo": 0.15101492949282774,
+                "Estimate": 0.713028914737842,
                 "Parameter": "YNWF-2014"
             },
             {
-                "ConfHi": 0.8115791658549534,
+                "ConfHi": 0.8158408132391167,
                 "Key": "2014",
-                "ConfLo": 0.8094077113308584,
-                "Estimate": 0.8104927633400841,
+                "ConfLo": 0.49147764962329565,
+                "Estimate": 0.7833354659960424,
                 "Parameter": "ONWF-2014"
             },
             {
-                "ConfHi": 0.39765439055202817,
+                "ConfHi": 0.3995202735952037,
                 "Key": "2016",
-                "ConfLo": 0.39665757533597124,
-                "Estimate": 0.3971579012877391,
+                "ConfLo": 0.34302423942445526,
+                "Estimate": 0.3927667601389364,
                 "Parameter": "YWM-2016"
             },
             {
-                "ConfHi": 0.35376026914815256,
+                "ConfHi": 0.6135157617092822,
                 "Key": "2016",
-                "ConfLo": 0.35273153978566923,
-                "Estimate": 0.3532462031680228,
+                "ConfLo": 0.3196744470930187,
+                "Estimate": 0.37635171873229134,
                 "Parameter": "OWM-2016"
             },
             {
-                "ConfHi": 0.40076516105784116,
+                "ConfHi": 0.5505790097624954,
                 "Key": "2016",
-                "ConfLo": 0.39979484615609906,
-                "Estimate": 0.4002799813777577,
+                "ConfLo": 0.38956963117229837,
+                "Estimate": 0.4133846221600565,
                 "Parameter": "YWF-2016"
             },
             {
-                "ConfHi": 0.3579341387675622,
+                "ConfHi": 0.3791932875603153,
                 "Key": "2016",
-                "ConfLo": 0.35698371741782936,
-                "Estimate": 0.35746017467901536,
+                "ConfLo": 0.18353733925728463,
+                "Estimate": 0.34275198712971006,
                 "Parameter": "OWF-2016"
             },
             {
-                "ConfHi": 0.8090826628488244,
+                "ConfHi": 0.8237788688587164,
                 "Key": "2016",
-                "ConfLo": 0.807464871776593,
-                "Estimate": 0.8082730262001473,
+                "ConfLo": 0.7158193104848423,
+                "Estimate": 0.8008369237766281,
                 "Parameter": "YNWM-2016"
             },
             {
-                "ConfHi": 0.845907214206663,
+                "ConfHi": 0.8536252951667854,
                 "Key": "2016",
-                "ConfLo": 0.8437780701069136,
-                "Estimate": 0.8448397605646841,
+                "ConfLo": 0.4252282075272569,
+                "Estimate": 0.8035395260401947,
                 "Parameter": "ONWM-2016"
             },
             {
-                "ConfHi": 0.8232924444017686,
+                "ConfHi": 0.8464211416518492,
                 "Key": "2016",
-                "ConfLo": 0.8218794475233417,
-                "Estimate": 0.8225883934738812,
+                "ConfLo": 0.7242130936001087,
+                "Estimate": 0.8151958045396512,
                 "Parameter": "YNWF-2016"
             },
             {
-                "ConfHi": 0.8716156539691629,
+                "ConfHi": 0.8827926935312399,
                 "Key": "2016",
-                "ConfLo": 0.8697487338682184,
-                "Estimate": 0.8706826431660313,
+                "ConfLo": 0.5920495430503694,
+                "Estimate": 0.8444103309011985,
                 "Parameter": "ONWF-2016"
             },
             {
-                "ConfHi": 0.43812906500624493,
+                "ConfHi": 0.46387248111598367,
                 "Key": "2018",
-                "ConfLo": 0.4368989061455153,
-                "Estimate": 0.43751170698259084,
+                "ConfLo": 0.36654528941069037,
+                "Estimate": 0.4292227719160574,
                 "Parameter": "YWM-2018"
             },
             {
-                "ConfHi": 0.4115014546219109,
+                "ConfHi": 0.6330617386185148,
                 "Key": "2018",
-                "ConfLo": 0.41035743822185905,
-                "Estimate": 0.41093062005947834,
+                "ConfLo": 0.3573814081803704,
+                "Estimate": 0.444572737444304,
                 "Parameter": "OWM-2018"
             },
             {
-                "ConfHi": 0.4354418845255479,
+                "ConfHi": 0.5360876812320492,
                 "Key": "2018",
-                "ConfLo": 0.4342121555050869,
-                "Estimate": 0.4348294876572638,
+                "ConfLo": 0.3812435337058973,
+                "Estimate": 0.4535429921156342,
                 "Parameter": "YWF-2018"
             },
             {
-                "ConfHi": 0.41336053068606493,
+                "ConfHi": 0.42937605892766767,
                 "Key": "2018",
-                "ConfLo": 0.41231601493236736,
-                "Estimate": 0.4128405184867558,
+                "ConfLo": 0.33626202249817866,
+                "Estimate": 0.4014164164244381,
                 "Parameter": "OWF-2018"
             },
             {
-                "ConfHi": 0.8190697763650123,
+                "ConfHi": 0.8522968120854639,
                 "Key": "2018",
-                "ConfLo": 0.8170904819819628,
-                "Estimate": 0.8180875791806534,
+                "ConfLo": 0.6134491055550289,
+                "Estimate": 0.7812639476290599,
                 "Parameter": "YNWM-2018"
             },
             {
-                "ConfHi": 0.8646674083550888,
+                "ConfHi": 0.8833637797983349,
                 "Key": "2018",
-                "ConfLo": 0.8622450757732127,
-                "Estimate": 0.8634565579325376,
+                "ConfLo": 0.5422328899923465,
+                "Estimate": 0.7967320044705962,
                 "Parameter": "ONWM-2018"
             },
             {
-                "ConfHi": 0.8368258863175617,
+                "ConfHi": 0.9515444241886503,
                 "Key": "2018",
-                "ConfLo": 0.8348560976290884,
-                "Estimate": 0.8358320276464616,
+                "ConfLo": 0.7779879644993759,
+                "Estimate": 0.8639422524974755,
                 "Parameter": "YNWF-2018"
             },
             {
-                "ConfHi": 0.8901706557566631,
+                "ConfHi": 0.9200235230153214,
                 "Key": "2018",
-                "ConfLo": 0.8880779736361257,
-                "Estimate": 0.8890990741492645,
+                "ConfLo": 0.4185726123402362,
+                "Estimate": 0.7947815807826042,
                 "Parameter": "ONWF-2018"
             }
         ]
@@ -406,18 +406,19 @@ vegaEmbed('#VoteProbs',vlSpec);</script>
 </section>
 <section id="model-notes" class="level2">
 <h2>Model Notes</h2>
-<p>Our goal is to use the 2016 house results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as the F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
-<p>For each congressional district where both major parties ran candidates (369 out of 438), we have census estimates of the number of people in each of our demographic categories. And from the census we have national-level turnout estimates for each of these groups as well. What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.</p>
-<p>We label our identity groups by a subscript <span class="math inline">\(i\)</span> and so, for each district, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), <span class="math inline">\(\{V_i\}\)</span>, the number of democratic votes, <span class="math inline">\(D\)</span>, republican votes, <span class="math inline">\(R\)</span> and total votes, <span class="math inline">\(T\)</span>, which may exceed <span class="math inline">\(D + R\)</span> since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter in the <span class="math inline">\(i\)</span>th group--who votes for a republican or democrat!!--will vote for the democratic candidate.</p>
+<p>Our goal is to use the house election results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as a F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
+<p>For each congressional district where both major parties ran candidates, we have census estimates of the number of people in each of our demographic categories. And from the census we have national-level turnout estimates for each of these groups as well. We assume that these turnout percentages hold exactly in each district, giving a number o voters in each group for each district.</p>
+<p>All we can observe is the sum of all the votes in the district, not the ones cast by each group separately. But since we have quite a few districts, each with a different mix of the demographic groups, we treat each as a new piece of data about how each group votes. What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.</p>
+<p>We label our identity groups by a subscript <span class="math inline">\(i\)</span> and so, for each district, <span class="math inline">\(d\)</span>, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), <span class="math inline">\(\{V_i\}_d\)</span>, the number of democratic votes, <span class="math inline">\(D_d\)</span>, republican votes, <span class="math inline">\(R_d\)</span> and total votes, <span class="math inline">\(T_d\)</span>, which may exceed <span class="math inline">\(D_d + R_d\)</span>, since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter (in any district) in the <span class="math inline">\(i\)</span>th group--who votes for a republican or democrat!!--will vote for the democratic candidate.</p>
 <ul>
-<li><p>Bayes theorem relates the probability of a model (our probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D_k\}\)</span>) to the likelihood of observing that data given the model and our prior knowledge about the model: <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D_k\}) = \frac{P(\{D_k\}|\{p_i\})P(\{p_i\})}{P(\{D_k\})} \end{equation}\)</span></p></li>
-<li><p>What makes this useful is that <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> is a thing we can compute. More on that later. <span class="math inline">\(P(\{p_i\})\)</span> is called a "prior" and amounts to an assumption about what we think we know about the parameters before we have seen any data. In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any <span class="math inline">\(p_i \in [0,1]\)</span> is equally likely.</p></li>
-<li><p><span class="math inline">\(P(\{D_k\})\)</span> is the unconditional probability that we observed our data. This is difficult to compute! But, thankfully, what we are usually interested in is just finding the <span class="math inline">\(\{p_i\}\)</span> which maximize <span class="math inline">\(P(\{p_i\}|\{D_k\})\)</span> and, since <span class="math inline">\(P(\{D_k\})\)</span> doesn't depend on <span class="math inline">\(\{p_i\}\)</span>, we don't need to know what it is.</p></li>
-<li><p>Back to the computation of <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, the probability that we observed our evidence, given a specific set of <span class="math inline">\(\{p_i\}\)</span>. Our <span class="math inline">\(p_i\)</span> are the probability that one voter of type <span class="math inline">\(i\)</span> votes for the democrat. Given <span class="math inline">\(V_i\)</span> voters of that type, the distribution of democratic votes <em>from that type of voter</em> is Bernoulli, with <span class="math inline">\(V_i\)</span> trials and <span class="math inline">\(p_i\)</span> probability of success. But <span class="math inline">\(V_i\)</span> is quite large! So we can approximate this with a normal distribution with mean <span class="math inline">\(V_i p_i\)</span> and variance <span class="math inline">\(V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation">Wikipedia</a>). However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types. Luckily, the sum of normally distributed random variables is also normal. So the distribution of democratic votes across all types of voters is also normal, with mean <span class="math inline">\(\sum_i V_i p_i\)</span> and variance <span class="math inline">\(\sum_i V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables">Wikipedia</a>). Thus we have <span class="math inline">\(P(D_k|\{p_i\})\)</span>, or, what amounts to the same thing, its density. But that means we also know <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> since that is just the product of the normal distribution for each <span class="math inline">\(D_k\)</span>:</p></li>
+<li><p>Bayes theorem relates the probability of a model (our probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D_k\}\)</span>) to the likelihood of observing that data given the model and our prior knowledge about the model: <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D_k\}) = \frac{P(\{D_k\}|\{p_i\})P(\{p_i\})}{P(\{D_k\})} \end{equation}\)</span> In this situation, <span class="math inline">\(P(\{p_i\}|\{D_k\})\)</span> is referred to as the "posterior" distribution.</p></li>
+<li><p><span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> is a thing we can compute. More on that later. <span class="math inline">\(P(\{p_i\})\)</span> is called a "prior" and amounts to an assumption about what we think we know about the parameters before we have seen any data. In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any <span class="math inline">\(p_i \in [0,1]\)</span> is equally likely.</p></li>
+<li><p><span class="math inline">\(P(\{D_k\})\)</span> is the unconditional probability of observing the specific outcome <span class="math inline">\(\{D_k\}\)</span> This is difficult to compute! Sometimes we can compute it by observing: <span class="math inline">\(\begin{equation} P(\{D_k\}) = \sum_{\{p_i\}} P(\{D_k\}|{p_i}) P(\{p_i\}) \end{equation}\)</span></p></li>
+<li><p>Back to the computation of <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, the probability that we observed our evidence, <em>given</em> a specific set of <span class="math inline">\(\{p_i\}\)</span>. Our <span class="math inline">\(p_i\)</span> are the probability that one voter of type <span class="math inline">\(i\)</span> votes for the democrat. We <em>assume</em>, for the sake of simplicity, that for each demographic group <span class="math inline">\(i\)</span>, each voter's vote is like a coin flip where the coin comes up "Democrat" with probability <span class="math inline">\(p_i\)</span> and "Republican" with probability <span class="math inline">\(1-p_i\)</span>. This distribution of single voter outcomes is known as the <a href="https://en.wikipedia.org/wiki/Bernoulli_distribution">Bernoulli distribution.</a>.</p></li>
 </ul>
-<p><span class="math inline">\(\begin{equation} \mu_k(\{p_i\}) = \sum_i V_i p_i\\ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\ p(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\ p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\}) \end{equation}\)</span></p>
+<p>Given <span class="math inline">\(V_i\)</span> voters of that type, the distribution of democratic votes <em>from that type of voter</em> is <a href="https://en.wikipedia.org/wiki/Binomial_distribution">Binomial</a> with <span class="math inline">\(V_i\)</span> trials and <span class="math inline">\(p_i\)</span> probability of success. But <span class="math inline">\(V_i\)</span> is quite large! So we can approximate this with a normal distribution with mean <span class="math inline">\(V_i p_i\)</span> and variance <span class="math inline">\(V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation">Wikipedia</a>). However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types. Luckily, the sum of normally distributed random variables follows a normal distribution. So the distribution of democratic votes across all types of voters is also normal, with mean <span class="math inline">\(\sum_i V_i p_i\)</span> and variance <span class="math inline">\(\sum_i V_i p_i (1 - p_i)\)</span> (See <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables">Wikipedia</a>). Thus we have <span class="math inline">\(P(D_k|\{p_i\})\)</span>, or, what amounts to the same thing, its density. But that means we also know <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> since that is just the product of the normal distribution for each <span class="math inline">\(D_k\)</span>: <span class="math inline">\(\begin{equation} \mu_k(\{p_i\}) = \sum_i V_i p_i\\ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\ p(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\ p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\}) \end{equation}\)</span></p>
 <ul>
-<li>MCMC creates chains of samples from the posterior distribution. Those samples are then used to compute expectations of various quantities of interest. In practice, it's hard to know when you have "enough" samples to have confidence in your expectations. Here we use a "potential scale reduction factor" (<a href="http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf">PSRF</a>), which entails starting many chains from different starting locations, computing the, e.g., 95%, confidence band on the combined chain and then the mean of those intervals on each chain and looking at the ratio. This converges to one as the chains converge<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> and a value below 1.1 is, conventionally, taken to indicate that the chains have converged "enough" for the expectation in question.</li>
+<li>Markov Chain Monte Carlo (MCMC) creates "chains" of samples from the the posterior distribution given a prior, <span class="math inline">\(P(\{p_i\})\)</span> and the conditional <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span> and a starting <span class="math inline">\(\{p_i\}\)</span>. Those samples are then used to compute expectations of various quantities of interest. In practice, it's hard to know when you have "enough" samples to have confidence in your expectations. Here we use an interval based "potential scale reduction factor" (<a href="http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf">PSRF</a>), and a "multivariate potential scale reduction factor" (<a href="https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf">MPRSF</a>) each of which which entails starting many chains from different starting locations, computing something on each chain and on the combined chain and using longer chains until they are similar. This converges to one as the chains converge<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a> and a value below 1.1 is, conventionally, taken to indicate that the chains have converged "enough" for the expectation in question.</li>
 </ul>
 </section>
 <section class="footnotes" role="doc-endnotes">

@@ -32,95 +32,90 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,1447
+./reports/turnout.hs,1473
 module Main Main10,11
 templateVars templateVars76,77
 loadCSVToFrame loadCSVToFrame95,96
-beforeProbs beforeProbs107,108
 beforeProbs beforeProbs108,109
-[^1]: [^1]:151,152
-afterProbs afterProbs159,160
-afterProbs afterProbs160,161
-whatMatters whatMatters174,175
-whatMatters whatMatters175,176
-quick quick184,185
-notAsQuick notAsQuick185,186
-thorough thorough186,187
-goToTown goToTown187,188
-main main190,191
-main main191,192
-type DVotes DVotes268,269
-type RVotes RVotes269,270
-flattenVotes flattenVotes274,275
-type X X298,299
-type PredictedVotes PredictedVotes299,300
-modelNotesPreface modelNotesPreface301,302
-modelNotesPreface modelNotesPreface302,303
-modelNotesBayes modelNotesBayes318,319
-modelNotesBayes modelNotesBayes319,320
-P(P323,324
-\mu_k(\mu_k333,334
-v_k(v_k334,335
-p(p335,336
-data RunParams RunParams355,356
-data RunParams = RunParams RunParams355,356
-data RunParams = RunParams { nChains nChains355,356
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain355,356
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain355,356
-turnoutModel turnoutModel364,365
-modelNotesRegression modelNotesRegression496,497
-modelNotesRegression modelNotesRegression497,498
-Given Given499,500
-D D502,503
-R R503,504
-\frac{D-R}{Q} \frac{D-R}{Q}510,511
-\sum_i \sum_i519,520
-We We522,523
-Now Now523,524
+beforeProbs beforeProbs109,110
+[^1]: [^1]:168,169
+afterProbs afterProbs177,178
+afterProbs afterProbs178,179
+whatMatters whatMatters198,199
+whatMatters whatMatters199,200
+quick quick213,214
+notAsQuick notAsQuick214,215
+thorough thorough215,216
+goToTown goToTown216,217
+main main219,220
+main main220,221
+type DVotes DVotes297,298
+type RVotes RVotes298,299
+flattenVotes flattenVotes303,304
+type X X327,328
+type PredictedVotes PredictedVotes328,329
+modelNotesPreface modelNotesPreface330,331
+modelNotesPreface modelNotesPreface331,332
+data about about353,354
+modelNotesBayes modelNotesBayes371,372
+modelNotesBayes modelNotesBayes372,373
+P(P379,380
+\mu_k(\mu_k424,425
+v_k(v_k425,426
+p(p426,427
+data RunParams RunParams459,460
+data RunParams = RunParams RunParams459,460
+data RunParams = RunParams { nChains nChains459,460
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain459,460
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain459,460
+turnoutModel turnoutModel468,469
+modelNotesRegression modelNotesRegression600,601
+modelNotesRegression modelNotesRegression601,602
+Given Given603,604
+D D606,607
+R R607,608
+\frac{D-R}{Q} \frac{D-R}{Q}614,615
+\sum_i \sum_i623,624
+We We626,627
+Now Now627,628
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/TurnoutBayes.hs,1413
+./src/BlueRipple/Model/TurnoutBayes.hs,1349
 module BlueRipple.Model.TurnoutBayes BlueRipple.Model.TurnoutBayes2,3
-data ObservedVote ObservedVote22,23
-data ObservedVote = ObservedVote ObservedVote22,23
-data ObservedVote = ObservedVote { dem dem22,23
-data Pair Pair24,25
-data Pair a b = Pair Pair24,25
-observedVoteNormalParams observedVoteNormalParams27,28
-observedVoteNormalParams observedVoteNormalParams28,29
-logProbObservedVote logProbObservedVote39,40
-logProbObservedVote logProbObservedVote40,41
-gradLogProbObservedVote gradLogProbObservedVote45,46
-gradLogProbObservedVote gradLogProbObservedVote46,47
-logProbObservedVotes logProbObservedVotes58,59
-logProbObservedVotes logProbObservedVotes59,60
-gradLogProbObservedVotes gradLogProbObservedVotes62,63
-gradLogProbObservedVotes gradLogProbObservedVotes63,64
+data ObservedVote ObservedVote21,22
+data ObservedVote = ObservedVote ObservedVote21,22
+data ObservedVote = ObservedVote { dem dem21,22
+data Pair Pair23,24
+data Pair a b = Pair Pair23,24
+binomialNormalParams binomialNormalParams26,27
+binomialNormalParams binomialNormalParams27,28
+logBinomialObservedVote logBinomialObservedVote38,39
+logBinomialObservedVote logBinomialObservedVote39,40
+gradLogBinomialObservedVote gradLogBinomialObservedVote44,45
+gradLogBinomialObservedVote gradLogBinomialObservedVote45,46
+logBinomialObservedVotes logBinomialObservedVotes57,58
+logBinomialObservedVotes logBinomialObservedVotes58,59
+gradLogBinomialObservedVotes gradLogBinomialObservedVotes61,62
+gradLogBinomialObservedVotes gradLogBinomialObservedVotes62,63
+betaDist betaDist76,77
 betaDist betaDist77,78
-betaDist betaDist78,79
+logBetaDist logBetaDist83,84
 logBetaDist logBetaDist84,85
-logBetaDist logBetaDist85,86
+betaPrior betaPrior88,89
 betaPrior betaPrior89,90
-betaPrior betaPrior90,91
---logBetaPrior --logBetaPrior92,93
---logBetaPrior --logBetaPrior93,94
-f f95,96
-f f96,97
-fLog fLog100,101
-fLog fLog101,102
-type Sample Sample105,106
-type Chain Chain106,107
---runMCMC --runMCMC108,109
-runMCMC runMCMC109,110
-sequenceConcurrently sequenceConcurrently119,120
+logBinomialWithPrior logBinomialWithPrior101,102
+logBinomialWithPrior logBinomialWithPrior102,103
+type Sample Sample106,107
+type Chain Chain107,108
+--runMCMC --runMCMC109,110
+runMCMC runMCMC110,111
 sequenceConcurrently sequenceConcurrently120,121
+sequenceConcurrently sequenceConcurrently121,122
 runMany runMany133,134
-mannWhitneyUs mannWhitneyUs148,149
-mannWhitneyUTest mannWhitneyUTest158,159
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8

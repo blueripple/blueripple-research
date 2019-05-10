@@ -105,29 +105,40 @@ loadCSVToFrame po fp filterF = do
   reportRows frame fp
   return frame
 
+--------------------------------------------------------------------------------
 beforeProbs :: T.Text
 beforeProbs = [here|
 ## Explaining the Blue Wave of 2018
 The 2018 house races were generally good for Democrats and Progressives.
-As we look to hold those gains and build on them there are an assortment of questions to ask about
-the 2018 results.  As an example, how much of the change from 2016 to 2018 were the result of
-changes in voter turnout vs. voters changing their minds?  Answering this is difficult since we don't have
-very granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people
-voted in each election.  Here, we attempt to use the election results themselves combined with demographic data about the
-populations in each district and turnout of various demographic groups to *infer* the likelihood of a given person voting
-for the democratic candidate in a house race.  We'll use changes in that inferred probability as a proxy for the idea of people
+As we look to hold those gains and build on them there are an assortment of
+questions to ask about the 2018 results.  As an example, how much of the change
+from 2016 to 2018 was the result of changes in voter turnout vs.
+voters changing their minds?  Answering this is difficult since we don't have
+granular turnout data and we have only exit-poll and post-election survey data
+to look at for data about how people voted in each election.  Here, we attempt
+to use the election results themselves combined with demographic data about the
+populations in each house district and turnout of various demographic groups
+to *infer* the likelihood of a given person voting
+for the democratic candidate in a house race.
+We'll use changes in that inferred probability as a proxy for the idea of people
 "changing their minds".
 
-We perform this inference using election results[^1], demographic data[^2] and turnout data[^3] from 2012, 2014, 2016 and then
+We perform this inference using election results[^1], demographic data[^2]
+and turnout data[^3] from 2012, 2014, 2016 and then
 for 2018[^4].  
 
-* In each year, we consider only districts that had a democrat and republican candidates.
-In 2018 that was 369 (of 438) districts, growing to 382 districts in 2018.
+* In each year, we consider only districts that had
+a democrat and republican candidates.
+In 2010 that was 385 districts, in 2014 that was 351 districts,
+in 2016 that was 369 (of 438) districts, and it was 382 districts in 2018.
 
-* Our demographic groupings are limited by the the categories recognized by the census
-and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with
-a need to keep the model small enough to make inference possible.  Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
-Male and Female and Young (<45) and Old. Those categories are denoted below as in the following table:
+* Our demographic groupings are limited by the the categories recognized
+and tabulated by the census and by our desire to balance specificity
+(using more groups so that we might recognize people's identity more precisely)
+with a need to keep the model small enough to make inference possible.
+Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
+Male and Female and Young (<45) and Old.
+Those categories are labeled below as in the following table:
 
 Label  Group
 ------ ------------------------
@@ -140,13 +151,19 @@ YWF    Young White Females
 OWM    Old White Males
 YWM    Young White Males
 
-* More detail about the model and the techniques used to perform inference are in the "Model Notes" section below.
+* More detail about the model and the techniques used to perform inference
+are in the [Model Notes](#model-notes) section below.
 
-The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates,
-running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters.
-Support from white voters is substantially lower, about 40% across all ages and sexes.
-As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support *grows*
-substantially across all ages and sexes, though it remains below 50%.
+The results are presented below. What stands out immediately is how strong
+the support of non-white voters is for democratic candidates,
+running at about 80% regardless of age or sex, though support
+is somewhat stronger among non-white female voters than non-white male voters.
+Support from white voters is substantially lower,
+about 40% across all ages and sexes.
+As we move from 2016 to 2018, the non-white support holds,
+maybe increasing slightly from its already high level,
+and white support *grows* substantially across all ages and sexes,
+though it remains below 50%.
 
 
 [^1]: Source: Mit Election Lab <https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2> 
@@ -155,16 +172,22 @@ substantially across all ages and sexes, though it remains below 50%.
 [^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
 We will update this whenever the census publishes updated 2018 American Community Survey data.  
 |]
+--------------------------------------------------------------------------------
 
-
+--------------------------------------------------------------------------------
 afterProbs :: T.Text
 afterProbs = [here|
-These results are broadly consistent with exit-polling from 2016 and 2018[^4]. But there is one confusing thing about these results:
+These results are broadly consistent with exit-polling from 2016 and 2018[^4].
+But there is one confusing thing about these results:
 
-* The numbers are not always consistent with exit-polling[^5] and after-election surveys[^6], especially when it comes to young white females.
-Exit-polls and after-election surveys show YWF voting for Hillary Clinton at slightly over 50% (??).
-but this model shows a much lower number, closer to 40%.  The model may be wrong, YWF's may have been more likely to split their ticket,
-voting for Clinton but also for a Republican for the house seat, or the exit-poll or after-election survey data may be incorrect.
+* The numbers are not always consistent with exit-polling[^5]
+and after-election surveys[^6], especially when it comes to young white females.
+Exit-polls and after-election surveys show YWF voting for Hillary Clinton
+at slightly over 50% (??).
+but this model shows a much lower number, closer to 40%.  The model may be wrong,
+YWF's may have been more likely to split their ticket, voting for Clinton but
+also for a Republican for the house seat, or the exit-poll or after-election
+survey data may be incorrect.
 
 
 [^4]: <https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
@@ -172,20 +195,26 @@ voting for Clinton but also for a Republican for the house seat, or the exit-pol
 [^6]: <http://www.rasmussenreports.com/public_content/political_commentary/commentary_by_geoffrey_skelley/another_look_back_at_2016>
 |]
 
+--------------------------------------------------------------------------------  
 whatMatters :: T.Text
 whatMatters = [here|
-Now we have an estimate of how people's choices changed between 2016 and 2018.  But that's only one part of the story.  The other change is voter turnout.
-Nationally, 2018 house races[^7] moved about 9 points towards the democrats in polls[^8] and XX points in the electoral results.  Was that driven more by turnout
- (lower turnout by whites and more by non-whites, e.g.,) or by changing minds (e.g., the move in white democratic voting probability we see in the above results)?
+Now we have an estimate of how people's choices changed between 2016 and 2018.
+But that's only one part of the story.  The other change is voter turnout.
+Nationally, 2018 house races[^7] moved about 9 points towards the democrats in
+polls[^8] and XX points in the electoral results.
+Was that driven more by turnout (lower turnout by whites and more by
+non-whites, e.g.,) or by changing minds (e.g., the move in white democratic
+voting probability we see in the above results)?
 
 [^7]: <https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html>
 [^8]: <https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html>
 |]
-
-quick = RunParams 5 500 50
+--------------------------------------------------------------------------------
+  
+quick = RunParams 2 500 50
 notAsQuick = RunParams 10 500 100
-thorough = RunParams 5 1500 100
-goToTown = RunParams 10 30000 300
+thorough = RunParams 5 5000 500
+goToTown = RunParams 10 30000 3000
 
   
 main :: IO ()
@@ -298,38 +327,100 @@ we had high turnout and we need to scale up or else that difference will cause p
 
 type X = "X" F.:-> Double
 type PredictedVotes = "PredictedVotes" F.:-> Int
-
+--------------------------------------------------------------------------------
 modelNotesPreface :: T.Text
 modelNotesPreface = [here|
 ## Model Notes
-Our goal is to use the 2016 house results to fit a very simple model of the electorate.  We consider the electorate as having eight
-"identity" groups, split by sex (the census only records this as the F/M binary), age, young (<45) and old (>45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.
+Our goal is to use the house election results to fit a very simple model of the
+electorate.  We consider the electorate as having eight
+"identity" groups, split by sex (the census only records this as a F/M binary),
+age, young (<45) and old (>45) and racial identity (white or non-white).
+We recognize that these categories are limiting and much too simple.
+But we believe it's a reasonable starting point, as a balance between inclusiveness
+and having way too many variables.
 
-For each congressional district where both major parties ran candidates (369 out of 438), we have census estimates of the number of people in each of our demographic categories.  And from the census we have national-level turnout estimates for each of these groups as well.
-What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.
+For each congressional district where both major parties ran candidates, we have
+census estimates of the number of people in each of our demographic categories.
+And from the census we have national-level turnout estimates for each of these
+groups as well. We assume that these turnout percentages
+hold exactly in each district, giving a number o voters in each group
+for each district.
 
-We label our identity groups by a subscript $i$ and so, for each district, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), $\{V_i\}$, the number of democratic votes, $D$,
-republican votes, $R$ and total votes, $T$, which may exceed $D + R$ since there may be third party candidates. 
-For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. And now we want to estimate $p_i$, the probability that
-a voter in the $i$th group--who votes for a republican or democrat!!--will vote for the democratic candidate.                     
+All we can observe is the sum of all the votes in the district,
+not the ones cast by each
+group separately.  But since we have quite a few districts,
+each with a different mix of
+the demographic groups,  we treat each as a new piece of
+data about how each group votes.
+What we want to estimate, is how likely a voter in each group is of voting for the
+democratic candidate in a contested race.
+
+We label our identity groups by a subscript $i$ and so,
+for each district, $d$, we have the set of expected voters
+(the number of people in each group, multiplied by the turnout for that group),
+$\{V_i\}_d$, the number of democratic votes, $D_d$,
+republican votes, $R_d$ and total votes, $T_d$, which may exceed $D_d + R_d$,
+since there may be third party candidates. For the sake of simplicity,
+we assume that all groups are equally likely to vote for a third party candidate.
+And now we want to estimate $p_i$, the probability that
+a voter (in any district) in the $i$th group--who votes for a
+republican or democrat!!--will vote for the democratic candidate.                     
 
 |]
 
-
+--------------------------------------------------------------------------------
 modelNotesBayes :: T.Text
 modelNotesBayes = modelNotesPreface <> "\n\n" <> [here|
 
-* Bayes theorem relates the probability of a model (our probabilities $\{p_i\}$), given the observed data (the number of democratic votes recorded in each district, $\{D_k\}$) to the likelihood of observing that data given the model and our prior knowledge about the model:
+* Bayes theorem relates the probability of a model (our probabilities $\{p_i\}$),
+given the observed data (the number of democratic votes recorded in each district,
+$\{D_k\}$) to the likelihood of observing that data given the model
+and our prior knowledge about the model:
 $\begin{equation}
 P(\{p_i\}|\{D_k\}) = \frac{P(\{D_k\}|\{p_i\})P(\{p_i\})}{P(\{D_k\})}
 \end{equation}$
+In this situation, $P(\{p_i\}|\{D_k\})$ is referred to as the
+"posterior" distribution.
 
-* What makes this useful is that $P(\{D_k\}|\{p_i\})$ is a thing we can compute. More on that later. $P(\{p_i\})$ is called a "prior" and amounts to an assumption about what we think we know about the parameters before we have seen any data.  In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any $p_i \in [0,1]$ is equally likely.
+* $P(\{D_k\}|\{p_i\})$ is a thing we can compute. More on that later.
+$P(\{p_i\})$ is called a "prior" and amounts to an assumption about
+what we think we know about the parameters before we have seen any data.
+In practice, this can often be set to something very boring, in our case,
+we will assume that our prior is just that any $p_i \in [0,1]$ is equally likely.
 
-* $P(\{D_k\})$ is the unconditional probability that we observed our data.  This is difficult to compute! But, thankfully, what we are usually interested in is just finding the $\{p_i\}$ which maximize $P(\{p_i\}|\{D_k\})$ and, since $P(\{D_k\})$ doesn't depend on $\{p_i\}$, we don't need to know what it is.
+* $P(\{D_k\})$ is the unconditional probability of observing
+the specific outcome $\{D_k\}$
+This is difficult to compute! Sometimes we can compute it by observing:
+$\begin{equation}
+P(\{D_k\}) = \sum_{\{p_i\}} P(\{D_k\}|{p_i}) P(\{p_i\})
+\end{equation}$
 
-* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we observed our evidence, given a specific set of $\{p_i\}$.  Our $p_i$ are the probability that one voter of type $i$ votes for the democrat.  Given $V_i$ voters of that type, the distribution of democratic votes *from that type of voter* is Bernoulli, with $V_i$ trials and $p_i$ probability of success.  But $V_i$ is quite large! So we can approximate this with a normal distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$ (See [Wikipedia][WP:Binomial]).  However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types.  Luckily, the sum of normally distributed random variables is also normal.  So the distribution of democratic votes across all types of voters is also normal, with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$ (See [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or, what amounts to the same thing, its density. But that means we also know $P(\{D_k\}|\{p_i\})$ since that is just the product of the normal distribution for each $D_k$:
 
+* Back to the computation of $P(\{D_k\}|\{p_i\})$, the probability that we
+observed our evidence, *given* a specific set of $\{p_i\}$.
+Our $p_i$ are the probability that one voter of type $i$ votes for
+the democrat.  We *assume*, for the sake of simplicity,
+that for each demographic group $i$, each voter's vote is like a coin
+flip where the coin comes up "Democrat" with probability $p_i$ and
+"Republican" with probability $1-p_i$. This distribution of single
+voter outcomes is known as the [Bernoulli distribution.][WP:Bernoulli].
+
+
+Given $V_i$ voters of that type, the distribution of democratic votes
+*from that type of voter*
+is [Binomial][WP:Binomial] with $V_i$ trials and $p_i$ probability of success.
+But $V_i$ is quite large! So we can approximate this with a normal
+distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$
+(See [Wikipedia][WP:BinomialApprox]).  However, we can't observe the number
+of votes from just one type of voter. We can only observe the sum over all types.
+Luckily, the sum of normally distributed random variables follows a  normal
+distribution.
+So the distribution of democratic votes across all types of voters is also normal,
+with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$
+(See [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or,
+what amounts to the same thing, its density.
+But that means we also know $P(\{D_k\}|\{p_i\})$ since that is just the
+product of the normal distribution for each $D_k$:
 $\begin{equation}
 \mu_k(\{p_i\}) = \sum_i V_i p_i\\
 v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
@@ -337,17 +428,30 @@ p(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_
 p(\{D_k\}|\{p_i\}) = \Pi_k p(D_k|\{p_i\})
 \end{equation}$
 
+* Markov Chain Monte Carlo (MCMC) creates "chains" of samples
+from the the posterior
+distribution given a prior, $P(\{p_i\})$ and
+the conditional $P(\{D_k\}|\{p_i\})$ and a starting $\{p_i\}$.
+Those samples are then used to compute expectations of
+various quantities of interest.
+In practice, it's hard to know when you have "enough" samples
+to have confidence in your expectations.
+Here we use an interval based "potential scale reduction factor"
+([PSRF][Ref:Convergence]), and a
+"multivariate potential scale reduction factor" ([MPRSF][Ref:MPRSF])
+each of which which entails starting many chains from
+different starting locations, computing something on each chain and on the
+combined chain and using longer chains until they are similar.
+This converges to one as the chains converge[^rhat] and a value below 1.1 is,
+conventionally, taken to indicate that the chains have converged
+"enough" for the expectation in question.
 
-* MCMC creates chains of samples from the posterior distribution.  Those samples are then used to compute expectations of various quantities of interest.
-In practice, it's hard to know when you have "enough" samples to have confidence in your expectations.
-Here we use a "potential scale reduction factor" ([PSRF][Ref:Convergence]), which entails starting many chains from different starting locations,
-computing the, e.g., 95%, confidence band on the combined chain and then the mean of those intervals on each chain
-and looking at the ratio. This converges to one as the chains converge[^rhat] and a value below 1.1 is,
-conventionally, taken to indicate that the chains have converged "enough" for the expectation in question.
-
-[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
+[WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
+[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
+[WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
 [WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
 [Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
+[Ref:MPRSF]: <https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf>
 [^rhat]: The details of this convergence are beyond our scope but just to get an intuition, imagine looking at some expectation on the entire chain.
 The interval on each chain is the maximum minus the mimumum and the mean of these intervals is also the mean maximum minus the mean minimum.
 And the mean maximum is clearly less than the maximum across all chains while the mean minimum is clearly larger than than the absolute minimum across
