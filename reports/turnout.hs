@@ -264,36 +264,39 @@ main = do
         let rp = goToTown
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
-        (results2012M, c2012) <- turnoutModel rp 2012 identityDemographics2012Frame
-                                 houseElectionsFrame
-                                 turnoutFrame
+        res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
+                   houseElectionsFrame
+                   turnoutFrame
         K.logLE K.Info $ "inferring for 2014"
-        (results2014M, c2014) <- turnoutModel rp 2014 identityDemographics2014Frame
-                                 houseElectionsFrame
-                                 turnoutFrame
+        res2014 <- turnoutModel rp 2014 identityDemographics2014Frame
+                   houseElectionsFrame
+                   turnoutFrame
         K.logLE K.Info $ "inferring for 2016"
-        (results2016M, c2016) <- turnoutModel rp 2016 identityDemographics2016Frame
-                                 houseElectionsFrame
-                                 turnoutFrame
-        K.logLE K.Info $ "inferring for 2016"
-        (results2018M, c2018) <- turnoutModel rp 2018 identityDemographics2017Frame
-                                 houseElectionsFrame
-                                 turnoutFrame
+        res2016 <- turnoutModel rp 2016 identityDemographics2016Frame
+                   houseElectionsFrame
+                   turnoutFrame
+        K.logLE K.Info $ "inferring for 2018"
+        res2018 <- turnoutModel rp 2018 identityDemographics2017Frame
+                    houseElectionsFrame
+                    turnoutFrame
         let names = ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"]
             toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
-        when (isJust results2012M && isJust results2014M && isJust results2016M && isJust results2018M) $ do
-          let pds2012 = fmap toPD $ zip (fmap (<> "-2012") names) (fromJust results2012M)
-              pds2014 = fmap toPD $ zip (fmap (<> "-2014") names) (fromJust results2014M)
-              pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust results2016M)
-              pds2018 = fmap toPD $ zip (fmap (<> "-2018") names) (fromJust results2018M)
+        when (isJust (modeled res2012)
+              && isJust (modeled res2014)
+              && isJust (modeled res2016)
+              && isJust (modeled res2018)) $ do
+          let pds2012 = fmap toPD $ zip (fmap (<> "-2012") names) (fromJust (modeled res2012))
+              pds2014 = fmap toPD $ zip (fmap (<> "-2014") names) (fromJust (modeled res2014))
+              pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust (modeled res2016))
+              pds2018 = fmap toPD $ zip (fmap (<> "-2018") names) (fromJust (modeled res2018))
               f x = fmap (\y -> (x,y))
           K.addHvega "VoteProbs" $ parameterPlotMany id
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
             (concat $ [f "2012" pds2012] ++ [f "2014" pds2014] ++ [f "2016" pds2016] ++ [f "2018" pds2018])
-          -- analyze results
-          -- Mann-Whitney
-          let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f c2016 c2018) $ fmap (\n-> (!!n)) [0..7]
+            -- analyze results
+            -- Mann-Whitney
+          let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f (mcmcChain res2016) (mcmcChain res2018)) $ fmap (\n-> (!!n)) [0..7]
           K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)
         K.addMarkDown afterProbs
         K.addMarkDown whatMatters
@@ -303,11 +306,25 @@ main = do
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
 
 
-deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-           =>([ParameterDetails], [Int], [Int]) -> ([ParameterDetails], [Int], [Int]) -> K.Sem r ()
-deltaTable = do
-  
+{-
+data DeltaTableRow = DeltaTableRow { dtrGroup :: Text, dtrFromPop :: Int, dtrFromTurnout :: Int, dtrFromOpinion :: Int, dtrTotal :: Int, dtrPct :: Double }
 
+deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
+           => ([ParameterDetails], [Int], [Int])
+           -> ([ParameterDetails], [Int], [Int])
+           -> K.Sem r ()
+deltaTable (probsA, popsA, turnoutA) (probsB, popsB, turnoutB) = do
+  -- we only produce the table if all lists are the same length
+  -- again, we need some error throwing capacity here!
+  let n = length probsA
+      f x = (length x == n)
+      dataGood = f popsA && f turnoutA && f probsB && f popsB && f turnoutB
+      colonnade = 
+  when (dataGood) $ do
+    tableHeader = "Group    |  From Population |  From Turnout |  From Opinion |  Total |  % All Votes\n" <>
+                  "________   ________________   _____________   _____________   ______   ____________\n"
+    oneRow
+-}
 
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
@@ -338,9 +355,6 @@ We'll be using expected voters to explain vote difference.  But if overall expec
 we had high turnout and we need to scale up or else that difference will cause probs to be artificially elevated
 -}
 
-
-type X = "X" F.:-> Double
-type PredictedVotes = "PredictedVotes" F.:-> Int
 --------------------------------------------------------------------------------
 modelNotesPreface :: T.Text
 modelNotesPreface = [here|
@@ -478,7 +492,56 @@ all chains. So their ratio gets closer to 1 as the individual chains
 look more and more like the combined chain, which we take to mean that the chains
 have converged.
 |]
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }  
+  
+type X = "X" F.:-> Double
+type PredictedVotes = "PredictedVotes" F.:-> Int
+type ScaledDVotes = "ScaledDVotes" F.:-> Int
+type ScaledRVotes = "ScaledRVotes" F.:-> Int
+type PopScale    = "PopScale" F.:-> Double -- (DVotes + RVotes)/sum (pop_i * turnout_i)
+
+type IdentityCounts = '[ OldNonWhiteFemale
+                       , OldNonWhiteMale
+                       , YoungNonWhiteFemale
+                       , YoungNonWhiteMale
+                       , OldWhiteFemale
+                       , OldWhiteMale
+                       , YoungWhiteFemale
+                       , YoungWhiteMale
+                       ]
+
+
+sumScaledPopF :: FL.Fold (F.Record ('[PopScale] V.++ IdentityCounts)) (F.Record IdentityCounts)
+sumScaledPopF =
+  FF.sequenceRecFold 
+  $ FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteMale r))
+  V.:& V.RNil
+{-
+These population numbers are scaled so that when multiplied by turnout we get the actual number of D + R votes in the
+district
+-}
+data TurnoutResults a = TurnoutResults
+  {
+    scaledVotesAndPopByDistrictF :: F.FrameRec ([ StateAbbreviation
+                                                , CongressionalDistrict
+                                                , PopScale
+                                                , DVotes
+                                                , RVotes
+                                                ] V.++ IdentityCounts),
+    scaledPopTotal :: F.Record IdentityCounts,
+    nationalTurnout :: M.Map T.Text (Int -> Int),
+    modeled :: Maybe [a],
+    mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
+  }
+    
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
+
 turnoutModel
   :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
   => RunParams
@@ -486,7 +549,7 @@ turnoutModel
   -> F.Frame IdentityDemographics
   -> F.Frame HouseElections
   -> F.Frame Turnout
-  -> K.Sem r (Maybe [ExpectationSummary Double], TB.Chain)
+  -> K.Sem r (TurnoutResults (ExpectationSummary Double)) --(Maybe [ExpectationSummary Double], TB.Chain)
 turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
 
@@ -583,21 +646,30 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     <> " rows. (contested races)"
   let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
                          + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
+      predictedVotesField = FT.recordSingleton @PredictedVotes . predictedVotes
+{-      
       scaledDVotes r =
         let vD = F.rgetField @DVotes r
             vR = F.rgetField @RVotes r
+            vT = F.rgetField @TotalVotes
         in FT.recordSingleton @X $ 0.5 * (realToFrac $ predictedVotes r) * (1+ (realToFrac $ vD - vR)/(realToFrac $ vD + vR))
-      opposedVBIRWithTargetF = fmap (FT.mutate scaledDVotes . FT.mutate (\r -> FT.recordSingleton @PredictedVotes $ predictedVotes r)) opposedVBIRF      
+-}
+      vD = F.rgetField @DVotes
+      vR = F.rgetField @RVotes
+      popScale r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (predictedVotes r))
+      opposedVBIRWithTargetF = fmap (FT.mutate predictedVotesField . FT.mutate popScale) opposedVBIRF      
   K.logLE K.Diagnostic
     $  "Final frame: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
-  let forMCMC r =
+  let resFrame = fmap (F.rcast @([StateAbbreviation, CongressionalDistrict, PopScale, DVotes, RVotes] V.++ IdentityCounts)) opposedVBIRWithTargetF      
+      forMCMC r =
         let dVotes = F.rgetField @DVotes r
             rVotes = F.rgetField @RVotes r
             totalVotes = F.rgetField @Totalvotes r
             predictedVotes = F.rgetField @PredictedVotes r
-            scaledDVotes = realToFrac dVotes * (realToFrac predictedVotes/realToFrac totalVotes)
-            scaledRVotes = realToFrac rVotes * (realToFrac predictedVotes/realToFrac totalVotes)
+            voteScale = 1/ F.rgetField @PopScale r
+            scaledDVotes = realToFrac dVotes * voteScale
+            scaledRVotes = realToFrac rVotes * voteScale 
         in (round scaledDVotes,
              [
                F.rgetField @YoungWhiteMale r
@@ -615,8 +687,9 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   let conf = S.cl95
       summaries = traverse (\n->summarize conf (!!n) mcmcResults) [0..7]         
   K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
-  K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..7]) mcmcResults)
-  return (summaries, L.concat mcmcResults)
+  K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..7]) mcmcResults)  
+  let scaledPopRec = FL.fold sumScaledPopF $ fmap F.rcast resFrame
+  return $ TurnoutResults resFrame scaledPopRec scaleMap summaries (L.concat mcmcResults)  
 
 
 modelNotesRegression :: T.Text
