@@ -252,7 +252,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = quick
+        let rp = goToTown
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -297,6 +297,7 @@ main = do
             -- Mann-Whitney
           let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f (mcmcChain res2016) (mcmcChain res2018)) $ fmap (\n-> (!!n)) [0..7]
           K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)
+          deltaTable tr2016 tr2018
         K.addMarkDown afterProbs
         K.addMarkDown whatMatters
         K.addMarkDown modelNotesBayes
@@ -321,14 +322,14 @@ deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
            -> K.Sem r ()
 deltaTable trA trB = do
   let groups = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
-      popA :: [Int] = V.recordToList $ V.rmapf (V.Const . V.getField) $ F.rcast @IdentityCounts $ scaledPopTotal trA 
-      popB :: [Int] = V.recordToList $ F.rcast @IdentityCounts $ scaledPopTotal trA
+      popA :: [Int] = V.recordToList $ V.rmapMethod @((~) Int) (V.Const . V.getIdentity) $ V.stripNames $ F.rcast @IdentityCounts $ scaledPopTotal trA 
+      popB :: [Int] = V.recordToList $ V.rmapMethod @((~) Int) (V.Const . V.getIdentity) $ V.stripNames $ F.rcast @IdentityCounts $ scaledPopTotal trB
       popTotal = FL.fold FL.sum popA
-      makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <$> (Just 1000))) groups
+      makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <*> (Just 1000))) groups
       turnoutA = makeTurnoutList $ nationalTurnout trA
       turnoutB = makeTurnoutList $ nationalTurnout trB
-      probA = I.runIdentity $ modeled trA
-      probB = I.runIdentity $ modeled trB
+      probA = fmap value $ I.runIdentity $ modeled trA
+      probB = fmap value $ I.runIdentity $ modeled trB
       makeDTR n =
         let pop0 = popA !! n
             dPop = (popB !! n) - (popA !! n)
@@ -336,9 +337,9 @@ deltaTable trA trB = do
             dTurnout = (turnoutB !! n) - (turnoutA !! n)
             prob0 = (probA !! n)
             dProb = (probB !! n) - (probA !! n)
-            dtrN = dPop * turnout0 * prob0
-            dtrT = pop0 * dTurnout * prob0
-            dtrO = pop0 * turnout0 * dProb
+            dtrN = round $ realToFrac dPop * turnout0 * prob0
+            dtrT = round $ realToFrac pop0 * dTurnout * prob0
+            dtrO = round $ realToFrac pop0 * turnout0 * dProb
             dtrTotal = dtrN + dtrT + dtrO
         in DeltaTableRow (groups !! n) pop0 dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac popTotal)
       deltaTableRows = fmap makeDTR [0..7]
