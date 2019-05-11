@@ -54,12 +54,12 @@ table td {
 
 <section id="explaining-the-blue-wave-of-2018" class="level2">
 <h2>Explaining the Blue Wave of 2018</h2>
-<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 was the result of changes in voter turnout vs. voters changing their minds? Answering this is difficult since we don't have granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. Here, we attempt to use the election results themselves combined with demographic data about the populations in each house district and turnout of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll use changes in that inferred probability as a proxy for the idea of people "changing their minds".</p>
+<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 was the result of changes in voter turnout vs. voters changing their opinion? Answering this is difficult since we don't have granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. Here, we attempt to use the election results themselves combined with demographic data about the populations in each house district and turnout of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll use changes in that inferred probability as a proxy for the idea of people "changing their minds".</p>
 <p>We perform this inference using election results<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, demographic data<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> and turnout data<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> from 2012, 2014, 2016 and then for 2018<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>.</p>
 <ul>
 <li><p>In each year, we consider only districts that had a democrat and republican candidates. In 2010 that was 385 districts, in 2014 that was 351 districts, in 2016 that was 369 (of 438) districts, and it was 382 districts in 2018.</p></li>
 <li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old.</p></li>
-<li><p>More detail about the model and the techniques used to perform inference are in the <a href="#model-notes">Model Notes</a> section below.</p></li>
+<li><p>More detail about the opinion model and the techniques used to perform inference are in the <a href="#opinion-model-notes">Model Notes</a> section below.</p></li>
 </ul>
 <p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters. Support from white voters is substantially lower, about 40% across all ages and sexes. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%.</p>
 <figure id="VoteProbs">
@@ -75,227 +75,227 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.8676117391575031,
+                "ConfHi": 0.8674864552509928,
                 "Key": "2012",
-                "ConfLo": 0.8656248984397967,
-                "Estimate": 0.8663580339454742,
+                "ConfLo": 0.8657666021168263,
+                "Estimate": 0.8666283609012939,
                 "Parameter": "OldNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8339481504108034,
+                "ConfHi": 0.8339802185764361,
                 "Key": "2012",
-                "ConfLo": 0.8319022250731856,
-                "Estimate": 0.832874087503968,
+                "ConfLo": 0.8320627172939173,
+                "Estimate": 0.8330196855253944,
                 "Parameter": "OldNonWhiteMale-2012"
             },
             {
-                "ConfHi": 0.8212657582936044,
+                "ConfHi": 0.8186831299308134,
                 "Key": "2012",
-                "ConfLo": 0.8105604937048514,
-                "Estimate": 0.8183173758878134,
+                "ConfLo": 0.8173441053471246,
+                "Estimate": 0.8180166802583835,
                 "Parameter": "YoungNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8033058653756638,
+                "ConfHi": 0.8026541599963609,
                 "Key": "2012",
-                "ConfLo": 0.8007767705005866,
-                "Estimate": 0.8021370199548881,
+                "ConfLo": 0.8011729334685227,
+                "Estimate": 0.8019185904630473,
                 "Parameter": "YoungNonWhiteMale-2012"
             },
             {
-                "ConfHi": 0.4097759483152455,
+                "ConfHi": 0.40672206457128357,
                 "Key": "2012",
-                "ConfLo": 0.3993479957159786,
-                "Estimate": 0.40618408197887185,
+                "ConfLo": 0.4057677499511877,
+                "Estimate": 0.4062411466436829,
                 "Parameter": "OldWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.4050524865466234,
+                "ConfHi": 0.3992105774633501,
                 "Key": "2012",
-                "ConfLo": 0.39450766038575996,
-                "Estimate": 0.398687248074122,
+                "ConfLo": 0.39821614642415387,
+                "Estimate": 0.39871345495237714,
                 "Parameter": "OldWhiteMale-2012"
             },
             {
-                "ConfHi": 0.4303625303344227,
+                "ConfHi": 0.4299219615888335,
                 "Key": "2012",
-                "ConfLo": 0.42812009812157203,
-                "Estimate": 0.4293976978148254,
+                "ConfLo": 0.42895670635769423,
+                "Estimate": 0.4294368654726511,
                 "Parameter": "YoungWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.43220871216365414,
+                "ConfHi": 0.4289176826676568,
                 "Key": "2012",
-                "ConfLo": 0.42535826385661785,
-                "Estimate": 0.42840797007949233,
+                "ConfLo": 0.4278590143754145,
+                "Estimate": 0.4283899720659247,
                 "Parameter": "YoungWhiteMale-2012"
             },
             {
-                "ConfHi": 0.8162946634749088,
+                "ConfHi": 0.8114466401546886,
                 "Key": "2014",
-                "ConfLo": 0.7891593851202748,
-                "Estimate": 0.8094201437267903,
+                "ConfLo": 0.80924403111275,
+                "Estimate": 0.8103497799744611,
                 "Parameter": "OldNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.7846325832986258,
+                "ConfHi": 0.7806732706845422,
                 "Key": "2014",
-                "ConfLo": 0.76484441556326,
-                "Estimate": 0.7787236328441443,
+                "ConfLo": 0.7781910748100015,
+                "Estimate": 0.7794113645663644,
                 "Parameter": "OldNonWhiteMale-2014"
             },
             {
-                "ConfHi": 0.7737922586493098,
+                "ConfHi": 0.7672858780797286,
                 "Key": "2014",
-                "ConfLo": 0.7428524466371277,
-                "Estimate": 0.7652801291660221,
+                "ConfLo": 0.7652654785271246,
+                "Estimate": 0.7662816635786519,
                 "Parameter": "YoungNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.7525332839458853,
+                "ConfHi": 0.7487264842654745,
                 "Key": "2014",
-                "ConfLo": 0.731199374425858,
-                "Estimate": 0.7468242859886012,
+                "ConfLo": 0.7463198365414061,
+                "Estimate": 0.7475248239376123,
                 "Parameter": "YoungNonWhiteMale-2014"
             },
             {
-                "ConfHi": 0.4791750705498766,
+                "ConfHi": 0.3895684392897273,
                 "Key": "2014",
-                "ConfLo": 0.25955155930224766,
-                "Estimate": 0.3828337736736009,
+                "ConfLo": 0.38587404604586384,
+                "Estimate": 0.387762156175574,
                 "Parameter": "OldWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.5637040799815889,
+                "ConfHi": 0.38522312003591347,
                 "Key": "2014",
-                "ConfLo": 0.27969312271583807,
-                "Estimate": 0.3893829040366835,
+                "ConfLo": 0.38219790145149557,
+                "Estimate": 0.3836066134436921,
                 "Parameter": "OldWhiteMale-2014"
             },
             {
-                "ConfHi": 0.4302564190109245,
+                "ConfHi": 0.402541143497845,
                 "Key": "2014",
-                "ConfLo": 0.37116701968992877,
-                "Estimate": 0.40181384752315036,
+                "ConfLo": 0.4009165806184632,
+                "Estimate": 0.4017455156549739,
                 "Parameter": "YoungWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.4288129241052495,
+                "ConfHi": 0.4051676925537242,
                 "Key": "2014",
-                "ConfLo": 0.3832905298645058,
-                "Estimate": 0.4048178741710277,
+                "ConfLo": 0.40359322116923774,
+                "Estimate": 0.4043721722731827,
                 "Parameter": "YoungWhiteMale-2014"
             },
             {
-                "ConfHi": 0.8913276477063614,
+                "ConfHi": 0.8825956050106808,
                 "Key": "2016",
-                "ConfLo": 0.4698912186211009,
-                "Estimate": 0.750045377324311,
+                "ConfLo": 0.8807579837199058,
+                "Estimate": 0.8803783302184994,
                 "Parameter": "OldNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8653916840180617,
+                "ConfHi": 0.8596368029140922,
                 "Key": "2016",
-                "ConfLo": 0.32400551322544036,
-                "Estimate": 0.6824756979627077,
+                "ConfLo": 0.857508563354224,
+                "Estimate": 0.8583724098826192,
                 "Parameter": "OldNonWhiteMale-2016"
             },
             {
-                "ConfHi": 0.8928136466376307,
+                "ConfHi": 0.8327632145449135,
                 "Key": "2016",
-                "ConfLo": 0.7978544905293241,
-                "Estimate": 0.8489991286597179,
+                "ConfLo": 0.8313195255271816,
+                "Estimate": 0.8320606527543896,
                 "Parameter": "YoungNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8334262984852684,
+                "ConfHi": 0.8201112513934263,
                 "Key": "2016",
-                "ConfLo": 0.5009114034813258,
-                "Estimate": 0.7513207162106026,
+                "ConfLo": 0.8184885352779683,
+                "Estimate": 0.8196614511030745,
                 "Parameter": "YoungNonWhiteMale-2016"
             },
             {
-                "ConfHi": 0.48054283125022823,
+                "ConfHi": 0.3766680319746438,
                 "Key": "2016",
-                "ConfLo": 0.3435206936390946,
-                "Estimate": 0.38924957305496743,
+                "ConfLo": 0.3757114760125268,
+                "Estimate": 0.3761575239047993,
                 "Parameter": "OldWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.5490153909241124,
+                "ConfHi": 0.3720845866458748,
                 "Key": "2016",
-                "ConfLo": 0.36859514983117364,
-                "Estimate": 0.40114954131528446,
+                "ConfLo": 0.3710167756547024,
+                "Estimate": 0.37162410015021413,
                 "Parameter": "OldWhiteMale-2016"
             },
             {
-                "ConfHi": 0.5664309214444617,
+                "ConfHi": 0.4159964761834884,
                 "Key": "2016",
-                "ConfLo": 0.36486041419881576,
-                "Estimate": 0.4280397213165816,
+                "ConfLo": 0.415005356993124,
+                "Estimate": 0.41554085726651513,
                 "Parameter": "YoungWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.4458784419795851,
+                "ConfHi": 0.4126582217172685,
                 "Key": "2016",
-                "ConfLo": 0.4061070637032631,
-                "Estimate": 0.42252290770431694,
+                "ConfLo": 0.41163710623128336,
+                "Estimate": 0.41222782668213453,
                 "Parameter": "YoungWhiteMale-2016"
             },
             {
-                "ConfHi": 0.9143855171477409,
+                "ConfHi": 0.8907937228024964,
                 "Key": "2018",
-                "ConfLo": 0.7226396733000872,
-                "Estimate": 0.8539154955550621,
+                "ConfLo": 0.8886683105941954,
+                "Estimate": 0.889735469769718,
                 "Parameter": "OldNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.9331058445357654,
+                "ConfHi": 0.8659968466758902,
                 "Key": "2018",
-                "ConfLo": 0.8066356118882839,
-                "Estimate": 0.8651828190415739,
+                "ConfLo": 0.8634783658933112,
+                "Estimate": 0.8647225407412231,
                 "Parameter": "OldNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.8647096236940092,
+                "ConfHi": 0.8368153379704697,
                 "Key": "2018",
-                "ConfLo": 0.7536080639572884,
-                "Estimate": 0.8163739896786558,
+                "ConfLo": 0.8347156315076912,
+                "Estimate": 0.8357819882845763,
                 "Parameter": "YoungNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.847406809669729,
+                "ConfHi": 0.819692778461807,
                 "Key": "2018",
-                "ConfLo": 0.29306892340117685,
-                "Estimate": 0.7303368820246673,
+                "ConfLo": 0.817580747685378,
+                "Estimate": 0.8186529272929882,
                 "Parameter": "YoungNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.5555008908670487,
+                "ConfHi": 0.42418673166945203,
                 "Key": "2018",
-                "ConfLo": 0.3849522816875677,
-                "Estimate": 0.4386340230079527,
+                "ConfLo": 0.42298083212274706,
+                "Estimate": 0.42359797918581227,
                 "Parameter": "OldWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.6027182232204397,
+                "ConfHi": 0.4228951648556274,
                 "Key": "2018",
-                "ConfLo": 0.3647890749850721,
-                "Estimate": 0.43781861309423664,
+                "ConfLo": 0.4202494047064075,
+                "Estimate": 0.4215076138192215,
                 "Parameter": "OldWhiteMale-2018"
             },
             {
-                "ConfHi": 0.6273831153190406,
+                "ConfHi": 0.4488298366811061,
                 "Key": "2018",
-                "ConfLo": 0.3779233799491863,
-                "Estimate": 0.4687049035270473,
+                "ConfLo": 0.4420966005008976,
+                "Estimate": 0.445375259516072,
                 "Parameter": "YoungWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.4822894765425458,
+                "ConfHi": 0.45214521247834155,
                 "Key": "2018",
-                "ConfLo": 0.3018765774879291,
-                "Estimate": 0.4223636493798369,
+                "ConfLo": 0.44239326016460534,
+                "Estimate": 0.44745972564525327,
                 "Parameter": "YoungWhiteMale-2018"
             }
         ]
@@ -358,10 +358,307 @@ vegaEmbed('#VoteProbs',vlSpec);</script>
 <ul>
 <li>The numbers are not always consistent with exit-polling<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a> and after-election surveys<a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a>, especially when it comes to young white females. Exit-polls and after-election surveys show YWF voting for Hillary Clinton at slightly over 50% (??). but this model shows a much lower number, closer to 40%. The model may be wrong, YWF's may have been more likely to split their ticket, voting for Clinton but also for a Republican for the house seat, or the exit-poll or after-election survey data may be incorrect.</li>
 </ul>
-<p>Now we have an estimate of how people's choices changed between 2016 and 2018. But that's only one part of the story. The other change is voter turnout. Nationally, 2018 house races<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a> moved about 9 points towards the democrats in polls<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a> and XX points in the electoral results. Was that driven more by turnout (lower turnout by whites and more by non-whites, e.g.,) or by changing minds (e.g., the move in white democratic voting probability we see in the above results)? In this simplistic model, The total change in votes from any group is a product of three factors, the change in the number of voters in that group, the change in turnout of that group and the change in the probability of voting for the democratic candidate. Below, we compare these changes for each group for 2012 -&gt; 2016 (both presidential elections), 2014 -&gt; 2018 (both midterm elections) and 2016 -&gt; 2018 (to look at the "Trump" effect).</p>
+<p>Now we have an estimate of how people's choices changed between 2016 and 2018. But that's only one part of the story. The other change is voter turnout. Nationally, 2018 house races<a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a> moved about 9 points towards the democrats in polls<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a> and XX points in the electoral results. Was that driven more by turnout (lower turnout by whites and more by non-whites, e.g.,) or by changing minds (e.g., the move in white democratic voting probability we see in the above results)? In this simplistic model, The total change in votes from any group is a product of three factors, the change in the number of voters in that group, the change in turnout of that group and the change in the probability of voting for the democratic candidate. Below, we compare these changes (nationally) for each group for 2012 -&gt; 2016 (both presidential elections), 2014 -&gt; 2018 (both midterm elections) and 2016 -&gt; 2018 (to look at the "Trump" effect). In each table the columns with "+/-" on them indicate a net change in the (Democratic - Republican) totals coming from that factor. For example, if the "From Population" column is positive, that means a change in population of that group between those years resulted in a net gain of D votes. NB: If that group was a net republican voting group then a rise in population would lead to negative net vote change.</p>
+<section id="section" class="level3">
+<h3>2012 -&gt; 2016</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th>Population (k)</th>
+<th>+/- From Population (k)</th>
+<th>+/- From Turnout (k)</th>
+<th>+/- From Opinion (k)</th>
+<th>+/- Total (k)</th>
+<th>+/- %Vote</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OldNonWhiteFemale</td>
+<td>5277</td>
+<td>-122</td>
+<td>-190</td>
+<td>95</td>
+<td>-217</td>
+<td>-0.20</td>
+</tr>
+<tr class="even">
+<td>OldNonWhiteMale</td>
+<td>4187</td>
+<td>-49</td>
+<td>-95</td>
+<td>132</td>
+<td>-11</td>
+<td>-0.01</td>
+</tr>
+<tr class="odd">
+<td>YoungNonWhiteFemale</td>
+<td>8486</td>
+<td>-58</td>
+<td>-141</td>
+<td>128</td>
+<td>-70</td>
+<td>-0.06</td>
+</tr>
+<tr class="even">
+<td>YoungNonWhiteMale</td>
+<td>7161</td>
+<td>-107</td>
+<td>-161</td>
+<td>114</td>
+<td>-152</td>
+<td>-0.14</td>
+</tr>
+<tr class="odd">
+<td>OldWhiteFemale</td>
+<td>22497</td>
+<td>-53</td>
+<td>-22</td>
+<td>-964</td>
+<td>-1038</td>
+<td>-0.97</td>
+</tr>
+<tr class="even">
+<td>OldWhiteMale</td>
+<td>20345</td>
+<td>-52</td>
+<td>8</td>
+<td>-779</td>
+<td>-822</td>
+<td>-0.77</td>
+</tr>
+<tr class="odd">
+<td>YoungWhiteFemale</td>
+<td>20297</td>
+<td>-92</td>
+<td>-55</td>
+<td>-324</td>
+<td>-469</td>
+<td>-0.44</td>
+</tr>
+<tr class="even">
+<td>YoungWhiteMale</td>
+<td>18979</td>
+<td>-101</td>
+<td>-68</td>
+<td>-316</td>
+<td>-485</td>
+<td>-0.45</td>
+</tr>
+<tr class="odd">
+<td>Total</td>
+<td>107232</td>
+<td>-630</td>
+<td>-721</td>
+<td>-1911</td>
+<td>-3260</td>
+<td>-3.04</td>
+</tr>
+</tbody>
+</table>
 </section>
-<section id="model-notes" class="level2">
-<h2>Model Notes</h2>
+<section id="section" class="level3">
+<h3>2014 -&gt; 2018</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th>Population (k)</th>
+<th>+/- From Population (k)</th>
+<th>+/- From Turnout (k)</th>
+<th>+/- From Opinion (k)</th>
+<th>+/- Total (k)</th>
+<th>+/- %Vote</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OldNonWhiteFemale</td>
+<td>3303</td>
+<td>735</td>
+<td>200</td>
+<td>239</td>
+<td>1175</td>
+<td>1.81</td>
+</tr>
+<tr class="even">
+<td>OldNonWhiteMale</td>
+<td>2626</td>
+<td>492</td>
+<td>132</td>
+<td>193</td>
+<td>817</td>
+<td>1.26</td>
+</tr>
+<tr class="odd">
+<td>YoungNonWhiteFemale</td>
+<td>3777</td>
+<td>440</td>
+<td>132</td>
+<td>141</td>
+<td>714</td>
+<td>1.10</td>
+</tr>
+<tr class="even">
+<td>YoungNonWhiteMale</td>
+<td>2893</td>
+<td>407</td>
+<td>187</td>
+<td>83</td>
+<td>679</td>
+<td>1.05</td>
+</tr>
+<tr class="odd">
+<td>OldWhiteFemale</td>
+<td>16662</td>
+<td>-1230</td>
+<td>-348</td>
+<td>665</td>
+<td>-913</td>
+<td>-1.40</td>
+</tr>
+<tr class="even">
+<td>OldWhiteMale</td>
+<td>15123</td>
+<td>-1168</td>
+<td>-307</td>
+<td>645</td>
+<td>-829</td>
+<td>-1.27</td>
+</tr>
+<tr class="odd">
+<td>YoungWhiteFemale</td>
+<td>10440</td>
+<td>-697</td>
+<td>-331</td>
+<td>290</td>
+<td>-736</td>
+<td>-1.13</td>
+</tr>
+<tr class="even">
+<td>YoungWhiteMale</td>
+<td>10145</td>
+<td>-595</td>
+<td>-280</td>
+<td>259</td>
+<td>-615</td>
+<td>-0.95</td>
+</tr>
+<tr class="odd">
+<td>Total</td>
+<td>64972</td>
+<td>-1612</td>
+<td>-611</td>
+<td>2518</td>
+<td>296</td>
+<td>0.46</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="section" class="level3">
+<h3>2016 -&gt; 2018</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th>Population (k)</th>
+<th>+/- From Population (k)</th>
+<th>+/- From Turnout (k)</th>
+<th>+/- From Opinion (k)</th>
+<th>+/- Total (k)</th>
+<th>+/- %Vote</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>OldNonWhiteFemale</td>
+<td>5023</td>
+<td>401</td>
+<td>-195</td>
+<td>56</td>
+<td>264</td>
+<td>0.24</td>
+</tr>
+<tr class="even">
+<td>OldNonWhiteMale</td>
+<td>4071</td>
+<td>253</td>
+<td>-202</td>
+<td>30</td>
+<td>82</td>
+<td>0.08</td>
+</tr>
+<tr class="odd">
+<td>YoungNonWhiteFemale</td>
+<td>8319</td>
+<td>-500</td>
+<td>-984</td>
+<td>31</td>
+<td>-1452</td>
+<td>-1.32</td>
+</tr>
+<tr class="even">
+<td>YoungNonWhiteMale</td>
+<td>6771</td>
+<td>42</td>
+<td>-347</td>
+<td>-6</td>
+<td>-310</td>
+<td>-0.28</td>
+</tr>
+<tr class="odd">
+<td>OldWhiteFemale</td>
+<td>22888</td>
+<td>-642</td>
+<td>379</td>
+<td>1557</td>
+<td>1295</td>
+<td>1.18</td>
+</tr>
+<tr class="even">
+<td>OldWhiteMale</td>
+<td>20703</td>
+<td>-602</td>
+<td>287</td>
+<td>1454</td>
+<td>1139</td>
+<td>1.04</td>
+</tr>
+<tr class="odd">
+<td>YoungWhiteFemale</td>
+<td>21425</td>
+<td>-12</td>
+<td>405</td>
+<td>756</td>
+<td>1150</td>
+<td>1.05</td>
+</tr>
+<tr class="even">
+<td>YoungWhiteMale</td>
+<td>20344</td>
+<td>-26</td>
+<td>353</td>
+<td>774</td>
+<td>1102</td>
+<td>1.01</td>
+</tr>
+<tr class="odd">
+<td>Total</td>
+<td>109548</td>
+<td>-1082</td>
+<td>-301</td>
+<td>4655</td>
+<td>3274</td>
+<td>2.99</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="opinion-model-notes" class="level2">
+<h2>Opinion-Model Notes</h2>
 <p>Our goal is to use the house election results to fit a very simple model of the electorate. We consider the electorate as having eight "identity" groups, split by sex (the census only records this as a F/M binary), age, young (&lt;45) and old (&gt;45) and racial identity (white or non-white). We recognize that these categories are limiting and much too simple. But we believe it's a reasonable starting point, as a balance between inclusiveness and having way too many variables.</p>
 <p>For each congressional district where both major parties ran candidates, we have census estimates of the number of people in each of our demographic categories. And from the census we have national-level turnout estimates for each of these groups as well. We assume that these turnout percentages hold exactly in each district, giving a number o voters in each group for each district.</p>
 <p>All we can observe is the sum of all the votes in the district, not the ones cast by each group separately. But since we have quite a few districts, each with a different mix of the demographic groups, we treat each as a new piece of data about how each group votes. What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.</p>

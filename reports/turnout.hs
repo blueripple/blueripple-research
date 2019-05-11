@@ -18,6 +18,8 @@ import           Control.Lens                   ( (^.)
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( when )
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import qualified Colonnade                     as C
+import qualified Text.Blaze.Colonnade          as C
 import qualified Data.Functor.Identity         as I
 import qualified Data.List as L
 import qualified Data.Map                      as M
@@ -36,6 +38,7 @@ import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.Functor            as V
+import qualified Text.Printf                   as PF
 import qualified Frames                        as F
 import           Frames                         ( (:->)
                                                 , (<+>)
@@ -58,6 +61,7 @@ import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, pa
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.VegaLite               as FV
 import qualified Frames.Transform              as FT
+import qualified Frames.Conversion             as FC
 import qualified Frames.Folds                  as FF
 import qualified Frames.Regression             as FR
 import qualified Frames.MapReduce              as MR
@@ -116,7 +120,7 @@ The 2018 house races were generally good for Democrats and Progressives.
 As we look to hold those gains and build on them there are an assortment of
 questions to ask about the 2018 results.  As an example, how much of the change
 from 2016 to 2018 was the result of changes in voter turnout vs.
-voters changing their minds?  Answering this is difficult since we don't have
+voters changing their opinion?  Answering this is difficult since we don't have
 granular turnout data and we have only exit-poll and post-election survey data
 to look at for data about how people voted in each election.  Here, we attempt
 to use the election results themselves combined with demographic data about the
@@ -142,8 +146,8 @@ with a need to keep the model small enough to make inference possible.
 Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
 Male and Female and Young (<45) and Old.
 
-* More detail about the model and the techniques used to perform inference
-are in the [Model Notes](#model-notes) section below.
+* More detail about the opinion model and the techniques used to perform inference
+are in the [Model Notes](#opinion-model-notes) section below.
 
 The results are presented below. What stands out immediately is how strong
 the support of non-white voters is for democratic candidates,
@@ -199,10 +203,15 @@ voting probability we see in the above results)?  In this simplistic model,
 The total change in votes from any group is a product of three factors, the
 change in the number of voters in that group, the change in turnout of that
 group and the change in the probability of voting for the democratic candidate.
-Below, we compare these changes for each group for
+Below, we compare these changes (nationally) for each group for
 2012 -> 2016 (both presidential elections),
 2014 -> 2018 (both midterm elections) and
-2016 -> 2018 (to look at the "Trump" effect).
+2016 -> 2018 (to look at the "Trump" effect). In each table the columns with "+/-" on
+them indicate a net change in the (Democratic - Republican) totals coming from
+that factor.  For example, if the "From Population" column is positive, that means
+a change in population of that group between those years resulted in a net gain of
+D votes.  NB: If that group was a net republican voting group then a rise in population
+would lead to negative net vote change.
 
 [^7]: <https://www.realclearpolitics.com/epolls/other/2016_generic_congressional_vote-5279.html>
 [^8]: <https://www.realclearpolitics.com/epolls/other/2018_generic_congressional_vote-6185.html>
@@ -211,6 +220,7 @@ Below, we compare these changes for each group for
   
 quick = RunParams 2 500 50
 notAsQuick = RunParams 10 500 100
+justEnough = RunParams 5 3000 300
 thorough = RunParams 5 5000 500
 goToTown = RunParams 10 30000 3000
 
@@ -252,7 +262,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = goToTown
+        let rp = justEnough
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -296,10 +306,15 @@ main = do
             -- analyze results
             -- Mann-Whitney
           let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f (mcmcChain res2016) (mcmcChain res2018)) $ fmap (\n-> (!!n)) [0..7]
-          K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)
-          deltaTable tr2016 tr2018
-        K.addMarkDown afterProbs
-        K.addMarkDown whatMatters
+          K.logLE K.Info $ "Mann-Whitney U  2016->2018: " <> (T.pack $ show mwU)          
+          K.addMarkDown afterProbs
+          K.addMarkDown whatMatters
+          K.addMarkDown "### 2012 -> 2016"
+          K.addColonnadeTextTable deltaTableColonnade $ deltaTable tr2012 tr2016
+          K.addMarkDown "### 2014 -> 2018"
+          K.addColonnadeTextTable deltaTableColonnade $ deltaTable tr2014 tr2018
+          K.addMarkDown "### 2016 -> 2018"
+          K.addColonnadeTextTable deltaTableColonnade $ deltaTable tr2016 tr2018
         K.addMarkDown modelNotesBayes
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
@@ -316,14 +331,14 @@ data DeltaTableRow =
   , dtrPct :: Double
   } deriving (Show)
 
-deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-           => TurnoutResults I.Identity ParameterDetails
+deltaTable :: 
+           TurnoutResults I.Identity ParameterDetails
            -> TurnoutResults I.Identity ParameterDetails
-           -> K.Sem r ()
-deltaTable trA trB = do
+           -> [DeltaTableRow] --K.Sem r ()
+deltaTable trA trB = 
   let groups = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
-      popA :: [Int] = V.recordToList $ V.rmapMethod @((~) Int) (V.Const . V.getIdentity) $ V.stripNames $ F.rcast @IdentityCounts $ scaledPopTotal trA 
-      popB :: [Int] = V.recordToList $ V.rmapMethod @((~) Int) (V.Const . V.getIdentity) $ V.stripNames $ F.rcast @IdentityCounts $ scaledPopTotal trB
+      popA :: [Int] = FC.toList @Int @IdentityCounts $ scaledPopTotal trA
+      popB :: [Int] = FC.toList @Int @IdentityCounts $ scaledPopTotal trB
       popTotal = FL.fold FL.sum popA
       makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <*> (Just 1000))) groups
       turnoutA = makeTurnoutList $ nationalTurnout trA
@@ -337,13 +352,27 @@ deltaTable trA trB = do
             dTurnout = (turnoutB !! n) - (turnoutA !! n)
             prob0 = (probA !! n)
             dProb = (probB !! n) - (probA !! n)
-            dtrN = round $ realToFrac dPop * turnout0 * prob0
-            dtrT = round $ realToFrac pop0 * dTurnout * prob0
-            dtrO = round $ realToFrac pop0 * turnout0 * dProb
+            dtrN = round $ realToFrac dPop * turnout0 * ((2*prob0) - 1)
+            dtrT = round $ realToFrac pop0 * dTurnout * ((2*prob0) - 1)
+            dtrO = round $ realToFrac pop0 * turnout0 * (2 * dProb)
             dtrTotal = dtrN + dtrT + dtrO
         in DeltaTableRow (groups !! n) pop0 dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac popTotal)
-      deltaTableRows = fmap makeDTR [0..7]
-  K.logLE K.Info $ T.pack $ show deltaTableRows
+      groupRows = fmap makeDTR [0..7]
+      addRow (DeltaTableRow g p fp ft fo t _) (DeltaTableRow _ p' fp' ft' fo' t' _) =
+        DeltaTableRow g (p+p') (fp + fp') (ft +ft') (fo +fo') (t + t') (realToFrac (t + t')/realToFrac (p + p'))
+      totalRow = FL.fold (FL.Fold addRow (DeltaTableRow "Total" 0 0 0 0 0 0) id) groupRows
+  in groupRows ++ [totalRow]
+
+deltaTableColonnade :: C.Colonnade C.Headed DeltaTableRow T.Text
+deltaTableColonnade =  
+  C.headed "Group" dtrGroup
+  <> C.headed "Population (k)" (T.pack . show . (`div` 1000) . dtrPop)
+  <> C.headed "+/- From Population (k)" (T.pack . show . (`div` 1000) . dtrFromPop)
+  <> C.headed "+/- From Turnout (k)" (T.pack . show . (`div` 1000). dtrFromTurnout)
+  <> C.headed "+/- From Opinion (k)" (T.pack . show . (`div` 1000) . dtrFromOpinion)
+  <> C.headed "+/- Total (k)" (T.pack . show . (`div` 1000) . dtrTotal)
+  <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (*100) . dtrPct) 
+--  K.logLE K.Info $ T.pack $ show deltaTableRows
         
         
 
@@ -382,7 +411,7 @@ we had high turnout and we need to scale up or else that difference will cause p
 --------------------------------------------------------------------------------
 modelNotesPreface :: T.Text
 modelNotesPreface = [here|
-## Model Notes
+## Opinion-Model Notes
 Our goal is to use the house election results to fit a very simple model of the
 electorate.  We consider the electorate as having eight
 "identity" groups, split by sex (the census only records this as a F/M binary),
@@ -558,7 +587,7 @@ data TurnoutResults f a = TurnoutResults
                                                 , DVotes
                                                 , RVotes
                                                 ] V.++ IdentityCounts),
-    scaledPopTotal :: F.Record IdentityCounts,
+    scaledPopTotal :: F.Record IdentityCounts, -- F.Record ('[PopScale,DVotes,RVotes] V.++ IdentityCounts),
     nationalTurnout :: M.Map T.Text (Int -> Int),
     modeled :: f [a],
     mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
@@ -601,7 +630,7 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   K.logLE K.Diagnostic
     $  "after mapReduce: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list houseElexFlattenedF))
-  let filteredTurnoutFrame = F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
+  let filteredTurnoutFrame = F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame  
   K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list filteredTurnoutFrame)
   K.logLE K.Diagnostic
     $  "Before scaling by turnout: "
@@ -643,29 +672,26 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   when (isNothing popToVotedM)
     $ K.logLE K.Error "popToVoted was not constructed!" -- we should throw something here
   let popToVoted       = fromMaybe id popToVotedM
-      votedByIdentityF = fmap popToVoted identityDFrame
-  K.logLE K.Diagnostic
-    $  "After scaling by turnout: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list votedByIdentityF))
-  let votedByIdentityAndResultsF =
+  let popByIdentityAndResultsF =
         F.toFrame
           $ catMaybes
           $ fmap F.recMaybe
           $ F.leftJoin @'[StateAbbreviation, CongressionalDistrict]
-              votedByIdentityF
+              identityDFrame
               houseElexFlattenedF
   K.logLE K.Diagnostic
     $  "After joining: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list votedByIdentityAndResultsF))
+    <> (T.pack $ show (take 5 $ FL.fold FL.list popByIdentityAndResultsF))
   K.logLE K.Info
     $  "Joined identity and result data has "
-    <> (T.pack $ show $ FL.fold FL.length votedByIdentityAndResultsF)
+    <> (T.pack $ show $ FL.fold FL.length popByIdentityAndResultsF)
     <> " rows."
-  let opposedVBIRF = F.filterFrame
+  let opposedPBIRF = F.filterFrame
         (\r -> (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0))
-        votedByIdentityAndResultsF
+        popByIdentityAndResultsF
+      opposedVBIRF = fmap popToVoted opposedPBIRF        
   K.logLE K.Info
-    $  "After removing races where someone is running unopposed we have "
+    $  "After removing races where someone is running unopposed and scaling each group by turnout we have "
     <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
     <> " rows. (contested races)"
   let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
@@ -674,7 +700,8 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
       vD = F.rgetField @DVotes
       vR = F.rgetField @RVotes
       popScale r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (predictedVotes r))
-      opposedVBIRWithTargetF = fmap (FT.mutate predictedVotesField . FT.mutate popScale) opposedVBIRF      
+      opposedVBIRWithTargetF = fmap (FT.mutate predictedVotesField . FT.mutate popScale) opposedVBIRF
+      opposedPBIRWithScaleF = fmap (FT.mutate popScale) opposedPBIRF
   K.logLE K.Diagnostic
     $  "Final frame: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))

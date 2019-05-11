@@ -119,6 +119,8 @@ runMCMC votesAndTurnout numIters start =
                (Just $ gradLogBinomialObservedVotes votesAndTurnout)
     )
 
+-- launch each action on its own thread, writing the result to an MVar.  Wait on all those MVars to return,
+-- placing each in the appropriate place in the structure as it does.
 sequenceConcurrently :: Traversable t => t (IO a) -> IO (t a)
 sequenceConcurrently actions = do
   let f :: IO a -> IO (CC.MVar a, CC.ThreadId)
