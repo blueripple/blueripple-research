@@ -32,65 +32,76 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,2030
+./reports/turnout.hs,2411
 module Main Main10,11
-templateVars templateVars76,77
-loadCSVToFrame loadCSVToFrame95,96
-beforeProbs beforeProbs108,109
-beforeProbs beforeProbs109,110
-[^1]: [^1]:168,169
-afterProbs afterProbs177,178
-afterProbs afterProbs178,179
-whatMatters whatMatters198,199
-whatMatters whatMatters199,200
-quick quick220,221
-notAsQuick notAsQuick221,222
-thorough thorough222,223
-goToTown goToTown223,224
-main main226,227
-main main227,228
-type DVotes DVotes328,329
-type RVotes RVotes329,330
-flattenVotes flattenVotes334,335
-modelNotesPreface modelNotesPreface358,359
-modelNotesPreface modelNotesPreface359,360
-data about about381,382
-modelNotesBayes modelNotesBayes399,400
-modelNotesBayes modelNotesBayes400,401
-P(P407,408
-\mu_k(\mu_k452,453
-v_k(v_k453,454
-p(p454,455
-type X X495,496
-type PredictedVotes PredictedVotes496,497
-type ScaledDVotes ScaledDVotes497,498
-type ScaledRVotes ScaledRVotes498,499
-type PopScale PopScale499,500
-type IdentityCounts IdentityCounts501,502
-sumScaledPopF sumScaledPopF512,513
-sumScaledPopF sumScaledPopF513,514
-data TurnoutResults TurnoutResults528,529
-data TurnoutResults a = TurnoutResultsTurnoutResults528,529
-    scaledVotesAndPopByDistrictF scaledVotesAndPopByDistrictF530,531
-    scaledPopTotal scaledPopTotal536,537
-    nationalTurnout nationalTurnout537,538
-    modeled modeled538,539
-    mcmcChain mcmcChain539,540
-data RunParams RunParams542,543
-data RunParams = RunParams RunParams542,543
-data RunParams = RunParams { nChains nChains542,543
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain542,543
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain542,543
-turnoutModel turnoutModel552,553
-modelNotesRegression modelNotesRegression694,695
-modelNotesRegression modelNotesRegression695,696
-Given Given697,698
-D D700,701
-R R701,702
-\frac{D-R}{Q} \frac{D-R}{Q}708,709
-\sum_i \sum_i717,718
-We We720,721
-Now Now721,722
+templateVars templateVars78,79
+loadCSVToFrame loadCSVToFrame97,98
+beforeProbs beforeProbs111,112
+beforeProbs beforeProbs112,113
+[^1]: [^1]:159,160
+afterProbs afterProbs168,169
+afterProbs afterProbs169,170
+whatMatters whatMatters189,190
+whatMatters whatMatters190,191
+quick quick211,212
+notAsQuick notAsQuick212,213
+thorough thorough213,214
+goToTown goToTown214,215
+main main217,218
+main main218,219
+data DeltaTableRow DeltaTableRow306,307
+  DeltaTableRowDeltaTableRow307,308
+  { dtrGroup dtrGroup308,309
+  , dtrPop dtrPop309,310
+  , dtrFromPop dtrFromPop310,311
+  , dtrFromTurnout dtrFromTurnout311,312
+  , dtrFromOpinion dtrFromOpinion312,313
+  , dtrTotal dtrTotal313,314
+  , dtrPct dtrPct314,315
+deltaTable deltaTable317,318
+deltaTable deltaTable321,322
+type DVotes DVotes351,352
+type RVotes RVotes352,353
+flattenVotes flattenVotes357,358
+modelNotesPreface modelNotesPreface381,382
+modelNotesPreface modelNotesPreface382,383
+data about about404,405
+modelNotesBayes modelNotesBayes422,423
+modelNotesBayes modelNotesBayes423,424
+P(P430,431
+\mu_k(\mu_k475,476
+v_k(v_k476,477
+p(p477,478
+type X X518,519
+type PredictedVotes PredictedVotes519,520
+type ScaledDVotes ScaledDVotes520,521
+type ScaledRVotes ScaledRVotes521,522
+type PopScale PopScale522,523
+type IdentityCounts IdentityCounts524,525
+sumScaledPopF sumScaledPopF535,536
+sumScaledPopF sumScaledPopF536,537
+data TurnoutResults TurnoutResults551,552
+data TurnoutResults f a = TurnoutResultsTurnoutResults551,552
+    scaledVotesAndPopByDistrictF scaledVotesAndPopByDistrictF553,554
+    scaledPopTotal scaledPopTotal559,560
+    nationalTurnout nationalTurnout560,561
+    modeled modeled561,562
+    mcmcChain mcmcChain562,563
+data RunParams RunParams565,566
+data RunParams = RunParams RunParams565,566
+data RunParams = RunParams { nChains nChains565,566
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain565,566
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain565,566
+turnoutModel turnoutModel575,576
+modelNotesRegression modelNotesRegression710,711
+modelNotesRegression modelNotesRegression711,712
+Given Given713,714
+D D716,717
+R R717,718
+\frac{D-R}{Q} \frac{D-R}{Q}724,725
+\sum_i \sum_i733,734
+We We736,737
+Now Now737,738
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

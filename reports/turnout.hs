@@ -18,6 +18,7 @@ import           Control.Lens                   ( (^.)
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( when )
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import qualified Data.Functor.Identity         as I
 import qualified Data.List as L
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes
@@ -34,6 +35,7 @@ import qualified Data.Text.Lazy                as TL
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+import qualified Data.Vinyl.Functor            as V
 import qualified Frames                        as F
 import           Frames                         ( (:->)
                                                 , (<+>)
@@ -71,7 +73,7 @@ import qualified Knit.Effect.Pandoc            as K
 
 import           Data.String.Here               ( here )
 
-import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DataFrames 
 import qualified BlueRipple.Model.TurnoutBayes as TB
 
 templateVars = M.fromList
@@ -104,6 +106,7 @@ loadCSVToFrame po fp filterF = do
           <> T.pack fn
   reportRows frame fp
   return frame
+
 
 --------------------------------------------------------------------------------
 beforeProbs :: T.Text
@@ -138,18 +141,6 @@ and tabulated by the census and by our desire to balance specificity
 with a need to keep the model small enough to make inference possible.
 Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
 Male and Female and Young (<45) and Old.
-Those categories are labeled below as in the following table:
-
-Label  Group
------- ------------------------
-ONWF   Old Non-White Females
-YNWF   Young Non-White Females
-ONWM   Old Non-White Males
-YNWM   Young Non-White Males
-OWF    Old White Females
-YWF    Young White Females
-OWM    Old White Males
-YWM    Young White Males
 
 * More detail about the model and the techniques used to perform inference
 are in the [Model Notes](#model-notes) section below.
@@ -261,7 +252,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = goToTown
+        let rp = quick
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -279,21 +270,29 @@ main = do
         res2018 <- turnoutModel rp 2018 identityDemographics2017Frame
                     houseElectionsFrame
                     turnoutFrame
-        let names = ["YWM","OWM","YWF","OWF","YNWM","ONWM","YNWF","ONWF"]
+        let names = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
             toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
         when (isJust (modeled res2012)
               && isJust (modeled res2014)
               && isJust (modeled res2016)
-              && isJust (modeled res2018)) $ do
-          let pds2012 = fmap toPD $ zip (fmap (<> "-2012") names) (fromJust (modeled res2012))
-              pds2014 = fmap toPD $ zip (fmap (<> "-2014") names) (fromJust (modeled res2014))
-              pds2016 = fmap toPD $ zip (fmap (<> "-2016") names) (fromJust (modeled res2016))
-              pds2018 = fmap toPD $ zip (fmap (<> "-2018") names) (fromJust (modeled res2018))
+              && isJust (modeled res2018)) $ do          
+          let tr2012 = res2012 { modeled = I.Identity $ fmap toPD $ zip names (fromJust $ modeled res2012) }
+              tr2014 = res2014 { modeled = I.Identity $ fmap toPD $ zip names (fromJust $ modeled res2014) }
+              tr2016 = res2016 { modeled = I.Identity $ fmap toPD $ zip names (fromJust $ modeled res2016) }
+              tr2018 = res2018 { modeled = I.Identity $ fmap toPD $ zip names (fromJust $ modeled res2018) }
+              pdsWithYear x tr =
+                let mapName pd@(ParameterDetails n _ _) = pd {name = n <> "-" <> x}
+                in fmap mapName $ I.runIdentity $ modeled tr
               f x = fmap (\y -> (x,y))
           K.addHvega "VoteProbs" $ parameterPlotMany id
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
-            (concat $ [f "2012" pds2012] ++ [f "2014" pds2014] ++ [f "2016" pds2016] ++ [f "2018" pds2018])
+            (concat
+             $ [f "2012" $ pdsWithYear "2012" tr2012]
+              ++ [f "2014" $ pdsWithYear "2014" tr2014]
+              ++ [f "2016" $ pdsWithYear "2016" tr2016]
+              ++ [f "2018" $ pdsWithYear "2018" tr2018]
+            )
             -- analyze results
             -- Mann-Whitney
           let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f (mcmcChain res2016) (mcmcChain res2018)) $ fmap (\n-> (!!n)) [0..7]
@@ -305,26 +304,50 @@ main = do
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
 
-
-{-
-data DeltaTableRow = DeltaTableRow { dtrGroup :: Text, dtrFromPop :: Int, dtrFromTurnout :: Int, dtrFromOpinion :: Int, dtrTotal :: Int, dtrPct :: Double }
+data DeltaTableRow =
+  DeltaTableRow
+  { dtrGroup :: T.Text
+  , dtrPop :: Int
+  , dtrFromPop :: Int
+  , dtrFromTurnout :: Int
+  , dtrFromOpinion :: Int
+  , dtrTotal :: Int
+  , dtrPct :: Double
+  } deriving (Show)
 
 deltaTable :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-           => ([ParameterDetails], [Int], [Int])
-           -> ([ParameterDetails], [Int], [Int])
+           => TurnoutResults I.Identity ParameterDetails
+           -> TurnoutResults I.Identity ParameterDetails
            -> K.Sem r ()
-deltaTable (probsA, popsA, turnoutA) (probsB, popsB, turnoutB) = do
-  -- we only produce the table if all lists are the same length
+deltaTable trA trB = do
+  let groups = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
+      popA :: [Int] = V.recordToList $ V.rmapf (V.Const . V.getField) $ F.rcast @IdentityCounts $ scaledPopTotal trA 
+      popB :: [Int] = V.recordToList $ F.rcast @IdentityCounts $ scaledPopTotal trA
+      popTotal = FL.fold FL.sum popA
+      makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <$> (Just 1000))) groups
+      turnoutA = makeTurnoutList $ nationalTurnout trA
+      turnoutB = makeTurnoutList $ nationalTurnout trB
+      probA = I.runIdentity $ modeled trA
+      probB = I.runIdentity $ modeled trB
+      makeDTR n =
+        let pop0 = popA !! n
+            dPop = (popB !! n) - (popA !! n)
+            turnout0 = turnoutA !! n
+            dTurnout = (turnoutB !! n) - (turnoutA !! n)
+            prob0 = (probA !! n)
+            dProb = (probB !! n) - (probA !! n)
+            dtrN = dPop * turnout0 * prob0
+            dtrT = pop0 * dTurnout * prob0
+            dtrO = pop0 * turnout0 * dProb
+            dtrTotal = dtrN + dtrT + dtrO
+        in DeltaTableRow (groups !! n) pop0 dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac popTotal)
+      deltaTableRows = fmap makeDTR [0..7]
+  K.logLE K.Info $ T.pack $ show deltaTableRows
+        
+        
+
+  -- we only produce the table if all lists are the same length  
   -- again, we need some error throwing capacity here!
-  let n = length probsA
-      f x = (length x == n)
-      dataGood = f popsA && f turnoutA && f probsB && f popsB && f turnoutB
-      colonnade = 
-  when (dataGood) $ do
-    tableHeader = "Group    |  From Population |  From Turnout |  From Opinion |  Total |  % All Votes\n" <>
-                  "________   ________________   _____________   _____________   ______   ____________\n"
-    oneRow
--}
 
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
@@ -526,7 +549,7 @@ sumScaledPopF =
 These population numbers are scaled so that when multiplied by turnout we get the actual number of D + R votes in the
 district
 -}
-data TurnoutResults a = TurnoutResults
+data TurnoutResults f a = TurnoutResults
   {
     scaledVotesAndPopByDistrictF :: F.FrameRec ([ StateAbbreviation
                                                 , CongressionalDistrict
@@ -536,7 +559,7 @@ data TurnoutResults a = TurnoutResults
                                                 ] V.++ IdentityCounts),
     scaledPopTotal :: F.Record IdentityCounts,
     nationalTurnout :: M.Map T.Text (Int -> Int),
-    modeled :: Maybe [a],
+    modeled :: f [a],
     mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
   }
     
@@ -549,7 +572,7 @@ turnoutModel
   -> F.Frame IdentityDemographics
   -> F.Frame HouseElections
   -> F.Frame Turnout
-  -> K.Sem r (TurnoutResults (ExpectationSummary Double)) --(Maybe [ExpectationSummary Double], TB.Chain)
+  -> K.Sem r (TurnoutResults Maybe (ExpectationSummary Double)) --(Maybe [ExpectationSummary Double], TB.Chain)
 turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
 
@@ -647,13 +670,6 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
                          + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
       predictedVotesField = FT.recordSingleton @PredictedVotes . predictedVotes
-{-      
-      scaledDVotes r =
-        let vD = F.rgetField @DVotes r
-            vR = F.rgetField @RVotes r
-            vT = F.rgetField @TotalVotes
-        in FT.recordSingleton @X $ 0.5 * (realToFrac $ predictedVotes r) * (1+ (realToFrac $ vD - vR)/(realToFrac $ vD + vR))
--}
       vD = F.rgetField @DVotes
       vR = F.rgetField @RVotes
       popScale r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (predictedVotes r))
@@ -672,14 +688,14 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
             scaledRVotes = realToFrac rVotes * voteScale 
         in (round scaledDVotes,
              [
-               F.rgetField @YoungWhiteMale r
-             , F.rgetField @OldWhiteMale r
-             , F.rgetField @YoungWhiteFemale r
-             , F.rgetField @OldWhiteFemale r
-             , F.rgetField @YoungNonWhiteMale r
+               F.rgetField @OldNonWhiteFemale r
              , F.rgetField @OldNonWhiteMale r
              , F.rgetField @YoungNonWhiteFemale r
-             , F.rgetField @OldNonWhiteFemale r
+             , F.rgetField @YoungNonWhiteMale r
+             , F.rgetField @OldWhiteFemale r
+             , F.rgetField @OldWhiteMale r
+             , F.rgetField @YoungWhiteFemale r
+             , F.rgetField @YoungWhiteMale r
              ])
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
   -- generate some random starting points

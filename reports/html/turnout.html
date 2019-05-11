@@ -58,52 +58,8 @@ table td {
 <p>We perform this inference using election results<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, demographic data<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a> and turnout data<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> from 2012, 2014, 2016 and then for 2018<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>.</p>
 <ul>
 <li><p>In each year, we consider only districts that had a democrat and republican candidates. In 2010 that was 385 districts, in 2014 that was 351 districts, in 2016 that was 369 (of 438) districts, and it was 382 districts in 2018.</p></li>
-<li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old. Those categories are labeled below as in the following table:</p></li>
-</ul>
-<table>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Label</th>
-<th style="text-align: left;">Group</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">ONWF</td>
-<td style="text-align: left;">Old Non-White Females</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">YNWF</td>
-<td style="text-align: left;">Young Non-White Females</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">ONWM</td>
-<td style="text-align: left;">Old Non-White Males</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">YNWM</td>
-<td style="text-align: left;">Young Non-White Males</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">OWF</td>
-<td style="text-align: left;">Old White Females</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">YWF</td>
-<td style="text-align: left;">Young White Females</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">OWM</td>
-<td style="text-align: left;">Old White Males</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">YWM</td>
-<td style="text-align: left;">Young White Males</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li>More detail about the model and the techniques used to perform inference are in the <a href="#model-notes">Model Notes</a> section below.</li>
+<li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and Young (&lt;45) and Old.</p></li>
+<li><p>More detail about the model and the techniques used to perform inference are in the <a href="#model-notes">Model Notes</a> section below.</p></li>
 </ul>
 <p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at about 80% regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters. Support from white voters is substantially lower, about 40% across all ages and sexes. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%.</p>
 <figure id="VoteProbs">
@@ -119,228 +75,228 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.42890561715955805,
+                "ConfHi": 0.9428969432657905,
                 "Key": "2012",
-                "ConfLo": 0.4278923761920224,
-                "Estimate": 0.4283932018617864,
-                "Parameter": "YWM-2012"
+                "ConfLo": 0.5602471343666321,
+                "Estimate": 0.8328111592221726,
+                "Parameter": "OldNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.3991987493978199,
+                "ConfHi": 0.8344636621614142,
                 "Key": "2012",
-                "ConfLo": 0.39822521413244005,
-                "Estimate": 0.39871145954992,
-                "Parameter": "OWM-2012"
+                "ConfLo": 0.3795844061459805,
+                "Estimate": 0.795991320379731,
+                "Parameter": "OldNonWhiteMale-2012"
             },
             {
-                "ConfHi": 0.42989860876788877,
+                "ConfHi": 0.88990942703423,
                 "Key": "2012",
-                "ConfLo": 0.4289739489470583,
-                "Estimate": 0.42943719556018534,
-                "Parameter": "YWF-2012"
+                "ConfLo": 0.6702022230761655,
+                "Estimate": 0.8170065870986978,
+                "Parameter": "YoungNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.4067026374125739,
+                "ConfHi": 0.9077846097975287,
                 "Key": "2012",
-                "ConfLo": 0.40579357520630754,
-                "Estimate": 0.40624901861374924,
-                "Parameter": "OWF-2012"
+                "ConfLo": 0.703461775710906,
+                "Estimate": 0.8088381568891475,
+                "Parameter": "YoungNonWhiteMale-2012"
             },
             {
-                "ConfHi": 0.8026715007120838,
+                "ConfHi": 0.5502822204021935,
                 "Key": "2012",
-                "ConfLo": 0.8011915663594943,
-                "Estimate": 0.8019230294169,
-                "Parameter": "YNWM-2012"
+                "ConfLo": 0.40534101244768883,
+                "Estimate": 0.4176086547103098,
+                "Parameter": "OldWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8339998972856556,
+                "ConfHi": 0.48318778264554696,
                 "Key": "2012",
-                "ConfLo": 0.832065513607056,
-                "Estimate": 0.8330282054986796,
-                "Parameter": "ONWM-2012"
+                "ConfLo": 0.38149764155218585,
+                "Estimate": 0.4028711698532374,
+                "Parameter": "OldWhiteMale-2012"
             },
             {
-                "ConfHi": 0.8186823439222297,
+                "ConfHi": 0.43510601362884166,
                 "Key": "2012",
-                "ConfLo": 0.81735536089325,
-                "Estimate": 0.8180229943583991,
-                "Parameter": "YNWF-2012"
+                "ConfLo": 0.32104200682167544,
+                "Estimate": 0.41307890147949555,
+                "Parameter": "YoungWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8674486433761941,
+                "ConfHi": 0.5345762882856628,
                 "Key": "2012",
-                "ConfLo": 0.865783882748482,
-                "Estimate": 0.8666183454694016,
-                "Parameter": "ONWF-2012"
+                "ConfLo": 0.4176220756947201,
+                "Estimate": 0.4411055166771211,
+                "Parameter": "YoungWhiteMale-2012"
             },
             {
-                "ConfHi": 0.4050879350608557,
+                "ConfHi": 0.8125562475663628,
                 "Key": "2014",
-                "ConfLo": 0.4036509109816982,
-                "Estimate": 0.40437199520211237,
-                "Parameter": "YWM-2014"
+                "ConfLo": 0.18305222441767469,
+                "Estimate": 0.712316561102957,
+                "Parameter": "OldNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.3842127868060413,
+                "ConfHi": 0.7815051957260877,
                 "Key": "2014",
-                "ConfLo": 0.38300515320205697,
-                "Estimate": 0.383611999681982,
-                "Parameter": "OWM-2014"
+                "ConfLo": 0.27675996502053357,
+                "Estimate": 0.6979581682567173,
+                "Parameter": "OldNonWhiteMale-2014"
             },
             {
-                "ConfHi": 0.4024288495502233,
+                "ConfHi": 0.7691168004049541,
                 "Key": "2014",
-                "ConfLo": 0.401045881120988,
-                "Estimate": 0.4017433893385801,
-                "Parameter": "YWF-2014"
+                "ConfLo": 0.5874171291978962,
+                "Estimate": 0.7413333653226366,
+                "Parameter": "YoungNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.38834070566904727,
+                "ConfHi": 0.8312281991430891,
                 "Key": "2014",
-                "ConfLo": 0.38718580663219887,
-                "Estimate": 0.3877604446832667,
-                "Parameter": "OWF-2014"
+                "ConfLo": 0.7441050977703938,
+                "Estimate": 0.7620069282226725,
+                "Parameter": "YoungNonWhiteMale-2014"
             },
             {
-                "ConfHi": 0.7487406081949622,
+                "ConfHi": 0.4633526523397116,
                 "Key": "2014",
-                "ConfLo": 0.7463580058482882,
-                "Estimate": 0.7475451743000874,
-                "Parameter": "YNWM-2014"
+                "ConfLo": 0.3140311296565458,
+                "Estimate": 0.39284942790815963,
+                "Parameter": "OldWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.7806157976402079,
+                "ConfHi": 0.4483020015786976,
                 "Key": "2014",
-                "ConfLo": 0.7781704696732066,
-                "Estimate": 0.7794031845986579,
-                "Parameter": "ONWM-2014"
+                "ConfLo": 0.3148816401361054,
+                "Estimate": 0.3871664771297883,
+                "Parameter": "OldWhiteMale-2014"
             },
             {
-                "ConfHi": 0.7673026642660842,
+                "ConfHi": 0.4753400629745808,
                 "Key": "2014",
-                "ConfLo": 0.7652457796234112,
-                "Estimate": 0.7662828988101212,
-                "Parameter": "YNWF-2014"
+                "ConfLo": 0.39112598215507105,
+                "Estimate": 0.4127746639620949,
+                "Parameter": "YoungWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.8113739081929047,
+                "ConfHi": 0.6036577467478229,
                 "Key": "2014",
-                "ConfLo": 0.8092879798545085,
-                "Estimate": 0.8103478635193259,
-                "Parameter": "ONWF-2014"
+                "ConfLo": 0.3943230266836406,
+                "Estimate": 0.4339213620415541,
+                "Parameter": "YoungWhiteMale-2014"
             },
             {
-                "ConfHi": 0.41261993998626656,
+                "ConfHi": 0.8953385958207434,
                 "Key": "2016",
-                "ConfLo": 0.4116486776812913,
-                "Estimate": 0.41212998410766527,
-                "Parameter": "YWM-2016"
+                "ConfLo": 0.39441053884028243,
+                "Estimate": 0.7104682299241482,
+                "Parameter": "OldNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.3720448550423294,
+                "ConfHi": 0.867520401612521,
                 "Key": "2016",
-                "ConfLo": 0.37104602997575026,
-                "Estimate": 0.3715457515097263,
-                "Parameter": "OWM-2016"
+                "ConfLo": 0.3954931451724339,
+                "Estimate": 0.7431142049451875,
+                "Parameter": "OldNonWhiteMale-2016"
             },
             {
-                "ConfHi": 0.4159626075645646,
+                "ConfHi": 0.9072801794178437,
                 "Key": "2016",
-                "ConfLo": 0.415016091614483,
-                "Estimate": 0.41548512775368024,
-                "Parameter": "YWF-2016"
+                "ConfLo": 0.5549455311921898,
+                "Estimate": 0.8083803596290372,
+                "Parameter": "YoungNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.3766771073719564,
+                "ConfHi": 0.8841001923507783,
                 "Key": "2016",
-                "ConfLo": 0.37572540725546305,
-                "Estimate": 0.3762023940593975,
-                "Parameter": "OWF-2016"
+                "ConfLo": 0.5767839863074309,
+                "Estimate": 0.7989977827552325,
+                "Parameter": "YoungNonWhiteMale-2016"
             },
             {
-                "ConfHi": 0.82004510680585,
+                "ConfHi": 0.5304790563560486,
                 "Key": "2016",
-                "ConfLo": 0.8184966434248625,
-                "Estimate": 0.8192698402407186,
-                "Parameter": "YNWM-2016"
+                "ConfLo": 0.36447616702855046,
+                "Estimate": 0.39832723718131235,
+                "Parameter": "OldWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8596376505359719,
+                "ConfHi": 0.5298185091433921,
                 "Key": "2016",
-                "ConfLo": 0.8576120229581535,
-                "Estimate": 0.8586206727629931,
-                "Parameter": "ONWM-2016"
+                "ConfLo": 0.2922440621044359,
+                "Estimate": 0.38290769912089906,
+                "Parameter": "OldWhiteMale-2016"
             },
             {
-                "ConfHi": 0.8327270776625654,
+                "ConfHi": 0.5748019637796336,
                 "Key": "2016",
-                "ConfLo": 0.8313808867333139,
-                "Estimate": 0.8320564093688106,
-                "Parameter": "YNWF-2016"
+                "ConfLo": 0.36522185242812594,
+                "Estimate": 0.4323749619195133,
+                "Parameter": "YoungWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8825985600460586,
+                "ConfHi": 0.5585832048642742,
                 "Key": "2016",
-                "ConfLo": 0.8808261620109026,
-                "Estimate": 0.8817086477953499,
-                "Parameter": "ONWF-2016"
+                "ConfLo": 0.3215434914820456,
+                "Estimate": 0.42459627109027004,
+                "Parameter": "YoungWhiteMale-2016"
             },
             {
-                "ConfHi": 0.4484885824061895,
+                "ConfHi": 0.916962556542593,
                 "Key": "2018",
-                "ConfLo": 0.4465133266891221,
-                "Estimate": 0.44748645366896894,
-                "Parameter": "YWM-2018"
+                "ConfLo": 0.49510167086955237,
+                "Estimate": 0.8215223696496368,
+                "Parameter": "OldNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.42206365284109454,
+                "ConfHi": 0.8831192334834707,
                 "Key": "2018",
-                "ConfLo": 0.42094555936731504,
-                "Estimate": 0.42150240159626484,
-                "Parameter": "OWM-2018"
+                "ConfLo": 0.5423347571053676,
+                "Estimate": 0.805401576443442,
+                "Parameter": "OldNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.4464396127887688,
+                "ConfHi": 0.9138091452959187,
                 "Key": "2018",
-                "ConfLo": 0.4442669435334652,
-                "Estimate": 0.445350241402534,
-                "Parameter": "YWF-2018"
+                "ConfLo": 0.8046030319963984,
+                "Estimate": 0.8508597257330954,
+                "Parameter": "YoungNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.42410367948320893,
+                "ConfHi": 0.8502847364295943,
                 "Key": "2018",
-                "ConfLo": 0.4231090613899399,
-                "Estimate": 0.423603384505687,
-                "Parameter": "OWF-2018"
+                "ConfLo": 0.39469828401300966,
+                "Estimate": 0.7469368785743196,
+                "Parameter": "YoungNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.819590744182934,
+                "ConfHi": 0.5640159133456077,
                 "Key": "2018",
-                "ConfLo": 0.8176947723277068,
-                "Estimate": 0.818641648868347,
-                "Parameter": "YNWM-2018"
+                "ConfLo": 0.4009777328376732,
+                "Estimate": 0.4436466274898973,
+                "Parameter": "OldWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.8658869709584176,
+                "ConfHi": 0.44448144061670375,
                 "Key": "2018",
-                "ConfLo": 0.8635465274548022,
-                "Estimate": 0.8647245053093433,
-                "Parameter": "ONWM-2018"
+                "ConfLo": 0.24973278818620723,
+                "Estimate": 0.39964747943391854,
+                "Parameter": "OldWhiteMale-2018"
             },
             {
-                "ConfHi": 0.8367282947622292,
+                "ConfHi": 0.5733390817401883,
                 "Key": "2018",
-                "ConfLo": 0.834869916310666,
-                "Estimate": 0.8357848422485047,
-                "Parameter": "YNWF-2018"
+                "ConfLo": 0.429508137876727,
+                "Estimate": 0.4648590849837716,
+                "Parameter": "YoungWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.8907332056501561,
+                "ConfHi": 0.57305895412903,
                 "Key": "2018",
-                "ConfLo": 0.8887312150332448,
-                "Estimate": 0.8897365419571273,
-                "Parameter": "ONWF-2018"
+                "ConfLo": 0.437040155068266,
+                "Estimate": 0.4672089973708517,
+                "Parameter": "YoungWhiteMale-2018"
             }
         ]
     },
