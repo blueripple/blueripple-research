@@ -262,7 +262,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = justEnough
+        let rp = goToTown
         K.addMarkDown beforeProbs
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -334,29 +334,35 @@ data DeltaTableRow =
 deltaTable :: 
            TurnoutResults I.Identity ParameterDetails
            -> TurnoutResults I.Identity ParameterDetails
-           -> [DeltaTableRow] --K.Sem r ()
+           -> [DeltaTableRow]
 deltaTable trA trB = 
   let groups = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
-      popA :: [Int] = FC.toList @Int @IdentityCounts $ scaledPopTotal trA
-      popB :: [Int] = FC.toList @Int @IdentityCounts $ scaledPopTotal trB
-      popTotal = FL.fold FL.sum popA
+      getScaledPop :: TurnoutResults I.Identity ParameterDetails -> [Int]
+      getScaledPop tr =
+        let popRec = popTotal tr
+            scale = F.rgetField @PopScale popRec
+            rescale = round . (* scale) . realToFrac
+        in fmap rescale $ FC.toList @Int @IdentityCounts popRec
+      popA = getScaledPop trA
+      popB = getScaledPop trB
+      pop = FL.fold FL.sum popA
       makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <*> (Just 1000))) groups
       turnoutA = makeTurnoutList $ nationalTurnout trA
       turnoutB = makeTurnoutList $ nationalTurnout trB
       probA = fmap value $ I.runIdentity $ modeled trA
       probB = fmap value $ I.runIdentity $ modeled trB
       makeDTR n =
-        let pop0 = popA !! n
+        let popEnd = popB !! n
             dPop = (popB !! n) - (popA !! n)
-            turnout0 = turnoutA !! n
+            turnoutEnd = turnoutB !! n
             dTurnout = (turnoutB !! n) - (turnoutA !! n)
-            prob0 = (probA !! n)
+            probEnd = (probB !! n)
             dProb = (probB !! n) - (probA !! n)
-            dtrN = round $ realToFrac dPop * turnout0 * ((2*prob0) - 1)
-            dtrT = round $ realToFrac pop0 * dTurnout * ((2*prob0) - 1)
-            dtrO = round $ realToFrac pop0 * turnout0 * (2 * dProb)
+            dtrN = round $ realToFrac dPop * turnoutEnd * ((2*probEnd) - 1)
+            dtrT = round $ realToFrac popEnd * dTurnout * ((2*probEnd) - 1)
+            dtrO = round $ realToFrac popEnd * turnoutEnd * (2 * dProb)
             dtrTotal = dtrN + dtrT + dtrO
-        in DeltaTableRow (groups !! n) pop0 dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac popTotal)
+        in DeltaTableRow (groups !! n) popEnd dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac pop)
       groupRows = fmap makeDTR [0..7]
       addRow (DeltaTableRow g p fp ft fo t _) (DeltaTableRow _ p' fp' ft' fo' t' _) =
         DeltaTableRow g (p+p') (fp + fp') (ft +ft') (fo +fo') (t + t') (realToFrac (t + t')/realToFrac (p + p'))
@@ -373,12 +379,7 @@ deltaTableColonnade =
   <> C.headed "+/- Total (k)" (T.pack . show . (`div` 1000) . dtrTotal)
   <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (*100) . dtrPct) 
 --  K.logLE K.Info $ T.pack $ show deltaTableRows
-        
-        
-
-  -- we only produce the table if all lists are the same length  
-  -- again, we need some error throwing capacity here!
-
+             
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
 flattenVotes
@@ -563,31 +564,16 @@ type IdentityCounts = '[ OldNonWhiteFemale
                        ]
 
 
-sumScaledPopF :: FL.Fold (F.Record ('[PopScale] V.++ IdentityCounts)) (F.Record IdentityCounts)
-sumScaledPopF =
-  FF.sequenceRecFold 
-  $ FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteFemale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteMale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteFemale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteMale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteFemale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteMale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteFemale r))
-  V.:& FF.recFieldF FL.sum (\r -> round $F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteMale r))
-  V.:& V.RNil
-{-
-These population numbers are scaled so that when multiplied by turnout we get the actual number of D + R votes in the
-district
--}
+
 data TurnoutResults f a = TurnoutResults
   {
-    scaledVotesAndPopByDistrictF :: F.FrameRec ([ StateAbbreviation
-                                                , CongressionalDistrict
-                                                , PopScale
-                                                , DVotes
-                                                , RVotes
-                                                ] V.++ IdentityCounts),
-    scaledPopTotal :: F.Record IdentityCounts, -- F.Record ('[PopScale,DVotes,RVotes] V.++ IdentityCounts),
+    votesAndPopByDistrictF :: F.FrameRec ([ StateAbbreviation
+                                          , CongressionalDistrict
+                                          , PopScale
+                                          , DVotes
+                                          , RVotes
+                                          ] V.++ IdentityCounts),
+    popTotal :: F.Record (IdentityCounts V.++ '[DVotes,RVotes,PredictedVotes,PopScale]), -- F.Record ('[PopScale,DVotes,RVotes] V.++ IdentityCounts),
     nationalTurnout :: M.Map T.Text (Int -> Int),
     modeled :: f [a],
     mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
@@ -636,6 +622,8 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     $  "Before scaling by turnout: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
 -- Use turnout so we have # voters of each type.
+  let pVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
+                 + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
   let scaleInt :: Double -> Int -> Int
       scaleInt s = round . (* s) . realToFrac
       scaleMap = FL.fold
@@ -668,11 +656,20 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
                 & (oldNonWhiteMale %~ scaleONWM)
                 & (youngNonWhiteFemale %~ scaleYNWF)
                 & (oldNonWhiteFemale %~ scaleONWF)
+            , \r -> ( scaleYWM $ r ^. youngWhiteMale)
+                    +(scaleOWM $ r ^. oldWhiteMale)
+                    +(scaleYWF $ r ^. youngWhiteFemale)
+                    +(scaleOWF$ r ^. oldWhiteFemale)
+                    +(scaleYNWM $ r ^. youngNonWhiteMale)
+                    +(scaleONWM $ r ^. oldNonWhiteMale) 
+                    +(scaleYNWF $ r ^. youngNonWhiteFemale)
+                    +(scaleONWF $ r ^. oldNonWhiteFemale) 
+            
             )
   when (isNothing popToVotedM)
     $ K.logLE K.Error "popToVoted was not constructed!" -- we should throw something here
-  let popToVoted       = fromMaybe id popToVotedM
-  let popByIdentityAndResultsF =
+  let (popToVoted, sumOfVoted) = fromMaybe (id,const 0) popToVotedM
+      popByIdentityAndResultsF =
         F.toFrame
           $ catMaybes
           $ fmap F.recMaybe
@@ -694,46 +691,37 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     $  "After removing races where someone is running unopposed and scaling each group by turnout we have "
     <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
     <> " rows. (contested races)"
-  let predictedVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
-                         + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
-      predictedVotesField = FT.recordSingleton @PredictedVotes . predictedVotes
+  let sumOfPeople r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
+                      + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
+  let predictedVotesField = FT.recordSingleton @PredictedVotes . sumOfVoted
       vD = F.rgetField @DVotes
       vR = F.rgetField @RVotes
-      popScale r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (predictedVotes r))
-      opposedVBIRWithTargetF = fmap (FT.mutate predictedVotesField . FT.mutate popScale) opposedVBIRF
-      opposedPBIRWithScaleF = fmap (FT.mutate popScale) opposedPBIRF
+      popScaleV r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumOfPeople r)) -- we've already scaled by turnout here
+      popScaleP r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumOfVoted r)) -- here we need to rescale as we sum
+      opposedVBIRWithTargetF = fmap (FT.mutate popScaleV) opposedVBIRF
+      opposedPBIRWithScaleF = fmap (FT.mutate (\r -> popScaleP r F.<+> predictedVotesField r)) opposedPBIRF
   K.logLE K.Diagnostic
     $  "Final frame: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list opposedVBIRWithTargetF))
-  let resFrame = fmap (F.rcast @([StateAbbreviation, CongressionalDistrict, PopScale, DVotes, RVotes] V.++ IdentityCounts)) opposedVBIRWithTargetF      
-      forMCMC r =
+  let forMCMC r =
         let dVotes = F.rgetField @DVotes r
             rVotes = F.rgetField @RVotes r
-            totalVotes = F.rgetField @Totalvotes r
-            predictedVotes = F.rgetField @PredictedVotes r
             voteScale = 1/ F.rgetField @PopScale r
             scaledDVotes = realToFrac dVotes * voteScale
             scaledRVotes = realToFrac rVotes * voteScale 
-        in (round scaledDVotes,
-             [
-               F.rgetField @OldNonWhiteFemale r
-             , F.rgetField @OldNonWhiteMale r
-             , F.rgetField @YoungNonWhiteFemale r
-             , F.rgetField @YoungNonWhiteMale r
-             , F.rgetField @OldWhiteFemale r
-             , F.rgetField @OldWhiteMale r
-             , F.rgetField @YoungWhiteFemale r
-             , F.rgetField @YoungWhiteMale r
-             ])
+        in (round scaledDVotes, FC.toList @Int @IdentityCounts r)
       mcmcData = fmap forMCMC $ FL.fold FL.list opposedVBIRWithTargetF
   -- generate some random starting points
   mcmcResults <- liftIO $ TB.runMany mcmcData 8 (nChains runParams) (nSamplesPerChain runParams) (nBurnPerChain runParams)
   let conf = S.cl95
       summaries = traverse (\n->summarize conf (!!n) mcmcResults) [0..7]         
   K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
-  K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..7]) mcmcResults)  
-  let scaledPopRec = FL.fold sumScaledPopF $ fmap F.rcast resFrame
-  return $ TurnoutResults resFrame scaledPopRec scaleMap summaries (L.concat mcmcResults)  
+  K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..7]) mcmcResults)
+  let resFrame = fmap (F.rcast @([StateAbbreviation, CongressionalDistrict, PopScale, DVotes, RVotes] V.++ IdentityCounts)) opposedPBIRWithScaleF      
+      totalPopRec = FL.fold (FF.foldAllConstrained @Num FL.sum) $ fmap (F.rcast @(IdentityCounts V.++ [DVotes,RVotes,PredictedVotes])) opposedPBIRWithScaleF
+      totalScale = let r = totalPopRec in realToFrac (F.rgetField @DVotes r + F.rgetField @RVotes r)/(realToFrac $ F.rgetField @PredictedVotes r)
+      totalPopWithScaleRec = V.rappend totalPopRec $ FT.recordSingleton @PopScale totalScale
+  return $ TurnoutResults resFrame totalPopWithScaleRec scaleMap summaries (L.concat mcmcResults)  
 
 
 modelNotesRegression :: T.Text
@@ -769,3 +757,17 @@ This is now in a form amenable for regression, estimating the $p_i$ that best fi
 
 Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
+
+
+sumScaledPopF :: FL.Fold (F.Record ('[PopScale] V.++ IdentityCounts)) (F.Record IdentityCounts)
+sumScaledPopF =
+  FF.sequenceRecFold 
+  $ FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldNonWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungNonWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @OldWhiteMale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteFemale r))
+  V.:& FF.recFieldF FL.sum (\r -> round $F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteMale r))
+  V.:& V.RNil
