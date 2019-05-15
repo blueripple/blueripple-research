@@ -140,9 +140,9 @@ type Sample Sample107,108
 type Chain Chain108,109
 --runMCMC --runMCMC110,111
 runMCMC runMCMC111,112
-sequenceConcurrently sequenceConcurrently123,124
-sequenceConcurrently sequenceConcurrently124,125
-runMany runMany136,137
+sequenceConcurrently sequenceConcurrently125,126
+sequenceConcurrently sequenceConcurrently126,127
+runMany runMany138,139
 
 ./src/BlueRipple/Data/DataFrames.hs,100
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames7,8

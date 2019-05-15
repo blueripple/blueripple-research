@@ -294,7 +294,7 @@ main = do
                 let mapName pd@(ParameterDetails n _ _) = pd {name = n <> "-" <> x}
                 in fmap mapName $ I.runIdentity $ modeled tr
               f x = fmap (\y -> (x,y))
-          K.addHvega "VoteProbs" $ parameterPlotMany id
+          _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
             (concat

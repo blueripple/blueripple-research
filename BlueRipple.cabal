@@ -32,7 +32,7 @@ common deps
                , freer-simple
                , here
                , hmatrix
-               , knit-haskell >= 0.2.0.0
+               , knit-haskell >= 0.3.0.0 && < 0.4.0.0
                , lucid
                , pipes
                , polysemy >= 0.1.2.0 && < 0.2.0.0
@@ -95,7 +95,7 @@ executable mission
   main-is:        mission.hs
   build-depends: base >= 4.11
                , BlueRipple
-               , Frames-map-reduce
+               , Frames-map-reduce >= 0.1.0.1
                , lens
                , map-reduce-folds
                , time
@@ -113,7 +113,7 @@ executable turnout
                , data-science-utils
                , Frames-map-reduce
                , lens
-               , map-reduce-folds
+               , map-reduce-folds >= 0.1.0.1
                , random
                , time
   default-language: Haskell2010               

@@ -169,7 +169,7 @@ setF :: V.KnownField t => V.Snd t -> V.ElField t
 setF = V.Field
   
 -- differential spend vs (result - 8/1 forecast)
-spendVsChangeInVoteShare :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
+spendVsChangeInVoteShare :: K.KnitOne effs
   => F.Frame TotalSpending -> F.Frame TotalSpending -> F.Frame ForecastAndSpending -> F.Frame ElectionResults -> K.Sem effs ()
 spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFrame eResultsFrame = K.wrapPrefix "spendVsChangeInVoteShare" $ do
   -- create a Frame with each candidate, candidate total, race total, candidate differential
@@ -220,12 +220,12 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   K.logLE K.Info $ "Added normalized differential spend and filtered to cheap and close races. " <> (T.pack $ show (FL.fold FL.length contestedRacesFrame)) <> " rows left."
   K.addMarkDown differentialSpendNotes
   K.addMarkDown "### All Races With 2 or more candidates"
-  K.addHvega "DiffSpendHistogram1"  $
+  _ <- K.addHvega Nothing Nothing  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True contestedRacesFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] contestedRacesFrame
-  K.addHvega "dsVsdvsfit1" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
+  _ <- K.addHvega Nothing Nothing $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
-  K.addHvega "dsVsdvsRegresssionCoeffs1" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
+  _ <- K.addHvega Nothing Nothing $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
   let filterCloseAndCheap r =
         let vs = F.rgetField @Voteshare r
             rtf = F.rgetField @RaceTotalFor r
@@ -234,12 +234,12 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
         in (vs > 40) && (vs < 60) && ((rtf + rta) < 2000000) -- && (party == "Republican")
       cheapAndCloseFrame = F.filterFrame filterCloseAndCheap  contestedRacesFrame
   K.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
-  K.addHvega "DiffSpendHistogram2"  $
+  _ <- K.addHvega Nothing Nothing  $
     FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True cheapAndCloseFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] cheapAndCloseFrame
-  K.addHvega "dsVsdvsfit2" $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
+  _ <- K.addHvega Nothing Nothing $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
-  K.addHvega "dsVsdvsRegresssionCoeffs2" $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
+  _ <- K.addHvega Nothing Nothing $ FV.regressionCoefficientPlot "Parameters" ["intercept","differential spend"] (FR.regressionResult diffSpendVsdiffVs) S.cl95
   K.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
   
   
@@ -265,7 +265,7 @@ sumSpending r =
       pe = realToFrac $ F.rgetField @PartyExpenditures r
   in FT.recordSingleton @AllSpending (db + is + pe)
      
-totalSpendingHistograms :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
+totalSpendingHistograms :: K.KnitOne effs
   => F.Frame TotalSpending -> K.Sem effs ()
 totalSpendingHistograms tsFrame = do
   K.addMarkDown spendingHistNotes
@@ -280,10 +280,10 @@ totalSpendingHistograms tsFrame = do
         in FT.recordSingleton @CandidateParty np
       frameWithMergedOtherParties = fmap (FT.transform mergeOtherParties) frameWithSum 
 --  K.log K.Diagnostic $ T.pack $ show $ fmap (show . F.rcast @[CandidateId, AllSpending]) $ FL.fold FL.list frameWithSum
-  K.addHvega "SpendingHistogramByPartyAll"  $
+  _ <- K.addHvega Nothing Nothing  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party" (Just "# Candidates") 10 (Just 0) (Just 1e7) True FV.AdjacentBar frameWithMergedOtherParties
-  K.addHvega "SpendingHistogramByParty1MM"  $
+  _ <- K.addHvega Nothing Nothing  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $1,000,000)" (Just "# Candidates") 10 (Just 0) (Just 1e6) False FV.AdjacentBar frameWithMergedOtherParties
-  K.addHvega "SpendingHistogramByParty1M"  $
+  _ <- K.addHvega Nothing Nothing  $
     FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $100,000)" (Just "# Candidates") 10 (Just 0) (Just 1e5) False FV.AdjacentBar frameWithMergedOtherParties
-  
+  return ()
