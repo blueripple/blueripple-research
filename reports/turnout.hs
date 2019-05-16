@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE TupleSections             #-}
 module Main where
 
 import           Control.Lens                   ( (^.)
@@ -17,20 +18,24 @@ import           Control.Lens                   ( (^.)
                                                 )
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( when )
+import           Data.Traversable            (sequenceA)
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
 import qualified Text.Blaze.Colonnade          as C
 import qualified Data.Functor.Identity         as I
 import qualified Data.List as L
 import qualified Data.Map                      as M
+import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 , isNothing
                                                 , isJust
                                                 , fromJust
-                                                )                 
+                                                )
+import qualified Text.Read                     as TR                 
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
+import qualified Data.Profunctor              as PF
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
 import qualified Data.Text.Lazy                as TL
@@ -283,13 +288,13 @@ main = do
         parserOptions
         contextDemographicsCSV
         (const True)
-      identityDemographics2012Frame :: F.Frame IdentityDemographics <-
+      identityDemographics2012Frame :: F.Frame AgeSexRaceByDistrict <-
         loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
-      identityDemographics2014Frame :: F.Frame IdentityDemographics <-
+      identityDemographics2014Frame :: F.Frame AgeSexRaceByDistrict <-
         loadCSVToFrame parserOptions identityDemographics2017CSV (const True)        
-      identityDemographics2016Frame :: F.Frame IdentityDemographics <-
+      identityDemographics2016Frame :: F.Frame AgeSexRaceByDistrict <-
         loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
-      identityDemographics2017Frame :: F.Frame IdentityDemographics <-
+      identityDemographics2017Frame :: F.Frame AgeSexRaceByDistrict <-
         loadCSVToFrame parserOptions identityDemographics2017CSV (const True)
       houseElectionsFrame :: F.Frame HouseElections <- loadCSVToFrame
         parserOptions
@@ -300,7 +305,8 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = justEnough
+        let rp = goToTown
+            ds = simpleAgeSexRace
         K.addMarkDown introduction
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -318,8 +324,8 @@ main = do
         res2018 <- turnoutModel rp 2018 identityDemographics2017Frame
                     houseElectionsFrame
                     turnoutFrame
-        let names = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
-            toPD (name, (ExpectationSummary m (lo,hi) _)) = ParameterDetails name m (lo,hi)
+        let categories = fmap (T.pack . show) $ demCategories ds --fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
+            toPD (category, (ExpectationSummary m (lo,hi) _)) = ParameterDetails category m (lo,hi)
         when (isJust (modeled res2012)
               && isJust (modeled res2014)
               && isJust (modeled res2016)
@@ -369,22 +375,23 @@ data DeltaTableRow =
   , dtrPct :: Double
   } deriving (Show)
 
-deltaTable :: 
-           TurnoutResults I.Identity ParameterDetails
+deltaTable :: DemographicStructure a b
+           -> TurnoutResults I.Identity ParameterDetails
            -> TurnoutResults I.Identity ParameterDetails
            -> [DeltaTableRow]
 deltaTable trA trB = 
-  let groups = fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
+  let groupNames = fmap (T.pack . show) $ demCategories ds
       getScaledPop :: TurnoutResults I.Identity ParameterDetails -> [Int]
-      getScaledPop tr =
+      getScaledPop tr = fmap (\b -> let r = popTotal tr b in round (realToFrac (F.rgetField @PopCount r) * (F.rgetField @PopScale r))) $ demCategories ds
+{-      getScaledPop tr =
         let popRec = popTotal tr
             scale = F.rgetField @PopScale popRec
             rescale = round . (* scale) . realToFrac
-        in fmap rescale $ FC.toList @Int @IdentityCounts popRec
+        in fmap rescale $ FC.toList @Int @IdentityCounts popRec -- FIX -}
       popA = getScaledPop trA
       popB = getScaledPop trB
       pop = FL.fold FL.sum popA
-      makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <*> (Just 1000))) groups
+      makeTurnoutList m = catMaybes $ fmap (\g -> fmap ((/1000.0) . realToFrac) (M.lookup g m <*> (Just 1000))) groupNames
       turnoutA = makeTurnoutList $ nationalTurnout trA
       turnoutB = makeTurnoutList $ nationalTurnout trB
       probA = fmap value $ I.runIdentity $ modeled trA
@@ -402,7 +409,7 @@ deltaTable trA trB =
             dtrO = round $ (pop0 + dPop/2) * (turnout0 + dTurnout/2) * (2 * dProb) + (dtrCombo/3)
             dtrTotal = dtrN + dtrT + dtrO 
         in DeltaTableRow (groups !! n) (popB !! n) dtrN dtrT dtrO dtrTotal (realToFrac dtrTotal/realToFrac pop)
-      groupRows = fmap makeDTR [0..7]
+      groupRows = fmap makeDTR [0..(length groupNames -1)] -- this is very bad.  It's like C. *Shudders*
       addRow (DeltaTableRow g p fp ft fo t _) (DeltaTableRow _ p' fp' ft' fo' t' _) =
         DeltaTableRow g (p+p') (fp + fp') (ft +ft') (fo +fo') (t + t') (realToFrac (t + t')/realToFrac (p + p'))
       totalRow = FL.fold (FL.Fold addRow (DeltaTableRow "Total" 0 0 0 0 0 0) id) groupRows
@@ -595,63 +602,42 @@ have converged.
 |]
   
 type X = "X" F.:-> Double
-type PredictedVotes = "PredictedVotes" F.:-> Int
+type PredictedVoters = "PredictedVoters" F.:-> Int
 type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
 type PopScale    = "PopScale" F.:-> Double -- (DVotes + RVotes)/sum (pop_i * turnout_i)
 
-type IdentityCounts = '[ OldNonWhiteFemale
-                       , OldNonWhiteMale
-                       , YoungNonWhiteFemale
-                       , YoungNonWhiteMale
-                       , OldWhiteFemale
-                       , OldWhiteMale
-                       , YoungWhiteFemale
-                       , YoungWhiteMale
-                       ]
-
-
-
-data TurnoutResults f a = TurnoutResults
+data TurnoutResults b f a = TurnoutResults
   {
-    votesAndPopByDistrictF :: F.FrameRec ([ StateAbbreviation
-                                          , CongressionalDistrict
-                                          , PopScale
-                                          , DVotes
-                                          , RVotes
-                                          ] V.++ IdentityCounts),
-    popTotal :: F.Record (IdentityCounts V.++ '[DVotes,RVotes,PredictedVotes,PopScale]), -- F.Record ('[PopScale,DVotes,RVotes] V.++ IdentityCounts),
-    nationalTurnout :: M.Map T.Text (Int -> Int),
+    votesAndPopByDistrictF :: F.FrameRec [ StateAbbreviation
+                                         , CongressionalDistrict
+                                         , DemographicCategory b
+                                         , PopCount
+                                         , PopScale
+                                         , DVotes
+                                         , RVotes
+                                         ],
+    popTotal :: (b -> F.Record [PopCount, DVotes,RVotes,PredictedVoters,PopScale]),
+    nationalTurnout :: (b -> Double),
     modeled :: f [a],
     mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
   }
     
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
 
-sumIdCounts :: (F.ElemOf rs YoungWhiteMale
-               , F.ElemOf rs OldWhiteMale
-               , F.ElemOf rs YoungWhiteFemale
-               , F.ElemOf rs OldWhiteFemale
-               , F.ElemOf rs YoungNonWhiteMale
-               , F.ElemOf rs OldNonWhiteMale
-               , F.ElemOf rs YoungNonWhiteFemale
-               , F.ElemOf rs OldNonWhiteFemale)
-            =>  F.Record rs -> Int
-sumIdCounts r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
-                + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
-
 turnoutModel
-  :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
-  => RunParams
+  :: forall a b r. (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
+  => DemographicStructure a b
+  -> RunParams
   -> Int
-  -> F.Frame IdentityDemographics
+  -> F.Frame a
   -> F.Frame HouseElections
   -> F.Frame Turnout
-  -> K.Sem r (TurnoutResults Maybe (ExpectationSummary Double)) --(Maybe [ExpectationSummary Double], TB.Chain)
-turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
+  -> K.Sem r (TurnoutResults b Maybe (ExpectationSummary Double))
+turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
   let
-    houseElexF = fmap
+    resultsFrame = fmap
       ( F.rcast
         @'[Year, StateAbbreviation, CongressionalDistrict, Party, Candidatevotes, Totalvotes]
       . FT.retypeColumn @District @CongressionalDistrict
@@ -663,101 +649,78 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
       MR.assignKeysAndData @'[StateAbbreviation, CongressionalDistrict]
         @'[Party, Candidatevotes, Totalvotes]
     reduce = MR.foldAndAddKey flattenVotes
-    houseElexFlattenedF
+    resultsFlattenedFrame
       :: F.FrameRec
            '[StateAbbreviation, CongressionalDistrict, DVotes, RVotes, Totalvotes]
-    houseElexFlattenedF =
-      FL.fold (MR.concatFold $ MR.mapReduceFold unpack assign reduce) houseElexF
+    resultsFlattenedFrame =
+      FL.fold (MR.concatFold $ MR.mapReduceFold unpack assign reduce) resultsFrame
   K.logLE K.Diagnostic
     $  "before mapReduce: "
-    <> (T.pack $ show (take 5 $ reverse $ FL.fold FL.list houseElexF))
+    <> (T.pack $ show (take 5 $ reverse $ FL.fold FL.list resultsFrame))
   K.logLE K.Diagnostic
     $  "after mapReduce: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list houseElexFlattenedF))
-  let filteredTurnoutFrame = F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame  
+    <> (T.pack $ show (take 5 $ FL.fold FL.list resultsFlattenedF))
+  let filteredTurnoutFrameM = sequenceA $ fmap (F.rtraverse getCompose . FT.transformMaybe typeIdentity) $ F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
+  filteredTurnoutFrame <- maybe (K.knitError "Failure when parsing identities in turnout data.") return filteredTurnoutFrameM                          
   K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list filteredTurnoutFrame)
   K.logLE K.Diagnostic
     $  "Before scaling by turnout: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
--- Use turnout so we have # voters of each type.
-  let scaleInt :: Double -> Int -> Int
-      scaleInt s = round . (* s) . realToFrac
-      scaleMap = FL.fold
-        (FL.Fold
-          (\m r -> M.insert (F.rgetField @Identity r)
-                            (scaleInt (F.rgetField @AllTurnout r))
-                            m
-          )
-          M.empty
-          id
-        )
-        filteredTurnoutFrame
-      popToVotedM = do -- Maybe Monad
-        scaleYWM  <- M.lookup "YoungWhiteMale" scaleMap
-        scaleOWM  <- M.lookup "OldWhiteMale" scaleMap
-        scaleYWF  <- M.lookup "YoungWhiteFemale" scaleMap
-        scaleOWF  <- M.lookup "OldWhiteFemale" scaleMap
-        scaleYNWM <- M.lookup "YoungNonWhiteMale" scaleMap
-        scaleONWM <- M.lookup "OldNonWhiteMale" scaleMap
-        scaleYNWF <- M.lookup "YoungNonWhiteFemale" scaleMap
-        scaleONWF <- M.lookup "OldNonWhiteFemale" scaleMap
-        return
-          $ (\r ->
-              r
-                & (youngWhiteMale %~ scaleYWM)
-                & (oldWhiteMale %~ scaleOWM)
-                & (youngWhiteFemale %~ scaleYWF)
-                & (oldWhiteFemale %~ scaleOWM)
-                & (youngNonWhiteMale %~ scaleYNWM)
-                & (oldNonWhiteMale %~ scaleONWM)
-                & (youngNonWhiteFemale %~ scaleYNWF)
-                & (oldNonWhiteFemale %~ scaleONWF)            
-            )
-  when (isNothing popToVotedM)
-    $ K.logLE K.Error "popToVoted was not constructed!" -- we should throw something here
-  let popToVoted = fromMaybe id popToVotedM
-      popByIdentityAndResultsF =
-        F.toFrame
-          $ catMaybes
-          $ fmap F.recMaybe
-          $ F.leftJoin @'[StateAbbreviation, CongressionalDistrict]
-              identityDFrame
-              houseElexFlattenedF
-  K.logLE K.Diagnostic
-    $  "After joining: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list popByIdentityAndResultsF))
-  K.logLE K.Info
-    $  "Joined identity and result data has "
-    <> (T.pack $ show $ FL.fold FL.length popByIdentityAndResultsF)
-    <> " rows."
-  
-  let opposedPBIRF = F.filterFrame
-        (\r -> (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0))
-        popByIdentityAndResultsF
-      opposedVBIRF = fmap popToVoted opposedPBIRF        
+  let turnoutByGroupArrayM = FL.fold (makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @AllTurnout)) filteredTurnoutFrame
+  turnoutByGroupA <- maybe (K.knitError "Missing group in turnoutMap") return turnoutByGroupArrayM
+  let turnoutByGroup b = turnoutByGroupA A.! b
+      scaleByTurnout b n = round $ turnoutByGroup b * realToFrac n
+      longByDCategoryF = F.toFrame . L.concat . fmap (demReshape ds) $ FL.fold FL.list identityDFrame
+      sumVotersF = PF.dimap
+                  (\r -> scaleByTurnout (F.rgetField @(DemographicCategory b) r) (F.rgetField @PopCount r))
+                  (FT.recordSingleton @PredictedVoters) 
+                  FL.sum
+      predictedVotersF = MR.concatFold $ MR.mapReduceFold MR.noUnpack (MR.splitOnKeys @DemographicIds) (MR.foldAndAddKey sumVotersF)
+      predictedVotersFrame = MR.fold predictedVotersF longByDCategory
+      addScaledDVotes r = FT.recordSingleton @ScaledDVotes $ realToFrac (F.rgetField @DVotes r + F.rgetField @RVotes r)/realToFrac (F.rgetField @PredictedVoters)
+      resultsWPVFrame = F.toFrame
+                        $ fmap (FT.mutate addScaledDVotes)
+                        $ catMaybes
+                        $ fmap F.recMaybe
+                        $ F.leftJoin @'[StateAbbreviation, CongressionalDistrict]
+                        resultsFlattenedFrame
+                        predictedVotesFrame
+                        
+  let onlyOpposed r = (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0)
+      opposedRWPVFrame = F.filterFrame onlyOpposed resultsWPVFrame
+      races = FL.fold FL.length opposedRWPVFrame
   K.logLE K.Info
     $  "After removing races where someone is running unopposed and scaling each group by turnout we have "
-    <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
-    <> " rows. (contested races)"
+    <> (T.pack $ show races) <> "contested races."
   -- some diagnostics here
-  -- pop * turnout for all then for opposed
-  let allVotersF = FL.premap (sumIdCounts . popToVoted) FL.sum
+  let allVotersF = FL.premap (F.rgetField @PredictedVoters) FL.sum
       allVotesF = FL.premap (F.rgetField @Totalvotes) FL.sum
       allDRVotesF = FL.premap (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r) FL.sum
-      (totalVoters, totalVotes, totalDRVotes) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) popByIdentityAndResultsF
-      (totalVotersCD, totalVotesCD, totalDRVotesCD) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) opposedPBIRF
+      (totalVoters, totalVotes, totalDRVotes) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) resultsWPVFrame
+      (totalVotersCD, totalVotesCD, totalDRVotesCD) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) opposedRWPVFrame
   K.logLE K.Info $ "total voters=" <> (T.pack $ show totalVoters)
   K.logLE K.Info $ "total house votes=" <> (T.pack $ show totalVotes)
   K.logLE K.Info $ "total D+R house votes=" <> (T.pack $ show totalDRVotes)
   K.logLE K.Info $ "total voters (competitive districts)=" <> (T.pack $ show totalVotersCD)
   K.logLE K.Info $ "total house votes (competitive districts)=" <> (T.pack $ show totalVotesCD)
   K.logLE K.Info $ "total D+R house votes (competitive districts)=" <> (T.pack $ show totalDRVotesCD)
-
-  let predictedVotesField = FT.recordSingleton @PredictedVotes . sumIdCounts . popToVoted 
+  let longWithScaledDFrame = F.filterFrame onlyOpposed
+                             $ F.toFrame
+                             $ catMaybes
+                             $ fmap F.recMaybe
+                             $ F.leftJoin @'[StateAbbreviation, CongressionalDistrict]
+                             longByCategoryDFrame
+                             resultsWPVFrame
+      forMCMCF :: FL.Fold (F.Record [DemographicCategory b, PopCount, ScaledDVotes]) (Maybe (Int,[Int]))
+      forMCMCF = fmap (\ma mb -> (,) <$> ma <*> mb) $
+                 (,) <$> PF.dimap (F.rgetField @ScaledDVotes) FL.last
+                 <*> fmap (fmap (\(b,c) ->  scaleByTurnout b c) . A.assocs) makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @PopCount)
+-- HERE                 
+  let predictedVoters = F.rgetField @PredictedVoters 
       vD = F.rgetField @DVotes
       vR = F.rgetField @RVotes
-      popScaleV r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumIdCounts r)) -- we've already scaled by turnout here
-      popScaleP r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumIdCounts $ popToVoted r)) -- here we need to rescale as we sum
+      popScale r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (predictedVoters r)) -- we've already scaled by turnout here
+      
       opposedVBIRWithTargetF = fmap (FT.mutate popScaleV) opposedVBIRF
       opposedPBIRWithScaleF = fmap (FT.mutate (\r -> popScaleP r F.<+> predictedVotesField r)) opposedPBIRF
   K.logLE K.Diagnostic
@@ -782,6 +745,25 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
       totalScale = let r = totalPopRec in realToFrac (F.rgetField @DVotes r + F.rgetField @RVotes r)/(realToFrac $ F.rgetField @PredictedVotes r)
       totalPopWithScaleRec = V.rappend totalPopRec $ FT.recordSingleton @PopScale totalScale
   return $ TurnoutResults resFrame totalPopWithScaleRec scaleMap summaries (L.concat mcmcResults)  
+
+mapAscListAll :: forall k v. (Enum k, Ord k, Bounded k) => M.Map k v -> Maybe [(k,v)] 
+mapAscListAll m = if (length M.keys m == length [minBound @k ..]) then Just $ M.toAscList m else Nothing
+
+makeArrayMF :: forall x k v. (Enum k, Ord k, Bounded k, A.Ix k) => (x -> k) -> (x -> v) -> FL.Fold x (Maybe (A.Array k v))
+makeArrayMF getKey getVal = FL.Fold 
+                            (\m x -> M.insert (getKey x) (getVal x) m)
+                            M.empty
+                            (fmap (A.array [minBound..]) . mapAscListAll)
+
+makeArrayWithDefaultF :: forall x k v. (Enum k, Ord k, Bounded k, A.Ix k) => (x -> k) -> (x -> v) -> v -> FL.Fold x (Maybe (A.Array k v))
+makeArrayWithDefaultF getKey getVal d = FL.Fold 
+                                        (\m x -> M.insert (getKey x) (getVal x) m)
+                                        (M.fromList $ fmap (,d) [minBound..])
+                                        (A.array [minBound..] . M.toAscList)
+
+
+typeIdentity :: forall b.F.Record '[Identity] -> F.Rec (Maybe F.:. F.ElField) '[DemographicCategory b]
+typeIdentity x = Compose $ fmap V.Field $ TR.readMaybe @b (F.rgetField @Identity x) V.:& V.RNil
 
 
 modelNotesRegression :: T.Text
@@ -818,7 +800,7 @@ This is now in a form amenable for regression, estimating the $p_i$ that best fi
 Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
 
-
+{-
 sumScaledPopF :: FL.Fold (F.Record ('[PopScale] V.++ IdentityCounts)) (F.Record IdentityCounts)
 sumScaledPopF =
   FF.sequenceRecFold 
@@ -831,3 +813,4 @@ sumScaledPopF =
   V.:& FF.recFieldF FL.sum (\r -> round $ F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteFemale r))
   V.:& FF.recFieldF FL.sum (\r -> round $F.rgetField @PopScale r * realToFrac (F.rgetField @YoungWhiteMale r))
   V.:& V.RNil
+-}

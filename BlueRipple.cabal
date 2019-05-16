@@ -53,14 +53,15 @@ library
                  , BlueRipple.Data.DataFrames
                  , BlueRipple.Model.TurnoutBayes
   build-depends:       base >=4.11
-                     , ad
---                     , backprop
+--                     , ad                       
+--                     , backprop                       
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default
                      , declarative
                      , formattable
                      , gamma
+                     , hashable
                      , lens
                      , math-functions
                      , OpenFEC-beam
@@ -108,6 +109,7 @@ executable turnout
   main-is:        turnout.hs
   build-depends: base >= 4.11
                , BlueRipple
+               , array
                , colonnade
                , blaze-colonnade
                , data-science-utils
