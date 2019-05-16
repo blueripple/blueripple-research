@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -7,7 +8,6 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
-{-# LANGUAGE PolyKinds                 #-}
 module Main where
 
 import           Control.Lens                   ( (^.)
@@ -43,10 +43,12 @@ import qualified Frames                        as F
 import           Frames                         ( (:->)
                                                 , (<+>)
                                                 , (&:)
-                                                )
+                                                )                 
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as F
                                          hiding ( inCoreAoS )
+import qualified Frames.Melt                   as F (ElemOf)
+
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
@@ -59,6 +61,7 @@ import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mann
 import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, parameterPlotMany)
 
 import qualified Frames.ParseableTypes         as FP
+import qualified Frames.Constraints            as FCon
 import qualified Frames.VegaLite               as FV
 import qualified Frames.Transform              as FT
 import qualified Frames.Conversion             as FC
@@ -242,9 +245,9 @@ Year   Democrats    Republicans   D - R
 2016  61,417       62,772        -1,355
 2018  60,320       50,467        +9,853
 
-* Our model indicates a -4,140k shift toward republicans 2012 -> 2016 and the popular house vote shifted -2,773k.
-* Our model indicates a +8,426 shift toward democrats 2014 -> 2018 and the popular house vote shifted +14,310k.
-* Our model indicates a +5,567 shift toward democrats 2016 -> 2018 and the popular house vote shifted +11,208k.
+* Our model indicates a 4,105k shift toward **republicans** 2012 -> 2016 and the popular house vote shifted -2,773k.
+* Our model indicates a 8,185k shift toward **democrats** 2014 -> 2018 and the popular house vote shifted +14,310k.
+* Our model indicates a 5,710k shift toward **democrats** 2016 -> 2018 and the popular house vote shifted +11,208k.
 
 We don't expect these numbers to match since we are only counting competitive house districts.  Still ???.
 
@@ -256,8 +259,7 @@ We don't expect these numbers to match since we are only counting competitive ho
 |]
   
 quick = RunParams 2 500 50
-justEnough = RunParams 5 3000 300
-thorough = RunParams 5 5000 500
+justEnough = RunParams 5 5000 500
 goToTown = RunParams 10 10000 1000
 
   
@@ -298,7 +300,7 @@ main = do
                                          (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = goToTown
+        let rp = justEnough
         K.addMarkDown introduction
         K.logLE K.Info $ "inferring for 2012"
         res2012 <- turnoutModel rp 2012 identityDemographics2012Frame
@@ -553,8 +555,8 @@ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
 * In order to compute expectations on this distribution we use
 Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples
 from the the posterior
-distribution given a prior, $P(\{p_i\})$,
-the conditional $P(\{D_k\}|\{p_i\})$, and a starting $\{p_i\}$.
+distribution given a prior, $P(\{p_i\})$, the conditional
+$P(\{D_k\}|\{p_i\})$, and a starting $\{p_i\}$.
 Note that this doesn't require knowing $P(\{D_k\})$, basically
 because the *relative* likelihood of any $\{p_i\}$
 doesn't depend on it.
@@ -626,6 +628,18 @@ data TurnoutResults f a = TurnoutResults
     
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
 
+sumIdCounts :: (F.ElemOf rs YoungWhiteMale
+               , F.ElemOf rs OldWhiteMale
+               , F.ElemOf rs YoungWhiteFemale
+               , F.ElemOf rs OldWhiteFemale
+               , F.ElemOf rs YoungNonWhiteMale
+               , F.ElemOf rs OldNonWhiteMale
+               , F.ElemOf rs YoungNonWhiteFemale
+               , F.ElemOf rs OldNonWhiteFemale)
+            =>  F.Record rs -> Int
+sumIdCounts r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
+                + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
+
 turnoutModel
   :: (K.Member K.ToPandoc r, K.PandocEffects r, MonadIO (K.Sem r))
   => RunParams
@@ -636,7 +650,6 @@ turnoutModel
   -> K.Sem r (TurnoutResults Maybe (ExpectationSummary Double)) --(Maybe [ExpectationSummary Double], TB.Chain)
 turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
   -- rename some cols in houseElex
-
   let
     houseElexF = fmap
       ( F.rcast
@@ -667,14 +680,12 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     $  "Before scaling by turnout: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
 -- Use turnout so we have # voters of each type.
-  let pVotes r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
-                 + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
   let scaleInt :: Double -> Int -> Int
       scaleInt s = round . (* s) . realToFrac
       scaleMap = FL.fold
         (FL.Fold
           (\m r -> M.insert (F.rgetField @Identity r)
-                            (scaleInt (F.rgetField @VotedFraction r))
+                            (scaleInt (F.rgetField @AllTurnout r))
                             m
           )
           M.empty
@@ -700,20 +711,11 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
                 & (youngNonWhiteMale %~ scaleYNWM)
                 & (oldNonWhiteMale %~ scaleONWM)
                 & (youngNonWhiteFemale %~ scaleYNWF)
-                & (oldNonWhiteFemale %~ scaleONWF)
-            , \r -> ( scaleYWM $ r ^. youngWhiteMale)
-                    +(scaleOWM $ r ^. oldWhiteMale)
-                    +(scaleYWF $ r ^. youngWhiteFemale)
-                    +(scaleOWF$ r ^. oldWhiteFemale)
-                    +(scaleYNWM $ r ^. youngNonWhiteMale)
-                    +(scaleONWM $ r ^. oldNonWhiteMale) 
-                    +(scaleYNWF $ r ^. youngNonWhiteFemale)
-                    +(scaleONWF $ r ^. oldNonWhiteFemale) 
-            
+                & (oldNonWhiteFemale %~ scaleONWF)            
             )
   when (isNothing popToVotedM)
     $ K.logLE K.Error "popToVoted was not constructed!" -- we should throw something here
-  let (popToVoted, sumOfVoted) = fromMaybe (id,const 0) popToVotedM
+  let popToVoted = fromMaybe id popToVotedM
       popByIdentityAndResultsF =
         F.toFrame
           $ catMaybes
@@ -728,6 +730,7 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     $  "Joined identity and result data has "
     <> (T.pack $ show $ FL.fold FL.length popByIdentityAndResultsF)
     <> " rows."
+  
   let opposedPBIRF = F.filterFrame
         (\r -> (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0))
         popByIdentityAndResultsF
@@ -736,13 +739,25 @@ turnoutModel runParams year identityDFrame houseElexFrame turnoutFrame = do
     $  "After removing races where someone is running unopposed and scaling each group by turnout we have "
     <> (T.pack $ show $ FL.fold FL.length opposedVBIRF)
     <> " rows. (contested races)"
-  let sumOfPeople r = (r ^. youngWhiteMale) + (r ^. oldWhiteMale) + (r ^. youngWhiteFemale) + (r ^. oldWhiteFemale)
-                      + (r ^. youngNonWhiteMale) + (r ^. oldNonWhiteMale) + (r ^. youngNonWhiteFemale) + (r ^. oldNonWhiteFemale)
-  let predictedVotesField = FT.recordSingleton @PredictedVotes . sumOfVoted
+  -- some diagnostics here
+  -- pop * turnout for all then for opposed
+  let allVotersF = FL.premap (sumIdCounts . popToVoted) FL.sum
+      allVotesF = FL.premap (F.rgetField @Totalvotes) FL.sum
+      allDRVotesF = FL.premap (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r) FL.sum
+      (totalVoters, totalVotes, totalDRVotes) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) popByIdentityAndResultsF
+      (totalVotersCD, totalVotesCD, totalDRVotesCD) = FL.fold ((,,) <$> allVotersF <*> allVotesF <*> allDRVotesF) opposedPBIRF
+  K.logLE K.Info $ "total voters=" <> (T.pack $ show totalVoters)
+  K.logLE K.Info $ "total house votes=" <> (T.pack $ show totalVotes)
+  K.logLE K.Info $ "total D+R house votes=" <> (T.pack $ show totalDRVotes)
+  K.logLE K.Info $ "total voters (competitive districts)=" <> (T.pack $ show totalVotersCD)
+  K.logLE K.Info $ "total house votes (competitive districts)=" <> (T.pack $ show totalVotesCD)
+  K.logLE K.Info $ "total D+R house votes (competitive districts)=" <> (T.pack $ show totalDRVotesCD)
+
+  let predictedVotesField = FT.recordSingleton @PredictedVotes . sumIdCounts . popToVoted 
       vD = F.rgetField @DVotes
       vR = F.rgetField @RVotes
-      popScaleV r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumOfPeople r)) -- we've already scaled by turnout here
-      popScaleP r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumOfVoted r)) -- here we need to rescale as we sum
+      popScaleV r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumIdCounts r)) -- we've already scaled by turnout here
+      popScaleP r = FT.recordSingleton @PopScale $ (realToFrac (vD r + vR r)/realToFrac (sumIdCounts $ popToVoted r)) -- here we need to rescale as we sum
       opposedVBIRWithTargetF = fmap (FT.mutate popScaleV) opposedVBIRF
       opposedPBIRWithScaleF = fmap (FT.mutate (\r -> popScaleP r F.<+> predictedVotesField r)) opposedPBIRF
   K.logLE K.Diagnostic
