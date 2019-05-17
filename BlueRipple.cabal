@@ -111,6 +111,7 @@ executable turnout
                , colonnade
                , blaze-colonnade
                , data-science-utils
+               , discrimination
                , lens
                , map-reduce-folds >= 0.1.0.1
                , random
