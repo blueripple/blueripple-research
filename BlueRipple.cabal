@@ -28,6 +28,7 @@ common deps
                , blaze-html
                , containers
                , Frames
+               , Frames-map-reduce >= 0.1.0.1
                , Frames-utils
                , foldl
                , freer-simple
@@ -95,7 +96,6 @@ executable mission
   main-is:        mission.hs
   build-depends: base >= 4.11
                , BlueRipple
-               , Frames-map-reduce >= 0.1.0.1
                , lens
                , map-reduce-folds
                , time
@@ -111,7 +111,6 @@ executable turnout
                , colonnade
                , blaze-colonnade
                , data-science-utils
-               , Frames-map-reduce
                , lens
                , map-reduce-folds >= 0.1.0.1
                , random

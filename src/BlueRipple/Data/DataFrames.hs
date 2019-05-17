@@ -42,6 +42,7 @@ import qualified Text.Read                     as TR
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
+import qualified Frames.MapReduce              as MR
 
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
@@ -94,11 +95,15 @@ makeArrayGeneralMF
   -> (x -> k)
   -> (x -> v)
   -> (v -> v -> v)
-  -> FL.Fold x (Maybe (A.Array k v))
-makeArrayGeneralMF m0 getKey getVal combine = FL.Fold
+  -> FL.FoldM Maybe x (A.Array k v)
+makeArrayGeneralMF m0 getKey getVal combine =
+  fmap (A.array (minBound, maxBound))
+  $ MR.postMapM mapAscListAll
+  $ FL.generalize
+  $ FL.Fold
   (\m x -> M.insertWith combine (getKey x) (getVal x) m)
   m0
-  (fmap (A.array (minBound, maxBound)) . mapAscListAll)
+  id
 
 makeArrayMF
   :: forall x k v
@@ -106,7 +111,7 @@ makeArrayMF
   => (x -> k)
   -> (x -> v)
   -> (v -> v -> v)
-  -> FL.Fold x (Maybe (A.Array k v))
+  -> FL.FoldM Maybe x (A.Array k v)
 makeArrayMF = makeArrayGeneralMF M.empty
 
 makeArrayWithDefaultF
@@ -118,14 +123,13 @@ makeArrayWithDefaultF
   -> (v -> v -> v)
   -> FL.Fold x (A.Array k v)
 makeArrayWithDefaultF d getKey getVal combine =
-  fmap fromJust $ makeArrayGeneralMF (M.fromList $ fmap (, d) [minBound ..])
-                                     getKey
-                                     getVal
-                                     combine
-
+  FL.Fold
+  (\m x -> M.insertWith combine (getKey x) (getVal x) m)
+  (M.fromList $ fmap (, d) [minBound ..])
+  (A.array (minBound,maxBound) . M.toAscList)
 
 -- This function requires at least one record of each type or else it returns Nothing
-recordsToArrayF
+recordsToArrayMF
   :: forall b rs
    . (F.ElemOf rs (DemographicCategory b)
      , F.ElemOf rs PopCount
@@ -133,18 +137,14 @@ recordsToArrayF
      , Ord b
      , Bounded b
      , Ix b)
-  => FL.Fold (F.Record rs) (Maybe (A.Array b Int))
-recordsToArrayF = makeArrayMF (F.rgetField @(DemographicCategory b))
-                              (F.rgetField @PopCount)
-                              (flip const)
+  => FL.FoldM Maybe (F.Record rs) (A.Array b Int)
+recordsToArrayMF =
+  makeArrayMF (F.rgetField @(DemographicCategory b))
+  (F.rgetField @PopCount)
+  (flip const)
 
-typeIdentity
-  :: forall b. (Read b)
-   => F.Record '[Identity]
-  -> F.Rec (Maybe F.:. F.ElField) '[DemographicCategory b]
-typeIdentity x =
-  (V.Compose $ fmap V.Field $ TR.readMaybe @b (T.unpack $ F.rgetField @Identity x)) V.:& V.RNil
-
+foldNumArray :: (Num a, A.Ix k, Bounded k) => FL.Fold (A.Array k a) (A.Array k a)
+foldNumArray = FL.Fold (\as a -> A.accum (+) as (A.assocs a)) (A.listArray (minBound,maxBound) $ repeat 0) id
 
 data SimpleASR = OldNonWhiteFemale
                | YoungNonWhiteFemale
@@ -156,6 +156,7 @@ data SimpleASR = OldNonWhiteFemale
                | YoungWhiteMale deriving (Show,Read,Enum,Bounded,Eq,Ord,Ix,Generic)
 
 type instance FI.VectorFor SimpleASR = V.Vector
+type instance FI.VectorFor (A.Array b Int) = V.Vector
 instance Hashable SimpleASR
 
 
@@ -191,6 +192,17 @@ simpleAgeSexRace = DemographicStructure reshape typeTurnout [minBound ..]
              V.++
              '[DemographicCategory SimpleASR]
          ))
-  typeTurnout f = fmap F.toFrame $ sequenceA $ fmap
-    (F.rtraverse V.getCompose . FT.transformMaybe typeIdentity) (FL.fold FL.list f)
+  typeTurnout f =
+    let filtered = F.filterFrame (\r -> let i = F.rgetField @Identity r in (i /= "YoungMale")
+                                                                           && (i /= "OldMale")
+                                                                           && (i /= "YoungFemale")
+                                                                           && (i /= "OldFemale")) f
+    in fmap F.toFrame $ sequenceA $ fmap
+    (F.rtraverse V.getCompose . FT.transformMaybe typeIdentity) (FL.fold FL.list filtered)
 
+typeIdentity
+  :: forall b. (Read b)
+   => F.Record '[Identity]
+  -> F.Rec (Maybe F.:. F.ElField) '[DemographicCategory b]
+typeIdentity x =
+  (V.Compose $ fmap V.Field $ TR.readMaybe @b (T.unpack $ F.rgetField @Identity x)) V.:& V.RNil

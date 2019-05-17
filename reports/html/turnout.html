@@ -54,14 +54,14 @@ table td {
 
 <section id="where-did-the-2018-votes-come-from" class="level2">
 <h2>Where Did The 2018 Votes Come From?</h2>
-<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them, there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 was the result of changes in demographics vs. voter turnout vs. voters changing their votes? Answering this is difficult. We don't have granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. In what follows, we attempt to use the election results themselves<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, combined with demographic data about the populations in each house district<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>, and census data regarding the turnout<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a> of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll interpret changes in that inferred probability as people "changing their minds".</p>
+<p>The 2018 house races were generally good for Democrats and Progressives. As we look to hold those gains and build on them, there are an assortment of questions to ask about the 2018 results. As an example, how much of the change from 2016 to 2018 was the result of changes in demographics vs. voter turnout vs. voters changing their votes? Answering this is difficult. We don't have granular turnout data and we have only exit-poll and post-election survey data to look at for data about how people voted in each election. In what follows, we attempt to use the election results themselves<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>, combined with demographic data about the populations in each house district<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a><a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>, and census data regarding the turnout<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll interpret changes in that inferred probability as people "changing their minds".</p>
 <p>In order to get a more complete picture, we'll do the same work for the house elections in 2012, 2014, 2016 and 2018 so we can look over time as well as compare like-with-like in terms of presidential and non-presidential elections.</p>
 <ul>
 <li><p>In each year, we consider only "competitive" districts, that is those that had a democrat and republican candidate. Of the possible 435 districts, In 2012 385 were competitive, in 2014 351 districts were competitive, in 2016 369 districts were competitive, and 382 districts were competitive in 2018.</p></li>
 <li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into White (Non-Hispanic) and Non-White, Male and Female and "Young" (&lt;45) and "Old".</p></li>
 <li><p>More detail about the voter preference model and the techniques used to perform inference are in the <a href="#preference-model-notes">Preference-Model Notes</a> section below. Please note, though, these results are inferred from other data, rather than measured directly through polling or surveys and as such may not match those sorts of analyses.</p></li>
 </ul>
-<p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at or above 75% (and often above 85%), regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a>. Support from white voters is substantially lower, about between 35% and 45% across both age groups and both sexes, though people under 45 are slightly more likely to vote democratic than their older counterparts. This is particularly noticeable in 2016, when, perhaps because of Trump, young white people became slightly more likely to vote for democratic house candidates while older white people became more likely to vote for republicans in the house. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%. These results are broadly consistent with exit-polling<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a><a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a><a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a><a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a>.</p>
+<p>The results are presented below. What stands out immediately is how strong the support of non-white voters is for democratic candidates, running at or above 75% (and often above 85%), regardless of age or sex, though support is somewhat stronger among non-white female voters than non-white male voters<a href="#fn5" class="footnote-ref" id="fnref5" role="doc-noteref"><sup>5</sup></a>. Support from white voters is substantially lower, about between 35% and 45% across both age groups and both sexes, though people under 45 are slightly more likely to vote democratic than their older counterparts. This is particularly noticeable in 2016, when, perhaps because of Trump, young white people became slightly more likely to vote for democratic house candidates while older white people became more likely to vote for republicans in the house. As we move from 2016 to 2018, the non-white support holds, maybe increasing slightly from its already high level, and white support <em>grows</em> substantially across all ages and sexes, though it remains below 50%. These results are broadly consistent with exit-polling<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a><a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a><a href="#fn8" class="footnote-ref" id="fnref8" role="doc-noteref"><sup>8</sup></a><a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a>.</p>
 <p>So we conclude that <em>some</em> of the 2018 democratic house votes came from existing white voters changing their votes while non-white support remained intensely high. Is that the whole story?</p>
 <figure id="figure_1">
 <script type="text/javascript">var vlSpec=
@@ -76,227 +76,227 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.889211827699331,
+                "ConfHi": 0.6615437605674548,
                 "Key": "2012",
-                "ConfLo": 0.8874352148648419,
-                "Estimate": 0.888327664525677,
+                "ConfLo": 0.6506815495945945,
+                "Estimate": 0.6572538382981318,
                 "Parameter": "OldNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8570989203477193,
+                "ConfHi": 0.5699851951049419,
                 "Key": "2012",
-                "ConfLo": 0.8549998869159238,
-                "Estimate": 0.8560477730665864,
-                "Parameter": "OldNonWhiteMale-2012"
-            },
-            {
-                "ConfHi": 0.844030102342777,
-                "Key": "2012",
-                "ConfLo": 0.8425502118250308,
-                "Estimate": 0.8432939239153214,
+                "ConfLo": 0.5428618822284069,
+                "Estimate": 0.5586775587308044,
                 "Parameter": "YoungNonWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.8280219114124336,
+                "ConfHi": 0.607858437811143,
                 "Key": "2012",
-                "ConfLo": 0.8263065594393229,
-                "Estimate": 0.8271662123257033,
+                "ConfLo": 0.6003043572711219,
+                "Estimate": 0.6048624953241553,
+                "Parameter": "OldNonWhiteMale-2012"
+            },
+            {
+                "ConfHi": 0.5335884907544338,
+                "Key": "2012",
+                "ConfLo": 0.5194669263985483,
+                "Estimate": 0.5274798649094318,
                 "Parameter": "YoungNonWhiteMale-2012"
             },
             {
-                "ConfHi": 0.4158028338977679,
+                "ConfHi": 0.6658539858780753,
                 "Key": "2012",
-                "ConfLo": 0.41489118533281266,
-                "Estimate": 0.4153440778040311,
+                "ConfLo": 0.645418254274283,
+                "Estimate": 0.6572888248049515,
                 "Parameter": "OldWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.4083590738432721,
+                "ConfHi": 0.6595768126585554,
                 "Key": "2012",
-                "ConfLo": 0.4073820840838675,
-                "Estimate": 0.4078700109060145,
-                "Parameter": "OldWhiteMale-2012"
-            },
-            {
-                "ConfHi": 0.44120447100082627,
-                "Key": "2012",
-                "ConfLo": 0.440249994267491,
-                "Estimate": 0.440725062293294,
+                "ConfLo": 0.4788829842994511,
+                "Estimate": 0.5592916549960476,
                 "Parameter": "YoungWhiteFemale-2012"
             },
             {
-                "ConfHi": 0.44023368496273824,
+                "ConfHi": 0.6095190395020397,
                 "Key": "2012",
-                "ConfLo": 0.4392283305188525,
-                "Estimate": 0.4397350465044682,
+                "ConfLo": 0.5978697056835491,
+                "Estimate": 0.6048488906458241,
+                "Parameter": "OldWhiteMale-2012"
+            },
+            {
+                "ConfHi": 0.5925977469952555,
+                "Key": "2012",
+                "ConfLo": 0.4403587552521667,
+                "Estimate": 0.5269655586345938,
                 "Parameter": "YoungWhiteMale-2012"
             },
             {
-                "ConfHi": 0.8320205093369455,
+                "ConfHi": 0.6005809371464954,
                 "Key": "2014",
-                "ConfLo": 0.8297040883844077,
-                "Estimate": 0.8308619437248105,
+                "ConfLo": 0.5984091488250085,
+                "Estimate": 0.599435314153241,
                 "Parameter": "OldNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.8018158457974063,
+                "ConfHi": 0.503591526792944,
                 "Key": "2014",
-                "ConfLo": 0.7991033204904411,
-                "Estimate": 0.8004592964358955,
-                "Parameter": "OldNonWhiteMale-2014"
-            },
-            {
-                "ConfHi": 0.7896007242674589,
-                "Key": "2014",
-                "ConfLo": 0.7872765726465744,
-                "Estimate": 0.7884398474843406,
+                "ConfLo": 0.5012453070898917,
+                "Estimate": 0.5025619251812123,
                 "Parameter": "YoungNonWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.7710278072668162,
+                "ConfHi": 0.5527236551362453,
                 "Key": "2014",
-                "ConfLo": 0.7681902035737798,
-                "Estimate": 0.7696037979766079,
+                "ConfLo": 0.5500204059155507,
+                "Estimate": 0.5514127127860168,
+                "Parameter": "OldNonWhiteMale-2014"
+            },
+            {
+                "ConfHi": 0.4725405616531582,
+                "Key": "2014",
+                "ConfLo": 0.4698519946593501,
+                "Estimate": 0.4712334642586951,
                 "Parameter": "YoungNonWhiteMale-2014"
             },
             {
-                "ConfHi": 0.39493577167125254,
+                "ConfHi": 0.6004168146620541,
                 "Key": "2014",
-                "ConfLo": 0.393860141659866,
-                "Estimate": 0.39439591390019635,
+                "ConfLo": 0.5986007364150117,
+                "Estimate": 0.5994742515021803,
                 "Parameter": "OldWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.39083708829416003,
+                "ConfHi": 0.5035929280807677,
                 "Key": "2014",
-                "ConfLo": 0.38966056559250717,
-                "Estimate": 0.3902489532692683,
-                "Parameter": "OldWhiteMale-2014"
-            },
-            {
-                "ConfHi": 0.41105073139503906,
-                "Key": "2014",
-                "ConfLo": 0.40964119796850723,
-                "Estimate": 0.4103460746137811,
+                "ConfLo": 0.5017306792809626,
+                "Estimate": 0.5025492664948372,
                 "Parameter": "YoungWhiteFemale-2014"
             },
             {
-                "ConfHi": 0.4137667400019956,
+                "ConfHi": 0.5523787229778446,
                 "Key": "2014",
-                "ConfLo": 0.41232086796017003,
-                "Estimate": 0.41304110194781557,
+                "ConfLo": 0.5503466301379684,
+                "Estimate": 0.5514105898456186,
+                "Parameter": "OldWhiteMale-2014"
+            },
+            {
+                "ConfHi": 0.4721443362439418,
+                "Key": "2014",
+                "ConfLo": 0.47023845069010606,
+                "Estimate": 0.47116666471688373,
                 "Parameter": "YoungWhiteMale-2014"
             },
             {
-                "ConfHi": 0.907752238027717,
+                "ConfHi": 0.6372784498475542,
                 "Key": "2016",
-                "ConfLo": 0.9058423162182688,
-                "Estimate": 0.9067939679228981,
+                "ConfLo": 0.6352359506622339,
+                "Estimate": 0.6361991348005996,
                 "Parameter": "OldNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8853343140334686,
+                "ConfHi": 0.5473465219437142,
                 "Key": "2016",
-                "ConfLo": 0.8831356236614649,
-                "Estimate": 0.884235036272746,
-                "Parameter": "OldNonWhiteMale-2016"
-            },
-            {
-                "ConfHi": 0.8590780104342512,
-                "Key": "2016",
-                "ConfLo": 0.8575214248995582,
-                "Estimate": 0.8582958078426247,
+                "ConfLo": 0.5409086094877321,
+                "Estimate": 0.5441389700301731,
                 "Parameter": "YoungNonWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.8461168948812943,
+                "ConfHi": 0.5959775325523918,
                 "Key": "2016",
-                "ConfLo": 0.8443167169643234,
-                "Estimate": 0.8452154515771564,
+                "ConfLo": 0.5936393086843825,
+                "Estimate": 0.5948089118875675,
+                "Parameter": "OldNonWhiteMale-2016"
+            },
+            {
+                "ConfHi": 0.5193595399790005,
+                "Key": "2016",
+                "ConfLo": 0.5172004460902345,
+                "Estimate": 0.5182970045808921,
                 "Parameter": "YoungNonWhiteMale-2016"
             },
             {
-                "ConfHi": 0.38585021117490487,
+                "ConfHi": 0.6382138761447932,
                 "Key": "2016",
-                "ConfLo": 0.38491687213144454,
-                "Estimate": 0.3853863268005303,
+                "ConfLo": 0.6339643347489178,
+                "Estimate": 0.6361593162265693,
                 "Parameter": "OldWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.3813412934177526,
+                "ConfHi": 0.5460172347694254,
                 "Key": "2016",
-                "ConfLo": 0.38035978504994716,
-                "Estimate": 0.38085210515145634,
-                "Parameter": "OldWhiteMale-2016"
-            },
-            {
-                "ConfHi": 0.427250055518992,
-                "Key": "2016",
-                "ConfLo": 0.4263069768957036,
-                "Estimate": 0.42677934624954783,
+                "ConfLo": 0.542022399422955,
+                "Estimate": 0.5440428527053559,
                 "Parameter": "YoungWhiteFemale-2016"
             },
             {
-                "ConfHi": 0.4239776324973018,
+                "ConfHi": 0.5960983907355316,
                 "Key": "2016",
-                "ConfLo": 0.42299271860155807,
-                "Estimate": 0.4234840305295574,
+                "ConfLo": 0.5938356319022713,
+                "Estimate": 0.5948162535437085,
+                "Parameter": "OldWhiteMale-2016"
+            },
+            {
+                "ConfHi": 0.5242931143249162,
+                "Key": "2016",
+                "ConfLo": 0.5114249996432776,
+                "Estimate": 0.5182980769876605,
                 "Parameter": "YoungWhiteMale-2016"
             },
             {
-                "ConfHi": 0.9084320432753634,
+                "ConfHi": 0.6546737283701226,
                 "Key": "2018",
-                "ConfLo": 0.906249439651447,
-                "Estimate": 0.9073489775947874,
+                "ConfLo": 0.6507695262856923,
+                "Estimate": 0.6520570352269325,
                 "Parameter": "OldNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.8838196186860368,
+                "ConfHi": 0.5563911034734407,
                 "Key": "2018",
-                "ConfLo": 0.8812390296616799,
-                "Estimate": 0.882526737984885,
-                "Parameter": "OldNonWhiteMale-2018"
-            },
-            {
-                "ConfHi": 0.8547208267867002,
-                "Key": "2018",
-                "ConfLo": 0.8528427746542218,
-                "Estimate": 0.8537764540345614,
+                "ConfLo": 0.5515393817163807,
+                "Estimate": 0.5527697532277226,
                 "Parameter": "YoungNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.8376054629861888,
+                "ConfHi": 0.6097783345669795,
                 "Key": "2018",
-                "ConfLo": 0.8354335642972184,
-                "Estimate": 0.8365317266020131,
+                "ConfLo": 0.6064572233639225,
+                "Estimate": 0.6077822996965572,
+                "Parameter": "OldNonWhiteMale-2018"
+            },
+            {
+                "ConfHi": 0.526146022165146,
+                "Key": "2018",
+                "ConfLo": 0.5220893118441752,
+                "Estimate": 0.5233248217834416,
                 "Parameter": "YoungNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.429060293424442,
+                "ConfHi": 0.6558399522186741,
                 "Key": "2018",
-                "ConfLo": 0.42807894489447884,
-                "Estimate": 0.42856854763814356,
+                "ConfLo": 0.651083210080814,
+                "Estimate": 0.6521673525323778,
                 "Parameter": "OldWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.42703954348449374,
+                "ConfHi": 0.5579715423876771,
                 "Key": "2018",
-                "ConfLo": 0.4259674741884577,
-                "Estimate": 0.4265036499941651,
-                "Parameter": "OldWhiteMale-2018"
-            },
-            {
-                "ConfHi": 0.45204994922011565,
-                "Key": "2018",
-                "ConfLo": 0.4509472135944821,
-                "Estimate": 0.45150086051898813,
+                "ConfLo": 0.5517623229158352,
+                "Estimate": 0.5529857996010626,
                 "Parameter": "YoungWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.45425079620597036,
+                "ConfHi": 0.6109682558472851,
                 "Key": "2018",
-                "ConfLo": 0.4530748474162934,
-                "Estimate": 0.4536649391945428,
+                "ConfLo": 0.6065821377276387,
+                "Estimate": 0.6078947324889334,
+                "Parameter": "OldWhiteMale-2018"
+            },
+            {
+                "ConfHi": 0.528558260320087,
+                "Key": "2018",
+                "ConfLo": 0.5223609929679297,
+                "Estimate": 0.5235596147054549,
                 "Parameter": "YoungWhiteMale-2018"
             }
         ]
@@ -356,7 +356,7 @@ table td {
 vegaEmbed('#figure_1',vlSpec);</script>
 </figure>
 <p>Now we have an estimate of how peoples' choices changed between 2012 and 2018. But that's only one part of the story. Voting shifts are also driven by changes in demographics (people move, get older, become eligible to vote and people die) and different changes in voter turnout among different demographic groups. In our simplistic model, we can look at these separately, nationally and in any congressional district.</p>
-<p>Below, we compare these changes (nationally) for each group for 2012 -&gt; 2016 (both presidential elections), 2014 -&gt; 2018 (both midterm elections) and 2016 -&gt; 2018 (to look at the "Trump" effect). In each table the columns with "+/-" on them indicate a net change in the (Democratic - Republican) vote totals coming from that factor. For example, if the "From Population" column is positive, that means the change in population of that group between those years resulted in a net gain of D votes. NB: If that group was a net republican voting group then a rise in population would lead to negative net vote change<a href="#fn9" class="footnote-ref" id="fnref9" role="doc-noteref"><sup>9</sup></a>.</p>
+<p>Below, we compare these changes (nationally) for each group for 2012 -&gt; 2016 (both presidential elections), 2014 -&gt; 2018 (both midterm elections) and 2016 -&gt; 2018 (to look at the "Trump" effect). In each table the columns with "+/-" on them indicate a net change in the (Democratic - Republican) vote totals coming from that factor. For example, if the "From Population" column is positive, that means the change in population of that group between those years resulted in a net gain of D votes. NB: If that group was a net republican voting group then a rise in population would lead to negative net vote change<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a>.</p>
 <section id="section" class="level3">
 <h3>2012 -&gt; 2016</h3>
 <table>
@@ -374,84 +374,84 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <tbody>
 <tr class="odd">
 <td>OldNonWhiteFemale</td>
-<td>9104</td>
-<td>74</td>
-<td>-316</td>
-<td>176</td>
-<td>-65</td>
-<td>-0.03</td>
+<td>19008</td>
+<td>81</td>
+<td>-244</td>
+<td>-418</td>
+<td>-580</td>
+<td>-0.27</td>
 </tr>
 <tr class="even">
-<td>OldNonWhiteMale</td>
-<td>7612</td>
-<td>53</td>
-<td>-157</td>
-<td>212</td>
-<td>108</td>
-<td>0.06</td>
+<td>YoungNonWhiteFemale</td>
+<td>37289</td>
+<td>46</td>
+<td>-38</td>
+<td>-433</td>
+<td>-425</td>
+<td>-0.20</td>
 </tr>
 <tr class="odd">
-<td>YoungNonWhiteFemale</td>
-<td>17861</td>
-<td>109</td>
-<td>-124</td>
-<td>214</td>
-<td>200</td>
-<td>0.10</td>
+<td>OldNonWhiteMale</td>
+<td>15892</td>
+<td>42</td>
+<td>-87</td>
+<td>-158</td>
+<td>-201</td>
+<td>-0.09</td>
 </tr>
 <tr class="even">
 <td>YoungNonWhiteMale</td>
-<td>18001</td>
-<td>83</td>
-<td>-264</td>
-<td>203</td>
-<td>23</td>
-<td>0.01</td>
+<td>37582</td>
+<td>16</td>
+<td>-38</td>
+<td>-216</td>
+<td>-237</td>
+<td>-0.11</td>
 </tr>
 <tr class="odd">
 <td>OldWhiteFemale</td>
-<td>34086</td>
-<td>-87</td>
-<td>-34</td>
-<td>-1426</td>
-<td>-1546</td>
-<td>-0.80</td>
+<td>19008</td>
+<td>108</td>
+<td>29</td>
+<td>-559</td>
+<td>-421</td>
+<td>-0.20</td>
 </tr>
 <tr class="even">
-<td>OldWhiteMale</td>
-<td>30855</td>
-<td>-84</td>
-<td>19</td>
-<td>-1149</td>
-<td>-1213</td>
-<td>-0.63</td>
+<td>YoungWhiteFemale</td>
+<td>37289</td>
+<td>65</td>
+<td>65</td>
+<td>-637</td>
+<td>-506</td>
+<td>-0.24</td>
 </tr>
 <tr class="odd">
-<td>YoungWhiteFemale</td>
-<td>38699</td>
-<td>-57</td>
-<td>-92</td>
-<td>-608</td>
-<td>-756</td>
-<td>-0.39</td>
+<td>OldWhiteMale</td>
+<td>15892</td>
+<td>59</td>
+<td>-13</td>
+<td>-219</td>
+<td>-172</td>
+<td>-0.08</td>
 </tr>
 <tr class="even">
 <td>YoungWhiteMale</td>
-<td>40261</td>
-<td>-55</td>
-<td>-137</td>
-<td>-667</td>
-<td>-859</td>
-<td>-0.45</td>
+<td>37582</td>
+<td>26</td>
+<td>41</td>
+<td>-331</td>
+<td>-263</td>
+<td>-0.12</td>
 </tr>
 <tr class="odd">
 <td>Total</td>
-<td>196482</td>
-<td>40</td>
-<td>-1102</td>
-<td>-3043</td>
-<td>-4104</td>
-<td>-2.09</td>
+<td>219546</td>
+<td>445</td>
+<td>-281</td>
+<td>-2967</td>
+<td>-2802</td>
+<td>-1.28</td>
 </tr>
 </tbody>
 </table>
@@ -473,84 +473,84 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <tbody>
 <tr class="odd">
 <td>OldNonWhiteFemale</td>
-<td>10912</td>
-<td>925</td>
-<td>595</td>
-<td>617</td>
-<td>2139</td>
-<td>1.22</td>
+<td>23855</td>
+<td>618</td>
+<td>450</td>
+<td>943</td>
+<td>2012</td>
+<td>0.97</td>
 </tr>
 <tr class="even">
-<td>OldNonWhiteMale</td>
-<td>9202</td>
-<td>658</td>
-<td>399</td>
-<td>513</td>
-<td>1572</td>
-<td>0.90</td>
+<td>YoungNonWhiteFemale</td>
+<td>46420</td>
+<td>177</td>
+<td>263</td>
+<td>1108</td>
+<td>1549</td>
+<td>0.74</td>
 </tr>
 <tr class="odd">
-<td>YoungNonWhiteFemale</td>
-<td>21235</td>
-<td>996</td>
-<td>1327</td>
-<td>650</td>
-<td>2973</td>
-<td>1.70</td>
+<td>OldNonWhiteMale</td>
+<td>20115</td>
+<td>302</td>
+<td>208</td>
+<td>783</td>
+<td>1293</td>
+<td>0.62</td>
 </tr>
 <tr class="even">
 <td>YoungNonWhiteMale</td>
-<td>21490</td>
-<td>720</td>
-<td>1190</td>
-<td>513</td>
-<td>2424</td>
-<td>1.38</td>
+<td>46977</td>
+<td>-3</td>
+<td>-14</td>
+<td>885</td>
+<td>870</td>
+<td>0.42</td>
 </tr>
 <tr class="odd">
 <td>OldWhiteFemale</td>
-<td>42292</td>
-<td>-1213</td>
-<td>-596</td>
-<td>1492</td>
-<td>-315</td>
-<td>-0.18</td>
+<td>23855</td>
+<td>865</td>
+<td>492</td>
+<td>1321</td>
+<td>2679</td>
+<td>1.29</td>
 </tr>
 <tr class="even">
-<td>OldWhiteMale</td>
-<td>38326</td>
-<td>-1141</td>
-<td>-529</td>
-<td>1443</td>
-<td>-226</td>
-<td>-0.13</td>
+<td>YoungWhiteFemale</td>
+<td>46420</td>
+<td>259</td>
+<td>370</td>
+<td>1622</td>
+<td>2252</td>
+<td>1.08</td>
 </tr>
 <tr class="odd">
-<td>YoungWhiteFemale</td>
-<td>47777</td>
-<td>-693</td>
-<td>-881</td>
-<td>1339</td>
-<td>-234</td>
-<td>-0.13</td>
+<td>OldWhiteMale</td>
+<td>20115</td>
+<td>462</td>
+<td>251</td>
+<td>1201</td>
+<td>1915</td>
+<td>0.92</td>
 </tr>
 <tr class="even">
 <td>YoungWhiteMale</td>
-<td>49750</td>
-<td>-639</td>
-<td>-784</td>
-<td>1271</td>
-<td>-151</td>
-<td>-0.09</td>
+<td>46977</td>
+<td>-8</td>
+<td>-17</td>
+<td>1574</td>
+<td>1549</td>
+<td>0.74</td>
 </tr>
 <tr class="odd">
 <td>Total</td>
-<td>240989</td>
-<td>-383</td>
-<td>726</td>
-<td>7841</td>
-<td>8185</td>
-<td>3.40</td>
+<td>274738</td>
+<td>2676</td>
+<td>2005</td>
+<td>9441</td>
+<td>14123</td>
+<td>5.14</td>
 </tr>
 </tbody>
 </table>
@@ -572,88 +572,88 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <tbody>
 <tr class="odd">
 <td>OldNonWhiteFemale</td>
-<td>10912</td>
-<td>717</td>
-<td>-318</td>
-<td>5</td>
-<td>405</td>
-<td>0.21</td>
+<td>23855</td>
+<td>679</td>
+<td>-242</td>
+<td>330</td>
+<td>769</td>
+<td>0.35</td>
 </tr>
 <tr class="even">
-<td>OldNonWhiteMale</td>
-<td>9202</td>
-<td>555</td>
-<td>-374</td>
-<td>-14</td>
-<td>169</td>
-<td>0.09</td>
+<td>YoungNonWhiteFemale</td>
+<td>46420</td>
+<td>319</td>
+<td>-309</td>
+<td>260</td>
+<td>271</td>
+<td>0.12</td>
 </tr>
 <tr class="odd">
-<td>YoungNonWhiteFemale</td>
-<td>21235</td>
-<td>870</td>
-<td>-1058</td>
-<td>-64</td>
-<td>-252</td>
-<td>-0.13</td>
+<td>OldNonWhiteMale</td>
+<td>20115</td>
+<td>389</td>
+<td>-214</td>
+<td>212</td>
+<td>388</td>
+<td>0.18</td>
 </tr>
 <tr class="even">
 <td>YoungNonWhiteMale</td>
-<td>21490</td>
-<td>668</td>
-<td>-673</td>
-<td>-97</td>
-<td>-101</td>
-<td>-0.05</td>
+<td>46977</td>
+<td>109</td>
+<td>-89</td>
+<td>119</td>
+<td>139</td>
+<td>0.06</td>
 </tr>
 <tr class="odd">
 <td>OldWhiteFemale</td>
-<td>42292</td>
-<td>-1034</td>
-<td>457</td>
-<td>2220</td>
-<td>1645</td>
-<td>0.84</td>
+<td>23855</td>
+<td>941</td>
+<td>-405</td>
+<td>461</td>
+<td>998</td>
+<td>0.45</td>
 </tr>
 <tr class="even">
-<td>OldWhiteMale</td>
-<td>38326</td>
-<td>-966</td>
-<td>336</td>
-<td>2108</td>
-<td>1480</td>
-<td>0.75</td>
+<td>YoungWhiteFemale</td>
+<td>46420</td>
+<td>461</td>
+<td>-439</td>
+<td>390</td>
+<td>413</td>
+<td>0.19</td>
 </tr>
 <tr class="odd">
-<td>YoungWhiteFemale</td>
-<td>47777</td>
-<td>-582</td>
-<td>564</td>
-<td>1114</td>
-<td>1096</td>
-<td>0.56</td>
+<td>OldWhiteMale</td>
+<td>20115</td>
+<td>571</td>
+<td>-187</td>
+<td>314</td>
+<td>698</td>
+<td>0.32</td>
 </tr>
 <tr class="even">
 <td>YoungWhiteMale</td>
-<td>49750</td>
-<td>-563</td>
-<td>531</td>
-<td>1295</td>
-<td>1264</td>
-<td>0.64</td>
+<td>46977</td>
+<td>187</td>
+<td>-173</td>
+<td>212</td>
+<td>227</td>
+<td>0.10</td>
 </tr>
 <tr class="odd">
 <td>Total</td>
-<td>240989</td>
-<td>-331</td>
-<td>-532</td>
-<td>6571</td>
-<td>5709</td>
-<td>2.37</td>
+<td>274738</td>
+<td>3660</td>
+<td>-2055</td>
+<td>2301</td>
+<td>3907</td>
+<td>1.42</td>
 </tr>
 </tbody>
 </table>
-<p>The total changes are broadly in-line with the popular house vote totals (all in thousands of votes)<a href="#fn10" class="footnote-ref" id="fnref10" role="doc-noteref"><sup>10</sup></a>:</p>
+<p>The total changes are broadly in-line with the popular house vote totals (all in thousands of votes)<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a>:</p>
 <table>
 <thead>
 <tr class="header">
@@ -706,11 +706,11 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <p>What we want to estimate, is how likely a voter in each group is of voting for the democratic candidate in a contested race.</p>
 <p>For each district, <span class="math inline">\(d\)</span>, we have the set of expected voters (the number of people in each group, multiplied by the turnout for that group), <span class="math inline">\(\{V_i\}_d\)</span>, the number of democratic votes, <span class="math inline">\(D_d\)</span>, republican votes, <span class="math inline">\(R_d\)</span> and total votes, <span class="math inline">\(T_d\)</span>, which may exceed <span class="math inline">\(D_d + R_d\)</span>, since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. We want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter (in any district) in the <span class="math inline">\(i\)</span>th group--given that they voted for a republican or democrat--will vote for the democratic candidate.</p>
 <ul>
-<li><p>Bayes theorem<a href="#fn11" class="footnote-ref" id="fnref11" role="doc-noteref"><sup>11</sup></a> relates the probability of a model (our demographic voting probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D_k\}\)</span>) to the likelihood of observing that data given the model and some prior knowledge about the unconditional probability of the model itself <span class="math inline">\(P(\{p_i\})\)</span>, as well as <span class="math inline">\(P(\{D_k\})\)</span>, the unconditional probability of observing the "evidence": <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D_k\})P(\{D_k\}) = P(\{D_k\}|\{p_i\})P(\{p_i\}) \end{equation}\)</span> In this situation, the thing we wish to compute, <span class="math inline">\(P(\{p_i\}|\{D_k\})\)</span>, is referred to as the "posterior" distribution.</p></li>
+<li><p>Bayes theorem<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a> relates the probability of a model (our demographic voting probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D_k\}\)</span>) to the likelihood of observing that data given the model and some prior knowledge about the unconditional probability of the model itself <span class="math inline">\(P(\{p_i\})\)</span>, as well as <span class="math inline">\(P(\{D_k\})\)</span>, the unconditional probability of observing the "evidence": <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D_k\})P(\{D_k\}) = P(\{D_k\}|\{p_i\})P(\{p_i\}) \end{equation}\)</span> In this situation, the thing we wish to compute, <span class="math inline">\(P(\{p_i\}|\{D_k\})\)</span>, is referred to as the "posterior" distribution.</p></li>
 <li><p><span class="math inline">\(P(\{p_i\})\)</span> is called a "prior" and amounts to an assertion about what we think we know about the parameters before we have seen any of the data. In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any <span class="math inline">\(p_i \in [0,1]\)</span> is equally likely.</p></li>
 <li><p><span class="math inline">\(P(\{D_k\})\)</span> is the unconditional probability of observing the specific outcome <span class="math inline">\(\{D_k\}\)</span> This is difficult to compute! Sometimes we can compute it by observing: <span class="math inline">\(\begin{equation} P(\{D_k\}) = \sum_{\{p_i\}} P(\{D_k\}|{p_i}) P(\{p_i\}) \end{equation}\)</span>. But in general, we'd like to compute the posterior in some way that avoids needing the probability of the evidence.</p></li>
 <li><p><span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, the probability that we observed our evidence, <em>given</em> a specific set of <span class="math inline">\(\{p_i\}\)</span> is a thing we can calculate: Our <span class="math inline">\(p_i\)</span> are the probability that one voter of type <span class="math inline">\(i\)</span>, who votes for a democrat or republican, chooses the democrat. We <em>assume</em>, for the sake of simplicity, that for each demographic group <span class="math inline">\(i\)</span>, each voter's vote is like a coin flip where the coin comes up "Democrat" with probability <span class="math inline">\(p_i\)</span> and "Republican" with probability <span class="math inline">\(1-p_i\)</span>. This distribution of single voter outcomes is known as the [Bernoulli distribution.][WP:Bernoulli]. Given <span class="math inline">\(V_i\)</span> voters of that type, the distribution of democratic votes <em>from that type of voter</em> is [Binomial][WP:Binomial] with <span class="math inline">\(V_i\)</span> trials and <span class="math inline">\(p_i\)</span> probability of success. But <span class="math inline">\(V_i\)</span> is quite large! So we can approximate this with a normal distribution with mean <span class="math inline">\(V_i p_i\)</span> and variance <span class="math inline">\(V_i p_i (1 - p_i)\)</span> (See [Wikipedia][WP:BinomialApprox]). However, we can't observe the number of votes from just one type of voter. We can only observe the sum over all types. Luckily, the sum of normally distributed random variables follows a normal distribution as well. So the distribution of democratic votes across all types of voters is also normal, with mean <span class="math inline">\(\sum_i V_i p_i\)</span> and variance <span class="math inline">\(\sum_i V_i p_i (1 - p_i)\)</span> (See [Wikipedia][WP:SumNormal]). Thus we have <span class="math inline">\(P(D_k|\{p_i\})\)</span>, or, what amounts to the same thing, its probability density. But that means we also know the probability density of all the evidence given <span class="math inline">\(\{p_i\}\)</span>, <span class="math inline">\(\rho(\{D_k\}|\{p_i\})\)</span>, since that is just the product of the densities for each <span class="math inline">\(D_k\)</span>: <span class="math inline">\(\begin{equation} \mu_k(\{p_i\}) = \sum_i V_i p_i\\ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\ \rho(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\ \rho(\{D_k\}|\{p_i\}) = \Pi_k \rho(D_k|\{p_i\}) \end{equation}\)</span></p></li>
-<li><p>In order to compute expectations on this distribution we use Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples from the the posterior distribution given a prior, <span class="math inline">\(P(\{p_i\})\)</span>, the conditional <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, and a starting <span class="math inline">\(\{p_i\}\)</span>. Note that this doesn't require knowing <span class="math inline">\(P(\{D_k\})\)</span>, basically because the <em>relative</em> likelihood of any <span class="math inline">\(\{p_i\}\)</span> doesn't depend on it. Those samples are then used to compute expectations of various quantities of interest. In practice, it's hard to know when you have "enough" samples to have confidence in your expectations. Here we use an interval based "potential scale reduction factor" ([PSRF][Ref:Convergence]) to check the convergence of any one expectation, e,g, each <span class="math inline">\(p_i\)</span> in <span class="math inline">\(\{p_i\}\)</span>, and a "multivariate potential scale reduction factor" ([MPSRF][Ref:MPSRF]) to make sure that the convergence holds for all possible linear combinations of the <span class="math inline">\(\{p_i\}\)</span>. Calculating either PSRF or MPSRF entails starting several chains from different (random) starting locations, then comparing something like a variance on each chain to the same quantity on the combined chains. This converges to one as the chains converge<a href="#fn12" class="footnote-ref" id="fnref12" role="doc-noteref"><sup>12</sup></a> and a value below 1.1 is, conventionally, taken to indicate that the chains have converged "enough".</p></li>
+<li><p>In order to compute expectations on this distribution we use Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples from the the posterior distribution given a prior, <span class="math inline">\(P(\{p_i\})\)</span>, the conditional <span class="math inline">\(P(\{D_k\}|\{p_i\})\)</span>, and a starting <span class="math inline">\(\{p_i\}\)</span>. Note that this doesn't require knowing <span class="math inline">\(P(\{D_k\})\)</span>, basically because the <em>relative</em> likelihood of any <span class="math inline">\(\{p_i\}\)</span> doesn't depend on it. Those samples are then used to compute expectations of various quantities of interest. In practice, it's hard to know when you have "enough" samples to have confidence in your expectations. Here we use an interval based "potential scale reduction factor" ([PSRF][Ref:Convergence]) to check the convergence of any one expectation, e,g, each <span class="math inline">\(p_i\)</span> in <span class="math inline">\(\{p_i\}\)</span>, and a "multivariate potential scale reduction factor" ([MPSRF][Ref:MPSRF]) to make sure that the convergence holds for all possible linear combinations of the <span class="math inline">\(\{p_i\}\)</span>. Calculating either PSRF or MPSRF entails starting several chains from different (random) starting locations, then comparing something like a variance on each chain to the same quantity on the combined chains. This converges to one as the chains converge<a href="#fn13" class="footnote-ref" id="fnref13" role="doc-noteref"><sup>13</sup></a> and a value below 1.1 is, conventionally, taken to indicate that the chains have converged "enough".</p></li>
 </ul>
 </section>
 <section class="footnotes" role="doc-endnotes">
@@ -718,16 +718,17 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <ol>
 <li id="fn1" role="doc-endnote"><p>Source: Mit Election Lab <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2" class="uri">https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2</a><a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
 <li id="fn2" role="doc-endnote"><p>Source: US Census, American Community Survey <a href="https://www.census.gov/programs-surveys/acs.html" class="uri">https://www.census.gov/programs-surveys/acs.html</a><a href="#fnref2" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn3" role="doc-endnote"><p>Source: US Census, Voting and Registration Tables <a href="https://www.census.gov/topics/public-sector/voting/data/tables.2014.html" class="uri">https://www.census.gov/topics/public-sector/voting/data/tables.2014.html</a><a href="#fnref3" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn4" role="doc-endnote"><p>We note that there is a non-white swing towards republicans in 2014. That is consistent with exit-polls that show a huge swing in the Asian vote: from approximately 75% likely to vote democratic in 2012 to slightly <em>republican</em> leaning in 2014 and then back to about 67% likely to vote democratic in 2016 and higher than 75% in 2018. See, e.g., <a href="https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html" class="uri">https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html</a><a href="#fnref4" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn5" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2012" class="uri">https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2012</a><a href="#fnref5" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn6" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2014" class="uri">https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2014</a><a href="#fnref6" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn7" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2016/11/08/us/politics/election-exit-polls.html" class="uri">https://www.nytimes.com/interactive/2016/11/08/us/politics/election-exit-polls.html</a><a href="#fnref7" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn8" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html" class="uri">https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html</a>, <a href="https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/" class="uri">https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/</a><a href="#fnref8" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn9" role="doc-endnote"><p>One tricky aspect of ascribing changes to one factor is that some of the change comes from changes in two or more of the factors. In this table, the changes due to any pair of factors is split evenly between that pair and the changes coming from all three are divvied up equally among all three.<a href="#fnref9" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn10" role="doc-endnote"><p>Sources: <a href="https://en.wikipedia.org/wiki/2012_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2012_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections</a><a href="#fnref10" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn11" role="doc-endnote"><p><a href="https://en.wikipedia.org/wiki/Bayes%27_theorem" class="uri">https://en.wikipedia.org/wiki/Bayes%27_theorem</a> [WP:Bernoulli]: <a href="https://en.wikipedia.org/wiki/Bernoulli_distribution" class="uri">https://en.wikipedia.org/wiki/Bernoulli_distribution</a> [WP:Binomial]: <a href="https://en.wikipedia.org/wiki/Binomial_distribution" class="uri">https://en.wikipedia.org/wiki/Binomial_distribution</a> [WP:BinomialApprox]: <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation" class="uri">https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation</a> [WP:SumNormal]: <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables" class="uri">https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables</a> [Ref:Convergence]: <a href="http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf" class="uri">http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf</a> [Ref:MPSRF]: <a href="https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf" class="uri">https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf</a><a href="#fnref11" class="footnote-back" role="doc-backlink">↩</a></p></li>
-<li id="fn12" role="doc-endnote"><p>The details of this convergence are beyond our scope but just to get an intuition: consider a PSRF computed by using (maximum - minimum) of some quantity. The mean of these intervals is also the mean maximum minus the mean minimum. And the mean maximum is clearly less than the maximum across all chains while the mean minimum is clearly larger than than the absolute minimum across all chains. So their ratio gets closer to 1 as the individual chains look more and more like the combined chain, which we take to mean that the chains have converged.<a href="#fnref12" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn3" role="doc-endnote"><p>We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census. We will update this once the census publishes updated 2018 American Community Survey data.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn4" role="doc-endnote"><p>Source: US Census, Voting and Registration Tables <a href="https://www.census.gov/topics/public-sector/voting/data/tables.2014.html" class="uri">https://www.census.gov/topics/public-sector/voting/data/tables.2014.html</a><a href="#fnref4" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn5" role="doc-endnote"><p>We note that there is a non-white swing towards republicans in 2014. That is consistent with exit-polls that show a huge swing in the Asian vote: from approximately 75% likely to vote democratic in 2012 to slightly <em>republican</em> leaning in 2014 and then back to about 67% likely to vote democratic in 2016 and higher than 75% in 2018. See, e.g., <a href="https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html" class="uri">https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html</a><a href="#fnref5" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn6" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2012" class="uri">https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2012</a><a href="#fnref6" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn7" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2014" class="uri">https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2014</a><a href="#fnref7" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn8" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2016/11/08/us/politics/election-exit-polls.html" class="uri">https://www.nytimes.com/interactive/2016/11/08/us/politics/election-exit-polls.html</a><a href="#fnref8" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn9" role="doc-endnote"><p><a href="https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html" class="uri">https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html</a>, <a href="https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/" class="uri">https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/</a><a href="#fnref9" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn10" role="doc-endnote"><p>One tricky aspect of ascribing changes to one factor is that some of the change comes from changes in two or more of the factors. In this table, the changes due to any pair of factors is split evenly between that pair and the changes coming from all three are divvied up equally among all three.<a href="#fnref10" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn11" role="doc-endnote"><p>Sources: <a href="https://en.wikipedia.org/wiki/2012_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2012_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections</a>, <a href="https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections" class="uri">https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections</a><a href="#fnref11" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn12" role="doc-endnote"><p><a href="https://en.wikipedia.org/wiki/Bayes%27_theorem" class="uri">https://en.wikipedia.org/wiki/Bayes%27_theorem</a> [WP:Bernoulli]: <a href="https://en.wikipedia.org/wiki/Bernoulli_distribution" class="uri">https://en.wikipedia.org/wiki/Bernoulli_distribution</a> [WP:Binomial]: <a href="https://en.wikipedia.org/wiki/Binomial_distribution" class="uri">https://en.wikipedia.org/wiki/Binomial_distribution</a> [WP:BinomialApprox]: <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation" class="uri">https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation</a> [WP:SumNormal]: <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables" class="uri">https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables</a> [Ref:Convergence]: <a href="http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf" class="uri">http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf</a> [Ref:MPSRF]: <a href="https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf" class="uri">https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf</a><a href="#fnref12" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn13" role="doc-endnote"><p>The details of this convergence are beyond our scope but just to get an intuition: consider a PSRF computed by using (maximum - minimum) of some quantity. The mean of these intervals is also the mean maximum minus the mean minimum. And the mean maximum is clearly less than the maximum across all chains while the mean minimum is clearly larger than than the absolute minimum across all chains. So their ratio gets closer to 1 as the individual chains look more and more like the combined chain, which we take to mean that the chains have converged.<a href="#fnref13" class="footnote-back" role="doc-backlink">↩</a></p></li>
 </ol>
 </section>
 
