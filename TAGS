@@ -32,7 +32,7 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,2706
+./reports/turnout.hs,2455
 module Main Main11,12
 templateVars templateVars90,91
 loadCSVToFrame loadCSVToFrame109,110
@@ -77,36 +77,30 @@ type PredictedVoters PredictedVoters604,605
 type ScaledDVotes ScaledDVotes605,606
 type ScaledRVotes ScaledRVotes606,607
 type PopScale PopScale607,608
-data TurnoutResults TurnoutResults609,610
-data TurnoutResults b f a = TurnoutResultsTurnoutResults609,610
-    votesAndPopByDistrictF votesAndPopByDistrictF611,612
-    popTotal popTotal619,620
-    nationalTurnout nationalTurnout620,621
-    modeled modeled621,622
-    mcmcChain mcmcChain622,623
-data RunParams RunParams625,626
-data RunParams = RunParams RunParams625,626
-data RunParams = RunParams { nChains nChains625,626
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain625,626
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain625,626
-turnoutModel turnoutModel636,637
-mapAscListAll mapAscListAll748,749
-mapAscListAll mapAscListAll749,750
-makeArrayMF makeArrayMF751,752
-makeArrayMF makeArrayMF752,753
-makeArrayWithDefaultF makeArrayWithDefaultF757,758
-makeArrayWithDefaultF makeArrayWithDefaultF758,759
-typeIdentity typeIdentity764,765
-typeIdentity typeIdentity765,766
-modelNotesRegression modelNotesRegression768,769
-modelNotesRegression modelNotesRegression769,770
-Given Given771,772
-D D774,775
-R R775,776
-\frac{D-R}{Q} \frac{D-R}{Q}782,783
-\sum_i \sum_i791,792
-We We794,795
-Now Now795,796
+type CountArray CountArray608,609
+type CountArray b b608,609
+data TurnoutResults TurnoutResults610,611
+data TurnoutResults b f a = TurnoutResultsTurnoutResults610,611
+    votesAndPopByDistrictF votesAndPopByDistrictF612,613
+    popTotal popTotal620,621
+    nationalTurnout nationalTurnout621,622
+    modeled modeled622,623
+    mcmcChain mcmcChain623,624
+data RunParams RunParams626,627
+data RunParams = RunParams RunParams626,627
+data RunParams = RunParams { nChains nChains626,627
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain626,627
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain626,627
+turnoutModel turnoutModel637,638
+modelNotesRegression modelNotesRegression776,777
+modelNotesRegression modelNotesRegression777,778
+Given Given779,780
+D D782,783
+R R783,784
+\frac{D-R}{Q} \frac{D-R}{Q}790,791
+\sum_i \sum_i799,800
+We We802,803
+Now Now803,804
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -146,30 +140,37 @@ sequenceConcurrently sequenceConcurrently125,126
 sequenceConcurrently sequenceConcurrently126,127
 runMany runMany138,139
 
-./src/BlueRipple/Data/DataFrames.hs,1118
-module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames11,12
-F.tableTypes' F.tableTypes'42,43
-type DemographicCategory DemographicCategory58,59
-type DemographicCategory b b58,59
-type DemographicIds DemographicIds60,61
-type DemographicLong DemographicLong61,62
-data DemographicStructure DemographicStructure63,64
-data DemographicStructure a b = DemographicStructureDemographicStructure63,64
-    dsReshape dsReshape65,66
-  , dsCategories dsCategories66,67
-data SimpleASR SimpleASR69,70
-data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale69,70
-               | YoungNonWhiteFemaleYoungNonWhiteFemale70,71
-               | OldNonWhiteMaleOldNonWhiteMale71,72
-               | YoungNonWhiteMaleYoungNonWhiteMale72,73
-               | OldWhiteFemaleOldWhiteFemale73,74
-               | YoungWhiteFemaleYoungWhiteFemale74,75
-               | OldWhiteMaleOldWhiteMale75,76
-               | YoungWhiteMale YoungWhiteMale76,77
-type instance instance78,79
-type instance FI.VectorFor FI.VectorFor78,79
-simpleAgeSexRace simpleAgeSexRace82,83
-simpleAgeSexRace simpleAgeSexRace83,84
+./src/BlueRipple/Data/DataFrames.hs,1437
+module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames15,16
+F.tableTypes' F.tableTypes'54,55
+type DemographicCategory DemographicCategory70,71
+type DemographicCategory b b70,71
+type DemographicIds DemographicIds72,73
+type DemographicLong DemographicLong73,74
+data DemographicStructure DemographicStructure75,76
+data DemographicStructure a b = DemographicStructureDemographicStructure75,76
+    dsReshape dsReshape77,78
+  , dsMapAndTypeTurnout dsMapAndTypeTurnout78,79
+  , dsCategories dsCategories79,80
+mapAscListAll mapAscListAll85,86
+makeArrayGeneralMF makeArrayGeneralMF97,98
+makeArrayMF makeArrayMF109,110
+makeArrayWithDefaultF makeArrayWithDefaultF119,120
+recordsToArrayF recordsToArrayF136,137
+typeIdentity typeIdentity144,145
+data SimpleASR SimpleASR148,149
+data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale148,149
+               | YoungNonWhiteFemaleYoungNonWhiteFemale149,150
+               | OldNonWhiteMaleOldNonWhiteMale150,151
+               | YoungNonWhiteMaleYoungNonWhiteMale151,152
+               | OldWhiteFemaleOldWhiteFemale152,153
+               | YoungWhiteFemaleYoungWhiteFemale153,154
+               | OldWhiteMaleOldWhiteMale154,155
+               | YoungWhiteMale YoungWhiteMale155,156
+type instance instance157,158
+type instance FI.VectorFor FI.VectorFor157,158
+simpleAgeSexRace simpleAgeSexRace161,162
+simpleAgeSexRace simpleAgeSexRace162,163
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,1391
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2

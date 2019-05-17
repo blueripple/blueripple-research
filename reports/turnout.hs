@@ -23,7 +23,7 @@ import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
 import qualified Text.Blaze.Colonnade          as C
 import qualified Data.Functor.Identity         as I
-import qualified Data.List as L
+import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
@@ -35,7 +35,7 @@ import           Data.Maybe                     ( catMaybes
 import qualified Text.Read                     as TR                 
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
-import qualified Data.Profunctor              as PF
+import qualified Data.Profunctor               as PF
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                  as T
 import qualified Data.Text.Lazy                as TL
@@ -57,7 +57,7 @@ import qualified Frames.Melt                   as F (ElemOf)
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
-import           System.Random (randomRIO)
+import           System.Random                  (randomRIO)
 import qualified Statistics.Types              as S
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
@@ -76,7 +76,7 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Table                  as Table
 
 import qualified Knit.Report                   as K
-import           Polysemy.Error (throw)
+import           Polysemy.Error                 (throw)
 import qualified Knit.Report.Other.Blaze       as KB
 import qualified Knit.Effect.Pandoc            as K
                                                 ( newPandoc
@@ -606,6 +606,7 @@ type PredictedVoters = "PredictedVoters" F.:-> Int
 type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
 type PopScale    = "PopScale" F.:-> Double -- (DVotes + RVotes)/sum (pop_i * turnout_i)
+type CountArray b = "CountArray" F.:-> A.Array b Int
 
 data TurnoutResults b f a = TurnoutResults
   {
@@ -660,13 +661,13 @@ turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
   K.logLE K.Diagnostic
     $  "after mapReduce: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list resultsFlattenedF))
-  let filteredTurnoutFrameM = sequenceA $ fmap (F.rtraverse getCompose . FT.transformMaybe typeIdentity) $ F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
+  let filteredTurnoutFrameM = dsMapAndTypeTurnout ds $ F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
   filteredTurnoutFrame <- maybe (K.knitError "Failure when parsing identities in turnout data.") return filteredTurnoutFrameM                          
   K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list filteredTurnoutFrame)
   K.logLE K.Diagnostic
     $  "Before scaling by turnout: "
     <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
-  let turnoutByGroupArrayM = FL.fold (makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @AllTurnout)) filteredTurnoutFrame
+  let turnoutByGroupArrayM = FL.fold (makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @AllTurnout) (flip const)) filteredTurnoutFrame
   turnoutByGroupA <- maybe (K.knitError "Missing group in turnoutMap") return turnoutByGroupArrayM
   let turnoutByGroup b = turnoutByGroupA A.! b
       scaleByTurnout b n = round $ turnoutByGroup b * realToFrac n
@@ -704,6 +705,13 @@ turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
   K.logLE K.Info $ "total voters (competitive districts)=" <> (T.pack $ show totalVotersCD)
   K.logLE K.Info $ "total house votes (competitive districts)=" <> (T.pack $ show totalVotesCD)
   K.logLE K.Info $ "total D+R house votes (competitive districts)=" <> (T.pack $ show totalDRVotesCD)
+  -- flatten long data into arrays
+  let votersArrayF =
+        MR.mapReduceFold
+        MR.noUnpack
+        (MR.splitOnKeys @[StateAbbreviation, CongressionalDistrict])
+        (MR.foldAndAddKey 
+  
   let longWithScaledDFrame = F.filterFrame onlyOpposed
                              $ F.toFrame
                              $ catMaybes
@@ -746,6 +754,7 @@ turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
       totalPopWithScaleRec = V.rappend totalPopRec $ FT.recordSingleton @PopScale totalScale
   return $ TurnoutResults resFrame totalPopWithScaleRec scaleMap summaries (L.concat mcmcResults)  
 
+{-
 mapAscListAll :: forall k v. (Enum k, Ord k, Bounded k) => M.Map k v -> Maybe [(k,v)] 
 mapAscListAll m = if (length M.keys m == length [minBound @k ..]) then Just $ M.toAscList m else Nothing
 
@@ -764,8 +773,7 @@ makeArrayWithDefaultF getKey getVal d = FL.Fold
 
 typeIdentity :: forall b.F.Record '[Identity] -> F.Rec (Maybe F.:. F.ElField) '[DemographicCategory b]
 typeIdentity x = Compose $ fmap V.Field $ TR.readMaybe @b (F.rgetField @Identity x) V.:& V.RNil
-
-
+-}
 modelNotesRegression :: T.Text
 modelNotesRegression = modelNotesPreface <> [here|
 
