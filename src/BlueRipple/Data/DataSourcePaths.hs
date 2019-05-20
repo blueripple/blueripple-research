@@ -20,6 +20,8 @@ identityDemographics2016CSV :: FilePath =
   dataDir ++ "identityDemographicsByDistrict2016.csv"
 identityDemographics2017CSV :: FilePath =
   dataDir ++ "identityDemographicsByDistrict2017.csv"
+identityDemographicsLongCSV :: FilePath =
+  dataDir ++ "identityDemographicsLong2010-2017.csv"
 angryDemsCSV :: FilePath = dataDir ++ "angryDemsContributions20181203.csv"
 houseElectionsCSV :: FilePath = dataDir ++ "1976-2018-house.csv"
 turnoutCSV :: FilePath = dataDir ++ "Turnout2012-2018.csv"

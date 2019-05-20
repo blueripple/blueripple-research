@@ -140,39 +140,41 @@ sequenceConcurrently sequenceConcurrently125,126
 sequenceConcurrently sequenceConcurrently126,127
 runMany runMany138,139
 
-./src/BlueRipple/Data/DataFrames.hs,1463
+./src/BlueRipple/Data/DataFrames.hs,1559
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames16,17
-F.tableTypes' F.tableTypes'61,62
-type DemographicCategory DemographicCategory76,77
-type DemographicCategory b b76,77
-type LocationKey LocationKey77,78
-type DemographicCounts DemographicCounts79,80
-data DemographicStructure DemographicStructure81,82
-data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructureDemographicStructure81,82
-    dsReshapeDemographicData dsReshapeDemographicData83,84
-  , dsMapAndTypeTurnout dsMapAndTypeTurnout84,85
-  , dsMapElectionData dsMapElectionData86,87
-  , dsCategories dsCategories87,88
-data SimpleASR SimpleASR90,91
-data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale90,91
-               | YoungNonWhiteFemaleYoungNonWhiteFemale91,92
-               | OldNonWhiteMaleOldNonWhiteMale92,93
-               | YoungNonWhiteMaleYoungNonWhiteMale93,94
-               | OldWhiteFemaleOldWhiteFemale94,95
-               | YoungWhiteFemaleYoungWhiteFemale95,96
-               | OldWhiteMaleOldWhiteMale96,97
-               | YoungWhiteMale YoungWhiteMale97,98
-type instance instance101,102
-type instance FI.VectorFor FI.VectorFor101,102
-type instance instance102,103
-simpleAgeSexRace simpleAgeSexRace106,107
-simpleAgeSexRace simpleAgeSexRace107,108
-type DVotes DVotes162,163
-type RVotes RVotes163,164
-flattenVotes flattenVotes168,169
-typeIdentity typeIdentity190,191
+F.tableTypes' F.tableTypes'62,63
+--F.tableTypes' --F.tableTypes'75,76
+type DemographicCategory DemographicCategory80,81
+type DemographicCategory b b80,81
+type LocationKey LocationKey81,82
+type DemographicCounts DemographicCounts83,84
+data DemographicStructure DemographicStructure85,86
+data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructureDemographicStructure85,86
+    dsPreprocessDemographicData dsPreprocessDemographicData87,88
+  , dsPreprocessTurnout dsPreprocessTurnout88,89
+  , dsPreprocessElectionData dsPreprocessElectionData90,91
+  , dsCategories dsCategories91,92
+data SimpleASR SimpleASR94,95
+data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale94,95
+               | YoungNonWhiteFemaleYoungNonWhiteFemale95,96
+               | OldNonWhiteMaleOldNonWhiteMale96,97
+               | YoungNonWhiteMaleYoungNonWhiteMale97,98
+               | OldWhiteFemaleOldWhiteFemale98,99
+               | YoungWhiteFemaleYoungWhiteFemale99,100
+               | OldWhiteMaleOldWhiteMale100,101
+               | YoungWhiteMale YoungWhiteMale101,102
+type instance instance105,106
+type instance FI.VectorFor FI.VectorFor105,106
+type instance instance106,107
+simpleAgeSexRace simpleAgeSexRace110,111
+simpleAgeSexRace simpleAgeSexRace111,112
+typeTurnouttypeTurnout168,169
+type DVotes DVotes197,198
+type RVotes RVotes198,199
+flattenVotes flattenVotes203,204
+typeIdentity typeIdentity225,226
 
-./src/BlueRipple/Data/DataSourcePaths.hs,1391
+./src/BlueRipple/Data/DataSourcePaths.hs,1517
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
 dataDir dataDir3,4
 totalSpendingCSV totalSpendingCSV5,6
@@ -195,12 +197,14 @@ identityDemographics2016CSV identityDemographics2016CSV18,19
 identityDemographics2016CSV identityDemographics2016CSV18,19
 identityDemographics2017CSV identityDemographics2017CSV20,21
 identityDemographics2017CSV identityDemographics2017CSV20,21
-angryDemsCSV angryDemsCSV22,23
-angryDemsCSV angryDemsCSV22,23
-houseElectionsCSV houseElectionsCSV23,24
-houseElectionsCSV houseElectionsCSV23,24
-turnoutCSV turnoutCSV24,25
-turnoutCSV turnoutCSV24,25
+identityDemographicsLongCSV identityDemographicsLongCSV22,23
+identityDemographicsLongCSV identityDemographicsLongCSV22,23
+angryDemsCSV angryDemsCSV24,25
+angryDemsCSV angryDemsCSV24,25
+houseElectionsCSV houseElectionsCSV25,26
+houseElectionsCSV houseElectionsCSV25,26
+turnoutCSV turnoutCSV26,27
+turnoutCSV turnoutCSV26,27
 
 ./src/BlueRipple/Data/FromDB.hs,1397
 module BlueRipple.Data.FromDB BlueRipple.Data.FromDB13,14

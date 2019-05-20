@@ -23,6 +23,7 @@ where
 import           BlueRipple.Data.DataSourcePaths
 
 import qualified Control.Foldl                 as FL
+import qualified Control.Monad.Except          as X
 import qualified Data.Array                    as A
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromMaybe)
@@ -68,9 +69,12 @@ F.tableTypes "AngryDems" angryDemsCSV
 F.tableTypes "HouseElections" houseElectionsCSV
 F.tableTypes "ContextDemographics" contextDemographicsCSV
 F.tableTypes "Turnout"          turnoutCSV
+F.tableTypes "TurnoutRSA"          detailedRSAturnoutCSV
+F.tableTypes "IdentityDemographics" identityDemographicsLongCSV
 
 -- This one might be different for different breakdowns
-F.tableTypes' (F.rowGen identityDemographics2016CSV) {F.rowTypeName = "AgeSexRaceByDistrict", F.tablePrefix = "Census" }
+--F.tableTypes' (F.rowGen identityDemographics2016CSV) {F.rowTypeName = "AgeSexRaceByDistrict", F.tablePrefix = "Census" }
+
 
 F.declareColumn "PopCount" ''Int
 
@@ -81,10 +85,10 @@ type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
 
 data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructure
   {
-    dsReshapeDemographicData :: demographicDataRow -> [F.Record (DemographicCounts demographicCategories)] -- wide to long
-  , dsMapAndTypeTurnout :: F.Frame Turnout
-                        -> Maybe (F.FrameRec ((F.RDelete Identity (F.RecordColumns Turnout)) V.++ '[DemographicCategory demographicCategories]))
-  , dsMapElectionData :: Int -> F.Frame electionDataRow -> F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])
+    dsPreprocessDemographicData :: Monad m => F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories))
+  , dsPreprocessTurnout :: Int -> F.Frame TurnoutRSA
+                        -> X.ExceptT Text m ((F.FrameRec '[DemographicCategory demographicCategories, VotedPctOfAll]))
+  , dsPreprocessElectionData :: Int -> F.Frame electionDataRow -> F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])
   , dsCategories :: [demographicCategories]
   }
 
@@ -104,34 +108,65 @@ type instance FI.VectorFor (A.Array b Int) = V.Vector
 instance Hashable SimpleASR
 
 
-simpleAgeSexRace :: DemographicStructure AgeSexRaceByDistrict HouseElections SimpleASR
-simpleAgeSexRace = DemographicStructure reshape typeTurnout mapElectionData [minBound ..]
+simpleAgeSexRace :: DemographicStructure IdentityDemographics HouseElections SimpleASR
+simpleAgeSexRace = DemographicStructure processDemograpicData typeTurnout mapElectionData [minBound ..]
  where
-  reshapeEach :: SimpleASR -> AgeSexRaceByDistrict -> F.Record '[PopCount]
-  reshapeEach c r = FT.recordSingleton @PopCount $ case c of
-    OldNonWhiteFemale   -> F.rgetField @CensusOldNonWhiteFemale r
-    YoungNonWhiteFemale -> F.rgetField @CensusYoungNonWhiteFemale r
-    OldNonWhiteMale     -> F.rgetField @CensusOldNonWhiteMale r
-    YoungNonWhiteMale   -> F.rgetField @CensusYoungNonWhiteMale r
-    OldWhiteFemale      -> F.rgetField @CensusOldWhiteFemale r
-    YoungWhiteFemale    -> F.rgetField @CensusYoungWhiteFemale r
-    OldWhiteMale        -> F.rgetField @CensusOldWhiteMale r
-    YoungWhiteMale      -> F.rgetField @CensusYoungWhiteMale r
+   mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT m [(SimpleASR, Int)]
+   mergeACSCounts m = do
+     let lookupX k = maybe (X.throwError $ "(mergeACSCounts) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
+     f18To24 <- lookupX "Female18To24" m
+     f25To44 <- lookupX "Female25To44" m
+     f45To64 <- lookupX "Female45To64" m
+     f65To74 <- lookupX "Female65To74" m
+     f75AndOver <- lookupX "Female75AndOver" m
+     m18To24 <- lookupX "Male18To24" m
+     m25To44 <- lookupX "Male25To44" m
+     m45To64 <- lookupX "Male45To64" m
+     m65To74 <- lookupX "Male65To74" m
+     m75AndOver <- lookupX "Male75AndOver" m
+     fWNH18To24 <- lookupX "FemaleWhiteNonHispanic18To24" m
+     fWNH25To44 <- lookupX "FemaleWhiteNonHispanic25To44" m
+     fWNH45To64 <- lookupX "FemaleWhiteNonHispanic45To64" m
+     fWNH65To74 <- lookupX "FemaleWhiteNonHispanic65To74" m
+     fWNH75AndOver <- lookupX "FemaleWhiteNonHispanic75AndOver" m
+     mWNH18To24 <- lookupX "MaleWhiteNonHispanic18To24" m
+     mWNH25To44 <- lookupX "MaleWhiteNonHispanic25To44" m
+     mWNH45To64 <- lookupX "MaleWhiteNonHispanic45To64" m
+     mWNH65To74 <- lookupX "MaleWhiteNonHispanic65To74" m
+     mWNH75AndOver <- lookupX "MaleWhiteNonHispanic75AndOver" m
+     let owf = fWNH45To64 + fWNH65To74 + fWNH75AndOver
+         ywf = fWNH18To24 + fWNH25To44
+         owm = mWNH45To64 + mWNH65To74 + mWNH75AndOver
+         ywm = mWNH18To24 + mWNH25To44
+     return $
+       [ (OldNonWhiteFemale, (f45To64 + f65To74 + f75AndOver - owf))
+       , (YoungNonWhiteFemale, (f18To24 + f25To44 - ywf))
+       , (OldNonWhiteMale, (m45To64 + m65To74 + m75AndOver - owm))
+       , (YoungNonWhiteMale, (m18To24 + m25To44 - ywm))
+       , (OldWhiteFemale, owf)
+       , (YoungWhiteFemale, ywf)
+       , (OldWhiteMale, owm)
+       , (YoungWhiteMale, ywm)
+       ]
+     
+   processDemographicData :: Monad m => Int -> F.Frame IdentityDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories))
+   processDemographicData year dd =
+    let makeRec b n :: F.Record [[DemographicCategory SimpleASR, PopCount] = b F.&: n F.&: V.RNil 
+        unpack = MR.generalizeUnpack $ MR.filterOnField @Year (==year)
+        assign = MR.generalizeAssign $ MR.assignKeysAndData @[StateAbbreviation,CongressionalDistrict] @[ACSKey,ACSCount]
+        reduce = MR.makeRecsWithKey (uncurry makeRec) $ MR.ReduceFoldM (const $ MR.postMapM mergeACSCounts $ FL.generalize FL.map) 
+    in FL.foldM (MR.concatFold $ MR.mapReduceFold unpack assign reduce) dd
+  
+   mergeTurnoutRows :: Monad m => M.Map T.Text (Int, Int) -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASR, VotedPctOfAll])
+   mergeTurnoutRows m = do
+     let lookupX = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
+     (wm18To24P, wm18To24V) <- lookupX "WhiteMale18To24"
+     (wm25To34P, wm25To24V) <- lookupX "WhiteMale25To34"
+     
 
-  reshape :: AgeSexRaceByDistrict -> [F.Record (DemographicCounts SimpleASR)]
-  reshape =
-    fmap
-        ( F.rcast -- this is required to rearrange cols into expected order, I think?
-        . FT.retypeColumn @CensusStateAbbreviation @StateAbbreviation
-        . FT.retypeColumn @CensusCongressionalDistrict @CongressionalDistrict
-        )
-      . FT.reshapeRowSimpleOnOne
-          @'[CensusStateAbbreviation, CensusCongressionalDistrict]
-          @(DemographicCategory SimpleASR)
-          [minBound ..]
-          reshapeEach
 
-  typeTurnout
+
+typeTurnout
     :: F.Frame Turnout
     -> Maybe (F.FrameRec
          ( (F.RDelete Identity (F.RecordColumns Turnout))
