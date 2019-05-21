@@ -25,3 +25,5 @@ identityDemographicsLongCSV :: FilePath =
 angryDemsCSV :: FilePath = dataDir ++ "angryDemsContributions20181203.csv"
 houseElectionsCSV :: FilePath = dataDir ++ "1976-2018-house.csv"
 turnoutCSV :: FilePath = dataDir ++ "Turnout2012-2018.csv"
+detailedRSATurnoutCSV :: FilePath =
+  dataDir ++ "DetailedTurnoutByRaceSexAge2010-2018.csv"

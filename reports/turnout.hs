@@ -19,12 +19,14 @@ import           Control.Lens                   ( (^.)
                                                 )
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( when )
-import           Data.Traversable            (sequenceA)
+import qualified Control.Monad.Except          as X
+import           Data.Traversable               (sequenceA)
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
 import qualified Text.Blaze.Colonnade          as C
 import qualified Data.Discrimination           as D
 import qualified Data.Functor.Identity         as I
+import qualified Data.Either                   as E
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
@@ -34,6 +36,9 @@ import           Data.Maybe                     ( catMaybes
                                                 , isJust
                                                 , fromJust
                                                 )
+
+import qualified Text.Pandoc.Error             as PA
+
 import qualified Text.Read                     as TR                 
 import qualified Data.Monoid                   as MO
 import           Data.Proxy                     ( Proxy(..) )
@@ -79,7 +84,7 @@ import qualified Frames.Enumerations           as FE
 import qualified Frames.Table                  as Table
 
 import qualified Knit.Report                   as K
-import           Polysemy.Error                 (throw)
+import           Polysemy.Error                 (throw,Error)
 import qualified Knit.Report.Other.Blaze       as KB
 import qualified Knit.Effect.Pandoc            as K
                                                 ( newPandoc
@@ -291,49 +296,49 @@ main = do
         parserOptions
         contextDemographicsCSV
         (const True)
-      identityDemographics2012Frame :: F.Frame AgeSexRaceByDistrict <-
-        loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
-      identityDemographics2014Frame :: F.Frame AgeSexRaceByDistrict <-
-        loadCSVToFrame parserOptions identityDemographics2017CSV (const True)        
-      identityDemographics2016Frame :: F.Frame AgeSexRaceByDistrict <-
-        loadCSVToFrame parserOptions identityDemographics2016CSV (const True)
-      identityDemographics2017Frame :: F.Frame AgeSexRaceByDistrict <-
-        loadCSVToFrame parserOptions identityDemographics2017CSV (const True)
+      identityDemographicsFrame :: F.Frame IdentityDemographics <-
+        loadCSVToFrame parserOptions identityDemographicsLongCSV (const True)
       houseElectionsFrame :: F.Frame HouseElections <- loadCSVToFrame
         parserOptions
         houseElectionsCSV
         (const True)
-      turnoutFrame :: F.Frame Turnout <- loadCSVToFrame parserOptions
-                                         turnoutCSV
-                                         (const True)
+      turnoutFrame :: F.Frame TurnoutRSA <- loadCSVToFrame parserOptions
+                                            detailedRSATurnoutCSV
+                                            (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = quick
+        let rp = goToTown
             ds = simpleAgeSexRace
         K.addMarkDown introduction
+        K.logLE K.Info $ "inferring for 2010"
+        res2010 <- turnoutModel ds rp 2010 identityDemographicsFrame
+                   houseElectionsFrame
+                   turnoutFrame
         K.logLE K.Info $ "inferring for 2012"
-        res2012 <- turnoutModel ds rp 2012 identityDemographics2012Frame
+        res2012 <- turnoutModel ds rp 2012 identityDemographicsFrame
                    houseElectionsFrame
                    turnoutFrame
         K.logLE K.Info $ "inferring for 2014"
-        res2014 <- turnoutModel ds rp 2014 identityDemographics2014Frame
+        res2014 <- turnoutModel ds rp 2014 identityDemographicsFrame
                    houseElectionsFrame
                    turnoutFrame
         K.logLE K.Info $ "inferring for 2016"
-        res2016 <- turnoutModel ds rp 2016 identityDemographics2016Frame
+        res2016 <- turnoutModel ds rp 2016 identityDemographicsFrame
                    houseElectionsFrame
                    turnoutFrame
         K.logLE K.Info $ "inferring for 2018"
-        res2018 <- turnoutModel ds rp 2018 identityDemographics2017Frame
+        res2018 <- turnoutModel ds rp 2018 identityDemographicsFrame
                     houseElectionsFrame
                     turnoutFrame
         let categories = fmap (T.pack . show) $ dsCategories ds --fmap T.pack $ F.columnHeaders (Proxy :: Proxy (F.Record IdentityCounts))
             toPD (category, (ExpectationSummary m (lo,hi) _)) = ParameterDetails category m (lo,hi)
-        when (isJust (modeled res2012)
+        when (isJust (modeled res2010)
+              && isJust (modeled res2012)
               && isJust (modeled res2014)
               && isJust (modeled res2016)
               && isJust (modeled res2018)) $ do          
-          let tr2012 = res2012 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2012) }
+          let tr2010 = res2010 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2010) }
+              tr2012 = res2012 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2012) }
               tr2014 = res2014 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2014) }
               tr2016 = res2016 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2016) }
               tr2018 = res2018 { modeled = I.Identity $ fmap toPD $ zip categories (fromJust $ modeled res2018) }
@@ -345,7 +350,8 @@ main = do
             "Modeled Probability of Voting Democratic in competitive house races"
             S.cl95
             (concat
-             $ [f "2012" $ pdsWithYear "2012" tr2012]
+             $ [f "2010" $ pdsWithYear "2010" tr2010]
+              ++ [f "2012" $ pdsWithYear "2012" tr2012]
               ++ [f "2014" $ pdsWithYear "2014" tr2014]
               ++ [f "2016" $ pdsWithYear "2016" tr2016]
               ++ [f "2018" $ pdsWithYear "2018" tr2018]
@@ -642,44 +648,43 @@ data TurnoutResults b f a = TurnoutResults
     
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
 
-
-
+-- required for now because knitError returns K.Sem r () instead of K.Sem r a
+knitX :: K.Member (Error PA.PandocError) r => X.ExceptT T.Text (K.Sem r) a -> K.Sem r a
+knitX  ma = do
+  ea <- X.runExceptT ma
+  case ea of
+    Left msg -> throw (PA.PandocSomeError $ "Knit User Error: " ++ (T.unpack msg))
+    Right a -> return a
+  
 turnoutModel  ::
-  forall a e b r. ( Show a
-                  , Show b
-                  , Enum b
-                  , Bounded b
-                  , A.Ix b
-                  , FL.Vector (F.VectorFor b) b
-                  , K.Member K.ToPandoc r
-                  , K.PandocEffects r
-                  , MonadIO (K.Sem r))
+  forall a b r. ( Show a
+                , Show b
+                , Enum b
+                , Bounded b
+                , A.Ix b
+                , FL.Vector (F.VectorFor b) b
+                , K.Member K.ToPandoc r
+                , K.PandocEffects r
+                , MonadIO (K.Sem r))
   => DemographicStructure a HouseElections b
   -> RunParams
   -> Int
   -> F.Frame a
   -> F.Frame HouseElections
-  -> F.Frame Turnout
+  -> F.Frame TurnoutRSA
   -> K.Sem r (TurnoutResults b Maybe (ExpectationSummary Double))
 turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
-  let resultsFlattenedFrame = (dsMapElectionData ds) year houseElexFrame
-  K.logLE K.Diagnostic
-    $  "after mapReduce: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list resultsFlattenedFrame))
-  let filteredTurnoutFrameM = dsMapAndTypeTurnout ds $ F.filterFrame ((== year) . F.rgetField @Year) turnoutFrame
-  when (isNothing filteredTurnoutFrameM) $ K.knitError "Failure when parsing identities in turnout data."
-  let filteredTurnoutFrame = fromJust filteredTurnoutFrameM                          
-  K.logLE K.Diagnostic $ T.pack $ show (FL.fold FL.list filteredTurnoutFrame)
-  K.logLE K.Diagnostic
-    $  "Before scaling by turnout: "
-    <> (T.pack $ show (take 5 $ FL.fold FL.list identityDFrame))
+  let resultsFlattenedFrame = (dsPreprocessElectionData ds) year houseElexFrame
+  filteredTurnoutFrame <- knitX $ (dsPreprocessTurnoutData ds) year turnoutFrame
+  let year' = if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
+  longByDCategoryFrame <- knitX $ (dsPreprocessDemographicData ds) year' identityDFrame
   let turnoutByGroupArrayM =
-        FL.foldM (FE.makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @AllTurnout) (flip const)) filteredTurnoutFrame
+        FL.foldM (FE.makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @VotedPctOfAll) (flip const)) filteredTurnoutFrame
   when (isNothing turnoutByGroupArrayM) $ K.knitError "Missing or extra group in turnout data?  turnoutByGroupArrayM is Nothing."
   let turnoutByGroupA :: A.Array b Double = fromJust turnoutByGroupArrayM
       turnoutByGroup b = turnoutByGroupA A.! b
       scaleByTurnout b n = round $ turnoutByGroup b * realToFrac n
-      longByDCategoryFrame = F.toFrame . L.concat . fmap (dsReshapeDemographicData ds) $ identityDFrame
+      
       sumVotersF = PF.dimap
                   (\r -> scaleByTurnout (F.rgetField @(DemographicCategory b) r) (F.rgetField @PopCount r))
                   (FT.recordSingleton @PredictedVoters) 

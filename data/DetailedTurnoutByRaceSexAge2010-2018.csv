@@ -1,4 +1,4 @@
-﻿Year,Group,Population,Citizen,Registered,RegisteredPct,NotRegisteres,NotRegisteredPct,NoResponeToRegistration,NoResponseToRegistrationPct,Voted,VotedPct,NotVoted,NotVotedPct,NoResponseVoted,NoResponseVotedPct,RegisteredPctOfAll,VotedPctOfAll
+﻿Year,Group,Population,Citizen,Registered,RegisteredPct,NotRegistered,NotRegisteredPct,NoResponseToRegistration,NoResponseToRegistrationPct,Voted,VotedPct,NotVoted,NotVotedPct,NoResponseVoted,NoResponseVotedPct,RegisteredPctOfAll,VotedPctOfAll
 2010,WhiteMale18To24,8692,8590,4104,47.8,2676,31.2,1809,21.1,1915,22.3,4978,57.9,1698,19.8,47.2,22
 2010,WhiteMale25To44,24463,23827,14847,62.3,5057,21.2,3924,16.5,8956,37.6,11142,46.8,3729,15.6,60.7,36.6
 2010,WhiteMale45To64,28649,28228,20228,71.7,3838,13.6,4162,14.7,15997,56.7,8153,28.9,4078,14.4,70.6,55.8
