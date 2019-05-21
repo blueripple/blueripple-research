@@ -87,7 +87,7 @@ type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
 data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructure
   {
     dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame TurnoutRSA -> X.ExceptT Text m ((F.FrameRec '[DemographicCategory demographicCategories, VotedPctOfAll])))
+  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame TurnoutRSA -> X.ExceptT Text m ((F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll])))
   , dsPreprocessElectionData :: Int -> F.Frame electionDataRow -> F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])
   , dsCategories :: [demographicCategories]
   }
@@ -245,10 +245,10 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
    processTurnoutData :: Monad m
      => Int
      -> F.Frame TurnoutRSA
-     -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASR, VotedPctOfAll])
+     -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASR, Population, VotedPctOfAll])
    processTurnoutData year td = 
-    let makeRec :: (SimpleASR,Int,Int) -> F.Record [DemographicCategory SimpleASR, VotedPctOfAll]
-        makeRec (b,p,v) = b F.&: (realToFrac p/realToFrac v) F.&: V.RNil
+    let makeRec :: (SimpleASR,Int,Int) -> F.Record [DemographicCategory SimpleASR, Population, VotedPctOfAll]
+        makeRec (b,p,v) = b F.&: p F.&: (realToFrac v/realToFrac p) F.&: V.RNil
 --        fromRec :: F.Record (F.RecordColumns TurnoutRSA) -> (Text, (Int, Int))
         fromRec r = (F.rgetField @Group r, (F.rgetField @Population r, F.rgetField @Voted r))
         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
