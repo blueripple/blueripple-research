@@ -250,7 +250,6 @@ voteShiftObservations = [here|
 The total changes are broadly in-line with the popular house vote totals
 (all in thousands of votes)[^WikipediaHouse]:
 
-
 Year   Democrats    Republicans   D - R
 ----- ----------   ------------  ------
 2010  38,980       44,827        -4,847
@@ -259,10 +258,22 @@ Year   Democrats    Republicans   D - R
 2016  61,417       62,772        -1,355
 2018  60,320       50,467        +9,853
 
-* This model indicates a 4,500k shift toward **republicans** 2012 -> 2016 and the popular house vote shifted -2,773k.
-* This model indicates a 8,400k shift toward **democrats** 2014 -> 2018 and the popular house vote shifted +14,310k.
-* This model indicates a 5,200k shift toward **democrats** 2016 -> 2018 and the popular house vote shifted +11,208k.
-* This model indicates a 6,100k shift toward **democrats** 2010 -> 2018 and the popular house vote shifted +14,700k. 
+when we look only at competitive districts, this via official result data:
+
+Year   Democrats    Republicans   D - R
+----- ----------   ------------  ------
+2010  37,922       40,911        -2,989
+2012  54,888       52,345        +2,543
+2014  30,326       34,646        -4,320
+2016  53,539       56,010        -2,471
+2018  61,427       55,610        +9,853
+
+
+
+* This model indicates a -5,400k shift toward **republicans** 2012 -> 2016 and the popular house vote shifted -2,773k.
+* This model indicates a 9,500k shift toward **democrats** 2014 -> 2018 and the popular house vote shifted +14,310k.
+* This model indicates a 6,800k shift toward **democrats** 2016 -> 2018 and the popular house vote shifted +11,208k.
+* This model indicates a 8,200k shift toward **democrats** 2010 -> 2018 and the popular house vote shifted +14,700k. 
 
 We don't expect these numbers to match since we are only counting competitive house districts.  Still ???.
 
@@ -278,12 +289,6 @@ We don't expect these numbers to match since we are only counting competitive ho
 -- required for now because knitError returns K.Sem r () instead of K.Sem r a (until knit-haskell v0.4.0.0)
 knitX :: forall r a. K.Member (Error PA.PandocError) r => X.ExceptT T.Text (K.Sem r) a -> K.Sem r a
 knitX  ma = X.runExceptT ma >>= (knitEither @r)
-{-
-  ea <- X.runExceptT ma
-  case ea of
-    Left msg -> throw (PA.PandocSomeError $ "Knit User Error: " ++ (T.unpack msg))
-    Right a -> return a
--}
 
 knitMaybe :: forall r a. K.Member (Error K.PandocError) r => T.Text -> Maybe a -> K.Sem r a
 knitMaybe msg ma = case ma of
@@ -296,7 +301,6 @@ knitEither = either ((throw @K.PandocError) . PA.PandocSomeError . ("Knit User E
 quick = RunParams 2 500 50
 justEnough = RunParams 5 5000 500
 goToTown = RunParams 10 10000 1000
-
   
 main :: IO ()
 main = do
@@ -395,8 +399,7 @@ deltaTable ds trA trB =
         let totalRec = FL.fold votesAndPopByDistrictF
               (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ votesAndPopByDistrict tr)
             totalCounts = F.rgetField @(CountArray b) totalRec
-            totalPopScale = F.rgetField @PopScale totalRec
-        in fmap (round . (* totalPopScale) . realToFrac) totalCounts
+        in totalCounts
       popA = getScaledPop trA
       popB = getScaledPop trB
       pop = FL.fold FL.sum popA
@@ -646,10 +649,11 @@ turnoutModel  ::
   -> F.Frame TurnoutRSA
   -> K.Sem r (TurnoutResults b (ExpectationSummary Double))
 turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
-  let resultsFlattenedFrame = (dsPreprocessElectionData ds) year houseElexFrame
+  resultsFlattenedFrame <- knitX $ (dsPreprocessElectionData ds) year houseElexFrame
   filteredTurnoutFrame <- knitX $ (dsPreprocessTurnoutData ds) year turnoutFrame
   let year' = if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
   longByDCategoryFrame <- knitX $ (dsPreprocessDemographicData ds) year' identityDFrame
+
   turnoutByGroupArray  <- knitMaybe "Missing or extra group in turnout data?" $
     FL.foldM (FE.makeArrayMF (F.rgetField @(DemographicCategory b)) (F.rgetField @VotedPctOfAll) (flip const)) filteredTurnoutFrame
   turnoutPopByGroupArray <- knitMaybe "Missing or extra group in turnout data?" $

@@ -87,8 +87,8 @@ type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
 data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructure
   {
     dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame TurnoutRSA -> X.ExceptT Text m ((F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll])))
-  , dsPreprocessElectionData :: Int -> F.Frame electionDataRow -> F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])
+  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame TurnoutRSA -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
+  , dsPreprocessElectionData :: (forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])))
   , dsCategories :: [demographicCategories]
   }
 
@@ -258,22 +258,49 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      
 
 
-   mapElectionData :: Int -> F.Frame HouseElections
-                   -> F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])
-   mapElectionData year eData =
-     let xDat = fmap (F.rcast @('[Year] V.++ LocationKey V.++ [Party, Candidatevotes, Totalvotes])
+   mapElectionData :: Monad m => Int -> F.Frame HouseElections
+                   -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes]))
+   mapElectionData year eData = do
+     let xDat = fmap (F.rcast @('[Year] V.++ LocationKey V.++ [Candidate, Party, Candidatevotes, Totalvotes])
                       . FT.retypeColumn @District @CongressionalDistrict
                       . FT.retypeColumn @StatePo @StateAbbreviation
                      ) eData
-         unpack = MR.unpackFilterOnField @Year (== year)
-         assign = MR.assignKeysAndData @LocationKey @'[Party, Candidatevotes, Totalvotes]
-         reduce = MR.foldAndAddKey flattenVotes
-     in FL.fold (MR.concatFold $ MR.mapReduceFold unpack assign reduce) xDat
-
+         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (== year)
+         assign = MR.generalizeAssign $ MR.assignKeysAndData @LocationKey @'[Candidate, Party, Candidatevotes, Totalvotes]
+         reduce = MR.makeRecsWithKeyM id $ MR.ReduceFoldM (const $ fmap (pure @[]) flattenVotes')
+     either X.throwError return $ FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) xDat
 
 
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
+flattenVotes'
+  :: FL.FoldM (Either Text)
+       (F.Record '[Candidate, Party, Candidatevotes, Totalvotes])
+       (F.Record '[DVotes, RVotes, Totalvotes]) -- Map Name (Map Party Votes)
+flattenVotes' =
+  MR.postMapM mapToRec
+  $ FL.generalize
+  $ FL.Fold step (M.empty,0) id where
+  step (m,_) r =
+    let cand = F.rgetField @Candidate r
+        party = F.rgetField @Party r
+        cVotes = F.rgetField @Candidatevotes r
+        tVotes = F.rgetField @Totalvotes r
+        updateInner :: M.Map Text Int -> Maybe (M.Map Text Int)
+        updateInner pm = Just $ M.insert party cVotes pm -- if same candidate appears with same party, this replaces
+    in (M.update updateInner cand m, tVotes)
+  mapToRec :: (M.Map Text (M.Map Text Int),Int) -> Either Text (F.Record [DVotes, RVotes, Totalvotes])
+  mapToRec (m, tVotes) = do
+    let findByParty p =
+          let cs = L.filter (L.elem p . M.keys) $ fmap snd $ M.toList m  
+          in case cs of
+            [] -> Left 0
+            [cm] -> Right $ FL.fold FL.sum cm 
+            _ -> Left $ "More than one candidate with party=" <> p
+    dVotes <- findByParty "democrat"
+    rVotes <- findByParty "republican"
+    return $ dVotes F.&: rVotes F.&: tVotes F.&: V.RNil
+
 flattenVotes
   :: FL.Fold
        (F.Record '[Party, Candidatevotes, Totalvotes])
@@ -294,12 +321,3 @@ flattenVotes =
            )
     V.:& FF.recFieldF (fmap (fromMaybe 0) $ FL.last) (F.rgetField @Totalvotes)
     V.:& V.RNil
-      
-{-
-typeIdentity
-  :: forall b. (Read b)
-   => F.Record '[Identity]
-  -> F.Rec (Maybe F.:. F.ElField) '[DemographicCategory b]
-typeIdentity x =
-  (V.Compose $ fmap V.Field $ TR.readMaybe @b (T.unpack $ F.rgetField @Identity x)) V.:& V.RNil
--}
