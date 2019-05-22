@@ -32,81 +32,81 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,2669
+./reports/turnout.hs,2641
 module Main Main12,13
 templateVars templateVars98,99
 loadCSVToFrame loadCSVToFrame117,118
 introduction introduction131,132
 introduction introduction132,133
-[^ResultsData]: [^ResultsData]:198,199
-voteShifts voteShifts217,218
-voteShifts voteShifts218,219
-voteShiftObservations voteShiftObservations246,247
-voteShiftObservations voteShiftObservations247,248
-knitX knitX289,290
-knitX knitX290,291
-knitMaybe knitMaybe292,293
-knitMaybe knitMaybe293,294
-knitEither knitEither297,298
-knitEither knitEither298,299
-quick quick300,301
-justEnough justEnough301,302
-goToTown goToTown302,303
-main main304,305
-main main305,306
-data DeltaTableRow DeltaTableRow378,379
-  DeltaTableRowDeltaTableRow379,380
-  { dtrGroup dtrGroup380,381
-  , dtrPop dtrPop381,382
-  , dtrFromPop dtrFromPop382,383
-  , dtrFromTurnout dtrFromTurnout383,384
-  , dtrFromOpinion dtrFromOpinion384,385
-  , dtrTotal dtrTotal385,386
-  , dtrPct dtrPct386,387
-deltaTable deltaTable389,390
-deltaTable deltaTable394,395
-deltaTableColonnade deltaTableColonnade435,436
-deltaTableColonnade deltaTableColonnade436,437
-modelNotesPreface modelNotesPreface446,447
-modelNotesPreface modelNotesPreface447,448
-modelNotesBayes modelNotesBayes487,488
-modelNotesBayes modelNotesBayes488,489
-P(P498,499
-\mu_k(\mu_k543,544
-v_k(v_k544,545
-\rho(\rho545,546
-type X X591,592
-type PredictedVoters PredictedVoters592,593
-type ScaledDVotes ScaledDVotes593,594
-type ScaledRVotes ScaledRVotes594,595
-type PopScale PopScale595,596
-type CountArray CountArray596,597
-type CountArray b b596,597
-addPopScale addPopScale598,599
-votesAndPopByDistrictF votesAndPopByDistrictF600,601
-votesAndPopByDistrictF votesAndPopByDistrictF604,605
-data TurnoutResults TurnoutResults615,616
-data TurnoutResults b a = TurnoutResultsTurnoutResults615,616
-    votesAndPopByDistrict votesAndPopByDistrict617,618
-    nationalTurnout nationalTurnout625,626
-    modeled modeled626,627
-    mcmcChain mcmcChain627,628
-data RunParams RunParams630,631
-data RunParams = RunParams RunParams630,631
-data RunParams = RunParams { nChains nChains630,631
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain630,631
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain630,631
-turnoutModel turnoutModel633,634
-turnoutModel turnoutModel650,651
-modelNotesRegression modelNotesRegression737,738
-modelNotesRegression modelNotesRegression738,739
-Given Given740,741
-D D743,744
-R R744,745
-\frac{D-R}{Q} \frac{D-R}{Q}751,752
-\sum_i \sum_i760,761
-We We763,764
-Now Now764,765
+, ,203,204
+voteShifts voteShifts222,223
+voteShifts voteShifts223,224
+voteShiftObservations voteShiftObservations251,252
+voteShiftObservations voteShiftObservations252,253
+knitX knitX300,301
+knitX knitX301,302
+knitMaybe knitMaybe303,304
+knitMaybe knitMaybe304,305
+knitEither knitEither308,309
+knitEither knitEither309,310
+quick quick311,312
+justEnough justEnough312,313
+goToTown goToTown313,314
+main main315,316
+main main316,317
+data DeltaTableRow DeltaTableRow389,390
+  DeltaTableRowDeltaTableRow390,391
+  { dtrGroup dtrGroup391,392
+  , dtrPop dtrPop392,393
+  , dtrFromPop dtrFromPop393,394
+  , dtrFromTurnout dtrFromTurnout394,395
+  , dtrFromOpinion dtrFromOpinion395,396
+  , dtrTotal dtrTotal396,397
+  , dtrPct dtrPct397,398
+deltaTable deltaTable400,401
+deltaTable deltaTable405,406
+deltaTableColonnade deltaTableColonnade446,447
+deltaTableColonnade deltaTableColonnade447,448
+modelNotesPreface modelNotesPreface457,458
+modelNotesPreface modelNotesPreface458,459
+modelNotesBayes modelNotesBayes498,499
+modelNotesBayes modelNotesBayes499,500
+P(P509,510
+\mu_k(\mu_k554,555
+v_k(v_k555,556
+\rho(\rho556,557
+type X X602,603
+type PredictedVoters PredictedVoters603,604
+type ScaledDVotes ScaledDVotes604,605
+type ScaledRVotes ScaledRVotes605,606
+type PopScale PopScale606,607
+type CountArray CountArray607,608
+type CountArray b b607,608
+addPopScale addPopScale609,610
+votesAndPopByDistrictF votesAndPopByDistrictF611,612
+votesAndPopByDistrictF votesAndPopByDistrictF615,616
+data TurnoutResults TurnoutResults626,627
+data TurnoutResults b a = TurnoutResultsTurnoutResults626,627
+    votesAndPopByDistrict votesAndPopByDistrict628,629
+    nationalTurnout nationalTurnout636,637
+    modeled modeled637,638
+    mcmcChain mcmcChain638,639
+data RunParams RunParams641,642
+data RunParams = RunParams RunParams641,642
+data RunParams = RunParams { nChains nChains641,642
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain641,642
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain641,642
+turnoutModel turnoutModel644,645
+turnoutModel turnoutModel661,662
+modelNotesRegression modelNotesRegression748,749
+modelNotesRegression modelNotesRegression749,750
+Given Given751,752
+D D754,755
+R R755,756
+\frac{D-R}{Q} \frac{D-R}{Q}762,763
+\sum_i \sum_i771,772
+We We774,775
+Now Now775,776
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -146,7 +146,7 @@ sequenceConcurrently sequenceConcurrently125,126
 sequenceConcurrently sequenceConcurrently126,127
 runMany runMany138,139
 
-./src/BlueRipple/Data/DataFrames.hs,1537
+./src/BlueRipple/Data/DataFrames.hs,1742
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames16,17
 F.tableTypes' F.tableTypes'63,64
 --F.tableTypes' --F.tableTypes'76,77
@@ -174,10 +174,15 @@ type instance FI.VectorFor FI.VectorFor105,106
 type instance instance106,107
 simpleAgeSexRace simpleAgeSexRace110,111
 simpleAgeSexRace simpleAgeSexRace111,112
-type DVotes DVotes273,274
-type RVotes RVotes274,275
-flattenVotes' flattenVotes'279,280
-flattenVotes flattenVotes307,308
+data Cands Cands273,274
+data Cands = NoCands NoCands273,274
+data Cands = NoCands | OneCand OneCand273,274
+data Cands = NoCands | OneCand Int | Multi Multi273,274
+candsToVotes candsToVotes274,275
+type DVotes DVotes278,279
+type RVotes RVotes279,280
+flattenVotes' flattenVotes'284,285
+flattenVotes flattenVotes319,320
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,1619
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2

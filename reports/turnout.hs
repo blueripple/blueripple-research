@@ -196,7 +196,12 @@ while non-white support remained intensely high. Is that
 the whole story?
 
 
-[^ResultsData]: Source: Mit Election Lab <https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2> 
+[^ResultsData]: MIT Election Data and Science Lab, 2017
+, "U.S. House 1976–2018"
+, https://doi.org/10.7910/DVN/IG0UN2
+, Harvard Dataverse
+, V3
+, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
 [^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
 [^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
 [^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
@@ -262,20 +267,26 @@ when we look only at competitive districts, this via official result data:
 
 Year   Democrats    Republicans   D - R
 ----- ----------   ------------  ------
-2010  37,922       40,911        -2,989
-2012  54,888       52,345        +2,543
-2014  30,326       34,646        -4,320
-2016  53,539       56,010        -2,471
-2018  61,427       55,610        +9,853
+2010  37,961       41,165        -3,204
+2012  55,213       52,650        +2,563
+2014  30,534       34,936        -4,402
+2016  53,840       56,409        -2,569
+2018  58,544       52,162        +6,382
 
 
+These numbers tie out fairly well with the model.
+This is by design: the model's population numbers are scaled so
+that the total votes in each district
+and the total voters in each category add up correctly.
+That means that the total number of D+R votes in each election
+will be very close to what
+we see in the data:
 
-* This model indicates a -5,400k shift toward **republicans** 2012 -> 2016 and the popular house vote shifted -2,773k.
-* This model indicates a 9,500k shift toward **democrats** 2014 -> 2018 and the popular house vote shifted +14,310k.
-* This model indicates a 6,800k shift toward **democrats** 2016 -> 2018 and the popular house vote shifted +11,208k.
-* This model indicates a 8,200k shift toward **democrats** 2010 -> 2018 and the popular house vote shifted +14,700k. 
+* This model indicates a - 4,800k shift (toward **republicans**) 2012 -> 2016 and the competitive popular house vote shifted -5,100k.
+* This model indicates a +10,200k shift (toward **democrats**) 2014 -> 2018 and the competitive popular house vote shifted +10,800k.
+* This model indicates a + 8,500k shift (toward **democrats**) 2016 -> 2018 and the competitive popular house vote shifted +8,900k.
+* This model indicates a + 9,100k shift (toward **democrats**) 2010 -> 2018 and the competitive popular house vote shifted +9,600k. 
 
-We don't expect these numbers to match since we are only counting competitive house districts.  Still ???.
 
 [^WikipediaHouse]: Sources:
 <https://en.wikipedia.org/wiki/2010_United_States_House_of_Representatives_elections>

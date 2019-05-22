@@ -271,6 +271,11 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      either X.throwError return $ FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) xDat
 
 
+data Cands = NoCands | OneCand Int | Multi Int
+candsToVotes NoCands = 0
+candsToVotes (OneCand x) = x
+candsToVotes (Multi x) = x
+
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
 flattenVotes'
@@ -286,20 +291,27 @@ flattenVotes' =
         party = F.rgetField @Party r
         cVotes = F.rgetField @Candidatevotes r
         tVotes = F.rgetField @Totalvotes r
-        updateInner :: M.Map Text Int -> Maybe (M.Map Text Int)
-        updateInner pm = Just $ M.insert party cVotes pm -- if same candidate appears with same party, this replaces
-    in (M.update updateInner cand m, tVotes)
+        updateInner :: Maybe (M.Map Text Int) -> Maybe (M.Map Text Int)
+        updateInner pmM = Just $ M.insert party cVotes $ fromMaybe M.empty pmM -- if same candidate appears with same party, this replaces
+    in (M.alter updateInner cand m, tVotes)
   mapToRec :: (M.Map Text (M.Map Text Int),Int) -> Either Text (F.Record [DVotes, RVotes, Totalvotes])
   mapToRec (m, tVotes) = do
     let findByParty p =
           let cs = L.filter (L.elem p . M.keys) $ fmap snd $ M.toList m  
           in case cs of
-            [] -> Left 0
-            [cm] -> Right $ FL.fold FL.sum cm 
-            _ -> Left $ "More than one candidate with party=" <> p
-    dVotes <- findByParty "democrat"
-    rVotes <- findByParty "republican"
-    return $ dVotes F.&: rVotes F.&: tVotes F.&: V.RNil
+            [] -> NoCands --Right 0 -- Left  $  "No cands when finding " <> p <> " in " <> (T.pack $ show m)
+            [cm] -> OneCand $ FL.fold FL.sum cm 
+            cms -> Multi $ FL.fold FL.sum $ fmap (FL.fold FL.sum) cms --Left $ "More than one candidate with party=" <> p <> ": " <> (T.pack $ show m)
+    let dCand = findByParty "democrat"
+        rCand = findByParty "republican"
+    return $ candsToVotes dCand F.&: candsToVotes rCand  F.&: tVotes F.&: V.RNil   
+{-
+    case (dCand, rCand) of
+       (Multi _, OneCand _) -> Left $ "More than one democrat in competitive election: " <> (T.pack $ show m)
+       (OneCand _,Multi _) -> Left $ "More than one republican in competitive election: " <> (T.pack $ show m)
+       (Multi _, Multi _) -> Left $ "More than one democrat and more than one republican: " <> (T.pack $ show m)
+       (dem, rep) -> Right $ 
+-}
 
 flattenVotes
   :: FL.Fold
