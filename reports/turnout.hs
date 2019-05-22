@@ -344,7 +344,7 @@ main = do
                                             (const True)
       K.logLE K.Info "Knitting..."
       K.newPandoc "turnout" $ do
-        let rp = justEnough
+        let rp = goToTown
             ds = simpleAgeSexRace
             years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
             categories = fmap (T.pack . show) $ dsCategories ds

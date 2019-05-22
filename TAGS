@@ -146,7 +146,7 @@ sequenceConcurrently sequenceConcurrently125,126
 sequenceConcurrently sequenceConcurrently126,127
 runMany runMany138,139
 
-./src/BlueRipple/Data/DataFrames.hs,1742
+./src/BlueRipple/Data/DataFrames.hs,3133
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames16,17
 F.tableTypes' F.tableTypes'63,64
 --F.tableTypes' --F.tableTypes'76,77
@@ -160,29 +160,56 @@ data DemographicStructure demographicDataRow electionDataRow demographicCategori
   , dsPreprocessTurnoutData dsPreprocessTurnoutData89,90
   , dsPreprocessElectionData dsPreprocessElectionData90,91
   , dsCategories dsCategories91,92
-data SimpleASR SimpleASR94,95
-data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale94,95
-               | YoungNonWhiteFemaleYoungNonWhiteFemale95,96
-               | OldNonWhiteMaleOldNonWhiteMale96,97
-               | YoungNonWhiteMaleYoungNonWhiteMale97,98
-               | OldWhiteFemaleOldWhiteFemale98,99
-               | YoungWhiteFemaleYoungWhiteFemale99,100
-               | OldWhiteMaleOldWhiteMale100,101
-               | YoungWhiteMale YoungWhiteMale101,102
+type instance instance94,95
+type instance FI.VectorFor FI.VectorFor94,95
+data SimpleASR SimpleASR96,97
+data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale96,97
+               | YoungNonWhiteFemaleYoungNonWhiteFemale97,98
+               | OldNonWhiteMaleOldNonWhiteMale98,99
+               | YoungNonWhiteMaleYoungNonWhiteMale99,100
+               | OldWhiteFemaleOldWhiteFemale100,101
+               | YoungWhiteFemaleYoungWhiteFemale101,102
+               | OldWhiteMaleOldWhiteMale102,103
+               | YoungWhiteMale YoungWhiteMale103,104
 type instance instance105,106
-type instance FI.VectorFor FI.VectorFor105,106
 type instance instance106,107
-simpleAgeSexRace simpleAgeSexRace110,111
-simpleAgeSexRace simpleAgeSexRace111,112
-data Cands Cands273,274
-data Cands = NoCands NoCands273,274
-data Cands = NoCands | OneCand OneCand273,274
-data Cands = NoCands | OneCand Int | Multi Multi273,274
-candsToVotes candsToVotes274,275
-type DVotes DVotes278,279
-type RVotes RVotes279,280
-flattenVotes' flattenVotes'284,285
-flattenVotes flattenVotes319,320
+data ASR ASR109,110
+data ASR = WhiteFemale18To24WhiteFemale18To24109,110
+         | WhiteFemale25To44WhiteFemale25To44110,111
+         | WhiteFemale45To64WhiteFemale45To64111,112
+         | WhiteFemale65To74WhiteFemale65To74112,113
+         | WhiteFemale75AndOverWhiteFemale75AndOver113,114
+         | WhiteMale18To24WhiteMale18To24114,115
+         | WhiteMale25To44WhiteMale25To44115,116
+         | WhiteMale45To64WhiteMale45To64116,117
+         | WhiteMale65To74WhiteMale65To74117,118
+         | WhiteMale75AndOverWhiteMale75AndOver118,119
+         | NonWhiteFemale18To24NonWhiteFemale18To24119,120
+         | NonWhiteFemale25To44NonWhiteFemale25To44120,121
+         | NonWhiteFemale45To64NonWhiteFemale45To64121,122
+         | NonWhiteFemale65To74NonWhiteFemale65To74122,123
+         | NonWhiteFemale75AndOverNonWhiteFemale75AndOver123,124
+         | NonWhiteMale18To24NonWhiteMale18To24124,125
+         | NonWhiteMale25To44NonWhiteMale25To44125,126
+         | NonWhiteMale45To64NonWhiteMale45To64126,127
+         | NonWhiteMale65To74NonWhiteMale65To74127,128
+         | NonWhiteMale75AndOver NonWhiteMale75AndOver128,129
+type instance instance130,131
+processElectionData processElectionData134,135
+processElectionData processElectionData136,137
+data Cands Cands146,147
+data Cands = NoCands NoCands146,147
+data Cands = NoCands | OneCand OneCand146,147
+data Cands = NoCands | OneCand Int | Multi Multi146,147
+candsToVotes candsToVotes147,148
+type DVotes DVotes151,152
+type RVotes RVotes152,153
+flattenVotes' flattenVotes'157,158
+flattenVotes flattenVotes185,186
+simpleAgeSexRace simpleAgeSexRace202,203
+simpleAgeSexRace simpleAgeSexRace203,204
+ageSexRace ageSexRace350,351
+ageSexRace ageSexRace351,352
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,1619
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
