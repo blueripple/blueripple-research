@@ -168,37 +168,14 @@ Thus for now we split the electorate into "white" (non-hispanic) and "non-white"
 
 * Our inference model uses Bayesian techniques
 that are described in more detail in a separate
-[Preference-Model Notes](file://PreferenceModelMethodsAndSources.html) post.
+[Preference-Model Notes](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html)
+post.
 
 As a first pass, we modeled the voting preferences of our
 8 demographic sub-groups in the 2018 election,
 so we could compare our results with data from exit polls and surveys.
 The results are presented in the figure below:
 
-[^Techniques]: In what follows, 
-we attempt to use the election results themselves[^ResultsData], combined with
-demographic data about the populations in each house
-district[^CensusDemographics][^4],
-and census data regarding the turnout[^CensusTurnout]
-of various demographic groups
-to *infer* the likelihood of a given person voting
-for the democratic candidate in a house race.
-We'll interpret changes in that inferred probability
-as people "changing their minds".
-[^ResultsData]: MIT Election Data and Science Lab, 2017
-, "U.S. House 1976–2018"
-, https://doi.org/10.7910/DVN/IG0UN2
-, Harvard Dataverse, V3
-, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
-[^ResultsDataV2]:MIT Election Data and Science Lab, 2017
-, "U.S. House 1976–2018"
-, https://doi.org/10.7910/DVN/IG0UN2
-, Harvard Dataverse, V4
-, UNF:6:M0873g1/8Ee6570GIaIKlQ== [fileUNF]
-[^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
-[^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
-[^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
-We will update this once the census publishes updated 2018 American Community Survey data.
 |]
   
 --------------------------------------------------------------------------------
@@ -380,7 +357,7 @@ main = do
         templateVars
         K.mindocOptionsF
   eitherDocs <-
-    K.knitHtmls (Just "turnout.Main") K.logAll pandocWriterConfig $ do
+    K.knitHtmls (Just "preference_model.Main") K.logAll pandocWriterConfig $ do
     -- load the data   
       let parserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
@@ -399,7 +376,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = quick
+      let rp = goToTown
           ds = simpleAgeSexRace
           years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
           categories = fmap (T.pack . show) $ dsCategories ds
@@ -419,7 +396,7 @@ main = do
           f x = fmap (\y -> (x,y))
           
       K.logLE K.Info "Knitting docs..."
-      K.newPandoc "PreferenceModel2018" $ do
+      K.newPandoc "2018" $ do
         K.addMarkDown intro2018
         pr2018 <- knitMaybe "Failed to find 2018 in modelResults." $ M.lookup 2018 modeledResults
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
@@ -427,8 +404,8 @@ main = do
           S.cl95
           (f "2018" $ pdsWithYear "2018" pr2018)
         K.addMarkDown postFig2018
-      K.newPandoc "PreferenceModelMethodsAndSources" $ K.addMarkDown modelNotesBayes        
-      K.newPandoc "PreferenceModelAcrossTime" $ do
+      K.newPandoc "MethodsAndSources" $ K.addMarkDown modelNotesBayes        
+      K.newPandoc "AcrossTime" $ do
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
@@ -531,9 +508,10 @@ deltaTableColonnade =
 modelNotesPreface :: T.Text
 modelNotesPreface = [here|
 ## Preference-Model Notes
-Our goal is to use the house election results to fit a very simple model of the
-electorate.  We consider the electorate as having eight
-"identity" groups, split by sex (the census only records this as a F/M binary),
+Our goal is to use the house election results[^ResultsData] to fit a very
+simple model of the electorate.  We consider the electorate as having some number
+of "identity" groups. For example we could divide by sex
+(the census only records this as a F/M binary),
 age, "old" (45 or older) and "young" (under 45) and
 racial identity (white-non-hispanic or non-white).
 We recognize that these categories are limiting and much too simple.
@@ -541,19 +519,20 @@ But we believe it's a reasonable starting point, as a balance
 between inclusiveness and having way too many variables.
 
 For each congressional district where both major parties ran candidates, we have
-census estimates of the number of people in each of our demographic categories.
+census estimates of the number of people in each of our
+demographic categories[^CensusDemographics].
 And from the census we have national-level turnout estimates for each of these
-groups as well. We assume that these turnout percentages
+groups as well[^CensusTurnout]. We assume that these turnout percentages
 hold exactly in each district, giving a number of voters,
 $N$, in each group, $i$, for each district.
 
 All we can observe is the **sum** of all the votes in the district,
-not the ones cast by each
-group separately.
+not the ones cast by each group separately.
 But each district has a different demographic makeup and so each is a
 distinct piece of data about how each group is likely to vote.
 
-What we want to estimate, is how likely a voter in each group is of voting for the
+What we want to estimate, is how likely a voter in
+each group is of voting for the
 democratic candidate in a contested race.
 
 For each district, $d$, we have the set of expected voters
@@ -565,6 +544,21 @@ we assume that all groups are equally likely to vote for a third party candidate
 We want to estimate $p_i$, the probability that
 a voter (in any district) in the $i$th group--given that they voted
 for a republican or democrat--will vote for the democratic candidate.                     
+
+[^ResultsData]: MIT Election Data and Science Lab, 2017
+, "U.S. House 1976–2018"
+, https://doi.org/10.7910/DVN/IG0UN2
+, Harvard Dataverse, V3
+, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
+[^ResultsDataV2]:MIT Election Data and Science Lab, 2017
+, "U.S. House 1976–2018"
+, https://doi.org/10.7910/DVN/IG0UN2
+, Harvard Dataverse, V4
+, UNF:6:M0873g1/8Ee6570GIaIKlQ== [fileUNF]
+[^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
+[^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>. NB: We are using 2017 demographic population data for our 2018 analysis,
+since that is the latest available from the census.
+We will update this once the census publishes updated 2018 American Community Survey data.
 
 |]
 
@@ -613,13 +607,13 @@ Given $V_i$ voters of that type, the distribution of democratic votes
 is [Binomial][WP:Binomial] with $V_i$ trials and $p_i$ probability of success.
 But $V_i$ is quite large! So we can approximate this with a normal
 distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$
-(See [Wikipedia][WP:BinomialApprox]).  However, we can't observe the number
+(see [Wikipedia][WP:BinomialApprox]).  However, we can't observe the number
 of votes from just one type of voter. We can only observe the sum over all types.
 Luckily, the sum of normally distributed random variables follows a  normal
 distribution as well.
 So the distribution of democratic votes across all types of voters is also normal,
 with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$
-(See [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or,
+(again, see [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or,
 what amounts to the same thing, its probability density.
 But that means we also know the probability density of all the evidence
 given $\{p_i\}$, $\rho(\{D_k\}|\{p_i\})$, since that is just the
@@ -657,12 +651,19 @@ conventionally, taken to indicate that the chains have converged
 "enough".
 
 [^WP:BayesTheorem]: <https://en.wikipedia.org/wiki/Bayes%27_theorem>
+
 [WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
+
 [WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
+
 [WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
+
 [WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
+
 [Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
+
 [Ref:MPSRF]: <https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf>
+
 [^rhat]: The details of this convergence are beyond our scope but just to get an intuition:
 consider a PSRF computed by using (maximum - minimum) of some quantity.
 The mean of these intervals is also the mean maximum minus the mean minimum.

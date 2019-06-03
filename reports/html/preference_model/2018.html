@@ -59,7 +59,7 @@ table td {
 <ul>
 <li><p>We consider only "competitive" districts, defined as those that had a democrat and republican candidate. Of the 435 House districts, 382 districts were competitive in 2018.</p></li>
 <li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into "white" (non-hispanic) and "non-white", "male" and "female" and "young" (&lt;45) and "old".</p></li>
-<li><p>Our inference model uses Bayesian<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> techniques that are described in more detail in the <a href="#preference-model-notes">Preference-Model Notes</a> section below.</p></li>
+<li><p>Our inference model uses Bayesian techniques that are described in more detail in a separate <a href="https://blueripple.github.io/PreferenceModel/MethodsAndSources.html">Preference-Model Notes</a> post.</p></li>
 </ul>
 <p>As a first pass, we modeled the voting preferences of our 8 demographic sub-groups in the 2018 election, so we could compare our results with data from exit polls and surveys. The results are presented in the figure below:</p>
 <figure id="figure_1">
@@ -75,59 +75,59 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.813183109304023,
+                "ConfHi": 0.8006822963434054,
                 "Key": "2018",
-                "ConfLo": 0.7113063654106081,
-                "Estimate": 0.7857148250226547,
+                "ConfLo": 0.7988742874262958,
+                "Estimate": 0.7997739563048177,
                 "Parameter": "OldNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.7794213208428238,
+                "ConfHi": 0.7718104873805722,
                 "Key": "2018",
-                "ConfLo": 0.7142805763597748,
-                "Estimate": 0.7617720496142106,
+                "ConfLo": 0.7696989960920105,
+                "Estimate": 0.7707615415904838,
                 "Parameter": "YoungNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.767176124060428,
+                "ConfHi": 0.7588699675576553,
                 "Key": "2018",
-                "ConfLo": 0.6973734442562278,
-                "Estimate": 0.7481748350323835,
+                "ConfLo": 0.7567351955558015,
+                "Estimate": 0.7578017444181308,
                 "Parameter": "OldNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.7381491296392118,
+                "ConfHi": 0.7329385712561457,
                 "Key": "2018",
-                "ConfLo": 0.6902589429756862,
-                "Estimate": 0.7251492078963565,
+                "ConfLo": 0.730467634927648,
+                "Estimate": 0.7317069298540171,
                 "Parameter": "YoungNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.4658571480058664,
+                "ConfHi": 0.4249547513432466,
                 "Key": "2018",
-                "ConfLo": 0.3836491092074979,
-                "Estimate": 0.4233582053547155,
+                "ConfLo": 0.4239665246853968,
+                "Estimate": 0.42445908989237363,
                 "Parameter": "OldWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.5008539309495332,
+                "ConfHi": 0.4744288123532596,
                 "Key": "2018",
-                "ConfLo": 0.47096354481526115,
-                "Estimate": 0.47828399527221643,
+                "ConfLo": 0.4727984378280274,
+                "Estimate": 0.473616457410911,
                 "Parameter": "YoungWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.4795237248157799,
+                "ConfHi": 0.42941010695601195,
                 "Key": "2018",
-                "ConfLo": 0.37378216225995115,
-                "Estimate": 0.4351914409852212,
+                "ConfLo": 0.4283585986682003,
+                "Estimate": 0.42888519443986606,
                 "Parameter": "OldWhiteMale-2018"
             },
             {
-                "ConfHi": 0.49907458712736835,
+                "ConfHi": 0.4860578940548302,
                 "Key": "2018",
-                "ConfLo": 0.48345130995507696,
-                "Estimate": 0.48775403987628924,
+                "ConfLo": 0.48434912131169516,
+                "Estimate": 0.4851976690937778,
                 "Parameter": "YoungWhiteMale-2018"
             }
         ]
@@ -187,12 +187,6 @@ table td {
 vegaEmbed('#figure_1',vlSpec);</script>
 </figure>
 <p>The most striking observation is the chasm between white and non-white voters’ inferred support for Democrats in 2018. Non-whites were modeled to have over 75% preference for Dems regardless of age or gender, though support is even a bit stronger among non-white female voters than non-white male voters5. Inferred support from white voters in 2018 is substantially lower, roughly 35-45% across age groups and genders. In contrast, differences in inferred preferences by age (matching for gender and race) or gender (matching for age and race) are not particularly striking or consistent (e.g., comparing white males in the under-25 and over-75 groups). Overall, we’re heartened that our model seems to work pretty well, because the results are broadly consistent with exit polls and surveys6789. *** Thus, our model confirmed prior work suggesting that non-white support for Democrats in 2018 was much higher than that by whites, across all genders and age groups. But it still doesn’t tell us what happened in 2018 compared with prior years. To what extent did Democrats’ gains over 2016 come from underlying growth in the non-white population, higher turnout among non-whites, increased preference for Democrats (among whites or non-whites), or some combination of these and other factors? That requires comparing these data to results from earlier elections – which is what we’ll do in subsequent posts. Stay tuned.</p>
-</section>
-<section class="footnotes" role="doc-endnotes">
-<hr />
-<ol>
-<li id="fn1" role="doc-endnote"><p>In what follows, we attempt to use the election results themselves[^ResultsData], combined with demographic data about the populations in each house district[^CensusDemographics][^4], and census data regarding the turnout[^CensusTurnout] of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll interpret changes in that inferred probability as people "changing their minds".<a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
-</ol>
 </section>
 
 <!-- page content ends here -->
