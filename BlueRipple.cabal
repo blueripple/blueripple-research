@@ -112,7 +112,6 @@ executable preference_model
                , colonnade
                , data-science-utils
                , directory
---               , discrimination
                , lens
                , map-reduce-folds >= 0.1.0.1
                , mtl

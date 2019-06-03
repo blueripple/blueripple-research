@@ -24,7 +24,6 @@ import           Data.Traversable               (sequenceA)
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
 import qualified Text.Blaze.Colonnade          as C
---import qualified Data.Discrimination           as D
 import qualified Data.Functor.Identity         as I
 import qualified Data.Either                   as E
 import qualified Data.List                     as L
@@ -208,8 +207,8 @@ from earlier elections – which is what we’ll do in subsequent posts. Stay tu
 |]
 
   --------------------------------------------------------------------------------
-introExtra :: T.Text
-introExtra = [here|
+acrossTime :: T.Text
+acrossTime = [here|
 The results are presented below. What stands out immediately is how strong
 the support of non-white voters is for democratic candidates,
 running at or above 75% (and often above 85%), regardless of age or sex,
@@ -406,6 +405,7 @@ main = do
         K.addMarkDown postFig2018
       K.newPandoc "MethodsAndSources" $ K.addMarkDown modelNotesBayes        
       K.newPandoc "AcrossTime" $ do
+        K.addMarkDown acrossTime
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
@@ -851,6 +851,8 @@ Now $\frac{D-R}{D+R} = d-r$ and so $\sum_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
 
 This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
 
-Except it's not!! Because these parameters are probabilities and classic regression is not a good method here.  So we turn to Bayesian inference.  Which was more appropriate from the start.
+Except it's not!! Because these parameters are probabilities and
+classic regression is not a good method here.
+So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
 
