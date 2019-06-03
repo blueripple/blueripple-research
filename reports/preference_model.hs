@@ -24,7 +24,7 @@ import           Data.Traversable               (sequenceA)
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
 import qualified Text.Blaze.Colonnade          as C
-import qualified Data.Discrimination           as D
+--import qualified Data.Discrimination           as D
 import qualified Data.Functor.Identity         as I
 import qualified Data.Either                   as E
 import qualified Data.List                     as L
@@ -65,6 +65,7 @@ import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
 import           System.Random                  (randomRIO)
+import qualified System.Directory              as SD
 import qualified Statistics.Types              as S
 
 import qualified Text.Blaze.Html.Renderer.Text as BH
@@ -98,8 +99,8 @@ import qualified BlueRipple.Model.TurnoutBayes as TB
 
 templateVars = M.fromList
   [ ("lang"     , "English")
-  , ("author"   , "Adam Conner-Sax")
-  , ("pagetitle", "Turnout Model & Predictions")
+  , ("author"   , "Adam Conner-Sax & Frank David")
+  , ("pagetitle", "Preference Model & Predictions")
 --  , ("tufte","True")
   ]
 
@@ -129,55 +130,116 @@ loadCSVToFrame po fp filterF = do
 
 
 --------------------------------------------------------------------------------
-introduction :: T.Text
-introduction = [here|
+intro2018 :: T.Text
+intro2018 = [here|
 ## Where Did The 2018 Votes Come From?
-The 2018 house races were generally good for Democrats and Progressives.
-As we look to hold those gains and build on them, there are an assortment of
-questions to ask about the 2018 results.  As an example, how much of the change
-from 2016 to 2018 was the result of changes in demographics vs. voter turnout vs.
-voters changing their votes?  Answering this is difficult. We don't have
-granular turnout data and we have only exit-poll and post-election survey data
-to look at for data about how people voted in each election.  In what follows, 
+The 2018 house races were generally good for Democrats and progressives--but why?
+Virtually every plausible theory has at least some support –
+depending on which pundits and researchers you follow,
+you could credibly argue that
+turnout of young voters, or white women abandoning Trump, or an underlying
+demographic shift toward non-white voters was the main factor that propelled the
+Blue Wave in the midterms.
+
+If Democrats want to solidify and extend their gains, what we really want to know
+is the relative importance of each of these factors – in other words,
+how much of last year’s outcome was due to changes in demographics vs.
+voter turnout vs. voters changing their party preferences?
+It turns out that answering
+this is difficult. We have good data on the country’s changing demographics,
+and also on who showed up to the polls, broken down by gender, age, and race.
+But in terms of how each sub-group voted, we only have exit polls and
+post-election surveys, as well as the final election results in aggregate.
+
+Several folks have tried to study voting patterns of particular sub-groups
+in U.S. elections. *** CONTEXT/PRIOR WORK *** But so far, none of these
+studies have been able to specifically estimate, for example, what fraction of ***
+
+* We consider only "competitive" districts, defined as those that had
+a democrat and republican candidate. Of the 435 House districts, 
+382 districts were competitive in 2018.
+
+* Our demographic groupings are limited by the the categories recognized
+and tabulated by the census and by our desire to balance specificity
+(using more groups so that we might recognize people's identity more precisely)
+with a need to keep the model small enough to make inference possible.
+Thus for now we split the electorate into "white" (non-hispanic) and "non-white",
+"male" and "female" and "young" (<45) and "old".
+
+* Our inference model uses Bayesian techniques
+that are described in more detail in a separate
+[Preference-Model Notes](file://PreferenceModelMethodsAndSources.html) post.
+
+As a first pass, we modeled the voting preferences of our
+8 demographic sub-groups in the 2018 election,
+so we could compare our results with data from exit polls and surveys.
+The results are presented in the figure below:
+
+[^Techniques]: In what follows, 
 we attempt to use the election results themselves[^ResultsData], combined with
-demographic data about the
-populations in each house district[^CensusDemographics][^4],
+demographic data about the populations in each house
+district[^CensusDemographics][^4],
 and census data regarding the turnout[^CensusTurnout]
 of various demographic groups
 to *infer* the likelihood of a given person voting
 for the democratic candidate in a house race.
 We'll interpret changes in that inferred probability
 as people "changing their minds".
+[^ResultsData]: MIT Election Data and Science Lab, 2017
+, "U.S. House 1976–2018"
+, https://doi.org/10.7910/DVN/IG0UN2
+, Harvard Dataverse, V3
+, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
+[^ResultsDataV2]:MIT Election Data and Science Lab, 2017
+, "U.S. House 1976–2018"
+, https://doi.org/10.7910/DVN/IG0UN2
+, Harvard Dataverse, V4
+, UNF:6:M0873g1/8Ee6570GIaIKlQ== [fileUNF]
+[^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
+[^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
+[^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
+We will update this once the census publishes updated 2018 American Community Survey data.
+|]
+  
+--------------------------------------------------------------------------------
+postFig2018 :: T.Text
+postFig2018 = [here|
+The most striking observation is the chasm between white and non-white voters’
+inferred support for Democrats in 2018. Non-whites were modeled to
+have over 75% preference for Dems regardless of age or gender,
+though support is even a bit stronger among non-white female voters than
+non-white male voters5. Inferred support from white voters in 2018
+is substantially lower, roughly 35-45% across age groups and genders.
+In contrast, differences in inferred preferences by age
+(matching for gender and race) or gender (matching for age and race) are not
+particularly striking or consistent
+(e.g., comparing white males in the under-25 and over-75 groups).
+Overall, we’re heartened that our model seems to work pretty well,
+because the results are broadly consistent with exit polls and surveys6789. *** 
+Thus, our model confirmed prior work suggesting that non-white support for
+Democrats in 2018 was much higher than that by whites, across all
+genders and age groups. But it still doesn’t tell us what happened in 2018
+compared with prior years. To what extent did Democrats’ gains over 2016 come from
+underlying growth in the non-white population, higher turnout among non-whites,
+increased preference for Democrats (among whites or non-whites), or some combination
+of these and other factors? That requires comparing these data to results
+from earlier elections – which is what we’ll do in subsequent posts. Stay tuned. 
 
-In order to get a more complete picture, we'll do the same work for the house
-elections in 2012, 2014, 2016 and 2018 so we can look over time as well as
-compare like-with-like in terms of presidential and non-presidential elections.
+[^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
+<https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
+[^Surveys2018]: <https://www.pewresearch.org/fact-tank/2018/11/29/in-midterm-voting-decisions-policies-took-a-back-seat-to-partisanship/>
+|]
 
-* In each year, we consider only "competitive" districts, that is those that had
-a democrat and republican candidate. Of the possible 435 districts, 
-In 2012 385 were competitive, in 2014 351 districts were competitive,
-in 2016 369 districts were competitive, and 382 districts were competitive in 2018.
-
-* Our demographic groupings are limited by the the categories recognized
-and tabulated by the census and by our desire to balance specificity
-(using more groups so that we might recognize people's identity more precisely)
-with a need to keep the model small enough to make inference possible.
-Thus for now we split the electorate into White (Non-Hispanic) and Non-White,
-Male and Female and "Young" (<45) and "Old".
-
-* More detail about the voter preference model and the techniques
-used to perform inference
-are in the [Preference-Model Notes](#preference-model-notes) section below.
-Please note, though, these results are inferred from other data,
-rather than measured directly through polling or surveys and as such
-may not match those sorts of analyses.
-
+  --------------------------------------------------------------------------------
+introExtra :: T.Text
+introExtra = [here|
 The results are presented below. What stands out immediately is how strong
 the support of non-white voters is for democratic candidates,
 running at or above 75% (and often above 85%), regardless of age or sex,
 though support is somewhat stronger among non-white female voters
-than non-white male voters[^2014]. Support from white voters is substantially lower,
-about between 35% and 45% across both age groups and both sexes, though people
+than non-white male voters[^2014]. Support from white voters is
+substantially lower, about between 35% and 45% across
+both age groups and both sexes, though people
 under 45 are slightly more likely to vote democratic than their older
 counterparts.  This is particularly noticeable in 2016,
 when, perhaps because of Trump,
@@ -196,16 +258,6 @@ while non-white support remained intensely high. Is that
 the whole story?
 
 
-[^ResultsData]: MIT Election Data and Science Lab, 2017
-, "U.S. House 1976–2018"
-, https://doi.org/10.7910/DVN/IG0UN2
-, Harvard Dataverse
-, V3
-, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
-[^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
-[^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>
-[^4]: We use 2017 demographic population data for our 2018 analysis, since that is the latest available from the census.
-We will update this once the census publishes updated 2018 American Community Survey data.
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
 That is consistent with exit-polls that show a huge swing in the Asian vote:
 from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then
@@ -217,7 +269,7 @@ See, e.g., <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-ex
 [^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
 <https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
 |]
---------------------------------------------------------------------------------
+
 
 --------------------------------------------------------------------------------  
 voteShifts :: T.Text
@@ -282,11 +334,14 @@ That means that the total number of D+R votes in each election
 will be very close to what
 we see in the data:
 
-* This model indicates a - 4,800k shift (toward **republicans**) 2012 -> 2016 and the competitive popular house vote shifted -5,100k.
-* This model indicates a +10,200k shift (toward **democrats**) 2014 -> 2018 and the competitive popular house vote shifted +10,800k.
-* This model indicates a + 8,500k shift (toward **democrats**) 2016 -> 2018 and the competitive popular house vote shifted +8,900k.
-* This model indicates a + 9,100k shift (toward **democrats**) 2010 -> 2018 and the competitive popular house vote shifted +9,600k. 
-
+* This model indicates a - 4,800k shift (toward **republicans**)
+2012 -> 2016 and the competitive popular house vote shifted -5,100k.
+* This model indicates a +10,200k shift (toward **democrats**)
+2014 -> 2018 and the competitive popular house vote shifted +10,800k.
+* This model indicates a + 8,500k shift (toward **democrats**)
+2016 -> 2018 and the competitive popular house vote shifted +8,900k.
+* This model indicates a + 9,100k shift (toward **democrats**)
+2010 -> 2018 and the competitive popular house vote shifted +9,600k. 
 
 [^WikipediaHouse]: Sources:
 <https://en.wikipedia.org/wiki/2010_United_States_House_of_Representatives_elections>
@@ -294,7 +349,6 @@ we see in the data:
 <https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections>,
 <https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections>,
 <https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections>
-
 |]
 
 -- required for now because knitError returns K.Sem r () instead of K.Sem r a (until knit-haskell v0.4.0.0)
@@ -313,9 +367,13 @@ goToTown = RunParams 10 10000 1000
   
 main :: IO ()
 main = do
-  let writeNamedHtml (K.NamedDoc n lt) =
-        T.writeFile (T.unpack $ "reports/html/" <> n <> ".html")
-          $ TL.toStrict lt
+  let writeNamedHtml (K.NamedDoc n lt) = do
+        let pathPrefix = "reports/html/preference_model/"
+            fPath = pathPrefix <> n <> ".html"
+            (dirPath,fName) = T.breakOnEnd "/" fPath
+        putStrLn $ T.unpack $ "If necessary, creating " <> dirPath <> " (and parents), and writing " <> fName
+        SD.createDirectoryIfMissing True (T.unpack dirPath)
+        T.writeFile (T.unpack fPath) $ TL.toStrict lt
       writeAllHtml       = fmap (const ()) . traverse writeNamedHtml
       pandocWriterConfig = K.PandocWriterConfig
         (Just "pandoc-templates/minWithVega-pandoc.html")
@@ -340,29 +398,41 @@ main = do
       turnoutFrame :: F.Frame TurnoutRSA <- loadCSVToFrame parserOptions
                                             detailedRSATurnoutCSV
                                             (const True)
-      K.logLE K.Info "Knitting..."
-      K.newPandoc "opinion_model" $ do
-        let rp = goToTown
-            ds = simpleAgeSexRace
-            years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
-            categories = fmap (T.pack . show) $ dsCategories ds
-            toPD (category, (ExpectationSummary m (lo,hi) _)) = ParameterDetails category m (lo,hi)
-        K.addMarkDown introduction
-        modeledResults <- flip traverse years $ \y -> do 
-          K.logLE K.Info $ "inferring for " <> (T.pack $ show y)
-          tr <- turnoutModel ds rp y identityDemographicsFrame
-                houseElectionsFrame
-                turnoutFrame
-          let pd = fmap toPD $ zip categories $ modeled tr
-          return $ tr { modeled = pd }
-        let pdsWithYear x tr =
-              let mapName pd@(ParameterDetails n _ _) = pd {name = n <> "-" <> x}
-              in fmap mapName $ modeled tr
-            f x = fmap (\y -> (x,y))
+      K.logLE K.Info "Inferring..."
+      let rp = quick
+          ds = simpleAgeSexRace
+          years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
+          categories = fmap (T.pack . show) $ dsCategories ds
+          toPD (category, (ExpectationSummary m (lo,hi) _)) = ParameterDetails category m (lo,hi)
+
+      modeledResults <- flip traverse years $ \y -> do 
+        K.logLE K.Info $ "inferring for " <> (T.pack $ show y)
+        pr <- preferenceModel ds rp y identityDemographicsFrame
+              houseElectionsFrame
+              turnoutFrame
+        let pd = fmap toPD $ zip categories $ modeled pr
+        return $ pr { modeled = pd }
+        
+      let pdsWithYear x pr =
+            let mapName pd@(ParameterDetails n _ _) = pd {name = n <> "-" <> x}
+            in fmap mapName $ modeled pr
+          f x = fmap (\y -> (x,y))
+          
+      K.logLE K.Info "Knitting docs..."
+      K.newPandoc "PreferenceModel2018" $ do
+        K.addMarkDown intro2018
+        pr2018 <- knitMaybe "Failed to find 2018 in modelResults." $ M.lookup 2018 modeledResults
+        _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
+          "Modeled probability of voting Democratic in (competitive) 2018 house races"
+          S.cl95
+          (f "2018" $ pdsWithYear "2018" pr2018)
+        K.addMarkDown postFig2018
+      K.newPandoc "PreferenceModelMethodsAndSources" $ K.addMarkDown modelNotesBayes        
+      K.newPandoc "PreferenceModelAcrossTime" $ do
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
-          (concat $ fmap (\(y,tr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) tr) $ M.toList modeledResults)
+          (concat $ fmap (\(y,pr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) pr) $ M.toList modeledResults)
         -- analyze results
         -- Quick Mann-Whitney
         let mkDeltaTable locFilter (y1, y2) = do
@@ -383,8 +453,8 @@ main = do
         let battlegroundStates = ["NH","PA","VA","NC","FL","OH","MI","WI","IA","CO","AZ","NV"]
             bgOnly r = L.elem (F.rgetField @StateAbbreviation r) battlegroundStates
         K.addMarkDown "### Presidential Battleground States"
-        _ <- mkDeltaTable bgOnly (2010,2018)    
-        K.addMarkDown modelNotesBayes
+        _ <- mkDeltaTable bgOnly (2010,2018)
+        return ()
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left  err       -> putStrLn $ "pandoc error: " ++ show err
@@ -403,12 +473,12 @@ data DeltaTableRow =
 deltaTable :: forall a e b. (A.Ix b, Bounded b, Enum b, Show b)
            => DemographicStructure a e b
            -> (F.Record LocationKey -> Bool)
-           -> TurnoutResults b ParameterDetails
-           -> TurnoutResults b ParameterDetails
+           -> PreferenceResults b ParameterDetails
+           -> PreferenceResults b ParameterDetails
            -> ([DeltaTableRow], (Int,Int), (Int,Int))
 deltaTable ds locFilter trA trB = 
   let groupNames = fmap (T.pack . show) $ dsCategories ds
-      getScaledPop :: TurnoutResults b ParameterDetails -> A.Array b Int
+      getScaledPop :: PreferenceResults b ParameterDetails -> A.Array b Int
       getScaledPop tr =
         let totalRec = FL.fold votesAndPopByDistrictF
               (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ F.filterFrame (locFilter . F.rcast) $ F.toFrame $ votesAndPopByDistrict tr)
@@ -627,7 +697,7 @@ votesAndPopByDistrictF =
   V.:& FF.FoldEndo FL.sum
   V.:& V.RNil
   
-data TurnoutResults b a = TurnoutResults
+data PreferenceResults b a = PreferenceResults
   {
     votesAndPopByDistrict :: [F.Record [ StateAbbreviation
                                        , CongressionalDistrict
@@ -645,14 +715,14 @@ data TurnoutResults b a = TurnoutResults
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
 
   
-turnoutModel  ::
+preferenceModel  ::
   forall a b r. ( Show a
                 , Show b
                 , Enum b
                 , Bounded b
                 , A.Ix b
                 , FL.Vector (F.VectorFor b) b
-                , K.Member K.ToPandoc r
+--                , K.Member K.ToPandoc r
                 , K.PandocEffects r
                 , MonadIO (K.Sem r))
   => DemographicStructure a HouseElections b
@@ -661,8 +731,8 @@ turnoutModel  ::
   -> F.Frame a
   -> F.Frame HouseElections
   -> F.Frame TurnoutRSA
-  -> K.Sem r (TurnoutResults b (ExpectationSummary Double))
-turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
+  -> K.Sem r (PreferenceResults b (ExpectationSummary Double))
+preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
   resultsFlattenedFrame <- knitX $ (dsPreprocessElectionData ds) year houseElexFrame
   filteredTurnoutFrame <- knitX $ (dsPreprocessTurnoutData ds) year turnoutFrame
   let year' = if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
@@ -747,7 +817,7 @@ turnoutModel ds runParams year identityDFrame houseElexFrame turnoutFrame = do
   summaries <- knitMaybe "mcmc \"summarize\" produced Nothing." $ traverse (\n -> summarize conf (!!n) mcmcResults) [0..(numParams - 1)]  
   K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
   K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..(numParams -1)]) mcmcResults)
-  return $ TurnoutResults (fmap F.rcast opposedRWPVWithScaledArrayCountsFrame) turnoutByGroup summaries (L.concat mcmcResults)  
+  return $ PreferenceResults (fmap F.rcast opposedRWPVWithScaledArrayCountsFrame) turnoutByGroup summaries (L.concat mcmcResults)  
 
 modelNotesRegression :: T.Text
 modelNotesRegression = modelNotesPreface <> [here|

@@ -101,17 +101,18 @@ executable mission
                , time
   default-language: Haskell2010
 
-executable turnout
+executable preference_model
   import: deps
   ghc-options: -fplugin=Polysemy.Plugin -Wall -O -threaded -rtsopts
   hs-source-dirs: reports
-  main-is:        turnout.hs
+  main-is:        preference_model.hs
   build-depends: base >= 4.11
                , BlueRipple
-               , colonnade
                , blaze-colonnade
+               , colonnade
                , data-science-utils
-               , discrimination
+               , directory
+--               , discrimination
                , lens
                , map-reduce-folds >= 0.1.0.1
                , mtl

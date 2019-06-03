@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preference Model & Predictions</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="http://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@4.4.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3.0.0-rc11"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@3.28.0"></script>
+
+<!-- Extra styles -->
+<style>
+body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+table {
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 24px;
+    border-spacing: 0;
+    border-bottom: 2px solid black;
+    border-top: 2px solid black;
+}
+table th {
+    padding: 3px 10px;
+    background-color: white;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid black;
+}
+table td {
+    padding: 3px 10px;
+    border-top: none;
+    border-left: none;
+    border-bottom: none;
+    border-right: none;
+}
+</style>
+
+</head>
+<body>
+<section id="page-content">
+<div class="pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<section id="where-did-the-2018-votes-come-from" class="level2">
+<h2>Where Did The 2018 Votes Come From?</h2>
+<p>The 2018 house races were generally good for Democrats and progressives--but why? Virtually every plausible theory has at least some support – depending on which pundits and researchers you follow, you could credibly argue that turnout of young voters, or white women abandoning Trump, or an underlying demographic shift toward non-white voters was the main factor that propelled the Blue Wave in the midterms.</p>
+<p>If Democrats want to solidify and extend their gains, what we really want to know is the relative importance of each of these factors – in other words, how much of last year’s outcome was due to changes in demographics vs. voter turnout vs. voters changing their party preferences? It turns out that answering this is difficult. We have good data on the country’s changing demographics, and also on who showed up to the polls, broken down by gender, age, and race. But in terms of how each sub-group voted, we only have exit polls and post-election surveys, as well as the final election results in aggregate.</p>
+<p>Several folks have tried to study voting patterns of particular sub-groups in U.S. elections. *** CONTEXT/PRIOR WORK *** But so far, none of these studies have been able to specifically estimate, for example, what fraction of ***</p>
+<ul>
+<li><p>We consider only "competitive" districts, defined as those that had a democrat and republican candidate. Of the 435 House districts, 382 districts were competitive in 2018.</p></li>
+<li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into "white" (non-hispanic) and "non-white", "male" and "female" and "young" (&lt;45) and "old".</p></li>
+<li><p>Our inference model uses Bayesian<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> techniques that are described in more detail in the <a href="#preference-model-notes">Preference-Model Notes</a> section below.</p></li>
+</ul>
+<p>As a first pass, we modeled the voting preferences of our 8 demographic sub-groups in the 2018 election, so we could compare our results with data from exit polls and surveys. The results are presented in the figure below:</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "config": {
+        "view": {
+            "height": 400,
+            "width": 800
+        },
+        "padding": 50
+    },
+    "data": {
+        "values": [
+            {
+                "ConfHi": 0.813183109304023,
+                "Key": "2018",
+                "ConfLo": 0.7113063654106081,
+                "Estimate": 0.7857148250226547,
+                "Parameter": "OldNonWhiteFemale-2018"
+            },
+            {
+                "ConfHi": 0.7794213208428238,
+                "Key": "2018",
+                "ConfLo": 0.7142805763597748,
+                "Estimate": 0.7617720496142106,
+                "Parameter": "YoungNonWhiteFemale-2018"
+            },
+            {
+                "ConfHi": 0.767176124060428,
+                "Key": "2018",
+                "ConfLo": 0.6973734442562278,
+                "Estimate": 0.7481748350323835,
+                "Parameter": "OldNonWhiteMale-2018"
+            },
+            {
+                "ConfHi": 0.7381491296392118,
+                "Key": "2018",
+                "ConfLo": 0.6902589429756862,
+                "Estimate": 0.7251492078963565,
+                "Parameter": "YoungNonWhiteMale-2018"
+            },
+            {
+                "ConfHi": 0.4658571480058664,
+                "Key": "2018",
+                "ConfLo": 0.3836491092074979,
+                "Estimate": 0.4233582053547155,
+                "Parameter": "OldWhiteFemale-2018"
+            },
+            {
+                "ConfHi": 0.5008539309495332,
+                "Key": "2018",
+                "ConfLo": 0.47096354481526115,
+                "Estimate": 0.47828399527221643,
+                "Parameter": "YoungWhiteFemale-2018"
+            },
+            {
+                "ConfHi": 0.4795237248157799,
+                "Key": "2018",
+                "ConfLo": 0.37378216225995115,
+                "Estimate": 0.4351914409852212,
+                "Parameter": "OldWhiteMale-2018"
+            },
+            {
+                "ConfHi": 0.49907458712736835,
+                "Key": "2018",
+                "ConfLo": 0.48345130995507696,
+                "Estimate": 0.48775403987628924,
+                "Parameter": "YoungWhiteMale-2018"
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Modeled probability of voting Democratic in (competitive) 2018 house races",
+    "layer": [
+        {
+            "mark": "point",
+            "encoding": {
+                "color": {
+                    "field": "Key",
+                    "type": "nominal"
+                },
+                "x": {
+                    "field": "Estimate",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": "Estimate (with 95% confidence error bars)"
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        },
+        {
+            "mark": "rule",
+            "encoding": {
+                "x2": {
+                    "field": "ConfHi",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "color": {
+                    "field": "Key",
+                    "type": "nominal"
+                },
+                "x": {
+                    "field": "ConfLo",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": ""
+                    }
+                },
+                "y": {
+                    "field": "Parameter",
+                    "type": "ordinal"
+                }
+            }
+        }
+    ]
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
+<p>The most striking observation is the chasm between white and non-white voters’ inferred support for Democrats in 2018. Non-whites were modeled to have over 75% preference for Dems regardless of age or gender, though support is even a bit stronger among non-white female voters than non-white male voters5. Inferred support from white voters in 2018 is substantially lower, roughly 35-45% across age groups and genders. In contrast, differences in inferred preferences by age (matching for gender and race) or gender (matching for age and race) are not particularly striking or consistent (e.g., comparing white males in the under-25 and over-75 groups). Overall, we’re heartened that our model seems to work pretty well, because the results are broadly consistent with exit polls and surveys6789. *** Thus, our model confirmed prior work suggesting that non-white support for Democrats in 2018 was much higher than that by whites, across all genders and age groups. But it still doesn’t tell us what happened in 2018 compared with prior years. To what extent did Democrats’ gains over 2016 come from underlying growth in the non-white population, higher turnout among non-whites, increased preference for Democrats (among whites or non-whites), or some combination of these and other factors? That requires comparing these data to results from earlier elections – which is what we’ll do in subsequent posts. Stay tuned.</p>
+</section>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p>In what follows, we attempt to use the election results themselves[^ResultsData], combined with demographic data about the populations in each house district[^CensusDemographics][^4], and census data regarding the turnout[^CensusTurnout] of various demographic groups to <em>infer</em> the likelihood of a given person voting for the democratic candidate in a house race. We'll interpret changes in that inferred probability as people "changing their minds".<a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
+</ol>
+</section>
+
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<div class="pure-g">
+<footer><a href="https://bitfragment.github.io/mindoc">mindoc</a> v1.1.0</footer>
+</div>
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>
