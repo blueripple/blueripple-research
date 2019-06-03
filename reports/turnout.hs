@@ -302,12 +302,10 @@ knitX :: forall r a. K.Member (Error PA.PandocError) r => X.ExceptT T.Text (K.Se
 knitX  ma = X.runExceptT ma >>= (knitEither @r)
 
 knitMaybe :: forall r a. K.Member (Error K.PandocError) r => T.Text -> Maybe a -> K.Sem r a
-knitMaybe msg ma = case ma of
-  Nothing -> (throw @K.PandocError) (PA.PandocSomeError $ "Knit User Error: " ++ (T.unpack msg))
-  Just a -> return a
+knitMaybe msg ma = maybe (K.knitError msg) return ma
 
 knitEither :: forall r a. K.Member (Error K.PandocError) r => Either T.Text a -> K.Sem r a
-knitEither = either ((throw @K.PandocError) . PA.PandocSomeError . ("Knit User Error: " ++) . T.unpack) return
+knitEither = either K.knitError return 
   
 quick = RunParams 2 500 50
 justEnough = RunParams 5 5000 500
@@ -343,7 +341,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Knitting..."
-      K.newPandoc "turnout" $ do
+      K.newPandoc "opinion_model" $ do
         let rp = goToTown
             ds = simpleAgeSexRace
             years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
@@ -367,7 +365,7 @@ main = do
           (concat $ fmap (\(y,tr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) tr) $ M.toList modeledResults)
         -- analyze results
         -- Quick Mann-Whitney
-        let mkDeltaTable (y1, y2) = do
+        let mkDeltaTable locFilter (y1, y2) = do
               let y1T = T.pack $ show y1
                   y2T = T.pack $ show y2
               K.addMarkDown $ "### " <> y1T <> "->" <> y2T
@@ -375,13 +373,17 @@ main = do
               mry2 <- knitMaybe "lookup failure in mwu" $ M.lookup y2 modeledResults
               let mwU = fmap (\f -> mannWhitneyUTest (S.mkPValue 0.05) f (mcmcChain mry1) (mcmcChain mry2)) $ fmap (\n-> (!!n)) [0..(length (dsCategories ds) - 1)]
               K.logLE K.Info $ "Mann-Whitney U  " <> y1T <> "->" <> y2T <> ": " <> (T.pack $ show mwU)
-              let (table, (mD1, mR1), (mD2, mR2)) = deltaTable ds mry1 mry2              
+              let (table, (mD1, mR1), (mD2, mR2)) = deltaTable ds locFilter mry1 mry2              
               K.addColonnadeTextTable deltaTableColonnade $ table
               K.addMarkDown $ "In " <> y1T <> " the model expects " <> (T.pack $ show mD1) <> " total D votes, " <> (T.pack $ show mR1) <> " total R votes, so modeled D-R is " <> (T.pack $ show (mD1 - mR1))
               K.addMarkDown $ "In " <> y2T <> " the model expects " <> (T.pack $ show mD2) <> " total D votes, " <> (T.pack $ show mR2) <> " total R votes, so modeled D-R is " <> (T.pack $ show (mD2 - mR2))
         K.addMarkDown voteShifts
-        _ <- traverse mkDeltaTable $ [(2012,2016),(2014,2018),(2016,2018),(2010,2018)]
+        _ <- traverse (mkDeltaTable (const True)) $ [(2012,2016),(2014,2018),(2014,2016),(2016,2018),(2010,2018)]        
         K.addMarkDown voteShiftObservations
+        let battlegroundStates = ["NH","PA","VA","NC","FL","OH","MI","WI","IA","CO","AZ","NV"]
+            bgOnly r = L.elem (F.rgetField @StateAbbreviation r) battlegroundStates
+        K.addMarkDown "### Presidential Battleground States"
+        _ <- mkDeltaTable bgOnly (2010,2018)    
         K.addMarkDown modelNotesBayes
   case eitherDocs of
     Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
@@ -400,15 +402,16 @@ data DeltaTableRow =
 
 deltaTable :: forall a e b. (A.Ix b, Bounded b, Enum b, Show b)
            => DemographicStructure a e b
+           -> (F.Record LocationKey -> Bool)
            -> TurnoutResults b ParameterDetails
            -> TurnoutResults b ParameterDetails
            -> ([DeltaTableRow], (Int,Int), (Int,Int))
-deltaTable ds trA trB = 
+deltaTable ds locFilter trA trB = 
   let groupNames = fmap (T.pack . show) $ dsCategories ds
       getScaledPop :: TurnoutResults b ParameterDetails -> A.Array b Int
       getScaledPop tr =
         let totalRec = FL.fold votesAndPopByDistrictF
-              (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ votesAndPopByDistrict tr)
+              (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ F.filterFrame (locFilter . F.rcast) $ F.toFrame $ votesAndPopByDistrict tr)
             totalCounts = F.rgetField @(CountArray b) totalRec
         in totalCounts
       popA = getScaledPop trA

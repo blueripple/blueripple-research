@@ -20,8 +20,6 @@ category:            Data
 build-type:          Simple
 extra-source-files:  ChangeLog.md
 
-
-
 common deps
   build-depends: base >= 4.11.1.0
                , array
@@ -34,10 +32,11 @@ common deps
                , freer-simple
                , here
                , hmatrix
-               , knit-haskell >= 0.3.0.0 && < 0.4.0.0
+               , knit-haskell >= 0.3.0.0 && < 0.5.0.0
                , lucid
                , pipes
-               , polysemy >= 0.1.2.0 && < 0.2.0.0
+               , polysemy >= 0.1.2.0 && < 0.3.0.0
+               , polysemy-plugin >= 0.2.0.0 && < 0.3.0.0 
                , profunctors
                , random-fu
                , random-source
@@ -92,7 +91,7 @@ executable dataLoader
   
 executable mission
   import: deps
-  ghc-options: -Wall -O0
+  ghc-options: -fplugin=Polysemy.Plugin -Wall -O
   hs-source-dirs: mission
   main-is:        mission.hs
   build-depends: base >= 4.11
@@ -104,7 +103,7 @@ executable mission
 
 executable turnout
   import: deps
-  ghc-options: -Wall -O0 -threaded -rtsopts
+  ghc-options: -fplugin=Polysemy.Plugin -Wall -O -threaded -rtsopts
   hs-source-dirs: reports
   main-is:        turnout.hs
   build-depends: base >= 4.11
