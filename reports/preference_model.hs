@@ -136,8 +136,8 @@ The 2018 house races were generally good for Democrats and progressives--but why
 Virtually every plausible theory has at least some support –
 depending on which pundits and researchers you follow,
 you could credibly argue that
-turnout of young voters, or white women abandoning Trump, or an underlying
-demographic shift toward non-white voters was the main factor that propelled the
+turnout of young voters[^VoxOn2018], or white women abandoning Trump, or an underlying
+demographic shift toward non-white voters[^Pew2018] was the main factor that propelled the
 Blue Wave in the midterms.
 
 If Democrats want to solidify and extend their gains, what we really want to know
@@ -175,6 +175,11 @@ As a first pass, we modeled the voting preferences of our
 so we could compare our results with data from exit polls and surveys.
 The results are presented in the figure below:
 
+
+[^VoxYouthTurnout]: <https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census>
+[^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
+[^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
+speaks to this, though it addresses turnout and opinion shifts as well.
 |]
   
 --------------------------------------------------------------------------------
@@ -346,7 +351,7 @@ main = do
   let writeNamedHtml (K.DocWithInfo (K.PandocInfo n _) lt) = do
         let pathPrefix = "reports/html/preference_model/"
             fPath = pathPrefix <> n <> ".html"
-            (dirPath,fName) = T.breakOnEnd "/" fPath
+            (dirPath, fName) = T.breakOnEnd "/" fPath
         putStrLn $ T.unpack $ "If necessary, creating " <> dirPath <> " (and parents), and writing " <> fName
         SD.createDirectoryIfMissing True (T.unpack dirPath)
         T.writeFile (T.unpack fPath) $ TL.toStrict lt
