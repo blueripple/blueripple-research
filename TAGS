@@ -32,81 +32,85 @@ sumSpending sumSpending261,262
 totalSpendingHistograms totalSpendingHistograms267,268
 totalSpendingHistograms totalSpendingHistograms269,270
 
-./reports/turnout.hs,2641
+./reports/preference_model.hs,2784
 module Main Main12,13
 templateVars templateVars98,99
 loadCSVToFrame loadCSVToFrame117,118
-introduction introduction131,132
-introduction introduction132,133
-, ,203,204
-voteShifts voteShifts222,223
-voteShifts voteShifts223,224
-voteShiftObservations voteShiftObservations251,252
-voteShiftObservations voteShiftObservations252,253
-knitX knitX300,301
-knitX knitX301,302
-knitMaybe knitMaybe303,304
-knitMaybe knitMaybe304,305
-knitEither knitEither308,309
-knitEither knitEither309,310
-quick quick311,312
-justEnough justEnough312,313
-goToTown goToTown313,314
-main main315,316
-main main316,317
-data DeltaTableRow DeltaTableRow389,390
-  DeltaTableRowDeltaTableRow390,391
-  { dtrGroup dtrGroup391,392
-  , dtrPop dtrPop392,393
-  , dtrFromPop dtrFromPop393,394
-  , dtrFromTurnout dtrFromTurnout394,395
-  , dtrFromOpinion dtrFromOpinion395,396
-  , dtrTotal dtrTotal396,397
-  , dtrPct dtrPct397,398
-deltaTable deltaTable400,401
-deltaTable deltaTable405,406
-deltaTableColonnade deltaTableColonnade446,447
-deltaTableColonnade deltaTableColonnade447,448
-modelNotesPreface modelNotesPreface457,458
-modelNotesPreface modelNotesPreface458,459
-modelNotesBayes modelNotesBayes498,499
-modelNotesBayes modelNotesBayes499,500
-P(P509,510
-\mu_k(\mu_k554,555
-v_k(v_k555,556
-\rho(\rho556,557
-type X X602,603
-type PredictedVoters PredictedVoters603,604
-type ScaledDVotes ScaledDVotes604,605
-type ScaledRVotes ScaledRVotes605,606
-type PopScale PopScale606,607
-type CountArray CountArray607,608
-type CountArray b b607,608
-addPopScale addPopScale609,610
-votesAndPopByDistrictF votesAndPopByDistrictF611,612
-votesAndPopByDistrictF votesAndPopByDistrictF615,616
-data TurnoutResults TurnoutResults626,627
-data TurnoutResults b a = TurnoutResultsTurnoutResults626,627
-    votesAndPopByDistrict votesAndPopByDistrict628,629
-    nationalTurnout nationalTurnout636,637
-    modeled modeled637,638
-    mcmcChain mcmcChain638,639
-data RunParams RunParams641,642
-data RunParams = RunParams RunParams641,642
-data RunParams = RunParams { nChains nChains641,642
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain641,642
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain641,642
-turnoutModel turnoutModel644,645
-turnoutModel turnoutModel661,662
-modelNotesRegression modelNotesRegression748,749
-modelNotesRegression modelNotesRegression749,750
-Given Given751,752
-D D754,755
-R R755,756
-\frac{D-R}{Q} \frac{D-R}{Q}762,763
-\sum_i \sum_i771,772
-We We774,775
-Now Now775,776
+intro2018 intro2018131,132
+intro2018 intro2018132,133
+postFig2018 postFig2018180,181
+postFig2018 postFig2018181,182
+acrossTime acrossTime209,210
+acrossTime acrossTime210,211
+voteShifts voteShifts250,251
+voteShifts voteShifts251,252
+voteShiftObservations voteShiftObservations279,280
+voteShiftObservations voteShiftObservations280,281
+knitX knitX330,331
+knitX knitX331,332
+knitMaybe knitMaybe333,334
+knitMaybe knitMaybe334,335
+knitEither knitEither336,337
+knitEither knitEither337,338
+quick quick339,340
+justEnough justEnough340,341
+goToTown goToTown341,342
+main main343,344
+main main344,345
+data DeltaTableRow DeltaTableRow438,439
+  DeltaTableRowDeltaTableRow439,440
+  { dtrGroup dtrGroup440,441
+  , dtrPop dtrPop441,442
+  , dtrFromPop dtrFromPop442,443
+  , dtrFromTurnout dtrFromTurnout443,444
+  , dtrFromOpinion dtrFromOpinion444,445
+  , dtrTotal dtrTotal445,446
+  , dtrPct dtrPct446,447
+deltaTable deltaTable449,450
+deltaTable deltaTable455,456
+deltaTableColonnade deltaTableColonnade496,497
+deltaTableColonnade deltaTableColonnade497,498
+modelNotesPreface modelNotesPreface507,508
+modelNotesPreface modelNotesPreface508,509
+, ,551,552
+modelNotesBayes modelNotesBayes565,566
+modelNotesBayes modelNotesBayes566,567
+P(P576,577
+\mu_k(\mu_k621,622
+v_k(v_k622,623
+\rho(\rho623,624
+type X X676,677
+type PredictedVoters PredictedVoters677,678
+type ScaledDVotes ScaledDVotes678,679
+type ScaledRVotes ScaledRVotes679,680
+type PopScale PopScale680,681
+type CountArray CountArray681,682
+type CountArray b b681,682
+addPopScale addPopScale683,684
+votesAndPopByDistrictF votesAndPopByDistrictF685,686
+votesAndPopByDistrictF votesAndPopByDistrictF689,690
+data PreferenceResults PreferenceResults700,701
+data PreferenceResults b a = PreferenceResultsPreferenceResults700,701
+    votesAndPopByDistrict votesAndPopByDistrict702,703
+    nationalTurnout nationalTurnout710,711
+    modeled modeled711,712
+    mcmcChain mcmcChain712,713
+data RunParams RunParams715,716
+data RunParams = RunParams RunParams715,716
+data RunParams = RunParams { nChains nChains715,716
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain715,716
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain715,716
+preferenceModel preferenceModel718,719
+preferenceModel preferenceModel735,736
+modelNotesRegression modelNotesRegression822,823
+modelNotesRegression modelNotesRegression823,824
+Given Given825,826
+D D828,829
+R R829,830
+\frac{D-R}{Q} \frac{D-R}{Q}836,837
+\sum_i \sum_i845,846
+We We848,849
+Now Now849,850
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

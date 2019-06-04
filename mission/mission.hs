@@ -92,7 +92,7 @@ main = do
     angryDemsFrame :: F.Frame AngryDems <- loadCSVToFrame parserOptions angryDemsCSV (const True)
 --    reportRows angryDemsFrame "angryDems"
     K.logLE K.Info "Knitting..."
-    K.newPandoc "mission" $ do
+    K.newPandoc (K.PandocInfo "mission" M.empty) $ do
       totalSpendingHistograms totalSpendingFrame
       spendVsChangeInVoteShare totalSpendingDuringFrame totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
       angryDemsAnalysis angryDemsFrame

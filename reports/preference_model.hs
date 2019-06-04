@@ -88,7 +88,7 @@ import           Polysemy.Error                 (throw,Error)
 import qualified Knit.Report.Other.Blaze       as KB
 import qualified Knit.Effect.Pandoc            as K
                                                 ( newPandoc
-                                                , NamedDoc(..)
+                                                , DocWithInfo(..)
                                                 )
 
 import           Data.String.Here               ( here )
@@ -343,7 +343,7 @@ goToTown = RunParams 10 10000 1000
   
 main :: IO ()
 main = do
-  let writeNamedHtml (K.NamedDoc n lt) = do
+  let writeNamedHtml (K.DocWithInfo (K.PandocInfo n _) lt) = do
         let pathPrefix = "reports/html/preference_model/"
             fPath = pathPrefix <> n <> ".html"
             (dirPath,fName) = T.breakOnEnd "/" fPath
@@ -395,7 +395,7 @@ main = do
           f x = fmap (\y -> (x,y))
           
       K.logLE K.Info "Knitting docs..."
-      K.newPandoc "2018" $ do
+      K.newPandoc (K.PandocInfo "2018" (M.singleton "pagetitle" "2018 Preference Model Intro")) $ do
         K.addMarkDown intro2018
         pr2018 <- knitMaybe "Failed to find 2018 in modelResults." $ M.lookup 2018 modeledResults
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
@@ -403,8 +403,8 @@ main = do
           S.cl95
           (f "2018" $ pdsWithYear "2018" pr2018)
         K.addMarkDown postFig2018
-      K.newPandoc "MethodsAndSources" $ K.addMarkDown modelNotesBayes        
-      K.newPandoc "AcrossTime" $ do
+      K.newPandoc (K.PandocInfo "MethodsAndSources" (M.singleton "pagetitle" "Inferred Preference Model: Methods & Sources")) $ K.addMarkDown modelNotesBayes        
+      K.newPandoc (K.PandocInfo "AcrossTime" (M.singleton "pagetitle" "Preference Model Across Time")) $ do
         K.addMarkDown acrossTime
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
