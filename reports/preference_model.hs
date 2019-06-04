@@ -151,7 +151,7 @@ But in terms of how each sub-group voted, we only have exit polls and
 post-election surveys, as well as the final election results in aggregate.
 
 Several folks have tried to study voting patterns of particular sub-groups
-in U.S. elections. *** CONTEXT/PRIOR WORK *** But so far, none of these
+in U.S. elections[^PriorArt]. *** CONTEXT/PRIOR WORK *** But so far, none of these
 studies have been able to specifically estimate, for example, what fraction of ***
 
 * We consider only "competitive" districts, defined as those that had
@@ -180,6 +180,7 @@ The results are presented in the figure below:
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
+[^PriorArt]: See, e.g., http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/, 
 |]
   
 --------------------------------------------------------------------------------
