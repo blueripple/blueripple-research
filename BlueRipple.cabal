@@ -51,7 +51,6 @@ library
                      , beam-sqlite >= 0.4.0.0
                      , data-default
                      , declarative
-                     , formattable
                      , gamma
                      , hashable
                      , lens

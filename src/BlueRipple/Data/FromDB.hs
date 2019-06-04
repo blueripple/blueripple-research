@@ -70,9 +70,6 @@ import           Data.Tuple.Update              ( upd5
                                                 , upd7
                                                 , upd8
                                                 )
-import           Formattable.NumFormat          ( formatNum
-                                                , usdFmt
-                                                )
 import qualified System.IO                     as Sys
 import qualified Text.Printf                   as TP
 

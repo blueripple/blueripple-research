@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
---{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
@@ -45,7 +44,6 @@ import qualified Frames.Table as Table
 
 import qualified Knit.Report                    as K
 import qualified Knit.Report.Other.Blaze        as KB
-import qualified Knit.Effect.Pandoc             as K (newPandoc, NamedDoc (..))
 
 import           Data.String.Here (here)
 
@@ -76,7 +74,8 @@ loadCSVToFrame po fp filterF = do
   
 main :: IO ()
 main = do
-  let writeNamedHtml (K.NamedDoc n lt) = T.writeFile (T.unpack $ "mission/html/" <> n <> ".html") $ TL.toStrict lt
+  let writeNamedHtml (K.DocWithInfo (K.PandocInfo n _) lt)
+        = T.writeFile (T.unpack $ "mission/html/" <> n <> ".html") $ TL.toStrict lt
       writeAllHtml = fmap (const ()) . traverse writeNamedHtml
       pandocWriterConfig = K.PandocWriterConfig (Just "pandoc-templates/minWithVega-pandoc.html")  templateVars K.mindocOptionsF
   eitherDocs <- K.knitHtmls (Just "mission.Main") K.logAll pandocWriterConfig $ do
@@ -121,23 +120,21 @@ angryDemsNotes
 [AngryDemPost]: <https://medium.com/@frank_s_david/angrydems-cc7e8caefe7b>
 |]
   
-angryDemsAnalysis :: (K.Member K.ToPandoc effs, K.PandocEffects effs)
-  => F.Frame AngryDems -> K.Sem effs ()
+angryDemsAnalysis :: K.KnitOne effs => F.Frame AngryDems -> K.Sem effs ()
 angryDemsAnalysis angryDemsFrame = do
   -- aggregate by ReceiptID
   K.addMarkDown angryDemsNotes
   let byDonationFrame = FL.fold (MR.concatFold $ MR.mapReduceFold
-                                  MR.noUnpack
-                                  (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
-                                  (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
+                                 MR.noUnpack
+                                 (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
+                                 (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
                         angryDemsFrame
-  K.addBlaze $ do
-    KB.placeVisualization "AngryDemsDonationsHistogram"  $
-      FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
-    KB.placeVisualization "AngryDemsDonationsHistogramZoom"  $
-      FV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 Nothing (Just 3000) True byDonationFrame
-    KB.placeVisualization "AngryDemsDonationsHistogramZoom2"  $
-      FV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 Nothing (Just 200) True byDonationFrame
+  _ <- K.addHvega Nothing Nothing $
+    FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
+  _ <- K.addHvega Nothing Nothing $
+    FV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 Nothing (Just 3000) True byDonationFrame
+  _ <- K.addHvega Nothing Nothing $
+    FV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 Nothing (Just 200) True byDonationFrame
   return ()
   
 
