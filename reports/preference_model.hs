@@ -180,7 +180,9 @@ The results are presented in the figure below:
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
-[^PriorArt]: See, e.g., http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/, 
+[^PriorArt1]: For Bayesian inference on issues:
+[^PriorArt2]: For a different statistical method doing similar work on the 2016 election: https://arxiv.org/pdf/1611.03787.pdf
+
 |]
   
 --------------------------------------------------------------------------------
