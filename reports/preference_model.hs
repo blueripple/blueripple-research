@@ -70,7 +70,12 @@ import qualified Statistics.Types              as S
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
-import Graphics.VegaLite.ParameterPlot (ParameterDetails (..), parameterPlot, parameterPlotMany)
+import Graphics.VegaLite.ParameterPlot (ParameterEstimate(..)
+                                        , NamedParameterEstimate (..)
+                                        , parameterPlot
+                                        , parameterPlotMany
+                                        , parameterPlotVsTime
+                                        , DateTime (..))
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
@@ -150,10 +155,6 @@ and also on who showed up to the polls, broken down by gender, age, and race.
 But in terms of how each sub-group voted, we only have exit polls and
 post-election surveys, as well as the final election results in aggregate.
 
-Several folks have tried to study voting patterns of particular sub-groups
-in U.S. elections[^PriorArt]. *** CONTEXT/PRIOR WORK *** But so far, none of these
-studies have been able to specifically estimate, for example, what fraction of ***
-
 * We consider only "competitive" districts, defined as those that had
 a democrat and republican candidate. Of the 435 House districts, 
 382 districts were competitive in 2018.
@@ -170,19 +171,38 @@ that are described in more detail in a separate
 [Preference-Model Notes](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html)
 post.
 
+Several folks have done related work, inferring voter behavior using the
+election results and other data combined with census data about demographics.
+in U.S. elections. In particular
+
+* [This blog post][SimilarWork1] uses bayesian inference and a beta-binomial
+voter model to look at the 2016 election and various subsets of the
+electorate. The more sophisticated model allows inference on voter polarity 
+within groups as well as the voter preference of each group.
+
+[This paper][SimilarWork2] uses different techniques but similar data to
+look at the 2016 election and infer voter behavior by demographic group.
+The model uses county-level data and exit-polls
+and is able to draw inferences about turnout and voter preference and to do so
+for *specific geographical areas*.
+
+Each of these studies is limited to the 2016 presidential election. Still,
+each has much to offer in terms of ideas for
+pushing this work forward, especially where county-level election returns are
+available, as they are for 2016 and 2018[^MITElectionLabData].
+
 As a first pass, we modeled the voting preferences of our
 8 demographic sub-groups in the 2018 election,
 so we could compare our results with data from exit polls and surveys.
 The results are presented in the figure below:
 
-
 [^VoxYouthTurnout]: <https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census>
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
-[^PriorArt1]: For Bayesian inference on issues:
-[^PriorArt2]: For a different statistical method doing similar work on the 2016 election: https://arxiv.org/pdf/1611.03787.pdf
-
+[SimilarWork1]: For Bayesian inference on issues: http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/
+[SimilarWork2]: For a different statistical method doing similar work on the 2016 election: https://arxiv.org/pdf/1611.03787.pdf
+[^MITElectionLab]: <https://electionlab.mit.edu/data>
 |]
   
 --------------------------------------------------------------------------------
@@ -383,22 +403,24 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = goToTown
+      let rp = quick
           ds = simpleAgeSexRace
-          years = M.fromList $ fmap (\x->(x,x)) [2010,2012,2014,2016,2018]            
+          yearList = [2010,2012,2014,2016,2018]            
+          years = M.fromList $ fmap (\x->(x,x)) yearList
           categories = fmap (T.pack . show) $ dsCategories ds
-          toPD (category, (ExpectationSummary m (lo,hi) _)) = ParameterDetails category m (lo,hi)
+          toNPE (category, (ExpectationSummary m (lo,hi) _)) =
+            NamedParameterEstimate category (ParameterEstimate m (lo,hi))
 
       modeledResults <- flip traverse years $ \y -> do 
         K.logLE K.Info $ "inferring for " <> (T.pack $ show y)
         pr <- preferenceModel ds rp y identityDemographicsFrame
               houseElectionsFrame
               turnoutFrame
-        let pd = fmap toPD $ zip categories $ modeled pr
+        let pd = fmap toNPE $ zip categories $ modeled pr
         return $ pr { modeled = pd }
         
       let pdsWithYear x pr =
-            let mapName pd@(ParameterDetails n _ _) = pd {name = n <> "-" <> x}
+            let mapName pd@(NamedParameterEstimate n _) = pd {name = n <> "-" <> x}
             in fmap mapName $ modeled pr
           f x = fmap (\y -> (x,y))
           
@@ -418,6 +440,23 @@ main = do
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
           (concat $ fmap (\(y,pr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) pr) $ M.toList modeledResults)
+        -- arrange data for vs time plot
+        let oneSetF y = FL.Fold
+              (\m a -> M.insertWith (<>) (name a) [(y, pEstimate a)] m) M.empty id
+            minY = minimum yearList
+            maxY = maximum yearList
+            dataVsTimeF = FL.Fold
+              (\m (y,pr) -> M.unionWith (<>) m (FL.fold (oneSetF y) (modeled pr)))
+              M.empty
+              M.toList
+        _ <- K.addHvega Nothing Nothing $ parameterPlotVsTime
+          "Voter Preference Vs. Election Year"
+          "Election Year"
+          (Just "Voter Preference")
+          id
+          2010
+          2018
+          (FL.fold dataVsTimeF $ M.toList modeledResults)
         -- analyze results
         -- Quick Mann-Whitney
         let mkDeltaTable locFilter (y1, y2) = do
@@ -458,12 +497,12 @@ data DeltaTableRow =
 deltaTable :: forall a e b. (A.Ix b, Bounded b, Enum b, Show b)
            => DemographicStructure a e b
            -> (F.Record LocationKey -> Bool)
-           -> PreferenceResults b ParameterDetails
-           -> PreferenceResults b ParameterDetails
+           -> PreferenceResults b NamedParameterEstimate
+           -> PreferenceResults b NamedParameterEstimate
            -> ([DeltaTableRow], (Int,Int), (Int,Int))
 deltaTable ds locFilter trA trB = 
   let groupNames = fmap (T.pack . show) $ dsCategories ds
-      getScaledPop :: PreferenceResults b ParameterDetails -> A.Array b Int
+      getScaledPop :: PreferenceResults b NamedParameterEstimate -> A.Array b Int
       getScaledPop tr =
         let totalRec = FL.fold votesAndPopByDistrictF
               (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ F.filterFrame (locFilter . F.rcast) $ F.toFrame $ votesAndPopByDistrict tr)
@@ -474,7 +513,7 @@ deltaTable ds locFilter trA trB =
       pop = FL.fold FL.sum popA
       turnoutA = nationalTurnout trA
       turnoutB = nationalTurnout trB
-      probsArray = A.array (minBound, maxBound) . zip [minBound..maxBound] . fmap value . modeled 
+      probsArray = A.array (minBound, maxBound) . zip [minBound..maxBound] . fmap (value . pEstimate) . modeled 
       probA = probsArray trA
       probB = probsArray trB
       modeledVotes popArray turnoutFunc probArray =
