@@ -72,7 +72,7 @@ import qualified Text.Blaze.Html.Renderer.Text as BH
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
 import Graphics.VegaLite.ParameterPlot (ParameterEstimate(..)
                                         , NamedParameterEstimate (..)
-                                        , YScaling(..)
+                                        , Scaling(..)
                                         , intYear
                                         , parameterPlot
                                         , parameterPlotMany
@@ -143,7 +143,7 @@ The 2018 house races were generally good for Democrats and progressives--but why
 Virtually every plausible theory has at least some support –
 depending on which pundits and researchers you follow,
 you could credibly argue that
-turnout of young voters[^VoxOn2018], or white women abandoning Trump, or an underlying
+turnout of young voters[^VoxYouthTurnout], or white women abandoning Trump[^VoxWhiteWomen], or an underlying
 demographic shift toward non-white voters[^Pew2018] was the main factor that propelled the
 Blue Wave in the midterms.
 
@@ -204,7 +204,7 @@ The results are presented in the figure below:
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
-[^MITElectionLab]: <https://electionlab.mit.edu/data>
+[^MITElectionLabData]: <https://electionlab.mit.edu/data>
 |]
   
 --------------------------------------------------------------------------------
@@ -221,7 +221,7 @@ In contrast, differences in inferred preferences by age
 particularly striking or consistent
 (e.g., comparing white males in the under-25 and over-75 groups).
 Overall, we’re heartened that our model seems to work pretty well,
-because the results are broadly consistent with exit polls and surveys6789. *** 
+because the results are broadly consistent with exit polls and surveys[^ExitPolls2018][^Surveys2018]. 
 Thus, our model confirmed prior work suggesting that non-white support for
 Democrats in 2018 was much higher than that by whites, across all
 genders and age groups. But it still doesn’t tell us what happened in 2018
