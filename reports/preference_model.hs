@@ -72,6 +72,8 @@ import qualified Text.Blaze.Html.Renderer.Text as BH
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
 import Graphics.VegaLite.ParameterPlot (ParameterEstimate(..)
                                         , NamedParameterEstimate (..)
+                                        , YScaling(..)
+                                        , intYear
                                         , parameterPlot
                                         , parameterPlotMany
                                         , parameterPlotVsTime
@@ -256,10 +258,6 @@ and white support *grows* substantially across all ages and sexes,
 though it remains below 50%. These results are broadly consistent with
 exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018]. 
 
-So we conclude that *some* of the 2018 democratic house votes came from
-existing white voters changing their votes
-while non-white support remained intensely high. Is that
-the whole story?
 
 
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
@@ -278,6 +276,11 @@ See, e.g., <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-ex
 --------------------------------------------------------------------------------  
 voteShifts :: T.Text
 voteShifts = [here|
+So *some* of the 2018 democratic house votes came from
+existing white voters changing their votes
+while non-white support remained intensely high. Is that
+the whole story?
+
 Now we have an estimate of how peoples' choices changed between 2012 and 2018.
 But that's only one part of the story.  Voting shifts are also driven by
 changes in demographics (people move, get older, become eligible to vote
@@ -403,7 +406,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = goToTown
+      let rp = quick
           ds = simpleAgeSexRace
           yearList = [2010,2012,2014,2016,2018]            
           years = M.fromList $ fmap (\x->(x,x)) yearList
@@ -436,10 +439,12 @@ main = do
       K.newPandoc (K.PandocInfo "MethodsAndSources" (M.singleton "pagetitle" "Inferred Preference Model: Methods & Sources")) $ K.addMarkDown modelNotesBayes        
       K.newPandoc (K.PandocInfo "AcrossTime" (M.singleton "pagetitle" "Preference Model Across Time")) $ do
         K.addMarkDown acrossTime
+{-        
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
           (concat $ fmap (\(y,pr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) pr) $ M.toList modeledResults)
+-}
         -- arrange data for vs time plot
         let oneSetF y = FL.Fold
               (\m a -> M.insertWith (<>) (name a) [(y, pEstimate a)] m) M.empty id
@@ -452,10 +457,10 @@ main = do
         _ <- K.addHvega Nothing Nothing $ parameterPlotVsTime
           "Voter Preference Vs. Election Year"
           "Election Year"
+          (Just "Group")
           (Just "Voter Preference")
-          id
-          2010
-          2018
+          DataMinMax
+          intYear
           (FL.fold dataVsTimeF $ M.toList modeledResults)
         -- analyze results
         -- Quick Mann-Whitney
