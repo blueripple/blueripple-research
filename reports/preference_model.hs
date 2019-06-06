@@ -173,14 +173,16 @@ post.
 
 Several folks have done related work, inferring voter behavior using the
 election results and other data combined with census data about demographics.
-in U.S. elections. In particular
+in U.S. elections. In particular:
 
-* [This blog post][SimilarWork1] uses bayesian inference and a beta-binomial
+* [This blog post](http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/)
+uses bayesian inference and a beta-binomial
 voter model to look at the 2016 election and various subsets of the
 electorate. The more sophisticated model allows inference on voter polarity 
 within groups as well as the voter preference of each group.
 
-[This paper][SimilarWork2] uses different techniques but similar data to
+* [This paper](https://arxiv.org/pdf/1611.03787.pdf)
+uses different techniques but similar data to
 look at the 2016 election and infer voter behavior by demographic group.
 The model uses county-level data and exit-polls
 and is able to draw inferences about turnout and voter preference and to do so
@@ -200,8 +202,6 @@ The results are presented in the figure below:
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
-[SimilarWork1]: For Bayesian inference on issues: http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/
-[SimilarWork2]: For a different statistical method doing similar work on the 2016 election: https://arxiv.org/pdf/1611.03787.pdf
 [^MITElectionLab]: <https://electionlab.mit.edu/data>
 |]
   
@@ -403,7 +403,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = quick
+      let rp = goToTown
           ds = simpleAgeSexRace
           yearList = [2010,2012,2014,2016,2018]            
           years = M.fromList $ fmap (\x->(x,x)) yearList

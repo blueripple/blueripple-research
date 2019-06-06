@@ -60,11 +60,11 @@ table td {
 <li><p>Our demographic groupings are limited by the the categories recognized and tabulated by the census and by our desire to balance specificity (using more groups so that we might recognize people's identity more precisely) with a need to keep the model small enough to make inference possible. Thus for now we split the electorate into "white" (non-hispanic) and "non-white", "male" and "female" and "young" (&lt;45) and "old".</p></li>
 <li><p>Our inference model uses Bayesian techniques that are described in more detail in a separate <a href="https://blueripple.github.io/PreferenceModel/MethodsAndSources.html">Preference-Model Notes</a> post.</p></li>
 </ul>
-<p>Several folks have done related work, inferring voter behavior using the election results and other data combined with census data about demographics. in U.S. elections. In particular</p>
+<p>Several folks have done related work, inferring voter behavior using the election results and other data combined with census data about demographics. in U.S. elections. In particular:</p>
 <ul>
-<li>[This blog post][SimilarWork1] uses bayesian inference and a beta-binomial voter model to look at the 2016 election and various subsets of the electorate. The more sophisticated model allows inference on voter polarity within groups as well as the voter preference of each group.</li>
+<li><p><a href="http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/">This blog post</a> uses bayesian inference and a beta-binomial voter model to look at the 2016 election and various subsets of the electorate. The more sophisticated model allows inference on voter polarity within groups as well as the voter preference of each group.</p></li>
+<li><p><a href="https://arxiv.org/pdf/1611.03787.pdf">This paper</a> uses different techniques but similar data to look at the 2016 election and infer voter behavior by demographic group. The model uses county-level data and exit-polls and is able to draw inferences about turnout and voter preference and to do so for <em>specific geographical areas</em>.</p></li>
 </ul>
-<p>[This paper][SimilarWork2] uses different techniques but similar data to look at the 2016 election and infer voter behavior by demographic group. The model uses county-level data and exit-polls and is able to draw inferences about turnout and voter preference and to do so for <em>specific geographical areas</em>.</p>
 <p>Each of these studies is limited to the 2016 presidential election. Still, each has much to offer in terms of ideas for pushing this work forward, especially where county-level election returns are available, as they are for 2016 and 2018[^MITElectionLabData].</p>
 <p>As a first pass, we modeled the voting preferences of our 8 demographic sub-groups in the 2018 election, so we could compare our results with data from exit polls and surveys. The results are presented in the figure below:</p>
 <figure id="figure_1">
@@ -80,59 +80,59 @@ table td {
     "data": {
         "values": [
             {
-                "ConfHi": 0.8112441207130868,
+                "ConfHi": 0.8006839406101066,
                 "Key": "2018",
-                "ConfLo": 0.7322698389719402,
-                "Estimate": 0.7889345473819982,
+                "ConfLo": 0.7988609410169086,
+                "Estimate": 0.7997736190520583,
                 "Parameter": "OldNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.7793756032240057,
+                "ConfHi": 0.7718230876001205,
                 "Key": "2018",
-                "ConfLo": 0.7263905537709208,
-                "Estimate": 0.763750031493166,
+                "ConfLo": 0.7697125534903118,
+                "Estimate": 0.7707700644278527,
                 "Parameter": "YoungNonWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.7658677939698935,
+                "ConfHi": 0.758889681500983,
                 "Key": "2018",
-                "ConfLo": 0.7114793801041219,
-                "Estimate": 0.7504430171827573,
+                "ConfLo": 0.7567133623117516,
+                "Estimate": 0.7577983318106879,
                 "Parameter": "OldNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.7373291769567141,
+                "ConfHi": 0.7329507948660247,
                 "Key": "2018",
-                "ConfLo": 0.7007290518709168,
-                "Estimate": 0.726828953439248,
+                "ConfLo": 0.7304646953866141,
+                "Estimate": 0.7317089937071046,
                 "Parameter": "YoungNonWhiteMale-2018"
             },
             {
-                "ConfHi": 0.479310955890869,
+                "ConfHi": 0.4249756746814617,
                 "Key": "2018",
-                "ConfLo": 0.37342789547966815,
-                "Estimate": 0.4285810641772512,
+                "ConfLo": 0.4239427069956992,
+                "Estimate": 0.42446015451824,
                 "Parameter": "OldWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.48769666191695343,
+                "ConfHi": 0.4744282243927943,
                 "Key": "2018",
-                "ConfLo": 0.47083134115810865,
-                "Estimate": 0.47611618978874,
+                "ConfLo": 0.47280157118168875,
+                "Estimate": 0.4736172107876755,
                 "Parameter": "YoungWhiteFemale-2018"
             },
             {
-                "ConfHi": 0.48332099156997443,
+                "ConfHi": 0.4294257877648905,
                 "Key": "2018",
-                "ConfLo": 0.36754022738527287,
-                "Estimate": 0.4288480380319259,
+                "ConfLo": 0.42834186115537487,
+                "Estimate": 0.4288842564173813,
                 "Parameter": "OldWhiteMale-2018"
             },
             {
-                "ConfHi": 0.4958168148366016,
+                "ConfHi": 0.48606088592508784,
                 "Key": "2018",
-                "ConfLo": 0.48268749968496033,
-                "Estimate": 0.4870392826713543,
+                "ConfLo": 0.48432915563189327,
+                "Estimate": 0.48519394361735574,
                 "Parameter": "YoungWhiteMale-2018"
             }
         ]
@@ -196,7 +196,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
 <section class="footnotes" role="doc-endnotes">
 <hr />
 <ol>
-<li id="fn1" role="doc-endnote"><p><a href="https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/" class="uri">https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/</a> speaks to this, though it addresses turnout and opinion shifts as well. [SimilarWork1]: For Bayesian inference on issues: http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/ [SimilarWork2]: For a different statistical method doing similar work on the 2016 election: https://arxiv.org/pdf/1611.03787.pdf<a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
+<li id="fn1" role="doc-endnote"><p><a href="https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/" class="uri">https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/</a> speaks to this, though it addresses turnout and opinion shifts as well.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩</a></p></li>
 </ol>
 </section>
 
