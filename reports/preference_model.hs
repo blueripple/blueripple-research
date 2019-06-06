@@ -70,14 +70,14 @@ import qualified Statistics.Types              as S
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
-import Graphics.VegaLite.ParameterPlot (ParameterEstimate(..)
-                                        , NamedParameterEstimate (..)
-                                        , Scaling(..)
-                                        , intYear
-                                        , parameterPlot
-                                        , parameterPlotMany
-                                        , parameterPlotVsTime
-                                        , DateTime (..))
+import Visualization.VegaLite.ParameterPlot (ParameterEstimate(..)
+                                            , NamedParameterEstimate (..)
+                                            , Scaling(..)
+                                            , intYear
+                                            , parameterPlot
+                                            , parameterPlotMany
+                                            , parameterPlotVsTime
+                                            , DateTime (..))
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
