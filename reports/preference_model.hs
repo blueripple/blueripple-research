@@ -12,6 +12,7 @@
 {-# LANGUAGE PartialTypeSignatures     #-}
 module Main where
 
+import           Control.Arrow                  (first,second,(***),(&&&))
 import           Control.Lens                   ( (^.)
                                                 , over
                                                 , (&)
@@ -70,14 +71,18 @@ import qualified Statistics.Types              as S
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
-import Visualization.VegaLite.ParameterPlot (ParameterEstimate(..)
+import qualified Visualization.VegaLite.ParameterPlot as VV
+{-(ParameterEstimate(..)
                                             , NamedParameterEstimate (..)
                                             , Scaling(..)
                                             , intYear
                                             , parameterPlot
                                             , parameterPlotMany
                                             , parameterPlotVsTime
-                                            , DateTime (..))
+                                            , DateTime (..)
+                                            , ViewConfig(..))
+-}
+import qualified Visualization.VegaLite.StackedArea as VV       
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
@@ -371,6 +376,8 @@ knitEither = either K.knitError return
 quick = RunParams 2 500 50
 justEnough = RunParams 5 5000 500
 goToTown = RunParams 10 10000 1000
+
+type DemographicCategories = SimpleASR
   
 main :: IO ()
 main = do
@@ -407,23 +414,23 @@ main = do
                                             (const True)
       K.logLE K.Info "Inferring..."
       let rp = quick
-          ds = simpleAgeSexRace
+          ds :: DemographicStructure _ _ DemographicCategories = simpleAgeSexRace
           yearList = [2010,2012,2014,2016,2018]            
           years = M.fromList $ fmap (\x->(x,x)) yearList
           categories = fmap (T.pack . show) $ dsCategories ds
           toNPE (category, (ExpectationSummary m (lo,hi) _)) =
-            NamedParameterEstimate category (ParameterEstimate m (lo,hi))
+            VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo,hi))
 
       modeledResults <- flip traverse years $ \y -> do 
         K.logLE K.Info $ "inferring for " <> (T.pack $ show y)
         pr <- preferenceModel ds rp y identityDemographicsFrame
               houseElectionsFrame
               turnoutFrame
-        let pd = fmap toNPE $ zip categories $ modeled pr
+        let pd = A.array (minBound, maxBound) $ fmap (\(b,es) -> (b, toNPE (T.pack $ show b, es))) $ A.assocs $ modeled pr
         return $ pr { modeled = pd }
         
       let pdsWithYear x pr =
-            let mapName pd@(NamedParameterEstimate n _) = pd {name = n <> "-" <> x}
+            let mapName pd@(VV.NamedParameterEstimate n _) = pd {VV.name = n <> "-" <> x}
             in fmap mapName $ modeled pr
           f x = fmap (\y -> (x,y))
           
@@ -431,9 +438,10 @@ main = do
       K.newPandoc (K.PandocInfo "2018" (M.singleton "pagetitle" "2018 Preference Model Intro")) $ do
         K.addMarkDown intro2018
         pr2018 <- knitMaybe "Failed to find 2018 in modelResults." $ M.lookup 2018 modeledResults
-        _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
+        _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany id
           "Modeled probability of voting Democratic in (competitive) 2018 house races"
           S.cl95
+          (VV.ViewConfig 800 400 50)
           (f "2018" $ pdsWithYear "2018" pr2018)
         K.addMarkDown postFig2018
       K.newPandoc (K.PandocInfo "MethodsAndSources" (M.singleton "pagetitle" "Inferred Preference Model: Methods & Sources")) $ K.addMarkDown modelNotesBayes        
@@ -443,25 +451,53 @@ main = do
         _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
           "Modeled Probability of Voting Democratic in competitive house races"
           S.cl95
+          (ViewConfig 800 400 50)
           (concat $ fmap (\(y,pr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) pr) $ M.toList modeledResults)
 -}
         -- arrange data for vs time plot
         let oneSetF y = FL.Fold
-              (\m a -> M.insertWith (<>) (name a) [(y, pEstimate a)] m) M.empty id
-            minY = minimum yearList
-            maxY = maximum yearList
+              (\m a -> M.insertWith (<>) (VV.name a) [(y, VV.pEstimate a)] m) M.empty id
             dataVsTimeF = FL.Fold
               (\m (y,pr) -> M.unionWith (<>) m (FL.fold (oneSetF y) (modeled pr)))
               M.empty
               M.toList
-        _ <- K.addHvega Nothing Nothing $ parameterPlotVsTime
+        _ <- K.addHvega Nothing Nothing $ VV.parameterPlotVsTime
           "Voter Preference Vs. Election Year"
           "Election Year"
           (Just "Group")
           (Just "Voter Preference")
-          DataMinMax
-          intYear
+          VV.DataMinMax
+          VV.intYear
+          (VV.ViewConfig 800 400 50)
           (FL.fold dataVsTimeF $ M.toList modeledResults)
+
+        -- arrange data for stacked area share of electorate
+        let modeledDVotes pr =
+              let summed = FL.fold (votesAndPopByDistrictF @DemographicCategories) (fmap F.rcast $ votesAndPopByDistrict pr)
+                  popArray = F.rgetField @(CountArray DemographicCategories) summed
+                  popScale = F.rgetField @PopScale summed 
+                  predVoters = F.rgetField @PredictedVoters summed
+                  allDVotes = F.rgetField @DVotes summed
+                  allRVotes =  F.rgetField @RVotes summed
+--                  totalDRVotes = (F.rgetField @DVotes summed) + (F.rgetField @RVotes summed)
+                  shareOfDScale = popScale * (realToFrac predVoters/realToFrac (allDVotes + allRVotes)) / realToFrac allDVotes
+                  shareOfDRScale = shareOfDScale * (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))
+                  dVotes b = realToFrac (popArray A.! b) * ((nationalTurnout pr) A.! b) * (VV.value . VV.pEstimate $ (modeled pr) A.! b) * shareOfDRScale
+              in fmap (\b -> (T.pack $ show b, dVotes b)) [(minBound :: DemographicCategories)..maxBound]
+            f1 :: [(x,[(y,z)])] -> [(x,y,z)]
+            f1 = concat . fmap (\(x,yzs) -> fmap (\(y,z) -> (x,y,z)) yzs)
+            f2 :: Ord y => [(x,y,z)] -> [(y,[(x,z)])]
+            f2 = M.toList . M.fromListWith (<>) .  fmap (\(x,y,z) -> (y,[(x,z)])) 
+            datForStackedArea = f2 . f1 $ M.toList $ fmap modeledDVotes modeledResults
+        _ <- K.addHvega Nothing Nothing $ VV.stackedAreaVsTime
+          "D Voteshare vs. Election Year"
+          "Group"
+          "Election Year"
+          "D Voteshare of *all* votes"
+          VV.intYear
+          (VV.ViewConfig 800 400 50)
+          datForStackedArea
+          
         -- analyze results
         -- Quick Mann-Whitney
         let mkDeltaTable locFilter (y1, y2) = do
@@ -502,12 +538,12 @@ data DeltaTableRow =
 deltaTable :: forall a e b. (A.Ix b, Bounded b, Enum b, Show b)
            => DemographicStructure a e b
            -> (F.Record LocationKey -> Bool)
-           -> PreferenceResults b NamedParameterEstimate
-           -> PreferenceResults b NamedParameterEstimate
+           -> PreferenceResults b VV.NamedParameterEstimate
+           -> PreferenceResults b VV.NamedParameterEstimate
            -> ([DeltaTableRow], (Int,Int), (Int,Int))
 deltaTable ds locFilter trA trB = 
   let groupNames = fmap (T.pack . show) $ dsCategories ds
-      getScaledPop :: PreferenceResults b NamedParameterEstimate -> A.Array b Int
+      getScaledPop :: PreferenceResults b VV.NamedParameterEstimate -> A.Array b Int
       getScaledPop tr =
         let totalRec = FL.fold votesAndPopByDistrictF
               (fmap (F.rcast @[CountArray b, DVotes, RVotes, PredictedVoters, PopScale]) $ F.filterFrame (locFilter . F.rcast) $ F.toFrame $ votesAndPopByDistrict tr)
@@ -518,18 +554,18 @@ deltaTable ds locFilter trA trB =
       pop = FL.fold FL.sum popA
       turnoutA = nationalTurnout trA
       turnoutB = nationalTurnout trB
-      probsArray = A.array (minBound, maxBound) . zip [minBound..maxBound] . fmap (value . pEstimate) . modeled 
+      probsArray = fmap (VV.value . VV.pEstimate) . modeled 
       probA = probsArray trA
       probB = probsArray trB
-      modeledVotes popArray turnoutFunc probArray =
-        let dVotes b = round $ realToFrac (popArray A.!b) * turnoutFunc b * (probArray A.! b)
-            rVotes b = round $ realToFrac (popArray A.!b) * turnoutFunc b * (1.0 - probArray A.! b)
+      modeledVotes popArray turnoutArray probArray =
+        let dVotes b = round $ realToFrac (popArray A.!b) * (turnoutArray A.! b) * (probArray A.! b)
+            rVotes b = round $ realToFrac (popArray A.!b) * (turnoutArray A.! b) * (1.0 - probArray A.! b)
         in FL.fold ((,) <$> FL.premap dVotes FL.sum <*> FL.premap rVotes FL.sum) [minBound..maxBound]      
       makeDTR b =
         let pop0 = realToFrac $ popA A.! b
             dPop = realToFrac $ (popB A.! b) - (popA A.! b)
-            turnout0 = realToFrac $ turnoutA b
-            dTurnout = realToFrac $ (turnoutB b) - (turnoutA b)
+            turnout0 = realToFrac $ turnoutA A.! b
+            dTurnout = realToFrac $ (turnoutB A.! b) - (turnoutA A.! b)
             prob0 = realToFrac $ (probA A.! b)
             dProb = realToFrac $ (probB A.! b) - (probA A.! b)
             dtrCombo = dPop * dTurnout * (2 * dProb)/4 -- the rest is accounted for in other terms, we spread this among them
@@ -759,10 +795,10 @@ data PreferenceResults b a = PreferenceResults
                                        , RVotes
                                        , PredictedVoters
                                        , PopScale
-                                       ]],
-    nationalTurnout :: (b -> Double),
-    modeled :: [a],
-    mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
+                                       ]]
+    , nationalTurnout :: A.Array b Double
+    , modeled :: A.Array b a
+    , mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
   }
     
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }                        
@@ -867,10 +903,11 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame = d
   mcmcResults <- liftIO $ TB.runMany mcmcData numParams (nChains runParams) (nSamplesPerChain runParams) (nBurnPerChain runParams)
   -- this use of [0..(numParams - 1)] is bad.
   let conf = S.cl95
-  summaries <- knitMaybe "mcmc \"summarize\" produced Nothing." $ traverse (\n -> summarize conf (!!n) mcmcResults) [0..(numParams - 1)]  
+  summaries <- knitMaybe "mcmc \"summarize\" produced Nothing." $ traverse (\n -> summarize conf (!!n) mcmcResults) [0..(numParams - 1)]
+  let summaryA = A.listArray (minBound :: b, maxBound) summaries
   K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
   K.logLE K.Info $ "mpsrf=" <> (T.pack $ show $ mpsrf (fmap (\n-> (!!n)) [0..(numParams -1)]) mcmcResults)
-  return $ PreferenceResults (fmap F.rcast opposedRWPVWithScaledArrayCountsFrame) turnoutByGroup summaries (L.concat mcmcResults)  
+  return $ PreferenceResults (fmap F.rcast opposedRWPVWithScaledArrayCountsFrame) turnoutByGroupArray summaryA (L.concat mcmcResults)  
 
 modelNotesRegression :: T.Text
 modelNotesRegression = modelNotesPreface <> [here|
