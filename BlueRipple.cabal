@@ -95,7 +95,7 @@ executable mission
 
 executable preference_model
   import: deps
-  ghc-options: -fplugin=Polysemy.Plugin -Wall -O -threaded -rtsopts
+  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
   main-is:        preference_model.hs
   build-depends: base >= 4.11

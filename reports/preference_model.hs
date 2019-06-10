@@ -143,7 +143,7 @@ loadCSVToFrame po fp filterF = do
 --------------------------------------------------------------------------------
 intro2018 :: T.Text
 intro2018 = [here|
-## Where Did The 2018 Votes Come From?
+## 2018 Voter Preference
 The 2018 house races were generally good for Democrats and progressives--but why?
 Virtually every plausible theory has at least some support –
 depending on which pundits and researchers you follow,
@@ -195,6 +195,10 @@ The model uses county-level data and exit-polls
 and is able to draw inferences about turnout and voter preference and to do so
 for *specific geographical areas*.
 
+* This [post](https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0)
+is asking many of the same questions but using much more specific data, gathered from
+voter files[^VoterFiles].  That data is not publicly available, at least not for free.
+
 Each of these studies is limited to the 2016 presidential election. Still,
 each has much to offer in terms of ideas for
 pushing this work forward, especially where county-level election returns are
@@ -209,6 +213,7 @@ The results are presented in the figure below:
 [^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
 [^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
 speaks to this, though it addresses turnout and opinion shifts as well.
+[^VoterFiles]: <https://www.pewresearch.org/fact-tank/2018/02/15/voter-files-study-qa/>
 [^MITElectionLabData]: <https://electionlab.mit.edu/data>
 |]
   
@@ -244,27 +249,34 @@ from earlier elections – which is what we’ll do in subsequent posts. Stay tu
   --------------------------------------------------------------------------------
 acrossTime :: T.Text
 acrossTime = [here|
-The results are presented below. What stands out immediately is how strong
-the support of non-white voters is for democratic candidates,
-running at or above 75% (and often above 85%), regardless of age or sex,
+## Where Did the 2018 Votes Come From?
+In our previous [post][BR:2018] we introduced a model which we used to infer voter
+preference for various demographic groups in the 2018 house elections.
+That model requires 2 inputs for each congressional district (CD):
+an estimated number of voters in each demographic group and the democratic vs
+republican vote totals.  We estimate the voter numbers via census data on population
+and turnout by demographic grouping and we use the MIT election lab data on election
+returns for the result data.
+Our interest in this model really comes from looking at the results across time
+in an attempt to distinguish changes coming from demographic shifts, voter turnout
+and voter preference.
+The results are presented below. As in 2018, what stands out immediately is
+the strong support of non-white voters for democratic candidates,
+running at or above 75%, regardless of age or sex,
 though support is somewhat stronger among non-white female voters
 than non-white male voters[^2014]. Support from white voters is
-substantially lower, about between 35% and 45% across
+substantially lower, between 37% and 49% across
 both age groups and both sexes, though people
-under 45 are slightly more likely to vote democratic than their older
-counterparts.  This is particularly noticeable in 2016,
-when, perhaps because of Trump,
-young white people became slightly more likely to vote for democratic
-house candidates while older
-white people became more likely to vote for republicans in the house.
+under 45 are about 4% more likely to vote democratic than their older
+counterparts.  
 As we move from 2016 to 2018, the non-white support holds,
 maybe increasing slightly from its already high level,
 and white support *grows* substantially across all ages and sexes,
 though it remains below 50%. These results are broadly consistent with
-exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018]. 
+exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018],
+though there are some notable differences as well.
 
-
-
+[BR:2018]: <https://blueripple.github.io/PreferenceModel/2018.html#>
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
 That is consistent with exit-polls that show a huge swing in the Asian vote:
 from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then
@@ -290,8 +302,7 @@ Now we have an estimate of how peoples' choices changed between 2012 and 2018.
 But that's only one part of the story.  Voting shifts are also driven by
 changes in demographics (people move, get older, become eligible to vote
 and people die) and different changes in voter turnout among different
-demographic groups. In our simplistic model, we can look at these separately,
-nationally and in any congressional district.
+demographic groups. In our simplistic model, we can look at these separately.
 
 Below, we compare these changes (nationally) for each group for
 2012 -> 2016 (both presidential elections),
@@ -413,7 +424,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = quick
+      let rp = goToTown
           ds :: DemographicStructure _ _ DemographicCategories = simpleAgeSexRace
           yearList = [2010,2012,2014,2016,2018]            
           years = M.fromList $ fmap (\x->(x,x)) yearList
@@ -462,10 +473,10 @@ main = do
               M.empty
               M.toList
         _ <- K.addHvega Nothing Nothing $ VV.parameterPlotVsTime
-          "Voter Preference Vs. Election Year"
+          "D Voter Preference Vs. Election Year"
           "Election Year"
           (Just "Group")
-          (Just "Voter Preference")
+          (Just "D Voter Preference")
           VV.DataMinMax
           VV.intYear
           (VV.ViewConfig 800 400 50)
@@ -490,10 +501,10 @@ main = do
             f2 = M.toList . M.fromListWith (<>) .  fmap (\(x,y,z) -> (y,[(x,z)])) 
             datForStackedArea = f2 . f1 $ M.toList $ fmap modeledDVotes modeledResults
         _ <- K.addHvega Nothing Nothing $ VV.stackedAreaVsTime
-          "D Voteshare vs. Election Year"
+          "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
           "Group"
           "Election Year"
-          "D Voteshare of *all* votes"
+          "D Voteshare of D+R votes"
           VV.intYear
           (VV.ViewConfig 800 400 50)
           datForStackedArea
