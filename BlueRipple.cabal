@@ -104,6 +104,8 @@ executable preference_model
                , colonnade
                , data-science-utils
                , directory
+               , grammar-of-graphics
+               , gog-hvega
                , lens
                , map-reduce-folds >= 0.1.0.1
                , mtl

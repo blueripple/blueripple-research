@@ -71,19 +71,10 @@ import qualified Statistics.Types              as S
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
-import qualified Visualization.VegaLite.ParameterPlot as VV
-import qualified Visualization.VegaLite.Common as VV
-{-(ParameterEstimate(..)
-                                            , NamedParameterEstimate (..)
-                                            , Scaling(..)
-                                            , intYear
-                                            , parameterPlot
-                                            , parameterPlotMany
-                                            , parameterPlotVsTime
-                                            , DateTime (..)
-                                            , ViewConfig(..))
--}
-import qualified Visualization.VegaLite.StackedArea as VV
+import qualified Graphics.Visualization.GOG.Data as GG
+import qualified Graphics.Visualization.VegaLite.ParameterPlot as VV
+import qualified Graphics.Visualization.VegaLite.Common as VV
+import qualified Graphics.Visualization.VegaLite.StackedArea as VV
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
@@ -498,9 +489,9 @@ main = do
               in fmap (\b -> (T.pack $ show b, dVotes b)) [(minBound :: DemographicCategories)..maxBound]
             f1 :: [(x,[(y,z)])] -> [(x,y,z)]
             f1 = concat . fmap (\(x,yzs) -> fmap (\(y,z) -> (x,y,z)) yzs)
-            rowBuilder = VV.buildDataRows [("Group", VV.strLoader (\(_,y,_) -> y))
-                                          ,("Election Year", VV.intYearLoader (\(x,_,_) -> x))
-                                          ,("D Voteshare of D+R Votes", VV.numLoader (\(_,_,z)->z))]
+            rowBuilder = GG.buildDataRows [("Group", GG.strLoader (\(_,y,_) -> y))
+                                          ,("Election Year", GG.intYearLoader (\(x,_,_) -> x))
+                                          ,("D Voteshare of D+R Votes", GG.numLoader (\(_,_,z)->z))]
             datForStackedArea = rowBuilder $ f1 $ M.toList $ fmap modeledDVotes modeledResults
         stackedAreaViz <- knitMaybe "Failed to build stacked area visualization.  Bad field names?" $
           VV.stackedAreaVsTime
