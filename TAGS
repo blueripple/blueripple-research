@@ -34,84 +34,84 @@ totalSpendingHistograms totalSpendingHistograms266,267
 
 ./reports/preference_model.hs,2850
 module Main Main12,13
-templateVars templateVars110,111
-loadCSVToFrame loadCSVToFrame129,130
-intro2018 intro2018143,144
+templateVars templateVars111,112
+loadCSVToFrame loadCSVToFrame130,131
 intro2018 intro2018144,145
-postFig2018 postFig2018220,221
+intro2018 intro2018145,146
 postFig2018 postFig2018221,222
-acrossTime acrossTime249,250
+postFig2018 postFig2018222,223
 acrossTime acrossTime250,251
-voteShifts voteShifts293,294
+acrossTime acrossTime251,252
 voteShifts voteShifts294,295
-voteShiftObservations voteShiftObservations326,327
+voteShifts voteShifts295,296
 voteShiftObservations voteShiftObservations327,328
-knitX knitX377,378
+voteShiftObservations voteShiftObservations328,329
 knitX knitX378,379
-knitMaybe knitMaybe380,381
+knitX knitX379,380
 knitMaybe knitMaybe381,382
-knitEither knitEither383,384
+knitMaybe knitMaybe382,383
 knitEither knitEither384,385
-quick quick386,387
-justEnough justEnough387,388
-goToTown goToTown388,389
-type DemographicCategories DemographicCategories390,391
-main main392,393
+knitEither knitEither385,386
+quick quick387,388
+justEnough justEnough388,389
+goToTown goToTown389,390
+type DemographicCategories DemographicCategories391,392
 main main393,394
-data DeltaTableRow DeltaTableRow537,538
-  DeltaTableRowDeltaTableRow538,539
-  { dtrGroup dtrGroup539,540
-  , dtrPop dtrPop540,541
-  , dtrFromPop dtrFromPop541,542
-  , dtrFromTurnout dtrFromTurnout542,543
-  , dtrFromOpinion dtrFromOpinion543,544
-  , dtrTotal dtrTotal544,545
-  , dtrPct dtrPct545,546
-deltaTable deltaTable548,549
-deltaTable deltaTable554,555
-deltaTableColonnade deltaTableColonnade595,596
-deltaTableColonnade deltaTableColonnade596,597
-modelNotesPreface modelNotesPreface606,607
-modelNotesPreface modelNotesPreface607,608
-, ,650,651
-modelNotesBayes modelNotesBayes664,665
-modelNotesBayes modelNotesBayes665,666
-P(P675,676
-\mu_k(\mu_k720,721
-v_k(v_k721,722
-\rho(\rho722,723
-type X X775,776
-type PredictedVoters PredictedVoters776,777
-type ScaledDVotes ScaledDVotes777,778
-type ScaledRVotes ScaledRVotes778,779
-type PopScale PopScale779,780
-type CountArray CountArray780,781
-type CountArray b b780,781
-addPopScale addPopScale782,783
-votesAndPopByDistrictF votesAndPopByDistrictF784,785
-votesAndPopByDistrictF votesAndPopByDistrictF788,789
-data PreferenceResults PreferenceResults799,800
-data PreferenceResults b a = PreferenceResultsPreferenceResults799,800
-    votesAndPopByDistrict votesAndPopByDistrict801,802
-    , nationalTurnout nationalTurnout809,810
-    , modeled modeled810,811
-    , mcmcChain mcmcChain811,812
-data RunParams RunParams814,815
-data RunParams = RunParams RunParams814,815
-data RunParams = RunParams { nChains nChains814,815
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain814,815
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain814,815
-preferenceModel preferenceModel817,818
-preferenceModel preferenceModel834,835
-modelNotesRegression modelNotesRegression922,923
-modelNotesRegression modelNotesRegression923,924
-Given Given925,926
-D D928,929
-R R929,930
-\frac{D-R}{Q} \frac{D-R}{Q}936,937
-\sum_i \sum_i945,946
-We We948,949
-Now Now949,950
+main main394,395
+data DeltaTableRow DeltaTableRow540,541
+  DeltaTableRowDeltaTableRow541,542
+  { dtrGroup dtrGroup542,543
+  , dtrPop dtrPop543,544
+  , dtrFromPop dtrFromPop544,545
+  , dtrFromTurnout dtrFromTurnout545,546
+  , dtrFromOpinion dtrFromOpinion546,547
+  , dtrTotal dtrTotal547,548
+  , dtrPct dtrPct548,549
+deltaTable deltaTable551,552
+deltaTable deltaTable557,558
+deltaTableColonnade deltaTableColonnade598,599
+deltaTableColonnade deltaTableColonnade599,600
+modelNotesPreface modelNotesPreface609,610
+modelNotesPreface modelNotesPreface610,611
+, ,653,654
+modelNotesBayes modelNotesBayes667,668
+modelNotesBayes modelNotesBayes668,669
+P(P678,679
+\mu_k(\mu_k723,724
+v_k(v_k724,725
+\rho(\rho725,726
+type X X778,779
+type PredictedVoters PredictedVoters779,780
+type ScaledDVotes ScaledDVotes780,781
+type ScaledRVotes ScaledRVotes781,782
+type PopScale PopScale782,783
+type CountArray CountArray783,784
+type CountArray b b783,784
+addPopScale addPopScale785,786
+votesAndPopByDistrictF votesAndPopByDistrictF787,788
+votesAndPopByDistrictF votesAndPopByDistrictF791,792
+data PreferenceResults PreferenceResults802,803
+data PreferenceResults b a = PreferenceResultsPreferenceResults802,803
+    votesAndPopByDistrict votesAndPopByDistrict804,805
+    , nationalTurnout nationalTurnout812,813
+    , modeled modeled813,814
+    , mcmcChain mcmcChain814,815
+data RunParams RunParams817,818
+data RunParams = RunParams RunParams817,818
+data RunParams = RunParams { nChains nChains817,818
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain817,818
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain817,818
+preferenceModel preferenceModel820,821
+preferenceModel preferenceModel837,838
+modelNotesRegression modelNotesRegression925,926
+modelNotesRegression modelNotesRegression926,927
+Given Given928,929
+D D931,932
+R R932,933
+\frac{D-R}{Q} \frac{D-R}{Q}939,940
+\sum_i \sum_i948,949
+We We951,952
+Now Now952,953
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

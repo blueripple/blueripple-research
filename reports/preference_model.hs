@@ -72,6 +72,7 @@ import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
 import qualified Visualization.VegaLite.ParameterPlot as VV
+import qualified Visualization.VegaLite.Common as VV
 {-(ParameterEstimate(..)
                                             , NamedParameterEstimate (..)
                                             , Scaling(..)
@@ -82,7 +83,7 @@ import qualified Visualization.VegaLite.ParameterPlot as VV
                                             , DateTime (..)
                                             , ViewConfig(..))
 -}
-import qualified Visualization.VegaLite.StackedArea as VV       
+import qualified Visualization.VegaLite.StackedArea as VV
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
@@ -424,7 +425,7 @@ main = do
                                             detailedRSATurnoutCSV
                                             (const True)
       K.logLE K.Info "Inferring..."
-      let rp = goToTown
+      let rp = quick
           ds :: DemographicStructure _ _ DemographicCategories = simpleAgeSexRace
           yearList = [2010,2012,2014,2016,2018]            
           years = M.fromList $ fmap (\x->(x,x)) yearList
@@ -497,18 +498,20 @@ main = do
               in fmap (\b -> (T.pack $ show b, dVotes b)) [(minBound :: DemographicCategories)..maxBound]
             f1 :: [(x,[(y,z)])] -> [(x,y,z)]
             f1 = concat . fmap (\(x,yzs) -> fmap (\(y,z) -> (x,y,z)) yzs)
-            f2 :: Ord y => [(x,y,z)] -> [(y,[(x,z)])]
-            f2 = M.toList . M.fromListWith (<>) .  fmap (\(x,y,z) -> (y,[(x,z)])) 
-            datForStackedArea = f2 . f1 $ M.toList $ fmap modeledDVotes modeledResults
-        _ <- K.addHvega Nothing Nothing $ VV.stackedAreaVsTime
+            rowBuilder = VV.buildDataRows [("Group", VV.strLoader (\(_,y,_) -> y))
+                                          ,("Election Year", VV.intYearLoader (\(x,_,_) -> x))
+                                          ,("D Voteshare of D+R Votes", VV.numLoader (\(_,_,z)->z))]
+            datForStackedArea = rowBuilder $ f1 $ M.toList $ fmap modeledDVotes modeledResults
+        stackedAreaViz <- knitMaybe "Failed to build stacked area visualization.  Bad field names?" $
+          VV.stackedAreaVsTime
           "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
           "Group"
           "Election Year"
-          "D Voteshare of D+R votes"
-          VV.intYear
-          (VV.ViewConfig 800 400 50)
+          "D Voteshare of D+R Votes"
           datForStackedArea
-          
+          VV.Year
+          (VV.ViewConfig 800 400 50)
+        _ <- K.addHvega Nothing Nothing stackedAreaViz  
         -- analyze results
         -- Quick Mann-Whitney
         let mkDeltaTable locFilter (y1, y2) = do
