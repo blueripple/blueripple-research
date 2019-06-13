@@ -1,4 +1,4 @@
-packages: . ../../DataScience/data-science-utils ../../DataScience/grammar-of-graphics/grammar-of-graphics ../../DataScience/grammar-of-graphics/gog-hvega
+packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega ../../DataScience/grammar-of-graphics/grammar-of-graphics ../../DataScience/grammar-of-graphics/gog-hvega
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 

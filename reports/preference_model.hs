@@ -71,10 +71,16 @@ import qualified Statistics.Types              as S
 import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mannWhitneyUTest)
+
+-- to be removed once all things are converted to Frames-hvega
 import qualified Graphics.Visualization.GOG.Data as GG
 import qualified Graphics.Visualization.VegaLite.ParameterPlot as VV
 import qualified Graphics.Visualization.VegaLite.Common as VV
 import qualified Graphics.Visualization.VegaLite.StackedArea as VV
+
+import qualified Frames.Visualization.VegaLite.Data        as FV
+import qualified Frames.Visualization.VegaLite.StackedArea as FV
+import qualified Frames.Visualization.VegaLite.LineVsTime as FV
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Constraints            as FCon
@@ -450,30 +456,25 @@ main = do
       K.newPandoc (K.PandocInfo "MethodsAndSources" (M.singleton "pagetitle" "Inferred Preference Model: Methods & Sources")) $ K.addMarkDown modelNotesBayes        
       K.newPandoc (K.PandocInfo "AcrossTime" (M.singleton "pagetitle" "Preference Model Across Time")) $ do
         K.addMarkDown acrossTime
-{-        
-        _ <- K.addHvega Nothing Nothing $ parameterPlotMany id
-          "Modeled Probability of Voting Democratic in competitive house races"
-          S.cl95
-          (ViewConfig 800 400 50)
-          (concat $ fmap (\(y,pr) -> let yt = T.pack (show y) in f yt $ (pdsWithYear yt) pr) $ M.toList modeledResults)
--}
         -- arrange data for vs time plot
-        let oneSetF y = FL.Fold
-              (\m a -> M.insertWith (<>) (VV.name a) [(y, VV.pEstimate a)] m) M.empty id
-            dataVsTimeF = FL.Fold
-              (\m (y,pr) -> M.unionWith (<>) m (FL.fold (oneSetF y) (modeled pr)))
-              M.empty
-              M.toList
-        _ <- K.addHvega Nothing Nothing $ VV.parameterPlotVsTime
-          "D Voter Preference Vs. Election Year"
-          "Election Year"
-          (Just "Group")
-          (Just "D Voter Preference")
-          VV.DataMinMax
-          VV.intYear
-          (VV.ViewConfig 800 400 50)
-          (FL.fold dataVsTimeF $ M.toList modeledResults)
-
+        let flattenOneF y = FL.Fold
+              (\l a -> (VV.name a, y, VV.value $ VV.pEstimate a) : l) [] reverse
+            flattenF = FL.Fold
+              (\l (y,pr) -> FL.fold (flattenOneF y) (modeled pr) : l)
+              []
+              (concat . reverse)
+            vRowBuilderPVsT = FV.addRowBuilder @'("Group",T.Text) (\(g,_,_) -> g) $
+                              FV.addRowBuilder @'("Election Year",Int) (\(_,y,_) -> y) $
+                              FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,vp) -> vp) FV.emptyRowBuilder
+            vDatPVsT = FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList modeledResults
+            vParametersVsTime = FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int) @'("D Voter Preference",Double)
+                                "D Voter Preference Vs. Election Year"
+                                FV.DataMinMax
+                                (FV.TimeEncoding "%Y" FV.Year)
+                                (FV.ViewConfig 800 400 50)
+                                vDatPVsT
+        _ <- K.addHvega Nothing Nothing vParametersVsTime
+        
         -- arrange data for stacked area share of electorate
         let modeledDVotes pr =
               let summed = FL.fold (votesAndPopByDistrictF @DemographicCategories) (fmap F.rcast $ votesAndPopByDistrict pr)
@@ -489,20 +490,16 @@ main = do
               in fmap (\b -> (T.pack $ show b, dVotes b)) [(minBound :: DemographicCategories)..maxBound]
             f1 :: [(x,[(y,z)])] -> [(x,y,z)]
             f1 = concat . fmap (\(x,yzs) -> fmap (\(y,z) -> (x,y,z)) yzs)
-            rowBuilder = GG.buildDataRows [("Group", GG.strLoader (\(_,y,_) -> y))
-                                          ,("Election Year", GG.intYearLoader (\(x,_,_) -> x))
-                                          ,("D Voteshare of D+R Votes", GG.numLoader (\(_,_,z)->z))]
-            datForStackedArea = rowBuilder $ f1 $ M.toList $ fmap modeledDVotes modeledResults
-        stackedAreaViz <- knitMaybe "Failed to build stacked area visualization.  Bad field names?" $
-          VV.stackedAreaVsTime
-          "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
-          "Group"
-          "Election Year"
-          "D Voteshare of D+R Votes"
-          datForStackedArea
-          VV.Year
-          (VV.ViewConfig 800 400 50)
-        _ <- K.addHvega Nothing Nothing stackedAreaViz  
+            vRowBuilderSVS = FV.addRowBuilder @'("Group",T.Text) (\(_,y,_) -> y) $
+                             FV.addRowBuilder @'("Election Year",Int) (\(x,_,_) -> x) $
+                             FV.addRowBuilder @'("D Voteshare of D+R Votes",Double) (\(_,_,z) -> z) FV.emptyRowBuilder
+            vDatSVS = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap modeledDVotes modeledResults              
+            vStackedArea = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int) @'("D Voteshare of D+R Votes",Double)
+                               "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
+                               (FV.TimeEncoding "%Y" FV.Year)
+                               (FV.ViewConfig 800 400 50)
+                               vDatSVS
+        _ <- K.addHvega Nothing Nothing vStackedArea
         -- analyze results
         -- Quick Mann-Whitney
         let mkDeltaTable locFilter (y1, y2) = do

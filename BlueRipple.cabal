@@ -21,6 +21,7 @@ common deps
                , Frames
                , Frames-map-reduce >= 0.1.0.1
                , Frames-utils
+               , Frames-hvega
                , foldl
                , freer-simple
                , here
