@@ -18,6 +18,29 @@
 <!-- Extra styles -->
 <style>
 body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+table {
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 24px;
+    border-spacing: 0;
+    border-bottom: 2px solid black;
+    border-top: 2px solid black;
+}
+table th {
+    padding: 3px 10px;
+    background-color: white;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: 1px solid black;
+}
+table td {
+    padding: 3px 10px;
+    border-top: none;
+    border-left: none;
+    border-bottom: none;
+    border-right: none;
+}
 </style>
 
 </head>
@@ -35,12 +58,12 @@ body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-colo
 <li>These were produced with data from the <a href="https://www.fec.gov/">FEC</a>, using the open-data <a href="https://api.open.fec.gov/developers/">API</a>.</li>
 <li>This chart includes candidate expenditures, independent expenditures in support of the candidate and party expenditures on behalf of the candidate. It ignores independent expenditures <em>against</em> the candidate, which can be considerable in some races. See the <a href="https://www.fec.gov/data/browse-data/?tab=spending">FEC web-site for more information</a> about all of these categories.</li>
 </ul>
-<figure id="SpendingHistogramByPartyAll">
+<figure id="figure_1">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -54,152 +77,152 @@ body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-colo
             {
                 "candidate_party": "Democrat",
                 "all_spending": 500000,
-                "count": 214
+                "# Candidates": 214
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 1500000,
-                "count": 102
+                "# Candidates": 102
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 2500000,
-                "count": 37
+                "# Candidates": 37
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 3500000,
-                "count": 20
+                "# Candidates": 20
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 4500000,
-                "count": 19
+                "# Candidates": 19
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 5500000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 6500000,
-                "count": 6
+                "# Candidates": 6
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 7500000,
-                "count": 7
+                "# Candidates": 7
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 8500000,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 9500000,
-                "count": 14
+                "# Candidates": 14
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 500000,
-                "count": 170
+                "# Candidates": 170
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 1500000,
-                "count": 95
+                "# Candidates": 95
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 2500000,
-                "count": 34
+                "# Candidates": 34
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 3500000,
-                "count": 14
+                "# Candidates": 14
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 4500000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 5500000,
-                "count": 11
+                "# Candidates": 11
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 6500000,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 7500000,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 8500000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 9500000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 500000,
-                "count": 31
+                "# Candidates": 31
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 1500000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 2500000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 3500000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 4500000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 5500000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 6500000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 7500000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 8500000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 9500000,
-                "count": 1
+                "# Candidates": 1
             }
         ]
     },
@@ -222,7 +245,7 @@ body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-colo
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
+            "field": "# Candidates",
             "type": "quantitative",
             "axis": {
                 "title": "# Candidates"
@@ -230,14 +253,14 @@ body{margin:10em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-colo
         }
     }
 };
-vegaEmbed('#SpendingHistogramByPartyAll',vlSpec);</script>
+vegaEmbed('#figure_1',vlSpec);</script>
 </figure>
-<figure id="SpendingHistogramByParty1MM">
+<figure id="figure_2">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -251,152 +274,152 @@ vegaEmbed('#SpendingHistogramByPartyAll',vlSpec);</script>
             {
                 "candidate_party": "Democrat",
                 "all_spending": 50000,
-                "count": 62
+                "# Candidates": 62
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 150000,
-                "count": 28
+                "# Candidates": 28
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 250000,
-                "count": 19
+                "# Candidates": 19
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 350000,
-                "count": 11
+                "# Candidates": 11
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 450000,
-                "count": 17
+                "# Candidates": 17
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 550000,
-                "count": 16
+                "# Candidates": 16
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 650000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 750000,
-                "count": 14
+                "# Candidates": 14
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 850000,
-                "count": 17
+                "# Candidates": 17
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 950000,
-                "count": 17
+                "# Candidates": 17
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 50000,
-                "count": 76
+                "# Candidates": 76
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 150000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 250000,
-                "count": 9
+                "# Candidates": 9
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 350000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 450000,
-                "count": 11
+                "# Candidates": 11
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 550000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 650000,
-                "count": 11
+                "# Candidates": 11
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 750000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 850000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 950000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 50000,
-                "count": 24
+                "# Candidates": 24
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 150000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 250000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 350000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 450000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 550000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 650000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 750000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 850000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 950000,
-                "count": 0
+                "# Candidates": 0
             }
         ]
     },
@@ -419,7 +442,7 @@ vegaEmbed('#SpendingHistogramByPartyAll',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
+            "field": "# Candidates",
             "type": "quantitative",
             "axis": {
                 "title": "# Candidates"
@@ -427,14 +450,14 @@ vegaEmbed('#SpendingHistogramByPartyAll',vlSpec);</script>
         }
     }
 };
-vegaEmbed('#SpendingHistogramByParty1MM',vlSpec);</script>
+vegaEmbed('#figure_2',vlSpec);</script>
 </figure>
-<figure id="SpendingHistogramByParty1M">
+<figure id="figure_3">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -448,152 +471,152 @@ vegaEmbed('#SpendingHistogramByParty1MM',vlSpec);</script>
             {
                 "candidate_party": "Democrat",
                 "all_spending": 5000,
-                "count": 9
+                "# Candidates": 9
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 15000,
-                "count": 9
+                "# Candidates": 9
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 25000,
-                "count": 8
+                "# Candidates": 8
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 35000,
-                "count": 13
+                "# Candidates": 13
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 45000,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 55000,
-                "count": 4
+                "# Candidates": 4
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 65000,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 75000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 85000,
-                "count": 4
+                "# Candidates": 4
             },
             {
                 "candidate_party": "Democrat",
                 "all_spending": 95000,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 5000,
-                "count": 25
+                "# Candidates": 25
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 15000,
-                "count": 9
+                "# Candidates": 9
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 25000,
-                "count": 9
+                "# Candidates": 9
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 35000,
-                "count": 7
+                "# Candidates": 7
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 45000,
-                "count": 10
+                "# Candidates": 10
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 55000,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 65000,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 75000,
-                "count": 4
+                "# Candidates": 4
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 85000,
-                "count": 4
+                "# Candidates": 4
             },
             {
                 "candidate_party": "Republican",
                 "all_spending": 95000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 5000,
-                "count": 11
+                "# Candidates": 11
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 15000,
-                "count": 6
+                "# Candidates": 6
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 25000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 35000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 45000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 55000,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 65000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 75000,
-                "count": 2
+                "# Candidates": 2
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 85000,
-                "count": 0
+                "# Candidates": 0
             },
             {
                 "candidate_party": "_AllOthers",
                 "all_spending": 95000,
-                "count": 1
+                "# Candidates": 1
             }
         ]
     },
@@ -616,7 +639,7 @@ vegaEmbed('#SpendingHistogramByParty1MM',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
+            "field": "# Candidates",
             "type": "quantitative",
             "axis": {
                 "title": "# Candidates"
@@ -624,7 +647,7 @@ vegaEmbed('#SpendingHistogramByParty1MM',vlSpec);</script>
         }
     }
 };
-vegaEmbed('#SpendingHistogramByParty1M',vlSpec);</script>
+vegaEmbed('#figure_3',vlSpec);</script>
 </figure>
 </section>
 <section id="differential-spending-and-changes-in-the-race" class="level2">
@@ -638,12 +661,12 @@ vegaEmbed('#SpendingHistogramByParty1M',vlSpec);</script>
 </ul>
 <section id="all-races-with-2-or-more-candidates" class="level3">
 <h3>All Races With 2 or more candidates</h3>
-<figure id="DiffSpendHistogram1">
+<figure id="figure_4">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -657,43 +680,43 @@ vegaEmbed('#SpendingHistogramByParty1M',vlSpec);</script>
         "values": [
             {
                 "candidate_diff_spend": 5,
-                "count": 112
+                "# Candidates": 112
             },
             {
                 "candidate_diff_spend": 15,
-                "count": 43
+                "# Candidates": 43
             },
             {
                 "candidate_diff_spend": 25,
-                "count": 34
+                "# Candidates": 34
             },
             {
                 "candidate_diff_spend": 35,
-                "count": 43
+                "# Candidates": 43
             },
             {
                 "candidate_diff_spend": 45,
-                "count": 47
+                "# Candidates": 47
             },
             {
                 "candidate_diff_spend": 55,
-                "count": 48
+                "# Candidates": 48
             },
             {
                 "candidate_diff_spend": 65,
-                "count": 42
+                "# Candidates": 42
             },
             {
                 "candidate_diff_spend": 75,
-                "count": 35
+                "# Candidates": 35
             },
             {
                 "candidate_diff_spend": 85,
-                "count": 44
+                "# Candidates": 44
             },
             {
                 "candidate_diff_spend": 95,
-                "count": 128
+                "# Candidates": 128
             }
         ]
     },
@@ -705,17 +728,14 @@ vegaEmbed('#SpendingHistogramByParty1M',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
-            "type": "quantitative",
-            "axis": {
-                "title": "# Candidates"
-            }
+            "field": "# Candidates",
+            "type": "quantitative"
         }
     }
 };
-vegaEmbed('#DiffSpendHistogram1',vlSpec);</script>
+vegaEmbed('#figure_4',vlSpec);</script>
 </figure>
-<figure id="dsVsdvsfit1">
+<figure id="figure_5">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
@@ -4913,7 +4933,7 @@ vegaEmbed('#DiffSpendHistogram1',vlSpec);</script>
         }
     ]
 };
-vegaEmbed('#dsVsdvsfit1',vlSpec);</script>
+vegaEmbed('#figure_5',vlSpec);</script>
 </figure>
 <div style="display: inline-block; padding: 7px; border-collapse: collapse">
 <span>Regression Details</span>
@@ -4972,7 +4992,7 @@ vegaEmbed('#dsVsdvsfit1',vlSpec);</script>
 </tbody>
 </table>
 </div>
-<figure id="dsVsdvsRegresssionCoeffs1">
+<figure id="figure_6">
 <script type="text/javascript">var vlSpec=
 {
     "transform": [
@@ -5062,17 +5082,17 @@ vegaEmbed('#dsVsdvsfit1',vlSpec);</script>
         }
     ]
 };
-vegaEmbed('#dsVsdvsRegresssionCoeffs1',vlSpec);</script>
+vegaEmbed('#figure_6',vlSpec);</script>
 </figure>
 </section>
 <section id="all-races-with-2-or-more-candidates-total-spending-below-2000000-and-first-forecast-closer-than-6040." class="level3">
 <h3>All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40.</h3>
-<figure id="DiffSpendHistogram2">
+<figure id="figure_7">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -5086,43 +5106,43 @@ vegaEmbed('#dsVsdvsRegresssionCoeffs1',vlSpec);</script>
         "values": [
             {
                 "candidate_diff_spend": 5.724245818687473,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_diff_spend": 15.563302303423589,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_diff_spend": 25.402358788159706,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_diff_spend": 35.241415272895814,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_diff_spend": 45.08047175763193,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_diff_spend": 54.91952824236805,
-                "count": 3
+                "# Candidates": 3
             },
             {
                 "candidate_diff_spend": 64.75858472710416,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_diff_spend": 74.59764121184028,
-                "count": 1
+                "# Candidates": 1
             },
             {
                 "candidate_diff_spend": 84.4366976965764,
-                "count": 5
+                "# Candidates": 5
             },
             {
                 "candidate_diff_spend": 94.27575418131252,
-                "count": 7
+                "# Candidates": 7
             }
         ]
     },
@@ -5134,17 +5154,14 @@ vegaEmbed('#dsVsdvsRegresssionCoeffs1',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
-            "type": "quantitative",
-            "axis": {
-                "title": "# Candidates"
-            }
+            "field": "# Candidates",
+            "type": "quantitative"
         }
     }
 };
-vegaEmbed('#DiffSpendHistogram2',vlSpec);</script>
+vegaEmbed('#figure_7',vlSpec);</script>
 </figure>
-<figure id="dsVsdvsfit2">
+<figure id="figure_8">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
@@ -5534,7 +5551,7 @@ vegaEmbed('#DiffSpendHistogram2',vlSpec);</script>
         }
     ]
 };
-vegaEmbed('#dsVsdvsfit2',vlSpec);</script>
+vegaEmbed('#figure_8',vlSpec);</script>
 </figure>
 <div style="display: inline-block; padding: 7px; border-collapse: collapse">
 <span>Regression Details</span>
@@ -5593,7 +5610,7 @@ vegaEmbed('#dsVsdvsfit2',vlSpec);</script>
 </tbody>
 </table>
 </div>
-<figure id="dsVsdvsRegresssionCoeffs2">
+<figure id="figure_9">
 <script type="text/javascript">var vlSpec=
 {
     "transform": [
@@ -5683,7 +5700,7 @@ vegaEmbed('#dsVsdvsfit2',vlSpec);</script>
         }
     ]
 };
-vegaEmbed('#dsVsdvsRegresssionCoeffs2',vlSpec);</script>
+vegaEmbed('#figure_9',vlSpec);</script>
 </figure>
 </section>
 <section id="all-races-with-2-or-more-candidates-total-spending-below-2000000-and-first-forecast-closer-than-6040." class="level3">
@@ -5696,12 +5713,12 @@ vegaEmbed('#dsVsdvsRegresssionCoeffs2',vlSpec);</script>
 <li>The <a href="https://medium.com/@frank_s_david/angrydems-cc7e8caefe7b">angry democrats post</a> generated a variety of donation size.</li>
 <li>As the histogram below shows, donations were mostly small with a few much larger ones.</li>
 </ul>
-<figure id="AngryDemsDonationsHistogram">
+<figure id="figure_10">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -5715,43 +5732,43 @@ vegaEmbed('#dsVsdvsRegresssionCoeffs2',vlSpec);</script>
         "values": [
             {
                 "Amount": 609.5,
-                "count": 70
+                "# Donations": 70
             },
             {
                 "Amount": 1808.5,
-                "count": 1
+                "# Donations": 1
             },
             {
                 "Amount": 3007.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 4206.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 5405.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 6604.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 7803.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 9002.5,
-                "count": 0
+                "# Donations": 0
             },
             {
                 "Amount": 10201.5,
-                "count": 1
+                "# Donations": 1
             },
             {
                 "Amount": 11400.5,
-                "count": 0
+                "# Donations": 0
             }
         ]
     },
@@ -5763,22 +5780,19 @@ vegaEmbed('#dsVsdvsRegresssionCoeffs2',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
-            "type": "quantitative",
-            "axis": {
-                "title": "# Donations"
-            }
+            "field": "# Donations",
+            "type": "quantitative"
         }
     }
 };
-vegaEmbed('#AngryDemsDonationsHistogram',vlSpec);</script>
+vegaEmbed('#figure_10',vlSpec);</script>
 </figure>
-<figure id="AngryDemsDonationsHistogramZoom">
+<figure id="figure_11">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -5791,44 +5805,44 @@ vegaEmbed('#AngryDemsDonationsHistogram',vlSpec);</script>
     "data": {
         "values": [
             {
-                "Amount": 159.5,
-                "count": 48
+                "Amount": 150,
+                "# Donations": 48
             },
             {
-                "Amount": 458.5,
-                "count": 12
+                "Amount": 450,
+                "# Donations": 12
             },
             {
-                "Amount": 757.5,
-                "count": 3
+                "Amount": 750,
+                "# Donations": 3
             },
             {
-                "Amount": 1056.5,
-                "count": 7
+                "Amount": 1050,
+                "# Donations": 7
             },
             {
-                "Amount": 1355.5,
-                "count": 1
+                "Amount": 1350,
+                "# Donations": 1
             },
             {
-                "Amount": 1654.5,
-                "count": 0
+                "Amount": 1650,
+                "# Donations": 0
             },
             {
-                "Amount": 1953.5,
-                "count": 0
+                "Amount": 1950,
+                "# Donations": 0
             },
             {
-                "Amount": 2252.5,
-                "count": 0
+                "Amount": 2250,
+                "# Donations": 0
             },
             {
-                "Amount": 2551.5,
-                "count": 0
+                "Amount": 2550,
+                "# Donations": 0
             },
             {
-                "Amount": 2850.5,
-                "count": 2
+                "Amount": 2850,
+                "# Donations": 2
             }
         ]
     },
@@ -5840,22 +5854,19 @@ vegaEmbed('#AngryDemsDonationsHistogram',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
-            "type": "quantitative",
-            "axis": {
-                "title": "# Donations"
-            }
+            "field": "# Donations",
+            "type": "quantitative"
         }
     }
 };
-vegaEmbed('#AngryDemsDonationsHistogramZoom',vlSpec);</script>
+vegaEmbed('#figure_11',vlSpec);</script>
 </figure>
-<figure id="AngryDemsDonationsHistogramZoom2">
+<figure id="figure_12">
 <script type="text/javascript">var vlSpec=
 {
     "config": {
         "view": {
-            "height": 800,
+            "height": 400,
             "width": 800
         },
         "padding": 50
@@ -5868,44 +5879,44 @@ vegaEmbed('#AngryDemsDonationsHistogramZoom',vlSpec);</script>
     "data": {
         "values": [
             {
-                "Amount": 19.5,
-                "count": 4
+                "Amount": 10,
+                "# Donations": 3
             },
             {
-                "Amount": 38.5,
-                "count": 1
+                "Amount": 30,
+                "# Donations": 2
             },
             {
-                "Amount": 57.5,
-                "count": 8
+                "Amount": 50,
+                "# Donations": 6
             },
             {
-                "Amount": 76.5,
-                "count": 1
+                "Amount": 70,
+                "# Donations": 3
             },
             {
-                "Amount": 95.5,
-                "count": 17
+                "Amount": 90,
+                "# Donations": 14
             },
             {
-                "Amount": 114.5,
-                "count": 1
+                "Amount": 110,
+                "# Donations": 4
             },
             {
-                "Amount": 133.5,
-                "count": 1
+                "Amount": 130,
+                "# Donations": 1
             },
             {
-                "Amount": 152.5,
-                "count": 1
+                "Amount": 150,
+                "# Donations": 1
             },
             {
-                "Amount": 171.5,
-                "count": 1
+                "Amount": 170,
+                "# Donations": 0
             },
             {
-                "Amount": 190.5,
-                "count": 38
+                "Amount": 190,
+                "# Donations": 39
             }
         ]
     },
@@ -5917,15 +5928,12 @@ vegaEmbed('#AngryDemsDonationsHistogramZoom',vlSpec);</script>
             "type": "quantitative"
         },
         "y": {
-            "field": "count",
-            "type": "quantitative",
-            "axis": {
-                "title": "# Donations"
-            }
+            "field": "# Donations",
+            "type": "quantitative"
         }
     }
 };
-vegaEmbed('#AngryDemsDonationsHistogramZoom2',vlSpec);</script>
+vegaEmbed('#figure_12',vlSpec);</script>
 </figure>
 </section>
 

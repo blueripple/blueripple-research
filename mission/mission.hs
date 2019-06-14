@@ -42,6 +42,10 @@ import qualified Frames.Regression as FR
 import qualified Frames.MapReduce as MR
 import qualified Frames.Table as Table
 
+import qualified Frames.Visualization.VegaLite.Data        as FHV
+import qualified Graphics.Vega.VegaLite.Configuration as VLC
+import qualified Frames.Visualization.VegaLite.Histogram as FHV
+
 import qualified Knit.Report                    as K
 import qualified Knit.Report.Other.Blaze        as KB
 
@@ -129,12 +133,13 @@ angryDemsAnalysis angryDemsFrame = do
                                  (MR.assignKeysAndData @'[ReceiptID] @'[Amount])
                                  (MR.foldAndAddKey (FF.foldAllMonoid @MO.Sum)))
                         angryDemsFrame
+      vc = VLC.ViewConfig 800 400 50
   _ <- K.addHvega Nothing Nothing $
-    FV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 Nothing Nothing False byDonationFrame
+    FHV.singleHistogram @Amount "Angry Democrats Donations" (Just "# Donations") 10 VLC.Default False vc byDonationFrame
   _ <- K.addHvega Nothing Nothing $
-    FV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 Nothing (Just 3000) True byDonationFrame
+    FHV.singleHistogram @Amount "Angry Democrats Donations (<$3000)" (Just "# Donations") 10 (VLC.GivenMinMax 0 3000) True vc byDonationFrame
   _ <- K.addHvega Nothing Nothing $
-    FV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 Nothing (Just 200) True byDonationFrame
+    FHV.singleHistogram @Amount "Angry Democrats Donations (<$200)" (Just "# Donations") 10 (VLC.GivenMinMax 0 200) True vc byDonationFrame
   return ()
   
 
@@ -218,7 +223,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
   K.addMarkDown differentialSpendNotes
   K.addMarkDown "### All Races With 2 or more candidates"
   _ <- K.addHvega Nothing Nothing  $
-    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True contestedRacesFrame
+    FHV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 VLC.Default True (VLC.ViewConfig 800 400 50) contestedRacesFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] contestedRacesFrame
   _ <- K.addHvega Nothing Nothing $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 contestedRacesFrame
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
@@ -232,7 +237,7 @@ spendVsChangeInVoteShare spendingDuringFrame totalSpendingFrame fcastAndSpendFra
       cheapAndCloseFrame = F.filterFrame filterCloseAndCheap  contestedRacesFrame
   K.addMarkDown "### All Races With 2 or more candidates, total spending below $2,000,000, and first forecast closer than 60/40."
   _ <- K.addHvega Nothing Nothing  $
-    FV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 Nothing Nothing True cheapAndCloseFrame
+    FHV.singleHistogram @CandidateDiffSpend "Distribution of Differential Spending (8/1/2018-11/6/2018)" (Just "# Candidates") 10 VLC.Default True (VLC.ViewConfig 800 400 50) cheapAndCloseFrame
   diffSpendVsdiffVs <- FR.ordinaryLeastSquares @_ @ResultVsForecast @True @'[CandidateDiffSpend] cheapAndCloseFrame
   _ <- K.addHvega Nothing Nothing $ FV.frameScatterWithFit "Differential Spending vs Change in Voteshare (8/1/208-11/6/2018)" (Just "regression") diffSpendVsdiffVs S.cl95 cheapAndCloseFrame
   K.addBlaze $ FR.prettyPrintRegressionResultBlaze (\y _ -> "Regression Details") diffSpendVsdiffVs S.cl95 
@@ -275,12 +280,13 @@ totalSpendingHistograms tsFrame = do
               "Democrat" -> "Democrat"
               _ -> "_AllOthers"
         in FT.recordSingleton @CandidateParty np
-      frameWithMergedOtherParties = fmap (FT.transform mergeOtherParties) frameWithSum 
+      frameWithMergedOtherParties = fmap (FT.transform mergeOtherParties) frameWithSum
+      vc = VLC.ViewConfig 800 400 50
 --  K.log K.Diagnostic $ T.pack $ show $ fmap (show . F.rcast @[CandidateId, AllSpending]) $ FL.fold FL.list frameWithSum
   _ <- K.addHvega Nothing Nothing  $
-    FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party" (Just "# Candidates") 10 (Just 0) (Just 1e7) True FV.AdjacentBar frameWithMergedOtherParties
+    FHV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party" (Just "# Candidates") 10 (VLC.GivenMinMax 0 1e7) True FHV.AdjacentBar vc frameWithMergedOtherParties
   _ <- K.addHvega Nothing Nothing  $
-    FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $1,000,000)" (Just "# Candidates") 10 (Just 0) (Just 1e6) False FV.AdjacentBar frameWithMergedOtherParties
+    FHV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $1,000,000)" (Just "# Candidates") 10 (VLC.GivenMinMax 0 1e6) False FHV.AdjacentBar vc frameWithMergedOtherParties
   _ <- K.addHvega Nothing Nothing  $
-    FV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $100,000)" (Just "# Candidates") 10 (Just 0) (Just 1e5) False FV.AdjacentBar frameWithMergedOtherParties
+    FHV.multiHistogram @AllSpending @CandidateParty "Distribution of Spending By Party (< $100,000)" (Just "# Candidates") 10 (VLC.GivenMinMax 0 1e5) False FHV.AdjacentBar vc frameWithMergedOtherParties
   return ()
