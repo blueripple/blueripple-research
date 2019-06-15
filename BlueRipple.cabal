@@ -26,10 +26,10 @@ common deps
                , freer-simple
                , here
                , hmatrix
-               , knit-haskell >= 0.3.0.0 && < 0.5.0.0
+               , knit-haskell >= 0.5.0.0 && < 0.6.0.0
                , lucid
                , pipes
-               , polysemy >= 0.1.2.0 && < 0.3.0.0
+               , polysemy >= 0.2.1.0 && < 0.5.0.0
                , polysemy-plugin >= 0.2.0.0 && < 0.3.0.0 
                , profunctors
                , random-fu

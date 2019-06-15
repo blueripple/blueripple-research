@@ -1,17 +1,23 @@
-packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega ../../DataScience/grammar-of-graphics/grammar-of-graphics ../../DataScience/grammar-of-graphics/gog-hvega
+packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega 
 jobs: 4
 with-compiler: /usr/local/bin/ghc
-
--- until 0.5.0.0 is released
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: eba64beecc6c0a963844e56f6ccd3d123235e5b7
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 162887d269ad22a4fe406296618d8dc464e51f24
+  tag: 526b055e0cc4d775b49825b74dab1d0439d7cfee
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/grammar-of-graphics
+  tag: 18e21e48921b5387f0d703362f83fea42c1b7f6f
+  subdir: grammar-of-graphics
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/grammar-of-graphics
+  tag: 18e21e48921b5387f0d703362f83fea42c1b7f6f
+  subdir: gog-hvega
 
 --source-repository-package
 --  type: git

@@ -76,7 +76,7 @@ import Numeric.MCMC.Diagnostics (summarize, ExpectationSummary (..), mpsrf, mann
 import qualified Graphics.Visualization.GOG.Data as GG
 import qualified Graphics.Visualization.VegaLite.ParameterPlot as VV
 import qualified Graphics.Visualization.VegaLite.Common as VV
-import qualified Graphics.Visualization.VegaLite.StackedArea as VV
+--import qualified Graphics.Visualization.VegaLite.StackedArea as VV
 
 import qualified Frames.Visualization.VegaLite.Data        as FV
 import qualified Frames.Visualization.VegaLite.StackedArea as FV
@@ -444,6 +444,15 @@ main = do
           f x = fmap (\y -> (x,y))
           
       K.logLE K.Info "Knitting docs..."
+      let flattenOneF y = FL.Fold
+            (\l a -> (VV.name a, y, VV.value $ VV.pEstimate a) : l) [] reverse
+          flattenF = FL.Fold
+            (\l (y,pr) -> FL.fold (flattenOneF y) (modeled pr) : l)
+            []
+            (concat . reverse)
+          vRowBuilderPVsT = FV.addRowBuilder @'("Group",T.Text) (\(g,_,_) -> g) $
+                            FV.addRowBuilder @'("Election Year",Int) (\(_,y,_) -> y) $
+                            FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,vp) -> vp) FV.emptyRowBuilder
       K.newPandoc (K.PandocInfo "2018" (M.singleton "pagetitle" "2018 Preference Model Intro")) $ do
         K.addMarkDown intro2018
         pr2018 <- knitMaybe "Failed to find 2018 in modelResults." $ M.lookup 2018 modeledResults
@@ -457,16 +466,7 @@ main = do
       K.newPandoc (K.PandocInfo "AcrossTime" (M.singleton "pagetitle" "Preference Model Across Time")) $ do
         K.addMarkDown acrossTime
         -- arrange data for vs time plot
-        let flattenOneF y = FL.Fold
-              (\l a -> (VV.name a, y, VV.value $ VV.pEstimate a) : l) [] reverse
-            flattenF = FL.Fold
-              (\l (y,pr) -> FL.fold (flattenOneF y) (modeled pr) : l)
-              []
-              (concat . reverse)
-            vRowBuilderPVsT = FV.addRowBuilder @'("Group",T.Text) (\(g,_,_) -> g) $
-                              FV.addRowBuilder @'("Election Year",Int) (\(_,y,_) -> y) $
-                              FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,vp) -> vp) FV.emptyRowBuilder
-            vDatPVsT = FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList modeledResults
+        let vDatPVsT = FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList modeledResults
             vParametersVsTime = FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int) @'("D Voter Preference",Double)
                                 "D Voter Preference Vs. Election Year"
                                 FV.DataMinMax
