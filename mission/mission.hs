@@ -78,10 +78,10 @@ loadCSVToFrame po fp filterF = do
   
 main :: IO ()
 main = do
-  let writeNamedHtml (K.DocWithInfo (K.PandocInfo n _) lt)
-        = T.writeFile (T.unpack $ "mission/html/" <> n <> ".html") $ TL.toStrict lt
-      writeAllHtml = fmap (const ()) . traverse writeNamedHtml
-      pandocWriterConfig = K.PandocWriterConfig (Just "pandoc-templates/minWithVega-pandoc.html")  templateVars K.mindocOptionsF
+  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
+  pandocWriterConfig <- K.mkPandocWriterConfig template
+                                               templateVars
+                                               K.mindocOptionsF
   eitherDocs <- K.knitHtmls (Just "mission.Main") K.logAll pandocWriterConfig $ do
     -- load the data   
     let parserOptions = F.defaultParser { F.quotingMode =  F.RFC4180Quoting ' ' }
@@ -100,12 +100,11 @@ main = do
       spendVsChangeInVoteShare totalSpendingDuringFrame totalSpendingFrame forecastAndSpendingFrame electionResultsFrame
       angryDemsAnalysis angryDemsFrame
   case eitherDocs of
-    Right namedDocs -> writeAllHtml namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
+    Right namedDocs ->   K.writeAllPandocResultsWithInfoAsHtml "mission/html" namedDocs --T.writeFile "mission/html/mission.html" $ TL.toStrict  $ htmlAsText
     Left err -> putStrLn $ "pandoc error: " ++ show err
 --
 {-
 TODO
-* Turnout
 ** Trends
 ** Registration (see Census)
 * Repeat Runners

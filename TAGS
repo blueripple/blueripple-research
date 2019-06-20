@@ -6,112 +6,106 @@ loadCSVToFrame loadCSVToFrame63,64
 loadCSVToFrame loadCSVToFrame69,70
 main main78,79
 main main79,80
-angryDemsNotes angryDemsNotes116,117
-angryDemsNotesangryDemsNotes117,118
+angryDemsNotes angryDemsNotes115,116
+angryDemsNotesangryDemsNotes116,117
+angryDemsAnalysis angryDemsAnalysis125,126
 angryDemsAnalysis angryDemsAnalysis126,127
-angryDemsAnalysis angryDemsAnalysis127,128
-spendFor spendFor146,147
-spendAgainst spendAgainst147,148
-proxyRace proxyRace148,149
-type RaceTotalFor RaceTotalFor150,151
-type RaceTotalAgainst RaceTotalAgainst151,152
-type RaceTotalCands RaceTotalCands152,153
-type CandidateDiffSpend CandidateDiffSpend153,154
-type ResultVsForecast ResultVsForecast154,155
-differentialSpendNotes differentialSpendNotes156,157
-differentialSpendNotesdifferentialSpendNotes157,158
+spendFor spendFor145,146
+spendAgainst spendAgainst146,147
+proxyRace proxyRace147,148
+type RaceTotalFor RaceTotalFor149,150
+type RaceTotalAgainst RaceTotalAgainst150,151
+type RaceTotalCands RaceTotalCands151,152
+type CandidateDiffSpend CandidateDiffSpend152,153
+type ResultVsForecast ResultVsForecast153,154
+differentialSpendNotes differentialSpendNotes155,156
+differentialSpendNotesdifferentialSpendNotes156,157
+setF setF168,169
 setF setF169,170
-setF setF170,171
-spendVsChangeInVoteShare spendVsChangeInVoteShare173,174
-spendVsChangeInVoteShare spendVsChangeInVoteShare175,176
-spendingHistNotes spendingHistNotes249,250
-spendingHistNotesspendingHistNotes250,251
-[FECDefs]: [FECDefs]:259,260
-type AllSpending AllSpending262,263
-sumSpending sumSpending263,264
-totalSpendingHistograms totalSpendingHistograms269,270
-totalSpendingHistograms totalSpendingHistograms271,272
+spendVsChangeInVoteShare spendVsChangeInVoteShare172,173
+spendVsChangeInVoteShare spendVsChangeInVoteShare174,175
+spendingHistNotes spendingHistNotes248,249
+spendingHistNotesspendingHistNotes249,250
+[FECDefs]: [FECDefs]:258,259
+type AllSpending AllSpending261,262
+sumSpending sumSpending262,263
+totalSpendingHistograms totalSpendingHistograms268,269
+totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,2850
+./reports/preference_model.hs,2684
 module Main Main12,13
-templateVars templateVars108,109
-loadCSVToFrame loadCSVToFrame127,128
-intro2018 intro2018141,142
-intro2018 intro2018142,143
-postFig2018 postFig2018218,219
-postFig2018 postFig2018219,220
-acrossTime acrossTime247,248
-acrossTime acrossTime248,249
-voteShifts voteShifts291,292
-voteShifts voteShifts292,293
-voteShiftObservations voteShiftObservations324,325
-voteShiftObservations voteShiftObservations325,326
-knitX knitX375,376
-knitX knitX376,377
-knitMaybe knitMaybe378,379
-knitMaybe knitMaybe379,380
-knitEither knitEither381,382
-knitEither knitEither382,383
-quick quick384,385
-justEnough justEnough385,386
-goToTown goToTown386,387
-type DemographicCategories DemographicCategories388,389
-main main390,391
-main main391,392
-data DeltaTableRow DeltaTableRow528,529
-  DeltaTableRowDeltaTableRow529,530
-  { dtrGroup dtrGroup530,531
-  , dtrPop dtrPop531,532
-  , dtrFromPop dtrFromPop532,533
-  , dtrFromTurnout dtrFromTurnout533,534
-  , dtrFromOpinion dtrFromOpinion534,535
-  , dtrTotal dtrTotal535,536
-  , dtrPct dtrPct536,537
-deltaTable deltaTable539,540
-deltaTable deltaTable545,546
-deltaTableColonnade deltaTableColonnade586,587
-deltaTableColonnade deltaTableColonnade587,588
-modelNotesPreface modelNotesPreface597,598
-modelNotesPreface modelNotesPreface598,599
-, ,641,642
-modelNotesBayes modelNotesBayes655,656
-modelNotesBayes modelNotesBayes656,657
-P(P666,667
-\mu_k(\mu_k711,712
-v_k(v_k712,713
-\rho(\rho713,714
-type X X766,767
-type PredictedVoters PredictedVoters767,768
-type ScaledDVotes ScaledDVotes768,769
-type ScaledRVotes ScaledRVotes769,770
-type PopScale PopScale770,771
-type CountArray CountArray771,772
-type CountArray b b771,772
-addPopScale addPopScale773,774
-votesAndPopByDistrictF votesAndPopByDistrictF775,776
-votesAndPopByDistrictF votesAndPopByDistrictF779,780
-data PreferenceResults PreferenceResults790,791
-data PreferenceResults b a = PreferenceResultsPreferenceResults790,791
-    votesAndPopByDistrict votesAndPopByDistrict792,793
-    , nationalTurnout nationalTurnout800,801
-    , modeled modeled801,802
-    , mcmcChain mcmcChain802,803
-data RunParams RunParams805,806
-data RunParams = RunParams RunParams805,806
-data RunParams = RunParams { nChains nChains805,806
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain805,806
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain805,806
-preferenceModel preferenceModel808,809
-preferenceModel preferenceModel825,826
-modelNotesRegression modelNotesRegression913,914
-modelNotesRegression modelNotesRegression914,915
-Given Given916,917
-D D919,920
-R R920,921
-\frac{D-R}{Q} \frac{D-R}{Q}927,928
-\sum_i \sum_i936,937
-We We939,940
-Now Now940,941
+templateVars templateVars127,128
+loadCSVToFrame loadCSVToFrame146,147
+intro2018 intro2018160,161
+intro2018 intro2018161,162
+postFig2018 postFig2018237,238
+postFig2018 postFig2018238,239
+acrossTime acrossTime266,267
+acrossTime acrossTime267,268
+voteShifts voteShifts310,311
+voteShifts voteShifts311,312
+voteShiftObservations voteShiftObservations343,344
+voteShiftObservations voteShiftObservations344,345
+knitX knitX398,399
+knitMaybe knitMaybe406,407
+knitEither knitEither413,414
+quick quick415,416
+justEnough justEnough416,417
+goToTown goToTown417,418
+type DemographicCategories DemographicCategories419,420
+main main421,422
+main main422,423
+data DeltaTableRow DeltaTableRow677,678
+  DeltaTableRowDeltaTableRow678,679
+  { dtrGroup dtrGroup679,680
+  , dtrPop dtrPop680,681
+  , dtrFromPop dtrFromPop681,682
+  , dtrFromTurnout dtrFromTurnout682,683
+  , dtrFromOpinion dtrFromOpinion683,684
+  , dtrTotal dtrTotal684,685
+  , dtrPct dtrPct685,686
+deltaTable deltaTable696,697
+deltaTableColonnade deltaTableColonnade789,790
+deltaTableColonnade deltaTableColonnade790,791
+modelNotesPreface modelNotesPreface803,804
+modelNotesPreface modelNotesPreface804,805
+, ,847,848
+modelNotesBayes modelNotesBayes861,862
+modelNotesBayes modelNotesBayes862,863
+P(P872,873
+\mu_k(\mu_k917,918
+v_k(v_k918,919
+\rho(\rho919,920
+type X X972,973
+type PredictedVoters PredictedVoters973,974
+type ScaledDVotes ScaledDVotes974,975
+type ScaledRVotes ScaledRVotes975,976
+type PopScale PopScale976,977
+type CountArray CountArray977,978
+type CountArray b b977,978
+addPopScale addPopScale979,980
+votesAndPopByDistrictF votesAndPopByDistrictF990,991
+data PreferenceResults PreferenceResults1000,1001
+data PreferenceResults b a = PreferenceResultsPreferenceResults1000,1001
+    votesAndPopByDistrict votesAndPopByDistrict1002,1003
+    , nationalTurnout nationalTurnout1010,1011
+    , modeled modeled1011,1012
+    , mcmcChain mcmcChain1012,1013
+data RunParams RunParams1015,1016
+data RunParams = RunParams RunParams1015,1016
+data RunParams = RunParams { nChains nChains1015,1016
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1015,1016
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1015,1016
+preferenceModel preferenceModel1039,1040
+modelNotesRegression modelNotesRegression1219,1220
+modelNotesRegression modelNotesRegression1220,1221
+Given Given1222,1223
+D D1225,1226
+R R1226,1227
+\frac{D-R}{Q} \frac{D-R}{Q}1233,1234
+\sum_i \sum_i1242,1243
+We We1245,1246
+Now Now1246,1247
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
