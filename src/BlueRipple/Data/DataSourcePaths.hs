@@ -12,6 +12,19 @@ totalSpendingDuringCSV :: FilePath =
   dataDir ++ "allSpendingFrom20180801Through20181106.csv"
 contextDemographicsCSV :: FilePath =
   dataDir ++ "contextDemographicsByDistrict.csv"
+ageSexRaceDemographicsLongCSV :: FilePath =
+  dataDir ++ "ageSexRaceDemographics2010-2017.csv"
+ageSexEducationDemographicsLongCSV :: FilePath =
+  dataDir ++ "ageSexEducationDemographics2010-2017.csv"
+angryDemsCSV :: FilePath = dataDir ++ "angryDemsContributions20181203.csv"
+houseElectionsCSV :: FilePath = dataDir ++ "1976-2018-house.csv"
+detailedASRTurnoutCSV :: FilePath =
+  dataDir ++ "DetailedTurnoutByAgeSexRace2010-2018.csv"
+detailedASETurnoutCSV :: FilePath =
+  dataDir ++ "DetailedTurnoutByAgeSexEducation2010-2018.csv"
+
+{-
+turnoutCSV :: FilePath = dataDir ++ "Turnout2012-2018.csv"
 identityDemographics2012CSV :: FilePath =
   dataDir ++ "identityDemographicsByDistrict2012.csv"
 identityDemographics2014CSV :: FilePath =
@@ -20,10 +33,4 @@ identityDemographics2016CSV :: FilePath =
   dataDir ++ "identityDemographicsByDistrict2016.csv"
 identityDemographics2017CSV :: FilePath =
   dataDir ++ "identityDemographicsByDistrict2017.csv"
-identityDemographicsLongCSV :: FilePath =
-  dataDir ++ "identityDemographicsLong2010-2017.csv"
-angryDemsCSV :: FilePath = dataDir ++ "angryDemsContributions20181203.csv"
-houseElectionsCSV :: FilePath = dataDir ++ "1976-2018-house.csv"
-turnoutCSV :: FilePath = dataDir ++ "Turnout2012-2018.csv"
-detailedRSATurnoutCSV :: FilePath =
-  dataDir ++ "DetailedTurnoutByRaceSexAge2010-2018.csv"
+-}

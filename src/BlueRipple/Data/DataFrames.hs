@@ -70,8 +70,10 @@ F.tableTypes "AngryDems" angryDemsCSV
 F.tableTypes "HouseElections" houseElectionsCSV
 F.tableTypes "ContextDemographics" contextDemographicsCSV
 --F.tableTypes "Turnout"          turnoutCSV
-F.tableTypes "TurnoutRSA"          detailedRSATurnoutCSV
-F.tableTypes "IdentityDemographics" identityDemographicsLongCSV
+F.tableTypes "TurnoutASR"          detailedASRTurnoutCSV
+F.tableTypes "TurnoutASE"          detailedASETurnoutCSV
+F.tableTypes "ASRDemographics" ageSexRaceDemographicsLongCSV
+F.tableTypes "ASEDemographics" ageSexEducationDemographicsLongCSV
 
 -- This one might be different for different breakdowns
 --F.tableTypes' (F.rowGen identityDemographics2016CSV) {F.rowTypeName = "AgeSexRaceByDistrict", F.tablePrefix = "Census" }
@@ -84,10 +86,10 @@ type LocationKey = '[StateAbbreviation, CongressionalDistrict]
 
 type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
 
-data DemographicStructure demographicDataRow electionDataRow demographicCategories = DemographicStructure
+data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demographicCategories = DemographicStructure
   {
     dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame TurnoutRSA -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
+  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame turnoutDataRow -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
   , dsPreprocessElectionData :: (forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])))
   , dsCategories :: [demographicCategories]
   }
@@ -215,7 +217,7 @@ flattenVotes =
     V.:& V.RNil
 
 ---
-simpleAgeSexEducation :: DemographicStructure IdentityDemographics HouseElections SimpleASE
+simpleAgeSexEducation :: DemographicStructure ASEDemographics TurnoutASE HouseElections SimpleASE
 simpleAgeSexEducation = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
  where
    mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(SimpleASE, Int)]
@@ -300,7 +302,7 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
      X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts (SimpleASE)")
      return result
      
-   processDemographicData :: Monad m => Int -> F.Frame IdentityDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASE))
+   processDemographicData :: Monad m => Int -> F.Frame ASEDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASE))
    processDemographicData year dd = 
      let makeRec :: (SimpleASE , Int) ->  F.Record [DemographicCategory SimpleASE, PopCount]
          makeRec (b, n) = b F.&: n F.&: V.RNil
@@ -406,10 +408,10 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
            , (YoungFemaleNonGrad, yfngP, yfngV)
            , (OldMaleNonGrad, omngP, omngV)
            , (YoungMaleNonGrad, ymngP, ymngV)
-           , (OldFemaleCollegeGrad, ofngP, ofngV)
-           , (YoungFemaleCollegeGrad, yfngP, yfngV)
-           , (OldMaleCollegeGrad, omngP, omngV)
-           , (YoungMaleCollegeGrad, ymngP, ymngV)
+           , (OldFemaleCollegeGrad, ofcgP, ofcgV)
+           , (YoungFemaleCollegeGrad, yfcgP, yfcgV)
+           , (OldMaleCollegeGrad, omcgP, omcgV)
+           , (YoungMaleCollegeGrad, ymcgP, ymcgV)
            ]
          (inputP, inputV) = FL.fold ((,) <$> FL.premap fst FL.sum <*> FL.premap snd FL.sum) m
          (resultP, resultV) = FL.fold ((,) <$> FL.premap (\(_,x,_) -> x) FL.sum <*> FL.premap (\(_,_,x) -> x) FL.sum) result
@@ -419,7 +421,7 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
          
    processTurnoutData :: Monad m
      => Int
-     -> F.Frame TurnoutRSA
+     -> F.Frame TurnoutASE
      -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASE, Population, VotedPctOfAll])
    processTurnoutData year td = 
     let makeRec :: (SimpleASE,Int,Int) -> F.Record [DemographicCategory SimpleASE, Population, VotedPctOfAll]
@@ -432,7 +434,7 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
 
 ---
 
-simpleAgeSexRace :: DemographicStructure IdentityDemographics HouseElections SimpleASR
+simpleAgeSexRace :: DemographicStructure ASRDemographics TurnoutASR HouseElections SimpleASR
 simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
  where
    mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(SimpleASR, Int)]
@@ -477,7 +479,7 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts")
      return result
      
-   processDemographicData :: Monad m => Int -> F.Frame IdentityDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASR))
+   processDemographicData :: Monad m => Int -> F.Frame ASRDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASR))
    processDemographicData year dd = 
      let makeRec :: (SimpleASR , Int) ->  F.Record [DemographicCategory SimpleASR, PopCount]
          makeRec (b, n) = b F.&: n F.&: V.RNil
@@ -568,7 +570,7 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
          
    processTurnoutData :: Monad m
      => Int
-     -> F.Frame TurnoutRSA
+     -> F.Frame TurnoutASR
      -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASR, Population, VotedPctOfAll])
    processTurnoutData year td = 
     let makeRec :: (SimpleASR,Int,Int) -> F.Record [DemographicCategory SimpleASR, Population, VotedPctOfAll]
@@ -580,7 +582,7 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
     in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) td
 
 
-ageSexRace :: DemographicStructure IdentityDemographics HouseElections ASR
+ageSexRace :: DemographicStructure ASRDemographics TurnoutASR HouseElections ASR
 ageSexRace = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
  where
    mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(ASR, Int)]
@@ -634,7 +636,7 @@ ageSexRace = DemographicStructure processDemographicData processTurnoutData proc
      X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts")
      return result
      
-   processDemographicData :: Monad m => Int -> F.Frame IdentityDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts ASR))
+   processDemographicData :: Monad m => Int -> F.Frame ASRDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts ASR))
    processDemographicData year dd = 
      let makeRec :: (ASR , Int) ->  F.Record [DemographicCategory ASR, PopCount]
          makeRec (b, n) = b F.&: n F.&: V.RNil
@@ -718,7 +720,7 @@ ageSexRace = DemographicStructure processDemographicData processTurnoutData proc
          
    processTurnoutData :: Monad m
      => Int
-     -> F.Frame TurnoutRSA
+     -> F.Frame TurnoutASR
      -> X.ExceptT Text m (F.FrameRec '[DemographicCategory ASR, Population, VotedPctOfAll])
    processTurnoutData year td = 
     let makeRec :: (ASR,Int,Int) -> F.Record [DemographicCategory ASR, Population, VotedPctOfAll]

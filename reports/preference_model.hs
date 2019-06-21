@@ -421,7 +421,7 @@ type DemographicCategories = SimpleASR
 
 main :: IO ()
 main = do
-  let template = K.FromIncludedTemplateDir "pandoc-mindoc-KH.html"
+  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
   pandocWriterConfig <- K.mkPandocWriterConfig template
                                                templateVars
                                                K.mindocOptionsF
@@ -435,34 +435,54 @@ main = do
         parserOptions
         contextDemographicsCSV
         (const True)
-      identityDemographicsFrame :: F.Frame IdentityDemographics <-
-        loadCSVToFrame parserOptions identityDemographicsLongCSV (const True)
+      asrDemographicsFrame :: F.Frame ASRDemographics <-
+        loadCSVToFrame parserOptions ageSexRaceDemographicsLongCSV (const True)
+      aseDemographicsFrame :: F.Frame ASEDemographics <-
+        loadCSVToFrame parserOptions ageSexEducationDemographicsLongCSV (const True)        
       houseElectionsFrame :: F.Frame HouseElections <- loadCSVToFrame
         parserOptions
         houseElectionsCSV
         (const True)
-      turnoutFrame :: F.Frame TurnoutRSA <- loadCSVToFrame
+      asrTurnoutFrame :: F.Frame TurnoutASR <- loadCSVToFrame
         parserOptions
-        detailedRSATurnoutCSV
+        detailedASRTurnoutCSV
         (const True)
+      aseTurnoutFrame :: F.Frame TurnoutASE <- loadCSVToFrame
+        parserOptions
+        detailedASETurnoutCSV
+        (const True)        
       K.logLE K.Info "Inferring..."
-      let rp = quick
-          ds :: DemographicStructure _ _ DemographicCategories =
-            simpleAgeSexRace
+      let rp = goToTown
           yearList   = [2010, 2012, 2014, 2016, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
-          categories = fmap (T.pack . show) $ dsCategories ds
+          categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
+          categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
           toNPE (category, (ExpectationSummary m (lo, hi) _)) =
             VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
 
-      modeledResults <- flip traverse years $ \y -> do
-        K.logLE K.Info $ "inferring for " <> (T.pack $ show y)
-        pr <- preferenceModel ds
+      modeledResultsASR <- flip traverse years $ \y -> do
+        K.logLE K.Info $ "inferring (SimpleASR) for " <> (T.pack $ show y)
+        pr <- preferenceModel simpleAgeSexRace
                               rp
                               y
-                              identityDemographicsFrame
+                              asrDemographicsFrame
                               houseElectionsFrame
-                              turnoutFrame
+                              asrTurnoutFrame
+        let pd =
+              A.array (minBound, maxBound)
+                $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
+                $ A.assocs
+                $ modeled pr
+        return $ pr { modeled = pd }
+
+      modeledResultsASE <- flip traverse years $ \y -> do
+        K.logLE K.Info $ "inferring (SimpleASE) for " <> (T.pack $ show y)
+        pr <- preferenceModel simpleAgeSexEducation
+                              rp
+                              y
+                              aseDemographicsFrame
+                              houseElectionsFrame
+                              aseTurnoutFrame
         let pd =
               A.array (minBound, maxBound)
                 $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
@@ -498,15 +518,25 @@ main = do
           )
         $ do
             K.addMarkDown intro2018
-            pr2018 <-
-              knitMaybe "Failed to find 2018 in modelResults."
-                $ M.lookup 2018 modeledResults
+            prASR_2018 <-
+              knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
+                $ M.lookup 2018 modeledResultsASR
             _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
               id
               "Modeled probability of voting Democratic in (competitive) 2018 house races"
               S.cl95
               (VV.ViewConfig 800 400 50)
-              (f "2018" $ pdsWithYear "2018" pr2018)
+              (f "2018" $ pdsWithYear "2018" prASR_2018)
+            prASE_2018 <-
+              knitMaybe "Failed to find 2018 in modelResults (SimpleASE)."
+                $ M.lookup 2018 modeledResultsASE
+            _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
+              id
+              "Modeled probability of voting Democratic in (competitive) 2018 house races"
+              S.cl95
+              (VV.ViewConfig 800 400 50)
+              (f "2018" $ pdsWithYear "2018" prASE_2018)
+
             K.addMarkDown postFig2018
       K.newPandoc
           (K.PandocInfo
@@ -524,52 +554,35 @@ main = do
         $ do
             K.addMarkDown acrossTime
             -- arrange data for vs time plot
-            let vDatPVsT =
+
+            let vDatPVsT_ASR =
                   FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList
-                    modeledResults
-                vParametersVsTime =
+                    modeledResultsASR
+                vParametersVsTime_ASR =
                   FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
                     @'("D Voter Preference",Double)
                     "D Voter Preference Vs. Election Year"
                     FV.DataMinMax
                     (FV.TimeEncoding "%Y" FV.Year)
                     (FV.ViewConfig 800 400 50)
-                    vDatPVsT
-            _ <- K.addHvega Nothing Nothing vParametersVsTime
+                    vDatPVsT_ASR
+            _ <- K.addHvega Nothing Nothing vParametersVsTime_ASR
+
+            let vDatPVsT_ASE =
+                  FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList
+                    modeledResultsASE
+                vParametersVsTime_ASE =
+                  FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
+                    @'("D Voter Preference",Double)
+                    "D Voter Preference Vs. Election Year"
+                    FV.DataMinMax
+                    (FV.TimeEncoding "%Y" FV.Year)
+                    (FV.ViewConfig 800 400 50)
+                    vDatPVsT_ASE
+            _ <- K.addHvega Nothing Nothing vParametersVsTime_ASE
 
             -- arrange data for stacked area share of electorate
             let
-              modeledDVotes pr =
-                let
-                  summed = FL.fold
-                    (votesAndPopByDistrictF @DemographicCategories)
-                    (fmap F.rcast $ votesAndPopByDistrict pr)
-                  popArray =
-                    F.rgetField @(CountArray DemographicCategories) summed
-                  popScale   = F.rgetField @PopScale summed
-                  predVoters = F.rgetField @PredictedVoters summed
-                  allDVotes  = F.rgetField @DVotes summed
-                  allRVotes  = F.rgetField @RVotes summed
---                  totalDRVotes = (F.rgetField @DVotes summed) + (F.rgetField @RVotes summed)
-                  shareOfDScale =
-                    popScale
-                      * ( realToFrac predVoters
-                        / realToFrac (allDVotes + allRVotes)
-                        )
-                      / realToFrac allDVotes
-                  shareOfDRScale =
-                    shareOfDScale
-                      * ( realToFrac allDVotes
-                        / realToFrac (allDVotes + allRVotes)
-                        )
-                  dVotes b =
-                    realToFrac (popArray A.! b)
-                      * ((nationalTurnout pr) A.! b)
-                      * (VV.value . VV.pEstimate $ (modeled pr) A.! b)
-                      * shareOfDRScale
-                in
-                  fmap (\b -> (T.pack $ show b, dVotes b))
-                       [(minBound :: DemographicCategories) .. maxBound]
               f1 :: [(x, [(y, z)])] -> [(x, y, z)]
               f1 = concat . fmap (\(x, yzs) -> fmap (\(y, z) -> (x, y, z)) yzs)
               vRowBuilderSVS =
@@ -578,17 +591,30 @@ main = do
                   $ FV.addRowBuilder @'("D Voteshare of D+R Votes",Double)
                       (\(_, _, z) -> z)
                       FV.emptyRowBuilder
-              vDatSVS = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
+              vDatSVS_ASR = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
                 modeledDVotes
-                modeledResults
-              vStackedArea =
+                modeledResultsASR
+              vStackedArea_ASR =
                 FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
                   @'("D Voteshare of D+R Votes",Double)
                   "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
                   (FV.TimeEncoding "%Y" FV.Year)
                   (FV.ViewConfig 800 400 50)
-                  vDatSVS
-            _ <- K.addHvega Nothing Nothing vStackedArea
+                  vDatSVS_ASR
+            _ <- K.addHvega Nothing Nothing vStackedArea_ASR
+            
+            let vDatSVS_ASE = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
+                              modeledDVotes
+                              modeledResultsASE
+                vStackedArea_ASE =
+                  FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
+                  @'("D Voteshare of D+R Votes",Double)
+                  "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
+                  (FV.TimeEncoding "%Y" FV.Year)
+                  (FV.ViewConfig 800 400 50)
+                  vDatSVS_ASE
+            _ <- K.addHvega Nothing Nothing vStackedArea_ASE
+
             -- analyze results
             -- Quick Mann-Whitney
             let
@@ -597,9 +623,9 @@ main = do
                     y2T = T.pack $ show y2
                 K.addMarkDown $ "### " <> y1T <> "->" <> y2T
                 mry1 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y1 modeledResults
+                  $ M.lookup y1 modeledResultsASR
                 mry2 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y2 modeledResults
+                  $ M.lookup y2 modeledResultsASR
                 let
                   mwU =
                     fmap
@@ -610,7 +636,7 @@ main = do
                         )
                       $ fmap
                           (\n -> (!! n))
-                          [0 .. (length (dsCategories ds) - 1)]
+                          [0 .. (length (dsCategories simpleAgeSexRace) - 1)]
                 K.logLE K.Info
                   $  "Mann-Whitney U  "
                   <> y1T
@@ -619,7 +645,7 @@ main = do
                   <> ": "
                   <> (T.pack $ show mwU)
                 let (table, (mD1, mR1), (mD2, mR2)) =
-                      deltaTable ds locFilter mry1 mry2
+                      deltaTable simpleAgeSexRace locFilter mry1 mry2
                 K.addColonnadeTextTable deltaTableColonnade $ table
                 K.addMarkDown
                   $  "In "
@@ -675,6 +701,40 @@ main = do
       namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
+modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
+  => PreferenceResults b VV.NamedParameterEstimate -> [(T.Text, Double)]
+modeledDVotes pr =
+  let
+    summed = FL.fold
+             (votesAndPopByDistrictF @b)
+             (fmap F.rcast $ votesAndPopByDistrict pr)
+    popArray =
+      F.rgetField @(CountArray b) summed
+    popScale   = F.rgetField @PopScale summed
+    predVoters = F.rgetField @PredictedVoters summed
+    allDVotes  = F.rgetField @DVotes summed
+    allRVotes  = F.rgetField @RVotes summed
+    shareOfDScale =
+      popScale
+      * ( realToFrac predVoters
+          / realToFrac (allDVotes + allRVotes)
+        )
+      / realToFrac allDVotes
+    shareOfDRScale =
+      shareOfDScale
+      * ( realToFrac allDVotes
+          / realToFrac (allDVotes + allRVotes)
+        )
+    dVotes b =
+      realToFrac (popArray A.! b)
+      * ((nationalTurnout pr) A.! b)
+      * (VV.value . VV.pEstimate $ (modeled pr) A.! b)
+      * shareOfDRScale
+  in
+    fmap (\b -> (T.pack $ show b, dVotes b))
+    [(minBound :: b) .. maxBound]
+
+
 data DeltaTableRow =
   DeltaTableRow
   { dtrGroup :: T.Text
@@ -687,9 +747,9 @@ data DeltaTableRow =
   } deriving (Show)
 
 deltaTable
-  :: forall a e b
+  :: forall dr tr e b
    . (A.Ix b, Bounded b, Enum b, Show b)
-  => DemographicStructure a e b
+  => DemographicStructure dr tr e b
   -> (F.Record LocationKey -> Bool)
   -> PreferenceResults b VV.NamedParameterEstimate
   -> PreferenceResults b VV.NamedParameterEstimate
@@ -1017,8 +1077,8 @@ data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerCh
 
 
 preferenceModel
-  :: forall a b r
-   . ( Show a
+  :: forall dr tr b r
+   . ( Show tr
      , Show b
      , Enum b
      , Bounded b
@@ -1028,12 +1088,12 @@ preferenceModel
      , K.PandocEffects r
      , MonadIO (K.Sem r)
      )
-  => DemographicStructure a HouseElections b
+  => DemographicStructure dr tr HouseElections b
   -> RunParams
   -> Int
-  -> F.Frame a
+  -> F.Frame dr
   -> F.Frame HouseElections
-  -> F.Frame TurnoutRSA
+  -> F.Frame tr
   -> K.Sem
        r
        (PreferenceResults b (ExpectationSummary Double))
