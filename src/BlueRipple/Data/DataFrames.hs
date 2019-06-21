@@ -104,8 +104,22 @@ data SimpleASR = OldNonWhiteFemale
                | YoungWhiteMale deriving (Show,Read,Enum,Bounded,Eq,Ord,Ix,Generic)
 
 type instance FI.VectorFor SimpleASR = V.Vector
-type instance FI.VectorFor (A.Array b Int) = V.Vector
 instance Hashable SimpleASR
+
+data SimpleASE = OldFemaleNonGrad
+               | YoungFemaleNonGrad
+               | OldMaleNonGrad
+               | YoungMaleNonGrad
+               | OldFemaleCollegeGrad
+               | YoungFemaleCollegeGrad
+               | OldMaleCollegeGrad
+               | YoungMaleCollegeGrad deriving (Show,Read,Enum,Bounded,Eq,Ord,Ix,Generic)
+
+type instance FI.VectorFor SimpleASE = V.Vector
+instance Hashable SimpleASE
+
+type instance FI.VectorFor (A.Array b Int) = V.Vector
+
 
 data ASR = WhiteFemale18To24
          | WhiteFemale25To44
@@ -199,6 +213,224 @@ flattenVotes =
            )
     V.:& FF.recFieldF (fmap (fromMaybe 0) $ FL.last) (F.rgetField @Totalvotes)
     V.:& V.RNil
+
+---
+simpleAgeSexEducation :: DemographicStructure IdentityDemographics HouseElections SimpleASE
+simpleAgeSexEducation = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
+ where
+   mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(SimpleASE, Int)]
+   mergeACSCounts m = do
+     let lookupX k = maybe (X.throwError $ "(mergeACSCounts) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
+     f18To24L9 <- lookupX "Female18To24LessThan9th" m
+     f25To44L9 <- lookupX "Female25To44LessThan9th" m
+     f18To24LHS <- lookupX "Female18To24LessThan12th" m
+     f25To44LHS <- lookupX "Female25To44LessThan12th" m
+     f18To24HS <- lookupX "Female18To24HighSchool" m
+     f25To44HS <- lookupX "Female25To44HighSchool" m  
+     f18To24SC <- lookupX "Female18To24SomeCollege" m
+     f25To44SC <- lookupX "Female25To44SomeCollege" m
+     f18To24AS <- lookupX "Female18To24Associates" m
+     f25To44AS <- lookupX "Female25To44Associates" m
+     let youngFemaleNonGrad = f18To24L9 + f25To44L9 + f18To24LHS + f25To44LHS + f18To24HS + f25To44HS + f18To24SC + f25To44SC + f18To24AS + f25To44AS
+     f18To24BA <- lookupX "Female18To24Bachelors" m
+     f25To44BA <- lookupX "Female25To44Bachelors" m
+     f18To24AD <- lookupX "Female18To24AdvancedDegree" m
+     f25To44AD <- lookupX "Female25To44AdvancedDegree" m
+     let youngFemaleGrad = f18To24BA + f25To44BA + f18To24AD + f25To44AD
+     f45To64L9 <- lookupX "Female45To64LessThan9th" m
+     f65AndOverL9 <- lookupX "Female65AndOverLessThan9th" m
+     f45To64LHS <- lookupX "Female45To64LessThan12th" m
+     f65AndOverLHS <- lookupX "Female65AndOverLessThan12th" m
+     f45To64HS <- lookupX "Female45To64HighSchool" m
+     f65AndOverHS <- lookupX "Female65AndOverHighSchool" m  
+     f45To64SC <- lookupX "Female45To64SomeCollege" m
+     f65AndOverSC <- lookupX "Female65AndOverSomeCollege" m
+     f45To64AS <- lookupX "Female45To64Associates" m
+     f65AndOverAS <- lookupX "Female65AndOverAssociates" m
+     let oldFemaleNonGrad = f45To64L9 + f65AndOverL9 + f45To64LHS + f65AndOverLHS + f45To64HS + f65AndOverHS + f45To64SC + f65AndOverSC + f45To64AS + f65AndOverAS
+     f45To64BA <- lookupX "Female45To64Bachelors" m
+     f65AndOverBA <- lookupX "Female65AndOverBachelors" m
+     f45To64AD <- lookupX "Female45To64AdvancedDegree" m
+     f65AndOverAD <- lookupX "Female65AndOverAdvancedDegree" m
+     let oldFemaleGrad = f45To64BA + f65AndOverBA + f45To64AD + f65AndOverAD
+     m18To24L9 <- lookupX "Male18To24LessThan9th" m
+     m25To44L9 <- lookupX "Male25To44LessThan9th" m
+     m18To24LHS <- lookupX "Male18To24LessThan12th" m
+     m25To44LHS <- lookupX "Male25To44LessThan12th" m
+     m18To24HS <- lookupX "Male18To24HighSchool" m
+     m25To44HS <- lookupX "Male25To44HighSchool" m  
+     m18To24SC <- lookupX "Male18To24SomeCollege" m
+     m25To44SC <- lookupX "Male25To44SomeCollege" m
+     m18To24AS <- lookupX "Male18To24Associates" m
+     m25To44AS <- lookupX "Male25To44Associates" m
+     let youngMaleNonGrad = m18To24L9 + m25To44L9 + m18To24LHS + m25To44LHS + m18To24HS + m25To44HS + m18To24SC + m25To44SC + m18To24AS + m25To44AS
+     m18To24BA <- lookupX "Male18To24Bachelors" m
+     m25To44BA <- lookupX "Male25To44Bachelors" m
+     m18To24AD <- lookupX "Male18To24AdvancedDegree" m
+     m25To44AD <- lookupX "Male25To44AdvancedDegree" m
+     let youngMaleGrad = m18To24BA + m25To44BA + m18To24AD + m25To44AD
+     m45To64L9 <- lookupX "Male45To64LessThan9th" m
+     m65AndOverL9 <- lookupX "Male65AndOverLessThan9th" m
+     m45To64LHS <- lookupX "Male45To64LessThan12th" m
+     m65AndOverLHS <- lookupX "Male65AndOverLessThan12th" m
+     m45To64HS <- lookupX "Male45To64HighSchool" m
+     m65AndOverHS <- lookupX "Male65AndOverHighSchool" m  
+     m45To64SC <- lookupX "Male45To64SomeCollege" m
+     m65AndOverSC <- lookupX "Male65AndOverSomeCollege" m
+     m45To64AS <- lookupX "Male45To64Associates" m
+     m65AndOverAS <- lookupX "Male65AndOverAssociates" m
+     let oldMaleNonGrad = m45To64L9 + m65AndOverL9 + m45To64LHS + m65AndOverLHS + m45To64HS + m65AndOverHS + m45To64SC + m65AndOverSC + m45To64AS + m65AndOverAS 
+     m45To64BA <- lookupX "Male45To64Bachelors" m
+     m65AndOverBA <- lookupX "Male65AndOverBachelors" m
+     m45To64AD <- lookupX "Male45To64AdvancedDegree" m
+     m65AndOverAD <- lookupX "Male65AndOverAdvancedDegree" m
+     let oldMaleGrad = m45To64BA + m65AndOverBA + m45To64AD + m65AndOverAD     
+         result = 
+           [ (OldFemaleNonGrad, oldFemaleNonGrad)
+           , (YoungFemaleNonGrad, youngFemaleNonGrad)
+           , (OldMaleNonGrad, oldMaleNonGrad)
+           , (YoungMaleNonGrad, youngMaleNonGrad)
+           , (OldFemaleCollegeGrad, oldFemaleGrad)
+           , (YoungFemaleCollegeGrad, youngFemaleGrad)
+           , (OldMaleCollegeGrad, oldMaleGrad)
+           , (YoungMaleCollegeGrad, youngMaleGrad)
+           ]
+         totalInput = FL.fold FL.sum $ fmap snd $ M.toList m
+         totalResult = FL.fold FL.sum $ fmap snd $ result
+     X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts (SimpleASE)")
+     return result
+     
+   processDemographicData :: Monad m => Int -> F.Frame IdentityDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASE))
+   processDemographicData year dd = 
+     let makeRec :: (SimpleASE , Int) ->  F.Record [DemographicCategory SimpleASE, PopCount]
+         makeRec (b, n) = b F.&: n F.&: V.RNil
+         fromRec r = (F.rgetField @ACSKey r, F.rgetField @ACSCount r)
+         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
+         assign = MR.generalizeAssign $ MR.assignKeysAndData @[StateAbbreviation,CongressionalDistrict] @[ACSKey,ACSCount]
+         reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeACSCounts $ FL.generalize $ FL.premap fromRec FL.map) 
+     in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) dd
+   
+   mergeTurnoutRows :: Monad m => M.Map T.Text (Int, Int) -> X.ExceptT Text m [(SimpleASE, Int, Int)]
+   mergeTurnoutRows m = do
+     let lookupX k = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
+     (f18To24L9P, f18To24L9V) <- lookupX "F18To24L9" m
+     (f25To44L9P, f25To44L9V) <- lookupX "F25To44L9" m
+     (f45To64L9P, f45To64L9V) <- lookupX "F45To64L9" m
+     (f65To74L9P, f65To74L9V) <- lookupX "F65To74L9" m
+     (f75AndOverL9P, f75AndOverL9V) <- lookupX "F75AndOverL9" m
+     (f18To24L12P, f18To24L12V) <- lookupX "F18To24L12" m
+     (f25To44L12P, f25To44L12V) <- lookupX "F25To44L12" m
+     (f45To64L12P, f45To64L12V) <- lookupX "F45To64L12" m
+     (f65To74L12P, f65To74L12V) <- lookupX "F65To74L12" m
+     (f75AndOverL12P, f75AndOverL12V) <- lookupX "F75AndOverL12" m
+     (f18To24HSP, f18To24HSV) <- lookupX "F18To24HS" m
+     (f25To44HSP, f25To44HSV) <- lookupX "F25To44HS" m
+     (f45To64HSP, f45To64HSV) <- lookupX "F45To64HS" m
+     (f65To74HSP, f65To74HSV) <- lookupX "F65To74HS" m
+     (f75AndOverHSP, f75AndOverHSV) <- lookupX "F75AndOverHS" m
+     (f18To24SCP, f18To24SCV) <- lookupX "F18To24SC" m
+     (f25To44SCP, f25To44SCV) <- lookupX "F25To44SC" m
+     (f45To64SCP, f45To64SCV) <- lookupX "F45To64SC" m
+     (f65To74SCP, f65To74SCV) <- lookupX "F65To74SC" m
+     (f75AndOverSCP, f75AndOverSCV) <- lookupX "F75AndOverSC" m
+     (f18To24BAP, f18To24BAV) <- lookupX "F18To24BA" m
+     (f25To44BAP, f25To44BAV) <- lookupX "F25To44BA" m
+     (f45To64BAP, f45To64BAV) <- lookupX "F45To64BA" m
+     (f65To74BAP, f65To74BAV) <- lookupX "F65To74BA" m
+     (f75AndOverBAP, f75AndOverBAV) <- lookupX "F75AndOverBA" m
+     (f18To24ADP, f18To24ADV) <- lookupX "F18To24AD" m
+     (f25To44ADP, f25To44ADV) <- lookupX "F25To44AD" m
+     (f45To64ADP, f45To64ADV) <- lookupX "F45To64AD" m
+     (f65To74ADP, f65To74ADV) <- lookupX "F65To74AD" m
+     (f75AndOverADP, f75AndOverADV) <- lookupX "F75AndOverAD" m
+     (m18To24L9P, m18To24L9V) <- lookupX "M18To24L9" m
+     (m25To44L9P, m25To44L9V) <- lookupX "M25To44L9" m
+     (m45To64L9P, m45To64L9V) <- lookupX "M45To64L9" m
+     (m65To74L9P, m65To74L9V) <- lookupX "M65To74L9" m
+     (m75AndOverL9P, m75AndOverL9V) <- lookupX "M75AndOverL9" m
+     (m18To24L12P, m18To24L12V) <- lookupX "M18To24L12" m
+     (m25To44L12P, m25To44L12V) <- lookupX "M25To44L12" m
+     (m45To64L12P, m45To64L12V) <- lookupX "M45To64L12" m
+     (m65To74L12P, m65To74L12V) <- lookupX "M65To74L12" m
+     (m75AndOverL12P, m75AndOverL12V) <- lookupX "M75AndOverL12" m
+     (m18To24HSP, m18To24HSV) <- lookupX "M18To24HS" m
+     (m25To44HSP, m25To44HSV) <- lookupX "M25To44HS" m
+     (m45To64HSP, m45To64HSV) <- lookupX "M45To64HS" m
+     (m65To74HSP, m65To74HSV) <- lookupX "M65To74HS" m
+     (m75AndOverHSP, m75AndOverHSV) <- lookupX "M75AndOverHS" m
+     (m18To24SCP, m18To24SCV) <- lookupX "M18To24SC" m
+     (m25To44SCP, m25To44SCV) <- lookupX "M25To44SC" m
+     (m45To64SCP, m45To64SCV) <- lookupX "M45To64SC" m
+     (m65To74SCP, m65To74SCV) <- lookupX "M65To74SC" m
+     (m75AndOverSCP, m75AndOverSCV) <- lookupX "M75AndOverSC" m
+     (m18To24BAP, m18To24BAV) <- lookupX "M18To24BA" m
+     (m25To44BAP, m25To44BAV) <- lookupX "M25To44BA" m
+     (m45To64BAP, m45To64BAV) <- lookupX "M45To64BA" m
+     (m65To74BAP, m65To74BAV) <- lookupX "M65To74BA" m
+     (m75AndOverBAP, m75AndOverBAV) <- lookupX "M75AndOverBA" m
+     (m18To24ADP, m18To24ADV) <- lookupX "M18To24AD" m
+     (m25To44ADP, m25To44ADV) <- lookupX "M25To44AD" m
+     (m45To64ADP, m45To64ADV) <- lookupX "M45To64AD" m
+     (m65To74ADP, m65To74ADV) <- lookupX "M65To74AD" m
+     (m75AndOverADP, m75AndOverADV) <- lookupX "M75AndOverAD" m
+     let (ofngP, ofngV) = (f45To64L9P + f45To64L12P + f45To64HSP + f45To64SCP +
+                           f65To74L9P + f65To74L12P + f65To74HSP + f65To74SCP +
+                           f75AndOverL9P + f75AndOverL12P + f75AndOverHSP + f75AndOverSCP,
+                           f45To64L9V + f45To64L12V + f45To64HSV + f45To64SCV +
+                           f65To74L9V + f65To74L12V + f65To74HSV + f65To74SCV +
+                           f75AndOverL9V + f75AndOverL12V + f75AndOverHSV + f75AndOverSCV)
+         (yfngP, yfngV) = (f18To24L9P + f18To24L12P + f18To24HSP + f18To24SCP +
+                           f25To44L9P + f25To44L12P + f25To44HSP + f25To44SCP,
+                           f18To24L9V + f18To24L12V + f18To24HSV + f18To24SCV +
+                           f25To44L9V + f25To44L12V + f25To44HSV + f25To44SCV)
+         (omngP, omngV) = (m45To64L9P + m45To64L12P + m45To64HSP + m45To64SCP +
+                           m65To74L9P + m65To74L12P + m65To74HSP + m65To74SCP +
+                           m75AndOverL9P + m75AndOverL12P + m75AndOverHSP + m75AndOverSCP,
+                           m45To64L9V + m45To64L12V + m45To64HSV + m45To64SCV +
+                           m65To74L9V + m65To74L12V + m65To74HSV + m65To74SCV +
+                           m75AndOverL9V + m75AndOverL12V + m75AndOverHSV + m75AndOverSCV)
+         (ymngP, ymngV) = (m18To24L9P + m18To24L12P + m18To24HSP + m18To24SCP +
+                           m25To44L9P + m25To44L12P + m25To44HSP + m25To44SCP,
+                           m18To24L9V + m18To24L12V + m18To24HSV + m18To24SCV +
+                           m25To44L9V + m25To44L12V + m25To44HSV + m25To44SCV)
+         (ofcgP, ofcgV) = (f45To64BAP + f45To64ADP + f65To74BAP + f65To74ADP + f75AndOverBAP + f75AndOverADP,
+                           f45To64BAV + f45To64ADV + f65To74BAV + f65To74ADV + f75AndOverBAV + f75AndOverADV)
+         (yfcgP, yfcgV) = (f18To24BAP + f18To24ADP + f25To44BAP + f25To44ADP,
+                           f18To24BAV + f18To24ADV + f25To44BAV + f25To44ADV)
+         (omcgP, omcgV) = (m45To64BAP + m45To64ADP + m65To74BAP + m65To74ADP + m75AndOverBAP + m75AndOverADP,
+                           m45To64BAV + m45To64ADV + m65To74BAV + m65To74ADV + m75AndOverBAV + m75AndOverADV)
+         (ymcgP, ymcgV) = (m18To24BAP + m18To24ADP + m25To44BAP + m25To44ADP,
+                           m18To24BAV + m18To24ADV + m25To44BAV + m25To44ADV)                                    
+         result =
+           [ (OldFemaleNonGrad, ofngP, ofngV)
+           , (YoungFemaleNonGrad, yfngP, yfngV)
+           , (OldMaleNonGrad, omngP, omngV)
+           , (YoungMaleNonGrad, ymngP, ymngV)
+           , (OldFemaleCollegeGrad, ofngP, ofngV)
+           , (YoungFemaleCollegeGrad, yfngP, yfngV)
+           , (OldMaleCollegeGrad, omngP, omngV)
+           , (YoungMaleCollegeGrad, ymngP, ymngV)
+           ]
+         (inputP, inputV) = FL.fold ((,) <$> FL.premap fst FL.sum <*> FL.premap snd FL.sum) m
+         (resultP, resultV) = FL.fold ((,) <$> FL.premap (\(_,x,_) -> x) FL.sum <*> FL.premap (\(_,_,x) -> x) FL.sum) result
+     X.when (inputP /= resultP) $ X.throwError "Population totals don't agree in mergeTurnoutRows (SimpleASE)"
+     X.when (inputV /= resultV) $ X.throwError "Voted totals don't agree in mergeTurnoutRows (SimpleASE)"
+     return result
+         
+   processTurnoutData :: Monad m
+     => Int
+     -> F.Frame TurnoutRSA
+     -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASE, Population, VotedPctOfAll])
+   processTurnoutData year td = 
+    let makeRec :: (SimpleASE,Int,Int) -> F.Record [DemographicCategory SimpleASE, Population, VotedPctOfAll]
+        makeRec (b,p,v) = b F.&: p F.&: (realToFrac v/realToFrac p) F.&: V.RNil
+        fromRec r = (F.rgetField @Group r, (F.rgetField @Population r, F.rgetField @Voted r))
+        unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
+        assign = MR.generalizeAssign $ MR.assignKeysAndData @'[] @[Group,Population,Voted]
+        reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeTurnoutRows $ FL.generalize $ FL.premap fromRec FL.map) 
+    in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) td
+
+---
 
 simpleAgeSexRace :: DemographicStructure IdentityDemographics HouseElections SimpleASR
 simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]

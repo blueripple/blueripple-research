@@ -145,7 +145,7 @@ sequenceConcurrently sequenceConcurrently125,126
 sequenceConcurrently sequenceConcurrently126,127
 runMany runMany138,139
 
-./src/BlueRipple/Data/DataFrames.hs,3133
+./src/BlueRipple/Data/DataFrames.hs,3810
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames16,17
 F.tableTypes' F.tableTypes'63,64
 --F.tableTypes' --F.tableTypes'76,77
@@ -171,44 +171,56 @@ data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale96,97
                | OldWhiteMaleOldWhiteMale102,103
                | YoungWhiteMale YoungWhiteMale103,104
 type instance instance105,106
-type instance instance106,107
-data ASR ASR109,110
-data ASR = WhiteFemale18To24WhiteFemale18To24109,110
-         | WhiteFemale25To44WhiteFemale25To44110,111
-         | WhiteFemale45To64WhiteFemale45To64111,112
-         | WhiteFemale65To74WhiteFemale65To74112,113
-         | WhiteFemale75AndOverWhiteFemale75AndOver113,114
-         | WhiteMale18To24WhiteMale18To24114,115
-         | WhiteMale25To44WhiteMale25To44115,116
-         | WhiteMale45To64WhiteMale45To64116,117
-         | WhiteMale65To74WhiteMale65To74117,118
-         | WhiteMale75AndOverWhiteMale75AndOver118,119
-         | NonWhiteFemale18To24NonWhiteFemale18To24119,120
-         | NonWhiteFemale25To44NonWhiteFemale25To44120,121
-         | NonWhiteFemale45To64NonWhiteFemale45To64121,122
-         | NonWhiteFemale65To74NonWhiteFemale65To74122,123
-         | NonWhiteFemale75AndOverNonWhiteFemale75AndOver123,124
-         | NonWhiteMale18To24NonWhiteMale18To24124,125
-         | NonWhiteMale25To44NonWhiteMale25To44125,126
-         | NonWhiteMale45To64NonWhiteMale45To64126,127
-         | NonWhiteMale65To74NonWhiteMale65To74127,128
-         | NonWhiteMale75AndOver NonWhiteMale75AndOver128,129
-type instance instance130,131
-processElectionData processElectionData134,135
-processElectionData processElectionData136,137
-data Cands Cands146,147
-data Cands = NoCands NoCands146,147
-data Cands = NoCands | OneCand OneCand146,147
-data Cands = NoCands | OneCand Int | Multi Multi146,147
-candsToVotes candsToVotes147,148
-type DVotes DVotes151,152
-type RVotes RVotes152,153
-flattenVotes' flattenVotes'157,158
-flattenVotes flattenVotes185,186
-simpleAgeSexRace simpleAgeSexRace202,203
-simpleAgeSexRace simpleAgeSexRace203,204
-ageSexRace ageSexRace350,351
-ageSexRace ageSexRace351,352
+data SimpleASE SimpleASE108,109
+data SimpleASE = OldFemaleNonGradOldFemaleNonGrad108,109
+               | YoungFemaleNonGradYoungFemaleNonGrad109,110
+               | OldMaleNonGradOldMaleNonGrad110,111
+               | YoungMaleNonGradYoungMaleNonGrad111,112
+               | OldFemaleCollegeGradOldFemaleCollegeGrad112,113
+               | YoungFemaleCollegeGradYoungFemaleCollegeGrad113,114
+               | OldMaleCollegeGradOldMaleCollegeGrad114,115
+               | YoungMaleCollegeGrad YoungMaleCollegeGrad115,116
+type instance instance117,118
+type instance instance120,121
+data ASR ASR123,124
+data ASR = WhiteFemale18To24WhiteFemale18To24123,124
+         | WhiteFemale25To44WhiteFemale25To44124,125
+         | WhiteFemale45To64WhiteFemale45To64125,126
+         | WhiteFemale65To74WhiteFemale65To74126,127
+         | WhiteFemale75AndOverWhiteFemale75AndOver127,128
+         | WhiteMale18To24WhiteMale18To24128,129
+         | WhiteMale25To44WhiteMale25To44129,130
+         | WhiteMale45To64WhiteMale45To64130,131
+         | WhiteMale65To74WhiteMale65To74131,132
+         | WhiteMale75AndOverWhiteMale75AndOver132,133
+         | NonWhiteFemale18To24NonWhiteFemale18To24133,134
+         | NonWhiteFemale25To44NonWhiteFemale25To44134,135
+         | NonWhiteFemale45To64NonWhiteFemale45To64135,136
+         | NonWhiteFemale65To74NonWhiteFemale65To74136,137
+         | NonWhiteFemale75AndOverNonWhiteFemale75AndOver137,138
+         | NonWhiteMale18To24NonWhiteMale18To24138,139
+         | NonWhiteMale25To44NonWhiteMale25To44139,140
+         | NonWhiteMale45To64NonWhiteMale45To64140,141
+         | NonWhiteMale65To74NonWhiteMale65To74141,142
+         | NonWhiteMale75AndOver NonWhiteMale75AndOver142,143
+type instance instance144,145
+processElectionData processElectionData148,149
+processElectionData processElectionData150,151
+data Cands Cands160,161
+data Cands = NoCands NoCands160,161
+data Cands = NoCands | OneCand OneCand160,161
+data Cands = NoCands | OneCand Int | Multi Multi160,161
+candsToVotes candsToVotes161,162
+type DVotes DVotes165,166
+type RVotes RVotes166,167
+flattenVotes' flattenVotes'171,172
+flattenVotes flattenVotes199,200
+simpleAgeSexEducation simpleAgeSexEducation217,218
+simpleAgeSexEducation simpleAgeSexEducation218,219
+simpleAgeSexRace simpleAgeSexRace434,435
+simpleAgeSexRace simpleAgeSexRace435,436
+ageSexRace ageSexRace582,583
+ageSexRace ageSexRace583,584
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,1619
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2
