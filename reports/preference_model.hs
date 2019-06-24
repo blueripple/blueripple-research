@@ -453,42 +453,36 @@ main = do
         (const True)        
       K.logLE K.Info "Inferring..."
       let rp = goToTown
-          yearList   = [2010, 2012, 2014, 2016, 2018]
+          yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
           toNPE (category, (ExpectationSummary m (lo, hi) _)) =
             VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
 
-      modeledResultsASR <- flip traverse years $ \y -> do
-        K.logLE K.Info $ "inferring (SimpleASR) for " <> (T.pack $ show y)
-        pr <- preferenceModel simpleAgeSexRace
-                              rp
-                              y
-                              asrDemographicsFrame
-                              houseElectionsFrame
-                              asrTurnoutFrame
-        let pd =
-              A.array (minBound, maxBound)
-                $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
-                $ A.assocs
-                $ modeled pr
-        return $ pr { modeled = pd }
-
-      modeledResultsASE <- flip traverse years $ \y -> do
-        K.logLE K.Info $ "inferring (SimpleASE) for " <> (T.pack $ show y)
-        pr <- preferenceModel simpleAgeSexEducation
-                              rp
-                              y
-                              aseDemographicsFrame
-                              houseElectionsFrame
-                              aseTurnoutFrame
-        let pd =
-              A.array (minBound, maxBound)
-                $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
-                $ A.assocs
-                $ modeled pr
-        return $ pr { modeled = pd }
+      
+      let modeledResults :: ( MonadIO (K.Sem r)
+                            , K.KnitEffects r
+                            , Show tr
+                            , Show b
+                            , Enum b
+                            , Bounded b
+                            , A.Ix b
+                            , FL.Vector (F.VectorFor b) b)
+            => DemographicStructure dr tr HouseElections b
+            -> F.Frame dr -> F.Frame tr -> K.Sem r (M.Map Int (PreferenceResults b VV.NamedParameterEstimate)) 
+          modeledResults ds dFrame tFrame = flip traverse years $ \y -> do
+            K.logLE K.Info $ "inferring (SimpleASR) for " <> (T.pack $ show y)
+            pr <- preferenceModel ds rp y dFrame houseElectionsFrame tFrame
+            let pd =
+                  A.array (minBound, maxBound)
+                  $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
+                  $ A.assocs
+                  $ modeled pr
+            return $ pr { modeled = pd }
+            
+      modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame
+      modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame
 
       let pdsWithYear x pr =
             let mapName pd@(VV.NamedParameterEstimate n _) =
