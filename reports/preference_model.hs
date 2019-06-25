@@ -547,32 +547,26 @@ main = do
         $ do
             K.addMarkDown acrossTime
             -- arrange data for vs time plot
-
-            let vDatPVsT_ASR =
-                  FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList
-                    modeledResultsASR
-                vParametersVsTime_ASR =
-                  FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
-                    @'("D Voter Preference",Double)
-                    "D Voter Preference Vs. Election Year"
-                    FV.DataMinMax
-                    (FV.TimeEncoding "%Y" FV.Year)
-                    (FV.ViewConfig 800 400 50)
-                    vDatPVsT_ASR
-            _ <- K.addHvega Nothing Nothing vParametersVsTime_ASR
-
-            let vDatPVsT_ASE =
-                  FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList
-                    modeledResultsASE
-                vParametersVsTime_ASE =
-                  FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
-                    @'("D Voter Preference",Double)
-                    "D Voter Preference Vs. Election Year"
-                    FV.DataMinMax
-                    (FV.TimeEncoding "%Y" FV.Year)
-                    (FV.ViewConfig 800 400 50)
-                    vDatPVsT_ASE
-            _ <- K.addHvega Nothing Nothing vParametersVsTime_ASE
+            let vDatPVsT :: M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                         -> [FV.Row
+                         '[ '("Group", F.Text), '("Election Year", Int),
+                            '("D Voter Preference", Double)]] 
+                vDatPVsT pr =
+                   FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
+                addParametersVsTime :: K.KnitOne r
+                                  => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                                  -> K.Sem r () --Graphics.Vega.VegaLite.VegaLite
+                addParametersVsTime pr = do 
+                   let vl =
+                         FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
+                         @'("D Voter Preference",Double)
+                         "D Voter Preference Vs. Election Year"
+                         FV.DataMinMax
+                         (FV.TimeEncoding "%Y" FV.Year)
+                         (FV.ViewConfig 800 400 50)
+                         (vDatPVsT pr)
+                   _ <- K.addHvega Nothing Nothing vl
+                   return ()
 
             -- arrange data for stacked area share of electorate
             let
@@ -584,30 +578,32 @@ main = do
                   $ FV.addRowBuilder @'("D Voteshare of D+R Votes",Double)
                       (\(_, _, z) -> z)
                       FV.emptyRowBuilder
-              vDatSVS_ASR = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
+              vDatSVS :: (A.Ix b, Bounded b, Enum b, Show b)
+                      => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                      -> [FV.Row [ '("Group", F.Text), '("Election Year", Int),
+                                   '("D Voteshare of D+R Votes", Double)]]
+              vDatSVS prMap = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
                 modeledDVotes
-                modeledResultsASR
-              vStackedArea_ASR =
-                FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
-                  @'("D Voteshare of D+R Votes",Double)
-                  "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
-                  (FV.TimeEncoding "%Y" FV.Year)
-                  (FV.ViewConfig 800 400 50)
-                  vDatSVS_ASR
-            _ <- K.addHvega Nothing Nothing vStackedArea_ASR
-            
-            let vDatSVS_ASE = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
-                              modeledDVotes
-                              modeledResultsASE
-                vStackedArea_ASE =
-                  FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
-                  @'("D Voteshare of D+R Votes",Double)
-                  "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
-                  (FV.TimeEncoding "%Y" FV.Year)
-                  (FV.ViewConfig 800 400 50)
-                  vDatSVS_ASE
-            _ <- K.addHvega Nothing Nothing vStackedArea_ASE
+                prMap
+              addStackedArea :: (K.KnitOne r, A.Ix b, Bounded b, Enum b, Show b)
+                             => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                             -> K.Sem r ()
+              addStackedArea prMap = do
+                let vl = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
+                         @'("D Voteshare of D+R Votes",Double)
+                         "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
+                         (FV.TimeEncoding "%Y" FV.Year)
+                         (FV.ViewConfig 800 400 50)
+                         (vDatSVS prMap)
+                _ <- K.addHvega Nothing Nothing vl
+                return ()
 
+            addParametersVsTime  modeledResultsASR
+            addStackedArea modeledResultsASR
+            
+            addParametersVsTime  modeledResultsASE
+            addStackedArea modeledResultsASE
+            
             -- analyze results
             -- Quick Mann-Whitney
             let
