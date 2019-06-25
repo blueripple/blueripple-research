@@ -9,6 +9,8 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE TupleSections             #-}
+{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+
 module Main where
 
 import           Control.Arrow                  ( first
@@ -418,6 +420,18 @@ goToTown = RunParams 10 10000 1000
 
 type DemographicCategories = SimpleASR
 
+{-
+type KnitMembers r = (K.Member K.UnusedId r
+                     , K.Member K.Pandoc r
+                     , K.Member K.Logger r
+                     , K.Member K.PrefixLog r
+                     , K.Member (K.Error K.PandocError) r
+                     , K.Member K.Pandoc r)
+
+  = '[KUI.UnusedId, KPM.Pandoc, KLog.Logger KLog.LogEntry, KLog.PrefixLog, PE.Error
+    PA.PandocError, P.Lift IO, P.Lift m]
+-}
+
 main :: IO ()
 main = do
   let template = K.FromIncludedTemplateDir "pandoc-mindoc-KH.html"
@@ -459,30 +473,9 @@ main = do
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
           toNPE (category, (ExpectationSummary m (lo, hi) _)) =
             VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
-
       
-      let modeledResults :: ( MonadIO (K.Sem r)
-                            , K.KnitEffects r
-                            , Show tr
-                            , Show b
-                            , Enum b
-                            , Bounded b
-                            , A.Ix b
-                            , FL.Vector (F.VectorFor b) b)
-            => DemographicStructure dr tr HouseElections b
-            -> F.Frame dr -> F.Frame tr -> K.Sem r (M.Map Int (PreferenceResults b VV.NamedParameterEstimate)) 
-          modeledResults ds dFrame tFrame = flip traverse years $ \y -> do
-            K.logLE K.Info $ "inferring (SimpleASR) for " <> (T.pack $ show y)
-            pr <- preferenceModel ds rp y dFrame houseElectionsFrame tFrame
-            let pd =
-                  A.array (minBound, maxBound)
-                  $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
-                  $ A.assocs
-                  $ modeled pr
-            return $ pr { modeled = pd }
-            
-      modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame
-      modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame
+      modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years rp
+      modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years rp
 
       let pdsWithYear x pr =
             let mapName pd@(VV.NamedParameterEstimate n _) =
@@ -689,6 +682,37 @@ main = do
       "reports/html/preference_model"
       namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
+
+
+            
+modeledResults :: ( MonadIO (K.Sem r)
+                  , K.KnitEffects r
+                  , Show tr
+                  , Show b
+                  , Enum b
+                  , Bounded b
+                  , A.Ix b
+                  , FL.Vector (F.VectorFor b) b)
+               => DemographicStructure dr tr HouseElections b
+               -> F.Frame dr
+               -> F.Frame tr
+               -> F.Frame HouseElections 
+               -> M.Map Int Int
+               -> RunParams
+               -> K.Sem r (M.Map Int (PreferenceResults b VV.NamedParameterEstimate))
+modeledResults ds dFrame tFrame eFrame years rp = flip traverse years $ \y -> do
+  K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
+  pr <- preferenceModel ds rp y dFrame eFrame tFrame
+  let toNPE (category, (ExpectationSummary m (lo, hi) _)) =
+        VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
+      pd =
+        A.array (minBound, maxBound)
+        $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
+        $ A.assocs
+        $ modeled pr
+  return $ pr { modeled = pd }
+
+
 
 modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
   => PreferenceResults b VV.NamedParameterEstimate -> [(T.Text, Double)]

@@ -1,4 +1,4 @@
-packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega 
+packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega ../../DataScience/knit-haskell
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 
