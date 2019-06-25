@@ -421,7 +421,8 @@ type DemographicCategories = SimpleASR
 
 main :: IO ()
 main = do
-  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
+  let template = K.FromIncludedTemplateDir "pandoc-mindoc-KH.html"
+--  let template = K.FullySpecifiedTemplatePath "pandoc-templates/minWithVega-pandoc.html"
   pandocWriterConfig <- K.mkPandocWriterConfig template
                                                templateVars
                                                K.mindocOptionsF
@@ -452,7 +453,7 @@ main = do
         detailedASETurnoutCSV
         (const True)        
       K.logLE K.Info "Inferring..."
-      let rp = goToTown
+      let rp = quick
           yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
@@ -510,27 +511,23 @@ main = do
             "2018"
             (M.singleton "pagetitle" "2018 Preference Model Intro")
           )
-        $ do
+        $ do            
             K.addMarkDown intro2018
-            prASR_2018 <-
-              knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
-                $ M.lookup 2018 modeledResultsASR
-            _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
-              id
-              "Modeled probability of voting Democratic in (competitive) 2018 house races"
-              S.cl95
-              (VV.ViewConfig 800 400 50)
-              (f "2018" $ pdsWithYear "2018" prASR_2018)
-            prASE_2018 <-
-              knitMaybe "Failed to find 2018 in modelResults (SimpleASE)."
-                $ M.lookup 2018 modeledResultsASE
-            _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
-              id
-              "Modeled probability of voting Democratic in (competitive) 2018 house races"
-              S.cl95
-              (VV.ViewConfig 800 400 50)
-              (f "2018" $ pdsWithYear "2018" prASE_2018)
-
+            let prefsOneYear :: K.KnitOne r => Int -> _ -> K.Sem r ()
+                prefsOneYear y mr = do
+                  pr <-
+                    knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
+                    $ M.lookup y mr
+                  _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
+                    id
+                    "Modeled probability of voting Democratic in (competitive) 2018 house races"
+                    S.cl95
+                    (VV.ViewConfig 800 400 50)
+                    (f (T.pack $ show y) $ pdsWithYear (T.pack $ show y) pr)
+                  return ()
+                  
+            prASR_2018 <- prefsOneYear 2018 modeledResultsASR
+            prASE_2018 <- prefsOneYear 2018 modeledResultsASE
             K.addMarkDown postFig2018
       K.newPandoc
           (K.PandocInfo

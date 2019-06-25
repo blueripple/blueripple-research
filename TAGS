@@ -55,59 +55,59 @@ goToTown goToTown417,418
 type DemographicCategories DemographicCategories419,420
 main main421,422
 main main422,423
-modeledDVotes modeledDVotes703,704
-modeledDVotes modeledDVotes705,706
-data DeltaTableRow DeltaTableRow737,738
-  DeltaTableRowDeltaTableRow738,739
-  { dtrGroup dtrGroup739,740
-  , dtrPop dtrPop740,741
-  , dtrFromPop dtrFromPop741,742
-  , dtrFromTurnout dtrFromTurnout742,743
-  , dtrFromOpinion dtrFromOpinion743,744
-  , dtrTotal dtrTotal744,745
-  , dtrPct dtrPct745,746
-deltaTable deltaTable756,757
-deltaTableColonnade deltaTableColonnade849,850
-deltaTableColonnade deltaTableColonnade850,851
-modelNotesPreface modelNotesPreface863,864
-modelNotesPreface modelNotesPreface864,865
-, ,907,908
-modelNotesBayes modelNotesBayes921,922
-modelNotesBayes modelNotesBayes922,923
-P(P932,933
-\mu_k(\mu_k977,978
-v_k(v_k978,979
-\rho(\rho979,980
-type X X1032,1033
-type PredictedVoters PredictedVoters1033,1034
-type ScaledDVotes ScaledDVotes1034,1035
-type ScaledRVotes ScaledRVotes1035,1036
-type PopScale PopScale1036,1037
-type CountArray CountArray1037,1038
-type CountArray b b1037,1038
-addPopScale addPopScale1039,1040
-votesAndPopByDistrictF votesAndPopByDistrictF1050,1051
-data PreferenceResults PreferenceResults1060,1061
-data PreferenceResults b a = PreferenceResultsPreferenceResults1060,1061
-    votesAndPopByDistrict votesAndPopByDistrict1062,1063
-    , nationalTurnout nationalTurnout1070,1071
-    , modeled modeled1071,1072
-    , mcmcChain mcmcChain1072,1073
-data RunParams RunParams1075,1076
-data RunParams = RunParams RunParams1075,1076
-data RunParams = RunParams { nChains nChains1075,1076
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1075,1076
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1075,1076
-preferenceModel preferenceModel1099,1100
-modelNotesRegression modelNotesRegression1279,1280
-modelNotesRegression modelNotesRegression1280,1281
-Given Given1282,1283
-D D1285,1286
-R R1286,1287
-\frac{D-R}{Q} \frac{D-R}{Q}1293,1294
-\sum_i \sum_i1302,1303
-We We1305,1306
-Now Now1306,1307
+modeledDVotes modeledDVotes694,695
+modeledDVotes modeledDVotes696,697
+data DeltaTableRow DeltaTableRow728,729
+  DeltaTableRowDeltaTableRow729,730
+  { dtrGroup dtrGroup730,731
+  , dtrPop dtrPop731,732
+  , dtrFromPop dtrFromPop732,733
+  , dtrFromTurnout dtrFromTurnout733,734
+  , dtrFromOpinion dtrFromOpinion734,735
+  , dtrTotal dtrTotal735,736
+  , dtrPct dtrPct736,737
+deltaTable deltaTable747,748
+deltaTableColonnade deltaTableColonnade840,841
+deltaTableColonnade deltaTableColonnade841,842
+modelNotesPreface modelNotesPreface854,855
+modelNotesPreface modelNotesPreface855,856
+, ,898,899
+modelNotesBayes modelNotesBayes912,913
+modelNotesBayes modelNotesBayes913,914
+P(P923,924
+\mu_k(\mu_k968,969
+v_k(v_k969,970
+\rho(\rho970,971
+type X X1023,1024
+type PredictedVoters PredictedVoters1024,1025
+type ScaledDVotes ScaledDVotes1025,1026
+type ScaledRVotes ScaledRVotes1026,1027
+type PopScale PopScale1027,1028
+type CountArray CountArray1028,1029
+type CountArray b b1028,1029
+addPopScale addPopScale1030,1031
+votesAndPopByDistrictF votesAndPopByDistrictF1041,1042
+data PreferenceResults PreferenceResults1051,1052
+data PreferenceResults b a = PreferenceResultsPreferenceResults1051,1052
+    votesAndPopByDistrict votesAndPopByDistrict1053,1054
+    , nationalTurnout nationalTurnout1061,1062
+    , modeled modeled1062,1063
+    , mcmcChain mcmcChain1063,1064
+data RunParams RunParams1066,1067
+data RunParams = RunParams RunParams1066,1067
+data RunParams = RunParams { nChains nChains1066,1067
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1066,1067
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1066,1067
+preferenceModel preferenceModel1090,1091
+modelNotesRegression modelNotesRegression1270,1271
+modelNotesRegression modelNotesRegression1271,1272
+Given Given1273,1274
+D D1276,1277
+R R1277,1278
+\frac{D-R}{Q} \frac{D-R}{Q}1284,1285
+\sum_i \sum_i1293,1294
+We We1296,1297
+Now Now1297,1298
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

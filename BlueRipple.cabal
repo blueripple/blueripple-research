@@ -21,10 +21,11 @@ common deps
                , Frames
                , Frames-map-reduce >= 0.1.0.1
                , Frames-utils
-               , Frames-hvega
+               , Frames-hvega               
                , foldl
                , freer-simple
                , here
+               , hvega >= 0.2.0.0
                , hmatrix
                , knit-haskell >= 0.6.0.1 && < 0.7.0.0
                , lucid
