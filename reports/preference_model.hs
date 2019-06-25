@@ -9,7 +9,6 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE TupleSections             #-}
-{-# LANGUAGE PartialTypeSignatures     #-}
 module Main where
 
 import           Control.Arrow                  ( first
@@ -513,7 +512,10 @@ main = do
           )
         $ do            
             K.addMarkDown intro2018
-            let prefsOneYear :: K.KnitOne r => Int -> _ -> K.Sem r ()
+            let prefsOneYear :: K.KnitOne r
+                  => Int
+                  -> M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                  -> K.Sem r ()
                 prefsOneYear y mr = do
                   pr <-
                     knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
