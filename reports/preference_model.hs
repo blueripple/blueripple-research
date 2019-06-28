@@ -13,70 +13,31 @@
 
 module Main where
 
-import           Control.Arrow                  ( first
-                                                , second
-                                                , (***)
-                                                , (&&&)
-                                                )
-import           Control.Lens                   ( (^.)
-                                                , over
-                                                , (&)
-                                                , (%~)
-                                                )
 import qualified Control.Foldl                 as FL
-import           Control.Monad                  ( when )
 import qualified Control.Monad.Except          as X
-import           Data.Traversable               ( sequenceA )
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
-import qualified Text.Blaze.Colonnade          as C
-import qualified Data.Functor.Identity         as I
-import qualified Data.Either                   as E
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
-                                                , fromMaybe
-                                                , isNothing
-                                                , isJust
-                                                , fromJust
                                                 )
 
 import qualified Text.Pandoc.Error             as PA
 
-import qualified Text.Read                     as TR
-import qualified Data.Monoid                   as MO
-import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Profunctor               as PF
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                  as T
-import qualified Data.Text.Lazy                as TL
-import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Functor            as V
 import qualified Text.Printf                   as PF
 import qualified Frames                        as F
-import           Frames                         ( (:->)
-                                                , (<+>)
-                                                , (&:)
-                                                )
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as F
                                          hiding ( inCoreAoS )
-import qualified Frames.Melt                   as F
-                                                ( ElemOf
-                                                , RDeleteAll
-                                                )
 
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
-import           System.Random                  ( randomRIO )
-import qualified System.Directory              as SD
-import qualified Statistics.Types              as S
 
-import qualified Text.Blaze.Html.Renderer.Text as BH
 
 import           Numeric.MCMC.Diagnostics       ( summarize
                                                 , ExpectationSummary(..)
@@ -85,13 +46,8 @@ import           Numeric.MCMC.Diagnostics       ( summarize
                                                 )
 
 -- to be removed once all things are converted to Frames-hvega
-import qualified Graphics.Visualization.GOG.Data
-                                               as GG
-import qualified Graphics.Visualization.VegaLite.ParameterPlot
-                                               as VV
-import qualified Graphics.Visualization.VegaLite.Common
-                                               as VV
---import qualified Graphics.Visualization.VegaLite.StackedArea as VV
+--import qualified Graphics.Visualization.VegaLite.ParameterPlot
+--                                               as VV
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -99,27 +55,16 @@ import qualified Frames.Visualization.VegaLite.StackedArea
                                                as FV
 import qualified Frames.Visualization.VegaLite.LineVsTime
                                                as FV
-
-import qualified Frames.ParseableTypes         as FP
-import qualified Frames.Constraints            as FCon
-import qualified Frames.VegaLite               as FV
+import qualified Frames.Visualization.VegaLite.ParameterPlots
+                                               as FV                                               
+                                               
 import qualified Frames.Transform              as FT
-import qualified Frames.Conversion             as FC
 import qualified Frames.Folds                  as FF
-import qualified Frames.Regression             as FR
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
-import qualified Frames.Table                  as Table
 
 import qualified Knit.Report                   as K
-import           Polysemy.Error                 ( throw
-                                                , Error
-                                                )
-import qualified Knit.Report.Other.Blaze       as KB
-import qualified Knit.Effect.Pandoc            as K
-                                                ( newPandoc
-                                                , DocWithInfo(..)
-                                                )
+import           Polysemy.Error                 (Error)
 
 import           Data.String.Here               ( here )
 
@@ -434,7 +379,7 @@ type KnitMembers r = (K.Member K.UnusedId r
 
 main :: IO ()
 main = do
-  let template = K.FromIncludedTemplateDir "pandoc-mindoc-KH.html"
+  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
 --  let template = K.FullySpecifiedTemplatePath "pandoc-templates/minWithVega-pandoc.html"
   pandocWriterConfig <- K.mkPandocWriterConfig template
                                                templateVars
@@ -472,20 +417,20 @@ main = do
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
           toNPE (category, (ExpectationSummary m (lo, hi) _)) =
-            VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
+            FV.NamedParameterEstimate category (FV.ParameterEstimate m (lo, hi))
       
       modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years rp
       modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years rp
 
       let pdsWithYear x pr =
-            let mapName pd@(VV.NamedParameterEstimate n _) =
-                    pd { VV.name = n <> "-" <> x }
+            let mapName pd@(FV.NamedParameterEstimate n _) =
+                    pd { FV.name = n <> "-" <> x }
             in  fmap mapName $ modeled pr
           f x = fmap (\y -> (x, y))
 
       K.logLE K.Info "Knitting docs..."
       let flattenOneF y = FL.Fold
-            (\l a -> (VV.name a, y, VV.value $ VV.pEstimate a) : l)
+            (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
             []
             reverse
           flattenF = FL.Fold
@@ -497,7 +442,10 @@ main = do
               $ FV.addRowBuilder @'("Election Year",Int) (\(_, y, _) -> y)
               $ FV.addRowBuilder @'("D Voter Preference",Double)
                   (\(_, _, vp) -> vp)
-                  FV.emptyRowBuilder
+              $ FV.emptyRowBuilder
+          vRowBuilderPR =
+            FV.addRowBuilder @'("PEst",FV.NamedParameterEstimate) id
+            $ FV.emptyRowBuilder
       K.newPandoc
           (K.PandocInfo
             "2018"
@@ -507,18 +455,19 @@ main = do
             K.addMarkDown intro2018
             let prefsOneYear :: K.KnitOne r
                   => Int
-                  -> M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                  -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                   -> K.Sem r ()
                 prefsOneYear y mr = do
                   pr <-
                     knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
                     $ M.lookup y mr
-                  _ <- K.addHvega Nothing Nothing $ VV.parameterPlotMany
-                    id
+                  let prRows = FV.vinylRows vRowBuilderPR $ modeled pr    
+                  _ <- K.addHvega Nothing Nothing $ FV.parameterPlot @'("PEst",FV.NamedParameterEstimate)
                     "Modeled probability of voting Democratic in (competitive) 2018 house races"
                     S.cl95
-                    (VV.ViewConfig 800 400 50)
-                    (f (T.pack $ show y) $ pdsWithYear (T.pack $ show y) pr)
+                    (FV.ViewConfig 800 400 50)
+                    prRows
+--                    (f (T.pack $ show y) $ pdsWithYear (T.pack $ show y) pr)
                   return ()
                   
             prASR_2018 <- prefsOneYear 2018 modeledResultsASR
@@ -540,14 +489,14 @@ main = do
         $ do
             K.addMarkDown acrossTime
             -- arrange data for vs time plot
-            let vDatPVsT :: M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+            let vDatPVsT :: M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                          -> [FV.Row
                          '[ '("Group", F.Text), '("Election Year", Int),
                             '("D Voter Preference", Double)]] 
                 vDatPVsT pr =
                    FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
                 addParametersVsTime :: K.KnitOne r
-                                  => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                                  => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                                   -> K.Sem r () --Graphics.Vega.VegaLite.VegaLite
                 addParametersVsTime pr = do 
                    let vl =
@@ -572,14 +521,14 @@ main = do
                       (\(_, _, z) -> z)
                       FV.emptyRowBuilder
               vDatSVS :: (A.Ix b, Bounded b, Enum b, Show b)
-                      => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                      => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                       -> [FV.Row [ '("Group", F.Text), '("Election Year", Int),
                                    '("D Voteshare of D+R Votes", Double)]]
               vDatSVS prMap = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
                 modeledDVotes
                 prMap
               addStackedArea :: (K.KnitOne r, A.Ix b, Bounded b, Enum b, Show b)
-                             => M.Map Int (PreferenceResults b VV.NamedParameterEstimate)
+                             => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                              -> K.Sem r ()
               addStackedArea prMap = do
                 let vl = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
@@ -699,12 +648,12 @@ modeledResults :: ( MonadIO (K.Sem r)
                -> F.Frame HouseElections 
                -> M.Map Int Int
                -> RunParams
-               -> K.Sem r (M.Map Int (PreferenceResults b VV.NamedParameterEstimate))
+               -> K.Sem r (M.Map Int (PreferenceResults b FV.NamedParameterEstimate))
 modeledResults ds dFrame tFrame eFrame years rp = flip traverse years $ \y -> do
   K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
   pr <- preferenceModel ds rp y dFrame eFrame tFrame
   let toNPE (category, (ExpectationSummary m (lo, hi) _)) =
-        VV.NamedParameterEstimate category (VV.ParameterEstimate m (lo, hi))
+        FV.NamedParameterEstimate category (FV.ParameterEstimate m (lo, hi))
       pd =
         A.array (minBound, maxBound)
         $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
@@ -715,7 +664,7 @@ modeledResults ds dFrame tFrame eFrame years rp = flip traverse years $ \y -> do
 
 
 modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
-  => PreferenceResults b VV.NamedParameterEstimate -> [(T.Text, Double)]
+  => PreferenceResults b FV.NamedParameterEstimate -> [(T.Text, Double)]
 modeledDVotes pr =
   let
     summed = FL.fold
@@ -741,7 +690,7 @@ modeledDVotes pr =
     dVotes b =
       realToFrac (popArray A.! b)
       * ((nationalTurnout pr) A.! b)
-      * (VV.value . VV.pEstimate $ (modeled pr) A.! b)
+      * (FV.value . FV.pEstimate $ (modeled pr) A.! b)
       * shareOfDRScale
   in
     fmap (\b -> (T.pack $ show b, dVotes b))
@@ -764,14 +713,14 @@ deltaTable
    . (A.Ix b, Bounded b, Enum b, Show b)
   => DemographicStructure dr tr e b
   -> (F.Record LocationKey -> Bool)
-  -> PreferenceResults b VV.NamedParameterEstimate
-  -> PreferenceResults b VV.NamedParameterEstimate
+  -> PreferenceResults b FV.NamedParameterEstimate
+  -> PreferenceResults b FV.NamedParameterEstimate
   -> ([DeltaTableRow], (Int, Int), (Int, Int))
 deltaTable ds locFilter trA trB =
   let
     groupNames = fmap (T.pack . show) $ dsCategories ds
     getScaledPop
-      :: PreferenceResults b VV.NamedParameterEstimate -> A.Array b Int
+      :: PreferenceResults b FV.NamedParameterEstimate -> A.Array b Int
     getScaledPop tr =
       let
         totalRec = FL.fold
@@ -792,7 +741,7 @@ deltaTable ds locFilter trA trB =
     pop        = FL.fold FL.sum popA
     turnoutA   = nationalTurnout trA
     turnoutB   = nationalTurnout trB
-    probsArray = fmap (VV.value . VV.pEstimate) . modeled
+    probsArray = fmap (FV.value . FV.pEstimate) . modeled
     probA      = probsArray trA
     probB      = probsArray trB
     modeledVotes popArray turnoutArray probArray =
