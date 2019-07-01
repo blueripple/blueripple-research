@@ -47,8 +47,10 @@ library
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
-                 , BlueRipple.Model.TurnoutBayes
+                 , BlueRipple.Model.PreferenceBayes
+                 , BlueRipple.Model.TurnoutAdjustment
   build-depends:       base >=4.11
+                     , ad >= 3.4 && < 4.4
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
                      , data-default
@@ -58,6 +60,7 @@ library
                      , lens
                      , math-functions
                      , mtl
+                     , nonlinear-optimization-ad >= 0.2 && < 0.3
                      , OpenFEC-beam
                      , parallel
                      , random >= 1.1 && < 1.2.0.0

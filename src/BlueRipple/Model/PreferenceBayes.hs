@@ -1,16 +1,13 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeApplications #-}
-module BlueRipple.Model.TurnoutBayes where
+module BlueRipple.Model.PreferenceBayes where
 
---import qualified Data.Vector.Unboxed           as V
---import qualified Statistics.Distribution.Binomial
---                                               as SB
+
 import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( sequence )
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
---import qualified Numeric.MCMC.Flat             as MC
 import qualified Numeric.MCMC                  as MC
 --import           Numeric.AD                     ( grad )
 import           Math.Gamma                     ( gamma )

@@ -45,10 +45,6 @@ import           Numeric.MCMC.Diagnostics       ( summarize
                                                 , mannWhitneyUTest
                                                 )
 
--- to be removed once all things are converted to Frames-hvega
---import qualified Graphics.Visualization.VegaLite.ParameterPlot
---                                               as VV
-
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Frames.Visualization.VegaLite.StackedArea
@@ -69,7 +65,7 @@ import           Polysemy.Error                 (Error)
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
-import qualified BlueRipple.Model.TurnoutBayes as TB
+import qualified BlueRipple.Model.PreferenceBayes as PB
 
 templateVars = M.fromList
   [ ("lang"     , "English")
@@ -1032,7 +1028,7 @@ data PreferenceResults b a = PreferenceResults
                                        ]]
     , nationalTurnout :: A.Array b Double
     , modeled :: A.Array b a
-    , mcmcChain :: TB.Chain -- exposed for significance testing of differences between years
+    , mcmcChain :: PB.Chain -- exposed for significance testing of differences between years
   }
 
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }
@@ -1216,7 +1212,7 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
             )
           $ opposedRWPVWithScaledArrayCountsFrame
       numParams = length $ dsCategories ds
-    mcmcResults <- liftIO $ TB.runMany mcmcData
+    mcmcResults <- liftIO $ PB.runMany mcmcData
                                        numParams
                                        (nChains runParams)
                                        (nSamplesPerChain runParams)
