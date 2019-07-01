@@ -30,6 +30,7 @@ import qualified Data.Text                     as T
 import qualified Data.Vinyl                    as V
 import qualified Text.Printf                   as PF
 import qualified Frames                        as F
+import qualified Frames.Melt                   as F
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as F
                                          hiding ( inCoreAoS )
@@ -66,6 +67,7 @@ import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Model.PreferenceBayes as PB
+import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
 templateVars = M.fromList
   [ ("lang"     , "English")
@@ -994,6 +996,7 @@ type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
 type PopScale = "PopScale" F.:-> Double -- (DVotes + RVotes)/sum (pop_i * turnout_i)
 type CountArray b = "CountArray" F.:-> A.Array b Int
+type GGTurnoutAdj = "GGTurnoutAdj" F.:-> Double
 
 addPopScale r =
   FT.recordSingleton @PopScale
@@ -1020,7 +1023,8 @@ data PreferenceResults b a = PreferenceResults
   {
     votesAndPopByDistrict :: [F.Record [ StateAbbreviation
                                        , CongressionalDistrict
-                                       , CountArray b
+                                       , CountArray b -- population by group
+                                       , GGTurnoutAdj
                                        , DVotes
                                        , RVotes
                                        , PredictedVoters
@@ -1101,7 +1105,7 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
       <> (T.pack $ show acsPopByGroupArray)
     let turnoutVsACSAdjustment b = realToFrac (turnoutPopByGroupArray A.! b)
           / realToFrac (acsPopByGroupArray A.! b)
-    let turnoutByGroup b = turnoutByGroupArray A.! b
+        turnoutByGroup b = turnoutByGroupArray A.! b
         scaleByTurnoutAndAdj b n =
           round $ turnoutByGroup b * turnoutVsACSAdjustment b * realToFrac n
 
@@ -1124,7 +1128,7 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
             $ fmap F.recMaybe
             $ F.leftJoin @LocationKey resultsFlattenedFrame predictedVotersFrame
 
-    let onlyOpposed r =
+        onlyOpposed r =
           (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0)
         opposedRWPVFrame    = F.filterFrame onlyOpposed resultsWPVFrame
         numCompetitiveRaces = FL.fold FL.length opposedRWPVFrame
@@ -1184,21 +1188,32 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
       opposedRWPVWithArrayCountsFrame =
         catMaybes $ fmap F.recMaybe $ F.leftJoin @LocationKey opposedRWPVFrame
                                                               arrayCountsFrame
+      
+    -- here's where we want to compute and add the GGTurnoutAdj.  I think.
+    opposedRWPVWithArrayCountsAndGGAdjFrame <- flip traverse opposedRWPVWithArrayCountsFrame $ \r -> do
+      ggDelta <- ggTurnoutAdj r turnoutByGroupArray
+      K.logLE K.Info $
+        "Ghitza-Gelman turnout adj="
+        <> (T.pack $ show ggDelta)
+        <> "; Adj Turnout=" <> (T.pack $ show $ TA.adjTurnoutP ggDelta turnoutByGroupArray)
+      return $ FT.mutate (const $ FT.recordSingleton @GGTurnoutAdj ggDelta) r
+              
+    let
       scaleArrayCounts popScale =
         A.array (minBound, maxBound)
-          . fmap
-              (\(b, c) ->
-                (b, round $ popScale * turnoutVsACSAdjustment b * realToFrac c)
-              )
-          . A.assocs
-      opposedRWPVWithScaledArrayCountsFrame = fmap
-        (\r -> F.rputField @(CountArray b)
-          (scaleArrayCounts (F.rgetField @PopScale r)
-                            (F.rgetField @(CountArray b) r)
-          )
-          r
+        . fmap
+        (\(b, c) ->
+            (b, round $ popScale * turnoutVsACSAdjustment b * realToFrac c)
         )
-        opposedRWPVWithArrayCountsFrame
+        . A.assocs
+      opposedRWPVWithScaledArrayCountsFrame = fmap
+                                              (\r -> F.rputField @(CountArray b)
+                                                (scaleArrayCounts (F.rgetField @PopScale r)
+                                                 (F.rgetField @(CountArray b) r)
+                                                )
+                                                r
+                                              )
+                                                opposedRWPVWithArrayCountsAndGGAdjFrame
       popArrayToVotersList :: A.Array b Int -> [Int]
       popArrayToVotersList =
         fmap (\(b, c) -> round $ turnoutByGroup b * realToFrac c) . A.assocs
@@ -1234,6 +1249,16 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
       turnoutByGroupArray
       summaryA
       (L.concat mcmcResults)
+
+ggTurnoutAdj :: forall b rs r. (A.Ix b
+                               , F.ElemOf rs (CountArray b)
+                               , F.ElemOf rs Totalvotes
+                               , MonadIO (K.Sem r)
+                               ) => F.Record rs -> A.Array b Double -> K.Sem r Double
+ggTurnoutAdj r unadjTurnoutP = do
+  let population = F.rgetField @(CountArray b) r
+      totalVotes = F.rgetField @Totalvotes r
+  liftIO $ TA.findDelta totalVotes population unadjTurnoutP
 
 modelNotesRegression :: T.Text
 modelNotesRegression = modelNotesPreface <> [here|

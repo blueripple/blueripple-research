@@ -44,9 +44,9 @@ findDelta totalVotes population unadjTurnoutP = do
   let --cost :: [Double] -> Double
       cost [x] =
         votesError (totalVotes) (population) (fmap realToFrac unadjTurnoutP) x
-      params = CG.defaultParameters { CG.printFinal  = True
-                                    , CG.printParams = True
-                                    , CG.verbose     = CG.Verbose
+      params = CG.defaultParameters { CG.printFinal  = False
+                                    , CG.printParams = False
+                                    , CG.verbose     = CG.Quiet
                                     }
       grad_tol = 0.0000001
   ([delta], _result, _stat) <- CG.optimize params grad_tol [0] cost

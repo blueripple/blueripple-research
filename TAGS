@@ -32,84 +32,87 @@ sumSpending sumSpending262,263
 totalSpendingHistograms totalSpendingHistograms268,269
 totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,2834
+./reports/preference_model.hs,2950
 module Main Main13,14
-templateVars templateVars69,70
-loadCSVToFrame loadCSVToFrame88,89
-intro2018 intro2018102,103
-intro2018 intro2018103,104
-postFig2018 postFig2018179,180
-postFig2018 postFig2018180,181
-acrossTime acrossTime208,209
-acrossTime acrossTime209,210
-voteShifts voteShifts252,253
-voteShifts voteShifts253,254
-voteShiftObservations voteShiftObservations285,286
-voteShiftObservations voteShiftObservations286,287
-knitX knitX340,341
-knitMaybe knitMaybe348,349
-knitEither knitEither355,356
-quick quick357,358
-justEnough justEnough358,359
-goToTown goToTown359,360
-type DemographicCategories DemographicCategories361,362
-main main375,376
-main main376,377
-modeledResults modeledResults632,633
-modeledResults modeledResults647,648
-modeledDVotes modeledDVotes661,662
+templateVars templateVars71,72
+loadCSVToFrame loadCSVToFrame90,91
+intro2018 intro2018104,105
+intro2018 intro2018105,106
+postFig2018 postFig2018181,182
+postFig2018 postFig2018182,183
+acrossTime acrossTime210,211
+acrossTime acrossTime211,212
+voteShifts voteShifts254,255
+voteShifts voteShifts255,256
+voteShiftObservations voteShiftObservations287,288
+voteShiftObservations voteShiftObservations288,289
+knitX knitX342,343
+knitMaybe knitMaybe350,351
+knitEither knitEither357,358
+quick quick359,360
+justEnough justEnough360,361
+goToTown goToTown361,362
+type DemographicCategories DemographicCategories363,364
+main main377,378
+main main378,379
+modeledResults modeledResults634,635
+modeledResults modeledResults649,650
 modeledDVotes modeledDVotes663,664
-data DeltaTableRow DeltaTableRow695,696
-  DeltaTableRowDeltaTableRow696,697
-  { dtrGroup dtrGroup697,698
-  , dtrPop dtrPop698,699
-  , dtrFromPop dtrFromPop699,700
-  , dtrFromTurnout dtrFromTurnout700,701
-  , dtrFromOpinion dtrFromOpinion701,702
-  , dtrTotal dtrTotal702,703
-  , dtrPct dtrPct703,704
-deltaTable deltaTable714,715
-deltaTableColonnade deltaTableColonnade807,808
-deltaTableColonnade deltaTableColonnade808,809
-modelNotesPreface modelNotesPreface821,822
-modelNotesPreface modelNotesPreface822,823
-, ,865,866
-modelNotesBayes modelNotesBayes879,880
-modelNotesBayes modelNotesBayes880,881
-P(P890,891
-\mu_k(\mu_k935,936
-v_k(v_k936,937
-\rho(\rho937,938
-type X X990,991
-type PredictedVoters PredictedVoters991,992
-type ScaledDVotes ScaledDVotes992,993
-type ScaledRVotes ScaledRVotes993,994
-type PopScale PopScale994,995
-type CountArray CountArray995,996
-type CountArray b b995,996
-addPopScale addPopScale997,998
-votesAndPopByDistrictF votesAndPopByDistrictF1008,1009
-data PreferenceResults PreferenceResults1018,1019
-data PreferenceResults b a = PreferenceResultsPreferenceResults1018,1019
-    votesAndPopByDistrict votesAndPopByDistrict1020,1021
-    , nationalTurnout nationalTurnout1028,1029
-    , modeled modeled1029,1030
-    , mcmcChain mcmcChain1030,1031
-data RunParams RunParams1033,1034
-data RunParams = RunParams RunParams1033,1034
-data RunParams = RunParams { nChains nChains1033,1034
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1033,1034
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1033,1034
-preferenceModel preferenceModel1057,1058
-modelNotesRegression modelNotesRegression1237,1238
-modelNotesRegression modelNotesRegression1238,1239
-Given Given1240,1241
-D D1243,1244
-R R1244,1245
-\frac{D-R}{Q} \frac{D-R}{Q}1251,1252
-\sum_i \sum_i1260,1261
-We We1263,1264
-Now Now1264,1265
+modeledDVotes modeledDVotes665,666
+data DeltaTableRow DeltaTableRow697,698
+  DeltaTableRowDeltaTableRow698,699
+  { dtrGroup dtrGroup699,700
+  , dtrPop dtrPop700,701
+  , dtrFromPop dtrFromPop701,702
+  , dtrFromTurnout dtrFromTurnout702,703
+  , dtrFromOpinion dtrFromOpinion703,704
+  , dtrTotal dtrTotal704,705
+  , dtrPct dtrPct705,706
+deltaTable deltaTable716,717
+deltaTableColonnade deltaTableColonnade809,810
+deltaTableColonnade deltaTableColonnade810,811
+modelNotesPreface modelNotesPreface823,824
+modelNotesPreface modelNotesPreface824,825
+, ,867,868
+modelNotesBayes modelNotesBayes881,882
+modelNotesBayes modelNotesBayes882,883
+P(P892,893
+\mu_k(\mu_k937,938
+v_k(v_k938,939
+\rho(\rho939,940
+type X X992,993
+type PredictedVoters PredictedVoters993,994
+type ScaledDVotes ScaledDVotes994,995
+type ScaledRVotes ScaledRVotes995,996
+type PopScale PopScale996,997
+type CountArray CountArray997,998
+type CountArray b b997,998
+type GGTurnoutAdj GGTurnoutAdj998,999
+addPopScale addPopScale1000,1001
+votesAndPopByDistrictF votesAndPopByDistrictF1011,1012
+data PreferenceResults PreferenceResults1021,1022
+data PreferenceResults b a = PreferenceResultsPreferenceResults1021,1022
+    votesAndPopByDistrict votesAndPopByDistrict1023,1024
+    , nationalTurnout nationalTurnout1032,1033
+    , modeled modeled1033,1034
+    , mcmcChain mcmcChain1034,1035
+data RunParams RunParams1037,1038
+data RunParams = RunParams RunParams1037,1038
+data RunParams = RunParams { nChains nChains1037,1038
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1037,1038
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1037,1038
+preferenceModel preferenceModel1061,1062
+ggTurnoutAdj ggTurnoutAdj1252,1253
+ggTurnoutAdj ggTurnoutAdj1257,1258
+modelNotesRegression modelNotesRegression1262,1263
+modelNotesRegression modelNotesRegression1263,1264
+Given Given1265,1266
+D D1268,1269
+R R1269,1270
+\frac{D-R}{Q} \frac{D-R}{Q}1276,1277
+\sum_i \sum_i1285,1286
+We We1288,1289
+Now Now1289,1290
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
