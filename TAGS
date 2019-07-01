@@ -32,7 +32,7 @@ sumSpending sumSpending262,263
 totalSpendingHistograms totalSpendingHistograms268,269
 totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,2950
+./reports/preference_model.hs,3122
 module Main Main13,14
 templateVars templateVars71,72
 loadCSVToFrame loadCSVToFrame90,91
@@ -102,17 +102,21 @@ data RunParams = RunParams { nChains nChains1037,1038
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1037,1038
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1037,1038
 preferenceModel preferenceModel1061,1062
-ggTurnoutAdj ggTurnoutAdj1252,1253
-ggTurnoutAdj ggTurnoutAdj1257,1258
-modelNotesRegression modelNotesRegression1262,1263
-modelNotesRegression modelNotesRegression1263,1264
-Given Given1265,1266
-D D1268,1269
-R R1269,1270
-\frac{D-R}{Q} \frac{D-R}{Q}1276,1277
-\sum_i \sum_i1285,1286
-We We1288,1289
-Now Now1289,1290
+ggTurnoutAdj ggTurnoutAdj1292,1293
+ggTurnoutAdj ggTurnoutAdj1296,1297
+adjVotersL adjVotersL1301,1302
+adjVotersL adjVotersL1302,1303
+totalVoteDiagnostics totalVoteDiagnostics1306,1307
+totalVoteDiagnostics totalVoteDiagnostics1318,1319
+modelNotesRegression modelNotesRegression1354,1355
+modelNotesRegression modelNotesRegression1355,1356
+Given Given1357,1358
+D D1360,1361
+R R1361,1362
+\frac{D-R}{Q} \frac{D-R}{Q}1368,1369
+\sum_i \sum_i1377,1378
+We We1380,1381
+Now Now1381,1382
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
