@@ -32,7 +32,7 @@ sumSpending sumSpending262,263
 totalSpendingHistograms totalSpendingHistograms268,269
 totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,3122
+./reports/preference_model.hs,3169
 module Main Main13,14
 templateVars templateVars71,72
 loadCSVToFrame loadCSVToFrame90,91
@@ -68,55 +68,56 @@ data DeltaTableRow DeltaTableRow697,698
   , dtrFromOpinion dtrFromOpinion703,704
   , dtrTotal dtrTotal704,705
   , dtrPct dtrPct705,706
-deltaTable deltaTable716,717
-deltaTableColonnade deltaTableColonnade809,810
-deltaTableColonnade deltaTableColonnade810,811
-modelNotesPreface modelNotesPreface823,824
-modelNotesPreface modelNotesPreface824,825
-, ,867,868
-modelNotesBayes modelNotesBayes881,882
-modelNotesBayes modelNotesBayes882,883
-P(P892,893
-\mu_k(\mu_k937,938
-v_k(v_k938,939
-\rho(\rho939,940
-type X X992,993
-type PredictedVoters PredictedVoters993,994
-type ScaledDVotes ScaledDVotes994,995
-type ScaledRVotes ScaledRVotes995,996
-type PopScale PopScale996,997
-type CountArray CountArray997,998
-type CountArray b b997,998
-type GGTurnoutAdj GGTurnoutAdj998,999
-addPopScale addPopScale1000,1001
-votesAndPopByDistrictF votesAndPopByDistrictF1011,1012
-data PreferenceResults PreferenceResults1021,1022
-data PreferenceResults b a = PreferenceResultsPreferenceResults1021,1022
-    votesAndPopByDistrict votesAndPopByDistrict1023,1024
-    , nationalTurnout nationalTurnout1032,1033
-    , modeled modeled1033,1034
-    , mcmcChain mcmcChain1034,1035
-data RunParams RunParams1037,1038
-data RunParams = RunParams RunParams1037,1038
-data RunParams = RunParams { nChains nChains1037,1038
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1037,1038
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1037,1038
-preferenceModel preferenceModel1061,1062
-ggTurnoutAdj ggTurnoutAdj1292,1293
-ggTurnoutAdj ggTurnoutAdj1296,1297
-adjVotersL adjVotersL1301,1302
-adjVotersL adjVotersL1302,1303
-totalVoteDiagnostics totalVoteDiagnostics1306,1307
-totalVoteDiagnostics totalVoteDiagnostics1318,1319
-modelNotesRegression modelNotesRegression1354,1355
-modelNotesRegression modelNotesRegression1355,1356
-Given Given1357,1358
-D D1360,1361
-R R1361,1362
-\frac{D-R}{Q} \frac{D-R}{Q}1368,1369
-\sum_i \sum_i1377,1378
-We We1380,1381
-Now Now1381,1382
+deltaTable deltaTable721,722
+deltaTableColonnade deltaTableColonnade814,815
+deltaTableColonnade deltaTableColonnade815,816
+modelNotesPreface modelNotesPreface828,829
+modelNotesPreface modelNotesPreface829,830
+, ,872,873
+modelNotesBayes modelNotesBayes886,887
+modelNotesBayes modelNotesBayes887,888
+P(P897,898
+\mu_k(\mu_k942,943
+v_k(v_k943,944
+\rho(\rho944,945
+type X X997,998
+type PredictedVoters PredictedVoters998,999
+type ScaledDVotes ScaledDVotes999,1000
+type ScaledRVotes ScaledRVotes1000,1001
+type PopScale PopScale1001,1002
+type PopArray PopArray1002,1003
+type PopArray b b1002,1003
+type TurnoutArray TurnoutArray1003,1004
+type GGTurnoutAdj GGTurnoutAdj1004,1005
+addPopScale addPopScale1006,1007
+votesAndPopByDistrictF votesAndPopByDistrictF1017,1018
+data PreferenceResults PreferenceResults1031,1032
+data PreferenceResults b a = PreferenceResultsPreferenceResults1031,1032
+    votesAndPopByDistrict votesAndPopByDistrict1033,1034
+    , nationalTurnout nationalTurnout1040,1041
+    , modeled modeled1041,1042
+    , mcmcChain mcmcChain1042,1043
+data RunParams RunParams1045,1046
+data RunParams = RunParams RunParams1045,1046
+data RunParams = RunParams { nChains nChains1045,1046
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1045,1046
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1045,1046
+preferenceModel preferenceModel1068,1069
+ggTurnoutAdj ggTurnoutAdj1299,1300
+ggTurnoutAdj ggTurnoutAdj1303,1304
+adjVotersL adjVotersL1308,1309
+adjVotersL adjVotersL1309,1310
+totalVoteDiagnostics totalVoteDiagnostics1311,1312
+totalVoteDiagnostics totalVoteDiagnostics1324,1325
+modelNotesRegression modelNotesRegression1361,1362
+modelNotesRegression modelNotesRegression1362,1363
+Given Given1364,1365
+D D1367,1368
+R R1368,1369
+\frac{D-R}{Q} \frac{D-R}{Q}1375,1376
+\sum_i \sum_i1384,1385
+We We1387,1388
+Now Now1388,1389
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
@@ -169,7 +170,7 @@ findDelta findDelta42,43
 adjTurnoutP adjTurnoutP55,56
 adjTurnoutP adjTurnoutP56,57
 
-./src/BlueRipple/Data/DataFrames.hs,3829
+./src/BlueRipple/Data/DataFrames.hs,3862
 module BlueRipple.Data.DataFramesBlueRipple.Data.DataFrames16,17
 F.tableTypes' F.tableTypes'63,64
 --F.tableTypes' --F.tableTypes'78,79
@@ -185,66 +186,67 @@ data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demo
   , dsCategories dsCategories93,94
 type instance instance96,97
 type instance FI.VectorFor FI.VectorFor96,97
-data SimpleASR SimpleASR98,99
-data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale98,99
-               | YoungNonWhiteFemaleYoungNonWhiteFemale99,100
-               | OldNonWhiteMaleOldNonWhiteMale100,101
-               | YoungNonWhiteMaleYoungNonWhiteMale101,102
-               | OldWhiteFemaleOldWhiteFemale102,103
-               | YoungWhiteFemaleYoungWhiteFemale103,104
-               | OldWhiteMaleOldWhiteMale104,105
-               | YoungWhiteMale YoungWhiteMale105,106
-type instance instance107,108
-data SimpleASE SimpleASE110,111
-data SimpleASE = OldFemaleNonGradOldFemaleNonGrad110,111
-               | YoungFemaleNonGradYoungFemaleNonGrad111,112
-               | OldMaleNonGradOldMaleNonGrad112,113
-               | YoungMaleNonGradYoungMaleNonGrad113,114
-               | OldFemaleCollegeGradOldFemaleCollegeGrad114,115
-               | YoungFemaleCollegeGradYoungFemaleCollegeGrad115,116
-               | OldMaleCollegeGradOldMaleCollegeGrad116,117
-               | YoungMaleCollegeGrad YoungMaleCollegeGrad117,118
-type instance instance119,120
-type instance instance122,123
-data ASR ASR125,126
-data ASR = WhiteFemale18To24WhiteFemale18To24125,126
-         | WhiteFemale25To44WhiteFemale25To44126,127
-         | WhiteFemale45To64WhiteFemale45To64127,128
-         | WhiteFemale65To74WhiteFemale65To74128,129
-         | WhiteFemale75AndOverWhiteFemale75AndOver129,130
-         | WhiteMale18To24WhiteMale18To24130,131
-         | WhiteMale25To44WhiteMale25To44131,132
-         | WhiteMale45To64WhiteMale45To64132,133
-         | WhiteMale65To74WhiteMale65To74133,134
-         | WhiteMale75AndOverWhiteMale75AndOver134,135
-         | NonWhiteFemale18To24NonWhiteFemale18To24135,136
-         | NonWhiteFemale25To44NonWhiteFemale25To44136,137
-         | NonWhiteFemale45To64NonWhiteFemale45To64137,138
-         | NonWhiteFemale65To74NonWhiteFemale65To74138,139
-         | NonWhiteFemale75AndOverNonWhiteFemale75AndOver139,140
-         | NonWhiteMale18To24NonWhiteMale18To24140,141
-         | NonWhiteMale25To44NonWhiteMale25To44141,142
-         | NonWhiteMale45To64NonWhiteMale45To64142,143
-         | NonWhiteMale65To74NonWhiteMale65To74143,144
-         | NonWhiteMale75AndOver NonWhiteMale75AndOver144,145
-type instance instance146,147
-processElectionData processElectionData150,151
-processElectionData processElectionData152,153
-data Cands Cands162,163
-data Cands = NoCands NoCands162,163
-data Cands = NoCands | OneCand OneCand162,163
-data Cands = NoCands | OneCand Int | Multi Multi162,163
-candsToVotes candsToVotes163,164
-type DVotes DVotes167,168
-type RVotes RVotes168,169
-flattenVotes' flattenVotes'173,174
-flattenVotes flattenVotes201,202
-simpleAgeSexEducation simpleAgeSexEducation219,220
+type instance instance97,98
+data SimpleASR SimpleASR99,100
+data SimpleASR = OldNonWhiteFemaleOldNonWhiteFemale99,100
+               | YoungNonWhiteFemaleYoungNonWhiteFemale100,101
+               | OldNonWhiteMaleOldNonWhiteMale101,102
+               | YoungNonWhiteMaleYoungNonWhiteMale102,103
+               | OldWhiteFemaleOldWhiteFemale103,104
+               | YoungWhiteFemaleYoungWhiteFemale104,105
+               | OldWhiteMaleOldWhiteMale105,106
+               | YoungWhiteMale YoungWhiteMale106,107
+type instance instance108,109
+data SimpleASE SimpleASE111,112
+data SimpleASE = OldFemaleNonGradOldFemaleNonGrad111,112
+               | YoungFemaleNonGradYoungFemaleNonGrad112,113
+               | OldMaleNonGradOldMaleNonGrad113,114
+               | YoungMaleNonGradYoungMaleNonGrad114,115
+               | OldFemaleCollegeGradOldFemaleCollegeGrad115,116
+               | YoungFemaleCollegeGradYoungFemaleCollegeGrad116,117
+               | OldMaleCollegeGradOldMaleCollegeGrad117,118
+               | YoungMaleCollegeGrad YoungMaleCollegeGrad118,119
+type instance instance120,121
+type instance instance123,124
+data ASR ASR126,127
+data ASR = WhiteFemale18To24WhiteFemale18To24126,127
+         | WhiteFemale25To44WhiteFemale25To44127,128
+         | WhiteFemale45To64WhiteFemale45To64128,129
+         | WhiteFemale65To74WhiteFemale65To74129,130
+         | WhiteFemale75AndOverWhiteFemale75AndOver130,131
+         | WhiteMale18To24WhiteMale18To24131,132
+         | WhiteMale25To44WhiteMale25To44132,133
+         | WhiteMale45To64WhiteMale45To64133,134
+         | WhiteMale65To74WhiteMale65To74134,135
+         | WhiteMale75AndOverWhiteMale75AndOver135,136
+         | NonWhiteFemale18To24NonWhiteFemale18To24136,137
+         | NonWhiteFemale25To44NonWhiteFemale25To44137,138
+         | NonWhiteFemale45To64NonWhiteFemale45To64138,139
+         | NonWhiteFemale65To74NonWhiteFemale65To74139,140
+         | NonWhiteFemale75AndOverNonWhiteFemale75AndOver140,141
+         | NonWhiteMale18To24NonWhiteMale18To24141,142
+         | NonWhiteMale25To44NonWhiteMale25To44142,143
+         | NonWhiteMale45To64NonWhiteMale45To64143,144
+         | NonWhiteMale65To74NonWhiteMale65To74144,145
+         | NonWhiteMale75AndOver NonWhiteMale75AndOver145,146
+type instance instance147,148
+processElectionData processElectionData151,152
+processElectionData processElectionData153,154
+data Cands Cands163,164
+data Cands = NoCands NoCands163,164
+data Cands = NoCands | OneCand OneCand163,164
+data Cands = NoCands | OneCand Int | Multi Multi163,164
+candsToVotes candsToVotes164,165
+type DVotes DVotes168,169
+type RVotes RVotes169,170
+flattenVotes' flattenVotes'174,175
+flattenVotes flattenVotes202,203
 simpleAgeSexEducation simpleAgeSexEducation220,221
-simpleAgeSexRace simpleAgeSexRace436,437
+simpleAgeSexEducation simpleAgeSexEducation221,222
 simpleAgeSexRace simpleAgeSexRace437,438
-ageSexRace ageSexRace584,585
+simpleAgeSexRace simpleAgeSexRace438,439
 ageSexRace ageSexRace585,586
+ageSexRace ageSexRace586,587
 
 ./src/BlueRipple/Data/DataSourcePaths.hs,1321
 module BlueRipple.Data.DataSourcePaths BlueRipple.Data.DataSourcePaths1,2

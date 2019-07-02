@@ -95,6 +95,7 @@ data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demo
   }
 
 type instance FI.VectorFor (A.Array b Int) = V.Vector
+type instance FI.VectorFor (A.Array b Double) = V.Vector
 
 data SimpleASR = OldNonWhiteFemale
                | YoungNonWhiteFemale
