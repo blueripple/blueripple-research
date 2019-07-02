@@ -1126,6 +1126,10 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
     (cgRes, _, _) <- liftIO $ PB.cgOptimize mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
     let cgParamsA = A.listArray (minBound :: b, maxBound) $ VS.toList cgRes
     K.logLE K.Info $ "CG result = " <> (T.pack $ show cgParamsA)
+    (cgADRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
+    let cgADParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgADRes
+    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA)
+
     K.logLE K.Info $ "Doing MCMC..."
     mcmcResults <- liftIO $ PB.runMany mcmcData
                                        numParams
