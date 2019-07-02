@@ -1,10 +1,17 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns     #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs            #-}
 {-# LANGUAGE TypeApplications #-}
 module BlueRipple.Model.PreferenceBayes where
 
 
 import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
+import           Control.Lens.At                ( IxValue
+                                                , Index
+                                                , Ixed
+                                                )
+import           Control.Lens.Indexed           ( FunctorWithIndex )
 import           Control.Monad                  ( sequence )
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
@@ -15,62 +22,107 @@ import           System.Random                  ( randomRIO )
 import           Control.Concurrent            as CC
 import           Control.Concurrent.MVar       as CC
 import qualified Data.Vector.Unboxed           as VU
+import qualified Data.Vector.Storable          as VS
+import qualified Data.Vector.Generic           as VG
+
+import qualified Numeric.Optimization.Algorithms.HagerZhang05
+                                               as CG
 
 data ObservedVote = ObservedVote { dem :: Int}
 
 data Pair a b = Pair !a !b
 
 
-binomialNormalParams :: [Int] -> [Double] -> (Double, Double)
+binomialNormalParams
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Foldable v
+     )
+  => v Int
+  -> v Double
+  -> (Double, Double)
 binomialNormalParams turnoutCounts demProbs =
-  let np          = zip turnoutCounts demProbs
-      foldMeanVar = FL.Fold
-        (\(Pair m v) (n, p) ->
-          let m' = (realToFrac n) * p in (Pair (m + m') (v + m' * (1 - p)))
-        )
-        (Pair 0 0)
-        id
-      Pair m v = FL.fold foldMeanVar np
+  let np = VG.zip turnoutCounts demProbs
+      meanVarUpdate :: Pair Double Double -> (Int, Double) -> Pair Double Double
+      meanVarUpdate (Pair m v) (n, p) =
+        let m' = (realToFrac n) * p in (Pair (m + m') (v + m' * (1 - p)))
+      foldMeanVar = FL.Fold meanVarUpdate (Pair 0 0) id
+      Pair m v    = FL.fold foldMeanVar np
   in  (m, v)
 
-logBinomialObservedVote :: [Double] -> (Int, [Int]) -> Double
+logBinomialObservedVote
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Foldable v
+     )
+  => v Double
+  -> (Int, v Int)
+  -> Double
 logBinomialObservedVote demProbs (demVote, turnoutCounts) =
   let (m, v) = binomialNormalParams turnoutCounts demProbs
   in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
 
 
-gradLogBinomialObservedVote :: [Double] -> (Int, [Int]) -> [Double]
+gradLogBinomialObservedVote
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Functor v
+     , Foldable v
+     )
+  => v Double
+  -> (Int, v Int)
+  -> v Double
 gradLogBinomialObservedVote demProbs (demVote, turnoutCounts) =
   let (m, v) = binomialNormalParams turnoutCounts demProbs
-      np     = zip turnoutCounts demProbs
+      np     = VG.zip turnoutCounts demProbs
       dv     = fmap (\(n, p) -> let n' = realToFrac n in n' * (1 - 2 * p)) np
       dm     = turnoutCounts
-      dmv    = zip dm dv
+      dmv    = VG.zip dm dv
       a1     = negate (1 / v) -- d (log v)
       a2     = (realToFrac demVote - m)
       a3     = (a2 * a2) / (2 * v * v)
       a4     = (a2 / v)
   in  fmap (\(dm, dv) -> (a1 + a3) * dv + a4 * realToFrac dm) dmv
 
-logBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> Double
+logBinomialObservedVotes
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Foldable v
+     , Functor f
+     , Foldable f
+     )
+  => f (Int, v Int)
+  -> v Double
+  -> Double
 logBinomialObservedVotes votesAndTurnout demProbs =
   FL.fold FL.sum $ fmap (logBinomialObservedVote demProbs) votesAndTurnout
 
-gradLogBinomialObservedVotes :: [(Int, [Int])] -> [Double] -> [Double]
+gradLogBinomialObservedVotes
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Traversable v
+     , Functor f
+     , Foldable f
+     )
+  => f (Int, v Int)
+  -> v Double
+  -> v Double
 gradLogBinomialObservedVotes votesAndTurnout demProbs =
-  let n = length demProbs
-      sumEach =
-        sequenceA
-          $ fmap (\n -> FL.premap (!! n) (FL.sum @Double))
-          $ [0 .. (n - 1)]
-  in  FL.fold sumEach
-        $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
+  let
+    n           = VG.length demProbs
+    indexVector = VG.generate n id
+    sumEach =
+      sequenceA $ fmap (\n -> FL.premap (VG.! n) (FL.sum @Double)) $ indexVector
+  in
+    FL.fold sumEach
+      $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
 
-{-
---gradLogProbObservedVotes2 :: [(Int, [Int])] -> [Double] -> [Double]
-gradLogProbObservedVotes2 votesAndTurnout =
-  grad (logProbObservedVotes votesAndTurnout)
--}
+--cgOptimize ::  [(Int, [Int])] -> IO (
 
 betaDist :: Double -> Double -> Double -> Double
 betaDist alpha beta x =
@@ -84,7 +136,12 @@ logBetaDist alpha beta x =
   let lb = log $ gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  lb + (alpha - 1) * log x + (beta - 1) * log (1 - x)
 
-betaPrior :: Double -> Double -> [Double] -> Double
+betaPrior
+  :: (VG.Vector v Double, Functor v, Foldable v)
+  => Double
+  -> Double
+  -> v Double
+  -> Double
 betaPrior a b xs = FL.fold FL.product $ fmap (betaDist a b) xs
 
 {-
@@ -97,15 +154,40 @@ f votesAndTurnout demProbs =
   in  (exp $ logProbObservedVotes votesAndTurnout v) * (betaPrior 2 2 v)
 -}
 
-logBinomialWithPrior :: [(Int, [Int])] -> [Double] -> Double
+logBinomialWithPrior
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Functor v
+     , Foldable v
+     , Functor f
+     , Foldable f
+     )
+  => f (Int, v Int)
+  -> v Double
+  -> Double
 logBinomialWithPrior votesAndTurnout demProbs =
-  let v = demProbs
-  in  logBinomialObservedVotes votesAndTurnout v + log (betaPrior 2 2 v)
+  let x = demProbs
+  in  logBinomialObservedVotes votesAndTurnout x + log (betaPrior 2 2 x)
 
-type Sample = [Double]
-type Chain = [Sample]
+type Sample v = v Double
+type Chain v = [Sample v]
 
---runMCMC :: _ -- [(Int, [Int])] -> Int -> Sample -> IO [Chain]
+runMCMC
+  :: ( VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Functor f
+     , Foldable f
+     , IxValue (v Double) ~ Double
+     , FunctorWithIndex (Index (v Double)) v
+     , Ixed (v Double)
+     , Traversable v
+     )
+  => f (Int, v Int)
+  -> Int
+  -> Sample v
+  -> IO (Chain v)
 runMCMC votesAndTurnout numIters start =
   fmap (fmap MC.chainPosition) . MC.withSystemRandom . MC.asGenIO $ MC.chain
     numIters
@@ -132,12 +214,28 @@ sequenceConcurrently actions = do
   forked <- traverse f actions -- IO (t (MVar a, ThreadId))
   traverse g forked
 
-
+runMany
+  :: ( Functor f
+     , Foldable f
+     , VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Traversable v
+     , IxValue (v Double) ~ Double
+     , FunctorWithIndex (Index (v Double)) v
+     , Ixed (v Double)
+     )
+  => f (Int, v Int)
+  -> Int
+  -> Int
+  -> Int
+  -> Int
+  -> IO [Chain v]
 runMany votesAndTurnout nParams nChains nSamplesPerChain nBurnPerChain = do
   let
-    randomStart :: Int -> IO [Double]
-    randomStart n = sequence $ replicate n (randomRIO (0, 1))
-    randomStarts :: Int -> Int -> IO [[Double]]
+--    randomStart :: Int -> IO (v Double)
+    randomStart n = VG.fromList <$> (sequence $ replicate n (randomRIO (0, 1)))
+--    randomStarts :: Int -> Int -> IO [v Double]
     randomStarts n m = sequence $ replicate m (randomStart n)
     doEach =
       fmap (drop nBurnPerChain) . runMCMC votesAndTurnout nSamplesPerChain

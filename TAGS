@@ -32,130 +32,120 @@ sumSpending sumSpending262,263
 totalSpendingHistograms totalSpendingHistograms268,269
 totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,3169
+./reports/preference_model.hs,3001
 module Main Main13,14
-templateVars templateVars71,72
-loadCSVToFrame loadCSVToFrame90,91
-intro2018 intro2018104,105
+templateVars templateVars72,73
+loadCSVToFrame loadCSVToFrame91,92
 intro2018 intro2018105,106
-postFig2018 postFig2018181,182
+intro2018 intro2018106,107
 postFig2018 postFig2018182,183
-acrossTime acrossTime210,211
+postFig2018 postFig2018183,184
 acrossTime acrossTime211,212
-voteShifts voteShifts254,255
+acrossTime acrossTime212,213
 voteShifts voteShifts255,256
-voteShiftObservations voteShiftObservations287,288
+voteShifts voteShifts256,257
 voteShiftObservations voteShiftObservations288,289
-knitX knitX342,343
-knitMaybe knitMaybe350,351
-knitEither knitEither357,358
-quick quick359,360
-justEnough justEnough360,361
-goToTown goToTown361,362
-type DemographicCategories DemographicCategories363,364
-main main377,378
+voteShiftObservations voteShiftObservations289,290
+knitX knitX343,344
+knitMaybe knitMaybe351,352
+knitEither knitEither358,359
+quick quick360,361
+justEnough justEnough361,362
+goToTown goToTown362,363
+type DemographicCategories DemographicCategories364,365
 main main378,379
-modeledResults modeledResults634,635
-modeledResults modeledResults649,650
+main main379,380
+modeledResults modeledResults631,632
+modeledResults modeledResults646,647
+modeledDVotes modeledDVotes661,662
 modeledDVotes modeledDVotes663,664
-modeledDVotes modeledDVotes665,666
-data DeltaTableRow DeltaTableRow697,698
-  DeltaTableRowDeltaTableRow698,699
-  { dtrGroup dtrGroup699,700
-  , dtrPop dtrPop700,701
-  , dtrFromPop dtrFromPop701,702
-  , dtrFromTurnout dtrFromTurnout702,703
-  , dtrFromOpinion dtrFromOpinion703,704
-  , dtrTotal dtrTotal704,705
-  , dtrPct dtrPct705,706
-deltaTable deltaTable721,722
-deltaTableColonnade deltaTableColonnade814,815
-deltaTableColonnade deltaTableColonnade815,816
-modelNotesPreface modelNotesPreface828,829
-modelNotesPreface modelNotesPreface829,830
-, ,872,873
-modelNotesBayes modelNotesBayes886,887
-modelNotesBayes modelNotesBayes887,888
-P(P897,898
-\mu_k(\mu_k942,943
-v_k(v_k943,944
-\rho(\rho944,945
-type X X997,998
-type PredictedVoters PredictedVoters998,999
-type ScaledDVotes ScaledDVotes999,1000
-type ScaledRVotes ScaledRVotes1000,1001
-type PopScale PopScale1001,1002
-type PopArray PopArray1002,1003
-type PopArray b b1002,1003
-type TurnoutArray TurnoutArray1003,1004
-type GGTurnoutAdj GGTurnoutAdj1004,1005
-addPopScale addPopScale1006,1007
-votesAndPopByDistrictF votesAndPopByDistrictF1017,1018
-data PreferenceResults PreferenceResults1031,1032
-data PreferenceResults b a = PreferenceResultsPreferenceResults1031,1032
-    votesAndPopByDistrict votesAndPopByDistrict1033,1034
-    , nationalTurnout nationalTurnout1040,1041
-    , modeled modeled1041,1042
-    , mcmcChain mcmcChain1042,1043
-data RunParams RunParams1045,1046
-data RunParams = RunParams RunParams1045,1046
-data RunParams = RunParams { nChains nChains1045,1046
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1045,1046
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1045,1046
-preferenceModel preferenceModel1068,1069
-ggTurnoutAdj ggTurnoutAdj1299,1300
-ggTurnoutAdj ggTurnoutAdj1303,1304
-adjVotersL adjVotersL1308,1309
-adjVotersL adjVotersL1309,1310
-totalVoteDiagnostics totalVoteDiagnostics1311,1312
-totalVoteDiagnostics totalVoteDiagnostics1324,1325
-modelNotesRegression modelNotesRegression1361,1362
-modelNotesRegression modelNotesRegression1362,1363
-Given Given1364,1365
-D D1367,1368
-R R1368,1369
-\frac{D-R}{Q} \frac{D-R}{Q}1375,1376
-\sum_i \sum_i1384,1385
-We We1387,1388
-Now Now1388,1389
+data DeltaTableRow DeltaTableRow686,687
+  DeltaTableRowDeltaTableRow687,688
+  { dtrGroup dtrGroup688,689
+  , dtrPop dtrPop689,690
+  , dtrFromPop dtrFromPop690,691
+  , dtrFromTurnout dtrFromTurnout691,692
+  , dtrFromOpinion dtrFromOpinion692,693
+  , dtrTotal dtrTotal693,694
+  , dtrPct dtrPct694,695
+deltaTable deltaTable709,710
+deltaTableColonnade deltaTableColonnade802,803
+deltaTableColonnade deltaTableColonnade803,804
+modelNotesPreface modelNotesPreface816,817
+modelNotesPreface modelNotesPreface817,818
+, ,860,861
+modelNotesBayes modelNotesBayes874,875
+modelNotesBayes modelNotesBayes875,876
+P(P885,886
+\mu_k(\mu_k930,931
+v_k(v_k931,932
+\rho(\rho932,933
+type X X985,986
+type ScaledDVotes ScaledDVotes986,987
+type ScaledRVotes ScaledRVotes987,988
+type PopArray PopArray988,989
+type PopArray b b988,989
+type TurnoutArray TurnoutArray989,990
+votesAndPopByDistrictF votesAndPopByDistrictF997,998
+data PreferenceResults PreferenceResults1011,1012
+data PreferenceResults b a = PreferenceResultsPreferenceResults1011,1012
+    votesAndPopByDistrict votesAndPopByDistrict1013,1014
+    , nationalTurnout nationalTurnout1020,1021
+    , modeled modeled1021,1022
+    , mcmcChain mcmcChain1022,1023
+data RunParams RunParams1025,1026
+data RunParams = RunParams RunParams1025,1026
+data RunParams = RunParams { nChains nChains1025,1026
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1025,1026
+data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1025,1026
+preferenceModel preferenceModel1048,1049
+ggTurnoutAdj ggTurnoutAdj1146,1147
+ggTurnoutAdj ggTurnoutAdj1150,1151
+adjVotersL adjVotersL1155,1156
+adjVotersL adjVotersL1156,1157
+totalVoteDiagnostics totalVoteDiagnostics1158,1159
+totalVoteDiagnostics totalVoteDiagnostics1171,1172
+modelNotesRegression modelNotesRegression1208,1209
+modelNotesRegression modelNotesRegression1209,1210
+Given Given1211,1212
+D D1214,1215
+R R1215,1216
+\frac{D-R}{Q} \frac{D-R}{Q}1222,1223
+\sum_i \sum_i1231,1232
+We We1234,1235
+Now Now1235,1236
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/PreferenceBayes.hs,1354
-module BlueRipple.Model.PreferenceBayes BlueRipple.Model.PreferenceBayes2,3
-data ObservedVote ObservedVote18,19
-data ObservedVote = ObservedVote ObservedVote18,19
-data ObservedVote = ObservedVote { dem dem18,19
-data Pair Pair20,21
-data Pair a b = Pair Pair20,21
-binomialNormalParams binomialNormalParams23,24
-binomialNormalParams binomialNormalParams24,25
-logBinomialObservedVote logBinomialObservedVote35,36
-logBinomialObservedVote logBinomialObservedVote36,37
-gradLogBinomialObservedVote gradLogBinomialObservedVote41,42
-gradLogBinomialObservedVote gradLogBinomialObservedVote42,43
-logBinomialObservedVotes logBinomialObservedVotes54,55
-logBinomialObservedVotes logBinomialObservedVotes55,56
-gradLogBinomialObservedVotes gradLogBinomialObservedVotes58,59
-gradLogBinomialObservedVotes gradLogBinomialObservedVotes59,60
-betaDist betaDist74,75
-betaDist betaDist75,76
-logBetaDist logBetaDist81,82
-logBetaDist logBetaDist82,83
-betaPrior betaPrior86,87
-betaPrior betaPrior87,88
-logBinomialWithPrior logBinomialWithPrior99,100
-logBinomialWithPrior logBinomialWithPrior100,101
-type Sample Sample104,105
-type Chain Chain105,106
---runMCMC --runMCMC107,108
-runMCMC runMCMC108,109
-sequenceConcurrently sequenceConcurrently122,123
-sequenceConcurrently sequenceConcurrently123,124
-runMany runMany135,136
+./src/BlueRipple/Model/PreferenceBayes.hs,1033
+module BlueRipple.Model.PreferenceBayes BlueRipple.Model.PreferenceBayes4,5
+data ObservedVote ObservedVote30,31
+data ObservedVote = ObservedVote ObservedVote30,31
+data ObservedVote = ObservedVote { dem dem30,31
+data Pair Pair32,33
+data Pair a b = Pair Pair32,33
+binomialNormalParams binomialNormalParams44,45
+logBinomialObservedVote logBinomialObservedVote62,63
+gradLogBinomialObservedVote gradLogBinomialObservedVote77,78
+logBinomialObservedVotes logBinomialObservedVotes100,101
+gradLogBinomialObservedVotes gradLogBinomialObservedVotes114,115
+--cgOptimize --cgOptimize124,125
+betaDist betaDist126,127
+betaDist betaDist127,128
+logBetaDist logBetaDist133,134
+logBetaDist logBetaDist134,135
+betaPrior betaPrior144,145
+logBinomialWithPrior logBinomialWithPrior168,169
+type Sample Sample172,173
+type Sample v v172,173
+type Chain Chain173,174
+runMCMC runMCMC190,191
+sequenceConcurrently sequenceConcurrently204,205
+sequenceConcurrently sequenceConcurrently205,206
+runMany runMany233,234
 
 ./src/BlueRipple/Model/TurnoutAdjustment.hs,332
 module BlueRipple.Model.TurnoutAdjustment BlueRipple.Model.TurnoutAdjustment10,11

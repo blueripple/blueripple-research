@@ -60,6 +60,7 @@ library
                      , lens
                      , math-functions
                      , mtl
+                     , nonlinear-optimization >= 0.3.11 && < 0.4
                      , nonlinear-optimization-ad >= 0.2 && < 0.3
                      , OpenFEC-beam
                      , parallel

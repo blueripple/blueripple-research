@@ -22,6 +22,7 @@ import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
                                                 )
+import qualified Data.Vector                   as VB                 
 
 import qualified Text.Pandoc.Error             as PA
 
@@ -383,7 +384,7 @@ main = do
                                                templateVars
                                                K.mindocOptionsF
   eitherDocs <-
-    K.knitHtmls (Just "preference_model.Main") K.logAll pandocWriterConfig $ do
+    K.knitHtmls (Just "preference_model.Main") K.nonDiagnostic pandocWriterConfig $ do
     -- load the data   
       let parserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
@@ -495,7 +496,7 @@ main = do
                    FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
                 addParametersVsTime :: K.KnitOne r
                                   => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
-                                  -> K.Sem r () --Graphics.Vega.VegaLite.VegaLite
+                                  -> K.Sem r ()
                 addParametersVsTime pr = do 
                    let vl =
                          FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
@@ -518,10 +519,6 @@ main = do
                   $ FV.addRowBuilder @'("D Voteshare of D+R Votes",Double)
                       (\(_, _, z) -> z)
                       FV.emptyRowBuilder
-              vDatSVS :: (A.Ix b, Bounded b, Enum b, Show b)
-                      => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
-                      -> [FV.Row [ '("Group", F.Text), '("Election Year", Int),
-                                   '("D Voteshare of D+R Votes", Double)]]
               vDatSVS prMap = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
                 modeledDVotes
                 prMap
@@ -564,7 +561,7 @@ main = do
                                                 (mcmcChain mry2)
                         )
                       $ fmap
-                          (\n -> (!! n))
+                          (\n -> (VB.! n))
                           [0 .. (length (dsCategories simpleAgeSexRace) - 1)]
                 K.logLE K.Info
                   $  "Mann-Whitney U  "
@@ -661,6 +658,7 @@ modeledResults ds dFrame tFrame eFrame years rp = flip traverse years $ \y -> do
 
 
 -- PreferenceResults to list of group names and predicted D votes
+-- But we want them as a fraction of D/D+R
 modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
   => PreferenceResults b FV.NamedParameterEstimate -> [(T.Text, Double)]
 modeledDVotes pr =
@@ -675,23 +673,14 @@ modeledDVotes pr =
     predVoters = zipWith (*) (A.elems turnoutArray) $ fmap realToFrac (A.elems popArray)
     allDVotes  = F.rgetField @DVotes summed
     allRVotes  = F.rgetField @RVotes summed
-{-    
-    shareOfDScale =
-      predVoters / realToFrac (allDVotes + allRVotes) / realToFrac allDVotes
-    shareOfDRScale =
-      shareOfDScale
-      * ( realToFrac allDVotes
-          / realToFrac (allDVotes + allRVotes)
-        )
--}
     dVotes b =
       realToFrac (popArray A.! b)
       * (turnoutArray A.! b)
       * (FV.value . FV.pEstimate $ (modeled pr) A.! b)
-      
---      * shareOfDRScale
+    allPredictedD = FL.fold FL.sum $ fmap dVotes [minBound..maxBound]
+    scale = (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))/allPredictedD      
   in
-    fmap (\b -> (T.pack $ show b, dVotes b))
+    fmap (\b -> (T.pack $ show b, scale * dVotes b))
     [(minBound :: b) .. maxBound]
 
 
@@ -712,7 +701,6 @@ deltaTable
      , Bounded b
      , Enum b
      , Show b
---     , FL.Vector (F.VectorFor (A.Array b Double)) (A.Array b Double)
      )
   => DemographicStructure dr tr e b
   -> (F.Record LocationKey -> Bool)
@@ -996,18 +984,10 @@ have converged.
 |]
 
 type X = "X" F.:-> Double
-type PredictedVoters = "PredictedVoters" F.:-> Int
 type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
-type PopScale = "PopScale" F.:-> Double -- (DVotes + RVotes)/sum (pop_i * turnout_i)
 type PopArray b = "PopArray" F.:-> A.Array b Int
 type TurnoutArray b = "TurnoutArray" F.:-> A.Array b Double
-type GGTurnoutAdj = "GGTurnoutAdj" F.:-> Double
-
-addPopScale r =
-  FT.recordSingleton @PopScale
-    $ realToFrac (F.rgetField @DVotes r + F.rgetField @RVotes r)
-    / realToFrac (F.rgetField @PredictedVoters r)
 
 votesAndPopByDistrictF
   :: forall b
@@ -1040,7 +1020,7 @@ data PreferenceResults b a = PreferenceResults
                                        ]]
     , nationalTurnout :: A.Array b Double
     , modeled :: A.Array b a
-    , mcmcChain :: PB.Chain -- exposed for significance testing of differences between years
+    , mcmcChain :: PB.Chain VB.Vector-- exposed for significance testing of differences between years
   }
 
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }
@@ -1129,151 +1109,18 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
       
     totalVoteDiagnostics @b resultsWithPopulationsAndGGAdjFrame opposedFrame
     
-    
-{-    
-    acsPopByGroupArray <-
-      knitMaybe "Problem making array from summed ACS population"
-      $ FL.foldM
-          (FE.makeArrayMF (F.rgetField @(DemographicCategory b))
-                          (F.rgetField @PopCount)
-                          (flip const)
-          )
-      $ FL.fold
-          (MR.concatFold $ MR.mapReduceFold
-            MR.noUnpack
-            (MR.assignKeysAndData @'[DemographicCategory b] @'[PopCount])
-            (MR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-          )
-          longByDCategoryFrame
 
-
-        
-    turnoutPopByGroupArray <-
-      knitMaybe "Missing or extra group in turnout data?" $ FL.foldM
-        (FE.makeArrayMF (F.rgetField @(DemographicCategory b))
-                        ((* 1000) . F.rgetField @Population)
-                        (flip const)
+    let 
+      scaleInt s n = round $ s * realToFrac n
+      mcmcData =
+        fmap
+        (\r ->
+           ( (F.rgetField @DVotes r)
+           , VB.fromList $ fmap round (adjVotersL (F.rgetField @(TurnoutArray b) r) (F.rgetField @(PopArray b) r))
+           )
         )
-        filteredTurnoutFrame
-    K.logLE K.Diagnostic
-      $  "Pop From Turnout: "
-      <> (T.pack $ show turnoutPopByGroupArray)
-    K.logLE K.Diagnostic
-      $  "Pop From ACS: "
-      <> (T.pack $ show acsPopByGroupArray)
-    let turnoutVsACSAdjustment b = realToFrac (turnoutPopByGroupArray A.! b)
-          / realToFrac (acsPopByGroupArray A.! b)
-        turnoutByGroup b = turnoutByGroupArray A.! b
-        scaleByTurnoutAndAdj b n =
-          round $ turnoutByGroup b * turnoutVsACSAdjustment b * realToFrac n
-
-        sumVotersF = PF.dimap
-          (\r -> scaleByTurnoutAndAdj (F.rgetField @(DemographicCategory b) r)
-                                      (F.rgetField @PopCount r)
-          )
-          (FT.recordSingleton @PredictedVoters)
-          FL.sum
-        predictedVotersF = MR.concatFold $ MR.mapReduceFold
-          MR.noUnpack
-          (MR.splitOnKeys @LocationKey)
-          (MR.foldAndAddKey sumVotersF)
-        predictedVotersFrame = MR.fold predictedVotersF longByDCategoryFrame
-
-        resultsWPVFrame =
-          F.toFrame
-            $ fmap (FT.mutate addPopScale)
-            $ catMaybes
-            $ fmap F.recMaybe
-            $ F.leftJoin @LocationKey resultsFlattenedFrame predictedVotersFrame
-
-        onlyOpposed r =
-          (F.rgetField @DVotes r > 0) && (F.rgetField @RVotes r > 0)
-        opposedRWPVFrame    = F.filterFrame onlyOpposed resultsWPVFrame
-        numCompetitiveRaces = FL.fold FL.length opposedRWPVFrame
-    K.logLE K.Info
-      $ "After removing races where someone is running unopposed and scaling each group by turnout we have "
-      <> (T.pack $ show numCompetitiveRaces)
-      <> " contested races."
-    -- some diagnostics here
-    let allVotersF = FL.premap (F.rgetField @PredictedVoters) FL.sum
-        allVotesF  = FL.premap (F.rgetField @Totalvotes) FL.sum
-        allDVotesF = FL.premap (F.rgetField @DVotes) FL.sum
-        allRVotesF = FL.premap (F.rgetField @RVotes) FL.sum
-  --      allDRVotesF = FL.premap (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r) FL.sum
-        (totalVoters, totalVotes, totalDVotes, totalRVotes) = FL.fold
-          ((,,,) <$> allVotersF <*> allVotesF <*> allDVotesF <*> allRVotesF)
-          resultsWPVFrame
-        (totalVotersCD, totalVotesCD, totalDVotesCD, totalRVotesCD) = FL.fold
-          ((,,,) <$> allVotersF <*> allVotesF <*> allDVotesF <*> allRVotesF)
-          opposedRWPVFrame
-    K.logLE K.Info $ "voters=" <> (T.pack $ show totalVoters)
-    K.logLE K.Info $ "house votes=" <> (T.pack $ show totalVotes)
-    K.logLE K.Info
-      $  "D/R/D+R house votes="
-      <> (T.pack $ show totalDVotes)
-      <> "/"
-      <> (T.pack $ show totalRVotes)
-      <> "/"
-      <> (T.pack $ show (totalDVotes + totalRVotes))
-    K.logLE K.Info
-      $  "voters (competitive districts)="
-      <> (T.pack $ show totalVotersCD)
-    K.logLE K.Info
-      $  "house votes (competitive districts)="
-      <> (T.pack $ show totalVotesCD)
-    K.logLE K.Info
-      $  "D/R/D+R house votes (competitive districts)="
-      <> (T.pack $ show totalDVotesCD)
-      <> "/"
-      <> (T.pack $ show totalRVotesCD)
-      <> "/"
-      <> (T.pack $ show (totalDVotesCD + totalRVotesCD))
-
-    let
-      opposedRWPVWithArrayCountsFrame =
-        catMaybes $ fmap F.recMaybe $ F.leftJoin @LocationKey opposedRWPVFrame
-                                                              arrayCountsFrame
-      
-    -- here's where we want to compute and add the GGTurnoutAdj.  I think.
-    opposedRWPVWithArrayCountsAndGGAdjFrame <- flip traverse opposedRWPVWithArrayCountsFrame $ \r -> do
-      ggDelta <- ggTurnoutAdj r turnoutByGroupArray
-      K.logLE K.Info $
-        "Ghitza-Gelman turnout adj="
-        <> (T.pack $ show ggDelta)
-        <> "; Adj Turnout=" <> (T.pack $ show $ TA.adjTurnoutP ggDelta turnoutByGroupArray)
-      return $ FT.mutate (const $ FT.recordSingleton @GGTurnoutAdj ggDelta) r
-              
-    let
-      scaleArrayCounts popScale =
-        A.array (minBound, maxBound)
-        . fmap
-        (\(b, c) ->
-            (b, round $ popScale * turnoutVsACSAdjustment b * realToFrac c)
-        )
-        . A.assocs
-      opposedRWPVWithScaledArrayCountsFrame = fmap
-                                              (\r -> F.rputField @(PopArray b)
-                                                (scaleArrayCounts (F.rgetField @PopScale r)
-                                                 (F.rgetField @(PopArray b) r)
-                                                )
-                                                r
-                                              )
-                                                opposedRWPVWithArrayCountsAndGGAdjFrame
--}
-    let --popArrayToVotersList :: Double -> A.Array b Int -> [Int]
-        --popArrayToVotersList ggDelta popA =
-      -- let adjTurnout = TA.adjTurnoutP ggDelta turnoutByGroupArray
-         -- in zipWith (*) (A.elems adjTurnout) (fmap realToFrac $ A.elems popA)
-        scaleInt s n = round $ s * realToFrac n
-        mcmcData =
-          fmap
-            (\r ->
-              ( (F.rgetField @DVotes r)
-              , fmap round (adjVotersL (F.rgetField @(TurnoutArray b) r) (F.rgetField @(PopArray b) r))
-              )
-            )
-          $ FL.fold FL.list opposedFrame
-        numParams = length $ dsCategories ds
+        $ FL.fold FL.list opposedFrame
+      numParams = length $ dsCategories ds
     mcmcResults <- liftIO $ PB.runMany mcmcData
                                        numParams
                                        (nChains runParams)
@@ -1282,13 +1129,13 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
     -- this use of [0..(numParams - 1)] is bad.
     let conf = S.cl95
     summaries <- knitMaybe "mcmc \"summarize\" produced Nothing." $ traverse
-      (\n -> summarize conf (!! n) mcmcResults)
+      (\n -> summarize conf (VB.! n) mcmcResults)
       [0 .. (numParams - 1)]
     let summaryA = A.listArray (minBound :: b, maxBound) summaries
     K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
     K.logLE K.Info
       $  "mpsrf="
-      <> (T.pack $ show $ mpsrf (fmap (\n -> (!! n)) [0 .. (numParams - 1)])
+      <> (T.pack $ show $ mpsrf (fmap (\n -> (VB.! n)) [0 .. (numParams - 1)])
                                 mcmcResults
          )
     return $ PreferenceResults
