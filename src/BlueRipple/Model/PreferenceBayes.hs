@@ -122,7 +122,32 @@ gradLogBinomialObservedVotes votesAndTurnout demProbs =
     FL.fold sumEach
       $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
 
---cgOptimize ::  [(Int, [Int])] -> IO (
+cgOptimize
+  :: ( Functor f
+     , Foldable f
+     , VG.Vector v Int
+     , VG.Vector v Double
+     , VG.Vector v (Int, Double)
+     , Traversable v
+     )
+  => f (Int, v Int)
+  -> v Double
+  -> IO (VS.Vector Double, CG.Result, CG.Statistics)
+cgOptimize votesAndVoters guess = do
+  let params = CG.defaultParameters { CG.printFinal  = False
+                                    , CG.printParams = False
+                                    , CG.verbose     = CG.Quiet
+                                    }
+      grad_tol = 0.0000001
+  CG.optimize
+    params
+    grad_tol
+    guess
+    (CG.VFunction (negate . logBinomialObservedVotes votesAndVoters))
+    (CG.VGradient (fmap negate . gradLogBinomialObservedVotes votesAndVoters))
+    Nothing
+
+
 
 betaDist :: Double -> Double -> Double -> Double
 betaDist alpha beta x =

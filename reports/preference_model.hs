@@ -22,7 +22,8 @@ import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
                                                 )
-import qualified Data.Vector                   as VB                 
+import qualified Data.Vector                   as VB
+import qualified Data.Vector.Storable                   as VS                 
 
 import qualified Text.Pandoc.Error             as PA
 
@@ -1121,6 +1122,11 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
         )
         $ FL.fold FL.list opposedFrame
       numParams = length $ dsCategories ds
+    K.logLE K.Info $ "Doing CG optimization..."
+    (cgRes, _, _) <- liftIO $ PB.cgOptimize mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
+    let cgParamsA = A.listArray (minBound :: b, maxBound) $ VS.toList cgRes
+    K.logLE K.Info $ "CG result = " <> (T.pack $ show cgParamsA)
+    K.logLE K.Info $ "Doing MCMC..."
     mcmcResults <- liftIO $ PB.runMany mcmcData
                                        numParams
                                        (nChains runParams)
