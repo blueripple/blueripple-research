@@ -13,10 +13,14 @@ import           Control.Lens.At                ( IxValue
                                                 )
 import           Control.Lens.Indexed           ( FunctorWithIndex )
 import           Control.Monad                  ( sequence )
+
+import qualified Numeric.AD                    as AD
+import           Numeric.LinearAlgebra         as LA
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 import qualified Numeric.MCMC                  as MC
-import           Numeric.AD.Mode.Reverse        ( Reverse)
+
+
 import           Math.Gamma                     ( gamma )
 import           System.Random                  ( randomRIO )
 import           Control.Concurrent            as CC
@@ -25,21 +29,18 @@ import qualified Data.Vector.Unboxed           as VU
 import qualified Data.Vector.Storable          as VS
 import qualified Data.Vector.Generic           as VG
 import qualified Data.Vector                   as VB
+
 import qualified Numeric.Optimization.Algorithms.HagerZhang05
                                                as CG
 
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
-                                               as CGAD                                               
+                                               as CGAD
 
 data ObservedVote = ObservedVote { dem :: Int}
 
 data Pair a b = Pair !a !b
 
-binomialNormalParams
-  :: RealFrac a
-  => VB.Vector Int
-  -> VB.Vector a
-  -> (a, a)
+binomialNormalParams :: RealFrac a => VB.Vector Int -> VB.Vector a -> (a, a)
 binomialNormalParams turnoutCounts demProbs =
   let np = VB.zip turnoutCounts demProbs
       meanVarUpdate :: RealFrac a => Pair a a -> (Int, a) -> Pair a a
@@ -50,20 +51,13 @@ binomialNormalParams turnoutCounts demProbs =
   in  (m, v)
 
 logBinomialObservedVote
-  :: ( RealFrac a
-     , Floating a
-     )
-  => VB.Vector a
-  -> (Int, VB.Vector Int)
-  -> a
+  :: (RealFrac a, Floating a) => VB.Vector a -> (Int, VB.Vector Int) -> a
 logBinomialObservedVote demProbs (demVote, turnoutCounts) =
   let (m, v) = binomialNormalParams turnoutCounts demProbs
   in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
 
 gradLogBinomialObservedVote
-  :: ( Floating a
-     , RealFrac a
-     )
+  :: (Floating a, RealFrac a)
   => VB.Vector a
   -> (Int, VB.Vector Int)
   -> VB.Vector a
@@ -80,11 +74,7 @@ gradLogBinomialObservedVote demProbs (demVote, turnoutCounts) =
   in  fmap (\(dm, dv) -> (a1 + a3) * dv + a4 * realToFrac dm) dmv
 
 logBinomialObservedVotes
-  :: ( Functor f
-     , Foldable f
-     , Floating a
-     , RealFrac a
-     )
+  :: (Functor f, Foldable f, Floating a, RealFrac a)
   => f (Int, VB.Vector Int)
   -> VB.Vector a
   -> a
@@ -92,9 +82,7 @@ logBinomialObservedVotes votesAndTurnout demProbs =
   FL.fold FL.sum $ fmap (logBinomialObservedVote demProbs) votesAndTurnout
 
 gradLogBinomialObservedVotes
-  :: ( Functor f
-     , Foldable f
-     )
+  :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> VB.Vector Double
@@ -109,9 +97,7 @@ gradLogBinomialObservedVotes votesAndTurnout demProbs =
       $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
 
 cgOptimize
-  :: ( Functor f
-     , Foldable f
-     )
+  :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> IO (VS.Vector Double, CG.Result, CG.Statistics)
@@ -130,9 +116,7 @@ cgOptimize votesAndVoters guess = do
     Nothing
 
 cgOptimizeAD
-  :: ( Functor f
-     , Foldable f
-     )
+  :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> IO (VB.Vector Double, CG.Result, CG.Statistics)
@@ -142,11 +126,23 @@ cgOptimizeAD votesAndVoters guess = do
                                     , CG.verbose     = CG.Quiet
                                     }
       grad_tol = 0.0000001
-  CGAD.optimize
-    params
-    grad_tol
-    guess
-    (negate . logBinomialObservedVotes votesAndVoters)
+  CGAD.optimize params
+                grad_tol
+                guess
+                (negate . logBinomialObservedVotes votesAndVoters)
+
+hessianLogBinomialObservedVotes
+  :: (Foldable f, Functor f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> LA.Matrix Double
+hessianLogBinomialObservedVotes votesAndVoters x =
+  LA.fromRows $ fmap VS.convert $ VB.toList $ AD.hessian
+    (logBinomialObservedVotes votesAndVoters)
+    x
+
+invFisherLogBinomialObservedVotes votesAndVoters x =
+  LA.inv $ hessianLogBinomialObservedVotes votesAndVoters x
 
 betaDist :: Double -> Double -> Double -> Double
 betaDist alpha beta x =
@@ -160,11 +156,7 @@ logBetaDist alpha beta x =
   let lb = log $ gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  lb + (alpha - 1) * log x + (beta - 1) * log (1 - x)
 
-betaPrior
-  :: Double
-  -> Double
-  -> VB.Vector Double
-  -> Double
+betaPrior :: Double -> Double -> VB.Vector Double -> Double
 betaPrior a b xs = FL.fold FL.product $ fmap (betaDist a b) xs
 
 {-
@@ -178,9 +170,7 @@ f votesAndTurnout demProbs =
 -}
 
 logBinomialWithPrior
-  :: ( Functor f
-     , Foldable f
-     )
+  :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> Double
@@ -192,13 +182,11 @@ type Sample v = v Double
 type Chain v = [Sample v]
 
 runMCMC
-  :: ( Functor f
-     , Foldable f
+  :: (Functor f, Foldable f)
 --     , IxValue (v Double) ~ Double
 --     , FunctorWithIndex (Index (v Double)) v
 --     , Ixed (v Double)
 --     , Traversable v
-     )
   => f (Int, VB.Vector Int)
   -> Int
   -> Sample VB.Vector
@@ -230,12 +218,10 @@ sequenceConcurrently actions = do
   traverse g forked
 
 runMany
-  :: ( Functor f
-     , Foldable f
+  :: (Functor f, Foldable f)
 --     , IxValue (v Double) ~ Double
 --     , FunctorWithIndex (Index (v Double)) v
 --     , Ixed (v Double)
-     )
   => f (Int, VB.Vector Int)
   -> Int
   -> Int

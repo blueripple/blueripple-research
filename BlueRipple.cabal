@@ -57,6 +57,7 @@ library
                      , declarative
                      , gamma
                      , hashable
+                     , hmatrix
                      , lens
                      , math-functions
                      , mtl

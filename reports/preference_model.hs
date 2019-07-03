@@ -23,7 +23,7 @@ import qualified Data.Array                    as A
 import           Data.Maybe                     ( catMaybes
                                                 )
 import qualified Data.Vector                   as VB
-import qualified Data.Vector.Storable                   as VS                 
+import qualified Data.Vector.Storable          as VS                 
 
 import qualified Text.Pandoc.Error             as PA
 
@@ -1128,7 +1128,8 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
     K.logLE K.Info $ "CG result = " <> (T.pack $ show cgParamsA)
     (cgADRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
     let cgADParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgADRes
-    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA)
+        cgAdCov = PB.invFisherLogBinomialObservedVotes mcmcData cgADRes
+    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA) <> "\n" <> "Cov=" <> (T.pack $ show cgAdCov)
 
     K.logLE K.Info $ "Doing MCMC..."
     mcmcResults <- liftIO $ PB.runMany mcmcData
