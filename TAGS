@@ -38,73 +38,73 @@ templateVars templateVars75,76
 loadCSVToFrame loadCSVToFrame94,95
 intro2018 intro2018108,109
 intro2018 intro2018109,110
-postFig2018 postFig2018185,186
-postFig2018 postFig2018186,187
-acrossTime acrossTime214,215
-acrossTime acrossTime215,216
-voteShifts voteShifts258,259
-voteShifts voteShifts259,260
-voteShiftObservations voteShiftObservations291,292
-voteShiftObservations voteShiftObservations292,293
-knitX knitX346,347
-knitMaybe knitMaybe354,355
-knitEither knitEither361,362
---type --type363,364
-main main365,366
-main main366,367
+postFig2018 postFig2018192,193
+postFig2018 postFig2018193,194
+acrossTime acrossTime221,222
+acrossTime acrossTime222,223
+voteShifts voteShifts265,266
+voteShifts voteShifts266,267
+voteShiftObservations voteShiftObservations298,299
+voteShiftObservations voteShiftObservations299,300
+knitX knitX350,351
+knitMaybe knitMaybe358,359
+knitEither knitEither365,366
+--type --type367,368
+main main369,370
+main main370,371
+modeledResults modeledResults596,597
 modeledResults modeledResults610,611
-modeledResults modeledResults624,625
-modeledDVotes modeledDVotes630,631
-modeledDVotes modeledDVotes632,633
-data DeltaTableRow DeltaTableRow655,656
-  DeltaTableRowDeltaTableRow656,657
-  { dtrGroup dtrGroup657,658
-  , dtrPop dtrPop658,659
-  , dtrFromPop dtrFromPop659,660
-  , dtrFromTurnout dtrFromTurnout660,661
-  , dtrFromOpinion dtrFromOpinion661,662
-  , dtrTotal dtrTotal662,663
-  , dtrPct dtrPct663,664
-deltaTable deltaTable678,679
-deltaTableColonnade deltaTableColonnade771,772
-deltaTableColonnade deltaTableColonnade772,773
-modelNotesPreface modelNotesPreface785,786
-modelNotesPreface modelNotesPreface786,787
-, ,829,830
-modelNotesBayes modelNotesBayes843,844
-modelNotesBayes modelNotesBayes844,845
-P(P854,855
-\mu_k(\mu_k899,900
-v_k(v_k900,901
-\rho(\rho901,902
-type X X954,955
-type ScaledDVotes ScaledDVotes955,956
-type ScaledRVotes ScaledRVotes956,957
-type PopArray PopArray957,958
-type PopArray b b957,958
-type TurnoutArray TurnoutArray958,959
-votesAndPopByDistrictF votesAndPopByDistrictF966,967
-data PreferenceResults PreferenceResults980,981
-data PreferenceResults b a = PreferenceResultsPreferenceResults980,981
-    votesAndPopByDistrict votesAndPopByDistrict982,983
-    , nationalTurnout nationalTurnout989,990
-    , modeled modeled990,991
-preferenceModel preferenceModel1012,1013
-ggTurnoutAdj ggTurnoutAdj1112,1113
-ggTurnoutAdj ggTurnoutAdj1116,1117
-adjVotersL adjVotersL1121,1122
+modeledDVotes modeledDVotes616,617
+modeledDVotes modeledDVotes618,619
+data DeltaTableRow DeltaTableRow641,642
+  DeltaTableRowDeltaTableRow642,643
+  { dtrGroup dtrGroup643,644
+  , dtrPop dtrPop644,645
+  , dtrFromPop dtrFromPop645,646
+  , dtrFromTurnout dtrFromTurnout646,647
+  , dtrFromOpinion dtrFromOpinion647,648
+  , dtrTotal dtrTotal648,649
+  , dtrPct dtrPct649,650
+deltaTable deltaTable669,670
+deltaTableColonnade deltaTableColonnade769,770
+deltaTableColonnade deltaTableColonnade770,771
+modelNotesPreface modelNotesPreface783,784
+modelNotesPreface modelNotesPreface784,785
+, ,827,828
+modelNotesBayes modelNotesBayes841,842
+modelNotesBayes modelNotesBayes842,843
+P(P852,853
+\mu_k(\mu_k897,898
+v_k(v_k898,899
+\rho(\rho899,900
+type X X952,953
+type ScaledDVotes ScaledDVotes953,954
+type ScaledRVotes ScaledRVotes954,955
+type PopArray PopArray955,956
+type PopArray b b955,956
+type TurnoutArray TurnoutArray956,957
+votesAndPopByDistrictF votesAndPopByDistrictF964,965
+data PreferenceResults PreferenceResults978,979
+data PreferenceResults b a = PreferenceResultsPreferenceResults978,979
+    votesAndPopByDistrict votesAndPopByDistrict980,981
+    , nationalTurnout nationalTurnout987,988
+    , modeled modeled988,989
+preferenceModel preferenceModel1010,1011
+ggTurnoutAdj ggTurnoutAdj1113,1114
+ggTurnoutAdj ggTurnoutAdj1117,1118
 adjVotersL adjVotersL1122,1123
-totalVoteDiagnostics totalVoteDiagnostics1124,1125
-totalVoteDiagnostics totalVoteDiagnostics1137,1138
-modelNotesRegression modelNotesRegression1174,1175
+adjVotersL adjVotersL1123,1124
+totalVoteDiagnostics totalVoteDiagnostics1125,1126
+totalVoteDiagnostics totalVoteDiagnostics1138,1139
 modelNotesRegression modelNotesRegression1175,1176
-Given Given1177,1178
-D D1180,1181
-R R1181,1182
-\frac{D-R}{Q} \frac{D-R}{Q}1188,1189
-\sum_i \sum_i1197,1198
-We We1200,1201
-Now Now1201,1202
+modelNotesRegression modelNotesRegression1176,1177
+Given Given1178,1179
+D D1181,1182
+R R1182,1183
+\frac{D-R}{Q} \frac{D-R}{Q}1189,1190
+\sum_i \sum_i1198,1199
+We We1201,1202
+Now Now1202,1203
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

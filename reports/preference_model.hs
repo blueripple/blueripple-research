@@ -147,6 +147,13 @@ Several folks have done related work, inferring voter behavior using the
 election results and other data combined with census data about demographics.
 in U.S. elections. In particular:
 
+* [Andrew Gelman](http://www.stat.columbia.edu/~gelman/)
+and various collaborators have used Bayesian and other inference techniques to
+look at exit-poll and other survey data to examine turnout and voting patterns.  In particular
+the technique I use here to adjust the census turnout numbers to best match the actual recorded
+vote totals in each district comes from
+[Ghitza & Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
+
 * [This blog post](http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/)
 uses bayesian inference and a beta-binomial
 voter model to look at the 2016 election and various subsets of the
@@ -315,20 +322,17 @@ Year   Democrats    Republicans   D - R
 
 
 These numbers tie out fairly well with the model.
-This is by design: the model's population numbers are scaled so
-that the total votes in each district
-and the total voters in each category add up correctly.
-That means that the total number of D+R votes in each election
-will be very close to what
-we see in the data:
+This is by design: the model's turnout percentages are
+adjusted in each district
+so that the total votes in the district add up correctly.
 
-* This model indicates a - 4,800k shift (toward **republicans**)
+* This model indicates a -4,700k shift (toward **republicans**)
 2012 -> 2016 and the competitive popular house vote shifted -5,100k.
-* This model indicates a +10,200k shift (toward **democrats**)
+* This model indicates a +9,600k shift (toward **democrats**)
 2014 -> 2018 and the competitive popular house vote shifted +10,800k.
-* This model indicates a + 8,500k shift (toward **democrats**)
+* This model indicates a +6,800k shift (toward **democrats**)
 2016 -> 2018 and the competitive popular house vote shifted +8,900k.
-* This model indicates a + 9,100k shift (toward **democrats**)
+* This model indicates a +8,300k shift (toward **democrats**)
 2010 -> 2018 and the competitive popular house vote shifted +9,600k. 
 
 [^WikipediaHouse]: Sources:
@@ -549,27 +553,9 @@ main = do
                   <> ": "
                   <> (T.pack $ show mwU)
 -}
-                let (table, (mD1, mR1), (mD2, mR2)) =
-                      deltaTable simpleAgeSexRace locFilter mry1 mry2
+                (table, (mD1, mR1), (mD2, mR2)) <-
+                      deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
                 K.addColonnadeTextTable deltaTableColonnade $ table
-                K.addMarkDown
-                  $  "In "
-                  <> y1T
-                  <> " the model expects "
-                  <> (T.pack $ show mD1)
-                  <> " total D votes, "
-                  <> (T.pack $ show mR1)
-                  <> " total R votes, so modeled D-R is "
-                  <> (T.pack $ show (mD1 - mR1))
-                K.addMarkDown
-                  $  "In "
-                  <> y2T
-                  <> " the model expects "
-                  <> (T.pack $ show mD2)
-                  <> " total D votes, "
-                  <> (T.pack $ show mR2)
-                  <> " total R votes, so modeled D-R is "
-                  <> (T.pack $ show (mD2 - mR2))
             K.addMarkDown voteShifts
             _ <-
               traverse (mkDeltaTable (const True))
@@ -665,24 +651,33 @@ data DeltaTableRow =
   } deriving (Show)
 
 deltaTable
-  :: forall dr tr e b
+  :: forall dr tr e b r
    . (A.Ix b
      , Bounded b
      , Enum b
      , Show b
+     , MonadIO (K.Sem r)
+     , K.KnitEffects r
      )
   => DemographicStructure dr tr e b
   -> (F.Record LocationKey -> Bool)
+  -> F.Frame e
+  -> Int -- ^ year A
+  -> Int -- ^ year B
   -> PreferenceResults b FV.NamedParameterEstimate
   -> PreferenceResults b FV.NamedParameterEstimate
-  -> ([DeltaTableRow], (Int, Int), (Int, Int))
-deltaTable ds locFilter trA trB =
+  -> K.Sem r ([DeltaTableRow], (Int, Int), (Int, Int))
+deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
   let
     groupNames = fmap (T.pack . show) $ dsCategories ds
-    getScaledPop
-      :: PreferenceResults b FV.NamedParameterEstimate -> A.Array b Int
-    getScaledPop tr =
+    getPopAndTurnout
+      :: Int -> PreferenceResults b FV.NamedParameterEstimate -> K.Sem r (A.Array b Int, A.Array b Double)
+    getPopAndTurnout y tr = do
+      resultsFrame <- knitX $ (dsPreprocessElectionData ds) y electionResultsFrame
       let
+        totalDRVotes =             
+          let filteredResultsF = F.filterFrame (locFilter . F.rcast) resultsFrame
+          in FL.fold (FL.premap (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r) FL.sum) filteredResultsF
         totalRec = FL.fold
           votesAndPopByDistrictF
           ( fmap
@@ -694,13 +689,17 @@ deltaTable ds locFilter trA trB =
           $ votesAndPopByDistrict tr
           )
         totalCounts = F.rgetField @(PopArray b) totalRec
-      in
-        totalCounts
-    popA       = getScaledPop trA
-    popB       = getScaledPop trB
+        unAdjTurnout = nationalTurnout tr
+      tDelta <- liftIO $ TA.findDelta totalDRVotes totalCounts unAdjTurnout
+      let adjTurnout = TA.adjTurnoutP tDelta unAdjTurnout        
+      return (totalCounts, adjTurnout)
+      
+  (popA, turnoutA) <- getPopAndTurnout yA trA
+  (popB, turnoutB) <- getPopAndTurnout yB trB
+  let
     pop        = FL.fold FL.sum popA
-    turnoutA   = nationalTurnout trA
-    turnoutB   = nationalTurnout trB
+--    turnoutA   = nationalTurnout trA
+--    turnoutB   = nationalTurnout trB
     probsArray = fmap (FV.value . FV.pEstimate) . modeled
     probA      = probsArray trA
     probB      = probsArray trB
@@ -766,8 +765,7 @@ deltaTable ds locFilter trA trB =
       groupRows
     dVotesA = modeledVotes popA turnoutA probA
     dVotesB = modeledVotes popB turnoutB probB
-  in
-    (groupRows ++ [totalRow], dVotesA, dVotesB)
+  return (groupRows ++ [totalRow], dVotesA, dVotesB)
 
 deltaTableColonnade :: C.Colonnade C.Headed DeltaTableRow T.Text
 deltaTableColonnade =
@@ -1092,15 +1090,18 @@ preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
           let
             x = cgParamsA A.! b
             sigma = sqrt $ cgVarsA A.! b
-            interval = S.quantile (S.studentT sigma) (1.0 - (S.significanceLevel cl/2))
-            pEstimate = FV.ParameterEstimate x (x - interval/2, x + interval/2)
+            dof = realToFrac $ numCompetitiveRaces - L.length (A.elems cgParamsA)
+            interval = S.quantile (S.studentTUnstandardized dof 0 sigma) (1.0 - (S.significanceLevel cl/2))
+            pEstimate = FV.ParameterEstimate x (x - interval/2.0, x + interval/2.0)
           in FV.NamedParameterEstimate (T.pack $ show b) pEstimate
-        parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) $ [minBound :: b .. maxBound]   
+        parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) $ [minBound :: b .. maxBound]
+
+    K.logLE K.Info $ "MLE results: " <> (T.pack $ show $ A.elems parameterEstimatesA)     
 -- For now this bit is diagnostic.  But we should chart the correlations
 -- and, perhaps, the eigenvectors of the covariance??    
     let cgCorrel = PB.correl mcmcData cgRes -- TODO: make a chart out of this
         (cgEv, cgEvs) = PB.mleCovEigens mcmcData cgRes
-    K.logLE K.Diagnostic $ "MLE (via CG) result = " <> (T.pack $ show cgParamsA)
+    K.logLE K.Diagnostic $ "sigma = " <> (T.pack $ show $ fmap sqrt $ cgVarsA)
     K.logLE K.Diagnostic $ "Correlation=" <> (T.pack $ PB.disps 3 cgCorrel)
     K.logLE K.Diagnostic $ "Eigenvalues=" <> (T.pack $ show cgEv)
     K.logLE K.Diagnostic $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgEvs)
