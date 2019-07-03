@@ -10,6 +10,7 @@ module BlueRipple.Model.PreferenceBayes
   , cgOptimizeAD
   , invFisher
   , mleCovEigens
+  , variances
   , correl
 
     -- * MCMC
@@ -171,6 +172,13 @@ invFisher
   -> VB.Vector Double
   -> LA.Matrix Double
 invFisher votesAndVoters x = LA.inv $ hessianLL votesAndVoters x
+
+variances
+  :: (Functor f, Foldable f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> LA.Vector Double
+variances votesAndVoters x = LA.takeDiag $ invFisher votesAndVoters x
 
 correl
   :: (Functor f, Foldable f)

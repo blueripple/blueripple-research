@@ -40,6 +40,8 @@ import qualified Frames.InCore                 as F
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 import qualified Statistics.Types              as S
+import qualified Statistics.Distribution       as S
+import qualified Statistics.Distribution.StudentT      as S
 
 
 import           Numeric.MCMC.Diagnostics       ( summarize
@@ -359,23 +361,7 @@ knitEither
   -> K.Sem r a
 knitEither = either K.knitError return
 
-quick = RunParams 2 500 50
-justEnough = RunParams 5 5000 500
-goToTown = RunParams 10 10000 1000
-
-type DemographicCategories = SimpleASR
-
-{-
-type KnitMembers r = (K.Member K.UnusedId r
-                     , K.Member K.Pandoc r
-                     , K.Member K.Logger r
-                     , K.Member K.PrefixLog r
-                     , K.Member (K.Error K.PandocError) r
-                     , K.Member K.Pandoc r)
-
-  = '[KUI.UnusedId, KPM.Pandoc, KLog.Logger KLog.LogEntry, KLog.PrefixLog, PE.Error
-    PA.PandocError, P.Lift IO, P.Lift m]
--}
+--type DemographicCategories = SimpleASR
 
 main :: IO ()
 main = do
@@ -411,22 +397,13 @@ main = do
         detailedASETurnoutCSV
         (const True)        
       K.logLE K.Info "Inferring..."
-      let rp = goToTown
-          yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
+      let yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
-          toNPE (category, (ExpectationSummary m (lo, hi) _)) =
-            FV.NamedParameterEstimate category (FV.ParameterEstimate m (lo, hi))
       
-      modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years rp
-      modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years rp
-
-      let pdsWithYear x pr =
-            let mapName pd@(FV.NamedParameterEstimate n _) =
-                    pd { FV.name = n <> "-" <> x }
-            in  fmap mapName $ modeled pr
-          f x = fmap (\y -> (x, y))
+      modeledResultsASR <- modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
+      modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
 
       K.logLE K.Info "Knitting docs..."
       let flattenOneF y = FL.Fold
@@ -467,7 +444,6 @@ main = do
                     S.cl95
                     (FV.ViewConfig 800 400 50)
                     prRows
---                    (f (T.pack $ show y) $ pdsWithYear (T.pack $ show y) pr)
                   return ()
                   
             prASR_2018 <- prefsOneYear 2018 modeledResultsASR
@@ -543,7 +519,7 @@ main = do
             addStackedArea modeledResultsASE
             
             -- analyze results
-            -- Quick Mann-Whitney
+            -- TODO: Quick Mann-Whitney
             let
               mkDeltaTable locFilter (y1, y2) = do
                 let y1T = T.pack $ show y1
@@ -553,6 +529,7 @@ main = do
                   $ M.lookup y1 modeledResultsASR
                 mry2 <- knitMaybe "lookup failure in mwu"
                   $ M.lookup y2 modeledResultsASR
+{-                  
                 let
                   mwU =
                     fmap
@@ -571,6 +548,7 @@ main = do
                   <> y2T
                   <> ": "
                   <> (T.pack $ show mwU)
+-}
                 let (table, (mD1, mR1), (mD2, mR2)) =
                       deltaTable simpleAgeSexRace locFilter mry1 mry2
                 K.addColonnadeTextTable deltaTableColonnade $ table
@@ -643,20 +621,10 @@ modeledResults :: ( MonadIO (K.Sem r)
                -> F.Frame tr
                -> F.Frame HouseElections 
                -> M.Map Int Int
-               -> RunParams
                -> K.Sem r (M.Map Int (PreferenceResults b FV.NamedParameterEstimate))
-modeledResults ds dFrame tFrame eFrame years rp = flip traverse years $ \y -> do
+modeledResults ds dFrame tFrame eFrame years = flip traverse years $ \y -> do
   K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
-  pr <- preferenceModel ds rp y dFrame eFrame tFrame
-  let toNPE (category, (ExpectationSummary m (lo, hi) _)) =
-        FV.NamedParameterEstimate category (FV.ParameterEstimate m (lo, hi))
-      pd =
-        A.array (minBound, maxBound)
-        $ fmap (\(b, es) -> (b, toNPE (T.pack $ show b, es)))
-        $ A.assocs
-        $ modeled pr
-  return $ pr { modeled = pd }
-
+  preferenceModel ds y dFrame eFrame tFrame
 
 -- PreferenceResults to list of group names and predicted D votes
 -- But we want them as a fraction of D/D+R
@@ -1021,11 +989,7 @@ data PreferenceResults b a = PreferenceResults
                                        ]]
     , nationalTurnout :: A.Array b Double
     , modeled :: A.Array b a
-    , mcmcChain :: PB.Chain -- exposed for significance testing of differences between years
   }
-
-data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }
-
 
 preferenceModel
   :: forall dr tr b r
@@ -1039,15 +1003,14 @@ preferenceModel
      , MonadIO (K.Sem r)
      )
   => DemographicStructure dr tr HouseElections b
-  -> RunParams
   -> Int
   -> F.Frame dr
   -> F.Frame HouseElections
   -> F.Frame tr
   -> K.Sem
        r
-       (PreferenceResults b (ExpectationSummary Double))
-preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
+       (PreferenceResults b FV.NamedParameterEstimate)
+preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
   do
     -- reorganize data from loaded Frames
     resultsFlattenedFrame <- knitX
@@ -1122,42 +1085,30 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
         )
         $ FL.fold FL.list opposedFrame
       numParams = length $ dsCategories ds
-    K.logLE K.Info $ "Doing CG optimization..."
-    (cgRes, _, _) <- liftIO $ PB.cgOptimize mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
-    let cgParamsA = A.listArray (minBound :: b, maxBound) $ VS.toList cgRes
-    K.logLE K.Info $ "CG result = " <> (T.pack $ show cgParamsA)
-    (cgADRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
-    let cgADParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgADRes
-        cgADCorrel = PB.correl mcmcData cgADRes
-        (cgADev, cgADevs) = PB.mleCovEigens mcmcData cgADRes
-    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA)
-    K.logLE K.Info $ "Correlation=" <> (T.pack $ PB.disps 3 cgADCorrel)
-    K.logLE K.Info $ "Eigenvalues=" <> (T.pack $ show cgADev)
-    K.logLE K.Info $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgADevs)
+    (cgRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
+    let cgParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgRes
+        cgVarsA = A.listArray (minBound :: b, maxBound) $ VS.toList $ PB.variances mcmcData cgRes
+        npe cl b =
+          let
+            x = cgParamsA A.! b
+            sigma = sqrt $ cgVarsA A.! b
+            interval = S.quantile (S.studentT sigma) (1.0 - (S.significanceLevel cl/2))
+            pEstimate = FV.ParameterEstimate x (x - interval/2, x + interval/2)
+          in FV.NamedParameterEstimate (T.pack $ show b) pEstimate
+        parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) $ [minBound :: b .. maxBound]   
+-- For now this bit is diagnostic.  But we should chart the correlations
+-- and, perhaps, the eigenvectors of the covariance??    
+    let cgCorrel = PB.correl mcmcData cgRes -- TODO: make a chart out of this
+        (cgEv, cgEvs) = PB.mleCovEigens mcmcData cgRes
+    K.logLE K.Diagnostic $ "MLE (via CG) result = " <> (T.pack $ show cgParamsA)
+    K.logLE K.Diagnostic $ "Correlation=" <> (T.pack $ PB.disps 3 cgCorrel)
+    K.logLE K.Diagnostic $ "Eigenvalues=" <> (T.pack $ show cgEv)
+    K.logLE K.Diagnostic $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgEvs)
     
-    K.logLE K.Info $ "Doing MCMC..."
-    mcmcResults <- liftIO $ PB.runMany mcmcData
-                                       numParams
-                                       (nChains runParams)
-                                       (nSamplesPerChain runParams)
-                                       (nBurnPerChain runParams)
-    -- this use of [0..(numParams - 1)] is bad.
-    let conf = S.cl95
-    summaries <- knitMaybe "mcmc \"summarize\" produced Nothing." $ traverse
-      (\n -> summarize conf (VB.! n) mcmcResults)
-      [0 .. (numParams - 1)]
-    let summaryA = A.listArray (minBound :: b, maxBound) summaries
-    K.logLE K.Info $ "summaries: " <> (T.pack $ show summaries)
-    K.logLE K.Info
-      $  "mpsrf="
-      <> (T.pack $ show $ mpsrf (fmap (\n -> (VB.! n)) [0 .. (numParams - 1)])
-                                mcmcResults
-         )
     return $ PreferenceResults
       (fmap F.rcast $ FL.fold FL.list opposedFrame)
       turnoutByGroupArray
-      summaryA
-      (L.concat mcmcResults)
+      parameterEstimatesA
 
 ggTurnoutAdj :: forall b rs r. (A.Ix b
                                , F.ElemOf rs (PopArray b)
