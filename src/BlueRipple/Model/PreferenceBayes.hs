@@ -3,7 +3,24 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
-module BlueRipple.Model.PreferenceBayes where
+module BlueRipple.Model.PreferenceBayes
+  (
+    -- * MLE
+    cgOptimize
+  , cgOptimizeAD
+  , invFisher
+  , mleCovEigens
+  , correl
+
+    -- * MCMC
+  , Sample
+  , Chain
+  , runMany
+    -- * Re-exports
+  , dispf
+  , disps
+  )
+where
 
 import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
@@ -15,13 +32,18 @@ import           Control.Lens.Indexed           ( FunctorWithIndex )
 import           Control.Monad                  ( sequence )
 
 import qualified Numeric.AD                    as AD
-import           Numeric.LinearAlgebra         as LA
+import qualified Numeric.LinearAlgebra         as LA
+import           Numeric.LinearAlgebra          ( dispf
+                                                , disps
+                                                )
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 import qualified Numeric.MCMC                  as MC
 
 
-import           Math.Gamma                     ( gamma )
+import           Math.Gamma                     ( gamma
+                                                , Gamma
+                                                )
 import           System.Random                  ( randomRIO )
 import           Control.Concurrent            as CC
 import           Control.Concurrent.MVar       as CC
@@ -131,32 +153,63 @@ cgOptimizeAD votesAndVoters guess = do
                 guess
                 (negate . logBinomialObservedVotes votesAndVoters)
 
-hessianLogBinomialObservedVotes
+-- I'm not sure about row/column order her. But it doesn't
+-- matter since the Hessian is symmetric.
+hessianLL
   :: (Foldable f, Functor f)
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> LA.Matrix Double
-hessianLogBinomialObservedVotes votesAndVoters x =
+hessianLL votesAndVoters x =
   LA.fromRows $ fmap VS.convert $ VB.toList $ AD.hessian
-    (logBinomialObservedVotes votesAndVoters)
+    (negate . logBinomialObservedVotes votesAndVoters)
     x
 
-invFisherLogBinomialObservedVotes votesAndVoters x =
-  LA.inv $ hessianLogBinomialObservedVotes votesAndVoters x
+invFisher
+  :: (Functor f, Foldable f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> LA.Matrix Double
+invFisher votesAndVoters x = LA.inv $ hessianLL votesAndVoters x
 
-betaDist :: Double -> Double -> Double -> Double
+correl
+  :: (Functor f, Foldable f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> LA.Matrix Double
+correl votesAndVoters x =
+  let cov          = invFisher votesAndVoters x
+      sds          = LA.cmap sqrt $ LA.takeDiag cov
+      (rows, cols) = LA.size cov
+      rho n m = cov `LA.atIndex` (n, m) / ((sds LA.! n) * (sds LA.! m))
+  in  LA.assoc
+        (rows, cols)
+        0
+        [ ((n, m), rho n m) | n <- [0 .. (rows - 1)], m <- [0 .. (cols - 1)] ]
+
+
+mleCovEigens
+  :: (Functor f, Foldable f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> (LA.Vector Double, LA.Matrix Double)
+mleCovEigens votesAndVoters x =
+  LA.eigSH $ LA.trustSym $ invFisher votesAndVoters x
+
+
+betaDist :: (Floating a, RealFrac a, Gamma a) => a -> a -> a -> a
 betaDist alpha beta x =
   let b = gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  if (x >= 0) && (x <= 1)
         then b * (x ** (alpha - 1)) * ((1 - x) ** (beta - 1))
         else 0
 
-logBetaDist :: Double -> Double -> Double -> Double
+logBetaDist :: (Floating a, RealFrac a, Gamma a) => a -> a -> a -> a
 logBetaDist alpha beta x =
   let lb = log $ gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  lb + (alpha - 1) * log x + (beta - 1) * log (1 - x)
 
-betaPrior :: Double -> Double -> VB.Vector Double -> Double
+betaPrior :: (Floating a, RealFrac a, Gamma a) => a -> a -> VB.Vector a -> a
 betaPrior a b xs = FL.fold FL.product $ fmap (betaDist a b) xs
 
 {-
@@ -170,27 +223,23 @@ f votesAndTurnout demProbs =
 -}
 
 logBinomialWithPrior
-  :: (Functor f, Foldable f)
+  :: (Functor f, Foldable f, Floating a, RealFrac a, Gamma a)
   => f (Int, VB.Vector Int)
-  -> VB.Vector Double
-  -> Double
+  -> VB.Vector a
+  -> a
 logBinomialWithPrior votesAndTurnout demProbs =
   let x = demProbs
   in  logBinomialObservedVotes votesAndTurnout x + log (betaPrior 2 2 x)
 
-type Sample v = v Double
-type Chain v = [Sample v]
+type Sample = VB.Vector Double
+type Chain = [Sample]
 
 runMCMC
   :: (Functor f, Foldable f)
---     , IxValue (v Double) ~ Double
---     , FunctorWithIndex (Index (v Double)) v
---     , Ixed (v Double)
---     , Traversable v
   => f (Int, VB.Vector Int)
   -> Int
-  -> Sample VB.Vector
-  -> IO (Chain VB.Vector)
+  -> Sample
+  -> IO Chain
 runMCMC votesAndTurnout numIters start =
   fmap (fmap MC.chainPosition) . MC.withSystemRandom . MC.asGenIO $ MC.chain
     numIters
@@ -219,25 +268,21 @@ sequenceConcurrently actions = do
 
 runMany
   :: (Functor f, Foldable f)
---     , IxValue (v Double) ~ Double
---     , FunctorWithIndex (Index (v Double)) v
---     , Ixed (v Double)
   => f (Int, VB.Vector Int)
   -> Int
   -> Int
   -> Int
   -> Int
-  -> IO [Chain VB.Vector]
+  -> IO [Chain]
 runMany votesAndTurnout nParams nChains nSamplesPerChain nBurnPerChain = do
   let
---    randomStart :: Int -> IO (v Double)
+    randomStart :: Int -> IO Sample
     randomStart n = VG.fromList <$> (sequence $ replicate n (randomRIO (0, 1)))
---    randomStarts :: Int -> Int -> IO [v Double]
+    randomStarts :: Int -> Int -> IO [Sample]
     randomStarts n m = sequence $ replicate m (randomStart n)
     doEach =
       fmap (drop nBurnPerChain) . runMCMC votesAndTurnout nSamplesPerChain
   starts <- randomStarts nParams nChains
---  traverse doEach starts
   sequenceConcurrently $ fmap doEach starts
 
 {-

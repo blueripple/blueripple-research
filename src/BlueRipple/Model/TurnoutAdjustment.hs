@@ -41,7 +41,7 @@ findDelta
   -> A.Array b a
   -> IO Double
 findDelta totalVotes population unadjTurnoutP = do
-  let --cost :: [Double] -> Double
+  let cost :: Floating a => [a] -> a
       cost [x] =
         votesError (totalVotes) (population) (fmap realToFrac unadjTurnoutP) x
       params = CG.defaultParameters { CG.printFinal  = False

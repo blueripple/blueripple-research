@@ -99,58 +99,59 @@ data RunParams = RunParams { nChains nChains1026,1027
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain nSamplesPerChain1026,1027
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain nBurnPerChain1026,1027
 preferenceModel preferenceModel1049,1050
-ggTurnoutAdj ggTurnoutAdj1157,1158
 ggTurnoutAdj ggTurnoutAdj1161,1162
-adjVotersL adjVotersL1166,1167
-adjVotersL adjVotersL1167,1168
-totalVoteDiagnostics totalVoteDiagnostics1169,1170
-totalVoteDiagnostics totalVoteDiagnostics1182,1183
-modelNotesRegression modelNotesRegression1219,1220
-modelNotesRegression modelNotesRegression1220,1221
-Given Given1222,1223
-D D1225,1226
-R R1226,1227
-\frac{D-R}{Q} \frac{D-R}{Q}1233,1234
-\sum_i \sum_i1242,1243
-We We1245,1246
-Now Now1246,1247
+ggTurnoutAdj ggTurnoutAdj1165,1166
+adjVotersL adjVotersL1170,1171
+adjVotersL adjVotersL1171,1172
+totalVoteDiagnostics totalVoteDiagnostics1173,1174
+totalVoteDiagnostics totalVoteDiagnostics1186,1187
+modelNotesRegression modelNotesRegression1223,1224
+modelNotesRegression modelNotesRegression1224,1225
+Given Given1226,1227
+D D1229,1230
+R R1230,1231
+\frac{D-R}{Q} \frac{D-R}{Q}1237,1238
+\sum_i \sum_i1246,1247
+We We1249,1250
+Now Now1250,1251
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1
 main main4,5
 main main5,6
 
-./src/BlueRipple/Model/PreferenceBayes.hs,1288
-module BlueRipple.Model.PreferenceBayes BlueRipple.Model.PreferenceBayes5,6
-data ObservedVote ObservedVote38,39
-data ObservedVote = ObservedVote ObservedVote38,39
-data ObservedVote = ObservedVote { dem dem38,39
-data Pair Pair40,41
-data Pair a b = Pair Pair40,41
-binomialNormalParams binomialNormalParams42,43
-binomialNormalParams binomialNormalParams43,44
-logBinomialObservedVote logBinomialObservedVote54,55
-gradLogBinomialObservedVote gradLogBinomialObservedVote63,64
-logBinomialObservedVotes logBinomialObservedVotes80,81
-gradLogBinomialObservedVotes gradLogBinomialObservedVotes88,89
-cgOptimize cgOptimize103,104
-cgOptimizeAD cgOptimizeAD122,123
-hessianLogBinomialObservedVotes hessianLogBinomialObservedVotes138,139
-invFisherLogBinomialObservedVotes invFisherLogBinomialObservedVotes143,144
-betaDist betaDist146,147
-betaDist betaDist147,148
-logBetaDist logBetaDist153,154
-logBetaDist logBetaDist154,155
-betaPrior betaPrior158,159
-betaPrior betaPrior159,160
-logBinomialWithPrior logBinomialWithPrior176,177
-type Sample Sample180,181
-type Sample v v180,181
-type Chain Chain181,182
-runMCMC runMCMC193,194
-sequenceConcurrently sequenceConcurrently207,208
-sequenceConcurrently sequenceConcurrently208,209
-runMany runMany230,231
+./src/BlueRipple/Model/PreferenceBayes.hs,1232
+module BlueRipple.Model.PreferenceBayesBlueRipple.Model.PreferenceBayes5,6
+data ObservedVote ObservedVote60,61
+data ObservedVote = ObservedVote ObservedVote60,61
+data ObservedVote = ObservedVote { dem dem60,61
+data Pair Pair62,63
+data Pair a b = Pair Pair62,63
+binomialNormalParams binomialNormalParams64,65
+binomialNormalParams binomialNormalParams65,66
+logBinomialObservedVote logBinomialObservedVote76,77
+gradLogBinomialObservedVote gradLogBinomialObservedVote85,86
+logBinomialObservedVotes logBinomialObservedVotes102,103
+gradLogBinomialObservedVotes gradLogBinomialObservedVotes110,111
+cgOptimize cgOptimize125,126
+cgOptimizeAD cgOptimizeAD144,145
+hessianLL hessianLL162,163
+invFisher invFisher172,173
+correl correl179,180
+mleCovEigens mleCovEigens195,196
+betaDist betaDist199,200
+betaDist betaDist200,201
+logBetaDist logBetaDist206,207
+logBetaDist logBetaDist207,208
+betaPrior betaPrior211,212
+betaPrior betaPrior212,213
+logBinomialWithPrior logBinomialWithPrior229,230
+type Sample Sample233,234
+type Chain Chain234,235
+runMCMC runMCMC242,243
+sequenceConcurrently sequenceConcurrently256,257
+sequenceConcurrently sequenceConcurrently257,258
+runMany runMany276,277
 
 ./src/BlueRipple/Model/TurnoutAdjustment.hs,332
 module BlueRipple.Model.TurnoutAdjustment BlueRipple.Model.TurnoutAdjustment10,11

@@ -411,7 +411,7 @@ main = do
         detailedASETurnoutCSV
         (const True)        
       K.logLE K.Info "Inferring..."
-      let rp = quick
+      let rp = goToTown
           yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
@@ -1021,7 +1021,7 @@ data PreferenceResults b a = PreferenceResults
                                        ]]
     , nationalTurnout :: A.Array b Double
     , modeled :: A.Array b a
-    , mcmcChain :: PB.Chain VB.Vector-- exposed for significance testing of differences between years
+    , mcmcChain :: PB.Chain -- exposed for significance testing of differences between years
   }
 
 data RunParams = RunParams { nChains :: Int, nSamplesPerChain :: Int, nBurnPerChain :: Int }
@@ -1128,9 +1128,13 @@ preferenceModel ds runParams year identityDFrame houseElexFrame turnoutFrame =
     K.logLE K.Info $ "CG result = " <> (T.pack $ show cgParamsA)
     (cgADRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
     let cgADParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgADRes
-        cgAdCov = PB.invFisherLogBinomialObservedVotes mcmcData cgADRes
-    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA) <> "\n" <> "Cov=" <> (T.pack $ show cgAdCov)
-
+        cgADCorrel = PB.correl mcmcData cgADRes
+        (cgADev, cgADevs) = PB.mleCovEigens mcmcData cgADRes
+    K.logLE K.Info $ "CGAD result = " <> (T.pack $ show cgADParamsA)
+    K.logLE K.Info $ "Correlation=" <> (T.pack $ PB.disps 3 cgADCorrel)
+    K.logLE K.Info $ "Eigenvalues=" <> (T.pack $ show cgADev)
+    K.logLE K.Info $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgADevs)
+    
     K.logLE K.Info $ "Doing MCMC..."
     mcmcResults <- liftIO $ PB.runMany mcmcData
                                        numParams
