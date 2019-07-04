@@ -32,7 +32,7 @@ sumSpending sumSpending262,263
 totalSpendingHistograms totalSpendingHistograms268,269
 totalSpendingHistograms totalSpendingHistograms270,271
 
-./reports/preference_model.hs,2501
+./reports/preference_model.hs,2553
 module Main Main13,14
 templateVars templateVars75,76
 loadCSVToFrame loadCSVToFrame94,95
@@ -70,41 +70,43 @@ deltaTableColonnade deltaTableColonnade769,770
 deltaTableColonnade deltaTableColonnade770,771
 modelNotesPreface modelNotesPreface783,784
 modelNotesPreface modelNotesPreface784,785
-, ,827,828
-modelNotesBayes modelNotesBayes841,842
-modelNotesBayes modelNotesBayes842,843
-P(P852,853
-\mu_k(\mu_k897,898
-v_k(v_k898,899
-\rho(\rho899,900
-type X X952,953
-type ScaledDVotes ScaledDVotes953,954
-type ScaledRVotes ScaledRVotes954,955
-type PopArray PopArray955,956
-type PopArray b b955,956
-type TurnoutArray TurnoutArray956,957
-votesAndPopByDistrictF votesAndPopByDistrictF964,965
-data PreferenceResults PreferenceResults978,979
-data PreferenceResults b a = PreferenceResultsPreferenceResults978,979
-    votesAndPopByDistrict votesAndPopByDistrict980,981
-    , nationalTurnout nationalTurnout987,988
-    , modeled modeled988,989
-preferenceModel preferenceModel1010,1011
-ggTurnoutAdj ggTurnoutAdj1113,1114
-ggTurnoutAdj ggTurnoutAdj1117,1118
-adjVotersL adjVotersL1122,1123
-adjVotersL adjVotersL1123,1124
-totalVoteDiagnostics totalVoteDiagnostics1125,1126
-totalVoteDiagnostics totalVoteDiagnostics1138,1139
-modelNotesRegression modelNotesRegression1175,1176
-modelNotesRegression modelNotesRegression1176,1177
-Given Given1178,1179
-D D1181,1182
-R R1182,1183
-\frac{D-R}{Q} \frac{D-R}{Q}1189,1190
-\sum_i \sum_i1198,1199
-We We1201,1202
-Now Now1202,1203
+, ,843,844
+state state858,859
+paper paper860,861
+modelNotesBayes modelNotesBayes865,866
+modelNotesBayes modelNotesBayes866,867
+P(P876,877
+\mu_k(\mu_k921,922
+v_k(v_k922,923
+\rho(\rho923,924
+type X X976,977
+type ScaledDVotes ScaledDVotes977,978
+type ScaledRVotes ScaledRVotes978,979
+type PopArray PopArray979,980
+type PopArray b b979,980
+type TurnoutArray TurnoutArray980,981
+votesAndPopByDistrictF votesAndPopByDistrictF988,989
+data PreferenceResults PreferenceResults1002,1003
+data PreferenceResults b a = PreferenceResultsPreferenceResults1002,1003
+    votesAndPopByDistrict votesAndPopByDistrict1004,1005
+    , nationalTurnout nationalTurnout1011,1012
+    , modeled modeled1012,1013
+preferenceModel preferenceModel1034,1035
+ggTurnoutAdj ggTurnoutAdj1137,1138
+ggTurnoutAdj ggTurnoutAdj1141,1142
+adjVotersL adjVotersL1146,1147
+adjVotersL adjVotersL1147,1148
+totalVoteDiagnostics totalVoteDiagnostics1149,1150
+totalVoteDiagnostics totalVoteDiagnostics1162,1163
+modelNotesRegression modelNotesRegression1199,1200
+modelNotesRegression modelNotesRegression1200,1201
+Given Given1202,1203
+D D1205,1206
+R R1206,1207
+\frac{D-R}{Q} \frac{D-R}{Q}1213,1214
+\sum_i \sum_i1222,1223
+We We1225,1226
+Now Now1226,1227
 
 ./dataLoader/dataLoader.hs,52
 module Main Main0,1

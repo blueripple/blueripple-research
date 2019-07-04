@@ -789,37 +789,53 @@ simple model of the electorate.  We consider the electorate as having some numbe
 of "identity" groups. For example we could divide by sex
 (the census only records this as a F/M binary),
 age, "old" (45 or older) and "young" (under 45) and
-racial identity (white-non-hispanic or non-white).
+education (college graduates vs. non-college graduate)
+or racial identity (white vs. non-white). 
 We recognize that these categories are limiting and much too simple.
-But we believe it's a reasonable starting point, as a balance
+But we believe it's a reasonable starting point, a balance
 between inclusiveness and having way too many variables.
 
 For each congressional district where both major parties ran candidates, we have
 census estimates of the number of people in each of our
 demographic categories[^CensusDemographics].
 And from the census we have national-level turnout estimates for each of these
-groups as well[^CensusTurnout]. We assume that these turnout percentages
-hold exactly in each district, giving a number of voters,
-$N$, in each group, $i$, for each district.
+groups as well[^CensusTurnout].
 
 All we can observe is the **sum** of all the votes in the district,
 not the ones cast by each group separately.
 But each district has a different demographic makeup and so each is a
 distinct piece of data about how each group is likely to vote.
 
-What we want to estimate, is how likely a voter in
-each group is of voting for the
-democratic candidate in a contested race.
+The turnout numbers from the census are national averages and
+aren't correct in any particular district.  Since we don't have more
+detailed turnout data, there's not much we can do.  But we do know the
+total number of votes observed in each district and we should at least
+adjust the turnout numbers so that the total number of votes predicted
+by the turnout numbers and populations is close to the observed number
+of votes. For more on this adjustment, see below.
+
+How likely is a voter in
+each group to vote for the
+democratic candidate in a contested race?
 
 For each district, $d$, we have the set of expected voters
-(the number of people in each group, multiplied by the turnout for that group),
-$\{V_i\}_d$, the number of democratic votes, $D_d$,
-republican votes, $R_d$ and total votes, $T_d$, which may exceed $D_d + R_d$,
+(the number of people in each group in that region, $N^{(d)}_i$,
+multiplied by the turnout, $t_i$ for that group),
+$V^{(d)}_i$, the number of democratic votes, $D^{(d)}$,
+republican votes, $R^{(d)}$ and total votes, $T^{(d)}$, which may exceed $D^{(d)} + R^{(d)}$,
 since there may be third party candidates. For the sake of simplicity,
 we assume that all groups are equally likely to vote for a third party candidate.
 We want to estimate $p_i$, the probability that
 a voter (in any district) in the $i$th group--given that they voted
 for a republican or democrat--will vote for the democratic candidate.                     
+
+the turnout numbers from the census, , multiplied by the
+poopulations of each group will *not* add up to the number of votes observed,
+since turnout varies district to district.
+We adjust these turnout numbers via a technique[^GGCorrection] in
+[Ghitza and Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
+
+
 
 [^ResultsData]: MIT Election Data and Science Lab, 2017
 , "U.S. House 1976–2018"
@@ -835,6 +851,14 @@ for a republican or democrat--will vote for the democratic candidate.
 [^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>. NB: We are using 2017 demographic population data for our 2018 analysis,
 since that is the latest available from the census.
 We will update this once the census publishes updated 2018 American Community Survey data.
+[^GGCorrection]: We note that there is an error in the 2013 Ghitza and Gelman paper, one which is
+corrected in a more recent working paper (http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf).
+by the same authors.  In the 2013 paper, a correction is derived
+for turnout in each region by find the $\delta^{(d)}$ which minimizes
+$\big|T^{(d)} -\sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \delta^{(d)})\big|$. The authors then
+state that the adjusted turnout in region $d$ is $\hat{t}^{(d)}_i = t_i + \delta^{(d)}$ which
+doesn't make sense since $\delta^{(d)}$ is not a probability.  This is corrected in the working
+paper to $\hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + \delta^{(d)})$.
 
 |]
 
