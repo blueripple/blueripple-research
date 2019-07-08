@@ -47,6 +47,11 @@ library
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
+                 , BlueRipple.Data.PrefModel.ASRTypes
+                 , BlueRipple.Data.PrefModel.SimpleAgeSexRace
+                 , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
+                 , BlueRipple.Data.PrefModel.ASETypes
+                 , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.TurnoutAdjustment
   build-depends:       base >=4.11

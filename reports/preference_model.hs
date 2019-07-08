@@ -70,6 +70,8 @@ import           Polysemy.Error                 (Error)
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
+import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.PreferenceBayes as PB
 import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
@@ -834,7 +836,6 @@ poopulations of each group will *not* add up to the number of votes observed,
 since turnout varies district to district.
 We adjust these turnout numbers via a technique[^GGCorrection] in
 [Ghitza and Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
-
 
 
 [^ResultsData]: MIT Election Data and Science Lab, 2017
