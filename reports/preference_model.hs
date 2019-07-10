@@ -49,6 +49,7 @@ import           Numeric.MCMC.Diagnostics       ( summarize
                                                 , mpsrf
                                                 , mannWhitneyUTest
                                                 )
+import qualified Numeric.LinearAlgebra         as LA                  
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -57,6 +58,9 @@ import qualified Frames.Visualization.VegaLite.StackedArea
 import qualified Frames.Visualization.VegaLite.LineVsTime
                                                as FV
 import qualified Frames.Visualization.VegaLite.ParameterPlots
+                                               as FV                                               
+
+import qualified Frames.Visualization.VegaLite.Correlation
                                                as FV                                               
                                                
 import qualified Frames.Transform              as FT
@@ -436,7 +440,7 @@ main = do
           )
         $ do            
             K.addMarkDown intro2018
-            let prefsOneYear :: K.KnitOne r
+            let prefsOneYear :: forall b r. (Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
                   => Int
                   -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                   -> K.Sem r ()
@@ -450,10 +454,19 @@ main = do
                     S.cl95
                     (FV.ViewConfig 800 400 50)
                     prRows
+                  let getIndex = fromEnum
+                  vl <- knitEither
+                        $ FV.correlationCircles
+                        (T.pack . show)
+                        (FL.fold FL.set [(minBound :: b)..maxBound])
+                         (\x y -> (correlations pr) `LA.atIndex` (getIndex x, getIndex y))
+                        True
+                        "Correlations"
+                        (FV.ViewConfig 500 500 50)
+                  _ <- K.addHvega Nothing Nothing vl                  
                   return ()
-                  
-            prASR_2018 <- prefsOneYear 2018 modeledResultsASR
-            prASE_2018 <- prefsOneYear 2018 modeledResultsASE
+            prASR_2018 <- prefsOneYear @SimpleASR 2018 modeledResultsASR
+            prASE_2018 <- prefsOneYear @SimpleASE 2018 modeledResultsASE
             K.addMarkDown postFig2018
       K.newPandoc
           (K.PandocInfo
@@ -487,7 +500,7 @@ main = do
                          "D Voter Preference Vs. Election Year"
                          FV.DataMinMax
                          (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 800 400 50)
+                         (FV.ViewConfig 1000 500 50)
                          (vDatPVsT pr)
                    _ <- K.addHvega Nothing Nothing vl
                    return ()
@@ -513,7 +526,7 @@ main = do
                          @'("D Voteshare of D+R Votes",Double)
                          "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
                          (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 800 400 50)
+                         (FV.ViewConfig 1000 500 50)
                          (vDatSVS prMap)
                 _ <- K.addHvega Nothing Nothing vl
                 return ()
@@ -700,8 +713,6 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
   (popB, turnoutB) <- getPopAndTurnout yB trB
   let
     pop        = FL.fold FL.sum popA
---    turnoutA   = nationalTurnout trA
---    turnoutB   = nationalTurnout trB
     probsArray = fmap (FV.value . FV.pEstimate) . modeled
     probA      = probsArray trA
     probB      = probsArray trB
@@ -1012,6 +1023,7 @@ data PreferenceResults b a = PreferenceResults
                                        ]]
     , nationalTurnout :: A.Array b Double
     , modeled :: A.Array b a
+    , correlations :: LA.Matrix Double
   }
 
 preferenceModel
@@ -1135,6 +1147,7 @@ preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
       (fmap F.rcast $ FL.fold FL.list opposedFrame)
       turnoutByGroupArray
       parameterEstimatesA
+      cgCorrel
 
 ggTurnoutAdj :: forall b rs r. (A.Ix b
                                , F.ElemOf rs (PopArray b)
