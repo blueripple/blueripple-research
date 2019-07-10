@@ -73,12 +73,11 @@ table td {
 <figure id="figure_1">
 <script type="text/javascript">var vlSpec=
 {
-    "config": {
-        "view": {
-            "height": 400,
-            "width": 800
-        },
-        "padding": 50
+    "height": 400,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
     },
     "data": {
         "values": [
@@ -143,6 +142,7 @@ table td {
             "parse": {}
         }
     },
+    "width": 800,
     "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
     "title": "Modeled probability of voting Democratic in (competitive) 2018 house races",
     "layer": [
@@ -195,19 +195,403 @@ table td {
                 }
             }
         }
-    ]
+    ],
+    "padding": 50
 };
 vegaEmbed('#figure_1',vlSpec);</script>
 </figure>
 <figure id="figure_2">
 <script type="text/javascript">var vlSpec=
 {
-    "config": {
-        "view": {
-            "height": 400,
-            "width": 800
+    "transform": [
+        {
+            "as": "absCorr",
+            "calculate": "abs(datum.C)"
         },
-        "padding": 50
+        {
+            "filter": {
+                "not": "datum.L1 == datum.L2"
+            }
+        }
+    ],
+    "height": 500,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "mark": "circle",
+    "data": {
+        "values": [
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "OldNonWhiteFemale",
+                "C": 0.9999999999999999
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -0.24272398560371222
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "OldNonWhiteMale",
+                "C": -0.26989245571760767
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "YoungNonWhiteMale",
+                "C": -0.2147673158102779
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "OldWhiteFemale",
+                "C": -3.6654899987068564e-2
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "YoungWhiteFemale",
+                "C": -2.161843816163431e-2
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "OldWhiteMale",
+                "C": -3.744734519537534e-2
+            },
+            {
+                "L1": "OldNonWhiteFemale",
+                "L2": "YoungWhiteMale",
+                "C": -2.5442978258256747e-2
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "OldNonWhiteFemale",
+                "C": -0.24272398560371242
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "YoungNonWhiteFemale",
+                "C": 1.0000000000000002
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "OldNonWhiteMale",
+                "C": -0.2196313351762561
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "YoungNonWhiteMale",
+                "C": -0.2525986213698955
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "OldWhiteFemale",
+                "C": -2.5926320030013727e-2
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "YoungWhiteFemale",
+                "C": -3.942485463502219e-2
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "OldWhiteMale",
+                "C": -2.7427103452940936e-2
+            },
+            {
+                "L1": "YoungNonWhiteFemale",
+                "L2": "YoungWhiteMale",
+                "C": -4.7861381628525296e-2
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "OldNonWhiteFemale",
+                "C": -0.26989245571760867
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -0.21963133517625616
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "OldNonWhiteMale",
+                "C": 1
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "YoungNonWhiteMale",
+                "C": -0.20342444624984285
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "OldWhiteFemale",
+                "C": -3.104709044255987e-2
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "YoungWhiteFemale",
+                "C": -2.074954643461307e-2
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "OldWhiteMale",
+                "C": -3.370705946687476e-2
+            },
+            {
+                "L1": "OldNonWhiteMale",
+                "L2": "YoungWhiteMale",
+                "C": -2.622103900867772e-2
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "OldNonWhiteFemale",
+                "C": -0.2147673158102766
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -0.2525986213698963
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "OldNonWhiteMale",
+                "C": -0.20342444624984318
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "YoungNonWhiteMale",
+                "C": 1
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "OldWhiteFemale",
+                "C": -1.7842825027201376e-2
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "YoungWhiteFemale",
+                "C": -3.536198269737457e-2
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "OldWhiteMale",
+                "C": -2.1767221991665947e-2
+            },
+            {
+                "L1": "YoungNonWhiteMale",
+                "L2": "YoungWhiteMale",
+                "C": -4.8964119978369115e-2
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "OldNonWhiteFemale",
+                "C": -3.6654899987068064e-2
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -2.5926320030012807e-2
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "OldNonWhiteMale",
+                "C": -3.104709044256096e-2
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "YoungNonWhiteMale",
+                "C": -1.7842825027201224e-2
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "OldWhiteFemale",
+                "C": 1
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "YoungWhiteFemale",
+                "C": -0.25073518360433444
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "OldWhiteMale",
+                "C": -0.4778127159655388
+            },
+            {
+                "L1": "OldWhiteFemale",
+                "L2": "YoungWhiteMale",
+                "C": -0.2334239187312545
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "OldNonWhiteFemale",
+                "C": -2.161843816163533e-2
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -3.942485463502252e-2
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "OldNonWhiteMale",
+                "C": -2.074954643461173e-2
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "YoungNonWhiteMale",
+                "C": -3.536198269737494e-2
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "OldWhiteFemale",
+                "C": -0.2507351836043347
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "YoungWhiteFemale",
+                "C": 0.9999999999999999
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "OldWhiteMale",
+                "C": -0.23285201498160632
+            },
+            {
+                "L1": "YoungWhiteFemale",
+                "L2": "YoungWhiteMale",
+                "C": -0.19106176480970175
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "OldNonWhiteFemale",
+                "C": -3.744734519537522e-2
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -2.7427103452941026e-2
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "OldNonWhiteMale",
+                "C": -3.370705946687432e-2
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "YoungNonWhiteMale",
+                "C": -2.176722199166655e-2
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "OldWhiteFemale",
+                "C": -0.47781271596553976
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "YoungWhiteFemale",
+                "C": -0.23285201498160682
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "OldWhiteMale",
+                "C": 1
+            },
+            {
+                "L1": "OldWhiteMale",
+                "L2": "YoungWhiteMale",
+                "C": -0.21937967924648807
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "OldNonWhiteFemale",
+                "C": -2.5442978258256414e-2
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "YoungNonWhiteFemale",
+                "C": -4.7861381628525726e-2
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "OldNonWhiteMale",
+                "C": -2.6221039008678802e-2
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "YoungNonWhiteMale",
+                "C": -4.896411997836782e-2
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "OldWhiteFemale",
+                "C": -0.23342391873125212
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "YoungWhiteFemale",
+                "C": -0.19106176480970136
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "OldWhiteMale",
+                "C": -0.2193796792464904
+            },
+            {
+                "L1": "YoungWhiteMale",
+                "L2": "YoungWhiteMale",
+                "C": 1
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 500,
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Correlations",
+    "encoding": {
+        "color": {
+            "field": "C",
+            "scale": {
+                "scheme": "redyellowgreen"
+            },
+            "type": "quantitative",
+            "legend": null
+        },
+        "size": {
+            "field": "absCorr",
+            "type": "quantitative",
+            "legend": null
+        },
+        "x": {
+            "field": "L1",
+            "type": "nominal",
+            "axis": {
+                "title": ""
+            }
+        },
+        "y": {
+            "field": "L2",
+            "type": "nominal",
+            "axis": {
+                "title": ""
+            }
+        }
+    },
+    "padding": 50
+};
+vegaEmbed('#figure_2',vlSpec);</script>
+</figure>
+<figure id="figure_3">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 400,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
     },
     "data": {
         "values": [
@@ -272,6 +656,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
             "parse": {}
         }
     },
+    "width": 800,
     "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
     "title": "Modeled probability of voting Democratic in (competitive) 2018 house races",
     "layer": [
@@ -324,9 +709,394 @@ vegaEmbed('#figure_1',vlSpec);</script>
                 }
             }
         }
-    ]
+    ],
+    "padding": 50
 };
-vegaEmbed('#figure_2',vlSpec);</script>
+vegaEmbed('#figure_3',vlSpec);</script>
+</figure>
+<figure id="figure_4">
+<script type="text/javascript">var vlSpec=
+{
+    "transform": [
+        {
+            "as": "absCorr",
+            "calculate": "abs(datum.C)"
+        },
+        {
+            "filter": {
+                "not": "datum.L1 == datum.L2"
+            }
+        }
+    ],
+    "height": 500,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "mark": "circle",
+    "data": {
+        "values": [
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": 1
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -0.1832382684985875
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -0.31895709357768454
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -0.17772283250879017
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -0.15039048303504754
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -8.231737834104937e-2
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -0.14492291880812325
+            },
+            {
+                "L1": "OldFemaleNonGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -5.498813304382113e-2
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -0.18323826849858607
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": 1.0000000000000002
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -0.17059435681335014
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -0.18171580053691502
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -7.014531706934034e-2
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -7.323716132572972e-2
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -6.894889573682472e-2
+            },
+            {
+                "L1": "YoungFemaleNonGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -6.250747997482592e-2
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -0.31895709357768526
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -0.1705943568133502
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "OldMaleNonGrad",
+                "C": 1.0000000000000002
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -0.16922833995855516
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -0.12232231489826309
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -6.298976955304238e-2
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -0.11486151235218449
+            },
+            {
+                "L1": "OldMaleNonGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -3.8046615747515444e-2
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -0.17772283250879053
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -0.18171580053691544
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -0.1692283399585551
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": 1
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -7.104802006682337e-2
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -7.483678585803367e-2
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -7.213221436462716e-2
+            },
+            {
+                "L1": "YoungMaleNonGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -6.518983372526267e-2
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -0.15039048303504915
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -7.014531706933923e-2
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -0.12232231489826131
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -7.104802006682333e-2
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": 1.0000000000000002
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -0.14446815319367942
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -0.22708329684811204
+            },
+            {
+                "L1": "OldFemaleCollegeGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -0.1269441899821098
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -8.23173783410483e-2
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -7.323716132572901e-2
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -6.298976955304365e-2
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -7.483678585803397e-2
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -0.14446815319368003
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": 1
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -0.15332014535478394
+            },
+            {
+                "L1": "YoungFemaleCollegeGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -0.14505946040642997
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -0.14492291880812314
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -6.894889573682465e-2
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -0.11486151235218459
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -7.213221436462774e-2
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -0.22708329684811074
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -0.1533201453547841
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": 0.9999999999999999
+            },
+            {
+                "L1": "OldMaleCollegeGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": -0.1385112136498335
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "OldFemaleNonGrad",
+                "C": -5.498813304382013e-2
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "YoungFemaleNonGrad",
+                "C": -6.250747997482571e-2
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "OldMaleNonGrad",
+                "C": -3.804661574751775e-2
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "YoungMaleNonGrad",
+                "C": -6.518983372526227e-2
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "OldFemaleCollegeGrad",
+                "C": -0.1269441899821093
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "YoungFemaleCollegeGrad",
+                "C": -0.14505946040643017
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "OldMaleCollegeGrad",
+                "C": -0.13851121364983202
+            },
+            {
+                "L1": "YoungMaleCollegeGrad",
+                "L2": "YoungMaleCollegeGrad",
+                "C": 1
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 500,
+    "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
+    "title": "Correlations",
+    "encoding": {
+        "color": {
+            "field": "C",
+            "scale": {
+                "scheme": "redyellowgreen"
+            },
+            "type": "quantitative",
+            "legend": null
+        },
+        "size": {
+            "field": "absCorr",
+            "type": "quantitative",
+            "legend": null
+        },
+        "x": {
+            "field": "L1",
+            "type": "nominal",
+            "axis": {
+                "title": ""
+            }
+        },
+        "y": {
+            "field": "L2",
+            "type": "nominal",
+            "axis": {
+                "title": ""
+            }
+        }
+    },
+    "padding": 50
+};
+vegaEmbed('#figure_4',vlSpec);</script>
 </figure>
 <p>The most striking observation is the chasm between white and non-white voters’ inferred support for Democrats in 2018. Non-whites were modeled to have over 75% preference for Dems regardless of age or gender, though support is even a bit stronger among non-white female voters than non-white male voters5. Inferred support from white voters in 2018 is substantially lower, roughly 35-45% across age groups and genders. In contrast, differences in inferred preferences by age (matching for gender and race) or gender (matching for age and race) are not particularly striking or consistent (e.g., comparing white males in the under-25 and over-75 groups). Overall, we’re heartened that our model seems to work pretty well, because the results are broadly consistent with exit polls and surveys<a href="#fn6" class="footnote-ref" id="fnref6" role="doc-noteref"><sup>6</sup></a><a href="#fn7" class="footnote-ref" id="fnref7" role="doc-noteref"><sup>7</sup></a>. Thus, our model confirmed prior work suggesting that non-white support for Democrats in 2018 was much higher than that by whites, across all genders and age groups. But it still doesn’t tell us what happened in 2018 compared with prior years. To what extent did Democrats’ gains over 2016 come from underlying growth in the non-white population, higher turnout among non-whites, increased preference for Democrats (among whites or non-whites), or some combination of these and other factors? That requires comparing these data to results from earlier elections – which is what we’ll do in subsequent posts. Stay tuned.</p>
 </section>

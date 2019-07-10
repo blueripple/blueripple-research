@@ -74,6 +74,7 @@ import           Polysemy.Error                 (Error)
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.PreferenceBayes as PB

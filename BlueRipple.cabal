@@ -47,6 +47,7 @@ library
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
+                 , BlueRipple.Data.PrefModel
                  , BlueRipple.Data.PrefModel.ASRTypes
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation

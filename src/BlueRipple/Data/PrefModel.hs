@@ -14,13 +14,21 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module BlueRipple.Data.DataFrames
-  ( module BlueRipple.Data.DataSourcePaths
-  , module BlueRipple.Data.DataFrames
+module BlueRipple.Data.PrefModel
+  (
+    PopCount
+  , DemographicCategory
+  , LocationKey
+  , DemographicCounts
+  , DemographicStructure (..)
+  , DVotes
+  , RVotes
+  , processElectionData
+  , flattenVotes'
   )
 where
 
-import           BlueRipple.Data.DataSourcePaths
+import           BlueRipple.Data.DataFrames
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
@@ -56,29 +64,6 @@ import           GHC.Generics                   ( Generic )
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
--- pre-declare cols with non-standard types
-F.declareColumn "Date" ''FP.FrameDay
-
-F.tableTypes "TotalSpending" totalSpendingCSV
-
-F.tableTypes' (F.rowGen forecastAndSpendingCSV) { F.rowTypeName = "ForecastAndSpending"
-                                                , F.columnUniverse = Proxy :: Proxy FP.ColumnsWithDayAndLocalTime
-                                                }
-
-F.tableTypes "ElectionResults" electionResultsCSV
-F.tableTypes "AngryDems" angryDemsCSV
-F.tableTypes "HouseElections" houseElectionsCSV
-F.tableTypes "ContextDemographics" contextDemographicsCSV
-
-F.tableTypes "TurnoutASR"          detailedASRTurnoutCSV
-F.tableTypes "TurnoutASE"          detailedASETurnoutCSV
-F.tableTypes "ASRDemographics" ageSexRaceDemographicsLongCSV
-F.tableTypes "ASEDemographics" ageSexEducationDemographicsLongCSV
-
--- This one might be different for different breakdowns
---F.tableTypes' (F.rowGen identityDemographics2016CSV) {F.rowTypeName = "AgeSexRaceByDistrict", F.tablePrefix = "Census" }
-
-{-
 
 F.declareColumn "PopCount" ''Int
 type DemographicCategory b = "DemographicCategory" F.:-> b  -- general holder
@@ -164,4 +149,3 @@ flattenVotes =
            )
     V.:& FF.recFieldF (fmap (fromMaybe 0) $ FL.last) (F.rgetField @Totalvotes)
     V.:& V.RNil
--}

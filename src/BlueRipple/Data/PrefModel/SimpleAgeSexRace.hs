@@ -17,6 +17,7 @@
 module BlueRipple.Data.PrefModel.SimpleAgeSexRace where
 
 import BlueRipple.Data.DataFrames
+import BlueRipple.Data.PrefModel
 import BlueRipple.Data.PrefModel.ASRTypes
 
 import qualified Control.Foldl                 as FL

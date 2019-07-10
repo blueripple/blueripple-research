@@ -17,6 +17,7 @@
 module BlueRipple.Data.PrefModel.SimpleAgeSexEducation where
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.ASETypes
 
 import qualified Control.Foldl                 as FL
