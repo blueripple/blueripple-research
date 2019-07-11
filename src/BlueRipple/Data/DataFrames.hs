@@ -21,8 +21,10 @@ module BlueRipple.Data.DataFrames
 where
 
 import           BlueRipple.Data.DataSourcePaths
+import qualified Knit.Report as K
 
 import qualified Control.Foldl                 as FL
+import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Control.Monad.Except          as X
 import qualified Data.Array                    as A
 import qualified Data.List                     as L
@@ -42,6 +44,9 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
 import qualified Text.Read                     as TR
+
+import qualified Pipes                         as P
+import qualified Pipes.Prelude                 as P
 
 import qualified Frames.Folds                  as FF
 import qualified Frames.ParseableTypes         as FP
@@ -75,93 +80,26 @@ F.tableTypes "TurnoutASE"          detailedASETurnoutCSV
 F.tableTypes "ASRDemographics" ageSexRaceDemographicsLongCSV
 F.tableTypes "ASEDemographics" ageSexEducationDemographicsLongCSV
 
--- This one might be different for different breakdowns
---F.tableTypes' (F.rowGen identityDemographics2016CSV) {F.rowTypeName = "AgeSexRaceByDistrict", F.tablePrefix = "Census" }
-
-{-
-
-F.declareColumn "PopCount" ''Int
-type DemographicCategory b = "DemographicCategory" F.:-> b  -- general holder
-type LocationKey = '[StateAbbreviation, CongressionalDistrict]
-
-type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
-
-data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demographicCategories = DemographicStructure
-  {
-    dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame turnoutDataRow -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
-  , dsPreprocessElectionData :: (forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])))
-  , dsCategories :: [demographicCategories]
-  }
-
-type instance FI.VectorFor (A.Array b Int) = V.Vector
-type instance FI.VectorFor (A.Array b Double) = V.Vector
-          
-processElectionData :: Monad m => Int -> F.Frame HouseElections
-                -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes]))
-processElectionData year eData = do
-  let xDat = fmap (F.rcast @('[Year] V.++ LocationKey V.++ [Candidate, Party, Candidatevotes, Totalvotes])
-                   . FT.retypeColumn @District @CongressionalDistrict
-                   . FT.retypeColumn @StatePo @StateAbbreviation
-                  ) eData
-      unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (== year)
-      assign = MR.generalizeAssign $ MR.assignKeysAndData @LocationKey @'[Candidate, Party, Candidatevotes, Totalvotes]
-      reduce = MR.makeRecsWithKeyM id $ MR.ReduceFoldM (const $ fmap (pure @[]) flattenVotes')
-  either X.throwError return $ FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) xDat
-
-data Cands = NoCands | OneCand Int | Multi Int
-candsToVotes NoCands = 0
-candsToVotes (OneCand x) = x
-candsToVotes (Multi x) = x
-
-type DVotes = "DVotes" F.:-> Int
-type RVotes = "RVotes" F.:-> Int
-flattenVotes'
-  :: FL.FoldM (Either Text)
-       (F.Record '[Candidate, Party, Candidatevotes, Totalvotes])
-       (F.Record '[DVotes, RVotes, Totalvotes]) -- Map Name (Map Party Votes)
-flattenVotes' =
-  MR.postMapM mapToRec
-  $ FL.generalize
-  $ FL.Fold step (M.empty,0) id where
-  step (m,_) r =
-    let cand = F.rgetField @Candidate r
-        party = F.rgetField @Party r
-        cVotes = F.rgetField @Candidatevotes r
-        tVotes = F.rgetField @Totalvotes r
-        updateInner :: Maybe (M.Map Text Int) -> Maybe (M.Map Text Int)
-        updateInner pmM = Just $ M.insert party cVotes $ fromMaybe M.empty pmM -- if same candidate appears with same party, this replaces
-    in (M.alter updateInner cand m, tVotes)
-  mapToRec :: (M.Map Text (M.Map Text Int),Int) -> Either Text (F.Record [DVotes, RVotes, Totalvotes])
-  mapToRec (m, tVotes) = do
-    let findByParty p =
-          let cs = L.filter (L.elem p . M.keys) $ fmap snd $ M.toList m  
-          in case cs of
-            [] -> NoCands --Right 0 -- Left  $  "No cands when finding " <> p <> " in " <> (T.pack $ show m)
-            [cm] -> OneCand $ FL.fold FL.sum cm 
-            cms -> Multi $ FL.fold FL.sum $ fmap (FL.fold FL.sum) cms --Left $ "More than one candidate with party=" <> p <> ": " <> (T.pack $ show m)
-    let dCand = findByParty "democrat"
-        rCand = findByParty "republican"
-    return $ candsToVotes dCand F.&: candsToVotes rCand  F.&: tVotes F.&: V.RNil   
-
-flattenVotes
-  :: FL.Fold
-       (F.Record '[Party, Candidatevotes, Totalvotes])
-       (F.Record '[DVotes, RVotes, Totalvotes])
-flattenVotes =
-  FF.sequenceRecFold
-    $    FF.recFieldF
-           FL.sum
-           (\r -> if F.rgetField @Party r == "democrat"
-             then F.rgetField @Candidatevotes r
-             else 0
-           )
-    V.:& FF.recFieldF
-           FL.sum
-           (\r -> if F.rgetField @Party r == "republican"
-             then F.rgetField @Candidatevotes r
-             else 0
-           )
-    V.:& FF.recFieldF (fmap (fromMaybe 0) $ FL.last) (F.rgetField @Totalvotes)
-    V.:& V.RNil
--}
+loadCSVToFrame
+  :: forall rs effs
+   . ( MonadIO (K.Sem effs)
+     , K.LogWithPrefixesLE effs
+     , F.ReadRec rs
+     , FI.RecVec rs
+     , V.RMap rs
+     )
+  => F.ParserOptions
+  -> FilePath
+  -> (F.Record rs -> Bool)
+  -> K.Sem effs (F.FrameRec rs)
+loadCSVToFrame po fp filterF = do
+  let producer = F.readTableOpt po fp P.>-> P.filter filterF
+  frame <- liftIO $ F.inCoreAoS producer
+  let reportRows :: Foldable f => f x -> FilePath -> K.Sem effs ()
+      reportRows f fn =
+        K.logLE K.Diagnostic
+          $  T.pack (show $ FL.fold FL.length f)
+          <> " rows in "
+          <> T.pack fn
+  reportRows frame fp
+  return frame

@@ -29,6 +29,7 @@ common deps
                , hmatrix
                , knit-haskell >= 0.6.0.1 && < 0.8.0.0
                , lucid
+               , map-reduce-folds >= 0.1.0.1
                , pipes
                , polysemy >= 0.2.1.0 && < 0.5.0.0
                , polysemy-plugin >= 0.2.0.0 && < 0.3.0.0 
@@ -43,7 +44,7 @@ common deps
 
 library
   import: deps
-  ghc-options: -O1
+  ghc-options: -O1 -fplugin=Polysemy.Plugin
   exposed-modules: BlueRipple.Data.FromDB
                  , BlueRipple.Data.DataSourcePaths
                  , BlueRipple.Data.DataFrames
@@ -55,6 +56,7 @@ library
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.TurnoutAdjustment
+                 , BlueRipple.Utilities.KnitUtils
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
                      , beam-core >= 0.8.0.0
@@ -118,9 +120,17 @@ executable preference_model
                , data-science-utils
                , directory
                , lens
-               , map-reduce-folds >= 0.1.0.1
                , mtl
                , pandoc
                , random
                , time
-  default-language: Haskell2010               
+  default-language: Haskell2010
+
+executable MRP_Basics
+  import: deps
+  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
+  hs-source-dirs: reports
+  main-is:        MRP_Basics.hs
+  build-depends: base >= 4.11
+               , BlueRipple
+  default-language: Haskell2010                 

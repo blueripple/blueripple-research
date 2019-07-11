@@ -46,8 +46,8 @@ import qualified Statistics.Distribution.StudentT      as S
 
 import           Numeric.MCMC.Diagnostics       ( summarize
                                                 , ExpectationSummary(..)
-                                                , mpsrf
-                                                , mannWhitneyUTest
+--                                                , mpsrf
+--                                                , mannWhitneyUTest
                                                 )
 import qualified Numeric.LinearAlgebra         as LA                  
 
@@ -73,6 +73,7 @@ import           Polysemy.Error                 (Error)
 
 import           Data.String.Here               ( here )
 
+import           BlueRipple.Utilities.KnitUtils
 import           BlueRipple.Data.DataFrames
 import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
@@ -86,31 +87,6 @@ templateVars = M.fromList
   , ("pagetitle", "Preference Model & Predictions")
 --  , ("tufte","True")
   ]
-
-loadCSVToFrame
-  :: forall rs effs
-   . ( MonadIO (K.Sem effs)
-     , K.LogWithPrefixesLE effs
-     , F.ReadRec rs
-     , F.RecVec rs
-     , V.RMap rs
-     )
-  => F.ParserOptions
-  -> FilePath
-  -> (F.Record rs -> Bool)
-  -> K.Sem effs (F.FrameRec rs)
-loadCSVToFrame po fp filterF = do
-  let producer = F.readTableOpt po fp P.>-> P.filter filterF
-  frame <- liftIO $ F.inCoreAoS producer
-  let reportRows :: Foldable f => f x -> FilePath -> K.Sem effs ()
-      reportRows f fn =
-        K.logLE K.Diagnostic
-          $  T.pack (show $ FL.fold FL.length f)
-          <> " rows in "
-          <> T.pack fn
-  reportRows frame fp
-  return frame
-
 
 --------------------------------------------------------------------------------
 intro2018 :: T.Text
@@ -350,6 +326,7 @@ so that the total votes in the district add up correctly.
 <https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections>
 |]
 
+{-
 knitX
   :: forall r a
    . K.Member (Error PA.PandocError) r
@@ -371,9 +348,10 @@ knitEither
   => Either T.Text a
   -> K.Sem r a
 knitEither = either K.knitError return
-
+-}
 --type DemographicCategories = SimpleASR
 
+  
 main :: IO ()
 main = do
   let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
