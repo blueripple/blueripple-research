@@ -13,7 +13,7 @@
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-
+{-# OPTIONS_GHC -O0              #-}
 module BlueRipple.Data.PrefModel
   (
     PopCount

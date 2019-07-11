@@ -326,31 +326,6 @@ so that the total votes in the district add up correctly.
 <https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections>
 |]
 
-{-
-knitX
-  :: forall r a
-   . K.Member (Error PA.PandocError) r
-  => X.ExceptT T.Text (K.Sem r) a
-  -> K.Sem r a
-knitX ma = X.runExceptT ma >>= (knitEither @r)
-
-knitMaybe
-  :: forall r a
-   . K.Member (Error K.PandocError) r
-  => T.Text
-  -> Maybe a
-  -> K.Sem r a
-knitMaybe msg ma = maybe (K.knitError msg) return ma
-
-knitEither
-  :: forall r a
-   . K.Member (Error K.PandocError) r
-  => Either T.Text a
-  -> K.Sem r a
-knitEither = either K.knitError return
--}
---type DemographicCategories = SimpleASR
-
   
 main :: IO ()
 main = do
@@ -365,23 +340,23 @@ main = do
       let parserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       K.logLE K.Info "Loading data..."
-      contextDemographicsFrame :: F.Frame ContextDemographics <- loadCSVToFrame
+      contextDemographicsFrame :: F.Frame ContextDemographics <- loadToFrame
         parserOptions
         contextDemographicsCSV
         (const True)
       asrDemographicsFrame :: F.Frame ASRDemographics <-
-        loadCSVToFrame parserOptions ageSexRaceDemographicsLongCSV (const True)
+        loadToFrame parserOptions ageSexRaceDemographicsLongCSV (const True)
       aseDemographicsFrame :: F.Frame ASEDemographics <-
-        loadCSVToFrame parserOptions ageSexEducationDemographicsLongCSV (const True)        
-      houseElectionsFrame :: F.Frame HouseElections <- loadCSVToFrame
+        loadToFrame parserOptions ageSexEducationDemographicsLongCSV (const True)        
+      houseElectionsFrame :: F.Frame HouseElections <- loadToFrame
         parserOptions
         houseElectionsCSV
         (const True)
-      asrTurnoutFrame :: F.Frame TurnoutASR <- loadCSVToFrame
+      asrTurnoutFrame :: F.Frame TurnoutASR <- loadToFrame
         parserOptions
         detailedASRTurnoutCSV
         (const True)
-      aseTurnoutFrame :: F.Frame TurnoutASE <- loadCSVToFrame
+      aseTurnoutFrame :: F.Frame TurnoutASE <- loadToFrame
         parserOptions
         detailedASETurnoutCSV
         (const True)        

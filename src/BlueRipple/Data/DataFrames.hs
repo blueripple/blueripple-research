@@ -1,9 +1,9 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -29,7 +29,7 @@ import qualified Control.Monad.Except          as X
 import qualified Data.Array                    as A
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe)
+import           Data.Maybe                     ( fromMaybe, catMaybes)
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
@@ -80,7 +80,13 @@ F.tableTypes "TurnoutASE"          detailedASETurnoutCSV
 F.tableTypes "ASRDemographics" ageSexRaceDemographicsLongCSV
 F.tableTypes "ASEDemographics" ageSexEducationDemographicsLongCSV
 
-loadCSVToFrame
+
+-- these columns are parsed wrong so we fix them before parsing
+F.declareColumn "CCESVvRegstatus" ''Int  
+F.declareColumn "CCESHispanic"    ''Int
+F.tableTypes' ccesRowGen
+
+loadToFrame
   :: forall rs effs
    . ( MonadIO (K.Sem effs)
      , K.LogWithPrefixesLE effs
@@ -92,7 +98,7 @@ loadCSVToFrame
   -> FilePath
   -> (F.Record rs -> Bool)
   -> K.Sem effs (F.FrameRec rs)
-loadCSVToFrame po fp filterF = do
+loadToFrame po fp filterF = do
   let producer = F.readTableOpt po fp P.>-> P.filter filterF
   frame <- liftIO $ F.inCoreAoS producer
   let reportRows :: Foldable f => f x -> FilePath -> K.Sem effs ()
@@ -103,3 +109,47 @@ loadCSVToFrame po fp filterF = do
           <> T.pack fn
   reportRows frame fp
   return frame
+
+loadToMaybeRecs
+  :: forall rs rs' effs
+   . ( MonadIO (K.Sem effs)
+     , K.LogWithPrefixesLE effs
+     , F.ReadRec rs'
+     , FI.RecVec rs'
+     , V.RMap rs'
+     , rs F.⊆ rs'
+     )
+  => F.ParserOptions
+  -> (F.Rec (Maybe F.:. F.ElField) rs -> Bool)
+  -> FilePath
+  -> K.Sem effs [F.Rec (Maybe F.:. F.ElField) rs]
+loadToMaybeRecs po filterF fp  = do
+  let producerM = F.readTableMaybeOpt @_ @rs' po fp --P.>-> P.filter filterF
+  listM :: [F.Rec (Maybe F.:. F.ElField) rs] <- liftIO $ F.runSafeEffect $ P.toListM $ producerM P.>-> P.map F.rcast P.>-> P.filter filterF  
+  let reportRows :: Foldable f => f x -> FilePath -> K.Sem effs ()
+      reportRows f fn =
+        K.logLE K.Diagnostic
+          $  T.pack (show $ FL.fold FL.length f)
+          <> " rows in "
+          <> T.pack fn
+  reportRows listM fp
+  return listM
+
+maybeRecsToFrame :: (K.LogWithPrefixesLE effs
+                    , FI.RecVec rs
+                    )
+                 => (F.Rec (Maybe F.:. F.ElField) rs -> (F.Rec (Maybe F.:. F.ElField) rs)) -- fix any Nothings you need to/can
+                 -> (F.Record rs -> Bool) -- filter after removing Nothings
+                 -> [F.Rec (Maybe F.:. F.ElField) rs]
+                 -> K.Sem effs (F.FrameRec rs)
+maybeRecsToFrame fixMissing filterRows maybeRecs = do
+  let fixed = catMaybes $ fmap (F.recMaybe . fixMissing) maybeRecs
+      filtered = L.filter filterRows fixed
+  K.logLE K.Diagnostic $ "maybeRecsToFrame: "
+    <> (T.pack $ show $ length maybeRecs)
+    <> " rows in and "
+    <> (T.pack $ show $ length fixed)
+    <> " rows after dropping unfixed bad data. After filtering "
+    <> (T.pack $ show $ length filtered)
+    <> " rows remain."
+  return $ F.toFrame filtered

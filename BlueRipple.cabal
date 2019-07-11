@@ -54,7 +54,8 @@ library
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
                  , BlueRipple.Data.PrefModel.ASETypes
                  , BlueRipple.Data.PrefModel.AgeSexRace
-                 , BlueRipple.Model.PreferenceBayes
+                 , BlueRipple.Data.MRP
+                 , BlueRipple.Model.PreferenceBayes                 
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Utilities.KnitUtils
   build-depends:       base >=4.11

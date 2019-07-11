@@ -1,5 +1,8 @@
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module BlueRipple.Data.DataSourcePaths where
+
+import qualified Frames.TH                     as F
 
 dataDir = "./data/"
 
@@ -22,6 +25,14 @@ detailedASRTurnoutCSV :: FilePath =
   dataDir ++ "DetailedTurnoutByAgeSexRace2010-2018.csv"
 detailedASETurnoutCSV :: FilePath =
   dataDir ++ "DetailedTurnoutByAgeSexEducation2010-2018.csv"
+
+ccesTSV :: FilePath = dataDir ++ "CCES_cumulative_2016_2018.txt"
+
+-- the things I would make Categorical are already ints. :(
+ccesRowGen = (F.rowGen ccesTSV) { F.tablePrefix = "CCES"
+                                , F.separator   = "\t"
+                                , F.rowTypeName = "CCES"
+                                }
 
 {-
 turnoutCSV :: FilePath = dataDir ++ "Turnout2012-2018.csv"

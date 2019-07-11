@@ -11,14 +11,16 @@
 
 import qualified Control.Foldl                 as FL
 
+import qualified Data.List                     as L
+import qualified Data.Map                      as M
 import qualified Data.Vector                   as VB
-
 import qualified Data.Text                     as T
 
 import qualified Text.Printf                   as PF
 
 import qualified Data.Vinyl                    as V
 import qualified Frames                        as F
+import qualified Frames.CSV                    as F
 
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
@@ -40,6 +42,7 @@ import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
+import qualified Frames.Utils                  as FU
 
 import qualified Knit.Report                   as K
 import           Polysemy.Error                 ( Error )
@@ -66,8 +69,28 @@ main = do
                                                templateVars
                                                K.mindocOptionsF
   eitherDocs <-
-    K.knitHtmls (Just "MRP_Basics.Main") K.nonDiagnostic pandocWriterConfig $ do
+    K.knitHtmls (Just "MRP_Basics.Main") K.logAll pandocWriterConfig $ do
       K.logLE K.Info "Loading data..."
+      let
+        csvParserOptions =
+          F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+        tsvParserOptions = csvParserOptions { F.columnSeparator = "\t" }
+        preFilterYears   = FU.filterOnMaybeField @CCESYear
+          (`L.elem` [2010, 2012, 2014, 2016, 2018])
+      ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
+        tsvParserOptions
+        preFilterYears
+        ccesTSV
+      ccesFrame <-
+        fmap transformCCESRow
+          <$> maybeRecsToFrame
+                fixCCESRow
+                ((`L.elem` [2010, 2012, 2014, 2016, 2018]) . F.rgetField @Year)
+                ccesMaybeRecs
+      let firstFew = take 4 $ FL.fold FL.list ccesFrame
+      K.logLE K.Diagnostic
+        $  "ccesFrame (first 4 rows):\n"
+        <> (T.pack $ show firstFew)
       K.logLE K.Info "Inferring..."
       K.logLE K.Info "Knitting docs..."
   case eitherDocs of
