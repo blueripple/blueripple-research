@@ -71,22 +71,17 @@ main = do
   eitherDocs <-
     K.knitHtmls (Just "MRP_Basics.Main") K.logAll pandocWriterConfig $ do
       K.logLE K.Info "Loading data..."
-      let
-        csvParserOptions =
-          F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-        tsvParserOptions = csvParserOptions { F.columnSeparator = "\t" }
-        preFilterYears   = FU.filterOnMaybeField @CCESYear
-          (`L.elem` [2010, 2012, 2014, 2016, 2018])
+      let csvParserOptions =
+            F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+          tsvParserOptions = csvParserOptions { F.columnSeparator = "\t" }
+          preFilterYears   = FU.filterOnMaybeField @CCESYear (`L.elem` [2018])
       ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
         tsvParserOptions
         preFilterYears
         ccesTSV
       ccesFrame <-
         fmap transformCCESRow
-          <$> maybeRecsToFrame
-                fixCCESRow
-                ((`L.elem` [2010, 2012, 2014, 2016, 2018]) . F.rgetField @Year)
-                ccesMaybeRecs
+          <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       let firstFew = take 4 $ FL.fold FL.list ccesFrame
       K.logLE K.Diagnostic
         $  "ccesFrame (first 4 rows):\n"

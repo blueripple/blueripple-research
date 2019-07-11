@@ -94,7 +94,7 @@ intToGenderT = toEnum . minus1
 
 type Gender = "Gender" F.:-> GenderT
 
-data EducationT = NoHS | SomeCollege | TwoYear | FourYear | PostGrad deriving (Show, Enum, Bounded, Eq, Ord)
+data EducationT = NoHS | HighSchool | SomeCollege | TwoYear | FourYear | PostGrad deriving (Show, Enum, Bounded, Eq, Ord)
 
 intToEducationT :: Int -> EducationT
 intToEducationT = toEnum . minus1
