@@ -61,6 +61,14 @@ templateVars = M.fromList
 --  , ("tufte","True")
   ]
 
+{- TODO
+1. Why are rows still being dropped?  Which col is missing?  In general, write a diagnostic for showing what is missing...
+Some answers:
+The boring:  CountyFIPS.  I don't want this anyway.  Dropped
+The weird:  Missing voted_rep_party.  These are non-voters or voters who didn't vote in house race.  A bit more than 1/3 of
+survey responses.  Maybe that's not weird??
+-}
+
 main :: IO ()
 main = do
   let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
@@ -74,7 +82,7 @@ main = do
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
           tsvParserOptions = csvParserOptions { F.columnSeparator = "\t" }
-          preFilterYears   = FU.filterOnMaybeField @CCESYear (`L.elem` [2018])
+          preFilterYears   = FU.filterOnMaybeField @CCESYear (`L.elem` [2016])
       ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
         tsvParserOptions
         preFilterYears

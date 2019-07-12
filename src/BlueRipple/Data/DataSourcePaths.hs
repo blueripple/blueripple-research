@@ -26,7 +26,7 @@ detailedASRTurnoutCSV :: FilePath =
 detailedASETurnoutCSV :: FilePath =
   dataDir ++ "DetailedTurnoutByAgeSexEducation2010-2018.csv"
 
-ccesTSV :: FilePath = dataDir ++ "CCES_cumulative_2016_2018.txt"
+ccesTSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.txt"
 
 -- the things I would make Categorical are already ints. :(
 ccesRowGen = (F.rowGen ccesTSV) { F.tablePrefix = "CCES"

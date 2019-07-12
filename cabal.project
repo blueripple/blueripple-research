@@ -1,11 +1,11 @@
-packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega
+packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega 
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: de98fa831814f0787bfde261bc66e1628ec27db3
+  tag: dbf84901a66189ea54aae93543126a30dba46cdf
 
 --source-repository-package
 --  type: git

@@ -29,6 +29,7 @@ import           Data.Maybe                     ( fromMaybe)
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
+import           Text.Read                      (readMaybe)
 import           Data.Ix                        ( Ix )
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -59,7 +60,6 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESSt
                      , CCESDist
                      , CCESDistUp
-                     , CCESCountyFips
                      , CCESGender
                      , CCESAge
                      , CCESEduc
@@ -132,7 +132,12 @@ type Under45 = "Under45" F.:-> Bool
 data RegistrationT = Active | NoRecordReg | UnRegistered | Dropped | Inactive | Multiple deriving (Show, Enum, Bounded, Eq, Ord)
 
 intToRegistrationT :: Int -> RegistrationT
-intToRegistrationT = toEnum . minus1
+intToRegistrationT =  toEnum . minus1
+
+textToRegistrationT :: T.Text -> RegistrationT
+textToRegistrationT r = case readMaybe @Int (T.unpack r) of
+  Just x -> intToRegistrationT x
+  Nothing -> NoRecordReg
 
 type Registration = "Registration" F.:-> RegistrationT
 
@@ -140,6 +145,12 @@ data TurnoutT = Voted | NoRecordVote | NoFile deriving (Show, Enum, Bounded, Eq,
 
 intToTurnoutT :: Int -> TurnoutT
 intToTurnoutT = toEnum . minus1
+
+textToTurnoutT :: T.Text -> TurnoutT
+textToTurnoutT r = case readMaybe @Int (T.unpack r) of
+  Just x -> intToTurnoutT x
+  Nothing -> NoRecordVote
+
 
 type Turnout = "Turnout" F.:-> TurnoutT
 
@@ -161,11 +172,11 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
                $ (F.rsubset %~ missingTurnoutToNoFile)
                $ r where
   missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
-  missingHispanicToNo = FM.fromMaybeMono 2
+  missingHispanicToNo = FM.fromMaybeMono "2"
   missingPartyToOther :: F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty] -> F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty]
   missingPartyToOther = FM.fromMaybeMono 3
   missingRegstatusToNoRecord :: F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -> F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -- ??
-  missingRegstatusToNoRecord = FM.fromMaybeMono 2
+  missingRegstatusToNoRecord = FM.fromMaybeMono "2"
   missingTurnoutToNoFile :: F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -> F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -- ??
   missingTurnoutToNoFile = FM.fromMaybeMono 3
   
@@ -177,12 +188,12 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
   addCollegeGrad = FT.recordSingleton @CollegeGrad . intToCollegeGrad . F.rgetField @CCESEduc
   rInt q = F.rgetField @CCESRace q
   hInt q = F.rgetField @CCESHispanic q
-  race q = if (hInt q == 1) then Hispanic else intToRaceT (rInt q)
+  race q = if (hInt q == "1") then Hispanic else intToRaceT (rInt q)
   addRace = FT.recordSingleton @Race . race 
   addWhiteNonHispanic = FT.recordSingleton @WhiteNonHispanic . (== White) . race 
   addAge = FT.recordSingleton @Age . intToAgeT . F.rgetField @CCESAge
   addUnder45 = FT.recordSingleton @Under45 . intToUnder45 . F.rgetField @CCESAge
-  addRegistration = FT.recordSingleton @Registration . intToRegistrationT . F.rgetField @CCESVvRegstatus
+  addRegistration = FT.recordSingleton @Registration . textToRegistrationT . F.rgetField @CCESVvRegstatus
   addTurnout = FT.recordSingleton @Turnout . intToTurnoutT . F.rgetField @CCESVvTurnoutGvm
   addHouseVoteParty = FT.recordSingleton @HouseVoteParty . intToPartyT . F.rgetField @CCESVotedRepParty
   mutate = FT.retypeColumn @CCESYear @Year
