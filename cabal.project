@@ -1,11 +1,18 @@
-packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega 
+packages: . ../../DataScience/data-science-utils ../../DataScience/Frames-hvega
 jobs: 4
 with-compiler: /usr/local/bin/ghc
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: dbf84901a66189ea54aae93543126a30dba46cdf
+  tag: 1e8eb929d708a3f26e558a2ac230924e7b94a552
+
+source-repository-package
+  type: git
+  location: https://github.com/DougBurke/hvega
+  tag: 76761025da4f0fd0bc55640d93ac2422977002fb
+  subdir: hvega
+
 
 --source-repository-package
 --  type: git
