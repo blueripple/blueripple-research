@@ -29,6 +29,8 @@ import qualified Text.Pandoc.Error             as PA
 
 import qualified Data.Profunctor               as PF
 import qualified Data.Text                     as T
+import qualified Data.Time.Clock               as Time
+import qualified Data.Time.Format              as Time
 import qualified Data.Vinyl                    as V
 import qualified Text.Printf                   as PF
 import qualified Frames                        as F
@@ -81,12 +83,23 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.PreferenceBayes as PB
 import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
+yamlAuthor :: T.Text
+yamlAuthor = [here|
+- name: Adam Conner-Sax
+- name: Frank David
+|]
+
 templateVars = M.fromList
   [ ("lang"     , "English")
-  , ("author"   , "Adam Conner-Sax & Frank David")
+  , ("author"   , T.unpack yamlAuthor)
   , ("pagetitle", "Preference Model & Predictions")
+  , ("site-title", "Blue Ripple Politics")
+  , ("home-url", "https://www.blueripplepolitics.org")
 --  , ("tufte","True")
   ]
+
+--pandocTemplate = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
+pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 --------------------------------------------------------------------------------
 intro2018 :: T.Text
@@ -329,9 +342,9 @@ so that the total votes in the district add up correctly.
   
 main :: IO ()
 main = do
-  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
+--  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
 --  let template = K.FullySpecifiedTemplatePath "pandoc-templates/minWithVega-pandoc.html"
-  pandocWriterConfig <- K.mkPandocWriterConfig template
+  pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                K.mindocOptionsF
   eitherDocs <-
@@ -361,7 +374,7 @@ main = do
         detailedASETurnoutCSV
         (const True)        
       K.logLE K.Info "Inferring..."
-      let yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
+      let yearList :: [Int]   = [2010,{- 2012, 2014, 2016,-} 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
@@ -370,7 +383,9 @@ main = do
       modeledResultsASE <- modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
 
       K.logLE K.Info "Knitting docs..."
-      let flattenOneF y = FL.Fold
+      curDateTime <- K.getCurrentTime
+      let curDateString = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" curDateTime
+          flattenOneF y = FL.Fold
             (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
             []
             reverse
@@ -390,7 +405,10 @@ main = do
       K.newPandoc
           (K.PandocInfo
             "2018"
-            (M.singleton "pagetitle" "2018 Preference Model Intro")
+            (M.fromList [("pagetitle", "Digging into 2018 - National Voter Preference")
+                        ,("published", curDateString)
+                        ]
+            )
           )
         $ do            
             K.addMarkDown intro2018
@@ -526,7 +544,7 @@ main = do
                       deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
                 K.addColonnadeTextTable deltaTableColonnade $ table
             K.addMarkDown voteShifts
-            _ <-
+{-            _ <-
               traverse (mkDeltaTable (const True))
                 $ [ (2012, 2016)
                   , (2014, 2018)
@@ -534,6 +552,7 @@ main = do
                   , (2016, 2018)
                   , (2010, 2018)
                   ]
+-}
             K.addMarkDown voteShiftObservations
             let
               battlegroundStates =
