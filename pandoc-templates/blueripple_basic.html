@@ -30,12 +30,40 @@ $endif$
 
 <!-- Extra styles -->
 <style>
-  body {margin:2em 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
-  #top {
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
       font-family: proxima-nova, sans-serif;
-      font-weight: 600;
-      font-size: 18pt;
-      margin: 2em 0.5em 2em 0; 
+      letter-spacing: 2px;
+      font-weight: 400;
+      font-size: 12pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em
+      display: flex; 
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      padding: 5px;
+      background-color: black
+  }
+  .br-header-item
+  {
+      flex-basis: auto;
+  }
+  .br-header-br  {
+      margin: 5px
+  }
+  .br-header-br > a:link, a:visited, a.active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-header-br > a:hover
+  {
+      color: white;
+      text-decoration: underline;
   }
   h1 {
       font-family: proxima-nova, sans-serif;
@@ -45,10 +73,15 @@ $endif$
       font-family: proxima-nova, sans-serif;
       font-weight: 600;
   }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
   body {
       font-family: Garamond;
       font-weight: 400		       
-  }
+  }  
   table {
       margin-left: auto;
       margin-right: auto;
@@ -93,8 +126,10 @@ $header-includes$
 $endfor$
 </head>
 <body>
-  <div id="top">
-    <a href="https://www.blueripplepolitics.org">Blue Ripple Politics</a>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <a href="https://www.blueripplepolitics.org">BLUE RIPPLE POLITICS</a>
+    </div>
   </div>
 <section id="page-content">
 <div class="pure-g">
