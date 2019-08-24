@@ -92,7 +92,7 @@ yamlAuthor = [here|
 templateVars = M.fromList
   [ ("lang"     , "English")
   , ("author"   , T.unpack yamlAuthor)
-  , ("pagetitle", "Preference Model & Predictions")
+  , ("pagetitle", "Preference Model & Pr edictions")
   , ("site-title", "Blue Ripple Politics")
   , ("home-url", "https://www.blueripplepolitics.org")
 --  , ("tufte","True")
@@ -374,7 +374,7 @@ main = do
         detailedASETurnoutCSV
         (const True)        
       K.logLE K.Info "Inferring..."
-      let yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
+      let yearList :: [Int]   = [2010,{- 2012, 2014, 2016,-} 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
