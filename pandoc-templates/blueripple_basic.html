@@ -34,13 +34,13 @@ $endif$
   .br-header {
       font-family: proxima-nova, sans-serif;
       letter-spacing: 2px;
-      font-weight: 400;
-      font-size: 12pt;
+      font-weight: 500;
+      font-size: 14pt;
       color: white;
       margin-top: 0em;
       margin-left: 0em;
       margin-bottom: 1em;
-      margin-right: 0.1em
+      margin-right: 0.1em;
       display: flex; 
       flex-direction: row;
       flex-wrap: nowrap;
@@ -50,20 +50,31 @@ $endif$
   }
   .br-header-item
   {
+      display: flex;
       flex-basis: auto;
   }
-  .br-header-br  {
-      margin: 5px
+  .br-header-br {
+      margin-left: 10px;
   }
-  .br-header-br > a:link, a:visited, a.active
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a.active
   {
       color: white;
       text-decoration: none;
   }
-  .br-header-br > a:hover
-  {
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 13px 20px;
       color: white;
-      text-decoration: underline;
+      text-align: center;      
   }
   h1 {
       font-family: proxima-nova, sans-serif;
@@ -128,7 +139,12 @@ $endfor$
 <body>
   <div class="br-header">
     <div class="br-header-item br-header-br" style="width: 8em">
-      <a href="https://www.blueripplepolitics.org">BLUE RIPPLE POLITICS</a>
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
     </div>
   </div>
 <section id="page-content">
