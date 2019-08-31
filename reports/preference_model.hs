@@ -51,7 +51,11 @@ import           Numeric.MCMC.Diagnostics       ( summarize
 --                                                , mpsrf
 --                                                , mannWhitneyUTest
                                                 )
-import qualified Numeric.LinearAlgebra         as LA                  
+import qualified Numeric.LinearAlgebra         as LA
+
+import qualified Graphics.Vega.VegaLite        as GV
+import           Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -91,8 +95,8 @@ yamlAuthor = [here|
 
 templateVars = M.fromList
   [ ("lang"     , "English")
-  , ("author"   , T.unpack yamlAuthor)
-  , ("pagetitle", "Preference Model & Pr edictions")
+--  , ("author"   , T.unpack yamlAuthor)
+--  , ("pagetitle", "Preference Model & Predictions")
   , ("site-title", "Blue Ripple Politics")
   , ("home-url", "https://www.blueripplepolitics.org")
 --  , ("tufte","True")
@@ -102,6 +106,68 @@ templateVars = M.fromList
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 --------------------------------------------------------------------------------
+brIntro2018 :: T.Text
+brIntro2018 = [here|
+In our first deep-dive into some modeling, we take a quick look at the 2018
+house elections.  What can we do with data from previous elections to guide
+our use of time and money in 2019 and 2020?
+
+1. Estimating voter preference
+2. Who voted for Democratic candidates?
+3. Why do we care?
+
+## 1. Estimating Voter Preference
+There are many ways to partition the electorate, e.g., age, educational
+attainment, race or sex.  We can also group people by answers to specific
+questions about issues or previous votes.  In subsequent posts we will look at all
+these possibilities, or point to other sources which do.  For our first look we're
+going to stick with some standard demographic groupings which originate with the
+[Census ACS data](https://www.census.gov/programs-surveys/acs.html). We'll look first
+at grouping the electorate by age (over/under 45), sex (female or male),
+and race (non-white and white), as well as the same age and sex categories but
+with a split on education (non-college-grad or college-grad) instead of race.
+
+We know that these categories are vast oversimplifications and problematic in
+various ways.  But we are limited to the categories the census provides and
+we need the number of groups to be reasonably small for any analysis to be useful.
+
+[Edison Research](https://www.edisonresearch.com/election-polling/#one)
+did extensive exit-polling in 2018
+and, along with others,
+[CNN analyzed](https://www.cnn.com/election/2018/exit-polls)
+this data, providing some breakdowns along these categories.
+[Much reporting](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls)
+has used these results to
+[discuss](https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html)
+the
+[2018 electorate](https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/).
+However, there is
+[widespread criticism](https://www.nytimes.com/2014/11/05/upshot/exit-polls-why-they-so-often-mislead.html) of exit-polling.
+
+Is there a different way to see which groups voted in what numbers for Democrats?
+In the rest of this post, and some subsequent posts, we'll explore a
+[different approach](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
+What if, rather than polling, we just used the *election results* themselves?
+How would that work? Here's what we used:
+- Use the census data for (national) turnout of each group.
+- Use the census data for the demographic breakdown of each house district.
+- Use the actual election result in each house district.
+
+We want to know the odds of a person in any of these demographic groups voting for
+the Democrat. Any set of voter preferences (those odds), give rise to
+a probability, given the turnout and demographics, of the election result we
+observe in a specific district.
+In 2018, We had 382 districts with at least one democrat and one republican
+running (we ignore the rest), and we can combine all those to get the chance that
+a particular set of voter preferences explains all the results.  From this, we
+choose the voter preferences that make the actual national results most likely.
+The details are spelled out
+[here](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
+
+## 2. Who Voted For Democratic Candidates?
+|]
+    
+  
 intro2018 :: T.Text
 intro2018 = [here|
 ## 2018 Voter Preference
@@ -372,9 +438,15 @@ main = do
       aseTurnoutFrame :: F.Frame TurnoutASE <- loadToFrame
         parserOptions
         detailedASETurnoutCSV
-        (const True)        
+        (const True)
+      edisonExit2018Frame :: F.Frame EdisonExit2018 <- loadToFrame
+        parserOptions
+        exitPoll2018CSV
+        (const True)
+      edisonExit2018Array <- knitMaybe "Failed to make array from 2018 Edison exit-poll data!" $
+        FL.foldM (FE.makeArrayMF (read @SimpleASR . T.unpack . F.rgetField @Group) (F.rgetField @DemPrefPct) const) edisonExit2018Frame
       K.logLE K.Info "Inferring..."
-      let yearList :: [Int]   = [2010,{- 2012, 2014, 2016,-} 2018]
+      let yearList :: [Int]   = [2010{-, 2012, 2014, 2016-}, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
           categoriesASR = fmap (T.pack . show) $ dsCategories simpleAgeSexRace
           categoriesASE = fmap (T.pack . show) $ dsCategories simpleAgeSexEducation
@@ -384,7 +456,7 @@ main = do
 
       K.logLE K.Info "Knitting docs..."
       curDateTime <- K.getCurrentTime
-      let curDateString = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" curDateTime
+      let curDateString = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" curDateTime          
           flattenOneF y = FL.Fold
             (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
             []
@@ -402,29 +474,73 @@ main = do
           vRowBuilderPR =
             FV.addRowBuilder @'("PEst",FV.NamedParameterEstimate) id
             $ FV.emptyRowBuilder
+          -- group name, voting pop, turnout fraction, inferred dem vote fraction  
+          groupData :: (A.Ix b, Show b)
+                    => PreferenceResults b FV.NamedParameterEstimate
+                    -> b
+                    -> (T.Text, Int, Double, Double)
+          groupData pr x = (T.pack (show x)
+                           , nationalVoters pr A.! x
+                           , nationalTurnout pr A.! x
+                           , FV.value $ FV.pEstimate  $ modeled pr A.! x
+                           )
+          groupDataList :: (Enum b, Bounded b, A.Ix b, Show b)
+                        => PreferenceResults b FV.NamedParameterEstimate
+                        -> [(T.Text, Int, Double, Double)]
+          groupDataList pr = fmap (groupData pr) [minBound..maxBound]
+          vRowBuilderGD =
+            FV.addRowBuilder @'("Group",T.Text) (\(g,_,_,_) -> g)
+            $ FV.addRowBuilder @'("VotingAgePop",Int) (\(_,v,_,_) -> v)
+            $ FV.addRowBuilder @'("Voters",Int) (\(_,v, t :: Double ,_) -> round (t * realToFrac v))
+            $ FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,_,p) -> 100*p)
+            $ FV.emptyRowBuilder
       K.newPandoc
           (K.PandocInfo
             "2018"
-            (M.fromList [("pagetitle", "Digging into 2018 - National Voter Preference")
+            (M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
+                        ,("title", "Digging into the 2018 House Election Results")
                         ,("published", curDateString)
                         ]
             )
           )
-        $ do            
-            K.addMarkDown intro2018
+        $ do
+            K.addMarkDown brIntro2018
+            let perGroupingChart :: forall b r. (A.Ix b, Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
+                                 => T.Text
+                                 -> Int
+                                 -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
+                                 -> K.Sem r ()
+                perGroupingChart title yr mr = do
+                  pr <-
+                    knitMaybe ("Failed to find " <> (T.pack $ show yr) <> " in modelResults.")
+                    $ M.lookup yr mr
+                  let groupDataL = groupDataList pr
+                      gdRows = FV.vinylRows vRowBuilderGD groupDataL
+                  _ <- K.addHvega Nothing Nothing
+                       $ vlGroupingChart
+                       title
+                       (FV.ViewConfig 650 325 0)
+                       gdRows
+                  return ()
+            prGDASR2018 <- perGroupingChart "Grouped by Age, Sex and Race" 2018 modeledResultsASR
+            prGDASE2018 <- perGroupingChart "Grouped by Age, Sex and Education" 2018 modeledResultsASE 
+            return ()
+                  
+{-           
+            K.addMarkDown intro2018            
             let prefsOneYear :: forall b r. (Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
                   => Int
                   -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                   -> K.Sem r ()
                 prefsOneYear y mr = do
                   pr <-
-                    knitMaybe "Failed to find 2018 in modelResults (SimpleASR)."
+                    knitMaybe "Failed to find 2018 in modelResults."
                     $ M.lookup y mr
                   let prRows = FV.vinylRows vRowBuilderPR $ modeled pr    
                   _ <- K.addHvega Nothing Nothing $ FV.parameterPlot @'("PEst",FV.NamedParameterEstimate)
                     "Modeled probability of voting Democratic in (competitive) 2018 house races"
                     S.cl95
-                    (FV.ViewConfig 800 400 50)
+                    (FV.ViewConfig 800 400 10)
                     prRows
                   let getIndex = fromEnum
                   vl <- knitEither
@@ -434,24 +550,29 @@ main = do
                          (\x y -> (correlations pr) `LA.atIndex` (getIndex x, getIndex y))
                         True
                         "Correlations"
-                        (FV.ViewConfig 500 500 50)
+                        (FV.ViewConfig 500 500 10)
                   _ <- K.addHvega Nothing Nothing vl                  
                   return ()
             prASR_2018 <- prefsOneYear @SimpleASR 2018 modeledResultsASR
             prASE_2018 <- prefsOneYear @SimpleASE 2018 modeledResultsASE
             K.addMarkDown postFig2018
+-}
       K.newPandoc
           (K.PandocInfo
             "MethodsAndSources"
-            (M.singleton "pagetitle"
-                         "Inferred Preference Model: Methods & Sources"
+            (M.fromList [("pagetitle", "Inferred Preference Model: Methods & Sources")
+                        ,("published", curDateString)
+                        ]
             )
           )
         $ K.addMarkDown modelNotesBayes
       K.newPandoc
           (K.PandocInfo
             "AcrossTime"
-            (M.singleton "pagetitle" "Preference Model Across Time")
+            (M.fromList [("pagetitle", "Preference Model Across Time")
+                        ,("published", curDateString)
+                        ]
+            )
           )
         $ do
             K.addMarkDown acrossTime
@@ -472,7 +593,7 @@ main = do
                          "D Voter Preference Vs. Election Year"
                          FV.DataMinMax
                          (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 1000 500 50)
+                         (FV.ViewConfig 800 400 10)
                          (vDatPVsT pr)
                    _ <- K.addHvega Nothing Nothing vl
                    return ()
@@ -498,7 +619,7 @@ main = do
                          @'("D Voteshare of D+R Votes",Double)
                          "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
                          (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 1000 500 50)
+                         (FV.ViewConfig 800 400 10)
                          (vDatSVS prMap)
                 _ <- K.addHvega Nothing Nothing vl
                 return ()
@@ -995,6 +1116,7 @@ data PreferenceResults b a = PreferenceResults
                                        , RVotes
                                        ]]
     , nationalTurnout :: A.Array b Double
+    , nationalVoters :: A.Array b Int
     , modeled :: A.Array b a
     , correlations :: LA.Matrix Double
   }
@@ -1050,9 +1172,16 @@ preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
           )
     -- F.Frame (LocationKey V.++ (PopArray b))      
     populationsFrame <-
-      knitMaybe "Error converting long demographic data to arrays for MCMC"
+      knitMaybe "Error converting long demographic data to arrays!"
       $   F.toFrame
       <$> FL.foldM votersArrayMF longByDCategoryFrame
+
+    -- and the total populations in each group
+    let addArray :: (A.Ix k, Num a) => A.Array k a -> A.Array k a -> A.Array k a
+        addArray a1 a2 = A.accum (+) a1 (A.assocs a2)
+        zeroArray :: (A.Ix k, Bounded k, Enum k, Num a) => A.Array k a
+        zeroArray = A.listArray (minBound, maxBound) $ L.repeat 0
+        popByGroupArray = FL.fold (FL.premap (F.rgetField @(PopArray b)) (FL.Fold addArray zeroArray id)) populationsFrame
 
     let
       resultsWithPopulationsFrame =
@@ -1119,6 +1248,7 @@ preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
     return $ PreferenceResults
       (fmap F.rcast $ FL.fold FL.list opposedFrame)
       turnoutByGroupArray
+      popByGroupArray
       parameterEstimatesA
       cgCorrel
 
@@ -1220,3 +1350,58 @@ classic regression is not a good method here.
 So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
 
+vlGroupingChart :: Foldable f
+                => T.Text
+                -> FV.ViewConfig
+                -> f (F.Record ['("Group", T.Text)
+                               ,'("VotingAgePop", Int)
+                               ,'("Voters", Int)
+                               ,'("D Voter Preference", Double)
+                               ])
+                -> GV.VegaLite
+vlGroupingChart title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      xLabel = "Inferred Likelihood of Voting Democratic"
+      estimateXenc = GV.position GV.X [FV.pName @'("D Voter Preference", Double)
+                                      ,GV.PmType GV.Quantitative
+                                      ,GV.PAxis [GV.AxTitle xLabel]
+                                      ]
+      estimateYenc = GV.position GV.Y [FV.pName @'("Group",T.Text)
+                                      ,GV.PmType GV.Ordinal
+                                      ]
+      estimateSizeEnc = GV.size [FV.mName @'("VotingAgePop",Int)
+                                , GV.MmType GV.Quantitative]
+      estEnc = estimateXenc . estimateYenc . estimateSizeEnc 
+      estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
+  in
+    FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
+
+
+vlGroupingChartExit :: Foldable f
+                    => T.Text
+                    -> FV.ViewConfig
+                    -> f (F.Record ['("Group", T.Text)
+                                   ,'("VotingAgePop", Int)
+                                   ,'("Voters", Int)
+                                   ,'("D Voter Preference", Double)
+                                   ,'("InfMinusExit", Double)
+                                   ])
+                    -> GV.VegaLite
+vlGroupingChartExit title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      xLabel = "Inferred Likelihood of Voting Democratic"
+      estimateXenc = GV.position GV.X [FV.pName @'("D Voter Preference", Double)
+                                      ,GV.PmType GV.Quantitative
+                                      ,GV.PAxis [GV.AxTitle xLabel]
+                                      ]
+      estimateYenc = GV.position GV.Y [FV.pName @'("Group",T.Text)
+                                      ,GV.PmType GV.Ordinal
+                                      ]
+      estimateSizeEnc = GV.size [FV.mName @'("VotingAgePop",Int)
+                                , GV.MmType GV.Quantitative]
+      estimateColorEnc = GV.color [FV.mName @'("InfMinusExit", Double)
+                                  , GV.MmType GV.Quantitative] 
+      estEnc = estimateXenc . estimateYenc . estimateSizeEnc . estimateColorEnc
+      estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
+  in
+    FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
