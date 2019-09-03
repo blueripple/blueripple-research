@@ -64,6 +64,16 @@ data SimpleASE = OldFemaleNonGrad
                | OldMaleCollegeGrad
                | YoungMaleCollegeGrad deriving (Show,Read,Enum,Bounded,Eq,Ord,Ix,Generic)
 
+data SimpleSE = FemaleNonGrad | FemaleCollegeGrad | MaleNonGrad | MaleCollegeGrad deriving (Show, Read, Enum, Bounded, Eq, Ord,Ix, Generic)
+
+simpleASE2SimpleSE :: Num a => A.Array SimpleASE a -> A.Array SimpleSE a
+simpleASE2SimpleSE x = A.array (minBound,maxBound) [(FemaleNonGrad, x A.! OldFemaleNonGrad + x A.! YoungFemaleNonGrad)
+                                                   ,(FemaleCollegeGrad, x A.! OldFemaleCollegeGrad + x A.! YoungFemaleCollegeGrad)
+                                                   ,(MaleNonGrad, x A.! OldMaleNonGrad + x A.! YoungMaleNonGrad)
+                                                   ,(MaleCollegeGrad, x A.! OldMaleCollegeGrad + x A.! YoungMaleCollegeGrad)
+                                                   ]
+
+
 type instance FI.VectorFor SimpleASE = V.Vector
 instance Hashable SimpleASE
 

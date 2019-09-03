@@ -106,30 +106,32 @@ templateVars = M.fromList
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 --------------------------------------------------------------------------------
-brIntro2018 :: T.Text
-brIntro2018 = [here|
+br2018Intro :: T.Text
+br2018Intro = [here|
 In our first deep-dive into some modeling, we take a quick look at the 2018
 house elections.  What can we do with data from previous elections to guide
 our use of time and money in 2019 and 2020?
 
 1. Estimating voter preference
-2. Who voted for Democratic candidates?
-3. Why do we care?
+2. Who voted for Democrats and Progressives?
+3. What does this mean for 2019 and 2020?
+4. What about exit polls?
+5. Action
 
-## 1. Estimating Voter Preference
+## Estimating Voter Preference
 There are many ways to partition the electorate, e.g., age, educational
 attainment, race or sex.  We can also group people by answers to specific
 questions about issues or previous votes.  In subsequent posts we will look at all
 these possibilities, or point to other sources which do.  For our first look we're
 going to stick with some standard demographic groupings which originate with the
 [Census ACS data](https://www.census.gov/programs-surveys/acs.html). We'll look first
-at grouping the electorate by age (over/under 45), sex (female or male),
+at grouping the electorate by age (old/young = over/under 45), sex (female or male),
 and race (non-white and white), as well as the same age and sex categories but
 with a split on education (non-college-grad or college-grad) instead of race.
 
-We know that these categories are vast oversimplifications and problematic in
+We know that these categories are oversimplifications and problematic in
 various ways.  But we are limited to the categories the census provides and
-we need the number of groups to be reasonably small for any analysis to be useful.
+we want the number of groups to be reasonably small for this analysis to be useful.
 
 [Edison Research](https://www.edisonresearch.com/election-polling/#one)
 did extensive exit-polling in 2018
@@ -160,127 +162,92 @@ observe in a specific district.
 In 2018, We had 382 districts with at least one democrat and one republican
 running (we ignore the rest), and we can combine all those to get the chance that
 a particular set of voter preferences explains all the results.  From this, we
-choose the voter preferences that make the actual national results most likely.
-The details are spelled out
-[here](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
+infer the most-likley voter preferences.
+The details are spelled out in a 
+[separate post](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
 
-## 2. Who Voted For Democratic Candidates?
+## Who Voted For Democrats and Progressives?
+In the charts below, we show our inferred voter preference split by demographic group.
+We use size to indicate the number of voters in each group and the color to
+signify turnout.
 |]
     
-  
-intro2018 :: T.Text
-intro2018 = [here|
-## 2018 Voter Preference
-The 2018 house races were generally good for Democrats and progressives--but why?
-Virtually every plausible theory has at least some support –
-depending on which pundits and researchers you follow,
-you could credibly argue that
-turnout of young voters[^VoxYouthTurnout], or white women abandoning Trump[^VoxWhiteWomen], or an underlying
-demographic shift toward non-white voters[^Pew2018] was the main factor that propelled the
-Blue Wave in the midterms.
-
-If Democrats want to solidify and extend their gains, what we really want to know
-is the relative importance of each of these factors – in other words,
-how much of last year’s outcome was due to changes in demographics vs.
-voter turnout vs. voters changing their party preferences?
-It turns out that answering
-this is difficult. We have good data on the country’s changing demographics,
-and also on who showed up to the polls, broken down by gender, age, and race.
-But in terms of how each sub-group voted, we only have exit polls and
-post-election surveys, as well as the final election results in aggregate.
-
-* We consider only "competitive" districts, defined as those that had
-a democrat and republican candidate. Of the 435 House districts, 
-382 districts were competitive in 2018.
-
-* Our demographic groupings are limited by the the categories recognized
-and tabulated by the census and by our desire to balance specificity
-(using more groups so that we might recognize people's identity more precisely)
-with a need to keep the model small enough to make inference possible.
-Thus for now we split the electorate into "white" (non-hispanic) and "non-white",
-"male" and "female" and "young" (<45) and "old".
-
-* Our inference model uses Bayesian techniques
-that are described in more detail in a separate
-[Preference-Model Notes](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html)
-post.
-
-Several folks have done related work, inferring voter behavior using the
-election results and other data combined with census data about demographics.
-in U.S. elections. In particular:
-
-* [Andrew Gelman](http://www.stat.columbia.edu/~gelman/)
-and various collaborators have used Bayesian and other inference techniques to
-look at exit-poll and other survey data to examine turnout and voting patterns.  In particular
-the technique I use here to adjust the census turnout numbers to best match the actual recorded
-vote totals in each district comes from
-[Ghitza & Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
-
-* [This blog post](http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/)
-uses bayesian inference and a beta-binomial
-voter model to look at the 2016 election and various subsets of the
-electorate. The more sophisticated model allows inference on voter polarity 
-within groups as well as the voter preference of each group.
-
-* [This paper](https://arxiv.org/pdf/1611.03787.pdf)
-uses different techniques but similar data to
-look at the 2016 election and infer voter behavior by demographic group.
-The model uses county-level data and exit-polls
-and is able to draw inferences about turnout and voter preference and to do so
-for *specific geographical areas*.
-
-* This [post](https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0)
-is asking many of the same questions but using much more specific data, gathered from
-voter files[^VoterFiles].  That data is not publicly available, at least not for free.
-
-Each of these studies is limited to the 2016 presidential election. Still,
-each has much to offer in terms of ideas for
-pushing this work forward, especially where county-level election returns are
-available, as they are for 2016 and 2018[^MITElectionLabData].
-
-As a first pass, we modeled the voting preferences of our
-8 demographic sub-groups in the 2018 election,
-so we could compare our results with data from exit polls and surveys.
-The results are presented in the figure below:
-
-[^VoxYouthTurnout]: <https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census>
-[^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
-[^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
-speaks to this, though it addresses turnout and opinion shifts as well.
-[^VoterFiles]: <https://www.pewresearch.org/fact-tank/2018/02/15/voter-files-study-qa/>
-[^MITElectionLabData]: <https://electionlab.mit.edu/data>
-|]
-
---------------------------------------------------------------------------------
-postFig2018 :: T.Text
-postFig2018 = [here|
-The most striking observation is the chasm between white and non-white voters’
-inferred support for Democrats in 2018. Non-whites were modeled to
+br2018BetweenFigs :: T.Text
+br2018BetweenFigs = [here|
+The most striking observation is the gap between white and non-white voters’
+inferred support for Democrats in 2018. Non-whites
 have over 75% preference for Dems regardless of age or gender,
-though support is even a bit stronger among non-white female voters than
-non-white male voters5. Inferred support from white voters in 2018
-is substantially lower, roughly 35-45% across age groups and genders.
-In contrast, differences in inferred preferences by age
-(matching for gender and race) or gender (matching for age and race) are not
-particularly striking or consistent
-(e.g., comparing white males in the under-25 and over-75 groups).
-Overall, we’re heartened that our model seems to work pretty well,
-because the results are broadly consistent with exit polls and surveys[^ExitPolls2018][^Surveys2018]. 
-Thus, our model confirmed prior work suggesting that non-white support for
-Democrats in 2018 was much higher than that by whites, across all
-genders and age groups. But it still doesn’t tell us what happened in 2018
-compared with prior years. To what extent did Democrats’ gains over 2016 come from
-underlying growth in the non-white population, higher turnout among non-whites,
-increased preference for Democrats (among whites or non-whites), or some combination
-of these and other factors? That requires comparing these data to results
-from earlier elections – which is what we’ll do in subsequent posts. Stay tuned. 
+though support is stronger among non-white female voters than
+non-white male voters. Inferred support from white voters in 2018
+is substantially lower, roughly 40-50% across age groups and genders.
 
-[^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
-<https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
-[^Surveys2018]: <https://www.pewresearch.org/fact-tank/2018/11/29/in-midterm-voting-decisions-policies-took-a-back-seat-to-partisanship/>
+Splitting instead by age, sex and education:
 |]
 
-  --------------------------------------------------------------------------------
+br2018AfterFigs :: T.Text
+br2018AfterFigs = [here|
+Here we see a large (>15% point) gap between more-democratic-leaning
+college-educated voters and voters without a
+four-year degree.  We also see a similar gap with age, where younger
+voters are 15% or so more likely to vote for democrats. 
+
+In both charts, the size of the circles reflects the number of people of
+voting age in each group (within the competitive districts).  In 2018
+democrats won almost all the groups we consider here but the groups where
+they lag have the largest number of actual voters.  The charts also make
+clear that voter turnout among young voters is relatively low and
+raising that would generally be a boon for democrats.
+
+## What does this mean for 2019 and 2020?
+These charts can be viewed as pictures of the so-called Democratic
+"base"--voters of color of all ages and younger white voters
+and/or college-educated voters of all ages and younger voters.
+Winning more votes comes from raising turnout among that
+coalition *and* trying to improve Democratic voter preference
+with everyone else.
+
+But this isn't really a national question!  Most candidates
+win local races and, because of the
+[electoral college](https://www.nationalpopularvote.com/),
+presidential elections also
+hinge on very local outcomes. So, in the near future,
+we plan to investigate the issue of turnout and changing
+voter-preference for single
+states or congressional districts.  We hope to use that
+analysis to help interested progressives discover where
+turnout is key vs. places where changing minds might be
+more important. Both are important everywhere, of course.
+But in some places, one might be a much larger source of
+democratic votes.
+
+## What About Exit Polls?
+These inferred voter preferences are similar to but also
+markedly different from the exit polls.  Please see [this
+post](https://blueripple.github.io/PreferenceModel/ExitPolls.html)
+for more details.
+
+## Action
+Right now, there are a lot of important ways to get involved!
+
+- [Crucial 2019 legislative races in VA and LA](http://www.blueripplepolitics.org/blog/ky-la-2019)
+- [Other important 2019 state races](http://www.blueripplepolitics.org/blog/state-level-races)
+- Donate your time (text-banking, canvassing, etc.) or money to
+[organizations fighting](https://fairfight.com/)
+to [improve turnout](https://www.demandthevote.com/)
+|]                
+--------------------------------------------------------------------------------
+brExitPolls :: T.Text
+brExitPolls = [here|
+The press has various breakdowns of the 2018 exit polling done by
+Edison Research.  None split things into the same categories we
+looked at in our
+[post on 2018](https://blueripple.github.io/PreferenceModel/2018.html). But
+we can merge some of our categories and then compare.
+
+|]
+
+  
+--------------------------------------------------------------------------------
 acrossTime :: T.Text
 acrossTime = [here|
 ## Where Did the 2018 Votes Come From?
@@ -443,8 +410,8 @@ main = do
         parserOptions
         exitPoll2018CSV
         (const True)
-      edisonExit2018Array <- knitMaybe "Failed to make array from 2018 Edison exit-poll data!" $
-        FL.foldM (FE.makeArrayMF (read @SimpleASR . T.unpack . F.rgetField @Group) (F.rgetField @DemPrefPct) const) edisonExit2018Frame
+--      edisonExit2018Array <- knitMaybe "Failed to make array from 2018 Edison exit-poll data!" $
+--        FL.foldM (FE.makeArrayMF (read @SimpleASR . T.unpack . F.rgetField @Group) (F.rgetField @DemPrefPct) const) edisonExit2018Frame
       K.logLE K.Info "Inferring..."
       let yearList :: [Int]   = [2010{-, 2012, 2014, 2016-}, 2018]
           years      = M.fromList $ fmap (\x -> (x, x)) yearList
@@ -457,43 +424,8 @@ main = do
       K.logLE K.Info "Knitting docs..."
       curDateTime <- K.getCurrentTime
       let curDateString = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" curDateTime          
-          flattenOneF y = FL.Fold
-            (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
-            []
-            reverse
-          flattenF = FL.Fold
-            (\l (y, pr) -> FL.fold (flattenOneF y) (modeled pr) : l)
-            []
-            (concat . reverse)
-          vRowBuilderPVsT =
-            FV.addRowBuilder @'("Group",T.Text) (\(g, _, _) -> g)
-              $ FV.addRowBuilder @'("Election Year",Int) (\(_, y, _) -> y)
-              $ FV.addRowBuilder @'("D Voter Preference",Double)
-                  (\(_, _, vp) -> vp)
-              $ FV.emptyRowBuilder
-          vRowBuilderPR =
-            FV.addRowBuilder @'("PEst",FV.NamedParameterEstimate) id
-            $ FV.emptyRowBuilder
           -- group name, voting pop, turnout fraction, inferred dem vote fraction  
-          groupData :: (A.Ix b, Show b)
-                    => PreferenceResults b FV.NamedParameterEstimate
-                    -> b
-                    -> (T.Text, Int, Double, Double)
-          groupData pr x = (T.pack (show x)
-                           , nationalVoters pr A.! x
-                           , nationalTurnout pr A.! x
-                           , FV.value $ FV.pEstimate  $ modeled pr A.! x
-                           )
-          groupDataList :: (Enum b, Bounded b, A.Ix b, Show b)
-                        => PreferenceResults b FV.NamedParameterEstimate
-                        -> [(T.Text, Int, Double, Double)]
-          groupDataList pr = fmap (groupData pr) [minBound..maxBound]
-          vRowBuilderGD =
-            FV.addRowBuilder @'("Group",T.Text) (\(g,_,_,_) -> g)
-            $ FV.addRowBuilder @'("VotingAgePop",Int) (\(_,v,_,_) -> v)
-            $ FV.addRowBuilder @'("Voters",Int) (\(_,v, t :: Double ,_) -> round (t * realToFrac v))
-            $ FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,_,p) -> 100*p)
-            $ FV.emptyRowBuilder
+
       K.newPandoc
           (K.PandocInfo
             "2018"
@@ -504,8 +436,28 @@ main = do
             )
           )
         $ do
-            K.addMarkDown brIntro2018
-            let perGroupingChart :: forall b r. (A.Ix b, Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
+            K.addMarkDown br2018Intro
+            let groupData :: (A.Ix b, Show b)
+                          => PreferenceResults b FV.NamedParameterEstimate
+                          -> b
+                          -> (T.Text, Int, Double, Double)
+                groupData pr x = (T.pack (show x)
+                                 , nationalVoters pr A.! x
+                                 , nationalTurnout pr A.! x
+                                 , FV.value $ FV.pEstimate  $ modeled pr A.! x
+                                 )
+                groupDataList :: (Enum b, Bounded b, A.Ix b, Show b)
+                              => PreferenceResults b FV.NamedParameterEstimate
+                              -> [(T.Text, Int, Double, Double)]
+                groupDataList pr = fmap (groupData pr) [minBound..maxBound]
+                vRowBuilderGD =
+                  FV.addRowBuilder @'("Group",T.Text) (\(g,_,_,_) -> g)
+                  $ FV.addRowBuilder @'("VotingAgePop",Int) (\(_,v,_,_) -> v)
+                  $ FV.addRowBuilder @'("Turnout",Double) (\(_,_,t,_) -> t)
+                  $ FV.addRowBuilder @'("Voters",Int) (\(_,v, t :: Double ,_) -> round (t * realToFrac v))
+                  $ FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,_,p) -> 100*p)
+                  $ FV.emptyRowBuilder
+                perGroupingChart :: forall b r. (A.Ix b, Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
                                  => T.Text
                                  -> Int
                                  -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
@@ -522,41 +474,78 @@ main = do
                        (FV.ViewConfig 650 325 0)
                        gdRows
                   return ()
-            prGDASR2018 <- perGroupingChart "Grouped by Age, Sex and Race" 2018 modeledResultsASR
-            prGDASE2018 <- perGroupingChart "Grouped by Age, Sex and Education" 2018 modeledResultsASE 
+            prGDASR2018 <- perGroupingChart "Grouped by Age, Race, and Sex" 2018 modeledResultsASR
+            K.addMarkDown br2018BetweenFigs
+            prGDASE2018 <- perGroupingChart "Grouped by Age, Sex and Education" 2018 modeledResultsASE
+            K.addMarkDown br2018AfterFigs
             return ()
-                  
-{-           
-            K.addMarkDown intro2018            
-            let prefsOneYear :: forall b r. (Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
-                  => Int
-                  -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
-                  -> K.Sem r ()
-                prefsOneYear y mr = do
-                  pr <-
-                    knitMaybe "Failed to find 2018 in modelResults."
-                    $ M.lookup y mr
-                  let prRows = FV.vinylRows vRowBuilderPR $ modeled pr    
-                  _ <- K.addHvega Nothing Nothing $ FV.parameterPlot @'("PEst",FV.NamedParameterEstimate)
-                    "Modeled probability of voting Democratic in (competitive) 2018 house races"
-                    S.cl95
-                    (FV.ViewConfig 800 400 10)
-                    prRows
-                  let getIndex = fromEnum
-                  vl <- knitEither
-                        $ FV.correlationCircles
-                        (T.pack . show)
-                        (FL.fold FL.set [(minBound :: b)..maxBound])
-                         (\x y -> (correlations pr) `LA.atIndex` (getIndex x, getIndex y))
-                        True
-                        "Correlations"
-                        (FV.ViewConfig 500 500 10)
-                  _ <- K.addHvega Nothing Nothing vl                  
-                  return ()
-            prASR_2018 <- prefsOneYear @SimpleASR 2018 modeledResultsASR
-            prASE_2018 <- prefsOneYear @SimpleASE 2018 modeledResultsASE
-            K.addMarkDown postFig2018
--}
+
+      K.newPandoc
+        (K.PandocInfo
+         "ExitPolls"
+          (M.fromList [("pagetitle", "Comparison of inferred preference model to Edison exit polls.")
+                      ,("title","Comparing the Inferred Preference Model to the Exit Polls")
+                      ,("published",curDateString)
+                      ]
+          )
+        )
+        $ do
+          K.addMarkDown brExitPolls
+          let mergedPrefs :: (A.Ix b, Enum b, Bounded b, A.Ix c, Enum c, Bounded c)
+                          => PreferenceResults b FV.NamedParameterEstimate
+                          -> (A.Array b Double -> A.Array c Double)
+                          -> A.Array c Double
+              mergedPrefs pr mergeF =
+                let mergedVAP = mergeF (fmap realToFrac $ nationalVoters pr)
+                    voters = totalArrayZipWith (*) (fmap realToFrac $ nationalVoters pr) (nationalTurnout pr)
+                    mergedVoters = mergeF voters
+                    mergedTurnout = totalArrayZipWith (/) mergedVoters mergedVAP
+                    dVotes = totalArrayZipWith (*) (fmap (FV.value . FV.pEstimate) $ modeled pr) voters
+                    mergedDVotes = mergeF dVotes
+                in totalArrayZipWith (/) mergedDVotes mergedVoters                
+              groupDataMerged :: forall b c r. (Enum b , Bounded b, A.Ix b, Show b
+                                               ,Enum c, Bounded c, A.Ix c, Show c, K.KnitOne r)
+                             => PreferenceResults b FV.NamedParameterEstimate
+                             -> F.Frame EdisonExit2018
+                             -> (A.Array b Double -> A.Array c Double)
+                             -> K.Sem r [(T.Text, Double, Double)]
+              groupDataMerged pr exits mergeF = do
+                   let allGroups :: [c] = [minBound..maxBound]
+                       modeledPrefs = mergedPrefs pr mergeF
+                       exitsRow c = knitEither $
+                         case FL.fold FL.list (F.filterFrame ((== T.pack (show c)) . F.rgetField @Group) exits) of
+                           [] -> Left ("No rows in exit-poll data for group=" <> (T.pack $ show c))
+                           [x] -> Right x
+                           _ -> Left (">1 in exit-poll data for group=" <> (T.pack $ show c))
+                       dPrefFromExitsRow r =
+                         let dFrac = F.rgetField @DemPref r
+                             rFrac = F.rgetField @RepPref r
+                         in dFrac/(dFrac + rFrac)
+                   exitPrefs <- fmap dPrefFromExitsRow <$> traverse exitsRow allGroups
+                   return $ zip3 (fmap (T.pack .show) allGroups) (A.elems modeledPrefs) exitPrefs
+              withExitsRowBuilder =
+                FV.addRowBuilder @'("Group",T.Text) (\(g,_,_) -> g)
+                $ FV.addRowBuilder @'("Model Dem Pref",Double) (\(_,mp,_) -> mp)
+                $ FV.addRowBuilder @'("ModelvsExit",Double) (\(_,mp,ep) -> mp - ep)
+                $ FV.emptyRowBuilder
+              compareChart :: (A.Ix b, Enum b, Bounded b, Show b, A.Ix c, Enum c, Bounded c, Show c, K.KnitOne r)
+                           => T.Text
+                           -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)                           
+                           -> F.Frame EdisonExit2018
+                           -> (A.Array b Double -> A.Array c Double)
+                           -> K.Sem r ()
+              compareChart title mr exits mergeF = do
+                pr <-
+                  knitMaybe ("Failed to find 2018 in modelResults.")
+                  $ M.lookup 2018 mr
+                gdm <- groupDataMerged pr exits mergeF
+                let ecRows = FV.vinylRows withExitsRowBuilder gdm 
+                _ <- K.addHvega Nothing Nothing $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
+                return ()         
+          compareChart "Age and Race" modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
+          compareChart "Sex and Race" modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
+          compareChart "Sex and Education" modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+          return ()
       K.newPandoc
           (K.PandocInfo
             "MethodsAndSources"
@@ -577,26 +566,42 @@ main = do
         $ do
             K.addMarkDown acrossTime
             -- arrange data for vs time plot
-            let vDatPVsT :: M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
+            let flattenOneF y = FL.Fold
+                  (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
+                  []
+                  reverse
+                flattenF = FL.Fold
+                  (\l (y, pr) -> FL.fold (flattenOneF y) (modeled pr) : l)
+                  []
+                  (concat . reverse)
+                vRowBuilderPVsT =
+                  FV.addRowBuilder @'("Group",T.Text) (\(g, _, _) -> g)
+                  $ FV.addRowBuilder @'("Election Year",Int) (\(_, y, _) -> y)
+                  $ FV.addRowBuilder @'("D Voter Preference",Double) (\(_, _, vp) -> vp)
+                  $ FV.emptyRowBuilder
+                vRowBuilderPR =
+                  FV.addRowBuilder @'("PEst",FV.NamedParameterEstimate) id
+                  $ FV.emptyRowBuilder
+                vDatPVsT :: M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
                          -> [FV.Row
-                         '[ '("Group", F.Text), '("Election Year", Int),
-                            '("D Voter Preference", Double)]] 
+                             '[ '("Group", F.Text), '("Election Year", Int),
+                                '("D Voter Preference", Double)]] 
                 vDatPVsT pr =
-                   FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
+                  FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
                 addParametersVsTime :: K.KnitOne r
-                                  => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
-                                  -> K.Sem r ()
+                                    => M.Map Int (PreferenceResults b FV.NamedParameterEstimate)
+                                    -> K.Sem r ()
                 addParametersVsTime pr = do 
-                   let vl =
-                         FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
-                         @'("D Voter Preference",Double)
-                         "D Voter Preference Vs. Election Year"
-                         FV.DataMinMax
-                         (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 800 400 10)
-                         (vDatPVsT pr)
-                   _ <- K.addHvega Nothing Nothing vl
-                   return ()
+                  let vl =
+                        FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
+                        @'("D Voter Preference",Double)
+                        "D Voter Preference Vs. Election Year"
+                        FV.DataMinMax
+                        (FV.TimeEncoding "%Y" FV.Year)
+                        (FV.ViewConfig 800 400 10)
+                        (vDatPVsT pr)
+                  _ <- K.addHvega Nothing Nothing vl
+                  return ()
 
             -- arrange data for stacked area share of electorate
             let
@@ -631,7 +636,6 @@ main = do
             addStackedArea modeledResultsASE
             
             -- analyze results
-            -- TODO: Quick Mann-Whitney
             let
               mkDeltaTable locFilter (y1, y2) = do
                 let y1T = T.pack $ show y1
@@ -641,26 +645,6 @@ main = do
                   $ M.lookup y1 modeledResultsASR
                 mry2 <- knitMaybe "lookup failure in mwu"
                   $ M.lookup y2 modeledResultsASR
-{-                  
-                let
-                  mwU =
-                    fmap
-                        (\f -> mannWhitneyUTest (S.mkPValue 0.05)
-                                                f
-                                                (mcmcChain mry1)
-                                                (mcmcChain mry2)
-                        )
-                      $ fmap
-                          (\n -> (VB.! n))
-                          [0 .. (length (dsCategories simpleAgeSexRace) - 1)]
-                K.logLE K.Info
-                  $  "Mann-Whitney U  "
-                  <> y1T
-                  <> "->"
-                  <> y2T
-                  <> ": "
-                  <> (T.pack $ show mwU)
--}
                 (table, (mD1, mR1), (mD2, mR2)) <-
                       deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
                 K.addColonnadeTextTable deltaTableColonnade $ table
@@ -916,13 +900,12 @@ distinct piece of data about how each group is likely to vote.
 The turnout numbers from the census are national averages and
 aren't correct in any particular district.  Since we don't have more
 detailed turnout data, there's not much we can do.  But we do know the
-total number of votes observed in each district and we should at least
+total number of votes observed in each district, and we should at least
 adjust the turnout numbers so that the total number of votes predicted
 by the turnout numbers and populations is close to the observed number
 of votes. For more on this adjustment, see below.
 
-How likely is a voter in
-each group to vote for the
+How likely is a voter in each group to vote for the
 democratic candidate in a contested race?
 
 For each district, $d$, we have the set of expected voters
@@ -958,7 +941,7 @@ We adjust these turnout numbers via a technique[^GGCorrection] in
 since that is the latest available from the census.
 We will update this once the census publishes updated 2018 American Community Survey data.
 [^GGCorrection]: We note that there is an error in the 2013 Ghitza and Gelman paper, one which is
-corrected in a more recent working paper (http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf).
+corrected in a more recent working paper <http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf>.
 by the same authors.  In the 2013 paper, a correction is derived
 for turnout in each region by find the $\delta^{(d)}$ which minimizes
 $\big|T^{(d)} -\sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \delta^{(d)})\big|$. The authors then
@@ -1031,6 +1014,25 @@ v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
 \rho(\{D_k\}|\{p_i\}) = \Pi_k \rho(D_k|\{p_i\})
 \end{equation}$
 
+* Now that we have this probability density, we want to look for the set of
+voter preferences which maximizes it.  There are many methods to do this but in
+this case, because the distribution has a simple shape, and we can compute its
+gradient, a good numerical optimizer is all we need.  That gives us
+maximum-likelihood estimates and covarainces among the estimated parameters.
+
+[^WP:BayesTheorem]: <https://en.wikipedia.org/wiki/Bayes%27_theorem>
+
+[WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
+
+[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
+
+[WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
+
+[WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
+|]
+
+modelNotesMCMC :: T.Text
+modelNotesMCMC = [here|
 * In order to compute expectations on this distribution we use
 Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples
 from the the posterior
@@ -1055,16 +1057,6 @@ a variance on each chain to the same quantity on the combined chains.
 This converges to one as the chains converge[^rhat] and a value below 1.1 is,
 conventionally, taken to indicate that the chains have converged
 "enough".
-
-[^WP:BayesTheorem]: <https://en.wikipedia.org/wiki/Bayes%27_theorem>
-
-[WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
-
-[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
-
-[WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
-
-[WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
 
 [Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
 
@@ -1350,31 +1342,82 @@ classic regression is not a good method here.
 So we turn to Bayesian inference.  Which was more appropriate from the start.
 |]
 
+
+totalArrayZipWith :: (A.Ix b, Enum b, Bounded b)
+                  => (x -> y -> z)
+                  -> A.Array b x
+                  -> A.Array b y
+                  -> A.Array b z
+totalArrayZipWith f xs ys = A.listArray (minBound, maxBound) $ zipWith f (A.elems xs) (A.elems ys)
+
 vlGroupingChart :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
                 -> f (F.Record ['("Group", T.Text)
                                ,'("VotingAgePop", Int)
+                               ,'("Turnout",Double)
                                ,'("Voters", Int)
                                ,'("D Voter Preference", Double)
                                ])
                 -> GV.VegaLite
 vlGroupingChart title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
-      xLabel = "Inferred Likelihood of Voting Democratic"
+      xLabel = "Inferred (%) Likelihood of Voting Democratic"
       estimateXenc = GV.position GV.X [FV.pName @'("D Voter Preference", Double)
                                       ,GV.PmType GV.Quantitative
                                       ,GV.PAxis [GV.AxTitle xLabel]
                                       ]
       estimateYenc = GV.position GV.Y [FV.pName @'("Group",T.Text)
                                       ,GV.PmType GV.Ordinal
+                                      ,GV.PAxis [GV.AxTitle "Demographic Group"]
                                       ]
-      estimateSizeEnc = GV.size [FV.mName @'("VotingAgePop",Int)
-                                , GV.MmType GV.Quantitative]
-      estEnc = estimateXenc . estimateYenc . estimateSizeEnc 
+      estimateSizeEnc = GV.size [FV.mName @'("Voters",Int)
+                                , GV.MmType GV.Quantitative
+                                , GV.MLegend [GV.LFormatAsNum]
+                                
+                                ]
+      estimateColorEnc = GV.color [FV.mName @'("Turnout", Double)
+                                  , GV.MmType GV.Quantitative
+                                  , GV.MLegend [GV.LGradientLength (vcHeight vc / 3)
+                                               , GV.LFormatAsNum
+                                               , GV.LFormat "%"
+                                               ]
+                                  ]
+      estEnc = estimateXenc . estimateYenc . estimateSizeEnc . estimateColorEnc
       estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
+
+exitCompareChart :: Foldable f
+                 => T.Text
+                 -> FV.ViewConfig
+                 -> f (F.Record ['("Group", T.Text)
+                                ,'("Model Dem Pref", Double)
+                                ,'("ModelvsExit",Double)
+                               ])
+                -> GV.VegaLite
+exitCompareChart title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      xLabel = "% Likelihood of Voting Democratic"
+      xEnc =  GV.position GV.X [FV.pName @'("Model Dem Pref", Double)
+                               ,GV.PmType GV.Quantitative
+                               ,GV.PAxis [GV.AxTitle xLabel]
+                               ]
+      yEnc = GV.position GV.Y [FV.pName @'("Group",T.Text)
+                              ,GV.PmType GV.Ordinal
+                              ,GV.PAxis [GV.AxTitle "Demographic Group"]
+                              ]
+      colorEnc = GV.color [FV.mName @'("ModelvsExit", Double)
+                          , GV.MmType GV.Quantitative
+                          , GV.MLegend [GV.LFormatAsNum
+                                       , GV.LFormat "%"
+                                       ]
+                          ]
+      enc = xEnc . yEnc . colorEnc
+      spec = GV.asSpec [(GV.encoding . enc) [], GV.mark GV.Point []]
+  in
+    FV.configuredVegaLite vc [FV.title title, GV.layer [spec], dat]
+             
 
 
 vlGroupingChartExit :: Foldable f
@@ -1405,3 +1448,116 @@ vlGroupingChartExit title vc rows =
       estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
+
+
+intro2018 :: T.Text
+intro2018 = [here|
+## 2018 Voter Preference
+The 2018 house races were generally good for Democrats and progressives--but why?
+Virtually every plausible theory has at least some support –
+depending on which pundits and researchers you follow,
+you could credibly argue that
+turnout of young voters[^VoxYouthTurnout], or white women abandoning Trump[^VoxWhiteWomen], or an underlying
+demographic shift toward non-white voters[^Pew2018] was the main factor that propelled the
+Blue Wave in the midterms.
+
+If Democrats want to solidify and extend their gains, what we really want to know
+is the relative importance of each of these factors – in other words,
+how much of last year’s outcome was due to changes in demographics vs.
+voter turnout vs. voters changing their party preferences?
+It turns out that answering
+this is difficult. We have good data on the country’s changing demographics,
+and also on who showed up to the polls, broken down by gender, age, and race.
+But in terms of how each sub-group voted, we only have exit polls and
+post-election surveys, as well as the final election results in aggregate.
+
+* We consider only "competitive" districts, defined as those that had
+a democrat and republican candidate. Of the 435 House districts, 
+382 districts were competitive in 2018.
+
+* Our demographic groupings are limited by the the categories recognized
+and tabulated by the census and by our desire to balance specificity
+(using more groups so that we might recognize people's identity more precisely)
+with a need to keep the model small enough to make inference possible.
+Thus for now we split the electorate into "white" (non-hispanic) and "non-white",
+"male" and "female" and "young" (<45) and "old".
+
+* Our inference model uses Bayesian techniques
+that are described in more detail in a separate
+[Preference-Model Notes](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html)
+post.
+
+Several folks have done related work, inferring voter behavior using the
+election results and other data combined with census data about demographics.
+in U.S. elections. In particular:
+
+* [Andrew Gelman](http://www.stat.columbia.edu/~gelman/)
+and various collaborators have used Bayesian and other inference techniques to
+look at exit-poll and other survey data to examine turnout and voting patterns.  In particular
+the technique I use here to adjust the census turnout numbers to best match the actual recorded
+vote totals in each district comes from
+[Ghitza & Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
+
+* [This blog post](http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/)
+uses bayesian inference and a beta-binomial
+voter model to look at the 2016 election and various subsets of the
+electorate. The more sophisticated model allows inference on voter polarity 
+within groups as well as the voter preference of each group.
+
+* [This paper](https://arxiv.org/pdf/1611.03787.pdf)
+uses different techniques but similar data to
+look at the 2016 election and infer voter behavior by demographic group.
+The model uses county-level data and exit-polls
+and is able to draw inferences about turnout and voter preference and to do so
+for *specific geographical areas*.
+
+* This [post](https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0)
+is asking many of the same questions but using much more specific data, gathered from
+voter files[^VoterFiles].  That data is not publicly available, at least not for free.
+
+Each of these studies is limited to the 2016 presidential election. Still,
+each has much to offer in terms of ideas for
+pushing this work forward, especially where county-level election returns are
+available, as they are for 2016 and 2018[^MITElectionLabData].
+
+As a first pass, we modeled the voting preferences of our
+8 demographic sub-groups in the 2018 election,
+so we could compare our results with data from exit polls and surveys.
+The results are presented in the figure below:
+
+[^VoxYouthTurnout]: <https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census>
+[^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
+[^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
+speaks to this, though it addresses turnout and opinion shifts as well.
+[^VoterFiles]: <https://www.pewresearch.org/fact-tank/2018/02/15/voter-files-study-qa/>
+[^MITElectionLabData]: <https://electionlab.mit.edu/data>
+|]
+
+  
+postFig2018 :: T.Text
+postFig2018 = [here|
+The most striking observation is the chasm between white and non-white voters’
+inferred support for Democrats in 2018. Non-whites were modeled to
+have over 75% preference for Dems regardless of age or gender,
+though support is even a bit stronger among non-white female voters than
+non-white male voters5. Inferred support from white voters in 2018
+is substantially lower, roughly 35-45% across age groups and genders.
+In contrast, differences in inferred preferences by age
+(matching for gender and race) or gender (matching for age and race) are not
+particularly striking or consistent
+(e.g., comparing white males in the under-25 and over-75 groups).
+Overall, we’re heartened that our model seems to work pretty well,
+because the results are broadly consistent with exit polls and surveys[^ExitPolls2018][^Surveys2018]. 
+Thus, our model confirmed prior work suggesting that non-white support for
+Democrats in 2018 was much higher than that by whites, across all
+genders and age groups. But it still doesn’t tell us what happened in 2018
+compared with prior years. To what extent did Democrats’ gains over 2016 come from
+underlying growth in the non-white population, higher turnout among non-whites,
+increased preference for Democrats (among whites or non-whites), or some combination
+of these and other factors? That requires comparing these data to results
+from earlier elections – which is what we’ll do in subsequent posts. Stay tuned. 
+
+[^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
+<https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
+[^Surveys2018]: <https://www.pewresearch.org/fact-tank/2018/11/29/in-midterm-voting-decisions-policies-took-a-back-seat-to-partisanship/>
+|]

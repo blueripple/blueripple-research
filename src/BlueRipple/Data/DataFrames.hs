@@ -80,7 +80,7 @@ F.tableTypes "TurnoutASR"          detailedASRTurnoutCSV
 F.tableTypes "TurnoutASE"          detailedASETurnoutCSV
 F.tableTypes "ASRDemographics" ageSexRaceDemographicsLongCSV
 F.tableTypes "ASEDemographics" ageSexEducationDemographicsLongCSV
-
+F.tableTypes "EdisonExit2018" exitPoll2018CSV
 
 -- these columns are parsed wrong so we fix them before parsing
 --F.declareColumn "CCESVvRegstatus" ''Int  

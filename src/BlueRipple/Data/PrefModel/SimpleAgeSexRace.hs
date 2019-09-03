@@ -63,6 +63,26 @@ data SimpleASR = OldNonWhiteFemale
                | OldWhiteMale
                | YoungWhiteMale deriving (Show,Read,Enum,Bounded,Eq,Ord,Ix,Generic)
 
+data SimpleSR = NonWhiteFemale | WhiteFemale | NonWhiteMale | WhiteMale deriving (Show, Read, Enum, Bounded, Eq, Ord,Ix, Generic)
+
+simpleASR2SimpleSR :: Num a => A.Array SimpleASR a -> A.Array SimpleSR a
+simpleASR2SimpleSR x = A.array (minBound,maxBound) [(NonWhiteFemale, x A.! OldNonWhiteFemale + x A.! YoungNonWhiteFemale)
+                                                   ,(WhiteFemale, x A.! OldWhiteFemale + x A.! YoungWhiteFemale)
+                                                   ,(NonWhiteMale, x A.! OldNonWhiteMale + x A.! YoungNonWhiteMale)
+                                                   ,(WhiteMale, x A.! OldWhiteMale + x A.! YoungWhiteMale)
+                                                   ]
+                       
+data SimpleAR = OldNonWhite | YoungNonWhite | OldWhite | YoungWhite deriving (Show, Read, Enum, Bounded, Eq, Ord,Ix, Generic)
+
+simpleASR2SimpleAR :: Num a => A.Array SimpleASR a -> A.Array SimpleAR a
+simpleASR2SimpleAR x = A.array (minBound,maxBound) [(OldNonWhite, x A.! OldNonWhiteFemale + x A.! OldNonWhiteMale)
+                                                   ,(YoungNonWhite, x A.! YoungNonWhiteFemale + x A.! YoungNonWhiteMale)
+                                                   ,(OldWhite, x A.! OldWhiteFemale + x A.! OldWhiteMale)
+                                                   ,(YoungWhite, x A.! YoungWhiteFemale + x A.! YoungWhiteMale)
+                                                   ]
+
+
+
 type instance FI.VectorFor SimpleASR = V.Vector
 instance Hashable SimpleASR
 
