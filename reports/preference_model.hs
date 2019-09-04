@@ -241,9 +241,31 @@ brExitPolls = [here|
 The press has various breakdowns of the 2018 exit polling done by
 Edison Research.  None split things into the same categories we
 looked at in our
-[post on 2018](https://blueripple.github.io/PreferenceModel/2018.html). But
-we can merge some of our categories and then compare.
+[post on inferred voter preference in 2018 house elections](https://blueripple.github.io/PreferenceModel/2018.html). But
+we can merge some of our categories and then compare. We see rough agreement but also some very
+large discrepancies that we have yet to explain.
+|]
 
+brExitAR :: T.Text
+brExitAR = [here|
+After merging genders, our preference model tracks the exit polls quite well. 
+|]
+
+brExitSR :: T.Text
+brExitSR = [here|
+A fairly large discrepancy appears when we look at sex and race, merging ages.
+Our model infers similar voting preferences for white men and women and non-white
+men and women whereas the exit polls show women in both groups voting for Democrats
+more than men by about 10 percentage points.
+|]
+
+brExitSE :: T.Text
+brExitSE = [here|
+An even larger discrepancy appears when we look at sex and education, merging
+our race categories.
+Our inferred result for male college graduates is a full 15% higher than the
+exit polls, while our result for female non-college graduates is almost 10%
+below the exit-polls.
 |]
 
   
@@ -530,21 +552,22 @@ main = do
                 $ FV.emptyRowBuilder
               compareChart :: (A.Ix b, Enum b, Bounded b, Show b, A.Ix c, Enum c, Bounded c, Show c, K.KnitOne r)
                            => T.Text
+                           -> Maybe T.Text
                            -> M.Map Int (PreferenceResults b FV.NamedParameterEstimate)                           
                            -> F.Frame EdisonExit2018
                            -> (A.Array b Double -> A.Array c Double)
                            -> K.Sem r ()
-              compareChart title mr exits mergeF = do
+              compareChart title captionM mr exits mergeF = do
                 pr <-
                   knitMaybe ("Failed to find 2018 in modelResults.")
                   $ M.lookup 2018 mr
                 gdm <- groupDataMerged pr exits mergeF
                 let ecRows = FV.vinylRows withExitsRowBuilder gdm 
-                _ <- K.addHvega Nothing Nothing $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
-                return ()         
-          compareChart "Age and Race" modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
-          compareChart "Sex and Race" modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
-          compareChart "Sex and Education" modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+                _ <- K.addHvega Nothing captionM $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
+                return ()
+          compareChart "Age and Race" (Just brExitAR) modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
+          compareChart "Sex and Race" (Just brExitSR) modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
+          compareChart "Sex and Education" (Just brExitSE) modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
           return ()
       K.newPandoc
           (K.PandocInfo
@@ -1373,11 +1396,13 @@ vlGroupingChart title vc rows =
                                       ]
       estimateSizeEnc = GV.size [FV.mName @'("Voters",Int)
                                 , GV.MmType GV.Quantitative
+                                , GV.MScale [GV.SDomain $ GV.DNumbers [5e6,30e6]]
                                 , GV.MLegend [GV.LFormatAsNum]
                                 
                                 ]
       estimateColorEnc = GV.color [FV.mName @'("Turnout", Double)
                                   , GV.MmType GV.Quantitative
+                                  , GV.MScale [GV.SDomain $ GV.DNumbers [0.2,0.8]]
                                   , GV.MLegend [GV.LGradientLength (vcHeight vc / 3)
                                                , GV.LFormatAsNum
                                                , GV.LFormat "%"
@@ -1398,20 +1423,24 @@ exitCompareChart :: Foldable f
                 -> GV.VegaLite
 exitCompareChart title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
-      xLabel = "% Likelihood of Voting Democratic"
+      xLabel = "Modeled % Likelihood of Voting Democratic"
       xEnc =  GV.position GV.X [FV.pName @'("Model Dem Pref", Double)
                                ,GV.PmType GV.Quantitative
-                               ,GV.PAxis [GV.AxTitle xLabel]
+                               ,GV.PAxis [GV.AxTitle xLabel
+                                         , GV.AxFormatAsNum
+                                         , GV.AxFormat "%"
+                                         ]
                                ]
-      yEnc = GV.position GV.Y [FV.pName @'("Group",T.Text)
-                              ,GV.PmType GV.Ordinal
-                              ,GV.PAxis [GV.AxTitle "Demographic Group"]
+      yEnc = GV.position GV.Y [FV.pName @'("ModelvsExit", Double)
+                              ,GV.PmType GV.Quantitative
+                              ,GV.PScale [GV.SDomain $ GV.DNumbers [negate 0.15,0.15]]
+                              ,GV.PAxis [GV.AxTitle "Model - Exit Poll"
+                                        , GV.AxFormatAsNum
+                                        , GV.AxFormat "%"
+                                        ]
                               ]
-      colorEnc = GV.color [FV.mName @'("ModelvsExit", Double)
-                          , GV.MmType GV.Quantitative
-                          , GV.MLegend [GV.LFormatAsNum
-                                       , GV.LFormat "%"
-                                       ]
+      colorEnc = GV.color [FV.mName @'("Group", T.Text)
+                          , GV.MmType GV.Nominal                          
                           ]
       enc = xEnc . yEnc . colorEnc
       spec = GV.asSpec [(GV.encoding . enc) [], GV.mark GV.Point []]
