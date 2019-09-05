@@ -146,6 +146,11 @@ $endif$
       font-family: Garamond;
       font-size: 12pt
   }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
   body {
       font-family: Garamond;
       font-weight: 400;
@@ -155,6 +160,8 @@ $endif$
       line-height: 1.6em;      		       
   }  
   table {
+      border-collapse: collapse;
+      font-size: 10pt;
       margin-left: auto;
       margin-right: auto;
       margin-bottom: 24px;
@@ -162,20 +169,8 @@ $endif$
       border-bottom: 2px solid black;
       border-top: 2px solid black;
   }
-  table th {
-      padding: 3px 10px;
-      background-color: white;
-      border-top: none;
-      border-left: none;
-      border-right: none;
-      border-bottom: 1px solid black;
-  }
-  table td {
-      padding: 3px 10px;
-      border-top: none;
-      border-left: none;
-      border-bottom: none;
-      border-right: none;
+  table th, table td {
+      border: 1px solid black;
   }
 </style>
 
@@ -221,7 +216,7 @@ $if(headnote)$
 <div class="headnote">$headnote$</div>
 $endif$
 $if(published)$
-<div class="published">$published$</div>
+<div class="published">$published$ $if(updated)$(updated: $updated$)$endif$</div>
 $endif$
 $if(license)$
 <div class="license">$license$</div>$endif$
