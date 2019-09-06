@@ -118,14 +118,85 @@ our use of time and money in 2019 and 2020?
 1. Estimating voter preference
 2. Who voted for Democrats and Progressives?
 3. What does this mean for 2019 and 2020?
-5. Action
+4. Ways to take action
+5. A note about exit polls
 
 ## Estimating Voter Preference
+The 2018 house races were generally good for Democrats and progressives---but why?
+Virtually every plausible theory has at least some support:
+depending on which pundits and researchers you follow,
+you could credibly argue that
+[turnout of young voters](https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census)
+, or [white women abandoning Trump](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>)
+, or an
+[underlying demographic shift toward non-white voters](https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education)
+was the main factor that propelled the
+Blue Wave in the midterms.
+
+But if Democrats want to solidify and extend their gains, we really want to know
+the relative importance of each of these factors---in other words,
+we want to understand election outcomes in a district or state in terms of:
+
+- Demographics: What are the age, sex, education level, race, etc. of the eligible voters?
+- Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?
+- Voter Preference: When people from each group vote, who are they likley to vote for?
+
+It turns out that breaking this down is difficult because we don't have all the data.
+
+- Demographics: [Census data](https://www.census.gov/programs-surveys/acs.html)
+exists for the demographic breakdown of each house district. 
+- Turnout: The [Census](https://www.census.gov/topics/public-sector/voting/data/tables.2018.html)
+also publishes data containing the *national* turnout of each group in each election.
+This is helpful but not as geographically specific as we'd like.
+- Preference: The [election results](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2)
+tell us how all those groups voted *in aggregate* in each district.
+
+In short, we have geographically specific information on demographics,
+demographically detailed but geographically general data on turnout,
+and demographically general but geographically specific data on voter preference.
+
+[Edison Research](https://www.edisonresearch.com/election-polling/#one)
+did extensive exit-polling in 2018
+and, along with others,
+[CNN analyzed](https://www.cnn.com/election/2018/exit-polls)
+this data, providing some breakdowns of voter preference in various demographic categories.
+[Much reporting](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls)
+has used these results to
+[discuss](https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html)
+the voter preferences of the 
+[2018 electorate](https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/).
+However, there is
+[widespread criticism](https://www.nytimes.com/2014/11/05/upshot/exit-polls-why-they-so-often-mislead.html) of exit-polling,
+and it may lead us astray in several ways.
+
+Is there a different way to find out which groups voted in what numbers for Democrats, without relying on exit polls?
+
+In the rest of this post, and some subsequent posts, we'll explore
+one approach for using the data we have to learn something demographically specific about
+voter preference.  That is, we'll infer a national-level voter preference
+for each demographic group using the data described above.
+We describe the methods in detail
+[here](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html), 
+
+What are the odds of a voter in any of these demographic groups voting for
+a Democrat? Any set of voter preferences (those odds), give rise to
+a probability, given the turnout and demographics, of the election result we
+observe in a specific district.
+In 2018, we had 382 districts with at least one Democrat and one Republican
+running (and we ignore the rest,
+since we are only interested in the choices people make between Democrats
+and Republicans). We can combine all those to get the chance that
+a particular set of voter preferences explains all the results.  From this, we
+can infer the most likely voter preferences.
+The details are spelled out in a 
+[separate post](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
+
+## Who Voted For Democrats and Progressives?
 There are many ways to partition the electorate, e.g., age, educational
 attainment, race or sex.  We can also group people by answers to specific
 questions about issues or previous votes.  In subsequent posts we will look at all
-these possibilities, or point to other sources which do.  For our first look we're
-going to stick with some standard demographic groupings which originate with the
+these possibilities, or point to other sources that do.  For our first look we're
+going to stick with some standard demographic groupings that originate with the
 [Census ACS data](https://www.census.gov/programs-surveys/acs.html). We'll look first
 at grouping the electorate by age (old/young = over/under 45), sex (female or male),
 and race (non-white and white), as well as the same age and sex categories but
@@ -135,44 +206,6 @@ We know that these categories are oversimplifications and problematic in
 various ways.  But we are limited to the categories the census provides and
 we want the number of groups to be reasonably small for this analysis to be useful.
 
-[Edison Research](https://www.edisonresearch.com/election-polling/#one)
-did extensive exit-polling in 2018
-and, along with others,
-[CNN analyzed](https://www.cnn.com/election/2018/exit-polls)
-this data, providing some breakdowns along these categories.
-[Much reporting](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls)
-has used these results to
-[discuss](https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html)
-the
-[2018 electorate](https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/).
-However, there is
-[widespread criticism](https://www.nytimes.com/2014/11/05/upshot/exit-polls-why-they-so-often-mislead.html) of exit-polling.
-
-Is there a different way to see which groups voted in what numbers for Democrats?
-In the rest of this post, and some subsequent posts, we'll explore a
-[different approach](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
-What if, rather than polling, we just used the *election results* themselves?
-How would that work? Here's the date used:
-
-- [Census data](https://www.census.gov/topics/public-sector/voting/data/tables.2018.html)
-for (national) turnout of each group.
-- [Census data](https://www.census.gov/programs-surveys/acs.html)
-for the demographic breakdown of each house district.
-- The [election result](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2)
-in each comptetive house district.
-
-What are the odds of a voter in any of these demographic groups voting for
-a Democrat? Any set of voter preferences (those odds), give rise to
-a probability, given the turnout and demographics, of the election result we
-observe in a specific district.
-In 2018, We had 382 districts with at least one democrat and one republican
-running (we ignore the rest), and we can combine all those to get the chance that
-a particular set of voter preferences explains all the results.  From this, we
-infer the most-likley voter preferences.
-The details are spelled out in a 
-[separate post](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
-
-## Who Voted For Democrats and Progressives?
 In the charts below, we show our inferred voter preference split by demographic group.
 We use size to indicate the number of voters in each group and the color to
 signify turnout.
@@ -192,21 +225,24 @@ Splitting instead by age, sex and education:
 
 br2018AfterFigs :: T.Text
 br2018AfterFigs = [here|
-Here we see a large (>15% point) gap between more-democratic-leaning
+Here we see a large (>15% point) gap between more Democratic-leaning
 college-educated voters and voters without a
 four-year degree.  We also see a similar gap with age, where younger
-voters are 15% or so more likely to vote for democrats. 
+voters are 15% or so more likely to vote for Democrats. 
 
 In both charts, the size of the circles reflects the number of people of
-voting age in each group (within the competitive districts).  In 2018
-democrats won almost all the groups we consider here but the groups where
-they lag have the largest number of actual voters.  The charts also make
-clear that voter turnout among young voters is relatively low and
-raising that would generally be a boon for democrats.
+voting age in each group.  In 2018
+Democrats won elections by winning smaller demographic groups
+by a large margin and losing larger demographic groups by a small
+margin.
 
-These results are similar but markedly different from the exit-polls.
-[This post](https://blueripple.github.io/PreferenceModel/ExitPolls.html)
-has more details on that comparison.
+Often those demographically small groups also had lower turnout.
+One thing to focus on now is boosting turnout among the groups that
+are more likely to vote for Democrats:
+
+- Non-white voters of any age, with or without a college degree
+- Young voters of any race, especially those with a college degree or in college
+- College educated voters of any race or age
 
 ## What does this mean for 2019 and 2020?
 These charts can be viewed as pictures of the so-called Democratic
@@ -216,7 +252,9 @@ Winning more votes comes from raising turnout among that
 coalition *and* trying to improve Democratic voter preference
 with everyone else.
 
-But this isn't really a national question!  Most candidates
+What we really want to know is demographic voter preference
+at the *district* or *state*
+level. Most candidates
 win local races and, because of the
 [electoral college](https://www.nationalpopularvote.com/),
 presidential elections also
@@ -225,23 +263,23 @@ we plan to investigate the issue of turnout and changing
 voter-preference for single
 states or congressional districts.  We hope to use that
 analysis to help interested progressives discover where
-turnout is key vs. places where changing minds might be
-more important. Both are important everywhere, of course.
+turnout is key vs. places where changing voter preference
+might be more important. Both are important everywhere, of course.
 But in some places, one might be a much larger source of
-democratic votes.
+Democratic votes.
 
-## Action
+## Ways to take Action
 Democrats and progressives will benefit
 from get-out-the-vote work and work fighting voter suppression.
 Both improve turnout among the groups most likely to vote
-for Dems and progressives.
+for blue candidates.
 
-Donate your time or money to organizations fighting to improve voter
-access and turnout:
+We suggest that you donate your time or money to organizations fighting to improve voter
+access and turnout. In later posts we'll dig into who's doing this work at a state and local
+level, but here are some groups that are operating nationally.
 
 - [Demand The Vote](https://www.demandthevote.com/) is an information
 clearinghouse for voter access and voting rights legislation in all 50 states.
-and link to variety of ways to put your time or money into voter access and turnout.
 - [When We All Vote](https://www.whenweallvote.org/), Michelle Obama's new
 organization, works to increase voter turnout nationally and has opportunities to
 volunteer and donate money.
@@ -251,12 +289,12 @@ Students can [sign up](https://www.campusvoteproject.org/sign-up) to work on the
 - [Next Gen America](https://nextgenamerica.org/) works nationally to improve youth turnout.
 They have a [variety of ways](https://nextgenamerica.org/act/) you can donate time or money to the cause. 
 
-And here's our take on some crucial state races coming up in 2019.  State
-legislatures, Governors and state Secretaries-of-State have a large impact on
-voter access:
+## A Note about Exit Polls
+These results are similar but markedly different from the exit polls.
+[This post](https://blueripple.github.io/PreferenceModel/ExitPolls.html)
+has more details on that comparison.
 
-- [Crucial 2019 legislative races in VA and LA](http://www.blueripplepolitics.org/blog/ky-la-2019)
-- [Other important 2019 state races](http://www.blueripplepolitics.org/blog/state-level-races)
+
 |]                
 --------------------------------------------------------------------------------
 brExitPolls :: T.Text
@@ -266,7 +304,8 @@ Edison Research.  None split things into the same categories we
 looked at in our
 [post on inferred voter preference in 2018 house elections](https://blueripple.github.io/PreferenceModel/2018.html). But
 we can merge some of our categories and then compare. We see rough agreement but also some very
-large discrepancies that we have yet to explain.
+large discrepancies that we have yet to explain. NB: In each of the following charts, perfect agreement
+with the exit polls would leave all the dots in the vertical middle of the chart, at 0%. 
 |]
 
 brExitAR :: T.Text
@@ -285,10 +324,17 @@ for Democrats.
 brExitSE :: T.Text
 brExitSE = [here|
 An even larger discrepancy appears when we look at sex and education, merging
-our race categories.
+our age categories.
 Our inferred result for male college graduates is a full 15% higher than the
 exit polls, while our result for female non-college graduates is almost 10%
 below the exit-polls.
+
+
+We're continuing to investigate these differences and we hope that using other
+data and methods we can figure out what is happening here.  We welcome your
+ideas, via [email](mailto:adam@blueripplepolitics.org),
+[twitter](https://twitter.com/blueripplepol) or
+via a [github issue](https://github.com/blueripple/BlueRipple/issues).
 |]
 
   
@@ -698,9 +744,12 @@ main = do
                 let ecRows = FV.vinylRows withExitsRowBuilder gdm 
                 _ <- K.addHvega Nothing captionM $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
                 return ()
-          compareChart "Age and Race" (Just brExitAR) modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
-          compareChart "Sex and Race" (Just brExitSR) modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
-          compareChart "Sex and Education" (Just brExitSE) modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+          compareChart "Age and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
+          brAddMarkDown brExitAR
+          compareChart "Sex and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
+          brAddMarkDown brExitSR
+          compareChart "Sex and Education" Nothing modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+          brAddMarkDown brExitSE
           return ()
       K.newPandoc
           (K.PandocInfo
@@ -1555,14 +1604,16 @@ vlGroupingChart title vc rows =
                                 ]
       estimateColorEnc = GV.color [FV.mName @'("Turnout", Double)
                                   , GV.MmType GV.Quantitative
-                                  , GV.MScale [GV.SDomain $ GV.DNumbers [0.2,0.8]]
+                                  , GV.MScale [GV.SDomain $ GV.DNumbers [0.2,0.8]
+                                              ,GV.SScheme "blues" [0.3,1.0]
+                                              ]
                                   , GV.MLegend [GV.LGradientLength (vcHeight vc / 3)
                                                , GV.LFormatAsNum
                                                , GV.LFormat "%"
                                                ]
                                   ]
       estEnc = estimateXenc . estimateYenc . estimateSizeEnc . estimateColorEnc
-      estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
+      estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point [GV.MFilled True]]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
 
@@ -1596,7 +1647,7 @@ exitCompareChart title vc rows =
                           , GV.MmType GV.Nominal                          
                           ]
       enc = xEnc . yEnc . colorEnc
-      spec = GV.asSpec [(GV.encoding . enc) [], GV.mark GV.Point []]
+      spec = GV.asSpec [(GV.encoding . enc) [], GV.mark GV.Point [GV.MFilled True, GV.MSize 100]]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [spec], dat]
              
