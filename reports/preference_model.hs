@@ -653,17 +653,19 @@ main = do
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
       let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
           curDateString = formatTime curDate
-          addDates :: Time.Day -> Time.Day -> M.Map String String -> M.Map String String
-          addDates pubDate updateDate tMap =
+          addDates :: Time.Day -> Maybe Time.Day -> M.Map String String -> M.Map String String
+          addDates pubDate updateDateM tMap =
             let pubT = M.singleton "published" $ formatTime pubDate
-                updT = M.singleton "updated" $ formatTime updateDate
-            in tMap <> pubT <> if (updateDate > pubDate) then updT else M.empty
+                updT = case updateDateM of
+                  Just updateDate -> if (updateDate > pubDate) then M.singleton "updated" (formatTime updateDate) else M.empty
+                  Nothing -> M.empty
+            in tMap <> pubT <> updT
           -- group name, voting pop, turnout fraction, inferred dem vote fraction  
-          pubDate2018 = Time.fromGregorian 2019 9 14
+          pubDate2018 = Time.fromGregorian 2019 9 2
       K.newPandoc
           (K.PandocInfo
             "p1/main"
-            (addDates pubDate2018 curDate
+            (addDates pubDate2018 Nothing -- (Just curDate)
              $ M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
                           ,("title", "Digging into the 2018 House Election Results")             
                           ]
@@ -718,7 +720,7 @@ main = do
       K.newPandoc
         (K.PandocInfo
          "p1/ExitPolls"
-          (addDates pubDate2018 curDate
+          (addDates pubDate2018 Nothing -- (Just curDate)
            $ M.fromList [("pagetitle", "Comparison of inferred preference model to Edison exit polls.")
                         ,("title","Comparing the Inferred Preference Model to the Exit Polls")
                         ]
@@ -790,7 +792,7 @@ main = do
       K.newPandoc
           (K.PandocInfo
             "MethodsAndSources"
-            (addDates pubDate2018 curDate
+            (addDates pubDate2018 Nothing -- (Just curDate)
               $ M.fromList [("pagetitle", "Inferred Preference Model: Methods & Sources")
                            ]
             )
@@ -802,7 +804,7 @@ main = do
       K.newPandoc
           (K.PandocInfo
             "p2/main"
-            (addDates pubDateAcrossTime curDate
+            (addDates pubDateAcrossTime (Just curDate)
             $ M.fromList [("pagetitle", "Voter Preference: 2010-2018")
                          ,("title", "Voter Preference: 2010-2018")
                          ]
