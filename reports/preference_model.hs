@@ -192,7 +192,7 @@ voter preference.  That is, we'll infer a national-level voter preference
 for each demographic group using the data described above.
 We describe the methods in detail
 **[here](${brPrefModelURL brMethods})**,
-and the [data and code](${brGithub <> "/BlueRipple"})
+and the [data and code](${brGithub <> "/preference-model"})
 are available at the Blue Ripple [github](${brGithubLanding}).
 
 What are the odds of a voter in any of these demographic groups voting for
@@ -360,7 +360,7 @@ voter preference for men and lower for women than exit-poll or other post-electi
 analytics.  We welcome your
 ideas, via [email](mailto:adam@blueripplepolitics.org),
 [twitter](${brTwitter}) or
-via a [github issue](${brGithub <> "/BlueRipple/issues"}).
+via a [github issue](${brGithub <> "/preference-model/issues"}).
 |]
 
   

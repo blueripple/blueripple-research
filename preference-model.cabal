@@ -1,15 +1,15 @@
 cabal-version:       2.2.0
-name:                BlueRipple
+name:                preference-model
 
 version:             0.1.0.0
-synopsis:            BlueRipple/FEC data analysis
+synopsis:            BlueRipple preference-model data analysis
 -- description:
 license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Adam Conner-Sax
-maintainer:          adam_conner_sax@yahoo.com
+maintainer:          adam@blueripplepolitics.org
 -- copyright:
-category:            Data
+category:            Numeric
 build-type:          Simple
 extra-source-files:  ChangeLog.md
 
@@ -42,7 +42,6 @@ common deps
                , vector
                , vinyl >= 0.10.0.1
                      
-
 library
   import: deps
   ghc-options: -O1 -fplugin=Polysemy.Plugin
@@ -90,7 +89,7 @@ executable dataLoader
   hs-source-dirs: dataLoader
   main-is:        dataLoader.hs
   build-depends: base >= 4.11
-               , BlueRipple
+               , preference-model
                , beam-core >= 0.8.0.0
                , beam-sqlite >= 0.4.0.0               
                , OpenFEC-beam
@@ -104,7 +103,7 @@ executable mission
   hs-source-dirs: mission
   main-is:        mission.hs
   build-depends: base >= 4.11
-               , BlueRipple
+               , preference-model
                , lens
                , map-reduce-folds
                , time
@@ -116,7 +115,7 @@ executable preference_model
   hs-source-dirs: reports
   main-is:        preference_model.hs
   build-depends: base >= 4.11
-               , BlueRipple
+               , preference-model
                , blaze-colonnade
                , colonnade
                , data-science-utils
@@ -128,11 +127,11 @@ executable preference_model
                , time
   default-language: Haskell2010
 
-executable MRP_Basics
-  import: deps
-  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
-  hs-source-dirs: reports
-  main-is:        MRP_Basics.hs
-  build-depends: base >= 4.11
-               , BlueRipple
-  default-language: Haskell2010                 
+--executable MRP_Basics
+--  import: deps
+--  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
+--  hs-source-dirs: reports
+--  main-is:        MRP_Basics.hs
+--  build-depends: base >= 4.11
+--               , preference-model
+--  default-language: Haskell2010                 
