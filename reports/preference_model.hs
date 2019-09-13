@@ -46,12 +46,6 @@ import qualified Statistics.Types              as S
 import qualified Statistics.Distribution       as S
 import qualified Statistics.Distribution.StudentT      as S
 
-
-import           Numeric.MCMC.Diagnostics       ( summarize
-                                                , ExpectationSummary(..)
---                                                , mpsrf
---                                                , mannWhitneyUTest
-                                                )
 import qualified Numeric.LinearAlgebra         as LA
 
 import qualified Graphics.Vega.VegaLite        as GV
@@ -80,8 +74,9 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown    as K
 import           Polysemy.Error                 (Error)
 import qualified Text.Pandoc.Options           as PA
 
-import           Data.String.Here               ( here )
+import           Data.String.Here               ( here, i )
 
+import           BlueRipple.Configuration
 import           BlueRipple.Utilities.KnitUtils
 import           BlueRipple.Data.DataFrames
 import           BlueRipple.Data.PrefModel
@@ -108,9 +103,27 @@ templateVars = M.fromList
 --pandocTemplate = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
+brPrefModelRoot :: T.Text
+brPrefModelRoot = brResearchRoot <> "preference-model/"
+
+brPrefModelURL :: T.Text -> T.Text
+brPrefModelURL x = brPrefModelRoot <> x <> ".html"
+
+brMethods :: T.Text
+brMethods = "MethodsAndSources"
+
+brP1Main :: T.Text
+brP1Main = "p1/main"
+
+brP1ExitPolls :: T.Text
+brP1ExitPolls = "p1/ExitPolls"
+
+brP2Main :: T.Text
+brP2Main = "p2/main"
+
 --------------------------------------------------------------------------------
 br2018Intro :: T.Text
-br2018Intro = [here|
+br2018Intro = [i|
 In our first deep-dive into some modeling, we take a quick look at the 2018
 house elections.  What can we do with data from previous elections to guide
 our use of time and money in 2019 and 2020?
@@ -121,7 +134,7 @@ our use of time and money in 2019 and 2020?
 4. Ways to take action
 5. A note about exit polls
 
-## Estimating Voter Preference
+## Estimating Voter Preference: What we're doing and why
 The 2018 house races were generally good for Democrats and progressives---but why?
 Virtually every plausible theory has at least some support:
 depending on which pundits and researchers you follow,
@@ -144,7 +157,9 @@ we want to understand election outcomes in a district or state in terms of:
 It turns out that breaking this down is difficult because we don't have all the data.
 
 - Demographics: [Census data](https://www.census.gov/programs-surveys/acs.html)
-exists for the demographic breakdown of each house district. 
+exists for the demographic breakdown of each house district. The census hasn't yet updated their data
+for 2018 so we are using data from 2017.  The 2018 data is due to be released on 9/26 and we will update
+this post soon after.
 - Turnout: The [Census](https://www.census.gov/topics/public-sector/voting/data/tables.2018.html)
 also publishes data containing the *national* turnout of each group in each election.
 This is helpful but not as geographically specific as we'd like.
@@ -176,7 +191,9 @@ one approach for using the data we have to learn something demographically speci
 voter preference.  That is, we'll infer a national-level voter preference
 for each demographic group using the data described above.
 We describe the methods in detail
-[here](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html), 
+**[here](${brPrefModelURL brMethods})**,
+and the [data and code](${brGithub <> "/BlueRipple"})
+are available at the Blue Ripple [github](${brGithubLanding}).
 
 What are the odds of a voter in any of these demographic groups voting for
 a Democrat? Any set of voter preferences (those odds), give rise to
@@ -189,7 +206,7 @@ and Republicans). We can combine all those to get the chance that
 a particular set of voter preferences explains all the results.  From this, we
 can infer the most likely voter preferences.
 The details are spelled out in a 
-[separate post](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html).
+**[separate post](${brPrefModelURL brMethods})**.
 
 ## Who Voted For Democrats and Progressives?
 There are many ways to partition the electorate, e.g., age, educational
@@ -212,7 +229,7 @@ signify turnout.
 |]
     
 br2018BetweenFigs :: T.Text
-br2018BetweenFigs = [here|
+br2018BetweenFigs = [i|
 The most striking observation is the gap between white and non-white voters’
 inferred support for Democrats in 2018. Non-whites
 have over 75% preference for Dems regardless of age or gender,
@@ -224,7 +241,7 @@ Splitting instead by age, sex and education:
 |]
 
 br2018AfterFigs :: T.Text
-br2018AfterFigs = [here|
+br2018AfterFigs = [i|
 Here we see a large (>15% point) gap between more Democratic-leaning
 college-educated voters and voters without a
 four-year degree.  We also see a similar gap with age, where younger
@@ -291,56 +308,65 @@ They have a [variety of ways](https://nextgenamerica.org/act/) you can donate ti
 
 ## A Note about Exit Polls
 These results are similar but markedly different from the exit polls.
-[This post](https://blueripple.github.io/PreferenceModel/ExitPolls.html)
+**[This post](${brPrefModelURL brP1ExitPolls})**
 has more details on that comparison.
 
 
 |]                
 --------------------------------------------------------------------------------
 brExitPolls :: T.Text
-brExitPolls = [here|
+brExitPolls = [i|
 The press has various breakdowns of the 2018 exit polling done by
 Edison Research.  None split things into the same categories we
 looked at in our
-[post on inferred voter preference in 2018 house elections](https://blueripple.github.io/PreferenceModel/2018.html). But
-we can merge some of our categories and then compare. We see rough agreement but also some very
-large discrepancies that we have yet to explain. NB: In each of the following charts, perfect agreement
-with the exit polls would leave all the dots in the vertical middle of the chart, at 0%. 
+**[post on inferred voter preference in 2018 house elections](${brPrefModelURL brP1Main})**.
+But we can merge some of our categories and then compare. For comparison we chose a
+[Fox News post](https://www.foxnews.com/midterms-2018/voter-analysis)
+because it had the most detailed demographic splits we found.
+
+We see rough agreement but also some very
+large discrepancies, particularly around voter preference of men and women
+that we have yet to explain. NB: In each of the following charts, perfect agreement
+with the exit polls would leave all the dots in the vertical middle of the chart, at 0%.
 |]
 
 brExitAR :: T.Text
-brExitAR = [here|
-After merging genders, our preference model tracks the exit polls quite well. 
+brExitAR = [i|
+After merging men and women, our preference model tracks the exit polls quite well as seen in the chart below.
 |]
 
 brExitSR :: T.Text
-brExitSR = [here|
+brExitSR = [i|
 A fairly large discrepancy appears when we look at sex and race, merging ages.
 Our model infers similar voting preferences for white men and women and non-white
 men and women whereas the exit polls show women about 10% more likely to vote
-for Democrats.
+for Democrats. This is illustrated in the chart below.
 |]
 
 brExitSE :: T.Text
-brExitSE = [here|
+brExitSE = [i|
 An even larger discrepancy appears when we look at sex and education, merging
 our age categories.
 Our inferred result for male college graduates is a full 15% higher than the
 exit polls, while our result for female non-college graduates is almost 10%
-below the exit-polls.
-
-
+below the exit-polls. This is laid out in the chart below.
+|]
+  
+brExitConclusion :: T.Text
+brExitConclusion = [i|
 We're continuing to investigate these differences and we hope that using other
-data and methods we can figure out what is happening here.  We welcome your
+data and methods we can figure out why this model infers higher Democratic
+voter preference for men and lower for women than exit-poll or other post-election
+analytics.  We welcome your
 ideas, via [email](mailto:adam@blueripplepolitics.org),
-[twitter](https://twitter.com/blueripplepol) or
-via a [github issue](https://github.com/blueripple/BlueRipple/issues).
+[twitter](${brTwitter}) or
+via a [github issue](${brGithub <> "/BlueRipple/issues"}).
 |]
 
   
 --------------------------------------------------------------------------------
 brAcrossTimeIntro :: T.Text
-brAcrossTimeIntro = [here|
+brAcrossTimeIntro = [i|
 
 In our previous [post][BR:2018] we introduced a
 [model][BR:Methods] which we used to infer voter
@@ -362,19 +388,19 @@ how these factors add up to an election result.
 
 Consider the voter preference broken down by age, sex and race from 2010 to 2018:
 
-[BR:2018]: <https://blueripple.github.io/PreferenceModel/2018.html#>
-[BR:Methods]: <https://blueripple.github.io/PreferenceModel/MethodsAndSources.html#>
+[BR:2018]: <${brPrefModelURL brP1Main}#>
+[BR:Methods]: <${brPrefModelURL brMethods}#>
 |]
   
 brAcrossTimeASRPref :: T.Text
-brAcrossTimeASRPref = [here|
+brAcrossTimeASRPref = [i|
 As before, the difference in voter preference between non-white and white voters is stark.
 There is an encouraging move in white voter preference toward Democrats in 2018.
 We can also look at how those numbers translate to the composition of the democratic electorate:
 |]
 
 brAcrossTimeASRVoteShare :: T.Text
-brAcrossTimeASRVoteShare = [here|
+brAcrossTimeASRVoteShare = [i|
 This chart reminds us that though non-white voters are overwhelmingly democratic,
 they only make up roughly 40% of the Democratic votes.
 This is a combination of smaller
@@ -387,7 +413,7 @@ the voter preferences through time:
 |]
 
 brAcrossTimeASEPref :: T.Text
-brAcrossTimeASEPref = [here|
+brAcrossTimeASEPref = [i|
 This shows a very distinct shift toward Democrats of all groups except older
 non-college graduates, who have become more Republican since 2012. Younger
 non-college graduates shifted republican in 2012 but shifted back in 2018.
@@ -396,7 +422,7 @@ Again, we can also look at this data in terms of vote-share:
 |]
 
 brAcrossTimeASEVoteShare :: T.Text
-brAcrossTimeASEVoteShare = [here|
+brAcrossTimeASEVoteShare = [i|
 Here we see again that the Democratic coalition is made up of a large number
 of voters from groups that are not majority democratic voters and smaller
 numbers of votes from many groups which do tend to vote for Democrats.
@@ -414,7 +440,7 @@ democratic votes between 2012 and 2016:
 |]
 
 brAcrossTimeASR2012To2016 :: T.Text  
-brAcrossTimeASR2012To2016 = [here|
+brAcrossTimeASR2012To2016 = [i|
 The loss of Democratic votes comes almost entirely from shifts in opinion among
 white voters, only slightly offset by demographic and turnout trends among
 non-white voters.
@@ -425,7 +451,7 @@ among non-college graduates, especially older ones:
 |]
   
 brAcrossTimeASE2012To2016 :: T.Text
-brAcrossTimeASE2012To2016 = [here|
+brAcrossTimeASE2012To2016 = [i|
 One common thread in these tables is that the loss of votes comes
 largely from shifts in opinion rather than demographics or turnout.
 This is what often leaves Democrats feeling like they must appeal
@@ -455,8 +481,8 @@ though it remains below 50%. These results are broadly consistent with
 exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018],
 though there are some notable differences as well.
 
-[BR:2018]: <https://blueripple.github.io/PreferenceModel/2018.html#>
-[BR:Methods]: <https://blueripple.github.io/PreferenceModel/MethodsAndSources.html#>
+[BR:2018]: <${brPrefModelURL brP1Main}#>
+[BR:Methods]: <${brPrefModelURL brMethods}#>
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
 That is consistent with exit-polls that show a huge swing in the Asian vote:
 from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then
@@ -470,11 +496,11 @@ See, e.g., <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-ex
 |]
 
 brAcrossTimeAfterASE :: T.Text
-brAcrossTimeAfterASE = [here|
+brAcrossTimeAfterASE = [i|
 |]
 --------------------------------------------------------------------------------  
 voteShifts :: T.Text
-voteShifts = [here|
+voteShifts = [i|
 So *some* of the 2018 democratic house votes came from
 existing white voters changing their votes
 while non-white support remained intensely high. Is that
@@ -507,7 +533,7 @@ changes coming from all three are divvied up equally among all three.
 
 
 voteShiftObservations :: T.Text
-voteShiftObservations = [here|
+voteShiftObservations = [i|
 
 The total changes are broadly in-line with the popular house vote totals
 (all in thousands of votes)[^WikipediaHouse]:
@@ -579,31 +605,38 @@ main = do
     K.knitHtmls (Just "preference_model.Main") K.nonDiagnostic pandocWriterConfig $ do
     -- load the data   
       let parserOptions =
-            F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+            F.defaultParser --{ F.quotingMode = F.RFC4180Quoting '\"' }
       K.logLE K.Info "Loading data..."
+      contextDemographicsPath <- liftIO $ usePath contextDemographicsCSV
       contextDemographicsFrame :: F.Frame ContextDemographics <- loadToFrame
         parserOptions
-        contextDemographicsCSV
+        contextDemographicsPath
         (const True)
+      asrDemographicsPath <- liftIO $ usePath ageSexRaceDemographicsLongCSV
       asrDemographicsFrame :: F.Frame ASRDemographics <-
-        loadToFrame parserOptions ageSexRaceDemographicsLongCSV (const True)
+        loadToFrame parserOptions  asrDemographicsPath (const True)
+      aseDemographicsPath <- liftIO $ usePath ageSexEducationDemographicsLongCSV  
       aseDemographicsFrame :: F.Frame ASEDemographics <-
-        loadToFrame parserOptions ageSexEducationDemographicsLongCSV (const True)        
+        loadToFrame parserOptions aseDemographicsPath (const True)
+      houseElectionsPath <- liftIO $ usePath houseElectionsCSV  
       houseElectionsFrame :: F.Frame HouseElections <- loadToFrame
         parserOptions
-        houseElectionsCSV
+        houseElectionsPath
         (const True)
+      asrTurnoutPath <- liftIO $ usePath detailedASRTurnoutCSV  
       asrTurnoutFrame :: F.Frame TurnoutASR <- loadToFrame
         parserOptions
-        detailedASRTurnoutCSV
+        asrTurnoutPath
         (const True)
+      aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
       aseTurnoutFrame :: F.Frame TurnoutASE <- loadToFrame
         parserOptions
-        detailedASETurnoutCSV
+        aseTurnoutPath
         (const True)
+      edisonExitPath <- liftIO $ usePath exitPoll2018CSV  
       edisonExit2018Frame :: F.Frame EdisonExit2018 <- loadToFrame
         parserOptions
-        exitPoll2018CSV
+        edisonExitPath
         (const True)
 --      edisonExit2018Array <- knitMaybe "Failed to make array from 2018 Edison exit-poll data!" $
 --        FL.foldM (FE.makeArrayMF (read @SimpleASR . T.unpack . F.rgetField @Group) (F.rgetField @DemPrefPct) const) edisonExit2018Frame
@@ -626,10 +659,10 @@ main = do
                 updT = M.singleton "updated" $ formatTime updateDate
             in tMap <> pubT <> if (updateDate > pubDate) then updT else M.empty
           -- group name, voting pop, turnout fraction, inferred dem vote fraction  
-          pubDate2018 = Time.fromGregorian 2019 9 5
+          pubDate2018 = Time.fromGregorian 2019 9 14
       K.newPandoc
           (K.PandocInfo
-            "2018"
+            "p1/main"
             (addDates pubDate2018 curDate
              $ M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
                           ,("title", "Digging into the 2018 House Election Results")             
@@ -679,11 +712,12 @@ main = do
             brAddMarkDown br2018BetweenFigs
             prGDASE2018 <- perGroupingChart "Grouped by Age, Sex and Education" 2018 modeledResultsASE
             brAddMarkDown br2018AfterFigs
-            return ()
-
+--            _ <- K.addHvega Nothing captionM $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
+            brAddMarkDown brReadMore
+--            return ()
       K.newPandoc
         (K.PandocInfo
-         "ExitPolls"
+         "p1/ExitPolls"
           (addDates pubDate2018 curDate
            $ M.fromList [("pagetitle", "Comparison of inferred preference model to Edison exit polls.")
                         ,("title","Comparing the Inferred Preference Model to the Exit Polls")
@@ -742,14 +776,16 @@ main = do
                   $ M.lookup 2018 mr
                 gdm <- groupDataMerged pr exits mergeF
                 let ecRows = FV.vinylRows withExitsRowBuilder gdm 
-                _ <- K.addHvega Nothing captionM $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
+                _ <- K.addHvega Nothing Nothing $ exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
                 return ()
-          compareChart "Age and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
           brAddMarkDown brExitAR
-          compareChart "Sex and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
+          compareChart "Age and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
           brAddMarkDown brExitSR
-          compareChart "Sex and Education" Nothing modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+          compareChart "Sex and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
           brAddMarkDown brExitSE
+          compareChart "Sex and Education" Nothing modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
+          brAddMarkDown brExitConclusion
+          brAddMarkDown brReadMore
           return ()
       K.newPandoc
           (K.PandocInfo
@@ -759,11 +795,13 @@ main = do
                            ]
             )
           )
-        $ brAddMarkDown modelNotesBayes
+        $ do
+          brAddMarkDown modelNotesBayes
+          brAddMarkDown brReadMore
       let pubDateAcrossTime = Time.fromGregorian 2019 9 19  
       K.newPandoc
           (K.PandocInfo
-            "AcrossTime"
+            "p2/main"
             (addDates pubDateAcrossTime curDate
             $ M.fromList [("pagetitle", "Voter Preference: 2010-2018")
                          ,("title", "Voter Preference: 2010-2018")
@@ -903,10 +941,11 @@ main = do
                 L.elem (F.rgetField @StateAbbreviation r) battlegroundStates
             brAddMarkDown "### Presidential Battleground States"
             _ <- mkDeltaTableASR bgOnly (2010, 2018)
+            brAddMarkDown brReadMore
             return ()
   case eitherDocs of
     Right namedDocs -> K.writeAllPandocResultsWithInfoAsHtml
-      "reports/html/preference_model"
+      "posts/preference-model"
       namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
@@ -1098,7 +1137,7 @@ deltaTableColonnade =
 
 --------------------------------------------------------------------------------
 modelNotesPreface :: T.Text
-modelNotesPreface = [here|
+modelNotesPreface = [i|
 ## Preference-Model Notes
 Our goal is to use the house election results[^ResultsData] to fit a very
 simple model of the electorate.  We consider the electorate as having some number
@@ -1134,7 +1173,7 @@ How likely is a voter in each group to vote for the
 democratic candidate in a contested race?
 
 For each district, $d$, we have the set of expected voters
-(the number of people in each group in that region, $N^{(d)}_i$,
+(the number of people in each group, $i$ in that region, $N^{(d)}_i$,
 multiplied by the turnout, $t_i$ for that group),
 $V^{(d)}_i$, the number of democratic votes, $D^{(d)}$,
 republican votes, $R^{(d)}$ and total votes, $T^{(d)}$, which may exceed $D^{(d)} + R^{(d)}$,
@@ -1184,14 +1223,14 @@ modelNotesBayes = modelNotesPreface <> "\n\n" <> [here|
 relates the probability of a model
 (our demographic voting probabilities $\{p_i\}$),
 given the observed data (the number of democratic votes recorded in each
-district, $\{D_k\}$) to the likelihood of observing that data given the model
+district, $\{D^{(d)}\}$) to the likelihood of observing that data given the model
 and some prior knowledge about the unconditional probability of the model itself
-$P(\{p_i\})$, as well as $P(\{D_k\})$, the unconditional probability of observing
+$P(\{p_i\})$, as well as $P(\{D^{(d)}\})$, the unconditional probability of observing
 the "evidence":
 $\begin{equation}
-P(\{p_i\}|\{D_k\})P(\{D_k\}) = P(\{D_k\}|\{p_i\})P(\{p_i\})
+P(\{p_i\}|\{D^{(d)})P(\{D^{(d)}\}) = P(\{D^{(d)}\}|\{p_i\})P(\{p_i\})
 \end{equation}$
-In this situation, the thing we wish to compute, $P(\{p_i\}|\{D_k\})$,
+In this situation, the thing we wish to compute, $P(\{p_i\}|\{D^{(d)}\})$,
 is referred to as the "posterior" distribution.
 
 * $P(\{p_i\})$ is called a "prior" and amounts to an assertion about
@@ -1199,16 +1238,18 @@ what we think we know about the parameters before we have seen any of the data.
 In practice, this can often be set to something very boring, in our case,
 we will assume that our prior is just that any $p_i \in [0,1]$ is equally likely.
 
-* $P(\{D_k\})$ is the unconditional probability of observing
-the specific outcome $\{D_k\}$.
+* $P(\{D^{(d)}\})$ is the unconditional probability of observing
+the specific outcome $\{D^{(d)}\}$, that is, the specific set of election results
+we observe.
 This is difficult to compute! Sometimes we can compute it by observing:
 $\begin{equation}
-P(\{D_k\}) = \sum_{\{p_i\}} P(\{D_k\}|{p_i}) P(\{p_i\})
+P(\{D^{(d)}\}) = \sum_{\{p_i\}} P(\{D^{(d)}\}|\{p_i\}) P(\{p_i\})
 \end{equation}$.  But in general, we'd like to compute the posterior in
 some way that avoids needing the probability of the evidence.
 
-* $P(\{D_k\}|\{p_i\})$, the probability that we
-observed our evidence, *given* a specific set of $\{p_i\}$ is a thing
+* $P(\{D^{(d)}\}|\{p_i\})$, the probability that we
+observed our evidence (the election results),
+*given* a specific set $\{p_i\}$ of voter preferences is a thing
 we can calculate:
 Our $p_i$ are the probability that one voter of type $i$, who votes for
 a democrat or republican, chooses
@@ -1229,16 +1270,16 @@ distribution as well.
 So the distribution of democratic votes across all types of voters is also approximately
 normal,
 with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$
-(again, see [Wikipedia][WP:SumNormal]). Thus we have $P(D_k|\{p_i\})$, or,
-what amounts to the same thing, its probability density.
+(again, see [Wikipedia][WP:SumNormal]). Thus we have $P(D^{(d)}|\{p_i\})$, or,
+more precisely, its probability density.
 But that means we also know the probability density of all the evidence
-given $\{p_i\}$, $\rho(\{D_k\}|\{p_i\})$, since that is just the
-product of the densities for each $D_k$:
+given $\{p_i\}$, $\rho(\{D^{(d)}\}|\{p_i\})$, since that is just the
+product of the densities for each district:
 $\begin{equation}
-\mu_k(\{p_i\}) = \sum_i V_i p_i\\
-v_k(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
-\rho(D_k|\{p_i\}) = \frac{1}{\sqrt{2\pi v_k}}e^{-\frac{(D_k -\mu_k(\{p_i\}))^2}{2v_k(\{p_i\})}}\\
-\rho(\{D_k\}|\{p_i\}) = \Pi_k \rho(D_k|\{p_i\})
+\mu^{(d)}(\{p_i\}) = \sum_i V_i p_i\\
+v^{(d)}(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
+\rho(D^{(d)}|\{p_i\}) = \frac{1}{\sqrt{2\pi v^{(d)}}}e^{-\frac{(D^{(d)} -\mu^{(d)}(\{p_i\}))^2}{2v^{(d)}(\{p_i\})}}\\
+\rho(\{D^{(d)}\}|\{p_i\}) = \Pi^{(d)} \rho(D^{(d)}|\{p_i\})
 \end{equation}$
 
 * Now that we have this probability density, we want to look for the set of
@@ -1257,7 +1298,7 @@ maximum-likelihood estimates and covariances among the estimated parameters.
 |]
 
 modelNotesMCMC :: T.Text
-modelNotesMCMC = [here|
+modelNotesMCMC = [i|
 * In order to compute expectations on this distribution we use
 Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples
 from the the posterior
@@ -1532,7 +1573,7 @@ totalVoteDiagnostics allFrame opposedFrame = K.wrapPrefix "VoteSummary" $ do
     <> (T.pack $ show (totalDVotesCD + totalRVotesCD))
 
 modelNotesRegression :: T.Text
-modelNotesRegression = modelNotesPreface <> [here|
+modelNotesRegression = modelNotesPreface <> [i|
 
 Given $T' = \sum_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
 
@@ -1684,7 +1725,7 @@ vlGroupingChartExit title vc rows =
 
 
 intro2018 :: T.Text
-intro2018 = [here|
+intro2018 = [i|
 ## 2018 Voter Preference
 The 2018 house races were generally good for Democrats and progressives--but why?
 Virtually every plausible theory has at least some support –
@@ -1717,7 +1758,7 @@ Thus for now we split the electorate into "white" (non-hispanic) and "non-white"
 
 * Our inference model uses Bayesian techniques
 that are described in more detail in a separate
-[Preference-Model Notes](https://blueripple.github.io/PreferenceModel/MethodsAndSources.html)
+[Preference-Model Notes](${brPrefModelURL brMethods})
 post.
 
 Several folks have done related work, inferring voter behavior using the
@@ -1768,7 +1809,7 @@ speaks to this, though it addresses turnout and opinion shifts as well.
 
   
 postFig2018 :: T.Text
-postFig2018 = [here|
+postFig2018 = [i|
 The most striking observation is the chasm between white and non-white voters’
 inferred support for Democrats in 2018. Non-whites were modeled to
 have over 75% preference for Dems regardless of age or gender,

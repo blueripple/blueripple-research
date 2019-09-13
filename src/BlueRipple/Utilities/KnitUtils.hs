@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
@@ -11,6 +12,8 @@ import qualified Control.Monad.Except          as X
 import qualified Data.Text                     as T
 
 import           Polysemy.Error                 ( Error )
+
+import           Data.String.Here               ( here )
 
 knitX
   :: forall r a
@@ -33,3 +36,4 @@ knitEither
   => Either T.Text a
   -> K.Sem r a
 knitEither = either K.knitError return
+

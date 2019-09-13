@@ -17,6 +17,7 @@ common deps
   build-depends: base >= 4.11.1.0
                , array
                , blaze-html
+               , blueripple-data-sets
                , containers
                , Frames
                , Frames-map-reduce >= 0.1.0.1
@@ -45,16 +46,15 @@ common deps
 library
   import: deps
   ghc-options: -O1 -fplugin=Polysemy.Plugin
-  exposed-modules: BlueRipple.Data.FromDB
-                 , BlueRipple.Data.DataSourcePaths
-                 , BlueRipple.Data.DataFrames
+  exposed-modules: BlueRipple.Configuration
+                 , BlueRipple.Data.FromDB
                  , BlueRipple.Data.PrefModel
                  , BlueRipple.Data.PrefModel.ASRTypes
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
                  , BlueRipple.Data.PrefModel.ASETypes
                  , BlueRipple.Data.PrefModel.AgeSexRace
-                 , BlueRipple.Data.MRP
+--                 , BlueRipple.Data.MRP
                  , BlueRipple.Model.PreferenceBayes                 
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Utilities.KnitUtils

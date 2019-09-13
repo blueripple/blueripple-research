@@ -104,6 +104,15 @@ $endif$
       color: white;
       text-align: center;      
   }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
   @media screen and (min-width: 629px) {
      .content-wrapper {
 	 margin-left: 218px;
@@ -194,9 +203,11 @@ $endfor$
 </head>
 <body>
   <div class="br-header">
-    <div class="br-header-item br-header-logo-wrapper">
-      <img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
-    </div>
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>	
     <div class="br-header-item br-home-button-c">
       <a href="https://www.blueripplepolitics.org">
 	<div class="br-home-button-b">HOME</div>
@@ -264,7 +275,17 @@ $body$
 $for(include-after)$
 $include-after$
 $endfor$
-
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
 <!-- page content ends here -->
 
 </div>     <!-- pure-u-1... -->
