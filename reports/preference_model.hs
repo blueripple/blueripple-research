@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -15,10 +16,11 @@ module Main where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import           Control.Monad (when)
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
-
+import qualified Data.Set                      as S
 import qualified Data.Text                     as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
@@ -44,6 +46,12 @@ import qualified Text.Pandoc.Options           as PA
 
 import           Data.String.Here               ( here, i )
 
+import Data.Data (Data)
+import Data.Typeable (Typeable)
+import qualified System.Console.CmdArgs.Implicit as CA
+import System.Console.CmdArgs.Implicit ((&=))
+
+
 import           BlueRipple.Configuration
 import           BlueRipple.Utilities.KnitUtils
 import           BlueRipple.Data.DataFrames
@@ -51,6 +59,13 @@ import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
+
+import PrefCommon
+import Methods
+import P1
+import P1A
+import P2
+import P3
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -70,487 +85,34 @@ templateVars = M.fromList
 --pandocTemplate = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
-brPrefModelRoot :: T.Text
-brPrefModelRoot = brResearchRoot <> "preference-model/"
 
-brPrefModelURL :: T.Text -> T.Text
-brPrefModelURL x = brPrefModelRoot <> x <> ".html"
-
-brMethods :: T.Text
-brMethods = "MethodsAndSources"
-
-brP1Main :: T.Text
-brP1Main = "p1/main"
-
-brP1ExitPolls :: T.Text
-brP1ExitPolls = "p1/ExitPolls"
-
-brP2Main :: T.Text
-brP2Main = "p2/main"
-
---------------------------------------------------------------------------------
-br2018Intro :: T.Text
-br2018Intro = [i|
-In our first deep-dive into some modeling, we take a quick look at the 2018
-house elections.  What can we do with data from previous elections to guide
-our use of time and money in 2019 and 2020?
-
-1. Estimating voter preference
-2. Who voted for Democrats and Progressives?
-3. What does this mean for 2019 and 2020?
-4. Ways to take action
-5. A note about exit polls
-
-## Estimating Voter Preference: What we're doing and why
-The 2018 house races were generally good for Democrats and progressives---but why?
-Virtually every plausible theory has at least some support:
-depending on which pundits and researchers you follow,
-you could credibly argue that
-[turnout of young voters](https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census)
-, or [white women abandoning Trump](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>)
-, or an
-[underlying demographic shift toward non-white voters](https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education)
-was the main factor that propelled the
-Blue Wave in the midterms.
-
-But if Democrats want to solidify and extend their gains, we really want to know
-the relative importance of each of these factors---in other words,
-we want to understand election outcomes in a district or state in terms of:
-
-- Demographics: What are the age, sex, education level, race, etc. of the eligible voters?
-- Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?
-- Voter Preference: When people from each group vote, who are they likely to vote for?
-
-It turns out that breaking this down is difficult because we don't have all the data.
-
-- Demographics: [Census data](https://www.census.gov/programs-surveys/acs.html)
-exists for the demographic breakdown of each house district. The census hasn't yet updated their data
-for 2018 so we are using data from 2017.  The 2018 data is due to be released on 9/26 and we will update
-this post soon after.
-- Turnout: The [Census](https://www.census.gov/topics/public-sector/voting/data/tables.2018.html)
-also publishes data containing the *national* turnout of each group in each election.
-This is helpful but not as geographically specific as we'd like.
-- Preference: The [election results](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2)
-tell us how all those groups voted *in aggregate* in each district.
-
-In short, we have geographically specific information on demographics,
-demographically detailed but geographically general data on turnout,
-and demographically general but geographically specific data on voter preference.
-
-[Edison Research](https://www.edisonresearch.com/election-polling/#one)
-did extensive exit-polling in 2018
-and, along with others,
-[CNN analyzed](https://www.cnn.com/election/2018/exit-polls)
-this data, providing some breakdowns of voter preference in various demographic categories.
-[Much reporting](https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls)
-has used these results to
-[discuss](https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html)
-the voter preferences of the 
-[2018 electorate](https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/).
-However, there is
-[widespread criticism](https://www.nytimes.com/2014/11/05/upshot/exit-polls-why-they-so-often-mislead.html) of exit-polling,
-and it may lead us astray in several ways.
-
-Is there a different way to find out which groups voted in what numbers for Democrats, without relying on exit polls?
-
-In the rest of this post, and some subsequent posts, we'll explore
-one approach for using the data we have to learn something demographically specific about
-voter preference.  That is, we'll infer a national-level voter preference
-for each demographic group using the data described above.
-We describe the methods in detail
-**[here](${brPrefModelURL brMethods})**,
-and the [data and code](${brGithub <> "/preference-model"})
-are available at the Blue Ripple [github](${brGithubLanding}).
-
-What are the odds of a voter in any of these demographic groups voting for
-a Democrat? Any set of voter preferences (those odds), give rise to
-a probability, given the turnout and demographics, of the election result we
-observe in a specific district.
-In 2018, we had 382 districts with at least one Democrat and one Republican
-running (and we ignore the rest,
-since we are only interested in the choices people make between Democrats
-and Republicans). We can combine all those to get the chance that
-a particular set of voter preferences explains all the results.  From this, we
-can infer the most likely voter preferences.
-The details are spelled out in a 
-**[separate post](${brPrefModelURL brMethods})**.
-
-## Who Voted For Democrats and Progressives?
-There are many ways to partition the electorate, e.g., age, educational
-attainment, race or sex.  We can also group people by answers to specific
-questions about issues or previous votes.  In subsequent posts we will look at all
-these possibilities, or point to other sources that do.  For our first look we're
-going to stick with some standard demographic groupings that originate with the
-[Census ACS data](https://www.census.gov/programs-surveys/acs.html). We'll look first
-at grouping the electorate by age (old/young = over/under 45), sex (female or male),
-and race (non-white and white), as well as the same age and sex categories but
-with a split on education (non-college-grad or college-grad) instead of race.
-
-We know that these categories are oversimplifications and problematic in
-various ways.  But we are limited to the categories the census provides and
-we want the number of groups to be reasonably small for this analysis to be useful.
-
-In the charts below, we show our inferred voter preference split by demographic group.
-We use size to indicate the number of voters in each group and the color to
-signify turnout. Hovering over a data point will show the numbers in detail.
-|]
-    
-br2018BetweenFigs :: T.Text
-br2018BetweenFigs = [i|
-The most striking observation is the gap between white and non-white voters’
-inferred support for Democrats in 2018. Non-whites
-have over 75% preference for Dems regardless of age or gender,
-though support is stronger among non-white female voters than
-non-white male voters. Inferred support from white voters in 2018
-is substantially lower, roughly 40-50% across age groups and genders.
-
-Splitting instead by age, sex and education:
-|]
-
-br2018AfterFigs :: T.Text
-br2018AfterFigs = [i|
-Here we see a large (>15% point) gap between more Democratic-leaning
-college-educated voters and voters without a
-four-year degree.  We also see a similar gap with age, where younger
-voters are 15% or so more likely to vote for Democrats. 
-
-In both charts, the size of the circles reflects the number of people of
-voting age in each group.  In 2018
-Democrats won elections by winning smaller demographic groups
-by a large margin and losing larger demographic groups by a small
-margin.
-
-Often those demographically small groups also had lower turnout.
-One thing to focus on now is boosting turnout among the groups that
-are more likely to vote for Democrats:
-
-- Non-white voters of any age, with or without a college degree
-- Young voters of any race, especially those with a college degree or in college
-- College educated voters of any race or age
-
-## What does this mean for 2019 and 2020?
-These charts can be viewed as pictures of the so-called Democratic
-"base"--voters of color and younger white voters, particularly those
-with a college degree.
-Winning more votes comes from raising turnout among that
-coalition *and* trying to improve Democratic voter preference
-with everyone else.
-
-What we really want to know is demographic voter preference
-at the *district* or *state*
-level. Most candidates
-win local races and, because of the
-[electoral college](https://www.nationalpopularvote.com/),
-presidential elections also
-hinge on very local outcomes. So, in the near future,
-we plan to investigate the issue of turnout and changing
-voter-preference for single
-states or congressional districts.  We hope to use that
-analysis to help interested progressives discover where
-turnout is key vs. places where changing voter preference
-might be more important. Both are important everywhere, of course.
-But in some places, one might be a much larger source of
-Democratic votes.
-
-## Ways to take Action
-Democrats and progressives will benefit
-from get-out-the-vote work and work fighting voter suppression.
-Both improve turnout among the groups most likely to vote
-for blue candidates.
-
-We suggest that you donate your time or money to organizations fighting to improve voter
-access and turnout. In later posts we'll dig into who's doing this work at a state and local
-level, but here are some groups that are operating nationally.
-
-- [Demand The Vote](https://www.demandthevote.com/) is an information
-clearinghouse for voter access and voting rights legislation in all 50 states.
-- [When We All Vote](https://www.whenweallvote.org/), Michelle Obama's new
-organization, works to increase voter turnout nationally and has opportunities to
-volunteer and donate money.
-- The [Campus Vote Project](https://www.campusvoteproject.org/why-student-voters-matter) works
-to improve registration and turnout among college students.
-Students can [sign up](https://www.campusvoteproject.org/sign-up) to work on their own campuses.
-- [Next Gen America](https://nextgenamerica.org/) works nationally to improve youth turnout.
-They have a [variety of ways](https://nextgenamerica.org/act/) you can donate time or money to the cause. 
-
-## A Note about Exit Polls
-These results are similar but markedly different from the exit polls.
-**[This post](${brPrefModelURL brP1ExitPolls})**
-has more details on that comparison.
-
-
-|]                
---------------------------------------------------------------------------------
-brExitPolls :: T.Text
-brExitPolls = [i|
-The press has various breakdowns of the 2018 exit polling done by
-Edison Research.  None split things into the same categories we
-looked at in our
-**[post on inferred voter preference in 2018 house elections](${brPrefModelURL brP1Main})**.
-But we can merge some of our categories and then compare. For comparison we chose a
-[Fox News post](https://www.foxnews.com/midterms-2018/voter-analysis)
-because it had the most detailed demographic splits we found.
-
-We see rough agreement but also some very
-large discrepancies, particularly around voter preference of men and women
-that we have yet to explain. NB: In each of the following charts, perfect agreement
-with the exit polls would leave all the dots in the vertical middle of the chart, at 0%.
-|]
-
-brExitAR :: T.Text
-brExitAR = [i|
-After merging men and women, our preference model tracks the exit polls quite well as seen in the chart below.
-|]
-
-brExitSR :: T.Text
-brExitSR = [i|
-A fairly large discrepancy appears when we look at sex and race, merging ages.
-Our model infers similar voting preferences for white men and women and non-white
-men and women whereas the exit polls show women about 10% more likely to vote
-for Democrats. This is illustrated in the chart below.
-|]
-
-brExitSE :: T.Text
-brExitSE = [i|
-An even larger discrepancy appears when we look at sex and education, merging
-our age categories.
-Our inferred result for male college graduates is a full 15% higher than the
-exit polls, while our result for female non-college graduates is almost 10%
-below the exit-polls. This is laid out in the chart below.
-|]
-  
-brExitConclusion :: T.Text
-brExitConclusion = [i|
-We're continuing to investigate these differences and we hope that using other
-data and methods we can figure out why this model infers higher Democratic
-voter preference for men and lower for women than exit-poll or other post-election
-analytics.  We welcome your
-ideas, via [email](mailto:adam@blueripplepolitics.org),
-[Twitter](${brTwitter}) or
-via a [github issue](${brGithub <> "/preference-model/issues"}).
-|]
-
-  
---------------------------------------------------------------------------------
-brAcrossTimeIntro :: T.Text
-brAcrossTimeIntro = [i|
-
-In our previous [post][BR:2018] we introduced a
-[model][BR:Methods] which we used to infer voter
-preference for various demographic groups in the 2018 house elections, using census
-data and election results. Here we look
-at how those preferences have shifted since 2010.
-
-1. The Evolving Democratic Coalition
-2. Breaking Down the Changes
-3. Thoughts on 2020 (and Beyond)
-
-## The Evolving Democratic Coalition
-
-Democratic votes can come from turnout---getting a Democratic voter registered and/or to
-the polls---or from changes in voter preference---basically, changing the
-opinion of a non-Democratic voter.  Further, the
-demographics of the voting population in a district change over time which shifts
-how these factors add up to an election result. 
-
-Consider the voter preference broken down by age, sex and race from 2010 to 2018:
-
-[BR:2018]: <${brPrefModelURL brP1Main}#>
-[BR:Methods]: <${brPrefModelURL brMethods}#>
-|]
-  
-brAcrossTimeASRPref :: T.Text
-brAcrossTimeASRPref = [i|
-As before, the difference in voter preference between non-white and white voters is stark.
-There is an encouraging move in white voter preference toward Democrats in 2018.
-We can also look at how those numbers translate to the composition of the democratic electorate:
-|]
-
-brAcrossTimeASRVoteShare :: T.Text
-brAcrossTimeASRVoteShare = [i|
-This chart reminds us that though non-white voters are overwhelmingly democratic,
-they only make up roughly 40% of the Democratic votes.
-This is a combination of smaller
-numbers of possible voters and lower turnout.  The latter is
-something there is ongoing work to change via anti-voter-suppression efforts
-and registration and GOTV drives.
-
-As before we can also group things by age, sex and educational attainment.  First
-the voter preferences through time:
-|]
-
-brAcrossTimeASEPref :: T.Text
-brAcrossTimeASEPref = [i|
-This shows a very distinct shift toward Democrats of all groups except older
-non-college graduates, who have become more Republican since 2012. Younger
-non-college graduates shifted republican in 2012 but shifted back in 2018.
-
-Again, we can also look at this data in terms of vote-share:
-|]
-
-brAcrossTimeASEVoteShare :: T.Text
-brAcrossTimeASEVoteShare = [i|
-Here we see again that the Democratic coalition is made up of a large number
-of voters from groups that are not majority democratic voters and smaller
-numbers of votes from many groups which do tend to vote for Democrats.
-
-Also of note in both vote-share charts is the tendency of Democratic vote-share
-to fall off in mid-term years, except for 2018.  That's something to keep in
-mind and work against in 2022!
-
-One interesting way to look at all this data is to break-down the changes in
-total Democratic votes in each group into 3 categories: demographics, turnout
-and preference.  Demographics tracks the changes in the size of these different
-groups, whereas turnout and preference track changes in the behavior of each group.
-For example, the following table illustrates the age/sex/race break-down in the loss of
-democratic votes between 2012 and 2016:
-|]
-
-brAcrossTimeASR2012To2016 :: T.Text  
-brAcrossTimeASR2012To2016 = [i|
-The loss of Democratic votes comes almost entirely from shifts in opinion among
-white voters, only slightly offset by demographic and turnout trends among
-non-white voters.
-
-The age/sex/education breakdown tells a related story, a waning
-of Democratic preference
-among non-college graduates, especially older ones:
-|]
-  
-brAcrossTimeASE2012To2016 :: T.Text
-brAcrossTimeASE2012To2016 = [i|
-One common thread in these tables is that the loss of votes comes
-largely from shifts in opinion rather than demographics or turnout.
-This is what often leaves Democrats feeling like they must appeal
-more to white voters, particularly white, non-college educated
-Democrats.  From this data it's clear that those are the voters
-that were lost between 2012 and 2016.  Did they come back in 2018?
-
-Last war, etc.
-
-
-Our interest in this model really comes from looking at the results across time
-in an attempt to distinguish changes coming from demographic shifts, voter turnout
-and voter preference.
-The results are presented below. As in 2018, what stands out immediately is
-the strong support of non-white voters for democratic candidates,
-running at or above 75%, regardless of age or sex,
-though support is somewhat stronger among non-white female voters
-than non-white male voters[^2014]. Support from white voters is
-substantially lower, between 37% and 49% across
-both age groups and both sexes, though people
-under 45 are about 4% more likely to vote democratic than their older
-counterparts.  
-As we move from 2016 to 2018, the non-white support holds,
-maybe increasing slightly from its already high level,
-and white support *grows* substantially across all ages and sexes,
-though it remains below 50%. These results are broadly consistent with
-exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018],
-though there are some notable differences as well.
-
-[BR:2018]: <${brPrefModelURL brP1Main}#>
-[BR:Methods]: <${brPrefModelURL brMethods}#>
-[^2014]: We note that there is a non-white swing towards republicans in 2014.
-That is consistent with exit-polls that show a huge swing in the Asian vote:
-from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then
-back to about 67% likely to vote democratic in 2016 and higher than 75% in 2018.
-See, e.g., <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>
-[^ExitPolls2012]: <https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2012>
-[^ExitPolls2014]: <https://www.nytimes.com/interactive/2014/11/04/us/politics/2014-exit-polls.html#us/2014>
-[^ExitPolls2016]:  <https://www.nytimes.com/interactive/2016/11/08/us/politics/election-exit-polls.html>
-[^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
-<https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
-|]
-
-brAcrossTimeAfterASE :: T.Text
-brAcrossTimeAfterASE = [i|
-|]
---------------------------------------------------------------------------------  
-voteShifts :: T.Text
-voteShifts = [i|
-So *some* of the 2018 democratic house votes came from
-existing white voters changing their votes
-while non-white support remained intensely high. Is that
-the whole story?
-
-Now we have an estimate of how peoples' choices changed between 2012 and 2018.
-But that's only one part of the story.  Voting shifts are also driven by
-changes in demographics (people move, get older, become eligible to vote
-and people die) and different changes in voter turnout among different
-demographic groups. In our simplistic model, we can look at these separately.
-
-Below, we compare these changes (nationally) for each group for
-2012 -> 2016 (both presidential elections),
-2014 -> 2018 (both midterm elections) and
-2016 -> 2018 (to look at the "Trump" effect). In each table the columns with "+/-" on
-them indicate a net change in the (Democratic - Republican) vote totals coming from
-that factor.  For example, if the "From Population" column is positive, that means
-the change in population of that group between those years resulted in a net gain of
-D votes.  NB: If that group was a net republican voting group then a rise in population
-would lead to negative net vote change[^TableNote].
-
-[^TableNote]: One tricky aspect of ascribing changes to one factor is that some of
-the change comes from changes in two or more of the factors.  In this table, the
-changes due to any pair of factors is split evenly between that pair and the
-changes coming from all three are divvied up equally among all three.
-
-|]
---------------------------------------------------------------------------------
-
-
-
-voteShiftObservations :: T.Text
-voteShiftObservations = [i|
-
-The total changes are broadly in-line with the popular house vote totals
-(all in thousands of votes)[^WikipediaHouse]:
-
-Year   Democrats    Republicans   D - R
------ ----------   ------------  ------
-2010  38,980       44,827        -4,847
-2012  59,646       58,228        +1,418
-2014  35,624       40,081        -4,457
-2016  61,417       62,772        -1,355
-2018  60,320       50,467        +9,853
-
-when we look only at competitive districts, this via official result data:
-
-Year   Democrats    Republicans   D - R
------ ----------   ------------  ------
-2010  37,961       41,165        -3,204
-2012  55,213       52,650        +2,563
-2014  30,534       34,936        -4,402
-2016  53,840       56,409        -2,569
-2018  58,544       52,162        +6,382
-
-
-These numbers tie out fairly well with the model.
-This is by design: the model's turnout percentages are
-adjusted in each district
-so that the total votes in the district add up correctly.
-
-* This model indicates a -4,700k shift (toward **republicans**)
-2012 -> 2016 and the competitive popular house vote shifted -5,100k.
-* This model indicates a +9,600k shift (toward **democrats**)
-2014 -> 2018 and the competitive popular house vote shifted +10,800k.
-* This model indicates a +6,800k shift (toward **democrats**)
-2016 -> 2018 and the competitive popular house vote shifted +8,900k.
-* This model indicates a +8,300k shift (toward **democrats**)
-2010 -> 2018 and the competitive popular house vote shifted +9,600k. 
-
-[^WikipediaHouse]: Sources:
-<https://en.wikipedia.org/wiki/2010_United_States_House_of_Representatives_elections>
-<https://en.wikipedia.org/wiki/2012_United_States_House_of_Representatives_elections>,
-<https://en.wikipedia.org/wiki/2014_United_States_House_of_Representatives_elections>,
-<https://en.wikipedia.org/wiki/2016_United_States_House_of_Representatives_elections>,
-<https://en.wikipedia.org/wiki/2018_United_States_House_of_Representatives_elections>
-|]
-
+data PostName = P1 | P1A | P2 | P3 | Methods  deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
+data PostsArgs = PostArgs { posts :: [PostName],  updated :: Bool } deriving (Show, Data, Typeable)
+
+
+
+postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
+                                        [P1] &= CA.name "p1" &= CA.help "knit P1",
+                                        [P1A] &= CA.name "p1a" &= CA.help "knit P1A (ExitPolls)",
+                                        [P2] &= CA.name "p2" &= CA.help "knit P2",
+                                        [P3] &= CA.name "p3" &= CA.help "knit P2",
+                                        [Methods] &= CA.name "methods" &= CA.help "knit Methods post",
+                                        [(minBound :: PostName).. ] &= CA.name "all" &= CA.help "knit all"
+                                      ]
+                    , updated = CA.def
+                      &= CA.name "u"
+                      &= CA.help "Flag to set whether the post gets an updated date annotation.  Defaults to False."
+                      &= CA.typ "Bool"
+                    }
+           &= CA.verbosity
+           &= CA.help "Produce Preference Model Blue Ripple Politics Posts"
+           &= CA.summary "preference_model v0.3.0.0, (C) 2019 Adam Conner-Sax"
+           
   
 main :: IO ()
 main = do
---  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
---  let template = K.FullySpecifiedTemplatePath "pandoc-templates/minWithVega-pandoc.html"
+  args <- CA.cmdArgs postArgs
+  putStrLn $ show args
   let brMarkDownReaderOptions =
         let exts = PA.readerExtensions K.markDownReaderOptions
         in PA.def
@@ -606,8 +168,14 @@ main = do
         edisonExitPath
         (const True)
       K.logLE K.Info "Inferring..."
-      let yearList :: [Int]   = [2010, 2012, 2014, 2016, 2018]
-          years      = M.fromList $ fmap (\x -> (x, x)) yearList
+      let yearSets :: M.Map PostName (S.Set Int) =
+            M.fromList [(P1,S.fromList [2018]),
+                        (P1A,S.fromList [2018]),
+                        (P2,S.fromList []),
+                        (P3,S.fromList [2010, 2012, 2014, 2016, 2018]),
+                        (Methods,S.empty)]
+      yearList <- knitMaybe "Failed to find a yearlist for some post name!" $ fmap (S.toList . S.unions) $ traverse (\pn -> M.lookup pn yearSets) $ posts args          
+      let years      = M.fromList $ fmap (\x -> (x, x)) yearList
       
       modeledResultsASR <- PM.modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
       modeledResultsASE <- PM.modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
@@ -615,653 +183,71 @@ main = do
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
       let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
-          curDateString = formatTime curDate
-          addDates :: Time.Day -> Maybe Time.Day -> M.Map String String -> M.Map String String
-          addDates pubDate updateDateM tMap =
+          addDates :: Time.Day -> Time.Day -> M.Map String String -> M.Map String String
+          addDates pubDate updateDate tMap =
             let pubT = M.singleton "published" $ formatTime pubDate
-                updT = case updateDateM of
-                  Just updateDate -> if (updateDate > pubDate) then M.singleton "updated" (formatTime updateDate) else M.empty
-                  Nothing -> M.empty
+                updT = case updated args of
+                         True -> if (updateDate > pubDate) then M.singleton "updated" (formatTime updateDate) else M.empty
+                         False -> M.empty
             in tMap <> pubT <> updT
           -- group name, voting pop, turnout fraction, inferred dem vote fraction  
-          pubDate2018 = Time.fromGregorian 2019 9 2
-      K.newPandoc
-          (K.PandocInfo
-            "p1/main"
-            (addDates pubDate2018 Nothing -- (Just curDate)
-             $ M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
-                          ,("title", "Digging into the 2018 House Election Results")             
-                          ]
-            )
+          pubDateP1 = Time.fromGregorian 2019 9 2
+      when (P1 `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+          "p1/main"
+          (addDates pubDateP1 curDate -- (Just curDate)
+            $ M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
+                         ,("title", "Digging into the 2018 House Election Results")             
+                         ]
           )
-        $ do
-            brAddMarkDown br2018Intro
-            let groupData :: (A.Ix b, Show b)
-                          => PM.PreferenceResults b FV.NamedParameterEstimate
-                          -> b
-                          -> (T.Text, Int, Double, Double)
-                groupData pr x = (T.pack (show x)
-                                 , PM.nationalVoters pr A.! x
-                                 , PM.nationalTurnout pr A.! x
-                                 , FV.value $ FV.pEstimate  $ PM.modeled pr A.! x
-                                 )
-                groupDataList :: (Enum b, Bounded b, A.Ix b, Show b)
-                              => PM.PreferenceResults b FV.NamedParameterEstimate
-                              -> [(T.Text, Int, Double, Double)]
-                groupDataList pr = fmap (groupData pr) [minBound..maxBound]
-                vRowBuilderGD =
-                  FV.addRowBuilder @'("Group",T.Text) (\(g,_,_,_) -> g)
-                  $ FV.addRowBuilder @'("VotingAgePop",Int) (\(_,v,_,_) -> v)
-                  $ FV.addRowBuilder @'("Turnout",Double) (\(_,_,t,_) -> t)
-                  $ FV.addRowBuilder @'("Voters",Int) (\(_,v, t :: Double ,_) -> round (t * realToFrac v))
-                  $ FV.addRowBuilder @'("D Voter Preference",Double) (\(_,_,_,p) -> 100*p)
-                  $ FV.emptyRowBuilder
-                perGroupingChart :: forall b r. (A.Ix b, Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
-                                 => T.Text
-                                 -> Int
-                                 -> M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
-                                 -> K.Sem r ()
-                perGroupingChart title yr mr = do
-                  pr <-
-                    knitMaybe ("Failed to find " <> (T.pack $ show yr) <> " in modelResults.")
-                    $ M.lookup yr mr
-                  let groupDataL = groupDataList pr
-                      gdRows = FV.vinylRows vRowBuilderGD groupDataL
-                  _ <- K.addHvega Nothing Nothing
-                       $ PM.vlGroupingChart
-                       title
-                       (FV.ViewConfig 650 325 0)
-                       gdRows
-                  return ()
-            _ <- perGroupingChart "Grouped by Age, Race, and Sex" 2018 modeledResultsASR
-            brAddMarkDown br2018BetweenFigs
-            _ <- perGroupingChart "Grouped by Age, Sex and Education" 2018 modeledResultsASE
-            brAddMarkDown br2018AfterFigs
-            brAddMarkDown brReadMore
-      K.newPandoc
+        )
+        $ p1 modeledResultsASR modeledResultsASE
+      when (P1A `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          "p1/ExitPolls"
-          (addDates pubDate2018 Nothing -- (Just curDate)
+          (addDates pubDateP1 curDate -- (Just curDate)
            $ M.fromList [("pagetitle", "Comparison of inferred preference model to Edison exit polls.")
                         ,("title","Comparing the Inferred Preference Model to the Exit Polls")
                         ]
           )
         )
-        $ do
-          brAddMarkDown brExitPolls
-          let mergedPrefs :: (A.Ix b, Enum b, Bounded b, A.Ix c, Enum c, Bounded c)
-                          => PM.PreferenceResults b FV.NamedParameterEstimate
-                          -> (A.Array b Double -> A.Array c Double)
-                          -> A.Array c Double
-              mergedPrefs pr mergeF =
-                let --mergedVAP = mergeF (fmap realToFrac $ PM.nationalVoters pr)
-                    voters = PM.totalArrayZipWith (*) (fmap realToFrac $ PM.nationalVoters pr) (PM.nationalTurnout pr)
-                    mergedVoters = mergeF voters
-                    --mergedTurnout = PM.totalArrayZipWith (/) mergedVoters mergedVAP
-                    dVotes = PM.totalArrayZipWith (*) (fmap (FV.value . FV.pEstimate) $ PM.modeled pr) voters
-                    mergedDVotes = mergeF dVotes
-                in PM.totalArrayZipWith (/) mergedDVotes mergedVoters                
-              groupDataMerged :: forall b c r. (Enum b , Bounded b, A.Ix b, Show b
-                                               ,Enum c, Bounded c, A.Ix c, Show c, K.KnitOne r)
-                             => PM.PreferenceResults b FV.NamedParameterEstimate
-                             -> F.Frame EdisonExit2018
-                             -> (A.Array b Double -> A.Array c Double)
-                             -> K.Sem r [(T.Text, Double, Double)]
-              groupDataMerged pr exits mergeF = do
-                   let allGroups :: [c] = [minBound..maxBound]
-                       modeledPrefs = mergedPrefs pr mergeF
-                       exitsRow c = knitEither $
-                         case FL.fold FL.list (F.filterFrame ((== T.pack (show c)) . F.rgetField @Group) exits) of
-                           [] -> Left ("No rows in exit-poll data for group=" <> (T.pack $ show c))
-                           [x] -> Right x
-                           _ -> Left (">1 in exit-poll data for group=" <> (T.pack $ show c))
-                       dPrefFromExitsRow r =
-                         let dFrac = F.rgetField @DemPref r
-                             rFrac = F.rgetField @RepPref r
-                         in dFrac/(dFrac + rFrac)
-                   exitPrefs <- fmap dPrefFromExitsRow <$> traverse exitsRow allGroups
-                   return $ zip3 (fmap (T.pack .show) allGroups) (A.elems modeledPrefs) exitPrefs
-              withExitsRowBuilder =
-                FV.addRowBuilder @'("Group",T.Text) (\(g,_,_) -> g)
-                $ FV.addRowBuilder @'("Model Dem Pref",Double) (\(_,mp,_) -> mp)
-                $ FV.addRowBuilder @'("ModelvsExit",Double) (\(_,mp,ep) -> mp - ep)
-                $ FV.emptyRowBuilder
-              compareChart :: (A.Ix b, Enum b, Bounded b, Show b, A.Ix c, Enum c, Bounded c, Show c, K.KnitOne r)
-                           => T.Text
-                           -> Maybe T.Text
-                           -> M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)                           
-                           -> F.Frame EdisonExit2018
-                           -> (A.Array b Double -> A.Array c Double)
-                           -> K.Sem r ()
-              compareChart title captionM mr exits mergeF = do
-                pr <-
-                  knitMaybe ("Failed to find 2018 in modelResults.")
-                  $ M.lookup 2018 mr
-                gdm <- groupDataMerged pr exits mergeF
-                let ecRows = FV.vinylRows withExitsRowBuilder gdm 
-                _ <- K.addHvega Nothing captionM $ PM.exitCompareChart title (FV.ViewConfig 650 325 0) ecRows
-                return ()
-          brAddMarkDown brExitAR
-          compareChart "Age and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleAR
-          brAddMarkDown brExitSR
-          compareChart "Sex and Race" Nothing modeledResultsASR edisonExit2018Frame simpleASR2SimpleSR
-          brAddMarkDown brExitSE
-          compareChart "Sex and Education" Nothing modeledResultsASE edisonExit2018Frame simpleASE2SimpleSE
-          brAddMarkDown brExitConclusion
-          brAddMarkDown brReadMore
-          return ()
-      K.newPandoc
-          (K.PandocInfo
-            "MethodsAndSources"
-            (addDates pubDate2018 Nothing -- (Just curDate)
-              $ M.fromList [("pagetitle", "Inferred Preference Model: Methods & Sources")
-                           ]
-            )
+        $ p1a modeledResultsASR modeledResultsASE edisonExit2018Frame
+      when (Methods `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+          "methods/main"
+          (addDates pubDateP1 curDate -- (Just curDate)
+            $ M.fromList [("pagetitle", "Inferred Preference Model: Methods & Sources")
+                         ]
           )
-        $ do
-          brAddMarkDown modelNotesBayes
-          brAddMarkDown brReadMore
-      let pubDateAcrossTime = Time.fromGregorian 2019 9 19  
-      K.newPandoc
-          (K.PandocInfo
-            "p2/main"
-            (addDates pubDateAcrossTime (Just curDate)
+        )
+        $ methods
+      let pubP2 = Time.fromGregorian 2019 9 27
+          titleP2 = "What's All This Talk About The White Working Class?"
+      when (P2 `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+          "p2/main"
+          (addDates pubP2 curDate
+            $ M.fromList [("pagetitle", titleP2)
+                         ,("title", titleP2)
+                         ]
+          )
+        )
+        $ p2 "p2" --modeledResultsASR modeledResultsASE houseElectionsFrame
+        
+      let pubP3 = Time.fromGregorian 2019 9 19  
+      when (P3 `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+          "p3/main"
+          (addDates pubP3 curDate
             $ M.fromList [("pagetitle", "Voter Preference: 2010-2018")
                          ,("title", "Voter Preference: 2010-2018")
                          ]
-            )
           )
-        $ do
-
-            -- arrange data for vs time plot
-            let flattenOneF y = FL.Fold
-                  (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
-                  []
-                  reverse
-                flattenF = FL.Fold
-                  (\l (y, pr) -> FL.fold (flattenOneF y) (PM.modeled pr) : l)
-                  []
-                  (concat . reverse)
-                vRowBuilderPVsT =
-                  FV.addRowBuilder @'("Group",T.Text) (\(g, _, _) -> g)
-                  $ FV.addRowBuilder @'("Election Year",Int) (\(_, y, _) -> y)
-                  $ FV.addRowBuilder @'("D Voter Preference (%)",Double) (\(_, _, vp) -> 100*vp)
-                  $ FV.emptyRowBuilder
-{-                vRowBuilderPR =
-                  FV.addRowBuilder @'("PEst",FV.NamedParameterEstimate) id
-                  $ FV.emptyRowBuilder -}
-                vDatPVsT :: M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
-                         -> [FV.Row
-                             '[ '("Group", F.Text), '("Election Year", Int),
-                                '("D Voter Preference (%)", Double)]] 
-                vDatPVsT pr =
-                  FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
-                addParametersVsTime :: K.KnitOne r
-                                    => M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
-                                    -> K.Sem r ()
-                addParametersVsTime pr = do 
-                  let vl =
-                        FV.multiLineVsTime @'("Group",T.Text) @'("Election Year",Int)
-                        @'("D Voter Preference (%)",Double)
-                        "D Voter Preference Vs. Election Year"
-                        FV.DataMinMax
-                        (FV.TimeEncoding "%Y" FV.Year)
-                        (FV.ViewConfig 800 400 10)
-                        (vDatPVsT pr)
-                  _ <- K.addHvega Nothing Nothing vl
-                  return ()
-
-            -- arrange data for stacked area share of electorate
-            let
-              f1 :: [(x, [(y, z)])] -> [(x, y, z)]
-              f1 = concat . fmap (\(x, yzs) -> fmap (\(y, z) -> (x, y, z)) yzs)
-              vRowBuilderSVS =
-                FV.addRowBuilder @'("Group",T.Text) (\(_, y, _) -> y)
-                  $ FV.addRowBuilder @'("Election Year",Int) (\(x, _, _) -> x)
-                  $ FV.addRowBuilder @'("D Voteshare of D+R Votes (%)",Double)
-                      (\(_, _, z) -> 100*z)
-                      FV.emptyRowBuilder
-              vDatSVS prMap = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
-                PM.modeledDVotes
-                prMap
-              addStackedArea :: (K.KnitOne r, A.Ix b, Bounded b, Enum b, Show b)
-                             => M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
-                             -> K.Sem r ()
-              addStackedArea prMap = do
-                let vl = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
-                         @'("D Voteshare of D+R Votes (%)",Double)
-                         "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
-                         (FV.TimeEncoding "%Y" FV.Year)
-                         (FV.ViewConfig 800 400 10)
-                         (vDatSVS prMap)
-                _ <- K.addHvega Nothing Nothing vl
-                return ()
-              mkDeltaTableASR locFilter  (y1, y2) = do
-                let y1T = T.pack $ show y1
-                    y2T = T.pack $ show y2
-                brAddMarkDown $ "### " <> y1T <> "->" <> y2T
-                mry1 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y1 modeledResultsASR
-                mry2 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y2 modeledResultsASR
-                (table, (mD1, mR1), (mD2, mR2)) <-
-                      PM.deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
-                K.addColonnadeTextTable PM.deltaTableColonnade $ table
-              mkDeltaTableASE locFilter  (y1, y2) = do
-                let y1T = T.pack $ show y1
-                    y2T = T.pack $ show y2
-                brAddMarkDown $ "### " <> y1T <> "->" <> y2T
-                mry1 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y1 modeledResultsASE
-                mry2 <- knitMaybe "lookup failure in mwu"
-                  $ M.lookup y2 modeledResultsASE
-                (table, (mD1, mR1), (mD2, mR2)) <-
-                      PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2
-                K.addColonnadeTextTable PM.deltaTableColonnade $ table
-                
-            brAddMarkDown brAcrossTimeIntro
-            addParametersVsTime  modeledResultsASR
-            brAddMarkDown brAcrossTimeASRPref
-            addStackedArea modeledResultsASR
-            brAddMarkDown brAcrossTimeASRVoteShare           
-            addParametersVsTime  modeledResultsASE
-            brAddMarkDown brAcrossTimeASEPref
-            addStackedArea modeledResultsASE
-            brAddMarkDown brAcrossTimeASEVoteShare           
-            brAddMarkDown brAcrossTimeAfterASE            
-            -- analyze results
-            mkDeltaTableASR (const True) (2012, 2016)
-            brAddMarkDown brAcrossTimeASR2012To2016
-            mkDeltaTableASE (const True) (2012, 2016)
-
-            brAddMarkDown voteShifts
-{-            _ <-
-              traverse (mkDeltaTable (const True))
-                $ [ (2012, 2016)
-                  , (2014, 2018)
-                  , (2014, 2016)
-                  , (2016, 2018)
-                  , (2010, 2018)
-                  ]
--}
-            brAddMarkDown voteShiftObservations
-            let
-              battlegroundStates =
-                [ "NH"
-                , "PA"
-                , "VA"
-                , "NC"
-                , "FL"
-                , "OH"
-                , "MI"
-                , "WI"
-                , "IA"
-                , "CO"
-                , "AZ"
-                , "NV"
-                ]
-              bgOnly r =
-                L.elem (F.rgetField @StateAbbreviation r) battlegroundStates
-            brAddMarkDown "### Presidential Battleground States"
-            _ <- mkDeltaTableASR bgOnly (2010, 2018)
-            _ <- mkDeltaTableASE bgOnly (2010, 2018)
-            _ <- mkDeltaTableASE bgOnly (2014, 2018)
-            _ <- mkDeltaTableASE bgOnly (2016, 2018)
-            brAddMarkDown brReadMore
-            return ()
+        )
+        $ p3 modeledResultsASR modeledResultsASE houseElectionsFrame
   case eitherDocs of
     Right namedDocs -> K.writeAllPandocResultsWithInfoAsHtml
       "posts/preference-model"
       namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
           
---------------------------------------------------------------------------------
-modelNotesPreface :: T.Text
-modelNotesPreface = [i|
-## Preference-Model Notes
-Our goal is to use the house election results[^ResultsData] to fit a very
-simple model of the electorate.  We consider the electorate as having some number
-of "identity" groups. For example we could divide by sex
-(the census only records this as a F/M binary),
-age, "old" (45 or older) and "young" (under 45) and
-education (college graduates vs. non-college graduate)
-or racial identity (white vs. non-white). 
-We recognize that these categories are limiting and much too simple.
-But we believe it's a reasonable starting point, a balance
-between inclusiveness and having way too many variables.
-
-For each congressional district where both major parties ran candidates, we have
-census estimates of the number of people in each of our
-demographic categories[^CensusDemographics].
-And from the census we have national-level turnout estimates for each of these
-groups as well[^CensusTurnout].
-
-All we can observe is the **sum** of all the votes in the district,
-not the ones cast by each group separately.
-But each district has a different demographic makeup and so each is a
-distinct piece of data about how each group is likely to vote.
-
-The turnout numbers from the census are national averages and
-aren't correct in any particular district.  Since we don't have more
-detailed turnout data, there's not much we can do.  But we do know the
-total number of votes observed in each district, and we should at least
-adjust the turnout numbers so that the total number of votes predicted
-by the turnout numbers and populations is close to the observed number
-of votes. For more on this adjustment, see below.
-
-How likely is a voter in each group to vote for the
-democratic candidate in a contested race?
-
-For each district, $d$, we have the set of expected voters
-(the number of people in each group, $i$ in that region, $N^{(d)}_i$,
-multiplied by the turnout, $t_i$ for that group),
-$V^{(d)}_i$, the number of democratic votes, $D^{(d)}$,
-republican votes, $R^{(d)}$ and total votes, $T^{(d)}$, which may exceed $D^{(d)} + R^{(d)}$,
-since there may be third party candidates. For the sake of simplicity,
-we assume that all groups are equally likely to vote for a third party candidate.
-We want to estimate $p_i$, the probability that
-a voter (in any district) in the $i$th group--given that they voted
-for a republican or democrat--will vote for the democratic candidate.                     
-
-the turnout numbers from the census, , multiplied by the
-poopulations of each group will *not* add up to the number of votes observed,
-since turnout varies district to district.
-We adjust these turnout numbers via a technique[^GGCorrection] from
-[Ghitza and Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
-
-
-[^ResultsData]: MIT Election Data and Science Lab, 2017
-, "U.S. House 1976–2018"
-, https://doi.org/10.7910/DVN/IG0UN2
-, Harvard Dataverse, V3
-, UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]
-[^ResultsDataV2]:MIT Election Data and Science Lab, 2017
-, "U.S. House 1976–2018"
-, https://doi.org/10.7910/DVN/IG0UN2
-, Harvard Dataverse, V4
-, UNF:6:M0873g1/8Ee6570GIaIKlQ== [fileUNF]
-[^CensusDemographics]: Source: US Census, American Community Survey <https://www.census.gov/programs-surveys/acs.html> 
-[^CensusTurnout]: Source: US Census, Voting and Registration Tables <https://www.census.gov/topics/public-sector/voting/data/tables.2014.html>. NB: We are using 2017 demographic population data for our 2018 analysis,
-since that is the latest available from the census.
-We will update this once the census publishes updated 2018 American Community Survey data.
-[^GGCorrection]: We note that there is an error in the 2013 Ghitza and Gelman paper, one which is
-corrected in a more recent working paper <http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf>.
-by the same authors.  In the 2013 paper, a correction is derived
-for turnout in each region by find the $\delta^{(d)}$ which minimizes
-$\big|T^{(d)} -\sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \delta^{(d)})\big|$. The authors then
-state that the adjusted turnout in region $d$ is $\hat{t}^{(d)}_i = t_i + \delta^{(d)}$ which
-doesn't make sense since $\delta^{(d)}$ is not a probability.  This is corrected in the working
-paper to $\hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + \delta^{(d)})$.
-
-|]
-
---------------------------------------------------------------------------------
-modelNotesBayes :: T.Text
-modelNotesBayes = modelNotesPreface <> "\n\n" <> [here|
-
-* [Bayes theorem](<https://en.wikipedia.org/wiki/Bayes%27_theorem)
-relates the probability of a model
-(our demographic voting probabilities $\{p_i\}$),
-given the observed data (the number of democratic votes recorded in each
-district, $\{D^{(d)}\}$) to the likelihood of observing that data given the model
-and some prior knowledge about the unconditional probability of the model itself
-$P(\{p_i\})$, as well as $P(\{D^{(d)}\})$, the unconditional probability of observing
-the "evidence":
-$\begin{equation}
-P(\{p_i\}|\{D^{(d)})P(\{D^{(d)}\}) = P(\{D^{(d)}\}|\{p_i\})P(\{p_i\})
-\end{equation}$
-In this situation, the thing we wish to compute, $P(\{p_i\}|\{D^{(d)}\})$,
-is referred to as the "posterior" distribution.
-
-* $P(\{p_i\})$ is called a "prior" and amounts to an assertion about
-what we think we know about the parameters before we have seen any of the data.
-In practice, this can often be set to something very boring, in our case,
-we will assume that our prior is just that any $p_i \in [0,1]$ is equally likely.
-
-* $P(\{D^{(d)}\})$ is the unconditional probability of observing
-the specific outcome $\{D^{(d)}\}$, that is, the specific set of election results
-we observe.
-This is difficult to compute! Sometimes we can compute it by observing:
-$\begin{equation}
-P(\{D^{(d)}\}) = \sum_{\{p_i\}} P(\{D^{(d)}\}|\{p_i\}) P(\{p_i\})
-\end{equation}$.  But in general, we'd like to compute the posterior in
-some way that avoids needing the probability of the evidence.
-
-* $P(\{D^{(d)}\}|\{p_i\})$, the probability that we
-observed our evidence (the election results),
-*given* a specific set $\{p_i\}$ of voter preferences is a thing
-we can calculate:
-Our $p_i$ are the probability that one voter of type $i$, who votes for
-a democrat or republican, chooses
-the democrat.  We *assume*, for the sake of simplicity,
-that for each demographic group $i$, each voter's vote is like a coin
-flip where the coin comes up "Democrat" with probability $p_i$ and
-"Republican" with probability $1-p_i$. This distribution of single
-voter outcomes is known as the [Bernoulli distribution.][WP:Bernoulli].
-Given $V_i$ voters of that type, the distribution of democratic votes
-*from that type of voter*
-is [Binomial][WP:Binomial] with $V_i$ trials and $p_i$ probability of success.
-But $V_i$ is quite large! So we can approximate this with a normal
-distribution with mean $V_i p_i$ and variance $V_i p_i (1 - p_i)$
-(see [Wikipedia][WP:BinomialApprox]).  However, we can't observe the number
-of votes from just one type of voter. We can only observe the sum over all types.
-Luckily, the sum of normally distributed random variables follows a  normal
-distribution as well.
-So the distribution of democratic votes across all types of voters is also approximately
-normal,
-with mean $\sum_i V_i p_i$ and variance $\sum_i V_i p_i (1 - p_i)$
-(again, see [Wikipedia][WP:SumNormal]). Thus we have $P(D^{(d)}|\{p_i\})$, or,
-more precisely, its probability density.
-But that means we also know the probability density of all the evidence
-given $\{p_i\}$, $\rho(\{D^{(d)}\}|\{p_i\})$, since that is just the
-product of the densities for each district:
-$\begin{equation}
-\mu^{(d)}(\{p_i\}) = \sum_i V_i p_i\\
-v^{(d)}(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\
-\rho(D^{(d)}|\{p_i\}) = \frac{1}{\sqrt{2\pi v^{(d)}}}e^{-\frac{(D^{(d)} -\mu^{(d)}(\{p_i\}))^2}{2v^{(d)}(\{p_i\})}}\\
-\rho(\{D^{(d)}\}|\{p_i\}) = \Pi^{(d)} \rho(D^{(d)}|\{p_i\})
-\end{equation}$
-
-* Now that we have this probability density, we want to look for the set of
-voter preferences which maximizes it.  There are many methods to do this but in
-this case, because the distribution has a simple shape, and we can compute its
-gradient, a good numerical optimizer is all we need.  That gives us
-maximum-likelihood estimates and covariances among the estimated parameters.
-
-[WP:Bernoulli]: <https://en.wikipedia.org/wiki/Bernoulli_distribution>
-
-[WP:Binomial]: <https://en.wikipedia.org/wiki/Binomial_distribution>
-
-[WP:BinomialApprox]: <https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation>
-
-[WP:SumNormal]: <https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables>
-|]
-
-modelNotesMCMC :: T.Text
-modelNotesMCMC = [i|
-* In order to compute expectations on this distribution we use
-Markov Chain Monte Carlo (MCMC). MCMC creates "chains" of samples
-from the the posterior
-distribution given a prior, $P(\{p_i\})$, the conditional
-$P(\{D_k\}|\{p_i\})$, and a starting $\{p_i\}$.
-Note that this doesn't require knowing $P(\{D_k\})$, basically
-because the *relative* likelihood of any $\{p_i\}$
-doesn't depend on it.
-Those samples are then used to compute expectations of
-various quantities of interest.
-In practice, it's hard to know when you have "enough" samples
-to have confidence in your expectations.
-Here we use an interval based "potential scale reduction factor"
-([PSRF][Ref:Convergence]) to check the convergence of any one
-expectation, e,g, each $p_i$ in $\{p_i\}$, and a
-"multivariate potential scale reduction factor" ([MPSRF][Ref:MPSRF]) to
-make sure that the convergence holds for all possible linear combinations
-of the $\{p_i\}$.
-Calculating either PSRF or MPSRF entails starting several chains from
-different (random) starting locations, then comparing something like
-a variance on each chain to the same quantity on the combined chains. 
-This converges to one as the chains converge[^rhat] and a value below 1.1 is,
-conventionally, taken to indicate that the chains have converged
-"enough".
-
-[Ref:Convergence]: <http://www2.stat.duke.edu/~scs/Courses/Stat376/Papers/ConvergeDiagnostics/BrooksGelman.pdf>
-
-[Ref:MPSRF]: <https://www.ets.org/Media/Research/pdf/RR-03-07-Sinharay.pdf>
-
-[^rhat]: The details of this convergence are beyond our scope but just to get an intuition:
-consider a PSRF computed by using (maximum - minimum) of some quantity.
-The mean of these intervals is also the mean maximum minus the mean minimum.
-And the mean maximum is clearly less than the maximum across all chains while the
-mean minimum is clearly larger than than the absolute minimum across
-all chains. So their ratio gets closer to 1 as the individual chains
-look more and more like the combined chain, which we take to mean that the chains
-have converged.
-|]
-
-modelNotesRegression :: T.Text
-modelNotesRegression = modelNotesPreface <> [i|
-
-Given $T' = \sum_i V_i$, the predicted number of votes in the district and that $\frac{D+R}{T}$ is the probability that a voter in this district will vote for either major party candidate, we define $Q=\frac{T}{T'}\frac{D+R}{T} = \frac{D+R}{T'}$ and have:
-
-$\begin{equation}
-D = Q\sum_i p_i V_i\\
-R = Q\sum_i (1-p_i) V_i
-\end{equation}$
-
-combining then simplfying:
-
-$\begin{equation}
-D - R =  Q\sum_i p_i V_i - Q\sum_i (1-p_i) V_i\\
-\frac{D-R}{Q} = \sum_i (2p_i - 1) V_i\\
-\frac{D-R}{Q} = 2\sum_i p_i V_i - \sum_i V_i\\
-\frac{D-R}{Q} = 2\sum_i p_i V_i - T'\\
-\frac{D-R}{Q} + T' = 2\sum_i p_i V_i
-\end{equation}$
-
-and substituting $\frac{D+R}{T'}$ for $Q$ and simplifying, we get
-
-$\begin{equation}
-\sum_i p_i V_i = \frac{T'}{2}(\frac{D-R}{D+R} + 1)
-\end{equation}$
-
-We can simplify this a bit more if we define $d$ and $r$ as the percentage of the major party vote that goes for each party, that is $d = D/(D+R)$ and $r = R/(D+R)$.
-Now $\frac{D-R}{D+R} = d-r$ and so $\sum_i p_i V_i = \frac{T'}{2}(1 + (d-r))$
-
-This is now in a form amenable for regression, estimating the $p_i$ that best fit the 369 results in 2016.
-
-Except it's not!! Because these parameters are probabilities and
-classic regression is not a good method here.
-So we turn to Bayesian inference.  Which was more appropriate from the start.
-|]
-
-intro2018 :: T.Text
-intro2018 = [i|
-## 2018 Voter Preference
-The 2018 house races were generally good for Democrats and progressives--but why?
-Virtually every plausible theory has at least some support –
-depending on which pundits and researchers you follow,
-you could credibly argue that
-turnout of young voters[^VoxYouthTurnout], or white women abandoning Trump[^VoxWhiteWomen], or an underlying
-demographic shift toward non-white voters[^Pew2018] was the main factor that propelled the
-Blue Wave in the midterms.
-
-If Democrats want to solidify and extend their gains, what we really want to know
-is the relative importance of each of these factors – in other words,
-how much of last year’s outcome was due to changes in demographics vs.
-voter turnout vs. voters changing their party preferences?
-It turns out that answering
-this is difficult. We have good data on the country’s changing demographics,
-and also on who showed up to the polls, broken down by gender, age, and race.
-But in terms of how each sub-group voted, we only have exit polls and
-post-election surveys, as well as the final election results in aggregate.
-
-* We consider only "competitive" districts, defined as those that had
-a democrat and republican candidate. Of the 435 House districts, 
-382 districts were competitive in 2018.
-
-* Our demographic groupings are limited by the the categories recognized
-and tabulated by the census and by our desire to balance specificity
-(using more groups so that we might recognize people's identity more precisely)
-with a need to keep the model small enough to make inference possible.
-Thus for now we split the electorate into "white" (non-hispanic) and "non-white",
-"male" and "female" and "young" (<45) and "old".
-
-* Our inference model uses Bayesian techniques
-that are described in more detail in a separate
-[Preference-Model Notes](${brPrefModelURL brMethods})
-post.
-
-Several folks have done related work, inferring voter behavior using the
-election results and other data combined with census data about demographics.
-in U.S. elections. In particular:
-
-* [Andrew Gelman](http://www.stat.columbia.edu/~gelman/)
-and various collaborators have used Bayesian and other inference techniques to
-look at exit-poll and other survey data to examine turnout and voting patterns.  In particular
-the technique I use here to adjust the census turnout numbers to best match the actual recorded
-vote totals in each district comes from
-[Ghitza & Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
-
-* [This blog post](http://tomvladeck.com/2016/12/31/unpacking-the-election-results-using-bayesian-inference/)
-uses bayesian inference and a beta-binomial
-voter model to look at the 2016 election and various subsets of the
-electorate. The more sophisticated model allows inference on voter polarity 
-within groups as well as the voter preference of each group.
-
-* [This paper](https://arxiv.org/pdf/1611.03787.pdf)
-uses different techniques but similar data to
-look at the 2016 election and infer voter behavior by demographic group.
-The model uses county-level data and exit-polls
-and is able to draw inferences about turnout and voter preference and to do so
-for *specific geographical areas*.
-
-* This [post](https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0)
-is asking many of the same questions but using much more specific data, gathered from
-voter files[^VoterFiles].  That data is not publicly available, at least not for free.
-
-Each of these studies is limited to the 2016 presidential election. Still,
-each has much to offer in terms of ideas for
-pushing this work forward, especially where county-level election returns are
-available, as they are for 2016 and 2018[^MITElectionLabData].
-
-As a first pass, we modeled the voting preferences of our
-8 demographic sub-groups in the 2018 election,
-so we could compare our results with data from exit polls and surveys.
-The results are presented in the figure below:
-
-[^VoxYouthTurnout]: <https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census>
-[^VoxWhiteWomen]: <https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls>
-[^Pew2018]: <https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education/>
-speaks to this, though it addresses turnout and opinion shifts as well.
-[^VoterFiles]: <https://www.pewresearch.org/fact-tank/2018/02/15/voter-files-study-qa/>
-[^MITElectionLabData]: <https://electionlab.mit.edu/data>
-|]
-
-  
-postFig2018 :: T.Text
-postFig2018 = [i|
-The most striking observation is the chasm between white and non-white voters’
-inferred support for Democrats in 2018. Non-whites were modeled to
-have over 75% preference for Dems regardless of age or gender,
-though support is even a bit stronger among non-white female voters than
-non-white male voters5. Inferred support from white voters in 2018
-is substantially lower, roughly 35-45% across age groups and genders.
-In contrast, differences in inferred preferences by age
-(matching for gender and race) or gender (matching for age and race) are not
-particularly striking or consistent
-(e.g., comparing white males in the under-25 and over-75 groups).
-Overall, we’re heartened that our model seems to work pretty well,
-because the results are broadly consistent with exit polls and surveys[^ExitPolls2018][^Surveys2018]. 
-Thus, our model confirmed prior work suggesting that non-white support for
-Democrats in 2018 was much higher than that by whites, across all
-genders and age groups. But it still doesn’t tell us what happened in 2018
-compared with prior years. To what extent did Democrats’ gains over 2016 come from
-underlying growth in the non-white population, higher turnout among non-whites,
-increased preference for Democrats (among whites or non-whites), or some combination
-of these and other factors? That requires comparing these data to results
-from earlier elections – which is what we’ll do in subsequent posts. Stay tuned. 
-
-[^ExitPolls2018]: <https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html>,
-<https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/>
-[^Surveys2018]: <https://www.pewresearch.org/fact-tank/2018/11/29/in-midterm-voting-decisions-policies-took-a-back-seat-to-partisanship/>
-|]

@@ -38,6 +38,8 @@ brGithubLanding = brGithub <> "/Guide"
 brResearch :: T.Text
 brResearch = "research"
 
-brResearchRoot :: T.Text
-brResearchRoot = "https://blueripple.github.io/" <> brResearch <> "/"
+brResearchRootUrl :: T.Text
+brResearchRootUrl = "https://blueripple.github.io/" <> brResearch <> "/"
 
+brResearchRootPath :: T.Text
+brResearchRootPath = "/" <> brResearch <> "/"

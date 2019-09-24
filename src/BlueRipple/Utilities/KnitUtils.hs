@@ -10,6 +10,7 @@ module BlueRipple.Utilities.KnitUtils where
 import qualified Knit.Report                   as K
 import qualified Control.Monad.Except          as X
 import qualified Data.Text                     as T
+import qualified System.Directory              as SD
 
 import           Polysemy.Error                 ( Error )
 
@@ -36,4 +37,22 @@ knitEither
   => Either T.Text a
   -> K.Sem r a
 knitEither = either K.knitError return
+
+copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
+copyAsset sourcePath destDir = do
+  sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
+  case sourceExists of
+    False ->
+      K.knitError $ "\"" <> sourcePath <> "\" doesn't exist (copyAsset)."
+    True -> do
+      K.logLE K.Info
+        $  "If necessary, creating \""
+        <> destDir
+        <> "\" and copying \""
+        <> sourcePath
+        <> "\" there"
+      K.liftKnit $ do
+        let (_, fName) = T.breakOnEnd "/" sourcePath
+        SD.createDirectoryIfMissing True (T.unpack destDir)
+        SD.copyFile (T.unpack sourcePath) (T.unpack $ destDir <> "/" <> fName)
 
