@@ -337,7 +337,7 @@ preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
       $ (dsPreprocessElectionData ds) year houseElexFrame
     filteredTurnoutFrame <- knitX
       $ (dsPreprocessTurnoutData ds) year turnoutFrame
-    let year' = if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
+    let year' = year --if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
     longByDCategoryFrame <- knitX
       $ (dsPreprocessDemographicData ds) year' identityDFrame
 

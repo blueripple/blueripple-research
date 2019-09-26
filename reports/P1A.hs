@@ -89,6 +89,9 @@ analytics.  We welcome your
 ideas, via [email](mailto:adam@blueripplepolitics.org),
 [Twitter](${brTwitter}) or
 via a [github issue](${brGithub <> "/preference-model/issues"}).
+
+### Updates
+- 9/26/2019: Updated demographic data from the census to the just released 2018 ACS data.
 |]
 
 

@@ -129,9 +129,7 @@ we want to understand election outcomes in a district or state in terms of:
 It turns out that breaking this down is difficult because we don't have all the data.
 
 - Demographics: [Census data](https://www.census.gov/programs-surveys/acs.html)
-exists for the demographic breakdown of each house district. The census hasn't yet updated their data
-for 2018 so we are using data from 2017.  The 2018 data is due to be released on 9/26 and we will update
-this post soon after.
+exists for the demographic breakdown of each house district.
 - Turnout: The [Census](https://www.census.gov/topics/public-sector/voting/data/tables.2018.html)
 also publishes data containing the *national* turnout of each group in each election.
 This is helpful but not as geographically specific as we'd like.
@@ -282,6 +280,9 @@ They have a [variety of ways](https://nextgenamerica.org/act/) you can donate ti
 These results are similar but markedly different from the exit polls.
 **[This post](${brPrefModelUrl brP1ExitPolls})**
 has more details on that comparison.
+
+### Updates
+- 9/26/2019: Updated demographic data from the census to the just released 2018 ACS data.
 |]  
   
 ------------- unused
