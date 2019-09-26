@@ -53,6 +53,7 @@ p2 assetPath = do
   let tweetPath = dataDir <> "/images/WWCV_tweet.png"
   copyAsset tweetPath (brPrefModelLocalPath <> assetPath <> "/images")
   brAddMarkDown $ brP2Intro assetPath
+  brAddMarkDown brReadMore
 
 --------------------------------------------------------------------------------
 brP2Intro :: T.Text -> T.Text
@@ -79,7 +80,7 @@ will almost certainly continue be true in 2020.
 But there are a lot of WWC voters! So the difference between the 37% loss in 2016
 and the 24% loss in 2018 represents a *lot* of votes. For instance,
 WWC voters make up about
-60% of the electorate in Wisconsin (ref?). If there had been a 13% swing to Clinton
+60% of the electorate in Wisconsin (ref?). If there had been a 13% swing to 
 Clinton instead of Trump in 2016, Wisconsin would have gone blue.
 Michigan (53% WWC) and Pennsylvania (55% WWC) are also states where a 13% shift
 in the 2016 WWC vote would have flipped them blue.
@@ -95,7 +96,7 @@ a campaign on winning WWC votes. To make that point even clearer, let's ask what
 among the rest of the state would make the same difference.  In all three states,
 it would require less than a 3% turnout boost to bridge the 2016 gap.
 And these are all states that saw, e.g., 
-drops in turnout of >5% among non-white voters across the board.
+drops in turnout from 2012 to 2016 of >5% among non-white voters. 
 
 This is summarized in the table below (votes in thousands):
 
@@ -113,7 +114,7 @@ NB: The turnout swing % assumes a turnout of 50% among Non-WWC voters in all 3 s
 
 ## How Democrats Can Win In Heavily WWC States
 First, it's important to re-iterate how close the mid-west battleground states
-were in 2016 and how difficult it would be for a Republican candidate to win them
+were in 2016, and how difficult it would be for a Republican candidate to win them
 with numbers anything like what we saw in 2018. So Democrats may be justified
 in not making any special appeal to WWC voters.  However, as progressives
 often point out, many progressive policies are good for almost everyone, including
@@ -130,8 +131,6 @@ And focus the approach in those states and districts accordingly.
 
 In other words, try to rally the voters who
 are reliable Democratic supporters while also minimizing losses among the WWC.
-That seems simple enough, but Clinton's failure to visit
-these states in 2016 showed a lack of commitment to that approach.
 
 ## Take Action
 Give your time or money to  organizations that work on registration and turnout,
@@ -161,7 +160,7 @@ to help voters acquire appropriate ID or
 [donate money](https://voteriders.salsalabs.org/donate/index.html) to
 help with their work.
 
-- We tried to find local
+We tried to find local
 organizations working specifically in these states.
 Please [email](mailto:adam@blueripplepolitics.org) us if you know of
 local organizations doing this work and we'll update this post! 
