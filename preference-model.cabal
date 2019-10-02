@@ -121,7 +121,7 @@ executable preference_model
   ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
   main-is:       preference_model.hs
-  other-modules: PrefCommon, Methods, P1, P1A, P3
+  other-modules: PrefCommon, Methods, P1, P1A, P3, P2, Paths_preference_model
   build-depends: base >= 4.11
                , preference-model
                , blaze-colonnade

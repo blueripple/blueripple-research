@@ -74,23 +74,24 @@ finding common ground on issues progressives and *some* WWC voters care about.
 ## Why Is There Controversy About White Working Class Voters?
 First, when people talk about WWC voters people usually mean white voters without a 4-year college degree.
 For more details, see
-[this paper](https://www.demos.org/research/understanding-working-class)).
+[this paper](https://www.demos.org/research/understanding-working-class).
 
-With that in mind, consider the following recent tweet:
+With that in mind, consider the following recent, much discussed tweet:
 
 ![@sahilkapur tweet](images/WWCV_tweet.png)\_
 
-This tweet generated a fair amount of discussion! Let's focus on "meaningful gains."
+Let's focus on "meaningful gains."
 WWC voters are more likely to vote for Republicans and that
 will almost certainly continue be true in 2020.
-But there are a lot of WWC voters! So the difference between the 37% loss in 2016
-and the 24% loss in 2018 represents a *lot* of votes. For instance,
+But there are a lot of WWC voters! So the difference between the 37% (66% - 29%) loss in 2016
+and the 24% (61% - 37%) loss in 2018 represents a *lot* of votes. For instance,
 WWC voters make up about
 58% of the electorate in Wisconsin. If there had been a 13% swing to 
-Clinton instead of Trump in 2016, Wisconsin would have gone blue.
+Clinton instead of Trump---the swing from 2016 to 2018--- in 2016,
+Wisconsin would have gone blue.
 Michigan (53% WWC) and Pennsylvania (55% WWC) are also states where a 13% shift
 in the 2016 WWC vote would have flipped them blue.
-But those states were very very close! Even a 2% preference swing in the WWC vote
+But those states were very very close! Even a 2% shift in the WWC vote
 would have flipped them *all* blue. 
 
 Where does this leave us? On the one hand, the WWC is a large
@@ -108,7 +109,7 @@ drops in turnout from 2012 to 2016 of >5% among non-white voters.
 This is summarized in the table below (votes in thousands):
 
 ---------------------------------------------------------------------------------------------
-State D Votes R Votes Total  WWC Pop  WWC D Pref  Non-WWC D Pref  Pref Swing  Turnout Boost 
+State D Votes R Votes Total  WWC Pop  WWC D Pref  Non-WWC D Pref  Pref Shift  Turnout Boost 
 ----- ------- ------- -----  -------  ----------  --------------  ----------  -------------
 PA    2926    2971    6167   53%      29%         70%             1.4%        2.2%
 
@@ -117,14 +118,14 @@ MI    2269    2280    4799   54%      29%         68%             0.4%        0.
 WI    1383    1405    2953   59%      29%         74%             1.3%        2.6%          
 ---------------------------------------------------------------------------------------------
 
-NB: The turnout swing % assumes an approximate turnout of 50% among Non-WWC voters in all 3 states.
+NB: The turnout boost % assumes an approximate turnout of 50% among Non-WWC voters in all 3 states.
 Our source for the percentage of WWC voters in these states is
 [this article.](https://www.americanprogress.org/issues/democracy/reports/2017/11/01/441926/voter-trends-in-2016/).
 Our vote totals are from
 [Wikipedia.](https://www.wikipedia.org/)
 
 ## How Democrats Can Win In Heavily WWC States
-First, it's important to re-iterate how close the mid-west battleground states
+It's important to re-iterate how close the mid-west battleground states
 were in 2016, and how difficult it would be for a Republican candidate to win them
 with numbers anything like what we saw in 2018. So Democrats may be justified
 in not making any special appeal to WWC voters.  However, as progressives
@@ -133,18 +134,20 @@ the WWC. So we think the approach should be two-fold:
 
 1. Do what we ought do everywhere else: work hard at registration and turnout among everyone,
 particularly the Democratic base.  This involves defense of voting rights:
-fighting poll purges and voter ID laws, working for automatic and same-day registration,
+fighting unfair poll purges and voter ID laws,
+working for automatic and same-day registration,
 and working to keep more polling places open and for more days and hours.
 And this also requires the traditional tools for improving turnout:
 registration drives, knocking on doors, etc.  This idea inspires part of 
-Blue Ripple Politics' method for choosing local candidates in places where
+Blue Ripple Politics' support for local candidates in places where
 their voter outreach will also help candidates running for other offices.
 
-2. Identify which parts of the WWC can be convinced, either by their willingness
-to embrace parts of the progressive agenda or their disgust with Trump and his enablers.  For example
+2. Identify which parts of the WWC can be convinced, hopefully by their willingness
+to embrace parts of the progressive agenda or, in the short-term,
+by their disgust with Trump and his enablers.  For example
 [non-evangelical WWC women](https://nymag.com/intelligencer/2018/12/democrats-won-with-non-evangelical-white-working-class-women.html)
 are more than 10% of the national electorate and were strong *Democratic* voters (57/41) in 2018.
-Trunp's approval rating with non-evangelical WWC women is about 35% so there's no hint that they would vote any differently in 2020
+Trump's approval rating with non-evangelical WWC women is now about 35% so there's no hint that they would vote any differently in 2020
 than they did in 2018. 
 
 In other words, rally and support the voters who
