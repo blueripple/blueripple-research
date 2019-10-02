@@ -221,7 +221,7 @@ main = do
           )
         )
         $ methods
-      let pubP2 = Time.fromGregorian 2019 9 27
+      let pubP2 = Time.fromGregorian 2019 10 3
           titleP2 = "What's All This Talk About The White Working Class?"
       when (P2 `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
