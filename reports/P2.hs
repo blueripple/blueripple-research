@@ -124,6 +124,9 @@ Our source for the percentage of WWC voters in these states is
 Our vote totals are from
 [Wikipedia.](https://www.wikipedia.org/)
 
+The preference shift and turnout boost in the table are each well within the typical
+election-to-election variation in these numbers.  
+
 ## How Democrats Can Win In Heavily WWC States
 It's important to re-iterate how close the mid-west battleground states
 were in 2016, and how difficult it would be for a Republican candidate to win them
