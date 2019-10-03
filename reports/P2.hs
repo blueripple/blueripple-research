@@ -91,7 +91,7 @@ Clinton instead of Trump---the swing from 2016 to 2018---in 2016,
 Wisconsin would have gone blue.
 Michigan (53% WWC) and Pennsylvania (55% WWC) are also states where a 13% shift
 in the 2016 WWC vote would have flipped them blue.
-But there's more: those states were very very close---so even a 2% shift in the WWC vote
+But there's more: those states were very, very close---so even a 2% shift in the WWC vote
 would have flipped them *all* blue. 
 
 Where does this leave us? On the one hand, the WWC is a large
@@ -106,9 +106,7 @@ let's do an experiment: what change in turnout
 among non-WWC voters in each state would have generated enough votes in 2016 to win three
 key battlegrounds?
 In all three states, it turns out that a pretty small turnout
-boost among non-WWC---less than 3%---would have made the difference.
-And these are all states that saw, e.g.,
-drops in turnout from 2012 to 2016 of >5% among non-white voters. 
+boost among non-WWC---less than 3%---would have made the difference. 
 
 This is summarized in the table below (votes in thousands):
 
@@ -128,7 +126,7 @@ WI    1383    1405    2953   59%      29%         74%             1.3%          
 
 NB: The turnout boost % assumes an approximate turnout of 50% among Non-WWC voters in all 3 states. 
 Our source for the percentage of WWC voters in these states is
-[this article.](https://www.americanprogress.org/issues/democracy/reports/2017/11/01/441926/voter-trends-in-2016/).
+[this article](https://www.americanprogress.org/issues/democracy/reports/2017/11/01/441926/voter-trends-in-2016/).
 Our vote totals are from
 [Wikipedia](https://www.wikipedia.org/) and our Democratic voter preference (29%) is taken from the
 tweet above.  The Non-WWC Democratic voter preference is calculated from the WWC voter preference, the
@@ -164,11 +162,11 @@ to embrace parts of the progressive agenda.
 [Data For Progress](https://www.dataforprogress.org/) has done amazing
 [work](https://www.dataforprogress.org/the-new-progressive-agenda) looking
 at progressive policies with broad support.  For instance, capping
-Credit Card interest rates polls positively among Trump voters in all 50 states,
-and Marijuana legalization polls positively among Trump voters in all but AK, MS and AL.
+credit card interest rates polls positively among Trump voters in all 50 states,
+and marijuana legalization polls positively among Trump voters in all but AK, MS and AL.
 Ending the war in Yemen is more mixed among Trump voters, but polls well among them
 in PA, MI and WI.  All of these policies are supported by many progressive
-candidates, including several vying for the Democratic Nomination.
+candidates, including several vying for the Democratic nomination.
 
 3. In the short-term, some WWC voters may choose to vote Democratic
 because of their disgust with Trump and his enablers.  For example
