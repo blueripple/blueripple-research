@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module P1A (p1a) where
+module PreferenceModel.ExitPolls (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -40,14 +40,14 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
-import PrefCommon
+import PreferenceModel.Common
 
 brExitPolls :: T.Text
 brExitPolls = [i|
 The press has various breakdowns of the 2018 exit polling done by
 Edison Research.  None split things into the same categories we
 looked at in our
-**[post on inferred voter preference in 2018 house elections](${brPrefModelUrl brP1Main})**.
+**[post on inferred voter preference in 2018 house elections](${brGithubUrl (postPath Post2018)})**.
 But we can merge some of our categories and then compare. For comparison we chose a
 [Fox News post](https://www.foxnews.com/midterms-2018/voter-analysis)
 because it had the most detailed demographic splits we found.
@@ -95,12 +95,12 @@ via a [github issue](${brGithub <> "/preference-model/issues"}).
 |]
 
 
-p1a :: K.KnitOne r
-   => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-   -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
-   -> F.Frame EdisonExit2018
-   -> K.Sem r ()
-p1a modeledResultsASR modeledResultsASE edisonExit2018Frame = do
+post :: K.KnitOne r
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     -> F.Frame EdisonExit2018
+     -> K.Sem r ()
+post modeledResultsASR modeledResultsASE edisonExit2018Frame = do
   brAddMarkDown brExitPolls
   let mergedPrefs :: (A.Ix b, Enum b, Bounded b, A.Ix c, Enum c, Bounded c)
                   => PM.PreferenceResults b FV.NamedParameterEstimate

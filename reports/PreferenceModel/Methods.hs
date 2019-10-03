@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module Methods (methods) where
+module PreferenceModel.Methods (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -40,12 +40,12 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
-import PrefCommon
+import PreferenceModel.Common
 
 
-methods :: K.KnitOne r
+post :: K.KnitOne r
         => K.Sem r ()
-methods = do
+post = do
  brAddMarkDown modelNotesBayes
  brAddMarkDown brReadMore
 

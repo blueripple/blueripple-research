@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module P3 (p3) where
+module PreferenceModel.AcrossTime (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -43,15 +43,15 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
-import PrefCommon
+import PreferenceModel.Common
 
 
-p3 :: K.KnitOne r
-           => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-           -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
-           -> F.Frame HouseElections
-           -> K.Sem r ()
-p3 modeledResultsASR modeledResultsASE houseElectionsFrame = do  
+post :: K.KnitOne r
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     -> F.Frame HouseElections
+     -> K.Sem r ()
+post modeledResultsASR modeledResultsASE houseElectionsFrame = do  
             -- arrange data for vs time plot
   let flattenOneF y = FL.Fold
         (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
@@ -209,8 +209,8 @@ how these factors add up to an election result.
 
 Consider the voter preference broken down by age, sex and race from 2010 to 2018:
 
-[BR:2018]: <${brPrefModelUrl brP1Main}#>
-[BR:Methods]: <${brPrefModelUrl brMethods}#>
+[BR:2018]: <${brGithubUrl (postPath Post2018)}#>
+[BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
 |]
   
 brAcrossTimeASRPref :: T.Text
@@ -302,8 +302,8 @@ though it remains below 50%. These results are broadly consistent with
 exit-polling[^ExitPolls2012][^ExitPolls2014][^ExitPolls2016][^ExitPolls2018],
 though there are some notable differences as well.
 
-[BR:2018]: <${brPrefModelUrl brP1Main}#>
-[BR:Methods]: <${brPrefModelUrl brMethods}#>
+[BR:2018]: <${brGithubUrl (postPath Post2018)}#>
+[BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
 That is consistent with exit-polls that show a huge swing in the Asian vote:
 from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then

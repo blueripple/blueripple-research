@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module P1 (p1) where
+module PreferenceModel.PM2018 (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -40,14 +40,14 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
-import PrefCommon
+import PreferenceModel.Common
 
 
-p1 :: K.KnitOne r
-   => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-   -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
-   -> K.Sem r ()
-p1 modeledResultsASR modeledResultsASE = do
+post :: K.KnitOne r
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     -> K.Sem r ()
+post modeledResultsASR modeledResultsASE = do
   brAddMarkDown br2018Intro
   let groupData :: (A.Ix b, Show b)
         => PM.PreferenceResults b FV.NamedParameterEstimate
@@ -161,7 +161,7 @@ one approach for using the data we have to learn something demographically speci
 voter preference.  That is, we'll infer a national-level voter preference
 for each demographic group using the data described above.
 We describe the methods in detail
-**[here](${brPrefModelUrl brMethods})**,
+**[here](${brGithubUrl (postPath PostMethods)})**,
 and the [data and code](${brGithub <> "/preference-model"})
 are available at the Blue Ripple [github](${brGithubLanding}).
 
@@ -176,7 +176,7 @@ and Republicans). We can combine all those to get the chance that
 a particular set of voter preferences explains all the results.  From this, we
 can infer the most likely voter preferences.
 The details are spelled out in a 
-**[separate post](${brPrefModelUrl brMethods})**.
+**[separate post](${brGithubUrl (postPath PostMethods)})**.
 
 ## Who Voted For Democrats and Progressives?
 There are many ways to partition the electorate, e.g., age, educational
@@ -278,7 +278,7 @@ They have a [variety of ways](https://nextgenamerica.org/act/) you can donate ti
 
 ## A Note about Exit Polls
 These results are similar but markedly different from the exit polls.
-**[This post](${brPrefModelUrl brP1ExitPolls})**
+**[This post](${brGithubUrl (postPath PostExitPolls)})**
 has more details on that comparison.
 
 ### Updates
@@ -320,7 +320,7 @@ Thus for now we split the electorate into "white" (non-hispanic) and "non-white"
 
 * Our inference model uses Bayesian techniques
 that are described in more detail in a separate
-[Preference-Model Notes](${brPrefModelUrl brMethods})
+[Preference-Model Notes](${brGithubUrl (postPath PostMethods)})
 post.
 
 Several folks have done related work, inferring voter behavior using the

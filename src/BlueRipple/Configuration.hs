@@ -43,3 +43,18 @@ brResearchRootUrl = "https://blueripple.github.io/" <> brResearch <> "/"
 
 brResearchRootPath :: T.Text
 brResearchRootPath = "/" <> brResearch <> "/"
+
+brExplainer :: T.Text
+brExplainer = "explainer"
+
+brExplainerRootUrl :: T.Text
+brExplainerRootUrl = "https://blueripple.github.io/" <> brExplainer <> "/"
+
+brExplainerRootPath :: T.Text
+brExplainerRootPath = "/" <> brExplainer <> "/"
+
+brGithubUrl :: T.Text -> T.Text
+brGithubUrl x = "https://blueripple.github.io" <> x <> ".html"
+
+brLocalRoot :: T.Text
+brLocalRoot = "posts/"

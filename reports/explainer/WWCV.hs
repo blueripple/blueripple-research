@@ -12,7 +12,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module P2 (p2) where
+module Explainer.WWCV (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -40,24 +40,21 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
-import PrefCommon
+import PreferenceModel.Common
 import Paths_preference_model
 
-p2 :: K.KnitOne r
-   => T.Text
---   -> M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
---   -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
-   -> K.Sem r ()
-p2 assetPath = do
+post :: K.KnitOne r
+     => K.Sem r ()
+post = do
   dataDir <- T.pack <$> K.liftKnit getDataDir
   let tweetPath = dataDir <> "/images/WWCV_tweet.png"
-  copyAsset tweetPath (brPrefModelLocalPath <> assetPath <> "/images")
-  brAddMarkDown $ brP2Intro assetPath
+  copyAsset tweetPath (brLocalRoot <> (postRoute PostWWCV) <> "/images")
+  brAddMarkDown brWWCV 
   brAddMarkDown brReadMore
 
 --------------------------------------------------------------------------------
-brP2Intro :: T.Text -> T.Text
-brP2Intro assetPath = [i|
+brWWCV :: T.Text
+brWWCV = [i|
 Political strategists and pundits are split on how Democrats ought
 to address "White Working Class" (WWC) voters:
 [convince them](https://www.realclearpolitics.com/articles/2019/04/07/after_2016_loss_democrats_know_they_need_white_male_voters_139987.html)
@@ -76,7 +73,7 @@ First, when people talk about WWC voters, they usually mean white voters without
 For more details, see
 [this paper](https://www.demos.org/research/understanding-working-class).
 
-With that in mind, consider the following recent, much discussed tweet:
+With that in mind, consider the following recent, much discussed tweet from Bloomberg Politics reporter Sahil Kapur:
 
 ![@sahilkapur tweet](images/WWCV_tweet.png)\_
 
