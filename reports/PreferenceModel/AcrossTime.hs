@@ -21,8 +21,6 @@ import qualified Data.Array                    as A
 import qualified Data.List as L
 import qualified Data.Text                     as T
 
-
-
 import qualified Frames as F
 import           Graphics.Vega.VegaLite.Configuration as FV
 
@@ -149,8 +147,8 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
   mkDeltaTableASR (const True) (2012, 2016)
   brAddMarkDown brAcrossTimeASR2012To2016
   mkDeltaTableASE (const True) (2012, 2016)
-    
-  brAddMarkDown voteShifts
+  brAddMarkDown brAcrossTimeASE2012To2016   
+{-  brAddMarkDown voteShifts
   _ <-
     traverse (mkDeltaTableASR (const True))
     $ [ (2012, 2016)
@@ -160,6 +158,7 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
       , (2010, 2018)
       ]
   brAddMarkDown voteShiftObservations
+-}
   let
     battlegroundStates =
       [ "NH"
@@ -177,11 +176,12 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
       ]
     bgOnly r =
       L.elem (F.rgetField @StateAbbreviation r) battlegroundStates
-  brAddMarkDown "### Presidential Battleground States"
-  _ <- mkDeltaTableASR bgOnly (2010, 2018)
-  _ <- mkDeltaTableASE bgOnly (2010, 2018)
-  _ <- mkDeltaTableASE bgOnly (2014, 2018)
+--  brAddMarkDown "### Presidential Battleground States"
+--  _ <- mkDeltaTableASR bgOnly (2010, 2018)
+--  _ <- mkDeltaTableASE bgOnly (2010, 2018)
+  _ <- mkDeltaTableASE bgOnly (2012, 2016)
   _ <- mkDeltaTableASE bgOnly (2016, 2018)
+  brAddMarkDown brAcrossTimeAfterBattleground
   brAddMarkDown brReadMore
 
 
@@ -197,17 +197,29 @@ at how those preferences have shifted since 2010.
 
 1. The Evolving Democratic Coalition
 2. Breaking Down the Changes
-3. Thoughts on 2020 (and Beyond)
+3. What Happened in the Battleground States?
+4. Take Action
 
 ## The Evolving Democratic Coalition
 
-Democratic votes can come from turnout---getting a Democratic voter registered and/or to
-the polls---or from changes in voter preference---basically, changing the
-opinion of a non-Democratic voter.  Further, the
-demographics of the voting population in a district change over time which shifts
-how these factors add up to an election result. 
+Our way of breaking down the Democratic electorate has three compoonents:
 
-Consider the voter preference broken down by age, sex and race from 2010 to 2018:
+- Demographics: What are the age, sex, education level, race, etc. of the eligible voters?
+- Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?
+- Voter Preference: When people from each group vote, who are they likely to vote for?
+
+and given data about the first two, we can use statistical techniques to infer the third.
+See [this post][BR:Methods] for details. Each of these can change over time.
+The demographics change as people
+move from one district to another, or age into voting eligibility, etc.
+Turnout changes as interest in the election varies and as various impediments to
+voting are put in place or removed.  And voter preference changes as well, as people
+choose different candidates and prioritize different issues.  Using the model
+we introduced in [this post][BR:2018], we can see each of these components
+separately.
+
+First, we look at the preference component broken down by age, sex and race from 2010 to 2018
+by plotting inferred national Democratic voter preference vs. year.
 
 [BR:2018]: <${brGithubUrl (postPath Post2018)}#>
 [BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
@@ -216,46 +228,53 @@ Consider the voter preference broken down by age, sex and race from 2010 to 2018
 brAcrossTimeASRPref :: T.Text
 brAcrossTimeASRPref = [i|
 As before, the difference in voter preference between non-white and white voters is stark.
-There is an encouraging move in white voter preference toward Democrats in 2018.
-We can also look at how those numbers translate to the composition of the democratic electorate:
+There is an encouraging move in white voter preference toward Democrats in 2018, though it's hard
+to compare presidential election years (2012 and 2016)
+to the mid-term years (2010, 2014, and 2018). Though turnout in 2018 was at near-presidential levels
+so 2018 may be more indicative than a typical mid-term election.
+
+We can also look at how those numbers translate to the composition of the democratic electorate
+by plotting vote-share--fraction of the total electorate--rather than preference. This allows us to
+see how many votes are coming from each group and how that has changed over time. 
 |]
 
 brAcrossTimeASRVoteShare :: T.Text
 brAcrossTimeASRVoteShare = [i|
 This chart reminds us that though non-white voters are overwhelmingly democratic,
-they only make up roughly 40% of the Democratic votes.
+they make up only about 40% of the Democratic votes.
 This is a combination of smaller
 numbers of possible voters and lower turnout.  The latter is
-something there is ongoing work to change via anti-voter-suppression efforts
-and registration and GOTV drives.
+something there is ongoing work to change via anti-voter-suppression efforts,
+registration drives and get-out-the-vote (GOTV) work.
 
-As before we can also group things by age, sex and educational attainment.  First
+As before, we also group things by age, sex and educational attainment.  First
 the voter preferences through time:
 |]
 
 brAcrossTimeASEPref :: T.Text
 brAcrossTimeASEPref = [i|
-This shows a very distinct shift toward Democrats of all groups except older
-non-college graduates, who have become more Republican since 2012. Younger
-non-college graduates shifted republican in 2012 but shifted back in 2018.
+This shows a very distinct shift toward Democrats of college-educated voters in 2018
+and an equally distinct shift toward Republicans of non-college-educated voters in 2014.  
 
-Again, we can also look at this data in terms of vote-share:
+In terms of vote-share:
 |]
 
 brAcrossTimeASEVoteShare :: T.Text
 brAcrossTimeASEVoteShare = [i|
-Here we see again that the Democratic coalition is made up of a large number
-of voters from groups that are not majority democratic voters and smaller
+Again we see that, in terms of these groups,
+the Democratic coalition is made up of a large number
+of votes from groups that are not majority democratic voters and smaller
 numbers of votes from many groups which do tend to vote for Democrats.
 
 Also of note in both vote-share charts is the tendency of Democratic vote-share
 to fall off in mid-term years, except for 2018.  That's something to keep in
 mind and work against in 2022!
 
-One interesting way to look at all this data is to break-down the changes in
-total Democratic votes in each group into 3 categories: demographics, turnout
-and preference.  Demographics tracks the changes in the size of these different
-groups, whereas turnout and preference track changes in the behavior of each group.
+## Breaking Down The Changes
+
+One way to look at all this data is to break-down the changes in
+total Democratic votes in each group into our 3 categories: demographics, turnout
+and preference. 
 For example, the following table illustrates the age/sex/race break-down in the loss of
 democratic votes between 2012 and 2016:
 |]
@@ -267,8 +286,7 @@ white voters, only slightly offset by demographic and turnout trends among
 non-white voters.
 
 The age/sex/education breakdown tells a related story, a waning
-of Democratic preference
-among non-college graduates, especially older ones:
+of Democratic preference among non-college graduates, especially older ones:
 |]
   
 brAcrossTimeASE2012To2016 :: T.Text
@@ -276,10 +294,46 @@ brAcrossTimeASE2012To2016 = [i|
 One common thread in these tables is that the loss of votes comes
 largely from shifts in opinion rather than demographics or turnout.
 This is what often leaves Democrats feeling like they must appeal
-more to white voters, particularly white, non-college educated
-Democrats.  From this data it's clear that those are the voters
-that were lost between 2012 and 2016.  Did they come back in 2018?
+more to white working class voters, as we talked about in
+[this post][BR:WWCV].
 
+## What Happened in the Battleground States?
+
+One question we can ask is what happened to those voters in 2018?
+In particular, let's consider just the battleground states of
+NH, PA, VA, NV, FL, OH, MI, WI, IA, CO, AZ, and NV. First we'll
+look again at the loss of votes from 2012 to 2016 and then
+the blue wave of 2018.
+
+[BR:WWCV]: <${brGithubUrl (postPath PostWWCV)}#>
+|]
+
+brAcrossTimeAfterBattleground :: T.Text
+brAcrossTimeAfterBattleground = [i|
+All of the approximately 2 million votes lost across those states
+from 2012 to 2016 are
+regained in 2018.  What's more, the gain comes from changes in
+preference *not* changes in turnout.  This was not Republican voters staying
+home, it was an electorate with similar turnout but which became
+substantially more Democratic between 2016 and 2018. This happened
+in an interesting way: from 2012 to 2016 Democrats lost share with
+non-college educated voters while holding relatively steady with
+college-educated voters.  The Blue wave in 2018 was *not* powered by
+gaining back ground with the voters lost in 2016
+but instead making 
+inroads with college-educated white voters while maintaining turnout and
+preference among the rest of the coalition.  That is, from 2012
+to 2018, Democrats are about even with white voters but they have lost
+non-college educated voters and gained college educated ones.
+
+# Take Action
+
+|]
+
+  
+  
+brAcrossTimeXXXX :: T.Text
+brAcrossTimeXXXX = [i|
 Last war, etc.
 
 
@@ -304,6 +358,7 @@ though there are some notable differences as well.
 
 [BR:2018]: <${brGithubUrl (postPath Post2018)}#>
 [BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
+[BR:WWCV]: <${brGithubUrl (postPath PostWWCV)}$>
 [^2014]: We note that there is a non-white swing towards republicans in 2014.
 That is consistent with exit-polls that show a huge swing in the Asian vote:
 from approximately 75% likely to vote democratic in 2012 to slightly *republican* leaning in 2014 and then

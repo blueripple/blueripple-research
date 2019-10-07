@@ -94,7 +94,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [Post2018] &= CA.name "p2018" &= CA.help "knit \"2018\"",
                                         [PostExitPolls] &= CA.name "pExitPolls" &= CA.help "knit \"ExitPolls\"",
                                         [PostWWCV] &= CA.name "wwcv" &= CA.help "knit \"WWCV\"",
-                                        [PostAcrossTime] &= CA.name "p3" &= CA.help "knit \"AcrossTime\"",
+                                        [PostAcrossTime] &= CA.name "pAcrossTime" &= CA.help "knit \"AcrossTime\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
@@ -220,7 +220,7 @@ main = do
           )
         )
         $ Methods.post
-      let pubP2 = Time.fromGregorian 2019 10 3
+      let pubP2 = Time.fromGregorian 2019 10 5
           titleP2 = "What's All This Talk About The White Working Class?"
       when (PostWWCV `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo

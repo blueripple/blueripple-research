@@ -73,7 +73,7 @@ First, when people talk about WWC voters, they usually mean white voters without
 For more details, see
 [this paper](https://www.demos.org/research/understanding-working-class).
 
-With that in mind, consider the following recent, much discussed tweet from Bloomberg Politics reporter Sahil Kapur:
+With that in mind, consider the following recent, much discussed tweet from Bloomberg politics reporter Sahil Kapur:
 
 ![@sahilkapur tweet](images/WWCV_tweet.png)\_
 
@@ -128,7 +128,8 @@ Our vote totals are from
 [Wikipedia](https://www.wikipedia.org/) and our Democratic voter preference (29%) is taken from the
 tweet above.  The Non-WWC Democratic voter preference is calculated from the WWC voter preference, the
 WWC percentage of the populations and the vote totals, assuming that turnout is similar among WWC and
-non-WWC voters.
+non-WWC voters. Details of these calculations are available in
+[this spreadsheet](https://github.com/blueripple/preference-model/blob/master/reports/Explainer/WWCV.xlsx).
 
 This little thought experiment makes an important point about the 2016 election, turnout and voter rights.
 In all three of these states, non-WWC turnout fell by over 5% from 2012 to 2016.
@@ -142,7 +143,7 @@ were in 2016, and how difficult it would be for a Republican candidate to win th
 with numbers anything like what we saw in 2018. So Democrats may be justified
 in not making any special appeal to WWC voters.  However, as progressives
 often point out, many progressive policies are good for almost everyone, including
-the WWC. So we think the approach should be two-fold:
+the WWC. So we think the approach should be three-fold:
 
 1. Do what we ought do everywhere else: work hard at registration and turnout among everyone,
 particularly the Democratic base.  This involves defense of voting rights:
