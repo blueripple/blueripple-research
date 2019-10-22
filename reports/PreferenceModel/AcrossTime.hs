@@ -18,6 +18,8 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 
+import qualified Text.Blaze.Html5.Attributes   as BHA
+
 import qualified Data.List as L
 import qualified Data.Text                     as T
 
@@ -47,9 +49,11 @@ import PreferenceModel.Common
 post :: K.KnitOne r
      => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
      -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
      -> F.Frame HouseElections
      -> K.Sem r ()
-post modeledResultsASR modeledResultsASE houseElectionsFrame = do  
+post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE houseElectionsFrame = do  
             -- arrange data for vs time plot
   let flattenOneF y = FL.Fold
         (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
@@ -92,46 +96,48 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
     vRowBuilderSVS =
       FV.addRowBuilder @'("Group",T.Text) (\(_, y, _) -> y)
       $ FV.addRowBuilder @'("Election Year",Int) (\(x, _, _) -> x)
-      $ FV.addRowBuilder @'("D Voteshare of D+R Votes (%)",Double)
+      $ FV.addRowBuilder @'("Voteshare of D Votes (%)",Double)
       (\(_, _, z) -> 100*z)
       FV.emptyRowBuilder
     vDatSVS prMap = FV.vinylRows vRowBuilderSVS $ f1 $ M.toList $ fmap
-                    PM.modeledDVotes
+                    (PM.modeledDVotes PM.ShareOfD)
                     prMap
     addStackedArea :: (K.KnitOne r, A.Ix b, Bounded b, Enum b, Show b)
                      => M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
                      -> K.Sem r ()
     addStackedArea prMap = do
       let vl = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
-               @'("D Voteshare of D+R Votes (%)",Double)
-               "D Voteshare of D+R votes in Competitive Districts vs. Election Year"
+               @'("Voteshare of D Votes (%)",Double)
+               "Voteshare in Competitive Districts vs. Election Year"
                (FV.TimeEncoding "%Y" FV.Year)
                (FV.ViewConfig 800 400 10)
                (vDatSVS prMap)
       _ <- K.addHvega Nothing Nothing vl
       return ()
-    mkDeltaTableASR locFilter  (y1, y2) = do
+    mkDeltaTableASR mr locFilter (y1, y2) = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
       brAddMarkDown $ "### " <> y1T <> "->" <> y2T
       mry1 <- knitMaybe "lookup failure in mwu"
-              $ M.lookup y1 modeledResultsASR
+              $ M.lookup y1 mr
       mry2 <- knitMaybe "lookup failure in mwu"
-              $ M.lookup y2 modeledResultsASR
+              $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
         PM.deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
       K.addColonnadeTextTable PM.deltaTableColonnade $ table
-    mkDeltaTableASE locFilter  (y1, y2) = do
+    mkDeltaTableASE mr locFilter  (y1, y2) = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
       brAddMarkDown $ "### " <> y1T <> "->" <> y2T
       mry1 <- knitMaybe "lookup failure in mwu"
-              $ M.lookup y1 modeledResultsASE
+              $ M.lookup y1 mr
       mry2 <- knitMaybe "lookup failure in mwu"
-              $ M.lookup y2 modeledResultsASE
+              $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
         PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2
       K.addColonnadeTextTable PM.deltaTableColonnade $ table
+      let greenOpinion g = g `elem` ["YoungFemaleCollegeGrad"] 
+      K.addColonnadeCellTable (BHA.style "border: 1px solid black") (PM.deltaTableColonnadeBlaze greenOpinion) table
                 
   brAddMarkDown brAcrossTimeIntro
   addParametersVsTime  modeledResultsASR
@@ -144,9 +150,9 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
   brAddMarkDown brAcrossTimeASEVoteShare           
   brAddMarkDown brAcrossTimeAfterASE            
   -- analyze results
-  mkDeltaTableASR (const True) (2012, 2016)
+  mkDeltaTableASR  modeledResultsASR  (const True) (2012, 2016)
   brAddMarkDown brAcrossTimeASR2012To2016
-  mkDeltaTableASE (const True) (2012, 2016)
+  mkDeltaTableASE  modeledResultsASE (const True) (2012, 2016)
   brAddMarkDown brAcrossTimeASE2012To2016   
 {-  brAddMarkDown voteShifts
   _ <-
@@ -179,21 +185,27 @@ post modeledResultsASR modeledResultsASE houseElectionsFrame = do
 --  brAddMarkDown "### Presidential Battleground States"
 --  _ <- mkDeltaTableASR bgOnly (2010, 2018)
 --  _ <- mkDeltaTableASE bgOnly (2010, 2018)
-  _ <- mkDeltaTableASE bgOnly (2012, 2016)
-  _ <- mkDeltaTableASE bgOnly (2016, 2018)
+  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2012, 2016)
+  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2016, 2018)
   brAddMarkDown brAcrossTimeAfterBattleground
   brAddMarkDown brReadMore
-
-
 
 brAcrossTimeIntro :: T.Text
 brAcrossTimeIntro = [i|
 
 In our previous [post][BR:2018] we introduced a
-[model][BR:Methods] which we used to infer voter
-preference for various demographic groups in the 2018 house elections, using census
-data and election results. Here we look
-at how those preferences have shifted since 2010.
+[model][BR:Methods] using census data and election results to infer voter
+preference for various demographic groups in the 2018 house elections.
+In this post we'll look back at the past few elections and examine
+how did Democrats gained and lost votes. Our key takeaway is that most
+of the change has been from people changing their minds. Demographic changes
+have created Democratic votes and there is a lot of room to gain votes via turnout as well.
+But the primary driver of election-to-election change has been voter preference.
+
+Whatever happened in the past is not a simple guide
+to the future. How we won in 2018 may not be how we win in 2019 or 2020.
+However, understanding what happened in previous elections
+is a good place to start as we look to hold and expand on the gains made in 2018.
 
 1. The Evolving Democratic Coalition
 2. Breaking Down the Changes
@@ -202,24 +214,18 @@ at how those preferences have shifted since 2010.
 
 ## The Evolving Democratic Coalition
 
-Our way of breaking down the Democratic electorate has three compoonents:
+As before, we try to understand election results by considering voter preference and turnout in various
+demographic groups.  In particular, we look at
 
 - Demographics: What are the age, sex, education level, race, etc. of the eligible voters?
 - Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?
-- Voter Preference: When people from each group vote, who are they likely to vote for?
+- Voter Preference: How likely are people from each group to vote for the Democratic candidate?
 
-and given data about the first two, we can use statistical techniques to infer the third.
-See [this post][BR:Methods] for details. Each of these can change over time.
-The demographics change as people
-move from one district to another, or age into voting eligibility, etc.
-Turnout changes as interest in the election varies and as various impediments to
-voting are put in place or removed.  And voter preference changes as well, as people
-choose different candidates and prioritize different issues.  Using the model
-we introduced in [this post][BR:2018], we can see each of these components
-separately.
-
-First, we look at the preference component broken down by age, sex and race from 2010 to 2018
-by plotting inferred national Democratic voter preference vs. year.
+Once we have some estimate of all three components and can see how they change over
+time, we can look at how votes were lost and gained by Democrats from 2010 to 2018.
+Consider a break down by age, sex and race. As was true in 2018, from 2010 to 2018, non-white
+voters vote for Democrats more than 70% of the time whereas white voters vote for Democrats
+less than 50% of the time. 
 
 [BR:2018]: <${brGithubUrl (postPath Post2018)}#>
 [BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
@@ -227,15 +233,8 @@ by plotting inferred national Democratic voter preference vs. year.
   
 brAcrossTimeASRPref :: T.Text
 brAcrossTimeASRPref = [i|
-As before, the difference in voter preference between non-white and white voters is stark.
-There is an encouraging move in white voter preference toward Democrats in 2018, though it's hard
-to compare presidential election years (2012 and 2016)
-to the mid-term years (2010, 2014, and 2018). Though turnout in 2018 was at near-presidential levels
-so 2018 may be more indicative than a typical mid-term election.
-
-We can also look at how those numbers translate to the composition of the democratic electorate
-by plotting vote-share--fraction of the total electorate--rather than preference. This allows us to
-see how many votes are coming from each group and how that has changed over time. 
+Also useful is to look at shares of the electorate rather than preference numbers.  Electorate shares
+put all three components together but make it clearer how mnay votes come from each group.
 |]
 
 brAcrossTimeASRVoteShare :: T.Text

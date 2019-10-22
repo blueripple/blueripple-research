@@ -176,8 +176,27 @@ main = do
       yearList <- knitMaybe "Failed to find a yearlist for some post name!" $ fmap (S.toList . S.unions) $ traverse (\pn -> M.lookup pn yearSets) $ posts args          
       let years      = M.fromList $ fmap (\x -> (x, x)) yearList
       
-      modeledResultsASR <- PM.modeledResults simpleAgeSexRace asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
-      modeledResultsASE <- PM.modeledResults simpleAgeSexEducation aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
+      modeledResultsASR <- PM.modeledResults simpleAgeSexRace (const True) asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
+      modeledResultsASE <- PM.modeledResults simpleAgeSexEducation (const True) aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years
+      let
+        battlegroundStates =
+          [ "NH"
+          , "PA"
+          , "VA"
+          , "NC"
+          , "FL"
+          , "OH"
+          , "MI"
+          , "WI"
+          , "IA"
+          , "CO"
+          , "AZ"
+          , "NV"
+          ]
+        bgOnly r =
+          L.elem (F.rgetField @StateAbbreviation r) battlegroundStates      
+      modeledResultsBG_ASR <- PM.modeledResults simpleAgeSexRace bgOnly asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
+      modeledResultsBG_ASE <- PM.modeledResults simpleAgeSexEducation bgOnly aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
 
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -233,7 +252,7 @@ main = do
         )
         $ WWCV.post --modeledResultsASR modeledResultsASE houseElectionsFrame
         
-      let pubP3 = Time.fromGregorian 2019 9 19  
+      let pubP3 = Time.fromGregorian 2019 10 11  
       when (PostAcrossTime `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostAcrossTime)
@@ -243,7 +262,7 @@ main = do
                          ]
           )
         )
-        $ AcrossTime.post modeledResultsASR modeledResultsASE houseElectionsFrame
+        $ AcrossTime.post modeledResultsASR modeledResultsASE modeledResultsBG_ASR modeledResultsBG_ASE houseElectionsFrame
   case eitherDocs of
     Right namedDocs -> K.writeAllPandocResultsWithInfoAsHtml
       "posts"

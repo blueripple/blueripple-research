@@ -65,6 +65,7 @@ library
                      , ad >= 3.4 && < 4.4
                      , beam-core >= 0.8.0.0
                      , beam-sqlite >= 0.4.0.0
+                     , blaze-colonnade
                      , colonnade
                      , data-default
                      , declarative

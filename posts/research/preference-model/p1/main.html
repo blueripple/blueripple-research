@@ -1,0 +1,581 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digging into 2018 -  National Voter Preference</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@4.4.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3.0.0-rc11"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@3.28.0"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex; 
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;      
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 629px) {
+     .content-wrapper {
+	 margin-left: 218px;
+	 margin-right: 218px
+     }   
+  }
+  @media screen and (max-width: 630px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }		       
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;		
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px		       
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;      		       
+  }  
+  table {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+  table th, table td {
+      border: 1px solid black;
+  }
+</style>
+
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>	
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<div class="published">September  2, 2019 </div>
+<header>
+<h1 class="title">Digging into the 2018 House Election Results</h1>
+</header>
+<p>In our first deep-dive into some modeling, we take a quick look at the 2018 house elections. What can we do with data from previous elections to guide our use of time and money in 2019 and 2020?</p>
+<ol type="1">
+<li>Estimating voter preference</li>
+<li>Who voted for Democrats and Progressives?</li>
+<li>What does this mean for 2019 and 2020?</li>
+<li>Ways to take action</li>
+<li>A note about exit polls</li>
+</ol>
+<section id="estimating-voter-preference-what-were-doing-and-why" class="level2">
+<h2>Estimating Voter Preference: What we’re doing and why</h2>
+<p>The 2018 house races were generally good for Democrats and progressives—but why? Virtually every plausible theory has at least some support: depending on which pundits and researchers you follow, you could credibly argue that <a href="https://www.vox.com/2019/4/26/18516645/2018-midterms-voter-turnout-census">turnout of young voters</a> , or <a href="https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls%3E">white women abandoning Trump</a> , or an <a href="https://www.pewresearch.org/fact-tank/2018/11/08/the-2018-midterm-vote-divisions-by-race-gender-education">underlying demographic shift toward non-white voters</a> was the main factor that propelled the Blue Wave in the midterms.</p>
+<p>But if Democrats want to solidify and extend their gains, we really want to know the relative importance of each of these factors—in other words, we want to understand election outcomes in a district or state in terms of:</p>
+<ul>
+<li>Demographics: What are the age, sex, education level, race, etc. of the eligible voters?</li>
+<li>Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?</li>
+<li>Voter Preference: When people from each group vote, who are they likely to vote for?</li>
+</ul>
+<p>It turns out that breaking this down is difficult because we don’t have all the data.</p>
+<ul>
+<li>Demographics: <a href="https://www.census.gov/programs-surveys/acs.html">Census data</a> exists for the demographic breakdown of each house district.</li>
+<li>Turnout: The <a href="https://www.census.gov/topics/public-sector/voting/data/tables.2018.html">Census</a> also publishes data containing the <em>national</em> turnout of each group in each election. This is helpful but not as geographically specific as we’d like.</li>
+<li>Preference: The <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/IG0UN2">election results</a> tell us how all those groups voted <em>in aggregate</em> in each district.</li>
+</ul>
+<p>In short, we have geographically specific information on demographics, demographically detailed but geographically general data on turnout, and demographically general but geographically specific data on voter preference.</p>
+<p><a href="https://www.edisonresearch.com/election-polling/#one">Edison Research</a> did extensive exit-polling in 2018 and, along with others, <a href="https://www.cnn.com/election/2018/exit-polls">CNN analyzed</a> this data, providing some breakdowns of voter preference in various demographic categories. <a href="https://www.vox.com/policy-and-politics/2018/11/7/18064260/midterm-elections-turnout-women-trump-exit-polls">Much reporting</a> has used these results to <a href="https://www.nytimes.com/interactive/2018/11/07/us/elections/house-exit-polls-analysis.html">discuss</a> the voter preferences of the <a href="https://www.brookings.edu/blog/the-avenue/2018/11/08/2018-exit-polls-show-greater-white-support-for-democrats/">2018 electorate</a>. However, there is <a href="https://www.nytimes.com/2014/11/05/upshot/exit-polls-why-they-so-often-mislead.html">widespread criticism</a> of exit-polling, and it may lead us astray in several ways.</p>
+<p>Is there a different way to find out which groups voted in what numbers for Democrats, without relying on exit polls?</p>
+<p>In the rest of this post, and some subsequent posts, we’ll explore one approach for using the data we have to learn something demographically specific about voter preference. That is, we’ll infer a national-level voter preference for each demographic group using the data described above. We describe the methods in detail <strong><a href="https://blueripple.github.io/research/preference-model/methods/main.html">here</a></strong>, and the <a href="https://github.com/blueripple/preference-model">data and code</a> are available at the Blue Ripple <a href="https://github.com/blueripple/Guide">github</a>.</p>
+<p>What are the odds of a voter in any of these demographic groups voting for a Democrat? Any set of voter preferences (those odds), give rise to a probability, given the turnout and demographics, of the election result we observe in a specific district. In 2018, we had 382 districts with at least one Democrat and one Republican running (and we ignore the rest, since we are only interested in the choices people make between Democrats and Republicans). We can combine all those to get the chance that a particular set of voter preferences explains all the results. From this, we can infer the most likely voter preferences. The details are spelled out in a <strong><a href="https://blueripple.github.io/research/preference-model/methods/main.html">separate post</a></strong>.</p>
+</section>
+<section id="who-voted-for-democrats-and-progressives" class="level2">
+<h2>Who Voted For Democrats and Progressives?</h2>
+<p>There are many ways to partition the electorate, e.g., age, educational attainment, race or sex. We can also group people by answers to specific questions about issues or previous votes. In subsequent posts we will look at all these possibilities, or point to other sources that do. For our first look we’re going to stick with some standard demographic groupings that originate with the <a href="https://www.census.gov/programs-surveys/acs.html">Census ACS data</a>. We’ll look first at grouping the electorate by age (old/young = over/under 45), sex (female or male), and race (non-white and white), as well as the same age and sex categories but with a split on education (non-college-grad or college-grad) instead of race.</p>
+<p>We know that these categories are oversimplifications and problematic in various ways. But we are limited to the categories the census provides and we want the number of groups to be reasonably small for this analysis to be useful.</p>
+<p>In the charts below, we show our inferred voter preference split by demographic group. We use size to indicate the number of voters in each group and the color to signify turnout. Hovering over a data point will show the numbers in detail.</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 325,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "data": {
+        "values": [
+            {
+                "Group": "OldNonWhiteFemale",
+                "D Voter Preference": 79.39588161007916,
+                "Turnout": 0.46758019873859974,
+                "Voters": 10292272,
+                "VotingAgePop": 22011778
+            },
+            {
+                "Group": "YoungNonWhiteFemale",
+                "D Voter Preference": 79.05649906708028,
+                "Turnout": 0.32404394594801517,
+                "Voters": 8518735,
+                "VotingAgePop": 26288825
+            },
+            {
+                "Group": "OldNonWhiteMale",
+                "D Voter Preference": 75.96873313257977,
+                "Turnout": 0.4269191457313465,
+                "Voters": 8015981,
+                "VotingAgePop": 18776345
+            },
+            {
+                "Group": "YoungNonWhiteMale",
+                "D Voter Preference": 75.9376808691919,
+                "Turnout": 0.25606585788561526,
+                "Voters": 6786876,
+                "VotingAgePop": 26504416
+            },
+            {
+                "Group": "OldWhiteFemale",
+                "D Voter Preference": 39.90385572852577,
+                "Turnout": 0.6417038818275507,
+                "Voters": 32147307,
+                "VotingAgePop": 50096794
+            },
+            {
+                "Group": "YoungWhiteFemale",
+                "D Voter Preference": 49.08628034398046,
+                "Turnout": 0.46918514289339297,
+                "Voters": 14938353,
+                "VotingAgePop": 31838931
+            },
+            {
+                "Group": "OldWhiteMale",
+                "D Voter Preference": 39.89336113086922,
+                "Turnout": 0.6425434705464869,
+                "Voters": 29191266,
+                "VotingAgePop": 45430803
+            },
+            {
+                "Group": "YoungWhiteMale",
+                "D Voter Preference": 50.28317590708055,
+                "Turnout": 0.4302082010917862,
+                "Voters": 14139784,
+                "VotingAgePop": 32867305
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 650,
+    "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
+    "title": "Grouped by Age, Race, and Sex",
+    "layer": [
+        {
+            "mark": {
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "Turnout",
+                    "scale": {
+                        "domain": [
+                            0.2,
+                            0.8
+                        ],
+                        "scheme": {
+                            "extent": [
+                                0.3,
+                                1
+                            ],
+                            "name": "blues"
+                        }
+                    },
+                    "type": "quantitative",
+                    "legend": {
+                        "format": "%",
+                        "gradientLength": 108.33333333333333,
+                        "formatType": "number"
+                    }
+                },
+                "size": {
+                    "field": "Voters",
+                    "scale": {
+                        "domain": [
+                            5000000,
+                            30000000
+                        ]
+                    },
+                    "type": "quantitative",
+                    "legend": {
+                        "formatType": "number"
+                    }
+                },
+                "x": {
+                    "field": "D Voter Preference",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": "Inferred (%) Likelihood of Voting Democratic"
+                    }
+                },
+                "y": {
+                    "field": "Group",
+                    "type": "ordinal",
+                    "axis": {
+                        "title": "Demographic Group"
+                    }
+                }
+            }
+        }
+    ],
+    "padding": 0
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
+<p>The most striking observation is the gap between white and non-white voters’ inferred support for Democrats in 2018. Non-whites have over 75% preference for Dems regardless of age or gender, though support is stronger among non-white female voters than non-white male voters. Inferred support from white voters in 2018 is substantially lower, roughly 40-50% across age groups and genders.</p>
+<p>Splitting instead by age, sex and education:</p>
+<figure id="figure_2">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 325,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "data": {
+        "values": [
+            {
+                "Group": "OldFemaleNonGrad",
+                "D Voter Preference": 40.92299530834026,
+                "Turnout": 0.5259507643603949,
+                "Voters": 26938104,
+                "VotingAgePop": 51217920
+            },
+            {
+                "Group": "YoungFemaleNonGrad",
+                "D Voter Preference": 47.660630689552654,
+                "Turnout": 0.31963754395455773,
+                "Voters": 12348105,
+                "VotingAgePop": 38631586
+            },
+            {
+                "Group": "OldMaleNonGrad",
+                "D Voter Preference": 38.41768899611432,
+                "Turnout": 0.505429582854956,
+                "Voters": 22261480,
+                "VotingAgePop": 44044671
+            },
+            {
+                "Group": "YoungMaleNonGrad",
+                "D Voter Preference": 45.61234613795255,
+                "Turnout": 0.2759960883628796,
+                "Voters": 12040227,
+                "VotingAgePop": 43624629
+            },
+            {
+                "Group": "OldFemaleCollegeGrad",
+                "D Voter Preference": 61.23076310153939,
+                "Turnout": 0.7148143422227893,
+                "Voters": 14932938,
+                "VotingAgePop": 20890652
+            },
+            {
+                "Group": "YoungFemaleCollegeGrad",
+                "D Voter Preference": 73.73041185805236,
+                "Turnout": 0.5533684770517967,
+                "Voters": 10788566,
+                "VotingAgePop": 19496170
+            },
+            {
+                "Group": "OldMaleCollegeGrad",
+                "D Voter Preference": 57.232968689672504,
+                "Turnout": 0.7214194256447778,
+                "Voters": 14545603,
+                "VotingAgePop": 20162477
+            },
+            {
+                "Group": "YoungMaleCollegeGrad",
+                "D Voter Preference": 78.00662550015545,
+                "Turnout": 0.531883632089333,
+                "Voters": 8375620,
+                "VotingAgePop": 15747092
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 650,
+    "$schema": "https://vega.github.io/schema/vega-lite/v3.json",
+    "title": "Grouped by Age, Sex and Education",
+    "layer": [
+        {
+            "mark": {
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "Turnout",
+                    "scale": {
+                        "domain": [
+                            0.2,
+                            0.8
+                        ],
+                        "scheme": {
+                            "extent": [
+                                0.3,
+                                1
+                            ],
+                            "name": "blues"
+                        }
+                    },
+                    "type": "quantitative",
+                    "legend": {
+                        "format": "%",
+                        "gradientLength": 108.33333333333333,
+                        "formatType": "number"
+                    }
+                },
+                "size": {
+                    "field": "Voters",
+                    "scale": {
+                        "domain": [
+                            5000000,
+                            30000000
+                        ]
+                    },
+                    "type": "quantitative",
+                    "legend": {
+                        "formatType": "number"
+                    }
+                },
+                "x": {
+                    "field": "D Voter Preference",
+                    "type": "quantitative",
+                    "axis": {
+                        "title": "Inferred (%) Likelihood of Voting Democratic"
+                    }
+                },
+                "y": {
+                    "field": "Group",
+                    "type": "ordinal",
+                    "axis": {
+                        "title": "Demographic Group"
+                    }
+                }
+            }
+        }
+    ],
+    "padding": 0
+};
+vegaEmbed('#figure_2',vlSpec);</script>
+</figure>
+<p>Here we see a large (&gt;15% point) gap between more Democratic-leaning college-educated voters and voters without a four-year degree. We also see a similar gap with age, where younger voters are 15% or so more likely to vote for Democrats.</p>
+<p>In both charts, the size of the circles reflects the number of people of voting age in each group. In 2018 Democrats won elections by winning smaller demographic groups by a large margin and losing larger demographic groups by a small margin.</p>
+<p>Often those demographically small groups also had lower turnout. One thing to focus on now is boosting turnout among the groups that are more likely to vote for Democrats:</p>
+<ul>
+<li>Non-white voters of any age, with or without a college degree</li>
+<li>Young voters of any race, especially those with a college degree or in college</li>
+<li>College educated voters of any race or age</li>
+</ul>
+</section>
+<section id="what-does-this-mean-for-2019-and-2020" class="level2">
+<h2>What does this mean for 2019 and 2020?</h2>
+<p>These charts can be viewed as pictures of the so-called Democratic “base”–voters of color and younger white voters, particularly those with a college degree. Winning more votes comes from raising turnout among that coalition <em>and</em> trying to improve Democratic voter preference with everyone else.</p>
+<p>What we really want to know is demographic voter preference at the <em>district</em> or <em>state</em> level. Most candidates win local races and, because of the <a href="https://www.nationalpopularvote.com/">electoral college</a>, presidential elections also hinge on very local outcomes. So, in the near future, we plan to investigate the issue of turnout and changing voter-preference for single states or congressional districts. We hope to use that analysis to help interested progressives discover where turnout is key vs. places where changing voter preference might be more important. Both are important everywhere, of course. But in some places, one might be a much larger source of Democratic votes.</p>
+</section>
+<section id="ways-to-take-action" class="level2">
+<h2>Ways to take Action</h2>
+<p>Democrats and progressives will benefit from get-out-the-vote work and work fighting voter suppression. Both improve turnout among the groups most likely to vote for blue candidates.</p>
+<p>We suggest that you donate your time or money to organizations fighting to improve voter access and turnout. In later posts we’ll dig into who’s doing this work at a state and local level, but here are some groups that are operating nationally.</p>
+<ul>
+<li><a href="https://www.demandthevote.com/">Demand The Vote</a> is an information clearinghouse for voter access and voting rights legislation in all 50 states.</li>
+<li><a href="https://www.whenweallvote.org/">When We All Vote</a>, Michelle Obama’s new organization, works to increase voter turnout nationally and has opportunities to volunteer and donate money.</li>
+<li>The <a href="https://www.campusvoteproject.org/why-student-voters-matter">Campus Vote Project</a> works to improve registration and turnout among college students. Students can <a href="https://www.campusvoteproject.org/sign-up">sign up</a> to work on their own campuses.</li>
+<li><a href="https://nextgenamerica.org/">Next Gen America</a> works nationally to improve youth turnout. They have a <a href="https://nextgenamerica.org/act/">variety of ways</a> you can donate time or money to the cause.</li>
+</ul>
+</section>
+<section id="a-note-about-exit-polls" class="level2">
+<h2>A Note about Exit Polls</h2>
+<p>These results are similar but markedly different from the exit polls. <strong><a href="https://blueripple.github.io/research/preference-model/p1/ExitPolls.html">This post</a></strong> has more details on that comparison.</p>
+<section id="updates" class="level3">
+<h3>Updates</h3>
+<ul>
+<li>9/26/2019: Updated demographic data from the census to the just released 2018 ACS data.</li>
+</ul>
+<p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
+</section>
+</section>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>

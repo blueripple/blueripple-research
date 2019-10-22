@@ -17,6 +17,9 @@ import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
+import qualified Text.Blaze.Colonnade          as BC
+import qualified Text.Blaze.Html               as BH
+import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
@@ -95,20 +98,23 @@ modeledResults :: ( MonadIO (K.Sem r)
                   , A.Ix b
                   , FL.Vector (F.VectorFor b) b)
                => DemographicStructure dr tr HouseElections b
+               -> (F.Record LocationKey -> Bool)
                -> F.Frame dr
                -> F.Frame tr
                -> F.Frame HouseElections 
                -> M.Map Int Int
                -> K.Sem r (M.Map Int (PreferenceResults b FV.NamedParameterEstimate))
-modeledResults ds dFrame tFrame eFrame years = flip traverse years $ \y -> do
+modeledResults ds locFilter dFrame tFrame eFrame years = flip traverse years $ \y -> do
   K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
-  preferenceModel ds y dFrame eFrame tFrame
+  preferenceModel ds locFilter y dFrame eFrame tFrame
 
 -- PreferenceResults to list of group names and predicted D votes
 -- But we want them as a fraction of D/D+R
+data VoteShare = ShareOfAll | ShareOfD
+
 modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
-  => PreferenceResults b FV.NamedParameterEstimate -> [(T.Text, Double)]
-modeledDVotes pr =
+  => VoteShare -> PreferenceResults b FV.NamedParameterEstimate -> [(T.Text, Double)]
+modeledDVotes vs pr =
   let
     summed = FL.fold
              (votesAndPopByDistrictF @b)
@@ -125,7 +131,9 @@ modeledDVotes pr =
       * (turnoutArray A.! b)
       * (FV.value . FV.pEstimate $ (modeled pr) A.! b)
     allPredictedD = FL.fold FL.sum $ fmap dVotes [minBound..maxBound]
-    scale = (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))/allPredictedD      
+    scale = case vs of
+      ShareOfAll -> (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))/allPredictedD
+      ShareOfD -> 1/allPredictedD
   in
     fmap (\b -> (T.pack $ show b, scale * dVotes b))
     [(minBound :: b) .. maxBound]
@@ -270,6 +278,24 @@ deltaTableColonnade =
     <> C.headed "+/- Total (k)" (T.pack . show . (`div` 1000) . dtrTotal)
     <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (* 100) . dtrPct)
 
+deltaTableColonnadeBlaze :: (T.Text -> Bool) -> C.Colonnade C.Headed DeltaTableRow BC.Cell
+deltaTableColonnadeBlaze opinionGreen =
+  let normalCell = BC.Cell (BHA.style "border: 1 px solid black") . BH.toHtml
+      greenText = BC.Cell (BHA.style "border: 1 px solid black; text: green") . BH.toHtml
+  in C.headed "Group" (normalCell . dtrGroup)
+     <> C.headed "Population (k)" (normalCell . T.pack . show . (`div` 1000) . dtrPop)
+     <>  C.headed "+/- From Population (k)"
+     (normalCell. T.pack . show . (`div` 1000) . dtrFromPop)
+     <> C.headed "+/- From Turnout (k)"
+     (normalCell . T.pack . show . (`div` 1000) . dtrFromTurnout)
+     <> C.headed "+/- From Opinion (k)"
+     (\tr -> (if opinionGreen (dtrGroup tr) then greenText else normalCell) . T.pack . show . (`div` 1000) $ dtrFromOpinion tr)
+     <> C.headed "+/- Total (k)" (normalCell . T.pack . show . (`div` 1000) . dtrTotal)
+     <> C.headed "+/- %Vote" (normalCell . T.pack . PF.printf "%2.2f" . (* 100) . dtrPct)
+
+
+
+     
 type X = "X" F.:-> Double
 type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
@@ -323,6 +349,7 @@ preferenceModel
      , MonadIO (K.Sem r)
      )
   => DemographicStructure dr tr HouseElections b
+  -> (F.Record LocationKey -> Bool)
   -> Int
   -> F.Frame dr
   -> F.Frame HouseElections
@@ -330,11 +357,12 @@ preferenceModel
   -> K.Sem
        r
        (PreferenceResults b FV.NamedParameterEstimate)
-preferenceModel ds year identityDFrame houseElexFrame turnoutFrame =
+preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
   do
     -- reorganize data from loaded Frames
-    resultsFlattenedFrame <- knitX
+    resultsFlattenedFrameFull <- knitX
       $ (dsPreprocessElectionData ds) year houseElexFrame
+    let resultsFlattenedFrame = F.filterFrame (locFilter . F.rcast) resultsFlattenedFrameFull  
     filteredTurnoutFrame <- knitX
       $ (dsPreprocessTurnoutData ds) year turnoutFrame
     let year' = year --if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data

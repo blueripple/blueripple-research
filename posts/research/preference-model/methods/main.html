@@ -1,0 +1,258 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inferred Preference Model: Methods & Sources</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@4.4.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3.0.0-rc11"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@3.28.0"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex; 
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;      
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 629px) {
+     .content-wrapper {
+	 margin-left: 218px;
+	 margin-right: 218px
+     }   
+  }
+  @media screen and (max-width: 630px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }		       
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;		
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px		       
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;      		       
+  }  
+  table {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+  table th, table td {
+      border: 1px solid black;
+  }
+</style>
+
+<script src="" type="text/javascript"></script>
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>	
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<div class="published">September  2, 2019 </div>
+<section id="preference-model-notes" class="level2">
+<h2>Preference-Model Notes</h2>
+<p>Our goal is to use the house election results<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> to fit a very simple model of the electorate. We consider the electorate as having some number of “identity” groups. For example we could divide by sex (the census only records this as a F/M binary), age, “old” (45 or older) and “young” (under 45) and education (college graduates vs. non-college graduate) or racial identity (white vs. non-white). We recognize that these categories are limiting and much too simple. But we believe it’s a reasonable starting point, a balance between inclusiveness and having way too many variables.</p>
+<p>For each congressional district where both major parties ran candidates, we have census estimates of the number of people in each of our demographic categories<a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>. And from the census we have national-level turnout estimates for each of these groups as well<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>.</p>
+<p>All we can observe is the <strong>sum</strong> of all the votes in the district, not the ones cast by each group separately. But each district has a different demographic makeup and so each is a distinct piece of data about how each group is likely to vote.</p>
+<p>The turnout numbers from the census are national averages and aren’t correct in any particular district. Since we don’t have more detailed turnout data, there’s not much we can do. But we do know the total number of votes observed in each district, and we should at least adjust the turnout numbers so that the total number of votes predicted by the turnout numbers and populations is close to the observed number of votes. For more on this adjustment, see below.</p>
+<p>How likely is a voter in each group to vote for the democratic candidate in a contested race?</p>
+<p>For each district, <span class="math inline">\(d\)</span>, we have the set of expected voters (the number of people in each group, <span class="math inline">\(i\)</span> in that region, <span class="math inline">\(N^{(d)}_i\)</span>, multiplied by the turnout, <span class="math inline">\(t_i\)</span> for that group), <span class="math inline">\(V^{(d)}_i\)</span>, the number of democratic votes, <span class="math inline">\(D^{(d)}\)</span>, republican votes, <span class="math inline">\(R^{(d)}\)</span> and total votes, <span class="math inline">\(T^{(d)}\)</span>, which may exceed <span class="math inline">\(D^{(d)} + R^{(d)}\)</span>, since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. We want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter (in any district) in the <span class="math inline">\(i\)</span>th group–given that they voted for a republican or democrat–will vote for the democratic candidate.</p>
+<p>the turnout numbers from the census, , multiplied by the poopulations of each group will <em>not</em> add up to the number of votes observed, since turnout varies district to district. We adjust these turnout numbers via a technique<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> from <a href="http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf">Ghitza and Gelman, 2013</a>.</p>
+<ul>
+<li><p><a href="%3Chttps://en.wikipedia.org/wiki/Bayes%27_theorem">Bayes theorem</a> relates the probability of a model (our demographic voting probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D^{(d)}\}\)</span>) to the likelihood of observing that data given the model and some prior knowledge about the unconditional probability of the model itself <span class="math inline">\(P(\{p_i\})\)</span>, as well as <span class="math inline">\(P(\{D^{(d)}\})\)</span>, the unconditional probability of observing the “evidence”: <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D^{(d)})P(\{D^{(d)}\}) = P(\{D^{(d)}\}|\{p_i\})P(\{p_i\}) \end{equation}\)</span> In this situation, the thing we wish to compute, <span class="math inline">\(P(\{p_i\}|\{D^{(d)}\})\)</span>, is referred to as the “posterior” distribution.</p></li>
+<li><p><span class="math inline">\(P(\{p_i\})\)</span> is called a “prior” and amounts to an assertion about what we think we know about the parameters before we have seen any of the data. In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any <span class="math inline">\(p_i \in [0,1]\)</span> is equally likely.</p></li>
+<li><p><span class="math inline">\(P(\{D^{(d)}\})\)</span> is the unconditional probability of observing the specific outcome <span class="math inline">\(\{D^{(d)}\}\)</span>, that is, the specific set of election results we observe. This is difficult to compute! Sometimes we can compute it by observing: <span class="math inline">\(\begin{equation} P(\{D^{(d)}\}) = \sum_{\{p_i\}} P(\{D^{(d)}\}|\{p_i\}) P(\{p_i\}) \end{equation}\)</span>. But in general, we’d like to compute the posterior in some way that avoids needing the probability of the evidence.</p></li>
+<li><p><span class="math inline">\(P(\{D^{(d)}\}|\{p_i\})\)</span>, the probability that we observed our evidence (the election results), <em>given</em> a specific set <span class="math inline">\(\{p_i\}\)</span> of voter preferences is a thing we can calculate: Our <span class="math inline">\(p_i\)</span> are the probability that one voter of type <span class="math inline">\(i\)</span>, who votes for a democrat or republican, chooses the democrat. We <em>assume</em>, for the sake of simplicity, that for each demographic group <span class="math inline">\(i\)</span>, each voter’s vote is like a coin flip where the coin comes up “Democrat” with probability <span class="math inline">\(p_i\)</span> and “Republican” with probability <span class="math inline">\(1-p_i\)</span>. This distribution of single voter outcomes is known as the <a href="https://en.wikipedia.org/wiki/Bernoulli_distribution">Bernoulli distribution.</a>. Given <span class="math inline">\(V_i\)</span> voters of that type, the distribution of democratic votes <em>from that type of voter</em> is <a href="https://en.wikipedia.org/wiki/Binomial_distribution">Binomial</a> with <span class="math inline">\(V_i\)</span> trials and <span class="math inline">\(p_i\)</span> probability of success. But <span class="math inline">\(V_i\)</span> is quite large! So we can approximate this with a normal distribution with mean <span class="math inline">\(V_i p_i\)</span> and variance <span class="math inline">\(V_i p_i (1 - p_i)\)</span> (see <a href="https://en.wikipedia.org/wiki/Binomial_distribution#Normal_approximation">Wikipedia</a>). However, we can’t observe the number of votes from just one type of voter. We can only observe the sum over all types. Luckily, the sum of normally distributed random variables follows a normal distribution as well. So the distribution of democratic votes across all types of voters is also approximately normal, with mean <span class="math inline">\(\sum_i V_i p_i\)</span> and variance <span class="math inline">\(\sum_i V_i p_i (1 - p_i)\)</span> (again, see <a href="https://en.wikipedia.org/wiki/Sum_of_normally_distributed_random_variables">Wikipedia</a>). Thus we have <span class="math inline">\(P(D^{(d)}|\{p_i\})\)</span>, or, more precisely, its probability density. But that means we also know the probability density of all the evidence given <span class="math inline">\(\{p_i\}\)</span>, <span class="math inline">\(\rho(\{D^{(d)}\}|\{p_i\})\)</span>, since that is just the product of the densities for each district: <span class="math inline">\(\begin{equation} \mu^{(d)}(\{p_i\}) = \sum_i V_i p_i\\ v^{(d)}(\{p_i\}) = \sum_i V_i p_i (1 - p_i)\\ \rho(D^{(d)}|\{p_i\}) = \frac{1}{\sqrt{2\pi v^{(d)}}}e^{-\frac{(D^{(d)} -\mu^{(d)}(\{p_i\}))^2}{2v^{(d)}(\{p_i\})}}\\ \rho(\{D^{(d)}\}|\{p_i\}) = \Pi^{(d)} \rho(D^{(d)}|\{p_i\}) \end{equation}\)</span></p></li>
+<li><p>Now that we have this probability density, we want to look for the set of voter preferences which maximizes it. There are many methods to do this but in this case, because the distribution has a simple shape, and we can compute its gradient, a good numerical optimizer is all we need. That gives us maximum-likelihood estimates and covariances among the estimated parameters.</p></li>
+</ul>
+<p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
+</section>
+<section class="footnotes" role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p>MIT Election Data and Science Lab, 2017 , “U.S. House 1976–2018” , https://doi.org/10.7910/DVN/IG0UN2 , Harvard Dataverse, V3 , UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2" role="doc-endnote"><p>Source: US Census, American Community Survey <a href="https://www.census.gov/programs-surveys/acs.html" class="uri">https://www.census.gov/programs-surveys/acs.html</a><a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3" role="doc-endnote"><p>Source: US Census, Voting and Registration Tables <a href="https://www.census.gov/topics/public-sector/voting/data/tables.2014.html" class="uri">https://www.census.gov/topics/public-sector/voting/data/tables.2014.html</a>. NB: We are using 2017 demographic population data for our 2018 analysis, since that is the latest available from the census. We will update this once the census publishes updated 2018 American Community Survey data.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4" role="doc-endnote"><p>We note that there is an error in the 2013 Ghitza and Gelman paper, one which is corrected in a more recent working paper <a href="http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf" class="uri">http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf</a>. by the same authors. In the 2013 paper, a correction is derived for turnout in each region by find the <span class="math inline">\(delta^{(d)}\)</span> which minimizes <span class="math inline">\(big|T^{(d)} -sum_i N^{(d)}_i logit^{-1}(logit(t_i) + delta^{(d)})big|\)</span>. The authors then state that the adjusted turnout in region <span class="math inline">\(d\)</span> is <span class="math inline">\(hat{t}^{(d)}_i = t_i + delta^{(d)}\)</span> which doesn’t make sense since <span class="math inline">\(delta^{(d)}\)</span> is not a probability. This is corrected in the working paper to <span class="math inline">\(hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + delta^{(d)})\)</span>.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>
