@@ -1,14 +1,15 @@
+{-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
-{-# LANGUAGE AllowAmbiguousTypes       #-}
-{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module BlueRipple.Model.Preference where
@@ -278,26 +279,41 @@ deltaTableColonnade =
     <> C.headed "+/- Total (k)" (T.pack . show . (`div` 1000) . dtrTotal)
     <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (* 100) . dtrPct)
 
-deltaTableColonnadeBlaze :: (T.Text -> Bool) -> C.Colonnade C.Headed DeltaTableRow BC.Cell
-deltaTableColonnadeBlaze opinionHighlight =
-  let normalCell = BC.Cell (BHA.style "border: 1 px solid black") . BH.toHtml
-      numberCell printFmt highlight x =
-        let border = if highlight
-                     then "border: 3px solid blue"
-                     else "border: 1px solid black"
-        in if x >= 0
-           then BC.Cell (BHA.style $ border <> "; color: green;") . BH.toHtml . T.pack $ PF.printf printFmt x
-           else BC.Cell (BHA.style $ border <> "; color: red;") . BH.toHtml . T.pack $ PF.printf ("(" ++ printFmt ++ ")") (negate x)       
-  in C.headed "Group" (normalCell . dtrGroup)
-     <> C.headed "Population (k)" (normalCell . T.pack . show . (`div` 1000) . dtrPop)
+
+data CellStyle row col = CellStyle (row -> col -> T.Text)
+instance Semigroup (CellStyle r c) where
+  (CellStyle f) <> (CellStyle g) = CellStyle (\r c -> f r c <> "; " <> g r c)
+
+instance Semigroup (CellStyle r c) => Monoid (CellStyle r c) where
+  mempty = CellStyle (\r c -> "")
+  mappend = (<>)
+
+toCell :: CellStyle row col -> col -> (row -> (BH.Html, T.Text)) -> row -> BC.Cell
+toCell (CellStyle csF) c toHtml r =
+  let (html, style) = toHtml r
+  in BC.Cell (BHA.style $ BH.toValue $ (csF r c) <> "; " <> style) html
+
+normalCell :: T.Text = "border: 1px solid black"
+totalCell :: T.Text = "border: 2px solid black"
+highlightCell :: T.Text = "border: 3px solid blue"
+
+deltaTableColonnadeBlaze :: CellStyle DeltaTableRow T.Text -> C.Colonnade C.Headed DeltaTableRow BC.Cell
+deltaTableColonnadeBlaze cas =
+  let numberToHtml printFmt x = if x >= 0
+           then (BH.toHtml . T.pack $ PF.printf printFmt x, "color: green")
+           else (BH.toHtml . T.pack $ PF.printf ("(" ++ printFmt ++ ")") (negate x), "color: red")
+      plainToHtml x = (BH.toHtml x, mempty)          
+  in C.headed "Group" (toCell cas "Group" (plainToHtml . dtrGroup))
+     <> C.headed "Population (k)" (toCell cas "Population" (plainToHtml . (`div` 1000) . dtrPop))
      <>  C.headed "+/- From Population (k)"
-     (numberCell "%.0d" False . (`div` 1000) . dtrFromPop)
+     (toCell cas "FromPop" (numberToHtml "%d" . (`div` 1000) . dtrFromPop))
      <> C.headed "+/- From Turnout (k)"
-     (numberCell "%.0d" False . (`div` 1000) . dtrFromTurnout)
+     (toCell cas "FromTurnout" (numberToHtml "%d" . (`div` 1000) . dtrFromTurnout))
      <> C.headed "+/- From Opinion (k)"
-     (\tr -> (numberCell "%.0d" (opinionHighlight (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
-     <> C.headed "+/- Total (k)" (numberCell "%.0d" False . (`div` 1000) . dtrTotal)
-     <> C.headed "+/- %Vote" (numberCell "%2.2f" False . (* 100) . dtrPct)
+     (toCell cas "FromOpinion" (numberToHtml "%d" .  (`div` 1000) . dtrFromOpinion))
+--     (\tr -> (numberCell "%.0d" (opinionHighlight (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
+     <> C.headed "+/- Total (k)" (toCell cas "Total" (numberToHtml "%d" . (`div` 1000) . dtrTotal))
+     <> C.headed "+/- %Vote" (toCell cas "PctVote" (numberToHtml "%2.2f" . (* 100) . dtrPct))
      
 type X = "X" F.:-> Double
 type ScaledDVotes = "ScaledDVotes" F.:-> Int

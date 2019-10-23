@@ -52,11 +52,12 @@ import PreferenceModel.Common
 post :: K.KnitOne r
      => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
      -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
-     -> M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
+{-     -> M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
      -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+-}
      -> F.Frame HouseElections
      -> K.Sem r ()
-post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE houseElectionsFrame = do  
+post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_ASE-} houseElectionsFrame = do  
             -- arrange data for vs time plot
   let flattenOneF y = FL.Fold
         (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
@@ -117,37 +118,48 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
                (vDatSVS prMap)
       _ <- K.addHvega Nothing Nothing vl
       return ()
-    mkDeltaTableASR mr locFilter (y1, y2) mRows greenOpinionGroups = do
+    mkDeltaTableASR mr locFilter (y1, y2) = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
-      brAddMarkDown $ "### " <> y1T <> "->" <> y2T
       mry1 <- knitMaybe "lookup failure in mwu"
               $ M.lookup y1 mr
       mry2 <- knitMaybe "lookup failure in mwu"
               $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
         PM.deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
-      let table' = case mRows of
-            Nothing -> table
-            Just n -> take n $ FL.fold FL.list table
-      let greenOpinion g = g `elem` greenOpinionGroups           
-      brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze greenOpinion)  $ table'
-    mkDeltaTableASE mr locFilter  (y1, y2) mRows greenOpinionGroups = do
+      return table
+    mkDeltaTableASE mr locFilter  (y1, y2) = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
-      brAddMarkDown $ "### " <> y1T <> "->" <> y2T
       mry1 <- knitMaybe "lookup failure in mwu"
               $ M.lookup y1 mr
       mry2 <- knitMaybe "lookup failure in mwu"
               $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
-        PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2        
+        PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2
+      return table
+{-      
       let table' = case mRows of
             Nothing -> table
             Just n -> take n $ FL.fold FL.list table
       let greenOpinion g = g `elem` greenOpinionGroups
       brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze greenOpinion) table
-        
+-}
+  let emphasizeTotalRow =
+        PM.CellStyle (\r _ -> if  (PM.dtrGroup r == "Total") then PM.totalCell else "")
+      highlightRows groups =
+        PM.CellStyle (\r _ -> if (PM.dtrGroup r `elem` groups) then PM.highlightCell else "")      
+      highlightOpinionCellFor groups =
+        PM.CellStyle (\r c -> if (c == "FromOpinion") && (PM.dtrGroup r `elem` groups) then PM.highlightCell else "")      
+
+      cStyles hgs ogs = mconcat [emphasizeTotalRow, highlightRows hgs, highlightOpinionCellFor ogs]      
+
+  ase20122016Table <- mkDeltaTableASE  modeledResultsASE (const True) (2012, 2016)
+  ase20162018Table <- mkDeltaTableASE  modeledResultsASE (const True) (2016, 2018)
+  ase20142018Table <- mkDeltaTableASE  modeledResultsASE (const True) (2014, 2018)
+  ase20102018Table <- mkDeltaTableASE  modeledResultsASE (const True) (2010, 2018)
+  asr20102018Table <- mkDeltaTableASR  modeledResultsASR (const True) (2010, 2018)  
+
   brAddMarkDown brAcrossTimeIntro
   addParametersVsTime  modeledResultsASR
   brAddMarkDown brAcrossTimeASRPref
@@ -156,14 +168,25 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
   addParametersVsTime  modeledResultsASE
   brAddMarkDown brAcrossTimeASEPref
   addStackedArea modeledResultsASE
-  brAddMarkDown brAcrossTimeASEVoteShare           
+  brAddMarkDown brBreakingDownTheChanges
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) (take 1 $ FL.fold FL.list ase20162018Table)
+  brAddMarkDown brAcrossTimeASRRow
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) ase20162018Table
+  brAddMarkDown brAcrossTimeTables
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) ase20102018Table
+  brAddMarkDown brAcrossTimeASRTable
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) asr20102018Table
+  brAddMarkDown brAcrossTimeTableSummary
+  
+  {-
   brAddMarkDown brAcrossTimeAfterASE
   -- one row to talk about
-  mkDeltaTableASR modeledResultsASR  (const True) (2012, 2016) (Just 1) []
   -- analyze results
-  mkDeltaTableASR  modeledResultsASR  (const True) (2012, 2016) Nothing []
+  
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) asr20122016Table
   brAddMarkDown brAcrossTimeASR2012To2016
-  mkDeltaTableASE  modeledResultsASE (const True) (2012, 2016) Nothing ["YoungFemaleCollegeGrad"]
+  ase20122016Table <- mkDeltaTableASE modeledResultsASE  (const True) (2012, 2016)
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles ["OldMaleNonGrad"] ["YoungFemaleCollegeGrad"])) ase20122016Table
   brAddMarkDown brAcrossTimeASE2012To2016   
 {-  brAddMarkDown voteShifts
   _ <-
@@ -196,11 +219,12 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
 --  brAddMarkDown "### Presidential Battleground States"
 --  _ <- mkDeltaTableASR bgOnly (2010, 2018)
 --  _ <- mkDeltaTableASE bgOnly (2010, 2018)
-  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2012, 2016) Nothing []
-  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2016, 2018) Nothing []
+  
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) bgASE20122016Table
+  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) bgASE20142018Table
   brAddMarkDown brAcrossTimeAfterBattleground
   brAddMarkDown brReadMore
-
+-}
 brAcrossTimeIntro :: T.Text
 brAcrossTimeIntro = [i|
 
@@ -211,29 +235,24 @@ In this post we'll look back to 2010, examining how Democrats gained and lost vo
 
 From our analysis it appears that most of the election-to-election change in voteshare
 is driven by changes in voter preference rather than demographics or turnout.
-We see a long-term demographic shift which currenty favors Democrats. And we observe that many
-demographic groups which vote heavily for Democrats have comparitively low turnout,
-something important to address via the fight against voter suppression, and voter outreach,
-especially to young voters.
+We do see a long-term demographic shift which currenty favors Democrats. 
 
-Whatever happened in the past is not a simple guide
-to the future. 2020 will not be a repeat of 2016 or 2018.
+Whatever happened in the past is likely not predictive.
+2020 will not be a repeat of 2016 or 2018.
 However, understanding what happened in previous elections
 is a good place to start as we look to hold and expand on the gains made in 2018.
 
 1. The Evolving Democratic Coalition
 2. Breaking Down the Changes
-3. What Happened in the Battleground States?
-4. Take Action
+3. Take Action 
 
 ## The Evolving Democratic Coalition
 
-From 2010 to 2018, non-white voters were consistenly highly likely to vote for Democrats,
+From 2010 to 2018, non-white voters were highly likely to vote for Democrats,
 with a >75% Democratic voter preference throughout all those elections. 
-By contrast, white-voters are more likely to vote for Republicans,
+By contrast, white voters are more likely to vote for Republicans,
 remaining between 40% and 45% throughout, with a low in 2016 and an encouraging uptick in
 2018.
-
 
 [BR:2018]: <${brGithubUrl (postPath Post2018)}#>
 [BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
@@ -242,67 +261,127 @@ remaining between 40% and 45% throughout, with a low in 2016 and an encouraging 
 brAcrossTimeASRPref :: T.Text
 brAcrossTimeASRPref = [i|
 There are more white than non-white
-voters---though see below for that is changing over time--and
+voters---though that is changing, see below--and
 white voters have higher overall turnout.  So it's
 also useful to look at shares of the Democratic electorate,
 that is, fractions of Democratic votes, 
-rather than preference numbers.  Electorate shares
-put all three components together but make it clearer how many votes come from each group.
-Though non-white voters are overwhelmingly democratic, they make up only about 40%
-of the votes Democrats get in any election.
+rather than preference numbers.  Though non-white voters are overwhelmingly democratic,
+they make up only about 40% of the votes Democrats get in any election.
 |]
 
 brAcrossTimeASRVoteShare :: T.Text
 brAcrossTimeASRVoteShare = [i|
 Grouping by educational attainment, age and sex, we a different picture of the
-Democratic electorate.  Here we see the young college graduates are strongly
-Democratic and older female college graduates are also consitent Democratic voters,
+Democratic electorate.  Young college graduates are strongly
+Democratic and older female college graduates are also consistent Democratic voters,
 though less strongly than their young counterparts.  Older college-educated
-men were Republican leaning until 2018 when they shifted to support the Democrats.
-By contrast, older people without a 4-year-degree are Republican leaning throughout
-and young people without a 4-year-degree favored Democrats through 2012 but have
-shifted to favor Republicans since, continuing that shift from 2016 to 2018.
+men were Republican leaning until 2018 when they shifted to slight support
+of the Democrats. We also see a very distinct shift:
+beginning sometime after the 2012 election
+college-educated voters become more likely to vote for Democrats and
+non-college-educated voters become more likely to vote for Republicans.
 
 When we looked at the breakdown by race rather than educational attainment, it
 looked as if Democrats had gained with all groups from 2016 to 2018.  But looking
 at educational attainment, it's clear that Democrats lost ground with
 non-college-educted people. Though the census data is not granular enough for us to
 do the same analysis broken down by race *and* educational attainment, it seems likely
-that the Democratic losses are largely with white non-college-educated voters, the
+that the Democratic losses between 2016 and 2018 are largely
+with white non-college-educated voters, the
 so-called "White Working Class", something we discuss in some
 detail in [another post][BR:WWC].
 
-[BR:2018]: <${brGithubUrl (postPath PostWWCV)}#>
+[BR:WWC]: <${brGithubUrl (postPath PostWWCV)}#>
 |]
 
 brAcrossTimeASEPref :: T.Text
 brAcrossTimeASEPref = [i|
-This shows a very distinct shift toward Democrats of college-educated voters in 2018
-and an equally distinct shift toward Republicans of non-college-educated voters in 2014.  
-
-In terms of vote-share:
+It's useful as before to also look at vote share.  Here the Democratic and
+Republican supporting groups are of about equal size in terms of their
+contribution to the electorate, with higher turnout among college graduates
+making up for their smaller share of the population.
 |]
 
-brAcrossTimeASEVoteShare :: T.Text
-brAcrossTimeASEVoteShare = [i|
-Again we see that, in terms of these groups,
-the Democratic coalition is made up of a large number
-of votes from groups that are not majority democratic voters and smaller
-numbers of votes from many groups which do tend to vote for Democrats.
-
-Also of note in both vote-share charts is the tendency of Democratic vote-share
-to fall off in mid-term years, except for 2018.  That's something to keep in
-mind and work against in 2022!
-
+brBreakingDownTheChanges :: T.Text
+brBreakingDownTheChanges = [i|
 ## Breaking Down The Changes
 
-One way to look at all this data is to break-down the changes in
-total Democratic votes in each group into our 3 categories: demographics, turnout
-and preference. 
-For example, the following table illustrates the age/sex/race break-down in the loss of
-democratic votes between 2012 and 2016:
+People tell various stories about how elections are won or lost.  For example,
+one story about the 2018 blue wave is that disaffected Republican voters stayed home,
+while energized Democratic voters turned out in unexpected numbers.  Another story
+is that turnout was fairly stable while large numbers of voters changed their votes.
+We think there is a grain of truth in the first story but that the second is more
+convincing.  To see why, we're going to look at some tables which break down the changes
+in *Democratic* votes by our three factors: demographics, turnout and preference.  Before
+we dive in, let's consider just one row of such a table,
+looking at changes from 2016 to 2018:
 |]
 
+brAcrossTimeASRRow :: T.Text
+brAcrossTimeASRRow = [i|
+In the first column we have the name of the demographic group, here "OldFemaleNonGrad", then
+the population in the ending year.  After that we have the change in Democratic votes coming
+from changes in population.  One important note here:  if this is a group that votes
+for Democrats on average, increases in population lead to increases in Democratic votes
+and a positive number in this column.
+But if this is a group that votes *against* Democrats, an increase in population is a *net loss*
+of Democratic votes and the number in this column will be negative. The next number is the change
+in votes coming from changes in turnout.  Again, increased turnout may lead to a positive or
+negative number here, depending on whether the group is more likely to vote for Democrats or Republicans.
+The next column indicates votes gained or lost from shifts in voter preference.  The last two columns
+are the total votes gained or lost and that total expressed as a % of the total electorate.
+
+In particular, older female non-college-educated voters are a group that consistently
+votes against Democrats. There were more such voters in 2018 than in 2016 and that cost
+120,000 net votes.  But that group had lower turnout in 2018 and that gained almost
+700,000 net votes.  However, those voters became more Republican between 2016 and 2018
+and that cost a net of 750,000 votes. Putting that all together, Democrats had a net loss
+of 120,000 votes among older, female, non-college educated voters between 2016 and 2018.
+
+Looking at all the groups together tells a more complete story. One thing that jumps out
+is that overall, turnout *was not* a big mover of votes.  Some Democratic
+votes were gained by a drop
+in turnout among older non-college-educated voters but a similar number of Democratic
+votes were lost by lower turnout among young college-educated voters.  Similarly,
+demographic shifts play a role---net gains among college-graduates outpace the aging of the
+non-college-educated groups---but a small one. Nearly all the Democratic vote gains arise
+from changes in voter preference.
+|]
+
+brAcrossTimeTables :: T.Text
+brAcrossTimeTables = [i|
+It's instructive to look at the same groups but this time examining the changes from
+2010 through 2018.  Here we see that voter preference also plays the largest role.  Over this
+time range demographics begins to play a larger role as well.  More people are getting
+college degrees and that increasing the size of the college-educated electorate, which
+benefits Democrats on average.  Again, the turnout changes are fairly small across
+all groups.  
+|]
+
+brAcrossTimeASRTable :: T.Text
+brAcrossTimeASRTable = [i|
+And it's worthwhile to look at these longer term changes by race as well as by educational attainment.
+Again we see that voter preference plays the largest role and that demographics is significant.
+One distinction here is a noticeable trend to higher turnout but one which is more pronounced among non-white
+voters, leading to a net gain of Democratic votes.
+|]
+
+brAcrossTimeTableSummary :: T.Text
+brAcrossTimeTableSummary = [i|
+A few conclusions are worth emphasizing. In our analysis, the blue wave
+was produced by voters who preferred Republicans in 2016,
+shifting toward Democrats in 2018.
+We also see that current demographic shifts, both in average educational attainment
+and non-white vs. white voters lead to more Democratic votes.  Turnout shifts are also
+largely good for Democrats.
+|]
+  
+brAcrossTimeTakeAction :: T.Text
+brAcrossTimeTakeAction = [i|
+## Take Action
+
+|]
+  
 brAcrossTimeASR2012To2016 :: T.Text  
 brAcrossTimeASR2012To2016 = [i|
 The loss of Democratic votes comes almost entirely from shifts in opinion among

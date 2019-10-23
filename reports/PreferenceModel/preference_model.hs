@@ -118,8 +118,6 @@ main = do
            { PA.readerStandalone = True
            , PA.readerExtensions = PA.enableExtension PA.Ext_smart
                                    . PA.enableExtension PA.Ext_raw_html
-                                   . PA.enableExtension PA.Ext_backtick_code_blocks
-                                   . PA.enableExtension PA.Ext_raw_attribute
                                    $ exts
            }
       brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
@@ -197,10 +195,10 @@ main = do
           , "AZ"
           , "NV"
           ]
-        bgOnly r =
-          L.elem (F.rgetField @StateAbbreviation r) battlegroundStates      
-      modeledResultsBG_ASR <- PM.modeledResults simpleAgeSexRace bgOnly asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
-      modeledResultsBG_ASE <- PM.modeledResults simpleAgeSexEducation bgOnly aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
+--        bgOnly r =
+--          L.elem (F.rgetField @StateAbbreviation r) battlegroundStates      
+--      modeledResultsBG_ASR <- PM.modeledResults simpleAgeSexRace bgOnly asrDemographicsFrame asrTurnoutFrame houseElectionsFrame years 
+--      modeledResultsBG_ASE <- PM.modeledResults simpleAgeSexEducation bgOnly aseDemographicsFrame aseTurnoutFrame houseElectionsFrame years 
 
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -266,7 +264,7 @@ main = do
                          ]
           )
         )
-        $ AcrossTime.post modeledResultsASR modeledResultsASE modeledResultsBG_ASR modeledResultsBG_ASE houseElectionsFrame
+        $ AcrossTime.post modeledResultsASR modeledResultsASE {-modeledResultsBG_ASR modeledResultsBG_ASE-} houseElectionsFrame
   case eitherDocs of
     Right namedDocs -> K.writeAllPandocResultsWithInfoAsHtml
       "posts"
