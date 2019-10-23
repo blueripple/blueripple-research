@@ -207,14 +207,17 @@ brAcrossTimeIntro = [i|
 In our previous [post][BR:2018] we introduced a
 [model][BR:Methods] using census data and election results to infer voter
 preference for various demographic groups in the 2018 house elections.
-In this post we'll look back at the past few elections and examine
-how did Democrats gained and lost votes. Our key takeaway is that most
-of the change has been from people changing their minds. Demographic changes
-have created Democratic votes and there is a lot of room to gain votes via turnout as well.
-But the primary driver of election-to-election change has been voter preference.
+In this post we'll look back to 2010, examining how Democrats gained and lost votes.
+
+From our analysis it appears that most of the election-to-election change in voteshare
+is driven by changes in voter preference rather than demographics or turnout.
+We see a long-term demographic shift which currenty favors Democrats. And we observe that many
+demographic groups which vote heavily for Democrats have comparitively low turnout,
+something important to address via the fight against voter suppression, and voter outreach,
+especially to young voters.
 
 Whatever happened in the past is not a simple guide
-to the future. How we won in 2018 may not be how we win in 2019 or 2020.
+to the future. 2020 will not be a repeat of 2016 or 2018.
 However, understanding what happened in previous elections
 is a good place to start as we look to hold and expand on the gains made in 2018.
 
@@ -225,18 +228,12 @@ is a good place to start as we look to hold and expand on the gains made in 2018
 
 ## The Evolving Democratic Coalition
 
-As before, we try to understand election results by considering voter preference and turnout in various
-demographic groups.  In particular, we look at
+From 2010 to 2018, non-white voters were consistenly highly likely to vote for Democrats,
+with a >75% Democratic voter preference throughout all those elections. 
+By contrast, white-voters are more likely to vote for Republicans,
+remaining between 40% and 45% throughout, with a low in 2016 and an encouraging uptick in
+2018.
 
-- Demographics: What are the age, sex, education level, race, etc. of the eligible voters?
-- Turnout: For each demographic group, what fraction of those eligible to vote cast votes on election day?
-- Voter Preference: How likely are people from each group to vote for the Democratic candidate?
-
-Once we have some estimate of all three components and can see how they change over
-time, we can look at how votes were lost and gained by Democrats from 2010 to 2018.
-Consider a break down by age, sex and race. As was true in 2018, from 2010 to 2018, non-white
-voters vote for Democrats more than 70% of the time whereas white voters vote for Democrats
-less than 50% of the time. 
 
 [BR:2018]: <${brGithubUrl (postPath Post2018)}#>
 [BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
@@ -244,21 +241,38 @@ less than 50% of the time.
   
 brAcrossTimeASRPref :: T.Text
 brAcrossTimeASRPref = [i|
-Also useful is to look at shares of the electorate rather than preference numbers.  Electorate shares
-put all three components together but make it clearer how mnay votes come from each group.
+There are more white than non-white
+voters---though see below for that is changing over time--and
+white voters have higher overall turnout.  So it's
+also useful to look at shares of the Democratic electorate,
+that is, fractions of Democratic votes, 
+rather than preference numbers.  Electorate shares
+put all three components together but make it clearer how many votes come from each group.
+Though non-white voters are overwhelmingly democratic, they make up only about 40%
+of the votes Democrats get in any election.
 |]
 
 brAcrossTimeASRVoteShare :: T.Text
 brAcrossTimeASRVoteShare = [i|
-This chart reminds us that though non-white voters are overwhelmingly democratic,
-they make up only about 40% of the Democratic votes.
-This is a combination of smaller
-numbers of possible voters and lower turnout.  The latter is
-something there is ongoing work to change via anti-voter-suppression efforts,
-registration drives and get-out-the-vote (GOTV) work.
+Grouping by educational attainment, age and sex, we a different picture of the
+Democratic electorate.  Here we see the young college graduates are strongly
+Democratic and older female college graduates are also consitent Democratic voters,
+though less strongly than their young counterparts.  Older college-educated
+men were Republican leaning until 2018 when they shifted to support the Democrats.
+By contrast, older people without a 4-year-degree are Republican leaning throughout
+and young people without a 4-year-degree favored Democrats through 2012 but have
+shifted to favor Republicans since, continuing that shift from 2016 to 2018.
 
-As before, we also group things by age, sex and educational attainment.  First
-the voter preferences through time:
+When we looked at the breakdown by race rather than educational attainment, it
+looked as if Democrats had gained with all groups from 2016 to 2018.  But looking
+at educational attainment, it's clear that Democrats lost ground with
+non-college-educted people. Though the census data is not granular enough for us to
+do the same analysis broken down by race *and* educational attainment, it seems likely
+that the Democratic losses are largely with white non-college-educated voters, the
+so-called "White Working Class", something we discuss in some
+detail in [another post][BR:WWC].
+
+[BR:2018]: <${brGithubUrl (postPath PostWWCV)}#>
 |]
 
 brAcrossTimeASEPref :: T.Text

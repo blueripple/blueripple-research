@@ -279,13 +279,15 @@ deltaTableColonnade =
     <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (* 100) . dtrPct)
 
 deltaTableColonnadeBlaze :: (T.Text -> Bool) -> C.Colonnade C.Headed DeltaTableRow BC.Cell
-deltaTableColonnadeBlaze opinionBlue =
+deltaTableColonnadeBlaze opinionHighlight =
   let normalCell = BC.Cell (BHA.style "border: 1 px solid black") . BH.toHtml
-      numberCell printFmt borderBlue x =
-        let b = if borderBlue then "blue" else "black"
+      numberCell printFmt highlight x =
+        let border = if highlight
+                     then "border: 3px solid blue"
+                     else "border: 1px solid black"
         in if x >= 0
-           then BC.Cell (BHA.style $ "border: 1 px solid " <> b <> "; color: green;") . BH.toHtml . T.pack $ PF.printf printFmt x
-           else BC.Cell (BHA.style $ "border: 1 px solid " <> b <> "; color: red;") . BH.toHtml . T.pack $ PF.printf ("(" ++ printFmt ++ ")") (negate x)       
+           then BC.Cell (BHA.style $ border <> "; color: green;") . BH.toHtml . T.pack $ PF.printf printFmt x
+           else BC.Cell (BHA.style $ border <> "; color: red;") . BH.toHtml . T.pack $ PF.printf ("(" ++ printFmt ++ ")") (negate x)       
   in C.headed "Group" (normalCell . dtrGroup)
      <> C.headed "Population (k)" (normalCell . T.pack . show . (`div` 1000) . dtrPop)
      <>  C.headed "+/- From Population (k)"
@@ -293,7 +295,7 @@ deltaTableColonnadeBlaze opinionBlue =
      <> C.headed "+/- From Turnout (k)"
      (numberCell "%.0d" False . (`div` 1000) . dtrFromTurnout)
      <> C.headed "+/- From Opinion (k)"
-     (\tr -> (numberCell "%.0d" (opinionBlue (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
+     (\tr -> (numberCell "%.0d" (opinionHighlight (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
      <> C.headed "+/- Total (k)" (numberCell "%.0d" False . (`div` 1000) . dtrTotal)
      <> C.headed "+/- %Vote" (numberCell "%2.2f" False . (* 100) . dtrPct)
      
