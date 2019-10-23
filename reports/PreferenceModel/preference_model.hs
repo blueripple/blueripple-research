@@ -116,7 +116,11 @@ main = do
         let exts = PA.readerExtensions K.markDownReaderOptions
         in PA.def
            { PA.readerStandalone = True
-           , PA.readerExtensions = PA.enableExtension PA.Ext_smart exts
+           , PA.readerExtensions = PA.enableExtension PA.Ext_smart
+                                   . PA.enableExtension PA.Ext_raw_html
+                                   . PA.enableExtension PA.Ext_backtick_code_blocks
+                                   . PA.enableExtension PA.Ext_raw_attribute
+                                   $ exts
            }
       brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
       brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions

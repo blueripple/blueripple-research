@@ -18,10 +18,13 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
 
+import qualified Text.Blaze.Colonnade          as BC
+import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import qualified Data.List as L
 import qualified Data.Text                     as T
+import qualified Data.Text.Lazy                     as TL
 
 import qualified Frames as F
 import           Graphics.Vega.VegaLite.Configuration as FV
@@ -114,7 +117,7 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
                (vDatSVS prMap)
       _ <- K.addHvega Nothing Nothing vl
       return ()
-    mkDeltaTableASR mr locFilter (y1, y2) = do
+    mkDeltaTableASR mr locFilter (y1, y2) mRows greenOpinionGroups = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
       brAddMarkDown $ "### " <> y1T <> "->" <> y2T
@@ -124,8 +127,12 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
               $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
         PM.deltaTable simpleAgeSexRace locFilter houseElectionsFrame y1 y2 mry1 mry2
-      K.addColonnadeTextTable PM.deltaTableColonnade $ table
-    mkDeltaTableASE mr locFilter  (y1, y2) = do
+      let table' = case mRows of
+            Nothing -> table
+            Just n -> take n $ FL.fold FL.list table
+      let greenOpinion g = g `elem` greenOpinionGroups           
+      brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze greenOpinion)  $ table'
+    mkDeltaTableASE mr locFilter  (y1, y2) mRows greenOpinionGroups = do
       let y1T = T.pack $ show y1
           y2T = T.pack $ show y2
       brAddMarkDown $ "### " <> y1T <> "->" <> y2T
@@ -134,11 +141,13 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
       mry2 <- knitMaybe "lookup failure in mwu"
               $ M.lookup y2 mr
       (table, (mD1, mR1), (mD2, mR2)) <-
-        PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2
-      K.addColonnadeTextTable PM.deltaTableColonnade $ table
-      let greenOpinion g = g `elem` ["YoungFemaleCollegeGrad"] 
-      K.addColonnadeCellTable (BHA.style "border: 1px solid black") (PM.deltaTableColonnadeBlaze greenOpinion) table
-                
+        PM.deltaTable simpleAgeSexEducation locFilter houseElectionsFrame y1 y2 mry1 mry2        
+      let table' = case mRows of
+            Nothing -> table
+            Just n -> take n $ FL.fold FL.list table
+      let greenOpinion g = g `elem` greenOpinionGroups
+      brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze greenOpinion) table
+        
   brAddMarkDown brAcrossTimeIntro
   addParametersVsTime  modeledResultsASR
   brAddMarkDown brAcrossTimeASRPref
@@ -148,11 +157,13 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
   brAddMarkDown brAcrossTimeASEPref
   addStackedArea modeledResultsASE
   brAddMarkDown brAcrossTimeASEVoteShare           
-  brAddMarkDown brAcrossTimeAfterASE            
+  brAddMarkDown brAcrossTimeAfterASE
+  -- one row to talk about
+  mkDeltaTableASR modeledResultsASR  (const True) (2012, 2016) (Just 1) []
   -- analyze results
-  mkDeltaTableASR  modeledResultsASR  (const True) (2012, 2016)
+  mkDeltaTableASR  modeledResultsASR  (const True) (2012, 2016) Nothing []
   brAddMarkDown brAcrossTimeASR2012To2016
-  mkDeltaTableASE  modeledResultsASE (const True) (2012, 2016)
+  mkDeltaTableASE  modeledResultsASE (const True) (2012, 2016) Nothing ["YoungFemaleCollegeGrad"]
   brAddMarkDown brAcrossTimeASE2012To2016   
 {-  brAddMarkDown voteShifts
   _ <-
@@ -185,8 +196,8 @@ post modeledResultsASR modeledResultsASE modeledResultBG_ASR modeledResultBG_ASE
 --  brAddMarkDown "### Presidential Battleground States"
 --  _ <- mkDeltaTableASR bgOnly (2010, 2018)
 --  _ <- mkDeltaTableASE bgOnly (2010, 2018)
-  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2012, 2016)
-  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2016, 2018)
+  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2012, 2016) Nothing []
+  _ <- mkDeltaTableASE  modeledResultBG_ASE bgOnly (2016, 2018) Nothing []
   brAddMarkDown brAcrossTimeAfterBattleground
   brAddMarkDown brReadMore
 

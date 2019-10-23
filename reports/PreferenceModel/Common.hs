@@ -14,6 +14,13 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown
                                                as K
 import qualified Text.Pandoc.Options           as PA
 
+import qualified Text.Blaze.Colonnade          as BC
+import qualified Text.Blaze.Html               as BH
+import qualified Text.Blaze.Html.Renderer.Text as B
+import qualified Text.Blaze.Html5.Attributes   as BHA
+
+import qualified Data.Text.Lazy                as TL
+
 import           BlueRipple.Configuration       ( brResearchRootUrl
                                                 , brResearchRootPath
                                                 , brExplainerRootUrl
@@ -73,7 +80,21 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
   brMarkDownReaderOptions =
     let exts = PA.readerExtensions K.markDownReaderOptions
-    in  PA.def { PA.readerStandalone = True
-               , PA.readerExtensions = PA.enableExtension PA.Ext_smart exts
-               }
+    in  PA.def
+          { PA.readerStandalone = True
+          , PA.readerExtensions = PA.enableExtension PA.Ext_smart
+                                  . PA.enableExtension PA.Ext_raw_html
+                                  $ exts
+          }
+
+brAddRawHtmlTable
+  :: (K.KnitOne r, Foldable f)
+  => BH.Attribute
+  -> K.Colonnade K.Headed a BC.Cell
+  -> f a
+  -> K.Sem r ()
+brAddRawHtmlTable attr colonnade rows =
+  brAddMarkDown $ TL.toStrict $ B.renderHtml $ BC.encodeCellTable attr
+                                                                  colonnade
+                                                                  rows
 
