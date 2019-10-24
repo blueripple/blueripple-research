@@ -254,13 +254,13 @@ main = do
         )
         $ WWCV.post --modeledResultsASR modeledResultsASE houseElectionsFrame
         
-      let pubP3 = Time.fromGregorian 2019 10 11  
+      let pubP3 = Time.fromGregorian 2019 10 25  
       when (PostAcrossTime `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostAcrossTime)
           (addDates pubP3 curDate
-            $ M.fromList [("pagetitle", "Voter Preference: 2010-2018")
-                         ,("title", "Voter Preference: 2010-2018")
+            $ M.fromList [("pagetitle", "Where Did The Blue Wave Come From?")
+                         ,("title", "Where Did The Blue Wave Come From?")
                          ]
           )
         )

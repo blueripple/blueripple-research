@@ -191,6 +191,8 @@ getting Trump out of office.
 Give your time or money to  organizations that work on registration and turnout,
 especially among groups that tend to support Democrats. 
 
+- [BLOC][Org:BLOC], community organizers in Milwaukee, WI, working to improve
+black voter turnout.
 - [Rock The Vote](https://www.rockthevote.org) is "nonpartisan nonprofit
 dedicated to building the political power of young people."
 Through them you can
@@ -210,9 +212,12 @@ to help voters acquire appropriate ID or
 [donate money](https://voteriders.salsalabs.org/donate/index.html) to
 help with their work.
 
-We tried to find local
-organizations working specifically in battleground states but didn't discover any.
+We tried to find more local
+organizations working specifically in battleground states but didn't find many.
 Please [email](mailto:adam@blueripplepolitics.org) us if you know of
-local organizations doing this work and we'll update this post! 
+local organizations doing this work and we'll update this post!
+
+
+[Org:BLOC]: <https://www.blocbybloc.org>
 |]
   
