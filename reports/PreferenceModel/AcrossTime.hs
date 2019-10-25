@@ -104,7 +104,8 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
               @'("D Voter Preference (%)",Double)
               "D Voter Preference Vs. Election Year"
               FV.DataMinMax
-              (FV.TimeEncoding "%Y" FV.Year)
+              FV.intYear
+--              (FV.TimeEncoding "%Y" FV.Year)
               (FV.ViewConfig 800 400 10)
               (vDatPVsT pr)
         _ <- K.addHvega Nothing Nothing vl
@@ -131,8 +132,9 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
                @'("Voteshare of D Votes (%)",Double)
                "Voteshare in Competitive Districts vs. Election Year"
                (FV.GivenMinMax 0 100)
-               (FV.TimeEncoding "%Y" FV.Year)
-               (FV.ViewConfig 800 200 10)
+               FV.intYear
+--               (FV.TimeEncoding "%Y" FV.Year)
+               (FV.ViewConfig 750 200 10)
                (vDatSVS prMap)
       _ <- K.addHvega Nothing Nothing vl
       return ()
@@ -188,15 +190,28 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
   brAddMarkDown brAcrossTimeASEPref
   addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToSimpleEducation . fmap FV.value) modeledResultsASE
   brAddMarkDown brBreakingDownTheChanges
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) (take 1 $ FL.fold FL.list ase20162018Table)
+  brAddRawHtmlTable "2016 to 2018"
+    (BHA.class_ "brTable")
+    (PM.deltaTableColonnadeBlaze (cStyles [] []))
+    (take 1 $ FL.fold FL.list ase20162018Table)
   brAddMarkDown brAcrossTimeASRRow
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) ase20162018Table
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) ase20142018Table
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) asr20142018Table
+  brAddRawHtmlTable
+    "2016 to 2018"
+    (BHA.class_ "brTable")
+    (PM.deltaTableColonnadeBlaze (cStyles [] []))
+    ase20162018Table
   brAddMarkDown brAcrossTimeTables
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) ase20102018Table
+  brAddRawHtmlTable
+    "2010 to 2018"
+    (BHA.class_ "brTable")
+    (PM.deltaTableColonnadeBlaze (cStyles [] []))
+    ase20102018Table
   brAddMarkDown brAcrossTimeASRTable
-  brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) asr20102018Table
+  brAddRawHtmlTable
+    "2010 to 2018"
+    (BHA.class_ "brTable")
+    (PM.deltaTableColonnadeBlaze (cStyles [] []))
+    asr20102018Table
   brAddMarkDown brAcrossTimeTableSummary
   brAddMarkDown brAcrossTimeTakeAction
   brAddMarkDown brReadMore
@@ -258,25 +273,25 @@ In this post we'll look back to 2010, examining how Democrats gained and lost vo
 
 From our analysis it appears that most of the election-to-election change in vote-share
 is driven by changes in voter preference rather than demographics or turnout.
-We do see a long-term demographic and turnout shifts which currently favors Democrats. 
+We do see a long-term demographic and turnout shift which currently favors Democrats. 
 
 Whatever happened in the past is likely not predictive.
 2020 will not be a replay of 2016 or 2018.
 However, understanding what happened in previous elections
 is a good place to start as we look to hold and expand on the gains made in 2018.
 
-1. Turnout vs. Preference
+1. Turnout vs. Preference: Context and Caveats
 2. The Evolving Democratic Coalition
 3. Breaking Down the Changes
 4. What Does It Mean?
 5. Take Action 
 
-## Turnout vs. Preference
-Swirling around many analyses and think-pieces about elections, is a central
+## Turnout vs. Preference: Context and Caveats
+Swirling around many analyses and think-pieces about elections is a central
 question:  do Democrats/Republicans win elections by getting the people who
 agree with them to vote (turnout) or by convincing
 people who disagree with them to change their minds (preference)? Campaigns
-try to do both, of course, but is one or the other more important in a given race?
+try to do both, of course, but is one more important in a given race?
 
 It's important to note that the analysis depends a lot on the geographical
 boundaries and the demographic categorizations. For instance,
@@ -284,14 +299,21 @@ if college-educated voters move from one district to another
 in a state, that's demographic change at the district level but not at the state
 or national level.
 
-Arguably even more important is choosing a baseline for comparison.  If you look at
-2014 as a baseline, an extremely sensible choice, then 2018 looks like a turnout surge
+Also important is choosing a baseline for comparison.  With
+2014 as a baseline---comparing mid-term to mid-term---then there is a Democratic turnout surge
 as [Rachel Bitecofer argues][RB:TurnoutTweet].  If you look instead at the changes from 2016
-to 2018 then it looks more like voter preference was the important shift.  For instance, see
-this [Yair Ghitza article][YG:WhatHappened2018].  Though, as Ghitza points out, even though
-preference was a huge component of the shift from 2016 to 2018, there were many mid-term
-voters who had not voted in the 2016 presidential race and those voters broke for the
-Democrats by 21 percentage points.
+to 2018, focusing on the blue wave, voter preference was the more pronounced shift.  For instance, see
+this [Yair Ghitza article][YG:WhatHappened2018], which agrees with our conclusion that preference changes
+played the largest role in the blue wave. Though, as Ghitza notes,  there were many
+2018 mid-term voters who had not voted in the 2016 presidential race, and those
+voters broke for the Democrats by 21 percentage points.
+
+Our analysis is also limited by looking only at voters in aggregate.  Both Bitecofer and
+Ghitza are analyzing voter files which allows them to examine the behavior of individual
+voters.  We are looking only at demographic groups as a whole so, for instance,
+if within the same demographic group some
+previously Republican voters stay home and some new Democratic voters show up, we will see
+that as a *preference* shift though it should properly be seen as a turnout shift.
 
 [RB:TurnoutTweet]: <https://twitter.com/RachelBitecofer/status/1185515355088867328>
 [YG:WhatHappened2018]: <https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0>
@@ -311,12 +333,10 @@ remaining between 40% and 45% throughout, with a low in 2016 and an encouraging 
 brAcrossTimeASRPref :: T.Text
 brAcrossTimeASRPref = [i|
 There are more white than non-white
-voters---though that is changing, see below--and
-white voters have higher overall turnout.  So it's
-also useful to look at shares of the Democratic electorate,
-that is, fractions of Democratic votes, 
-rather than preference numbers.  Though non-white voters are overwhelmingly democratic,
-they make up only about 40% of the votes Democrats get in any election.
+eligible voters and white voters have higher overall turnout.  We can see
+this clearly in a chart of the shares of the Democratic electorate,
+that is, fractions of Democratic votes.  Though non-white voters are overwhelmingly democratic,
+they make up at most 40% of the votes Democrats get in any election.
 |]
 
 brAcrossTimeASRVoteShare :: T.Text
@@ -327,29 +347,29 @@ graduates are consistently democratic, but the younger voters are more Democrati
 leaning by about 10 percentage points.  Older college-educated
 men were Republican leaning until 2018 when they shifted to slight support
 of the Democrats. We also see a very distinct shift:
-beginning sometime after the 2012 election
-college-educated voters become more likely to vote for Democrats and
+beginning sometime after the 2012 election,
+college-educated voters become more likely to vote for Democrats, and
 non-college-educated voters become more likely to vote for Republicans.
-|]
 
-brAcrossTimeASEPref :: T.Text
-brAcrossTimeASEPref = [i|
 When we looked at the breakdown by race rather than educational attainment, it
 looked as if Democrats had gained with all groups from 2016 to 2018.  But looking
 at educational attainment, it's clear that Democrats lost ground with
-non-college-educated people. Though the census data is not granular enough for us to
+non-college-educated voters. Though the census data is not granular enough for us to
 do the same analysis broken down by race *and* educational attainment, it seems likely
 that the Democratic losses between 2016 and 2018 are largely
 with white non-college-educated voters, the
 so-called "White Working Class", something we discuss in some
 detail in [another post][BR:WWC].
 
-It's useful as before to look at vote share.  Here the Democratic and
-Republican supporting groups are of about equal size in terms of their
-contribution to the electorate, with higher turnout among college graduates
-making up for their smaller share of the population.
-
 [BR:WWC]: <${brGithubUrl (postPath PostWWCV)}#>
+|]
+
+brAcrossTimeASEPref :: T.Text
+brAcrossTimeASEPref = [i|
+The movement of college-educated voters toward Democrats, while non-college-educated
+voters move toward Republicans, is also clear in the Democratic vote-share.  In 2010,
+Democrats got 60% of their votes from non-college-educated voters but that is down to
+49% in 2018.
 |]
 
 brBreakingDownTheChanges :: T.Text
@@ -360,8 +380,9 @@ People tell various stories about how elections are won or lost.  For example,
 one story about the 2018 blue wave is that disaffected Republican voters stayed home,
 while energized Democratic voters turned out in unexpected numbers.  Another story
 is that significant numbers of voters shifted from voting Republican to Democratic.
+
 We think there is a grain of truth in the first story but that the second is more
-convincing.  To see why, we're going to look at some tables which break down the changes
+convincing.  To see why, we're going to look at some tables that break down the changes
 in Democratic votes by our three factors: demographics, turnout and preference.  Before
 we dive in, let's consider just one row of such a table,
 looking at changes from 2016 to 2018:
@@ -390,7 +411,7 @@ In this case, *lower* turnout is leading to a net *gain* of Democratic votes.
 7. The total votes gained or lost (column 6) as a percentage of the total electorate (-0.08%).
 
 Looking at all the groups together tells a more complete story. Overall,
-turnout was *not* a big mover of votes.  Some Democratic
+changes in turnout does *not* appear to be a big net mover of votes.  Some Democratic
 votes were gained by a drop
 in turnout among older non-college-educated voters, but a similar number of Democratic
 votes were lost by lower turnout among young college-educated voters.  Similarly,
@@ -414,26 +435,23 @@ brAcrossTimeASRTable = [i|
 And it's worthwhile to look at these longer-term changes by race as well as by educational attainment.
 Again we see that voter preference plays the largest role and that demographics is significant.
 One distinction here is a noticeable trend to higher turnout
-but one which is more pronounced among non-white
-voters, leading to a net gain of Democratic votes.
+but one which generates more net votes among non-white
+voters than are lost among white voters, leading to a net gain of Democratic votes.
 |]
 
 brAcrossTimeTableSummary :: T.Text
 brAcrossTimeTableSummary = [i|
-In our analysis, the blue wave
-was produced by voters who preferred Republicans in 2016,
+In our analysis, the blue
+wave---the electorate shift just between 2016 and 2018---was
+produced by voters who preferred Republicans in 2016,
 shifting toward Democrats in 2018. We also see that current demographic shifts,
 both in average educational attainment
-and non-white vs. white voters lead to more Democratic votes.  Turnout shifts are also
+and non-white vs. white voters, lead to more Democratic votes.  Turnout shifts are also
 largely good for Democrats over the long-term.
 
 It's important to note that this analysis is at the national level.
 Each district has its own version of this story and we plan to dig into
 those in more detail in the coming months.
-
-## What Does It Mean?
-- Same number of people in each group
-
 |]
   
 brAcrossTimeTakeAction :: T.Text
@@ -447,7 +465,7 @@ turnout was not the driver of the blue wave, it was the base beneath it.  All
 those "extra" votes don't matter, if the Democratic base doesn't (or can't) show
 up on election day. So consider supporting:
 
-- [Fair Fight][FairFight], Stacey Abrams organization dedicated to fighting for
+- [Fair Fight][Org:FairFight], Stacey Abrams' organization dedicated to fighting for
 voting rights in Georgia and beyond.
 - [BLOC][Org:BLOC], community organizers in Milwaukee, WI,
 working on [improving black voter turnout][WP:BLOC].
@@ -463,8 +481,10 @@ has identified policies that progressives support which also poll well with cent
 and Republicans, e.g., capping credit-card interest rates or ending the war in Yemen.
 
 Lastly, support *local* candidates who will rally turnout and engage undecided voters who may then
-support progressives up and down the ticket. This is part of how our (LA, MS, KY) Watch this space for our recommendations as we
-head toward 2020!
+support progressives up and down the ticket. This is part of how Blue Ripple Politics looks at all
+elections. Our current pieces on
+[Louisiana][BR:LA],
+[Kentucky and Mississippi][BR:KYandMS] highlight many great examples of this.
 
 
 [Org:BLOC]: <https://www.blocbybloc.org>
@@ -473,7 +493,8 @@ head toward 2020!
 [NYT:Students]: <https://www.nytimes.com/2019/10/24/us/voting-college-suppression.html>
 [Org:FairFight]: <https://fairfight.com/>
 [Org:CampusVoteProject]: <https://www.campusvoteproject.org>
-
+[BR:LA]: <https://blueripplepolitics.org/blog/2019-la-leg>
+[BR:KYandMS]: <https://blueripplepolitics.org/blog/2019-la-ky-ms>
 |]
   
 brAcrossTimeASR2012To2016 :: T.Text  

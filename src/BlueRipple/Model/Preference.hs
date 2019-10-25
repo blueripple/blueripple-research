@@ -198,6 +198,9 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
       
   (popA, turnoutA) <- getPopAndTurnout yA trA
   (popB, turnoutB) <- getPopAndTurnout yB trB
+{-  K.logLE K.Info $ (T.pack $ show yA) <> "->" <> (T.pack $ show yB) 
+  K.logLE K.Info $ T.pack $ show turnoutA
+  K.logLE K.Info $ T.pack $ show turnoutB -}
   let
     pop        = FL.fold FL.sum popA
     probsArray = fmap FV.value . modeled

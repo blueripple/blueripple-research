@@ -15,7 +15,7 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown
 import qualified Text.Pandoc.Options           as PA
 
 import qualified Text.Blaze.Colonnade          as BC
-import qualified Text.Blaze.Html               as BH
+import qualified Text.Blaze.Html5              as BH
 import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5.Attributes   as BHA
 
@@ -89,12 +89,13 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
 
 brAddRawHtmlTable
   :: (K.KnitOne r, Foldable f)
-  => BH.Attribute
+  => T.Text
+  -> BH.Attribute
   -> K.Colonnade K.Headed a BC.Cell
   -> f a
   -> K.Sem r ()
-brAddRawHtmlTable attr colonnade rows =
-  brAddMarkDown $ TL.toStrict $ B.renderHtml $ BC.encodeCellTable attr
-                                                                  colonnade
-                                                                  rows
+brAddRawHtmlTable title attr colonnade rows =
+  brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
+    BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
+    BC.encodeCellTable attr colonnade rows
 
