@@ -96,25 +96,25 @@ via a [github issue](${brGithub <> "/preference-model/issues"}).
 
 
 post :: K.KnitOne r
-     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.ParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.ParameterEstimate)
      -> F.Frame EdisonExit2018
      -> K.Sem r ()
 post modeledResultsASR modeledResultsASE edisonExit2018Frame = do
   brAddMarkDown brExitPolls
   let mergedPrefs :: (A.Ix b, Enum b, Bounded b, A.Ix c, Enum c, Bounded c)
-                  => PM.PreferenceResults b FV.NamedParameterEstimate
+                  => PM.PreferenceResults b FV.ParameterEstimate
                   -> (A.Array b Double -> A.Array c Double)
                   -> A.Array c Double
       mergedPrefs pr mergeF =
         let voters = PM.totalArrayZipWith (*) (fmap realToFrac $ PM.nationalVoters pr) (PM.nationalTurnout pr)
             mergedVoters = mergeF voters
-            dVotes = PM.totalArrayZipWith (*) (fmap (FV.value . FV.pEstimate) $ PM.modeled pr) voters
+            dVotes = PM.totalArrayZipWith (*) (fmap FV.value $ PM.modeled pr) voters
             mergedDVotes = mergeF dVotes
         in PM.totalArrayZipWith (/) mergedDVotes mergedVoters                
       groupDataMerged :: forall b c r. (Enum b , Bounded b, A.Ix b, Show b
                                        ,Enum c, Bounded c, A.Ix c, Show c, K.KnitOne r)
-                      => PM.PreferenceResults b FV.NamedParameterEstimate
+                      => PM.PreferenceResults b FV.ParameterEstimate
                       -> F.Frame EdisonExit2018
                       -> (A.Array b Double -> A.Array c Double)
                       -> K.Sem r [(T.Text, Double, Double)]
@@ -140,7 +140,7 @@ post modeledResultsASR modeledResultsASE edisonExit2018Frame = do
       compareChart :: (A.Ix b, Enum b, Bounded b, Show b, A.Ix c, Enum c, Bounded c, Show c, K.KnitOne r)
                    => T.Text
                    -> Maybe T.Text
-                   -> M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)                           
+                   -> M.Map Int (PM.PreferenceResults b FV.ParameterEstimate)                           
                    -> F.Frame EdisonExit2018
                    -> (A.Array b Double -> A.Array c Double)
                    -> K.Sem r ()

@@ -44,22 +44,22 @@ import PreferenceModel.Common
 
 
 post :: K.KnitOne r
-     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.ParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.ParameterEstimate)
      -> K.Sem r ()
 post modeledResultsASR modeledResultsASE = do
   brAddMarkDown br2018Intro
   let groupData :: (A.Ix b, Show b)
-        => PM.PreferenceResults b FV.NamedParameterEstimate
+        => PM.PreferenceResults b FV.ParameterEstimate
         -> b
         -> (T.Text, Int, Double, Double)
       groupData pr x = (T.pack (show x)
                        , PM.nationalVoters pr A.! x
                        , PM.nationalTurnout pr A.! x
-                       , FV.value $ FV.pEstimate  $ PM.modeled pr A.! x
+                       , FV.value $ PM.modeled pr A.! x
                        )
       groupDataList :: (Enum b, Bounded b, A.Ix b, Show b)
-                    => PM.PreferenceResults b FV.NamedParameterEstimate
+                    => PM.PreferenceResults b FV.ParameterEstimate
                     -> [(T.Text, Int, Double, Double)]
       groupDataList pr = fmap (groupData pr) [minBound..maxBound]
       vRowBuilderGD =
@@ -72,7 +72,7 @@ post modeledResultsASR modeledResultsASE = do
       perGroupingChart :: forall b r. (A.Ix b, Enum b, Show b, Ord b, Bounded b, K.KnitOne r)
                        => T.Text
                        -> Int
-                       -> M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
+                       -> M.Map Int (PM.PreferenceResults b FV.ParameterEstimate)
                        -> K.Sem r ()
       perGroupingChart title yr mr = do
         pr <-

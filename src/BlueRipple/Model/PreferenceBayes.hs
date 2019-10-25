@@ -11,7 +11,8 @@ module BlueRipple.Model.PreferenceBayes
   , invFisher
   , mleCovEigens
   , variances
-  , correl
+  , covar
+  , correlFromCov
 
     -- * MCMC
   , Sample
@@ -179,6 +180,19 @@ variances
   -> VB.Vector Double
   -> LA.Vector Double
 variances votesAndVoters x = LA.takeDiag $ invFisher votesAndVoters x
+
+covar
+  :: (Functor f, Foldable f)
+  => f (Int, VB.Vector Int)
+  -> VB.Vector Double
+  -> LA.Matrix Double
+covar votesAndVoters x = invFisher votesAndVoters x
+
+correlFromCov :: LA.Matrix Double -> LA.Matrix Double
+correlFromCov cov =
+  let vars = LA.takeDiag cov
+      mISD = LA.diag $ LA.cmap (\x -> 1 / sqrt x) vars
+  in  mISD LA.<> cov LA.<> mISD
 
 correl
   :: (Functor f, Foldable f)

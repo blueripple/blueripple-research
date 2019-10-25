@@ -15,6 +15,7 @@
 module BlueRipple.Model.Preference where
 
 import qualified Control.Foldl                 as FL
+import qualified Control.Lens                  as L
 import qualified Control.Monad.Except          as X
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Colonnade                     as C
@@ -104,7 +105,7 @@ modeledResults :: ( MonadIO (K.Sem r)
                -> F.Frame tr
                -> F.Frame HouseElections 
                -> M.Map Int Int
-               -> K.Sem r (M.Map Int (PreferenceResults b FV.NamedParameterEstimate))
+               -> K.Sem r (M.Map Int (PreferenceResults b FV.ParameterEstimate))
 modeledResults ds locFilter dFrame tFrame eFrame years = flip traverse years $ \y -> do
   K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
   preferenceModel ds locFilter y dFrame eFrame tFrame
@@ -114,7 +115,7 @@ modeledResults ds locFilter dFrame tFrame eFrame years = flip traverse years $ \
 data VoteShare = ShareOfAll | ShareOfD
 
 modeledDVotes :: forall b. (A.Ix b, Bounded b, Enum b, Show b)
-  => VoteShare -> PreferenceResults b FV.NamedParameterEstimate -> [(T.Text, Double)]
+  => VoteShare -> PreferenceResults b Double -> [(T.Text, Double)]
 modeledDVotes vs pr =
   let
     summed = FL.fold
@@ -130,7 +131,7 @@ modeledDVotes vs pr =
     dVotes b =
       realToFrac (popArray A.! b)
       * (turnoutArray A.! b)
-      * (FV.value . FV.pEstimate $ (modeled pr) A.! b)
+      * (modeled pr A.! b)
     allPredictedD = FL.fold FL.sum $ fmap dVotes [minBound..maxBound]
     scale = case vs of
       ShareOfAll -> (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))/allPredictedD
@@ -165,14 +166,14 @@ deltaTable
   -> F.Frame e
   -> Int -- ^ year A
   -> Int -- ^ year B
-  -> PreferenceResults b FV.NamedParameterEstimate
-  -> PreferenceResults b FV.NamedParameterEstimate
+  -> PreferenceResults b FV.ParameterEstimate
+  -> PreferenceResults b FV.ParameterEstimate
   -> K.Sem r ([DeltaTableRow], (Int, Int), (Int, Int))
 deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
   let
     groupNames = fmap (T.pack . show) $ dsCategories ds
     getPopAndTurnout
-      :: Int -> PreferenceResults b FV.NamedParameterEstimate -> K.Sem r (A.Array b Int, A.Array b Double)
+      :: Int -> PreferenceResults b FV.ParameterEstimate -> K.Sem r (A.Array b Int, A.Array b Double)
     getPopAndTurnout y tr = do
       resultsFrame <- knitX $ (dsPreprocessElectionData ds) y electionResultsFrame
       let
@@ -199,7 +200,7 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
   (popB, turnoutB) <- getPopAndTurnout yB trB
   let
     pop        = FL.fold FL.sum popA
-    probsArray = fmap (FV.value . FV.pEstimate) . modeled
+    probsArray = fmap FV.value . modeled
     probA      = probsArray trA
     probB      = probsArray trB
     modeledVotes popArray turnoutArray probArray =
@@ -341,6 +342,80 @@ votesAndPopByDistrictF =
     V.:& FF.FoldRecord (PF.dimap (F.rgetField @RVotes) V.Field FL.sum)
     V.:& V.RNil
 
+
+data Aggregation c b where
+  Aggregation :: (Enum b, Bounded b, Eq b, Ord b, A.Ix b,
+                  Enum c, Bounded c, Eq c, Ord c, A.Ix c) => (c -> [b]) -> Aggregation c b
+  
+
+aggregateFold :: forall c b a x. Aggregation c b -> (FL.Fold a x) -> A.Array b a -> A.Array c x
+aggregateFold (Aggregation children) fld arr =
+  let cs = [minBound ..maxBound]
+      expanded :: [[a]]
+      expanded = fmap (fmap (arr A.!) . children) cs     
+      folded = fmap (FL.fold fld) expanded
+  in A.listArray (minBound,maxBound) folded
+
+aggregateFold2 :: Aggregation c b -> (FL.Fold (a,w) x) -> A.Array b a -> A.Array b w -> A.Array c x
+aggregateFold2 (Aggregation children) fld arrA arrW =
+  let cs = [minBound..maxBound]
+      as = fmap (fmap (arrA A.!) . children) cs
+      ws = fmap (fmap (arrW A.!) . children) cs
+      folded = fmap (FL.fold fld . uncurry zip) $ zip as ws
+  in A.listArray (minBound, maxBound) folded
+      
+weightedFold :: (Num a, Fractional a) => FL.Fold (a,a) a
+weightedFold =
+  let sumWeightsF = FL.premap snd $ FL.sum
+      weightedSumF = FL.premap (uncurry (*)) $ FL.sum
+  in fmap (uncurry (/)) $ (,) <$> weightedSumF <*> sumWeightsF
+
+popWeightedAggregate :: (Num d, Fractional d) => Aggregation c b -> A.Array b Int -> A.Array b d -> A.Array c d
+popWeightedAggregate agg popArray datArray = aggregateFold2 agg weightedFold datArray (fmap realToFrac popArray)
+
+aggregateRecord
+  :: forall b c. Aggregation c b
+  -> F.Record [StateAbbreviation
+              , CongressionalDistrict
+              , PopArray b -- population by group
+              , TurnoutArray b -- adjusted turnout by group
+              , DVotes
+              , RVotes
+              ]
+  -> F.Record [StateAbbreviation
+              , CongressionalDistrict
+              , PopArray c -- population by group
+              , TurnoutArray c -- adjusted turnout by group
+              , DVotes
+              , RVotes
+              ]
+aggregateRecord agg r =
+  let 
+    f :: F.Record [PopArray b, TurnoutArray b] -> F.Record [PopArray c, TurnoutArray c]
+    f x =
+      let popB = F.rgetField @(PopArray b) x
+          turnoutB = F.rgetField @(TurnoutArray b) x
+      in (aggregateFold agg FL.sum popB) F.&: (popWeightedAggregate agg popB turnoutB) F.&: V.RNil
+  in F.rcast $ FT.transform f r
+
+cByB :: Aggregation c b -> LA.Matrix Double
+cByB (Aggregation children) =
+  let allBs = [minBound..maxBound]
+      toZeroOne y = if y then 1 else 0
+      getCol c = LA.fromList $ fmap (toZeroOne . (`elem` children c)) allBs
+  in LA.fromColumns $ fmap getCol [minBound..maxBound]
+
+aggregatePreferenceResults :: Fractional a => Aggregation c b -> PreferenceResults b a -> PreferenceResults c a
+aggregatePreferenceResults agg pr =
+  let prVBPAD' = fmap (aggregateRecord agg) (votesAndPopByDistrict pr)
+      prTurnout' = popWeightedAggregate agg (nationalVoters pr) (nationalTurnout pr)
+      prVoters' = aggregateFold agg FL.sum (nationalVoters pr)
+      prModeled' = popWeightedAggregate agg (nationalVoters pr) (modeled pr)
+      mCB = cByB agg
+      prCovar' = LA.tr mCB LA.<> (covariances pr) LA.<> mCB
+  in PreferenceResults prVBPAD' prTurnout' prVoters' prModeled' prCovar'
+
+
 data PreferenceResults b a = PreferenceResults
   {
     votesAndPopByDistrict :: [F.Record [ StateAbbreviation
@@ -353,8 +428,11 @@ data PreferenceResults b a = PreferenceResults
     , nationalTurnout :: A.Array b Double
     , nationalVoters :: A.Array b Int
     , modeled :: A.Array b a
-    , correlations :: LA.Matrix Double
+    , covariances :: LA.Matrix Double
   }
+
+instance Functor (PreferenceResults b) where
+  fmap f (PreferenceResults v nt nv m c) = PreferenceResults v nt nv (fmap f m) c
 
 preferenceModel
   :: forall dr tr b r
@@ -375,7 +453,7 @@ preferenceModel
   -> F.Frame tr
   -> K.Sem
        r
-       (PreferenceResults b FV.NamedParameterEstimate)
+       (PreferenceResults b FV.ParameterEstimate)
 preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
   do
     -- reorganize data from loaded Frames
@@ -468,17 +546,18 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
             sigma = sqrt $ cgVarsA A.! b
             dof = realToFrac $ numCompetitiveRaces - L.length (A.elems cgParamsA)
             interval = S.quantile (S.studentTUnstandardized dof 0 sigma) (1.0 - (S.significanceLevel cl/2))
-            pEstimate = FV.ParameterEstimate x (x - interval/2.0, x + interval/2.0)
-          in FV.NamedParameterEstimate (T.pack $ show b) pEstimate
+          in FV.ParameterEstimate x (x - interval/2.0, x + interval/2.0)
+--          in FV.NamedParameterEstimate (T.pack $ show b) pEstimate
         parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) $ [minBound :: b .. maxBound]
 
     K.logLE K.Info $ "MLE results: " <> (T.pack $ show $ A.elems parameterEstimatesA)     
 -- For now this bit is diagnostic.  But we should chart the correlations
 -- and, perhaps, the eigenvectors of the covariance??    
-    let cgCorrel = PB.correl mcmcData cgRes -- TODO: make a chart out of this
+    let cgCovar = PB.covar mcmcData cgRes -- TODO: make a chart out of this
         (cgEv, cgEvs) = PB.mleCovEigens mcmcData cgRes
     K.logLE K.Diagnostic $ "sigma = " <> (T.pack $ show $ fmap sqrt $ cgVarsA)
-    K.logLE K.Diagnostic $ "Correlation=" <> (T.pack $ PB.disps 3 cgCorrel)
+    K.logLE K.Diagnostic $ "Covariances=" <> (T.pack $ PB.disps 3 cgCovar)
+    K.logLE K.Diagnostic $ "Correlations=" <> (T.pack $ PB.disps 3 $ PB.correlFromCov cgCovar)
     K.logLE K.Diagnostic $ "Eigenvalues=" <> (T.pack $ show cgEv)
     K.logLE K.Diagnostic $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgEvs)
     
@@ -487,7 +566,7 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
       turnoutByGroupArray
       popByGroupArray
       parameterEstimatesA
-      cgCorrel
+      cgCovar
 
 ggTurnoutAdj :: forall b rs r. (A.Ix b
                                , F.ElemOf rs (PopArray b)

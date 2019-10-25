@@ -77,7 +77,7 @@ simpleASE2SimpleSE x = A.array (minBound,maxBound) [(FemaleNonGrad, x A.! OldFem
 type instance FI.VectorFor SimpleASE = V.Vector
 instance Hashable SimpleASE
 
-data SimpleEducation = NonGrad | Grad
+data SimpleEducation = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show)
 data SimpleAge = Old | Young
 
 -- map SimpleASE to triples (which then get mapped to labels from the data) of Age, Sex, Education

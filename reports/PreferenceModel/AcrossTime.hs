@@ -49,9 +49,24 @@ import qualified BlueRipple.Model.Preference as PM
 import PreferenceModel.Common
 
 
+data JustRace = NonWhite | White deriving (Enum, Bounded, Eq, Ord, A.Ix, Show)
+aggregateToJustRace :: PM.Aggregation JustRace SimpleASR
+aggregateToJustRace = PM.Aggregation children where
+  children :: JustRace -> [SimpleASR]
+  children x = case x of
+    NonWhite -> [OldNonWhiteFemale, YoungNonWhiteFemale, OldNonWhiteMale, YoungNonWhiteMale]
+    White -> [OldWhiteFemale, YoungWhiteFemale, OldWhiteMale, YoungWhiteMale]
+
+aggregateToSimpleEducation :: PM.Aggregation SimpleEducation SimpleASE
+aggregateToSimpleEducation = PM.Aggregation children where
+  children :: SimpleEducation -> [SimpleASE]
+  children x = case x of
+    NonGrad -> [OldFemaleNonGrad, YoungFemaleNonGrad, OldMaleNonGrad, YoungMaleNonGrad]
+    Grad -> [OldFemaleCollegeGrad, YoungFemaleCollegeGrad, OldMaleCollegeGrad, YoungMaleCollegeGrad]
+
 post :: K.KnitOne r
-     => M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
-     -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
+     => M.Map Int (PM.PreferenceResults SimpleASR FV.ParameterEstimate)
+     -> M.Map Int (PM.PreferenceResults SimpleASE FV.ParameterEstimate)
 {-     -> M.Map Int (PM.PreferenceResults SimpleASR FV.NamedParameterEstimate)
      -> M.Map Int (PM.PreferenceResults SimpleASE FV.NamedParameterEstimate)
 -}
@@ -59,12 +74,14 @@ post :: K.KnitOne r
      -> K.Sem r ()
 post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_ASE-} houseElectionsFrame = do  
             -- arrange data for vs time plot
-  let flattenOneF y = FL.Fold
-        (\l a -> (FV.name a, y, FV.value $ FV.pEstimate a) : l)
+  let flattenOneF :: Show b => Int -> FL.Fold (b,FV.ParameterEstimate) [(T.Text,Int,Double)]
+      flattenOneF y = FL.Fold
+        (\l (b,a) -> (T.pack (show b), y, FV.value a) : l)
         []
         reverse
+      flattenF :: (A.Ix b, Show b) => FL.Fold (Int, PM.PreferenceResults b FV.ParameterEstimate) [(T.Text,Int,Double)]  
       flattenF = FL.Fold
-        (\l (y, pr) -> FL.fold (flattenOneF y) (PM.modeled pr) : l)
+        (\l (y, pr) -> FL.fold (flattenOneF y) (A.assocs $ PM.modeled pr) : l)
         []
         (concat . reverse)
       vRowBuilderPVsT =
@@ -72,14 +89,14 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
         $ FV.addRowBuilder @'("Election Year",Int) (\(_, y, _) -> y)
         $ FV.addRowBuilder @'("D Voter Preference (%)",Double) (\(_, _, vp) -> 100*vp)
         $ FV.emptyRowBuilder
-      vDatPVsT :: M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
+      vDatPVsT :: (Show b, A.Ix b) => M.Map Int (PM.PreferenceResults b FV.ParameterEstimate)
                -> [FV.Row
                     '[ '("Group", F.Text), '("Election Year", Int),
                        '("D Voter Preference (%)", Double)]] 
       vDatPVsT pr =
         FV.vinylRows vRowBuilderPVsT $ FL.fold flattenF $ M.toList pr
-      addParametersVsTime :: K.KnitOne r
-                          => M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
+      addParametersVsTime :: (Show b, A.Ix b, K.KnitOne r)
+                          => M.Map Int (PM.PreferenceResults b FV.ParameterEstimate)
                           -> K.Sem r ()
       addParametersVsTime pr = do 
         let vl =
@@ -107,7 +124,7 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
                     (PM.modeledDVotes PM.ShareOfD)
                     prMap
     addStackedArea :: (K.KnitOne r, A.Ix b, Bounded b, Enum b, Show b)
-                     => M.Map Int (PM.PreferenceResults b FV.NamedParameterEstimate)
+                     => M.Map Int (PM.PreferenceResults b Double)
                      -> K.Sem r ()
     addStackedArea prMap = do
       let vl = FV.stackedAreaVsTime @'("Group",T.Text) @'("Election Year",Int)
@@ -115,7 +132,7 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
                "Voteshare in Competitive Districts vs. Election Year"
                (FV.GivenMinMax 0 100)
                (FV.TimeEncoding "%Y" FV.Year)
-               (FV.ViewConfig 800 400 10)
+               (FV.ViewConfig 800 200 10)
                (vDatSVS prMap)
       _ <- K.addHvega Nothing Nothing vl
       return ()
@@ -165,11 +182,11 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
   brAddMarkDown brAcrossTimeIntro
   addParametersVsTime  modeledResultsASR
   brAddMarkDown brAcrossTimeASRPref
-  addStackedArea modeledResultsASR
+  addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToJustRace . fmap FV.value) modeledResultsASR
   brAddMarkDown brAcrossTimeASRVoteShare           
   addParametersVsTime  modeledResultsASE
   brAddMarkDown brAcrossTimeASEPref
-  addStackedArea modeledResultsASE
+  addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToSimpleEducation . fmap FV.value) modeledResultsASE
   brAddMarkDown brBreakingDownTheChanges
   brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze (cStyles [] [])) (take 1 $ FL.fold FL.list ase20162018Table)
   brAddMarkDown brAcrossTimeASRRow
@@ -271,7 +288,10 @@ Arguably even more important is choosing a baseline for comparison.  If you look
 2014 as a baseline, an extremely sensible choice, then 2018 looks like a turnout surge
 as [Rachel Bitecofer argues][RB:TurnoutTweet].  If you look instead at the changes from 2016
 to 2018 then it looks more like voter preference was the important shift.  For instance, see
-this [Yair Ghitza article][YG:WhatHappened2018]
+this [Yair Ghitza article][YG:WhatHappened2018].  Though, as Ghitza points out, even though
+preference was a huge component of the shift from 2016 to 2018, there were many mid-term
+voters who had not voted in the 2016 presidential race and those voters broke for the
+Democrats by 21 percentage points.
 
 [RB:TurnoutTweet]: <https://twitter.com/RachelBitecofer/status/1185515355088867328>
 [YG:WhatHappened2018]: <https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0>
