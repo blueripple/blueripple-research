@@ -292,10 +292,10 @@ instance Semigroup (CellStyle r c) => Monoid (CellStyle r c) where
   mempty = CellStyle (\r c -> "")
   mappend = (<>)
 
-toCell :: CellStyle row col -> col -> (row -> (BH.Html, T.Text)) -> row -> BC.Cell
-toCell (CellStyle csF) c toHtml r =
+toCell :: CellStyle row col -> col -> T.Text -> (row -> (BH.Html, T.Text)) -> row -> BC.Cell
+toCell (CellStyle csF) c colName toHtml r =
   let (html, style) = toHtml r
-  in BC.Cell (BHA.style $ BH.toValue $ (csF r c) <> "; " <> style) html
+  in BC.Cell ((BHA.style $ BH.toValue $ (csF r c) <> "; " <> style) <> BH.dataAttribute "label" (BH.toValue $ T.unpack colName)) html
 
 normalCell :: T.Text = "border: 1px solid black"
 totalCell :: T.Text = "border: 2px solid black"
@@ -307,17 +307,17 @@ deltaTableColonnadeBlaze cas =
            then (BH.toHtml . T.pack $ PF.printf printFmt x, "color: green")
            else (BH.toHtml . T.pack $ PF.printf ("(" ++ printFmt ++ ")") (negate x), "color: red")
       plainToHtml x = (BH.toHtml x, mempty)          
-  in C.headed "Group" (toCell cas "Group" (plainToHtml . dtrGroup))
-     <> C.headed "Population (k)" (toCell cas "Population" (plainToHtml . (`div` 1000) . dtrPop))
+  in C.headed "Group" (toCell cas "Group" "" (plainToHtml . dtrGroup))
+     <> C.headed "Population (k)" (toCell cas "Population" "Population" (plainToHtml . (`div` 1000) . dtrPop))
      <>  C.headed "+/- From Population (k)"
-     (toCell cas "FromPop" (numberToHtml "%d" . (`div` 1000) . dtrFromPop))
+     (toCell cas "FromPop" "+/- From Population" (numberToHtml "%d" . (`div` 1000) . dtrFromPop))
      <> C.headed "+/- From Turnout (k)"
-     (toCell cas "FromTurnout" (numberToHtml "%d" . (`div` 1000) . dtrFromTurnout))
+     (toCell cas "FromTurnout" "+/- From Turnout" (numberToHtml "%d" . (`div` 1000) . dtrFromTurnout))
      <> C.headed "+/- From Opinion (k)"
-     (toCell cas "FromOpinion" (numberToHtml "%d" .  (`div` 1000) . dtrFromOpinion))
+     (toCell cas "FromOpinion" "+/- From Opinion" (numberToHtml "%d" .  (`div` 1000) . dtrFromOpinion))
 --     (\tr -> (numberCell "%.0d" (opinionHighlight (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
-     <> C.headed "+/- Total (k)" (toCell cas "Total" (numberToHtml "%d" . (`div` 1000) . dtrTotal))
-     <> C.headed "+/- %Vote" (toCell cas "PctVote" (numberToHtml "%2.2f" . (* 100) . dtrPct))
+     <> C.headed "+/- Total (k)" (toCell cas "Total" "Total" (numberToHtml "%d" . (`div` 1000) . dtrTotal))
+     <> C.headed "+/- %Vote" (toCell cas "PctVote" "% Vote" (numberToHtml "%2.2f" . (* 100) . dtrPct))
      
 type X = "X" F.:-> Double
 type ScaledDVotes = "ScaledDVotes" F.:-> Int

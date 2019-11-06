@@ -1,16 +1,16 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module BlueRipple.Data.CCESPath where
+module MRP.CCESPath where
 
 import qualified Frames.TH                     as F
 
-dataDir = "./data/"
+dataDir = "./reports/MRP/data/"
 
-ccesTSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.txt"
+ccesTSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.csv"
 
 -- the things I would make Categorical are already ints. :(
 ccesRowGen = (F.rowGen ccesTSV) { F.tablePrefix = "CCES"
-                                , F.separator   = "\t"
+                                , F.separator   = ","
                                 , F.rowTypeName = "CCES"
                                 }
 

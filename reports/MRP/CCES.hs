@@ -14,10 +14,15 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# OPTIONS_GHC -O0              #-}
-module BlueRipple.Data.MRP where
-
+module MRP.CCES
+  (
+    module MRP.CCES
+  , module MRP.CCESFrame
+  )
+  where
 
 import           BlueRipple.Data.DataFrames
+import           MRP.CCESFrame
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
@@ -57,6 +62,7 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 type CCES_MRP_Raw = '[ CCESYear
+                     , CCESCaseId
                      , CCESSt
                      , CCESDist
                      , CCESDistUp
@@ -70,7 +76,8 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESVotedRepParty]
                     
 type CCES_MRP = '[ Year
-                 , StateFIPS
+                 , CCESCaseId
+                 , StateAbbreviation
                  , CongressionalDistrict
                  , Gender
                  , Age
@@ -129,7 +136,16 @@ intToUnder45 n = n < 45
 type Age = "Age" F.:-> AgeT
 type Under45 = "Under45" F.:-> Bool
 
-data RegistrationT = Active | NoRecordReg | UnRegistered | Dropped | Inactive | Multiple deriving (Show, Enum, Bounded, Eq, Ord)
+data RegistrationT = Active | NoRecordReg | UnRegistered | Dropped | Inactive | Multiple | RegMissing deriving (Show, Enum, Bounded, Eq, Ord)
+
+parseRegistration :: T.Text -> RegistrationT
+parseRegistration "Active" = Active
+parseRegistration "No Record Of Registration" = NoRecordReg
+parseRegistration "Unregistered" = UnRegistered
+parseRegistration "Dropped" = Dropped
+parseRegistration "Inactive" = Inactive
+parseRegistration "Multiple Appearances" = Multiple
+parseRegistration _ = RegMissing
 
 intToRegistrationT :: Int -> RegistrationT
 intToRegistrationT =  toEnum . minus1
@@ -162,21 +178,26 @@ intToPartyT x
   | x == 2 = Republican
   | otherwise = OtherParty
 
+textToPartyT :: T.Text -> PartyT
+textToPartyT r = case readMaybe @Int (T.unpack r) of
+  Just x -> intToPartyT x
+  Nothing -> OtherParty
+
 type HouseVoteParty = "HouseVoteParty" F.:-> PartyT
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
 fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
                $ (F.rsubset %~ missingPartyToOther)
-               $ (F.rsubset %~ missingRegstatusToNoRecord)
+--               $ (F.rsubset %~ missingRegstatusToNoRecord)
                $ (F.rsubset %~ missingTurnoutToNoFile)
                $ r where
   missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
-  missingHispanicToNo = FM.fromMaybeMono "2"
+  missingHispanicToNo = FM.fromMaybeMono 2
   missingPartyToOther :: F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty] -> F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty]
   missingPartyToOther = FM.fromMaybeMono 3
-  missingRegstatusToNoRecord :: F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -> F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -- ??
-  missingRegstatusToNoRecord = FM.fromMaybeMono "2"
+--  missingRegstatusToNoRecord :: F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -> F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -- ??
+--  missingRegstatusToNoRecord = FM.fromMaybeMono 2
   missingTurnoutToNoFile :: F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -> F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -- ??
   missingTurnoutToNoFile = FM.fromMaybeMono 3
   
@@ -188,16 +209,16 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
   addCollegeGrad = FT.recordSingleton @CollegeGrad . intToCollegeGrad . F.rgetField @CCESEduc
   rInt q = F.rgetField @CCESRace q
   hInt q = F.rgetField @CCESHispanic q
-  race q = if (hInt q == "1") then Hispanic else intToRaceT (rInt q)
+  race q = if (hInt q == 1) then Hispanic else intToRaceT (rInt q)
   addRace = FT.recordSingleton @Race . race 
   addWhiteNonHispanic = FT.recordSingleton @WhiteNonHispanic . (== White) . race 
   addAge = FT.recordSingleton @Age . intToAgeT . F.rgetField @CCESAge
   addUnder45 = FT.recordSingleton @Under45 . intToUnder45 . F.rgetField @CCESAge
-  addRegistration = FT.recordSingleton @Registration . textToRegistrationT . F.rgetField @CCESVvRegstatus
+  addRegistration = FT.recordSingleton @Registration . parseRegistration . F.rgetField @CCESVvRegstatus
   addTurnout = FT.recordSingleton @Turnout . intToTurnoutT . F.rgetField @CCESVvTurnoutGvm
   addHouseVoteParty = FT.recordSingleton @HouseVoteParty . intToPartyT . F.rgetField @CCESVotedRepParty
   mutate = FT.retypeColumn @CCESYear @Year
-           . FT.retypeColumn @CCESSt @StateFIPS
+           . FT.retypeColumn @CCESSt @StateAbbreviation
            . FT.retypeColumn @CCESDistUp @CongressionalDistrict -- could be CCES_Dist or CCES_DistUp
            . FT.mutate addGender
            . FT.mutate addEducation
@@ -210,21 +231,3 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
            . FT.mutate addTurnout
            . FT.mutate addHouseVoteParty
 
-{-
-F.declareColumn "PopCount" ''Int
-type DemographicCategory b = "DemographicCategory" F.:-> b  -- general holder
-type LocationKey = '[StateAbbreviation, CongressionalDistrict]
-
-type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
-
-data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demographicCategories = DemographicStructure
-  {
-    dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame turnoutDataRow -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
-  , dsPreprocessElectionData :: (forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])))
-  , dsCategories :: [demographicCategories]
-  }
-
-type instance FI.VectorFor (A.Array b Int) = V.Vector
-type instance FI.VectorFor (A.Array b Double) = V.Vector
--}

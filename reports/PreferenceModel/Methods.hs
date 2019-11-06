@@ -121,11 +121,12 @@ We will update this once the census publishes updated 2018 American Community Su
 [^GGCorrection]: We note that there is an error in the 2013 Ghitza and Gelman paper, one which is
 corrected in a more recent working paper <http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf>.
 by the same authors.  In the 2013 paper, a correction is derived
-for turnout in each region by find the $\delta^{(d)}$ which minimizes
-$\big|T^{(d)} -\sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \delta^{(d)})\big|$. The authors then
-state that the adjusted turnout in region $d$ is $\hat{t}^{(d)}_i = t_i + \delta^{(d)}$ which
-doesn't make sense since $\delta^{(d)}$ is not a probability.  This is corrected in the working
-paper to $\hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + \delta^{(d)})$.
+for turnout in each region by finding the $\\delta^{(d)}$ which minimizes
+$|T^{(d)} - \\sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \\delta^{(d)})|$.
+The authors then
+state that the adjusted turnout in region $d$ is $\\hat{t}^{(d)}_i = t_i + \\delta^{(d)}$ which
+doesn't make sense since $\\delta^{(d)}$ is not a probability.  This is corrected in the working
+paper to $\\hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + \\delta^{(d)})$.
 
 |]
 

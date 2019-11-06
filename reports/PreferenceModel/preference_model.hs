@@ -254,7 +254,7 @@ main = do
         )
         $ WWCV.post --modeledResultsASR modeledResultsASE houseElectionsFrame
         
-      let pubP3 = Time.fromGregorian 2019 10 25  
+      let pubP3 = Time.fromGregorian 2019 10 26  
       when (PostAcrossTime `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostAcrossTime)

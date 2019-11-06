@@ -97,16 +97,23 @@
   .br-readmore {
       font-style: italic;
   }
+  .brTable {
+      font-size: 180t
+  }
+  .brTableTitle {
+      text-align: center;
+      font-size:  14pt
+  }
   .footnotes {
       font-size: 10pt;
   }
-  @media screen and (min-width: 629px) {
+  @media screen and (min-width: 600px) {
      .content-wrapper {
 	 margin-left: 218px;
 	 margin-right: 218px
      }   
   }
-  @media screen and (max-width: 630px) {
+  @media screen and (max-width: 600px) {
       .content-wrapper {
 	  margin-left: 10px;
 	  margin-right: 10px
@@ -156,6 +163,51 @@
       line-height: 1.6em;      		       
   }  
   table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+      
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+      
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+      
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
       border-collapse: collapse;
       font-size: 10pt;
       margin-left: auto;
@@ -165,9 +217,7 @@
       border-bottom: 2px solid black;
       border-top: 2px solid black;
   }
-  table th, table td {
-      border: 1px solid black;
-  }
+
 </style>
 
 <script src="" type="text/javascript"></script>
@@ -216,7 +266,7 @@
 <li id="fn1" role="doc-endnote"><p>MIT Election Data and Science Lab, 2017 , “U.S. House 1976–2018” , https://doi.org/10.7910/DVN/IG0UN2 , Harvard Dataverse, V3 , UNF:6:KlGyqtI+H+vGh2pDCVp7cA== [fileUNF]<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2" role="doc-endnote"><p>Source: US Census, American Community Survey <a href="https://www.census.gov/programs-surveys/acs.html" class="uri">https://www.census.gov/programs-surveys/acs.html</a><a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn3" role="doc-endnote"><p>Source: US Census, Voting and Registration Tables <a href="https://www.census.gov/topics/public-sector/voting/data/tables.2014.html" class="uri">https://www.census.gov/topics/public-sector/voting/data/tables.2014.html</a>. NB: We are using 2017 demographic population data for our 2018 analysis, since that is the latest available from the census. We will update this once the census publishes updated 2018 American Community Survey data.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
-<li id="fn4" role="doc-endnote"><p>We note that there is an error in the 2013 Ghitza and Gelman paper, one which is corrected in a more recent working paper <a href="http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf" class="uri">http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf</a>. by the same authors. In the 2013 paper, a correction is derived for turnout in each region by find the <span class="math inline">\(delta^{(d)}\)</span> which minimizes <span class="math inline">\(big|T^{(d)} -sum_i N^{(d)}_i logit^{-1}(logit(t_i) + delta^{(d)})big|\)</span>. The authors then state that the adjusted turnout in region <span class="math inline">\(d\)</span> is <span class="math inline">\(hat{t}^{(d)}_i = t_i + delta^{(d)}\)</span> which doesn’t make sense since <span class="math inline">\(delta^{(d)}\)</span> is not a probability. This is corrected in the working paper to <span class="math inline">\(hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + delta^{(d)})\)</span>.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4" role="doc-endnote"><p>We note that there is an error in the 2013 Ghitza and Gelman paper, one which is corrected in a more recent working paper <a href="http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf" class="uri">http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf</a>. by the same authors. In the 2013 paper, a correction is derived for turnout in each region by finding the <span class="math inline">\(\delta^{(d)}\)</span> which minimizes <span class="math inline">\(|T^{(d)} - \sum_i N^{(d)}_i logit^{-1}(logit(t_i) + \delta^{(d)})|\)</span>. The authors then state that the adjusted turnout in region <span class="math inline">\(d\)</span> is <span class="math inline">\(\hat{t}^{(d)}_i = t_i + \delta^{(d)}\)</span> which doesn’t make sense since <span class="math inline">\(\delta^{(d)}\)</span> is not a probability. This is corrected in the working paper to <span class="math inline">\(\hat{t}^{(d)}_i = logit^{-1}(logit(t_i) + \delta^{(d)})\)</span>.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>
 <!--

@@ -120,13 +120,13 @@ $endif$
   .footnotes {
       font-size: 10pt;
   }
-  @media screen and (min-width: 629px) {
+  @media screen and (min-width: 600px) {
      .content-wrapper {
 	 margin-left: 218px;
 	 margin-right: 218px
      }   
   }
-  @media screen and (max-width: 630px) {
+  @media screen and (max-width: 600px) {
       .content-wrapper {
 	  margin-left: 10px;
 	  margin-right: 10px
@@ -176,6 +176,51 @@ $endif$
       line-height: 1.6em;      		       
   }  
   table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+      
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+      
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+      
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
       border-collapse: collapse;
       font-size: 10pt;
       margin-left: auto;
@@ -185,9 +230,7 @@ $endif$
       border-bottom: 2px solid black;
       border-top: 2px solid black;
   }
-  table th, table td {
-      border: 1px solid black;
-  }
+
 </style>
 
 $if(quotes)$

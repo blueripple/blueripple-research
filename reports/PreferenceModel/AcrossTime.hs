@@ -280,11 +280,11 @@ Whatever happened in the past is likely not predictive.
 However, understanding what happened in previous elections
 is a good place to start as we look to hold and expand on the gains made in 2018.
 
-1. Turnout vs. Preference: Context and Caveats
-2. The Evolving Democratic Coalition
-3. Breaking Down the Changes
-4. What Does It Mean?
-5. Take Action 
+1. **Turnout vs. Preference:** Context and Caveats
+2. **The Evolving Democratic Coalition**
+3. **Breaking Down the Changes**
+4. **What Does It Mean?**
+5. **Take Action**
 
 ## Turnout vs. Preference: Context and Caveats
 Swirling around many analyses and think-pieces about elections is a central
@@ -293,30 +293,38 @@ agree with them to vote (turnout) or by convincing
 people who disagree with them to change their minds (preference)? Campaigns
 try to do both, of course, but is one more important in a given race?
 
-It's important to note that the analysis depends a lot on the geographical
-boundaries and the demographic categorizations. For instance,
-if college-educated voters move from one district to another
-in a state, that's demographic change at the district level but not at the state
-or national level.
+We think preference shifts were a big deal in 2018.  Before explaining our data,
+it's important to address three key issues that arise with these sorts of analyses:
 
-Also important is choosing a baseline for comparison.  With
-2014 as a baseline---comparing mid-term to mid-term---then there is a Democratic turnout surge
-as [Rachel Bitecofer argues][RB:TurnoutTweet].  If you look instead at the changes from 2016
-to 2018, focusing on the blue wave, voter preference was the more pronounced shift.  For instance, see
-this [Yair Ghitza article][YG:WhatHappened2018], which agrees with our conclusion that preference changes
-played the largest role in the blue wave. Though, as Ghitza notes,  there were many
-2018 mid-term voters who had not voted in the 2016 presidential race, and those
-voters broke for the Democrats by 21 percentage points.
+1. **Who are the "people" we're studying?** Many excellent prior analyses,
+like those by [Rachel Bitecofer][RB:TurnoutTweet]  and
+[Yair Ghitza][YG:WhatHappened2018], use voter files to look at
+voters' underlying party affiliation, to understand the behaviors of registered
+Dems and Republicans (and independents) from election to election. We use a
+different approach (described in more detail [here][BR:Methods]) that subdivides
+people only by demographics, e.g., age, race, degree of education, etc. That
+means that if, within the same demographic group, some previously Republican voters
+stay home and some new Democratic voters show up, we will see that as
+a *preference shift* though from a party affiliation perspective,
+it could also be seen as a turnout shift. 
 
-Our analysis is also limited by looking only at voters in aggregate.  Both Bitecofer and
-Ghitza are analyzing voter files which allows them to examine the behavior of individual
-voters.  We are looking only at demographic groups as a whole so, for instance,
-if within the same demographic group some
-previously Republican voters stay home and some new Democratic voters show up, we will see
-that as a *preference* shift though it should properly be seen as a turnout shift.
+2. **What's the geographic unit of measure?** These analyses depend
+a lot on the geographical boundaries and the demographic categorizations.
+For instance, if college-educated voters move from one district to another in a state,
+that’s demographic change at the district level but not at the state or national level.
+In our work so far, we've looked at voters' behaviors only at the national level.
+
+3. **What's the comparator year?** If there's a change in demographics, turnout, or preference,
+the key question is: compared with what?
+Using 2014 as a baseline—comparing mid-term to mid-term—then there is a Democratic turnout surge,
+as [Rachel Bitecofer argues][RB:TurnoutTweet]. If you look instead at the changes from 2016 to 2018,
+focusing on the blue wave, voter preference was the more pronounced shift,
+as seen in this [Yair Ghitza article][YG:WhatHappened2018]. We take
+a few different perspectives, as noted below.
 
 [RB:TurnoutTweet]: <https://twitter.com/RachelBitecofer/status/1185515355088867328>
 [YG:WhatHappened2018]: <https://medium.com/@yghitza_48326/revisiting-what-happened-in-the-2018-election-c532feb51c0>
+[BR:Methods]: <${brGithubUrl (postPath PostMethods)}#>
 
 ## The Evolving Democratic Coalition
 
@@ -390,7 +398,7 @@ looking at changes from 2016 to 2018:
 
 brAcrossTimeASRRow :: T.Text
 brAcrossTimeASRRow = [i|
-By column:
+We have:
 
 1. The name of the demographic group (older female non-college-graduates).
 2. The population (44.7 million) in the ending year.

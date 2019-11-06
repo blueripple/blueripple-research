@@ -50,7 +50,7 @@ import           Polysemy.Error                 ( Error )
 import           Data.String.Here               ( here )
 
 import           BlueRipple.Data.DataFrames
-import           BlueRipple.Data.MRP
+import           MRP.CCES
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as TA
 
@@ -81,8 +81,8 @@ main = do
       K.logLE K.Info "Loading data..."
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-          tsvParserOptions = csvParserOptions { F.columnSeparator = "\t" }
-          preFilterYears   = FU.filterOnMaybeField @CCESYear (`L.elem` [2016])
+          tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
+          preFilterYears   = FU.filterOnMaybeField @Year (`L.elem` [2016])
       ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
         tsvParserOptions
         preFilterYears
@@ -90,9 +90,17 @@ main = do
       ccesFrame <-
         fmap transformCCESRow
           <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
-      let firstFew = take 4 $ FL.fold FL.list ccesFrame
+      let
+        firstFew = take 100 $ FL.fold
+          FL.list
+          (fmap
+            (F.rcast
+              @'[StateAbbreviation, Registration, Turnout, HouseVoteParty]
+            )
+            ccesFrame
+          )
       K.logLE K.Diagnostic
-        $  "ccesFrame (first 4 rows):\n"
+        $  "ccesFrame (first 100 rows):\n"
         <> (T.pack $ show firstFew)
       K.logLE K.Info "Inferring..."
       K.logLE K.Info "Knitting docs..."

@@ -74,7 +74,7 @@ brP2Main = "p2/main"
 brP3Main :: T.Text
 brP3Main = "p3/main"
 -}
-
+{-
 brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
 brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
@@ -99,3 +99,4 @@ brAddRawHtmlTable title attr colonnade rows =
     BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
     BC.encodeCellTable attr colonnade rows
 
+-}

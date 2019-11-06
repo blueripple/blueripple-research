@@ -18,3 +18,5 @@ examples/html
 *.ps
 *.aux
 *.png
+/posts
+reports/MRP/data

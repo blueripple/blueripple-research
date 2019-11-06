@@ -8,13 +8,23 @@
 module BlueRipple.Utilities.KnitUtils where
 
 import qualified Knit.Report                   as K
+import qualified Knit.Report.Input.MarkDown.PandocMarkDown
+                                               as K
 import qualified Control.Monad.Except          as X
 import qualified Data.Text                     as T
+import qualified Data.Text.Lazy                as TL
 import qualified System.Directory              as SD
 
 import           Polysemy.Error                 ( Error )
 
-import           Data.String.Here               ( here )
+import qualified Text.Pandoc.Options           as PA
+
+import qualified Text.Blaze.Colonnade          as BC
+import qualified Text.Blaze.Html5              as BH
+import qualified Text.Blaze.Html.Renderer.Text as B
+import qualified Text.Blaze.Html5.Attributes   as BHA
+
+
 
 knitX
   :: forall r a
@@ -55,4 +65,29 @@ copyAsset sourcePath destDir = do
         let (_, fName) = T.breakOnEnd "/" sourcePath
         SD.createDirectoryIfMissing True (T.unpack destDir)
         SD.copyFile (T.unpack sourcePath) (T.unpack $ destDir <> "/" <> fName)
+
+brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
+brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
+ where
+  brMarkDownReaderOptions =
+    let exts = PA.readerExtensions K.markDownReaderOptions
+    in  PA.def
+          { PA.readerStandalone = True
+          , PA.readerExtensions = PA.enableExtension PA.Ext_smart
+                                  . PA.enableExtension PA.Ext_raw_html
+                                  $ exts
+          }
+
+brAddRawHtmlTable
+  :: (K.KnitOne r, Foldable f)
+  => T.Text
+  -> BH.Attribute
+  -> K.Colonnade K.Headed a BC.Cell
+  -> f a
+  -> K.Sem r ()
+brAddRawHtmlTable title attr colonnade rows =
+  brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
+    BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
+    BC.encodeCellTable attr colonnade rows
+
 
