@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                 #-}
+{-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -15,6 +16,8 @@ import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Vector                   as VB
 import qualified Data.Text                     as T
+import           Data.Data                      ( Data )
+import           Data.Typeable                  ( Typeable )
 
 import qualified Text.Printf                   as PF
 
@@ -49,17 +52,29 @@ import           Polysemy.Error                 ( Error )
 
 import           Data.String.Here               ( here )
 
+import qualified System.Console.CmdArgs.Implicit as CA
+import System.Console.CmdArgs.Implicit ((&=))
+
+
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Utilities.KnitUtils
 import           MRP.CCES
+import           MRP.Common
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as TA
 
+yamlAuthor :: T.Text
+yamlAuthor = [here|
+- name: Adam Conner-Sax
+- name: Frank David
+|]
+
 templateVars =
   M.fromList [("lang", "English")
---  , ("author"   , "Adam Conner-Sax & Frank David")
---  , ("pagetitle", "Preference Model & Predictions")
---  , ("tufte","True")
-                                 ]
+             , ("site-title", "Blue Ripple Politics")
+             , ("home-url", "https://www.blueripplepolitics.org")             
+--  , ("author"   , T.unpack yamlAuthor)
+             ]
 
 {- TODO
 1. Why are rows still being dropped?  Which col is missing?  In general, write a diagnostic for showing what is missing...
@@ -69,13 +84,49 @@ The weird:  Missing voted_rep_party.  These are non-voters or voters who didn't 
 survey responses.  Maybe that's not weird??
 -}
 
+pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
+
+data PostArgs = PostArgs { posts :: [Post], updated :: Bool } deriving (Show, Data, Typeable)
+
+postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
+                                        [PostIntro] &= CA.name "intro" &= CA.help "knit \"Intro\"",
+                                        [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
+                                        [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
+                                      ]
+                    , updated = CA.def
+                      &= CA.name "u"
+                      &= CA.help "Flag to set whether the post gets an updated date annotation.  Defaults to False."
+                      &= CA.typ "Bool"
+                    }
+           &= CA.verbosity
+           &= CA.help "Produce MRP Model Blue Ripple Politics Posts"
+           &= CA.summary "mrp-model v0.1.0.0, (C) 2019 Adam Conner-Sax"
+
 main :: IO ()
 main = do
-  let template = K.FromIncludedTemplateDir "mindoc-pandoc-KH.html"
---  let template = K.FullySpecifiedTemplatePath "pandoc-templates/minWithVega-pandoc.html"
-  pandocWriterConfig <- K.mkPandocWriterConfig template
+  args <- CA.cmdArgs postArgs
+  putStrLn $ show args
+{-  
+  let brMarkDownReaderOptions =
+        let exts = PA.readerExtensions K.markDownReaderOptions
+        in PA.def
+           { PA.readerStandalone = True
+           , PA.readerExtensions = PA.enableExtension PA.Ext_smart
+                                   . PA.enableExtension PA.Ext_raw_html
+                                   $ exts
+           }
+      brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
+      brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
+      brWriterOptionsF :: PA.WriterOptions -> PA.WriterOptions
+      brWriterOptionsF o =
+        let exts = PA.writerExtensions o
+        in o { PA.writerExtensions = PA.enableExtension PA.Ext_smart exts
+             , PA.writerSectionDivs = True
+             }
+-}
+  pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
-                                               K.mindocOptionsF
+                                               brWriterOptionsF
   eitherDocs <-
     K.knitHtmls (Just "MRP_Basics.Main") K.logAll pandocWriterConfig $ do
       K.logLE K.Info "Loading data..."
@@ -104,6 +155,8 @@ main = do
         <> (T.intercalate "\n" $ fmap (T.pack . show) firstFew)
       K.logLE K.Info "Inferring..."
       K.logLE K.Info "Knitting docs..."
+--      curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+        
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "reports/html/MRP_Basics" namedDocs

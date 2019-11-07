@@ -26,25 +26,25 @@ import           BlueRipple.Configuration       ( brResearchRootUrl
                                                 , brExplainerRootUrl
                                                 , brExplainerRootPath
                                                 )
-brMPRModelRootUrl :: T.Text
+brMRPModelRootUrl :: T.Text
 brMRPModelRootUrl = brResearchRootUrl <> "mrp-model/"
 
 brMRPModelUrl :: T.Text -> T.Text
 brMRPModelUrl x = brMRPModelRootUrl <> x <> ".html"
 
 brMRPModelRootPath :: T.Text
-brMRPModelRootPath = brResearchRootPath <> "preference-model/"
+brMRPModelRootPath = brResearchRootPath <> "mrp-model/"
 {-
 brMRPModelLocalPath :: T.Text
 brMRPModelLocalPath = "posts/preference-model/"
 -}
-data Post = PostMethods | Post2018 deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
+data Post = PostMethods | PostIntro deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
 
 postRoute :: Post -> T.Text
 postRoute PostMethods = brMRPModelRootPath <> "methods/"
-postRoute Post2018    = brMRPModelRootPath <> "p1/"
+postRoute PostIntro   = brMRPModelRootPath <> "p1/"
 
 postPath :: Post -> T.Text
 postPath PostMethods = postRoute PostMethods <> "main"
-postPath Post2018    = postRoute Post2018 <> "main"
+postPath PostIntro   = postRoute PostIntro <> "main"
 

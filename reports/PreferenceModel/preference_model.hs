@@ -112,27 +112,11 @@ main :: IO ()
 main = do
   args <- CA.cmdArgs postArgs
   putStrLn $ show args
-  let brMarkDownReaderOptions =
-        let exts = PA.readerExtensions K.markDownReaderOptions
-        in PA.def
-           { PA.readerStandalone = True
-           , PA.readerExtensions = PA.enableExtension PA.Ext_smart
-                                   . PA.enableExtension PA.Ext_raw_html
-                                   $ exts
-           }
-      brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
-      brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
-      brWriterOptionsF :: PA.WriterOptions -> PA.WriterOptions
-      brWriterOptionsF o =
-        let exts = PA.writerExtensions o
-        in o { PA.writerExtensions = PA.enableExtension PA.Ext_smart exts
-             , PA.writerSectionDivs = True
-             }
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
   eitherDocs <-
-    K.knitHtmls (Just "preference_model.Main") K.nonDiagnostic pandocWriterConfig $ do
+    K.knitHtmls (Just "preference-model.Main") K.nonDiagnostic pandocWriterConfig $ do
     -- load the data   
       let parserOptions =
             F.defaultParser --{ F.quotingMode = F.RFC4180Quoting '\"' }
@@ -202,20 +186,11 @@ main = do
 
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-      let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
-          addDates :: Time.Day -> Time.Day -> M.Map String String -> M.Map String String
-          addDates pubDate updateDate tMap =
-            let pubT = M.singleton "published" $ formatTime pubDate
-                updT = case updated args of
-                         True -> if (updateDate > pubDate) then M.singleton "updated" (formatTime updateDate) else M.empty
-                         False -> M.empty
-            in tMap <> pubT <> updT
-          -- group name, voting pop, turnout fraction, inferred dem vote fraction  
-          pubDateP1 = Time.fromGregorian 2019 9 2
+      let pubDateP1 = Time.fromGregorian 2019 9 2
       when (Post2018 `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath Post2018)
-          (addDates pubDateP1 curDate -- (Just curDate)
+          (brAddDates (updated args) pubDateP1 curDate -- (Just curDate)
             $ M.fromList [("pagetitle", "Digging into 2018 -  National Voter Preference")
                          ,("title", "Digging into the 2018 House Election Results")             
                          ]
@@ -225,7 +200,7 @@ main = do
       when (PostExitPolls `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostExitPolls)
-          (addDates pubDateP1 curDate -- (Just curDate)
+          (brAddDates (updated args) pubDateP1 curDate -- (Just curDate)
            $ M.fromList [("pagetitle", "Comparison of inferred preference model to Edison exit polls.")
                         ,("title","Comparing the Inferred Preference Model to the Exit Polls")
                         ]
@@ -235,7 +210,7 @@ main = do
       when (PostMethods `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostMethods)
-          (addDates pubDateP1 curDate -- (Just curDate)
+          (brAddDates (updated args) pubDateP1 curDate -- (Just curDate)
             $ M.fromList [("pagetitle", "Inferred Preference Model: Methods & Sources")
                          ]
           )
@@ -246,7 +221,7 @@ main = do
       when (PostWWCV `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostWWCV)
-          (addDates pubP2 curDate
+          (brAddDates (updated args) pubP2 curDate
             $ M.fromList [("pagetitle", titleP2)
                          ,("title", titleP2)
                          ]
@@ -258,7 +233,7 @@ main = do
       when (PostAcrossTime `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
           (postPath PostAcrossTime)
-          (addDates pubP3 curDate
+          (brAddDates (updated args) pubP3 curDate
             $ M.fromList [("pagetitle", "Where Did The Blue Wave Come From?")
                          ,("title", "Where Did The Blue Wave Come From?")
                          ]

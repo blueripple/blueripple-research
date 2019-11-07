@@ -116,7 +116,7 @@ executable mission
                , time
   default-language: Haskell2010
 
-executable preference_model
+executable preference-model
   import: deps
   ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
@@ -142,17 +142,22 @@ executable preference_model
                , time
   default-language: Haskell2010
 
-executable MRP
+executable mrp-model
   import: deps
   ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath
-                  MRP.CCES
+                , MRP.CCES
+                , MRP.CCESFrame
+                , MRP.Common
   build-depends: base >= 4.11
+               , blaze-colonnade
+               , cmdargs
                , hashable >= 1.2 && < 1.3.0
                , lens >= 4.16 && < 5
                , mtl  >= 2.1 && < 2.3.0
+               , pandoc
                , preference-model
                , glm-haskell
   default-language: Haskell2010                 

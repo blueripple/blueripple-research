@@ -11,9 +11,13 @@ import qualified Knit.Report                   as K
 import qualified Knit.Report.Input.MarkDown.PandocMarkDown
                                                as K
 import qualified Control.Monad.Except          as X
+import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Text.Lazy                as TL
 import qualified System.Directory              as SD
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Clock               as Time
+import qualified Data.Time.Format              as Time
 
 import           Polysemy.Error                 ( Error )
 
@@ -66,6 +70,13 @@ copyAsset sourcePath destDir = do
         SD.createDirectoryIfMissing True (T.unpack destDir)
         SD.copyFile (T.unpack sourcePath) (T.unpack $ destDir <> "/" <> fName)
 
+brWriterOptionsF :: PA.WriterOptions -> PA.WriterOptions
+brWriterOptionsF o =
+  let exts = PA.writerExtensions o
+  in  o { PA.writerExtensions  = PA.enableExtension PA.Ext_smart exts
+        , PA.writerSectionDivs = True
+        }
+
 brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
 brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
@@ -91,3 +102,14 @@ brAddRawHtmlTable title attr colonnade rows =
     BC.encodeCellTable attr colonnade rows
 
 
+brAddDates
+  :: Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
+brAddDates updated pubDate updateDate tMap =
+  let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
+      pubT = M.singleton "published" $ formatTime pubDate
+      updT = case updated of
+        True -> if (updateDate > pubDate)
+          then M.singleton "updated" (formatTime updateDate)
+          else M.empty
+        False -> M.empty
+  in  tMap <> pubT <> updT
