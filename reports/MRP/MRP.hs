@@ -54,12 +54,12 @@ import           MRP.CCES
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as TA
 
-templateVars = M.fromList
-  [ ("lang"     , "English")
-  , ("author"   , "Adam Conner-Sax & Frank David")
-  , ("pagetitle", "Preference Model & Predictions")
+templateVars =
+  M.fromList [("lang", "English")
+--  , ("author"   , "Adam Conner-Sax & Frank David")
+--  , ("pagetitle", "Preference Model & Predictions")
 --  , ("tufte","True")
-  ]
+                                 ]
 
 {- TODO
 1. Why are rows still being dropped?  Which col is missing?  In general, write a diagnostic for showing what is missing...
@@ -91,17 +91,17 @@ main = do
         fmap transformCCESRow
           <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       let
-        firstFew = take 100 $ FL.fold
+        firstFew = take 1000 $ FL.fold
           FL.list
           (fmap
             (F.rcast
-              @'[StateAbbreviation, Registration, Turnout, HouseVoteParty]
+              @'[CCESCaseId, StateAbbreviation, Registration, Turnout, HouseVoteParty, PartisanId3]
             )
             ccesFrame
           )
       K.logLE K.Diagnostic
         $  "ccesFrame (first 100 rows):\n"
-        <> (T.pack $ show firstFew)
+        <> (T.intercalate "\n" $ fmap (T.pack . show) firstFew)
       K.logLE K.Info "Inferring..."
       K.logLE K.Info "Knitting docs..."
   case eitherDocs of

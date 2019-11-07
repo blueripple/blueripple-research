@@ -47,9 +47,9 @@ F.declareColumn "Date" ''FP.FrameDay
 
 
 --these columns are parsed wrong so we fix them before parsing
---F.declareColumn "CCESVvRegstatus" ''Int
+--F.declareColumn "CCESVvRegstatus" ''Text
 F.declareColumn "CCESHispanic"    ''Int
-F.declareColumn "CCESVvTurnoutGvm" ''Int
-F.declareColumn "CCESVotedRepParty" ''Int
+--F.declareColumn "CCESVvTurnoutGvm" ''Int
+--F.declareColumn "CCESVotedRepParty" ''Int
 F.tableTypes' ccesRowGen
 
