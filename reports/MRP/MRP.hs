@@ -30,6 +30,9 @@ import qualified Pipes.Prelude                 as P
 
 import qualified Numeric.LinearAlgebra         as LA
 
+import qualified Frames                        as F
+import qualified Data.Vinyl                    as V
+
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Frames.Visualization.VegaLite.StackedArea
@@ -58,10 +61,12 @@ import System.Console.CmdArgs.Implicit ((&=))
 
 import           BlueRipple.Data.DataFrames
 import           BlueRipple.Utilities.KnitUtils
-import           MRP.CCES
-import           MRP.Common
+
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as TA
+
+import           MRP.CCES
+import           MRP.Common
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -140,7 +145,7 @@ main = do
         ccesTSV
       ccesFrame <-
         fmap transformCCESRow
-          <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
+          <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs          
       let
         firstFew = take 1000 $ FL.fold
           FL.list
@@ -161,3 +166,14 @@ main = do
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "reports/html/MRP_Basics" namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
+
+
+-- map reduce
+type Count = "Count" F.:-> Int
+type Successes = "Successes" F.:-> Int
+
+binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
+binomialFold testRow =
+  let successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
+  in  (\s n -> s F.&: n F.&: V.RNil) <$> successesF <*> FL.length
+      
