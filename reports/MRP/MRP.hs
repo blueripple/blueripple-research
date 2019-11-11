@@ -79,6 +79,7 @@ import           MRP.Common
 
 import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
+import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.FunctionFamily    as GLM
 import           Numeric.GLM.MixedModel        as GLM  
 import qualified Numeric.GLM.Report            as GLM
@@ -178,7 +179,7 @@ main = do
         Right x -> return x --K.knitError "GLMK.throwEither $ either (Left . GLM.OtherGLMError) Right rcM
       let effectsByGroup = M.fromList [(CCES_State, IS.fromList [GLM.Intercept])]
       fitSpecByGroup <- GLM.fitSpecByGroup fixedEffects effectsByGroup rowClassifier        
-      let lmmControls = GLM.LMMControls LMM_NELDERMEAD 1e-6
+      let lmmControls = GLM.LMMControls GLM.LMM_NELDERMEAD 1e-6
           lmmSpec = GLM.LinearMixedModelSpec (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup) lmmControls
           cc = GLM.PIRLSConvergenceCriterion GLM.PCT_Deviance 1e-6 20
           glmmControls = GLM.GLMMControls GLM.UseCanonical 10 cc
@@ -190,6 +191,7 @@ main = do
           mdVerbosity = MDVNone
       GLM.checkProblem mixedModel randomEffectCalc
       (th, pd, sigma2, betaU, b, cs) <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
+{-
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
@@ -198,7 +200,7 @@ main = do
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
       _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0                                                                                                
+      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0                                                                                         -}       
       GLM.report mixedModel randomEffectsModelMatrix (GLM.bu_vBeta betaU) (SD.toSparseVector b)
 
       let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU

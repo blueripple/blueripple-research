@@ -144,7 +144,8 @@ executable preference-model
 
 executable mrp-model
   import: deps
-  ghc-options: -Wall -O0 -threaded -fexternal-interpreter -rtsopts -prof -fprof-auto
+  ghc-options: -Wall -O0 -threaded -rtsopts
+--  ghc-options: -Wall -O0 -threaded -fexternal-interpreter -rtsopts -prof -fprof-auto
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath
