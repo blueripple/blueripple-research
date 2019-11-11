@@ -46,7 +46,7 @@ common deps
                      
 library
   import: deps
-  ghc-options: -O1 -fplugin=Polysemy.Plugin
+  ghc-options: -O -fplugin=Polysemy.Plugin
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.FromDB
                  , BlueRipple.Data.PrefModel
@@ -144,7 +144,7 @@ executable preference-model
 
 executable mrp-model
   import: deps
-  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
+  ghc-options: -Wall -O0 -threaded -fexternal-interpreter -rtsopts -prof -fprof-auto
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath

@@ -101,6 +101,7 @@ type CCES_MRP = '[ Year
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
 minus1 x = x - 1
 data GenderT = Male | Female deriving (Show, Enum, Bounded, Eq, Ord)
+type instance FI.VectorFor GenderT = V.Vector
 
 intToGenderT :: Int -> GenderT
 intToGenderT = toEnum . minus1
