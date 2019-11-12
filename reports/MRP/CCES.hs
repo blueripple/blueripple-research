@@ -1,18 +1,22 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0              #-}
 module MRP.CCES
   (
@@ -27,7 +31,9 @@ import           MRP.CCESFrame
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
 import qualified Control.Monad.Except          as X
+import qualified Control.Monad.State           as ST
 import qualified Data.Array                    as A
+import qualified Data.Binary                   as B
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromMaybe)
@@ -54,8 +60,13 @@ import qualified Frames.MaybeUtils             as FM
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 
+import qualified Data.IndexedSet               as IS
+import qualified Numeric.GLM.ProblemTypes      as GLM
+import qualified Numeric.LinearAlgebra         as LA
+
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
+--import qualified Data.Vector.Boxed             as VB
 import           GHC.Generics                   ( Generic )
 
 import GHC.TypeLits (Symbol)
@@ -95,14 +106,18 @@ type CCES_MRP = '[ Year
                  , Registration
                  , Turnout
                  , HouseVoteParty
-                 ]
-                 
+                 ]                
+
+-- these are orphans but where could they go?
+-- I guess we could newtype "ElField" somehow, just for serialization? Then coerce back and forth...
+instance (B.Binary (V.Snd t), V.KnownField t) => B.Binary (F.ElField t)
+instance B.Binary (F.Record CCES_MRP)
 
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
 minus1 x = x - 1
-data GenderT = Male | Female deriving (Show, Enum, Bounded, Eq, Ord)
+data GenderT = Male | Female deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor GenderT = V.Vector
-
+instance B.Binary GenderT
 intToGenderT :: Int -> GenderT
 intToGenderT = toEnum . minus1
 
@@ -114,7 +129,9 @@ data EducationT = E_NoHS
                 | E_TwoYear
                 | E_FourYear
                 | E_PostGrad
-                | E_Missing deriving (Show, Enum, Bounded, Eq, Ord)
+                | E_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor EducationT = V.Vector
+instance B.Binary EducationT
 
 intToEducationT :: Int -> EducationT
 intToEducationT = toEnum . minus1 . min 7
@@ -125,7 +142,9 @@ intToCollegeGrad n = n >= 4
 type Education = "Education" F.:-> EducationT
 type CollegeGrad = "CollegeGrad" F.:-> Bool
 
-data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord)
+data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor RaceT = V.Vector
+instance B.Binary RaceT
 
 intToRaceT :: Int -> RaceT
 intToRaceT = toEnum . minus1
@@ -134,7 +153,10 @@ type Race = "Race" F.:-> RaceT
 type WhiteNonHispanic = "WhiteNonHispanic" F.:-> Bool
 
 
-data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord)
+data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor AgeT = V.Vector
+instance B.Binary AgeT
+
 intToAgeT :: Real a => a -> AgeT
 intToAgeT x 
   | x < 25 = A18To24
@@ -155,7 +177,9 @@ data RegistrationT = R_Active
                    | R_Dropped
                    | R_Inactive
                    | R_Multiple
-                   | R_Missing deriving (Show, Enum, Bounded, Eq, Ord)
+                   | R_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor RegistrationT = V.Vector
+instance B.Binary RegistrationT
 
 parseRegistration :: T.Text -> RegistrationT
 parseRegistration "Active" = R_Active
@@ -175,7 +199,9 @@ data RegPartyT = RP_NoRecord
                | RP_Green
                | RP_Independent
                | RP_Libertarian
-               | RP_Other deriving (Show, Enum, Bounded, Eq, Ord)
+               | RP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor RegPartyT = V.Vector
+instance B.Binary RegPartyT
 
 parseRegParty :: T.Text -> RegPartyT
 parseRegParty "No Record Of Party Registration" = RP_NoRecord
@@ -190,7 +216,9 @@ parseRegParty _ = RP_Other
 data TurnoutT = T_Voted
               | T_NoRecord
               | T_NoFile
-              | T_Missing deriving (Show, Enum, Bounded, Eq, Ord)
+              | T_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor TurnoutT = V.Vector
+instance B.Binary TurnoutT
 
 parseTurnout :: T.Text -> TurnoutT
 parseTurnout "Voted" = T_Voted
@@ -205,7 +233,9 @@ data PartisanIdentity3 = PI3_Democrat
                        | PI3_Independent
                        | PI3_Other
                        | PI3_NotSure
-                       | PI3_Missing deriving (Show, Enum, Bounded, Eq, Ord)
+                       | PI3_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor PartisanIdentity3 = V.Vector
+instance B.Binary PartisanIdentity3
 
 parsePartisanIdentity3 :: Int -> PartisanIdentity3
 parsePartisanIdentity3 = toEnum . minus1 . min 6
@@ -220,8 +250,9 @@ data PartisanIdentity7 = PI7_StrongDem
                        | PI7_WeakRep
                        | PI7_StrongRep
                        | PI7_NotSure
-                       | PI7_Missing deriving (Show, Enum, Bounded, Eq, Ord)
-
+                       | PI7_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor PartisanIdentity7 = V.Vector
+instance B.Binary PartisanIdentity7
 
 parsePartisanIdentity7 :: Int -> PartisanIdentity7
 parsePartisanIdentity7 = toEnum . minus1 . min 9
@@ -232,14 +263,18 @@ data PartisanIdentityLeaner = PIL_Democrat
                             | PIL_Republican
                             | PIL_Independent
                             | PIL_NotSure
-                            | PIL_Missing deriving (Show, Enum, Bounded, Eq, Ord)
+                            | PIL_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor PartisanIdentityLeaner = V.Vector
+instance B.Binary PartisanIdentityLeaner
 
 parsePartisanIdentityLeaner :: Int -> PartisanIdentityLeaner
 parsePartisanIdentityLeaner = toEnum . minus1 . min 5
 
 type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
 
-data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord)
+data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor VotePartyT = V.Vector
+instance B.Binary VotePartyT
 
 parseVoteParty :: T.Text -> VotePartyT
 parseVoteParty "Democratic" = VP_Democratic
@@ -325,3 +360,140 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
            . FT.mutate addPID7
            . FT.mutate addPIDLeaner
 
+
+
+-- map reduce
+type Count = "Count" F.:-> Int
+type Successes = "Successes" F.:-> Int
+
+-- some keys for aggregation
+type ByStateGender = '[StateAbbreviation, Gender]
+type ByStateGenderRace = '[StateAbbreviation, Gender, WhiteNonHispanic]
+type ByStateGenderRaceAge = '[StateAbbreviation, Gender, WhiteNonHispanic, Under45]
+type ByStateGenderEducationAge = '[StateAbbreviation, Gender, CollegeGrad, Under45]
+type ByStateGenderRaceEducation = '[StateAbbreviation, Gender, WhiteNonHispanic, CollegeGrad]
+
+binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
+binomialFold testRow =
+  let successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
+  in  (\s n -> s F.&: n F.&: V.RNil) <$> FL.length <*> successesF
+
+countFold :: forall k r d.(Ord (F.Record k)
+                          , FI.RecVec (k V.++ '[Count, Successes])
+                          , k F.⊆ r
+                          , d F.⊆ r)
+          => (F.Record d -> Bool)
+          -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count,Successes])]
+countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR.foldAndAddKey $ binomialFold testData)
+ 
+data CCESPredictor = P_Gender deriving (Show, Eq, Ord, Enum, Bounded)
+type CCESEffect = GLM.WithIntercept CCESPredictor
+ccesPredictor :: forall r. (F.ElemOf r Gender) => F.Record r -> CCESPredictor -> Double
+ccesPredictor r P_Gender = if (F.rgetField @Gender r == Female) then 0 else 1
+
+data CCESGroup = CCES_State deriving (Show, Eq, Ord, Enum, Bounded, A.Ix)
+ccesGroupLabels ::forall r.  F.ElemOf r StateAbbreviation => F.Record r -> CCESGroup -> T.Text
+ccesGroupLabels r CCES_State = F.rgetField @StateAbbreviation r
+
+getFraction r = (realToFrac $ F.rgetField @Successes r)/(realToFrac $ F.rgetField @Count r)
+fixedEffects :: GLM.FixedEffects CCESPredictor
+fixedEffects = GLM.allFixedEffects True
+
+groups = IS.fromList [CCES_State]
+
+-- This really really needs to be someplace central...
+
+lmePrepFrame
+  :: forall p g rs
+   . (Bounded p, Enum p, Ord g, Show g)
+  => (F.Record rs -> Double) -- ^ observations
+  -> GLM.FixedEffects p
+  -> IS.IndexedSet g
+  -> (F.Record rs -> p -> Double) -- ^ predictors
+  -> (F.Record rs -> g -> T.Text)  -- ^ classifiers
+  -> FL.Fold
+       (F.Record rs)
+       ( LA.Vector Double
+       , LA.Matrix Double
+       , Either T.Text (GLM.RowClassifier g)
+       ) -- ^ (X,y,(row-classifier, size of class))
+lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
+  = let
+      makeInfoVector
+        :: M.Map g (M.Map T.Text Int)
+        -> M.Map g T.Text
+        -> Either T.Text (V.Vector GLM.ItemInfo)
+      makeInfoVector indexMaps labels =
+        let
+          g (grp, label) =
+            GLM.ItemInfo
+              <$> (maybe (Left $ "Failed on " <> (T.pack $ show (grp, label)))
+                         Right
+                  $ M.lookup grp indexMaps
+                  >>= M.lookup label
+                  )
+              <*> pure label
+        in  fmap V.fromList $ traverse g $ M.toList labels
+      makeRowClassifier
+        :: Traversable f
+        => M.Map g (M.Map T.Text Int)
+        -> f (M.Map g T.Text)
+        -> Either T.Text (GLM.RowClassifier g)
+      makeRowClassifier indexMaps labels = do
+        let sizes = fmap M.size indexMaps
+        indexed <- traverse (makeInfoVector indexMaps) labels
+        return $ GLM.RowClassifier groupIndices
+                                   sizes
+                                   (V.fromList $ FL.fold FL.list indexed)
+                                   indexMaps
+      getPredictorF' _   GLM.Intercept     = 1
+      getPredictorF' row (GLM.Predictor x) = getPredictorF row x
+      predictorF row = LA.fromList $ case fe of
+        GLM.FixedEffects indexedFixedEffects ->
+          fmap (getPredictorF' row) $ IS.members indexedFixedEffects
+        GLM.InterceptOnly -> [1]
+      getClassifierLabels :: F.Record rs -> M.Map g T.Text
+      getClassifierLabels r =
+        M.fromList $ fmap (\g -> (g, classifierLabelF r g)) $ IS.members
+          groupIndices
+      foldObs   = fmap LA.fromList $ FL.premap observationF FL.list
+      foldPred  = fmap LA.fromRows $ FL.premap predictorF FL.list
+      foldClass = FL.premap getClassifierLabels FL.list
+      g (vY, mX, ls) =
+        ( vY
+        , mX
+        , makeRowClassifier
+          (snd $ ST.execState (addAll ls) (M.empty, M.empty))
+          ls
+        )
+    in
+      fmap g $ ((,,) <$> foldObs <*> foldPred <*> foldClass)
+
+addOne
+  :: Ord g
+  => (g, T.Text)
+  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
+addOne (grp, label) = do
+  (nextIndexMap, groupIndexMaps) <- ST.get
+  let groupIndexMap = fromMaybe M.empty $ M.lookup grp groupIndexMaps
+  case M.lookup label groupIndexMap of
+    Nothing -> do
+      let index         = fromMaybe 0 $ M.lookup grp nextIndexMap
+          nextIndexMap' = M.insert grp (index + 1) nextIndexMap
+          groupIndexMaps' =
+            M.insert grp (M.insert label index groupIndexMap) groupIndexMaps
+      ST.put (nextIndexMap', groupIndexMaps')
+      return ()
+    _ -> return ()
+
+addMany
+  :: (Ord g, Traversable h)
+  => h (g, T.Text)
+  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
+addMany x = traverse addOne x >> return ()
+
+addAll
+  :: Ord g
+  => [M.Map g T.Text]
+  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
+addAll x = traverse (addMany . M.toList) x >> return ()

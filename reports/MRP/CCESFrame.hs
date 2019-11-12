@@ -1,7 +1,9 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE QuasiQuotes         #-}
@@ -9,10 +11,10 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module MRP.CCESFrame
   ( module MRP.CCESPath
@@ -25,12 +27,14 @@ import qualified Knit.Report                   as K
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import qualified Data.Binary                   as B
 import qualified Data.List                     as L
 import           Data.Maybe                     ( catMaybes )
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
@@ -52,4 +56,5 @@ F.declareColumn "CCESHispanic"    ''Int
 --F.declareColumn "CCESVvTurnoutGvm" ''Int
 --F.declareColumn "CCESVotedRepParty" ''Int
 F.tableTypes' ccesRowGen
+--deriving instance Generic CCES
 

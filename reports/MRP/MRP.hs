@@ -13,11 +13,18 @@
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.State           as ST
+import Control.Monad (when)
+import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Clock               as Time
+import qualified Data.Time.Format              as Time
 
 import qualified Data.Array as A
+import qualified Data.Binary as B
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import           Data.Maybe (fromMaybe)
+import           Data.Maybe (fromMaybe, isJust)
 import qualified Data.Vector                   as VB
 import qualified Data.Vector.Storable          as VS
 import qualified Data.Text                     as T
@@ -76,15 +83,8 @@ import qualified BlueRipple.Model.TurnoutAdjustment
                                                
 import           MRP.CCES
 import           MRP.Common
+import qualified MRP.Intro as Intro
 
-import qualified Data.IndexedSet               as IS
-import qualified Numeric.GLM.ProblemTypes      as GLM
-import qualified Numeric.GLM.ModelTypes      as GLM
-import qualified Numeric.GLM.FunctionFamily    as GLM
-import           Numeric.GLM.MixedModel        as GLM  
-import qualified Numeric.GLM.Report            as GLM
-import qualified Numeric.SparseDenseConversions
-                                               as SD
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -109,7 +109,10 @@ survey responses.  Maybe that's not weird??
 
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
-data PostArgs = PostArgs { posts :: [Post], updated :: Bool } deriving (Show, Data, Typeable)
+-- If writeFile is given then text is read and parsed into frame and then serialised into writeFile
+-- if readFile is given then data is de-serialised from the file
+-- if both are given, error out
+data PostArgs = PostArgs { posts :: [Post], updated :: Bool, writeBinary :: Maybe T.Text, readBinary :: Maybe T.Text, diagnostics :: Bool } deriving (Show, Data, Typeable)
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostIntro] &= CA.name "intro" &= CA.help "knit \"Intro\"",
@@ -120,13 +123,23 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                       &= CA.name "u"
                       &= CA.help "Flag to set whether the post gets an updated date annotation.  Defaults to False."
                       &= CA.typ "Bool"
+                    , writeBinary = CA.def
+                      &= CA.name "wb"
+                      &= CA.help "Flag to set whether we read the text and serialize it."
+                      &= CA.typFile
+                    , readBinary = CA.def
+                      &= CA.name "rb"
+                      &= CA.help "Flag to set whether we read the serialized data instead of text."
+                      &= CA.typFile
+                    , diagnostics = CA.def
+                      &= CA.name "d"
+                      &= CA.help "Show diagnostic info.  Defaults to False."
+                      &= CA.typ "Bool"                    
                     }
            &= CA.verbosity
            &= CA.help "Produce MRP Model Blue Ripple Politics Posts"
            &= CA.summary "mrp-model v0.1.0.0, (C) 2019 Adam Conner-Sax"
 
-glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
-glmErrorToPandocError x = PE.PandocSomeError $ show x
 
 main :: IO ()
 main = do
@@ -135,21 +148,40 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
+  let logFilter = case (diagnostics args) of
+        False -> K.nonDiagnostic
+        True -> K.logAll
   eitherDocs <-
-    K.knitHtmls (Just "MRP_Basics.Main") K.nonDiagnostic pandocWriterConfig $ mapError glmErrorToPandocError $ do
+    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ do
       K.logLE K.Info "Loading data..."
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
           tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
-          preFilterYears   = FU.filterOnMaybeField @Year (`L.elem` [2016])
-      ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
-        tsvParserOptions
-        preFilterYears
-        ccesTSV
-      ccesFrame <-
-        fmap transformCCESRow
-          <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
-{-          
+          preFilterYears   = const True --FU.filterOnMaybeField @Year (`L.elem` [2016])
+      when (isJust (writeBinary args) && isJust (readBinary args)) $
+        K.knitError "readBinary and writeBinary both specified in arguments.  Please specify neither to read from csv, writeBinary to read from csv and serialize parsed data or readBinary to deserialize already parsed data."
+      ccesFrameAll :: F.FrameRec CCES_MRP <- do
+        case (readBinary args) of
+          Nothing -> do
+            K.logLE K.Info $ "Loading from csv (" <> (T.pack ccesCSV) <> ") and parsing..."
+            ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
+                             tsvParserOptions
+                             preFilterYears
+                             ccesCSV      
+            fmap transformCCESRow
+              <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
+          Just fName -> do
+            K.logLE K.Info $ "Loading from already-parsed serialised binary (" <> fName <> ")"
+            result <- liftIO $ B.decodeFileOrFail @[F.Record CCES_MRP] (T.unpack fName)
+            case result of
+              Left (offset, msg) -> K.knitError $ "Deserialising error (" <> (T.pack msg) <> "), " <> (T.pack $ show offset) <> " bytes into \"" <> fName <> "\""
+              Right recs -> return $ F.toFrame recs
+      flip (maybe (return ())) (writeBinary args) $ \fn -> do
+        K.logLE K.Info $ "Writing already-parsed serialised binary (" <> fn <> ")"
+        liftIO $ B.encodeFile (T.unpack fn) (FL.fold FL.list ccesFrameAll)
+      
+            
+  {-       
       let
         firstFew = take 1000 $ FL.fold
           FL.list
@@ -163,78 +195,28 @@ main = do
         $  "ccesFrame (first 100 rows):\n"
         <> (T.intercalate "\n" $ fmap (T.pack . show) firstFew)
 -}
-      let countVotedByStateGenderF = MR.concatFold $ countFold @ByStateGender @[StateAbbreviation, Gender, Turnout] @'[Turnout] ((== T_Voted) . F.rgetField @Turnout)
-      let counted = FL.fold FL.list $ FL.fold countVotedByStateGenderF (fmap F.rcast ccesFrame)
-      K.logLE K.Diagnostic      
-        $  "counted:\n"
-        <> (T.intercalate "\n" $ fmap (T.pack . show) counted)
-      K.logLE K.Info "Inferring..."
-      let counts = VS.fromList $ fmap (F.rgetField @Count) counted
-          weights :: VS.Vector Double = VS.replicate (VS.length counts) 1.0
-          (observations, fixedEffectsModelMatrix, rcM) = FL.fold
-            (lmePrepFrame getFraction fixedEffects groups ccesPredictor ccesGroupLabels) counted
-          regressionModelSpec = GLM.RegressionModelSpec fixedEffects fixedEffectsModelMatrix observations
-      rowClassifier  <- case rcM of
-        Left msg -> throw $ GLM.OtherGLMError msg
-        Right x -> return x --K.knitError "GLMK.throwEither $ either (Left . GLM.OtherGLMError) Right rcM
-      let effectsByGroup = M.fromList [(CCES_State, IS.fromList [GLM.Intercept])]
-      fitSpecByGroup <- GLM.fitSpecByGroup fixedEffects effectsByGroup rowClassifier        
-      let lmmControls = GLM.LMMControls GLM.LMM_NELDERMEAD 1e-6
-          lmmSpec = GLM.LinearMixedModelSpec (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup) lmmControls
-          cc = GLM.PIRLSConvergenceCriterion GLM.PCT_Deviance 1e-6 20
-          glmmControls = GLM.GLMMControls GLM.UseCanonical 10 cc
-          glmmSpec = GLM.GeneralizedLinearMixedModelSpec lmmSpec weights (GLM.Binomial counts) glmmControls
-          mixedModel = GLM.GeneralizedLinearMixedModel glmmSpec
-      randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix fitSpecByGroup rowClassifier
-      let randomEffectCalc = GLM.RandomEffectCalculated randomEffectsModelMatrix (GLM.makeLambda fitSpecByGroup)
-          th0 = GLM.setCovarianceVector fitSpecByGroup 1 0
-          mdVerbosity = MDVNone
-      GLM.checkProblem mixedModel randomEffectCalc
-      (th, pd, sigma2, betaU, b, cs) <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-{-
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-      _ <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0                                                                                         -}       
-      GLM.report mixedModel randomEffectsModelMatrix (GLM.bu_vBeta betaU) (SD.toSparseVector b)
-
-      let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU
-      K.logLE K.Info $ "FixedEffectStatistics: " <> (T.pack $ show fes)
-      epg <- GLM.effectParametersByGroup rowClassifier effectsByGroup b
-      K.logLE K.Info $ "EffectParametersByGroup: " <> (T.pack $ show epg)
-      gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th      
-      K.logLE K.Info $ "EffectCovariancesByGroup: " <> (T.pack $ show gec)
-      rebl <- GLM.randomEffectsByLabel epg rowClassifier
-      K.logLE K.Info
-        $  "Random Effects:\n"
-        <> GLM.printRandomEffectsByLabel rebl
-      let f r = do
-            let obs = getFraction r
-            fitted <- GLM.fitted mixedModel
-                      ccesPredictor
-                      ccesGroupLabels
-                      fes
-                      epg
-                      rowClassifier
-                      r
-            return (obs, fitted)
-      fitted <- traverse f (FL.fold FL.list counted)
-      K.logLE K.Info $ "Fitted:\n" <> (T.pack $ show fitted)
+        
       
       K.logLE K.Info "Knitting docs..."
---      curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+      curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+      let pubDateIntro = Time.fromGregorian 2019 12 1
+      when (PostIntro `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostIntro)
+         (brAddDates (updated args) pubDateIntro curDate
+          $ M.fromList [("pagetitle", "How did WWCV voter preference change from 2016 to 2018?")
+                        ,("title","How did WWCV voter preference change from 2016 to 2018?")
+                        ]
+          )
+        )
+        $ Intro.post ccesFrameAll 
         
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "reports/html/MRP_Basics" namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
-
+{-
 -- map reduce
 type Count = "Count" F.:-> Int
 type Successes = "Successes" F.:-> Int
@@ -369,3 +351,4 @@ addAll
   -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
 addAll x = traverse (addMany . M.toList) x >> return ()
 
+-}
