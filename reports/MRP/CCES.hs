@@ -115,7 +115,8 @@ instance B.Binary (F.Record CCES_MRP)
 
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
 minus1 x = x - 1
-data GenderT = Male | Female deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data GenderT = Male
+             | Female deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor GenderT = V.Vector
 instance B.Binary GenderT
 intToGenderT :: Int -> GenderT
@@ -372,6 +373,7 @@ type ByStateGenderRace = '[StateAbbreviation, Gender, WhiteNonHispanic]
 type ByStateGenderRaceAge = '[StateAbbreviation, Gender, WhiteNonHispanic, Under45]
 type ByStateGenderEducationAge = '[StateAbbreviation, Gender, CollegeGrad, Under45]
 type ByStateGenderRaceEducation = '[StateAbbreviation, Gender, WhiteNonHispanic, CollegeGrad]
+type ByStateRaceEducation = '[StateAbbreviation, WhiteNonHispanic, CollegeGrad]
 
 binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
 binomialFold testRow =
@@ -386,20 +388,21 @@ countFold :: forall k r d.(Ord (F.Record k)
           -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count,Successes])]
 countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR.foldAndAddKey $ binomialFold testData)
  
-data CCESPredictor = P_Gender deriving (Show, Eq, Ord, Enum, Bounded)
+data CCESPredictor = P_Gender | P_WWC deriving (Show, Eq, Ord, Enum, Bounded)
 type CCESEffect = GLM.WithIntercept CCESPredictor
-ccesPredictor :: forall r. (F.ElemOf r Gender) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Gender = if (F.rgetField @Gender r == Female) then 0 else 1
+ccesPredictor :: forall r. (F.ElemOf r Gender, F.ElemOf r WhiteNonHispanic, F.ElemOf r CollegeGrad) => F.Record r -> CCESPredictor -> Double
+ccesPredictor r P_Gender = if (F.rgetField @Gender r == Male) then 1 else 0
+ccesPredictor r P_WWC    = if (F.rgetField @WhiteNonHispanic r == True) && (F.rgetField @CollegeGrad r == False) then 1 else 0
 
-data CCESGroup = CCES_State deriving (Show, Eq, Ord, Enum, Bounded, A.Ix)
+data CCESGroup = G_State deriving (Show, Eq, Ord, Enum, Bounded, A.Ix)
 ccesGroupLabels ::forall r.  F.ElemOf r StateAbbreviation => F.Record r -> CCESGroup -> T.Text
-ccesGroupLabels r CCES_State = F.rgetField @StateAbbreviation r
+ccesGroupLabels r G_State = F.rgetField @StateAbbreviation r
 
 getFraction r = (realToFrac $ F.rgetField @Successes r)/(realToFrac $ F.rgetField @Count r)
-fixedEffects :: GLM.FixedEffects CCESPredictor
-fixedEffects = GLM.allFixedEffects True
+--fixedEffects :: GLM.FixedEffects CCESPredictor
+--fixedEffects = GLM.allFixedEffects True
 
-groups = IS.fromList [CCES_State]
+--groups = IS.fromList [CCES_State]
 
 -- This really really needs to be someplace central...
 
