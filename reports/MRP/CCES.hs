@@ -87,7 +87,9 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESPid3Leaner
                      , CCESVvRegstatus
                      , CCESVvTurnoutGvm
-                     , CCESVotedRepParty]
+                     , CCESVotedRepParty
+                     , CCESVotedPres16
+                     , CCESVotedPres12]
                     
 type CCES_MRP = '[ Year
                  , CCESCaseId
@@ -106,6 +108,8 @@ type CCES_MRP = '[ Year
                  , Registration
                  , Turnout
                  , HouseVoteParty
+                 , Pres2016VoteParty
+                 , Pres2012VoteParty
                  ]                
 
 -- these are orphans but where could they go?
@@ -277,25 +281,26 @@ data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum,
 type instance FI.VectorFor VotePartyT = V.Vector
 instance B.Binary VotePartyT
 
-parseVoteParty :: T.Text -> VotePartyT
-parseVoteParty "Democratic" = VP_Democratic
-parseVoteParty "Republican" = VP_Republican
-parseVoteParty _ = VP_Other
-
-{-
-intToPartyT :: Int -> PartyT
-intToPartyT x
-  | x == 1 = Democrat
-  | x == 2 = Republican
-  | otherwise = OtherParty
-
-textToPartyT :: T.Text -> PartyT
-textToPartyT r = case readMaybe @Int (T.unpack r) of
-  Just x -> intToPartyT x
-  Nothing -> OtherParty
--}
+parseHouseVoteParty :: T.Text -> VotePartyT
+parseHouseVoteParty "Democratic" = VP_Democratic
+parseHouseVoteParty "Republican" = VP_Republican
+parseHouseVoteParty _ = VP_Other
 
 type HouseVoteParty = "HouseVoteParty" F.:-> VotePartyT
+
+parsePres2016VoteParty :: T.Text -> VotePartyT
+parsePres2016VoteParty "Hilary Clinton" = VP_Democratic
+parsePres2016VoteParty "Donald Trump" = VP_Republican
+parsePres2016VoteParty _ = VP_Other
+
+parsePres2012VoteParty :: T.Text -> VotePartyT
+parsePres2012VoteParty "Barack Obama" = VP_Democratic
+parsePres2012VoteParty "Mitt Romney" = VP_Republican
+parsePres2012VoteParty _ = VP_Other
+
+type Pres2016VoteParty = "Pres2016VoteParty" F.:-> VotePartyT
+type Pres2012VoteParty = "Pres2012VoteParty" F.:-> VotePartyT 
+
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
@@ -304,9 +309,6 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
                $ (F.rsubset %~ missingPID7)
                $ (F.rsubset %~ missingPIDLeaner)
                $ (F.rsubset %~ missingEducation)
---               $ (F.rsubset %~ missingPartyToOther)
---               $ (F.rsubset %~ missingRegstatusToNoRecord)
---               $ (F.rsubset %~ missingTurnoutToNoFile)
                $ r where
   missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
   missingHispanicToNo = FM.fromMaybeMono 2
@@ -318,12 +320,6 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
   missingPIDLeaner = FM.fromMaybeMono 5
   missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
   missingEducation = FM.fromMaybeMono 5
---  missingPartyToOther :: F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty] -> F.Rec (Maybe :. F.ElField) '[CCESVotedRepParty]
---  missingPartyToOther = FM.fromMaybeMono 3
---  missingRegstatusToNoRecord :: F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -> F.Rec (Maybe :. F.ElField) '[CCESVvRegstatus] -- ??
---  missingRegstatusToNoRecord = FM.fromMaybeMono 2
---  missingTurnoutToNoFile :: F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -> F.Rec (Maybe :. F.ElField) '[CCESVvTurnoutGvm] -- ??
---  missingTurnoutToNoFile = FM.fromMaybeMono 3
   
 -- fmap over Frame after load and throwing out bad rows
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
@@ -340,7 +336,9 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
   addUnder45 = FT.recordSingleton @Under45 . intToUnder45 . F.rgetField @CCESAge
   addRegistration = FT.recordSingleton @Registration . parseRegistration  . F.rgetField @CCESVvRegstatus
   addTurnout = FT.recordSingleton @Turnout . parseTurnout . F.rgetField @CCESVvTurnoutGvm
-  addHouseVoteParty = FT.recordSingleton @HouseVoteParty . parseVoteParty . F.rgetField @CCESVotedRepParty
+  addHouseVoteParty = FT.recordSingleton @HouseVoteParty . parseHouseVoteParty . F.rgetField @CCESVotedRepParty
+  addPres2012VoteParty = FT.recordSingleton @Pres2012VoteParty . parsePres2012VoteParty . F.rgetField @CCESVotedPres12
+  addPres2016VoteParty = FT.recordSingleton @Pres2016VoteParty . parsePres2016VoteParty . F.rgetField @CCESVotedPres16
   addPID3 = FT.recordSingleton @PartisanId3 . parsePartisanIdentity3 . F.rgetField @CCESPid3
   addPID7 = FT.recordSingleton @PartisanId7 . parsePartisanIdentity7 . F.rgetField @CCESPid7
   addPIDLeaner = FT.recordSingleton @PartisanIdLeaner . parsePartisanIdentityLeaner . F.rgetField @CCESPid3Leaner
@@ -357,6 +355,8 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
            . FT.mutate addRegistration
            . FT.mutate addTurnout
            . FT.mutate addHouseVoteParty
+           . FT.mutate addPres2012VoteParty
+           . FT.mutate addPres2016VoteParty           
            . FT.mutate addPID3
            . FT.mutate addPID7
            . FT.mutate addPIDLeaner

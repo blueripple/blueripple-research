@@ -196,7 +196,12 @@ main = do
         <> (T.intercalate "\n" $ fmap (T.pack . show) firstFew)
 -}
         
-      
+      stateCrosswalkPath <- liftIO $ usePath statesCSV
+      stateCrossWalkFrame :: F.Frame States <- loadToFrame
+        csvParserOptions
+        stateCrosswalkPath
+        (const True)
+      let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame  
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
       let pubDateIntro = Time.fromGregorian 2019 12 1
@@ -209,11 +214,11 @@ main = do
                         ]
           )
         )
-        $ Intro.post ccesFrameAll 
+        $ Intro.post statesFromAbbreviations ccesFrameAll 
         
   case eitherDocs of
     Right namedDocs ->
-      K.writeAllPandocResultsWithInfoAsHtml "reports/html/MRP_Basics" namedDocs
+      K.writeAllPandocResultsWithInfoAsHtml "posts" namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
 {-

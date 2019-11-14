@@ -168,9 +168,9 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
   let emphasizeTotalRow =
         PM.CellStyle (\r _ -> if  (PM.dtrGroup r == "Total") then PM.totalCell else "")
       highlightRows groups =
-        PM.CellStyle (\r _ -> if (PM.dtrGroup r `elem` groups) then PM.highlightCell else "")      
+        PM.CellStyle (\r _ -> if (PM.dtrGroup r `elem` groups) then PM.highlightCellBlue else "")      
       highlightOpinionCellFor groups =
-        PM.CellStyle (\r c -> if (c == "FromOpinion") && (PM.dtrGroup r `elem` groups) then PM.highlightCell else "")      
+        PM.CellStyle (\r c -> if (c == "FromOpinion") && (PM.dtrGroup r `elem` groups) then PM.highlightCellBlue else "")      
 
       cStyles hgs ogs = mconcat [emphasizeTotalRow, highlightRows hgs, highlightOpinionCellFor ogs]      
 

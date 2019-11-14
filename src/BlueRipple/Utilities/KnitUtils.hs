@@ -89,19 +89,6 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                                   $ exts
           }
 
-brAddRawHtmlTable
-  :: (K.KnitOne r, Foldable f)
-  => T.Text
-  -> BH.Attribute
-  -> K.Colonnade K.Headed a BC.Cell
-  -> f a
-  -> K.Sem r ()
-brAddRawHtmlTable title attr colonnade rows =
-  brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
-    BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
-    BC.encodeCellTable attr colonnade rows
-
-
 brAddDates
   :: Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
 brAddDates updated pubDate updateDate tMap =
