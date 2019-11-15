@@ -204,7 +204,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                                             fullState <- maybe (Left $ "Couldn't find " <> sa) Right $ M.lookup sa stateNameByAbbreviation
                                             return (fullState, deltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forTable
   brAddMarkDown brIntro
-  _ <- K.addHvega Nothing Nothing $ (vlPctStateChloropleth "Test" (FV.ViewConfig 800 400 10) forChart)
+  _ <- K.addHvega Nothing Nothing $ (vlPctStateChloropleth "Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forChart)
   brAddRawHtmlTable
     "WWC Democratic Voter Preference"
     (BHA.class_ "brTable")
@@ -249,8 +249,9 @@ vlPctStateChloropleth title vc stateData =
       projection = GV.projection [GV.PrType GV.AlbersUsa]
       transform = GV.transform . GV.lookup "properties.name" datVal "state" ["state","value"]
       mark = GV.mark GV.Geoshape []
-      tooltip = GV.tooltips [[GV.TName "state", GV.TmType GV.Nominal],[GV.TName "value", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]
-      enc = GV.encoding . GV.color [GV.MName "value", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redyellowgreen" []]] . tooltip
+      colorEnc = GV.color [GV.MName "value", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      tooltip = GV.tooltips [[GV.TName "state", GV.TmType GV.Nominal],[GV.TName "value", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      enc = GV.encoding .  colorEnc . tooltip
   in FV.configuredVegaLite vc [FV.title title, datGeo, mark, projection, transform [], enc []]
 
 vlTest :: FV.ViewConfig -> GV.VegaLite
