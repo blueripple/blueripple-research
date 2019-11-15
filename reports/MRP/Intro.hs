@@ -27,6 +27,7 @@ import qualified Data.Vector.Storable               as VS
 
 
 import           Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Frames as F
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -202,13 +203,13 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                                             let sa = stateAbbr tr
                                             fullState <- maybe (Left $ "Couldn't find " <> sa) Right $ M.lookup sa stateNameByAbbreviation
                                             return (fullState, deltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forTable
-
   brAddMarkDown brIntro
-  K.addHvega Nothing Nothing $ (vlPctStateChloropleth "Test" (FV.ViewConfig 800 400 10) forChart)
+  _ <- K.addHvega Nothing Nothing $ (vlPctStateChloropleth "Test" (FV.ViewConfig 800 400 10) forChart)
   brAddRawHtmlTable
     "WWC Democratic Voter Preference"
     (BHA.class_ "brTable")
     (colWWC_Change $ emphasizeStates mwBG <> emphasizeNational) forTable
+
   brAddMarkDown brReadMore
 
 data WWCTableRow = WWCTableRow { stateAbbr :: T.Text
@@ -235,13 +236,27 @@ colWWC_Change cas =
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
 
+-- Lessons learned
+-- The data is the geography
+-- transform with lookup (properties.name) to add data
+-- to figure out the right lookup name you can just plot the geography (no transform, no encoding) and look at loaded data
+-- in vega editor
 vlPctStateChloropleth :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, Double) -> GV.VegaLite
 vlPctStateChloropleth title vc stateData =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       datVal = GV.dataFromRows [] $ concat $ fmap (\(s,x) -> GV.dataRow [("state", GV.Str s),("value", GV.Number x)] []) $ FL.fold FL.list stateData
-      dataSets = GV.datasets [("geoStates",datGeo),("stateNums",datVal)]
+      dataSets = GV.datasets [("stateNums",datVal)]
       projection = GV.projection [GV.PrType GV.AlbersUsa]
-      transform = GV.transform . GV.lookup "state" datVal "state" ["value"]
+      transform = GV.transform . GV.lookup "properties.name" datVal "state" ["state","value"]
       mark = GV.mark GV.Geoshape []
-      enc = GV.encoding . GV.color [GV.MName "value"]
-  in GV.toVegaLite [dataSets, mark, enc [], projection, transform []]
+      tooltip = GV.tooltips [[GV.TName "state", GV.TmType GV.Nominal],[GV.TName "value", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]
+      enc = GV.encoding . GV.color [GV.MName "value", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redyellowgreen" []]] . tooltip
+  in FV.configuredVegaLite vc [FV.title title, datGeo, mark, projection, transform [], enc []]
+
+vlTest :: FV.ViewConfig -> GV.VegaLite
+vlTest vc =
+  let
+    datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+    projection = GV.projection [GV.PrType GV.AlbersUsa]
+    mark = GV.mark GV.Geoshape [GV.MFill "lightgrey" ]
+  in FV.configuredVegaLite vc [datGeo, mark, projection]
