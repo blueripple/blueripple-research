@@ -67,6 +67,8 @@ import qualified Frames.Utils                  as FU
 
 import qualified Knit.Report                   as K
 import           Polysemy.Error                 ( Error, mapError, throw )
+import           Polysemy.Async                 (Async, asyncToIO, asyncToIOFinal) -- can't use final with this version of Knit-Haskell
+import           Polysemy.RandomFu              (RandomFu, runRandomIO)
 import           Text.Pandoc.Error             as PE
 
 import           Data.String.Here               ( here )
@@ -152,7 +154,7 @@ main = do
         False -> K.nonDiagnostic
         True -> K.logAll
   eitherDocs <-
-    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ do
+    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ asyncToIO . runRandomIO $ do
       K.logLE K.Info "Loading data..."
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }

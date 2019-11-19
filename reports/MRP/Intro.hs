@@ -64,7 +64,8 @@ import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.FunctionFamily    as GLM
-import           Numeric.GLM.MixedModel        as GLM  
+import           Numeric.GLM.MixedModel        as GLM
+import qualified Numeric.GLM.Bootstrap            as GLM
 import qualified Numeric.GLM.Report            as GLM
 import qualified Numeric.SparseDenseConversions as SD
 
@@ -108,7 +109,7 @@ mid-west: Indiana, Michigan, Ohio, Pennsylvania and Wisconsin.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ show x
   
-post :: K.KnitOne r
+post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
      -> F.FrameRec CCES_MRP
      -> K.Sem r ()
@@ -119,7 +120,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                                $ countFold @ByStateGenderRaceEducation @_ @'[HouseVoteParty] ((== VP_Democratic) . F.rgetField @HouseVoteParty)
       countWWCDemPres2016VotesF = MR.concatFold
                                   $ countFold @ByStateGenderRaceEducation @_ @'[Pres2016VoteParty] ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
-      modelWWCV :: (K.KnitOne r)
+      modelWWCV :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
                 => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByStateGenderRaceEducation V.++ '[Count, Successes]))
                 -> Int
                 -> K.Sem r (GLM.MixedModel CCESPredictor CCESGroup
@@ -153,11 +154,12 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
             th0 = GLM.setCovarianceVector fitSpecByGroup 1 0
             mdVerbosity = MDVNone
         GLM.checkProblem mixedModel randomEffectCalc
-        (th, pd, sigma2, betaU, b, cs) <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-        GLM.report mixedModel randomEffectsModelMatrix (GLM.bu_vBeta betaU) (SD.toSparseVector b)          
+        K.logLE K.Info "Fitting data..."
+        ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
+        GLM.report mixedModel randomEffectsModelMatrix (GLM.bu_vBeta betaU) (SD.toSparseVector vb)          
         let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU
         K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
-        epg <- GLM.effectParametersByGroup rowClassifier effectsByGroup b
+        epg <- GLM.effectParametersByGroup rowClassifier effectsByGroup vb
         K.logLE K.Diagnostic $ "EffectParametersByGroup: " <> (T.pack $ show epg)
         gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th      
         K.logLE K.Diagnostic $ "EffectCovariancesByGroup: " <> (T.pack $ show gec)
@@ -165,38 +167,60 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
         K.logLE K.Diagnostic
           $  "Random Effects:\n"
           <> GLM.printRandomEffectsByLabel rebl
+        K.logLE K.Info "Bootstrappping for confidence intervals..."
+        bootstraps <- GLM.parametricBootstrap mdVerbosity
+                      ML
+                      mixedModel
+                      randomEffectCalc
+                      cf
+                      th
+                      vMuSol
+                      (sqrt sigma2)
+                      10
+                      True  
         let f r = do
               let obs = getFraction r
-              fitted <- GLM.fitted mixedModel
+              bootWCI <- GLM.bootstrappedConfidence
+                         mixedModel
+                         (Just . ccesPredictor r)
+                         (Just . ccesGroupLabels r)
+                         rowClassifier
+                         effectsByGroup
+                         (betaU, vb)
+                         bootstraps
+                         GLM.BCI_Accelerated
+                         (GLM.mkCL 0.95)
+{-              fitted <- GLM.fitted mixedModel
                         ccesPredictor
                         ccesGroupLabels
                         fes
                         epg
                         rowClassifier
-                        r
-              return (r, obs, fitted)
+                        r -}
+              return (r, obs, bootWCI)
         fitted <- traverse f (FL.fold FL.list counted)
-        K.logLE K.Diagnostic $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
+        K.logLE K.Info $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
         fixedEffectTable <- GLM.printFixedEffects fes
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let toPredict = [("WWC (all States)", M.fromList [(P_WWC, 1)], M.empty)
                         ,("Non-WWC (all States)", M.fromList [(P_WWC, 0)], M.empty)
                         ]
-        predictionTable <- GLM.printPredictions mixedModel fes epg rowClassifier toPredict
+            GLM.FixedEffectStatistics fep _ = fes            
+        predictionTable <- GLM.printPredictions mixedModel fep epg rowClassifier toPredict
         K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
         return (mixedModel, fes, epg, rowClassifier)
 --  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
-  (mm2016p, fes2016p, epg2016p, rc2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
-  (mm2016, fes2016, epg2016, rc2016) <- modelWWCV countWWCDemHouseVotesF 2016
-  (mm2018, fes2018, epg2018, rc2018) <- modelWWCV countWWCDemHouseVotesF 2018
+  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
+  (mm2016, (GLM.FixedEffectStatistics fep2016 _), epg2016, rc2016) <- modelWWCV countWWCDemHouseVotesF 2016
+  (mm2018, (GLM.FixedEffectStatistics fep2018 _), epg2018, rc2018) <- modelWWCV countWWCDemHouseVotesF 2018
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
       toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton G_State s)) $ S.toList states)
       wwc = M.singleton P_WWC 1
       mwBG = ["IA", "MI", "OH", "PA", "WI"]
       addPredictions (s,groupMap) = do
-        p2016p <- fst <$> (GLM.predict mm2016p (flip M.lookup wwc) (flip M.lookup groupMap) fes2016p epg2016p rc2016p)
-        p2016 <- fst <$> (GLM.predict mm2016 (flip M.lookup wwc) (flip M.lookup groupMap) fes2016 epg2016 rc2016)
-        p2018 <- fst <$> (GLM.predict mm2018 (flip M.lookup wwc) (flip M.lookup groupMap) fes2018 epg2018 rc2018)
+        p2016p <- fst <$> (GLM.predict mm2016p (flip M.lookup wwc) (flip M.lookup groupMap) fep2016p epg2016p rc2016p)
+        p2016 <- fst <$> (GLM.predict mm2016 (flip M.lookup wwc) (flip M.lookup groupMap) fep2016 epg2016 rc2016)
+        p2018 <- fst <$> (GLM.predict mm2018 (flip M.lookup wwc) (flip M.lookup groupMap) fep2018 epg2018 rc2018)
         return  $ WWCTableRow s p2016p p2016 p2018  
   forTable <-  L.sortOn deltaHouse <$> traverse addPredictions toPredict
   forChart <-  GLM.eitherToSem $ traverse (\tr -> do
