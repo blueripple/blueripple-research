@@ -5,7 +5,7 @@ with-compiler: ghc
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 3815f872274ae071e98604431ba8e3694eb2794c
+  tag: 84c884206dedf91d511a888649178765d755e5c9
 
 source-repository-package
   type: git
