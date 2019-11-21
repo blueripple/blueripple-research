@@ -67,7 +67,12 @@ import qualified Numeric.GLM.FunctionFamily    as GLM
 import           Numeric.GLM.MixedModel        as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
 import qualified Numeric.GLM.Report            as GLM
+import qualified Numeric.GLM.Predict            as GLM
+import qualified Numeric.GLM.Confidence            as GLM
 import qualified Numeric.SparseDenseConversions as SD
+
+import qualified Statistics.Types              as ST
+
 
 import BlueRipple.Data.DataFrames
 import MRP.Common
@@ -167,6 +172,11 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
         K.logLE K.Diagnostic
           $  "Random Effects:\n"
           <> GLM.printRandomEffectsByLabel rebl
+        smCondVar <- GLM.conditionalCovariances mixedModel
+                     cf
+                     randomEffectCalc
+                     th
+                     betaU
         K.logLE K.Info "Bootstrappping for confidence intervals..."
         bootstraps <- GLM.parametricBootstrap mdVerbosity
                       ML
@@ -177,9 +187,32 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                       vMuSol
                       (sqrt sigma2)
                       10
-                      True  
+                      True
+        let GLM.FixedEffectStatistics _ mBetaCov = fes                      
         let f r = do
               let obs = getFraction r
+              bootWCI <- GLM.predictWithCI
+                         mixedModel
+                         (Just . ccesPredictor r)
+                         (Just . ccesGroupLabels r)
+                         rowClassifier
+                         effectsByGroup
+                         betaU
+                         vb
+                         (ST.mkCL 0.95)
+                         (GLM.BootstrapCI GLM.BCI_Accelerated bootstraps)
+                
+              predictCVCI <- GLM.predictWithCI
+                             mixedModel
+                             (Just . ccesPredictor r)
+                             (Just . ccesGroupLabels r)
+                             rowClassifier
+                             effectsByGroup
+                             betaU
+                             vb
+                             (ST.mkCL 0.95)
+                             (GLM.NaiveCondVarCI mBetaCov smCondVar)
+{-
               bootWCI <- GLM.bootstrappedConfidence
                          mixedModel
                          (Just . ccesPredictor r)
@@ -197,7 +230,8 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                         epg
                         rowClassifier
                         r -}
-              return (r, obs, bootWCI)
+-}
+              return (r, obs, bootWCI, predictCVCI)
         fitted <- traverse f (FL.fold FL.list counted)
         K.logLE K.Info $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
         fixedEffectTable <- GLM.printFixedEffects fes
