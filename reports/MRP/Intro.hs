@@ -262,7 +262,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                                             fullState <- maybe (Left $ "Couldn't find " <> sa) Right $ M.lookup sa stateNameByAbbreviation
                                             return (fullState, deltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forTable
   brAddMarkDown brIntro
-  _ <- K.addHvega Nothing Nothing $ (vlPctStateChloropleth "Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forChart)
+  _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forChart)
   brAddRawHtmlTable
     "WWC Democratic Voter Preference"
     (BHA.class_ "brTable")
@@ -299,8 +299,8 @@ usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albe
 -- transform with lookup (properties.name) to add data
 -- to figure out the right lookup name you can just plot the geography (no transform, no encoding) and look at loaded data
 -- in vega editor
-vlPctStateChloropleth :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, Double) -> GV.VegaLite
-vlPctStateChloropleth title vc stateData =
+vlPctStateChoropleth :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, Double) -> GV.VegaLite
+vlPctStateChoropleth title vc stateData =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       datVal = GV.dataFromRows [] $ concat $ fmap (\(s,x) -> GV.dataRow [("state", GV.Str s),("value", GV.Number x)] []) $ FL.fold FL.list stateData
       dataSets = GV.datasets [("stateNums",datVal)]
