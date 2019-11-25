@@ -165,7 +165,7 @@ main = do
             FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
-      ccesFrameAll <- F.toFrame <$> K.knitRetrieveOrMake @[F.Record CCES_MRP] "intro/ccesMRP.bin" ccesFrameFromCSV
+      ccesFrameAll <- F.toFrame <$> K.knitRetrieveOrMake @[F.Record CCES_MRP] "mrp/ccesMRP.bin" ccesFrameFromCSV
   {-       
       let
         firstFew = take 1000 $ FL.fold

@@ -212,25 +212,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                              vb
                              (ST.mkCL 0.95)
                              (GLM.NaiveCondVarCI mBetaCov smCondVar)
-{-
-              bootWCI <- GLM.bootstrappedConfidence
-                         mixedModel
-                         (Just . ccesPredictor r)
-                         (Just . ccesGroupLabels r)
-                         rowClassifier
-                         effectsByGroup
-                         (betaU, vb)
-                         bootstraps
-                         GLM.BCI_Accelerated
-                         (GLM.mkCL 0.95)
-{-              fitted <- GLM.fitted mixedModel
-                        ccesPredictor
-                        ccesGroupLabels
-                        fes
-                        epg
-                        rowClassifier
-                        r -}
--}
+
               return (r, obs, bootWCI, predictCVCI)
         fitted <- traverse f (FL.fold FL.list counted)
         K.logLE K.Info $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
@@ -244,6 +226,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
         K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
         return (mixedModel, fes, epg, rowClassifier)
 --  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
+--  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
   (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
   (mm2016, (GLM.FixedEffectStatistics fep2016 _), epg2016, rc2016) <- modelWWCV countWWCDemHouseVotesF 2016
   (mm2018, (GLM.FixedEffectStatistics fep2018 _), epg2018, rc2018) <- modelWWCV countWWCDemHouseVotesF 2018
