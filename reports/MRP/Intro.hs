@@ -82,13 +82,13 @@ import qualified PreferenceModel.Common as PrefModel
 
 brIntro :: T.Text
 brIntro = [i|
-In our research pieces so far, we;ve looked only at aggregate data, that
+In our research pieces so far, we've looked only at aggregate data, that
 is data which comes from adding together a large number of people: census
 counts or election results, for example.  In this piece we look at some
 per-person data, namely the CCES survey, which surveys about 60,000 people
 in every election cycle. For each survey response,
 the CCES includes geographic and demographic information along with opinion about
-various political questions, whether the person is registered to vote, whether they
+various political questions, whether the person is registered to vote, and whether they
 voted and who for in elections for Governor, House, Senate and President, whenever
 each is applicable.
 

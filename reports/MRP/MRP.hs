@@ -154,7 +154,7 @@ main = do
         False -> K.nonDiagnostic
         True -> K.logAll
   eitherDocs <-
-    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ asyncToIO . runRandomIO $ do
+    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ runRandomIO $ do
       K.logLE K.Info "Loading data..."
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
