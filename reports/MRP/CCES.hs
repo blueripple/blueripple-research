@@ -33,7 +33,8 @@ import           Control.Lens                   ((%~))
 import qualified Control.Monad.Except          as X
 import qualified Control.Monad.State           as ST
 import qualified Data.Array                    as A
-import qualified Data.Binary                   as B
+import qualified Data.Serialize                as S
+import qualified Data.Serialize.Text           as S
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromMaybe)
@@ -114,15 +115,15 @@ type CCES_MRP = '[ Year
 
 -- these are orphans but where could they go?
 -- I guess we could newtype "ElField" somehow, just for serialization? Then coerce back and forth...
-instance (B.Binary (V.Snd t), V.KnownField t) => B.Binary (F.ElField t)
-instance B.Binary (F.Record CCES_MRP)
+instance (S.Serialize (V.Snd t), V.KnownField t) => S.Serialize (F.ElField t)
+instance S.Serialize (F.Record CCES_MRP)
 
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
 minus1 x = x - 1
 data GenderT = Male
              | Female deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor GenderT = V.Vector
-instance B.Binary GenderT
+instance S.Serialize GenderT
 intToGenderT :: Int -> GenderT
 intToGenderT = toEnum . minus1
 
@@ -136,7 +137,7 @@ data EducationT = E_NoHS
                 | E_PostGrad
                 | E_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor EducationT = V.Vector
-instance B.Binary EducationT
+instance S.Serialize EducationT
 
 intToEducationT :: Int -> EducationT
 intToEducationT = toEnum . minus1 . min 7
@@ -149,7 +150,7 @@ type CollegeGrad = "CollegeGrad" F.:-> Bool
 
 data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
-instance B.Binary RaceT
+instance S.Serialize RaceT
 
 intToRaceT :: Int -> RaceT
 intToRaceT = toEnum . minus1
@@ -160,7 +161,7 @@ type WhiteNonHispanic = "WhiteNonHispanic" F.:-> Bool
 
 data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor AgeT = V.Vector
-instance B.Binary AgeT
+instance S.Serialize AgeT
 
 intToAgeT :: Real a => a -> AgeT
 intToAgeT x 
@@ -184,7 +185,7 @@ data RegistrationT = R_Active
                    | R_Multiple
                    | R_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegistrationT = V.Vector
-instance B.Binary RegistrationT
+instance S.Serialize RegistrationT
 
 parseRegistration :: T.Text -> RegistrationT
 parseRegistration "Active" = R_Active
@@ -206,7 +207,7 @@ data RegPartyT = RP_NoRecord
                | RP_Libertarian
                | RP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegPartyT = V.Vector
-instance B.Binary RegPartyT
+instance S.Serialize RegPartyT
 
 parseRegParty :: T.Text -> RegPartyT
 parseRegParty "No Record Of Party Registration" = RP_NoRecord
@@ -223,7 +224,7 @@ data TurnoutT = T_Voted
               | T_NoFile
               | T_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor TurnoutT = V.Vector
-instance B.Binary TurnoutT
+instance S.Serialize TurnoutT
 
 parseTurnout :: T.Text -> TurnoutT
 parseTurnout "Voted" = T_Voted
@@ -240,7 +241,7 @@ data PartisanIdentity3 = PI3_Democrat
                        | PI3_NotSure
                        | PI3_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity3 = V.Vector
-instance B.Binary PartisanIdentity3
+instance S.Serialize PartisanIdentity3
 
 parsePartisanIdentity3 :: Int -> PartisanIdentity3
 parsePartisanIdentity3 = toEnum . minus1 . min 6
@@ -257,7 +258,7 @@ data PartisanIdentity7 = PI7_StrongDem
                        | PI7_NotSure
                        | PI7_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity7 = V.Vector
-instance B.Binary PartisanIdentity7
+instance S.Serialize PartisanIdentity7
 
 parsePartisanIdentity7 :: Int -> PartisanIdentity7
 parsePartisanIdentity7 = toEnum . minus1 . min 9
@@ -270,7 +271,7 @@ data PartisanIdentityLeaner = PIL_Democrat
                             | PIL_NotSure
                             | PIL_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentityLeaner = V.Vector
-instance B.Binary PartisanIdentityLeaner
+instance S.Serialize PartisanIdentityLeaner
 
 parsePartisanIdentityLeaner :: Int -> PartisanIdentityLeaner
 parsePartisanIdentityLeaner = toEnum . minus1 . min 5
@@ -279,7 +280,7 @@ type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
 
 data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor VotePartyT = V.Vector
-instance B.Binary VotePartyT
+instance S.Serialize VotePartyT
 
 parseHouseVoteParty :: T.Text -> VotePartyT
 parseHouseVoteParty "Democratic" = VP_Democratic

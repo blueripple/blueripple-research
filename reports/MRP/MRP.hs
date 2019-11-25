@@ -21,7 +21,6 @@ import qualified Data.Time.Clock               as Time
 import qualified Data.Time.Format              as Time
 
 import qualified Data.Array as A
-import qualified Data.Binary as B
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import           Data.Maybe (fromMaybe, isJust)
@@ -114,7 +113,7 @@ pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic
 -- If writeFile is given then text is read and parsed into frame and then serialised into writeFile
 -- if readFile is given then data is de-serialised from the file
 -- if both are given, error out
-data PostArgs = PostArgs { posts :: [Post], updated :: Bool, writeBinary :: Maybe T.Text, readBinary :: Maybe T.Text, diagnostics :: Bool } deriving (Show, Data, Typeable)
+data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool } deriving (Show, Data, Typeable)
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostIntro] &= CA.name "intro" &= CA.help "knit \"Intro\"",
@@ -125,14 +124,6 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                       &= CA.name "u"
                       &= CA.help "Flag to set whether the post gets an updated date annotation.  Defaults to False."
                       &= CA.typ "Bool"
-                    , writeBinary = CA.def
-                      &= CA.name "wb"
-                      &= CA.help "Flag to set whether we read the text and serialize it."
-                      &= CA.typFile
-                    , readBinary = CA.def
-                      &= CA.name "rb"
-                      &= CA.help "Flag to set whether we read the serialized data instead of text."
-                      &= CA.typFile
                     , diagnostics = CA.def
                       &= CA.name "d"
                       &= CA.help "Show diagnostic info.  Defaults to False."
@@ -153,36 +144,28 @@ main = do
   let logFilter = case (diagnostics args) of
         False -> K.nonDiagnostic
         True -> K.logAll
+      knitConfig = K.defaultKnitConfig
+        { K.outerLogPrefix = Just "MRP.Main"
+        , K.logIf = logFilter
+        , K.pandocWriterConfig = pandocWriterConfig
+        }      
   eitherDocs <-
-    K.knitHtmls (Just "MRP_Basics.Main") logFilter pandocWriterConfig $ runRandomIO $ do
+    K.knitHtmls knitConfig $ runRandomIO $ do
       K.logLE K.Info "Loading data..."
       let csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
           tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
           preFilterYears   = const True --FU.filterOnMaybeField @Year (`L.elem` [2016])
-      when (isJust (writeBinary args) && isJust (readBinary args)) $
-        K.knitError "readBinary and writeBinary both specified in arguments.  Please specify neither to read from csv, writeBinary to read from csv and serialize parsed data or readBinary to deserialize already parsed data."
-      ccesFrameAll :: F.FrameRec CCES_MRP <- do
-        case (readBinary args) of
-          Nothing -> do
-            K.logLE K.Info $ "Loading from csv (" <> (T.pack ccesCSV) <> ") and parsing..."
+      let ccesFrameFromCSV = do
+            K.logLE K.Info $ "Loading CCES data from csv (" <> (T.pack $ ccesCSV) <> ") and parsing..."
             ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
                              tsvParserOptions
                              preFilterYears
-                             ccesCSV      
-            fmap transformCCESRow
+                             ccesCSV
+            FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
-          Just fName -> do
-            K.logLE K.Info $ "Loading from already-parsed serialised binary (" <> fName <> ")"
-            result <- liftIO $ B.decodeFileOrFail @[F.Record CCES_MRP] (T.unpack fName)
-            case result of
-              Left (offset, msg) -> K.knitError $ "Deserialising error (" <> (T.pack msg) <> "), " <> (T.pack $ show offset) <> " bytes into \"" <> fName <> "\""
-              Right recs -> return $ F.toFrame recs
-      flip (maybe (return ())) (writeBinary args) $ \fn -> do
-        K.logLE K.Info $ "Writing already-parsed serialised binary (" <> fn <> ")"
-        liftIO $ B.encodeFile (T.unpack fn) (FL.fold FL.list ccesFrameAll)
-      
-            
+      -- This load and parse takes a while.  Cache the result for future runs              
+      ccesFrameAll <- F.toFrame <$> K.knitRetrieveOrMake @[F.Record CCES_MRP] "ccesMRP.bin" ccesFrameFromCSV
   {-       
       let
         firstFew = take 1000 $ FL.fold

@@ -27,7 +27,6 @@ import qualified Knit.Report                   as K
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Data.Binary                   as B
 import qualified Data.List                     as L
 import           Data.Maybe                     ( catMaybes )
 import           Data.Proxy                     ( Proxy(..) )

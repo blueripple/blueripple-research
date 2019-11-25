@@ -82,7 +82,12 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig template
                                                templateVars
                                                K.mindocOptionsF
-  eitherDocs <- K.knitHtmls (Just "mission.Main") K.logAll pandocWriterConfig $ do
+  let knitConfig = K.defaultKnitConfig
+        { K.outerLogPrefix = Just "mission.Main"
+        , K.logIf = K.logAll
+        , K.pandocWriterConfig = pandocWriterConfig
+        }
+  eitherDocs <- K.knitHtmls knitConfig $ do
     -- load the data   
     let parserOptions = F.defaultParser { F.quotingMode =  F.RFC4180Quoting ' ' }
     K.logLE K.Info "Loading data..."

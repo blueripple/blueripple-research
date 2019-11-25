@@ -20,3 +20,4 @@ examples/html
 *.png
 /posts
 reports/MRP/data
+.knit-haskell-cache

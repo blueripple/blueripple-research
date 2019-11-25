@@ -115,8 +115,13 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
+  let knitConfig = K.defaultKnitConfig
+                   { K.outerLogPrefix = Just "preference-model.Main"
+                   , K.logIf = K.nonDiagnostic
+                   , K.pandocWriterConfig = pandocWriterConfig
+                   }                                               
   eitherDocs <-
-    K.knitHtmls (Just "preference-model.Main") K.nonDiagnostic pandocWriterConfig $ do
+    K.knitHtmls knitConfig $ do
     -- load the data   
       let parserOptions =
             F.defaultParser --{ F.quotingMode = F.RFC4180Quoting '\"' }

@@ -41,6 +41,7 @@ import           Data.String.Here               ( here, i )
 
 import           BlueRipple.Configuration
 import           BlueRipple.Utilities.KnitUtils
+import qualified BlueRipple.Utilities.TableUtils as BT
 import           BlueRipple.Data.DataFrames 
 import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
@@ -166,11 +167,11 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
       brAddRawHtmlTable (BHA.class_ "br_table") (PM.deltaTableColonnadeBlaze greenOpinion) table
 -}
   let emphasizeTotalRow =
-        PM.CellStyle (\r _ -> if  (PM.dtrGroup r == "Total") then PM.totalCell else "")
+        BT.CellStyle (\r _ -> if  (PM.dtrGroup r == "Total") then BT.totalCell else "")
       highlightRows groups =
-        PM.CellStyle (\r _ -> if (PM.dtrGroup r `elem` groups) then PM.highlightCellBlue else "")      
+        BT.CellStyle (\r _ -> if (PM.dtrGroup r `elem` groups) then BT.highlightCellBlue else "")      
       highlightOpinionCellFor groups =
-        PM.CellStyle (\r c -> if (c == "FromOpinion") && (PM.dtrGroup r `elem` groups) then PM.highlightCellBlue else "")      
+        BT.CellStyle (\r c -> if (c == "FromOpinion") && (PM.dtrGroup r `elem` groups) then BT.highlightCellBlue else "")      
 
       cStyles hgs ogs = mconcat [emphasizeTotalRow, highlightRows hgs, highlightOpinionCellFor ogs]      
 
@@ -190,24 +191,24 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
   brAddMarkDown brAcrossTimeASEPref
   addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToSimpleEducation . fmap FV.value) modeledResultsASE
   brAddMarkDown brBreakingDownTheChanges
-  brAddRawHtmlTable "2016 to 2018"
+  BT.brAddRawHtmlTable "2016 to 2018"
     (BHA.class_ "brTable")
     (PM.deltaTableColonnadeBlaze (cStyles [] []))
     (take 1 $ FL.fold FL.list ase20162018Table)
   brAddMarkDown brAcrossTimeASRRow
-  brAddRawHtmlTable
+  BT.brAddRawHtmlTable
     "2016 to 2018"
     (BHA.class_ "brTable")
     (PM.deltaTableColonnadeBlaze (cStyles [] []))
     ase20162018Table
   brAddMarkDown brAcrossTimeTables
-  brAddRawHtmlTable
+  BT.brAddRawHtmlTable
     "2010 to 2018"
     (BHA.class_ "brTable")
     (PM.deltaTableColonnadeBlaze (cStyles [] []))
     ase20102018Table
   brAddMarkDown brAcrossTimeASRTable
-  brAddRawHtmlTable
+  BT.brAddRawHtmlTable
     "2010 to 2018"
     (BHA.class_ "brTable")
     (PM.deltaTableColonnadeBlaze (cStyles [] []))
