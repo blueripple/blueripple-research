@@ -63,6 +63,7 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Utils                  as FU
+import qualified Frames.Serialize              as FS
 
 import qualified Knit.Report                   as K
 import           Polysemy.Error                 ( Error, mapError, throw )
@@ -133,7 +134,6 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
            &= CA.help "Produce MRP Model Blue Ripple Politics Posts"
            &= CA.summary "mrp-model v0.1.0.0, (C) 2019 Adam Conner-Sax"
 
-
 main :: IO ()
 main = do
   args <- CA.cmdArgs postArgs
@@ -165,7 +165,8 @@ main = do
             FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
-      ccesFrameAll <- F.toFrame <$> K.knitRetrieveOrMake @[F.Record CCES_MRP] "mrp/ccesMRP.bin" ccesFrameFromCSV
+      ccesFrameAll :: F.FrameRec CCES_MRP <- (F.toFrame . fmap FS.fromS)
+                      <$> K.knitRetrieveOrMake "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV)
   {-       
       let
         firstFew = take 1000 $ FL.fold

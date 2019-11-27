@@ -13,7 +13,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 50f412011e55df974567604cf53aed0b32b71445
+  tag: e1d043fc6b8f5aae57ec04eb4ca331fc12898159
 
 source-repository-package
   type: git
