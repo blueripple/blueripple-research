@@ -165,8 +165,8 @@ main = do
             FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
-      ccesFrameAll :: F.FrameRec CCES_MRP <- (F.toFrame . fmap FS.fromS)
-                      <$> K.retrieveOrMake "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV)        
+      ccesFrameAll :: F.FrameRec CCES_MRP <- F.toFrame 
+                      <$> K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) "mrp/ccesMRP.bin" ccesFrameFromCSV
       stateCrosswalkPath <- liftIO $ usePath statesCSV
       stateCrossWalkFrame :: F.Frame States <- loadToFrame
         csvParserOptions
