@@ -8,8 +8,9 @@
 module BlueRipple.Utilities.KnitUtils where
 
 import qualified Knit.Report                   as K
-import qualified Knit.Report.Input.MarkDown.PandocMarkDown
-                                               as K
+import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
+import qualified Knit.Report.Cache as KC
+
 import qualified Control.Monad.Except          as X
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
@@ -28,6 +29,7 @@ import qualified Text.Blaze.Html5              as BH
 import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5.Attributes   as BHA
 
+import qualified Frames.Serialize              as FS
 
 
 knitX
@@ -100,3 +102,4 @@ brAddDates updated pubDate updateDate tMap =
           else M.empty
         False -> M.empty
   in  tMap <> pubT <> updT
+

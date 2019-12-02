@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveDataTypeable        #-}
+{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
@@ -23,6 +24,7 @@ import qualified Data.Map                      as M
 --import  Data.Ord (Compare)
 
 import qualified Data.Text                     as T
+import qualified Data.Serialize                as SE
 import qualified Data.Vector.Storable               as VS
 
 
@@ -73,6 +75,7 @@ import qualified Numeric.GLM.Confidence            as GLM
 import qualified Numeric.SparseDenseConversions as SD
 
 import qualified Statistics.Types              as ST
+import GHC.Generics (Generic)
 
 
 import BlueRipple.Data.DataFrames
@@ -115,28 +118,30 @@ mid-west: Indiana, Michigan, Ohio, Pennsylvania and Wisconsin.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ show x
   
-post :: forall r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.CacheHolder r (F.FrameRec CCES_MRP) -- for things which might be cached, make them actions so laziness saves us if we don't need them
+     -> F.FrameRec CCES_MRP
      -> K.Sem r ()
-post stateNameByAbbreviation ccesFrameCH = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @WhiteNonHispanic r == True) && (F.rgetField @CollegeGrad r == False)
       countWWCDemHouseVotesF = MR.concatFold
                                $ countFold @ByStateGenderRaceEducation @_ @'[HouseVoteParty] ((== VP_Democratic) . F.rgetField @HouseVoteParty)
       countWWCDemPres2016VotesF = MR.concatFold
                                   $ countFold @ByStateGenderRaceEducation @_ @'[Pres2016VoteParty] ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
-      modelWWCV :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+      modelWWCV :: (K.KnitEffects r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
                 => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByStateGenderRaceEducation V.++ '[Count, Successes]))
                 -> Int
                 -> K.Sem r (GLM.MixedModel CCESPredictor CCESGroup
-                           ,GLM.FixedEffectStatistics CCESPredictor
-                           ,GLM.EffectParametersByGroup CCESGroup CCESPredictor
-                           ,GLM.RowClassifier CCESGroup)
+                           , GLM.RowClassifier CCESGroup
+                           , GLM.EffectsByGroup CCESGroup CCESPredictor
+                           , GLM.BetaU
+                           , VS.Vector Double
+                           , [(GLM.BetaU, VS.Vector Double)])
       modelWWCV cf y = P.mapError glmErrorToPandocError $ K.wrapPrefix ("modelWWCV " <> (T.pack $ show y) <> ":") $ do
         let recFilter r = (F.rgetField @Turnout r == T_Voted) && (F.rgetField @Year r == y)
-        ccesFrame <- F.filterFrame recFilter <$> P.raise (K.useCached ccesFrameCH)
-        let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
+            ccesFrame = F.filterFrame recFilter ccesFrameAll
+            counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
             vWeights  = VS.replicate (VS.length vCounts) 1.0
             fixedEffects = GLM.FixedEffects $ IS.fromList [GLM.Intercept, GLM.Predictor P_WWC]
@@ -216,7 +221,7 @@ post stateNameByAbbreviation ccesFrameCH = P.mapError glmErrorToPandocError $ K.
 
               return (r, obs, bootWCI, predictCVCI)
         fitted <- traverse f (FL.fold FL.list counted)
-        K.logLE K.Info $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
+        K.logLE K.Diagnostic $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
         fixedEffectTable <- GLM.printFixedEffects fes
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let toPredict = [("WWC (all States)", M.fromList [(P_WWC, 1)], M.empty)
@@ -225,29 +230,33 @@ post stateNameByAbbreviation ccesFrameCH = P.mapError glmErrorToPandocError $ K.
             GLM.FixedEffectStatistics fep _ = fes            
         predictionTable <- GLM.printPredictions mixedModel fep epg rowClassifier toPredict
         K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
-        return (mixedModel, fes, epg, rowClassifier)
+--        return (mixedModel, fes, epg, rowClassifier, bootstraps)
+        return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
 --  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
 --  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
-  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
-  (mm2016, (GLM.FixedEffectStatistics fep2016 _), epg2016, rc2016) <- modelWWCV countWWCDemHouseVotesF 2016
-  (mm2018, (GLM.FixedEffectStatistics fep2018 _), epg2018, rc2018) <- modelWWCV countWWCDemHouseVotesF 2018
-  ccesFrameAll <- P.raise (K.useCached ccesFrameCH)
-  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
-      toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton G_State s)) $ S.toList states)
-      wwc = M.singleton P_WWC 1
-      mwBG = ["IA", "MI", "OH", "PA", "WI"]
-      addPredictions (s,groupMap) = do
-        p2016p <- fst <$> (GLM.predict mm2016p (flip M.lookup wwc) (flip M.lookup groupMap) fep2016p epg2016p rc2016p)
-        p2016 <- fst <$> (GLM.predict mm2016 (flip M.lookup wwc) (flip M.lookup groupMap) fep2016 epg2016 rc2016)
-        p2018 <- fst <$> (GLM.predict mm2018 (flip M.lookup wwc) (flip M.lookup groupMap) fep2018 epg2018 rc2018)
-        return  $ WWCTableRow s p2016p p2016 p2018  
-  forTable <-  L.sortOn deltaHouse <$> traverse addPredictions toPredict
+  let makeTableRows = do 
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
+        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- modelWWCV countWWCDemHouseVotesF 2016
+        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- modelWWCV countWWCDemHouseVotesF 2018
+        let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
+            toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton G_State s)) $ S.toList states)
+            wwc = M.singleton P_WWC 1
+            addPredictions (s, groupMap) = do
+              let cl = ST.mkCL 0.95
+                  ct bs = GLM.BootstrapCI GLM.BCI_Accelerated bs
+              p2016p <- GLM.predictWithCI mm2016p (flip M.lookup wwc) (flip M.lookup groupMap) rc2016p ebg2016p bu2016p vb2016p cl (ct bs2016p)
+              p2016 <- GLM.predictWithCI mm2016 (flip M.lookup wwc) (flip M.lookup groupMap) rc2016 ebg2016 bu2016 vb2016 cl (ct bs2016)
+              p2018 <- GLM.predictWithCI mm2018 (flip M.lookup wwc) (flip M.lookup groupMap) rc2018 ebg2018 bu2018 vb2018 cl (ct bs2018)
+              return  $ WWCTableRow s p2016p p2016 p2018
+        L.sortOn deltaHouse <$> traverse addPredictions toPredict
+  forTable <-  K.retrieveOrMake "mrp/intro/prefTable" makeTableRows
   forChart <-  GLM.eitherToSem $ traverse (\tr -> do
                                             let sa = stateAbbr tr
                                             fullState <- maybe (Left $ "Couldn't find " <> sa) Right $ M.lookup sa stateNameByAbbreviation
                                             return (fullState, deltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forTable
   brAddMarkDown brIntro
   _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forChart)
+  let mwBG = ["IA", "MI", "OH", "PA", "WI"]
   brAddRawHtmlTable
     "WWC Democratic Voter Preference"
     (BHA.class_ "brTable")
@@ -256,12 +265,14 @@ post stateNameByAbbreviation ccesFrameCH = P.mapError glmErrorToPandocError $ K.
   brAddMarkDown brReadMore
 
 data WWCTableRow = WWCTableRow { stateAbbr :: T.Text
-                               , pref2016Pres :: Double
-                               , pref2016House :: Double
-                               , pref2018House :: Double
-                               }
+                               , pref2016Pres :: (Double, (Double, Double))
+                               , pref2016House :: (Double, (Double, Double))
+                               , pref2018House :: (Double, (Double, Double))
+                               } deriving (Generic)
+
+instance SE.Serialize WWCTableRow
                    
-deltaHouse tr = pref2018House tr - pref2016House tr 
+deltaHouse tr = fst (pref2018House tr) - fst (pref2016House tr)
 inStates s tr = stateAbbr tr `elem` s
                 
 emphasizeStates s = CellStyle (\tr _ -> if inStates s tr then highlightCellBlue else "")
@@ -270,9 +281,9 @@ emphasizeNational = CellStyle (\tr _ -> if  stateAbbr tr == "National" then high
 colWWC_Change :: CellStyle WWCTableRow T.Text -> C.Colonnade C.Headed WWCTableRow BC.Cell
 colWWC_Change cas =
   C.headed "State" (toCell cas "State" "State" (textToStyledHtml . stateAbbr))
-  <> C.headed "2016 Pres (%)" (toCell cas "2016 Pres" "2016 Pres" (numberToStyledHtml "%2.1f" . (*100) . pref2016Pres))
-  <> C.headed "2016 House (%)" (toCell cas "2016 House" "2016 House" (numberToStyledHtml "%2.1f" . (*100) . pref2016House))
-  <> C.headed "2018 House (%)" (toCell cas "2018 D Pref" "2018 House" (numberToStyledHtml "%2.1f" . (*100) . pref2018House))
+  <> C.headed "2016 Pres (%)" (toCell cas "2016 Pres" "2016 Pres" (numberToStyledHtml "%2.1f" . (*100) . fst . pref2016Pres))
+  <> C.headed "2016 House (%)" (toCell cas "2016 House" "2016 House" (numberToStyledHtml "%2.1f" . (*100) . fst . pref2016House))
+  <> C.headed "2018 House (%)" (toCell cas "2018 D Pref" "2018 House" (numberToStyledHtml "%2.1f" . (*100) . fst . pref2018House))
   <> C.headed "2018-2016 House" (toCell cas "2018-2016 House" "2018-2016 House" (numberToStyledHtml "%2.1f" . (*100) . deltaHouse))
   
 

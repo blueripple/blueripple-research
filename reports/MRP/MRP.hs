@@ -166,24 +166,7 @@ main = do
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
       ccesFrameAll :: F.FrameRec CCES_MRP <- (F.toFrame . fmap FS.fromS)
-                      <$> K.knitRetrieveOrMake "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV)
-      let ccesFrameDC :: K.CacheHolder _ (F.FrameRec CCES_MRP)
-            = cacheAction "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV) (F.toFrame . fmap FS.fromS) 
-  {-       
-      let
-        firstFew = take 1000 $ FL.fold
-          FL.list
-          (fmap
-            (F.rcast
-              @'[CCESCaseId, StateAbbreviation, Registration, Turnout, HouseVoteParty, PartisanId3]
-            )
-            ccesFrame
-          )
-      K.logLE K.Diagnostic      
-        $  "ccesFrame (first 100 rows):\n"
-        <> (T.intercalate "\n" $ fmap (T.pack . show) firstFew)
--}
-        
+                      <$> K.retrieveOrMake "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV)        
       stateCrosswalkPath <- liftIO $ usePath statesCSV
       stateCrossWalkFrame :: F.Frame States <- loadToFrame
         csvParserOptions
