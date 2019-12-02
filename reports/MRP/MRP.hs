@@ -167,6 +167,8 @@ main = do
       -- This load and parse takes a while.  Cache the result for future runs              
       ccesFrameAll :: F.FrameRec CCES_MRP <- (F.toFrame . fmap FS.fromS)
                       <$> K.knitRetrieveOrMake "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV)
+      let ccesFrameDC :: K.CacheHolder _ (F.FrameRec CCES_MRP)
+            = cacheAction "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV) (F.toFrame . fmap FS.fromS) 
   {-       
       let
         firstFew = take 1000 $ FL.fold

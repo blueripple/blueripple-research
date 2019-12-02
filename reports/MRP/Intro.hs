@@ -45,6 +45,7 @@ import qualified Frames.Visualization.VegaLite.ParameterPlots
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
 import qualified Polysemy.Error                as P (mapError)
+import qualified Polysemy                      as P (raise)
 import           Text.Pandoc.Error             as PE
 import qualified Text.Blaze.Colonnade          as BC
 
@@ -114,11 +115,11 @@ mid-west: Indiana, Michigan, Ohio, Pennsylvania and Wisconsin.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ show x
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+post :: forall r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> F.FrameRec CCES_MRP
+     -> K.CacheHolder r (F.FrameRec CCES_MRP) -- for things which might be cached, make them actions so laziness saves us if we don't need them
      -> K.Sem r ()
-post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation ccesFrameCH = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @WhiteNonHispanic r == True) && (F.rgetField @CollegeGrad r == False)
       countWWCDemHouseVotesF = MR.concatFold
@@ -132,10 +133,10 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
                            ,GLM.FixedEffectStatistics CCESPredictor
                            ,GLM.EffectParametersByGroup CCESGroup CCESPredictor
                            ,GLM.RowClassifier CCESGroup)
-      modelWWCV cf y = K.wrapPrefix ("modelWWCV " <> (T.pack $ show y) <> ":") $ P.mapError glmErrorToPandocError $ do
+      modelWWCV cf y = P.mapError glmErrorToPandocError $ K.wrapPrefix ("modelWWCV " <> (T.pack $ show y) <> ":") $ do
         let recFilter r = (F.rgetField @Turnout r == T_Voted) && (F.rgetField @Year r == y)
-            ccesFrame = F.filterFrame recFilter ccesFrameAll
-            counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
+        ccesFrame <- F.filterFrame recFilter <$> P.raise (K.useCached ccesFrameCH)
+        let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
             vWeights  = VS.replicate (VS.length vCounts) 1.0
             fixedEffects = GLM.FixedEffects $ IS.fromList [GLM.Intercept, GLM.Predictor P_WWC]
@@ -230,6 +231,7 @@ post stateNameByAbbreviation ccesFrameAll = P.mapError glmErrorToPandocError $ K
   (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- modelWWCV countWWCDemPres2016VotesF 2016
   (mm2016, (GLM.FixedEffectStatistics fep2016 _), epg2016, rc2016) <- modelWWCV countWWCDemHouseVotesF 2016
   (mm2018, (GLM.FixedEffectStatistics fep2018 _), epg2018, rc2018) <- modelWWCV countWWCDemHouseVotesF 2018
+  ccesFrameAll <- P.raise (K.useCached ccesFrameCH)
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
       toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton G_State s)) $ S.toList states)
       wwc = M.singleton P_WWC 1

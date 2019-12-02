@@ -21,3 +21,4 @@ examples/html
 /posts
 reports/MRP/data
 .knit-haskell-cache
+bigData
