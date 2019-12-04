@@ -66,6 +66,7 @@ import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
 
 import qualified Knit.Report                   as K
+import qualified Polysemy                      as P
 import           Polysemy.Error                 ( Error, mapError, throw )
 import           Polysemy.Async                 (Async, asyncToIO, asyncToIOFinal) -- can't use final with this version of Knit-Haskell
 import           Polysemy.RandomFu              (RandomFu, runRandomIO)
@@ -86,6 +87,7 @@ import qualified BlueRipple.Model.TurnoutAdjustment
 import           MRP.CCES
 import           MRP.Common
 import qualified MRP.Intro as Intro
+import qualified MRP.Pools as Pools
 
 
 yamlAuthor :: T.Text
@@ -118,6 +120,7 @@ data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostIntro] &= CA.name "intro" &= CA.help "knit \"Intro\"",
+                                        [PostPools] &= CA.name "pools" &= CA.help "knit \"Pools\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
@@ -156,7 +159,8 @@ main = do
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
           tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
           preFilterYears   = const True --FU.filterOnMaybeField @Year (`L.elem` [2016])
-      let ccesFrameFromCSV = do
+      let ccesFrameFromCSV :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [F.Record CCES_MRP]
+          ccesFrameFromCSV = do
             K.logLE K.Info $ "Loading CCES data from csv (" <> (T.pack $ ccesCSV) <> ") and parsing..."
             ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
                              tsvParserOptions
@@ -165,13 +169,24 @@ main = do
             FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
-      ccesFrameAll :: F.FrameRec CCES_MRP <- F.toFrame 
-                      <$> K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) "mrp/ccesMRP.bin" ccesFrameFromCSV
+      let ccesListCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [F.Record CCES_MRP] =
+            K.cacheAction "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV) (fmap FS.fromS)
       stateCrosswalkPath <- liftIO $ usePath statesCSV
       stateCrossWalkFrame :: F.Frame States <- loadToFrame
         csvParserOptions
         stateCrosswalkPath
         (const True)
+      aseDemographicsPath <- liftIO $ usePath ageSexEducationDemographicsLongCSV  
+      aseDemoGraphicsFrame :: F.Frame ASEDemographics <- loadToFrame
+        csvParserOptions
+        aseDemographicsPath
+        (const True)
+      aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
+      aseTurnoutFrame :: F.Frame TurnoutASE <- loadToFrame
+        csvParserOptions
+        aseTurnoutPath
+        (const True)
+        
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame  
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -185,7 +200,17 @@ main = do
                         ]
           )
         )
-        $ Intro.post statesFromAbbreviations ccesFrameAll 
+        $ Intro.post statesFromAbbreviations (K.makeRunnable ccesListCA) --ccesFrameAll
+      when (PostPools `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostPools)
+         (brAddDates (updated args) pubDateIntro curDate
+          $ M.fromList [("pagetitle", "Where Do We Look for Democratic Votes in 2020?")
+                        ,("title","Where Do We Look For Democratic Votes in 2020?")
+                        ]
+          )
+        )
+        $ Pools.post statesFromAbbreviations aseDemoGraphicsFrame aseTurnoutFrame (K.makeRunnable ccesListCA) --ccesFrameAll 
         
   case eitherDocs of
     Right namedDocs ->

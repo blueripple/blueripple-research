@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/glm-haskell ~/DataScience/knit-haskell
+packages: ./ ~/DataScience/glm-haskell ~/DataScience/knit-haskell ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 
@@ -10,10 +10,10 @@ source-repository-package
   location: https://github.com/blueripple/data-sets
   tag: 84c884206dedf91d511a888649178765d755e5c9
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: e1d043fc6b8f5aae57ec04eb4ca331fc12898159
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: e1d043fc6b8f5aae57ec04eb4ca331fc12898159
 
 source-repository-package
   type: git

@@ -155,6 +155,7 @@ executable mrp-model
                 , MRP.Common
                 , PreferenceModel.Common
                 , MRP.Intro
+                , MRP.Pools
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs

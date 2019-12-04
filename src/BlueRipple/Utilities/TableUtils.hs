@@ -11,6 +11,7 @@ module BlueRipple.Utilities.TableUtils
   , highlightCellBlue
   , highlightCellPurple
   , numberToStyledHtml
+  , maybeNumberToStyledHtml
   , textToStyledHtml
   , brAddRawHtmlTable
   )
@@ -64,6 +65,12 @@ numberToStyledHtml printFmt x = if x >= 0
                                      (negate x)
     , "color: red"
     )
+
+maybeNumberToStyledHtml
+  :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> Maybe a -> (BH.Html, T.Text)
+maybeNumberToStyledHtml printFmt xM =
+  maybe (textToStyledHtml "N/A") (numberToStyledHtml printFmt) xM
+
 
 textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)
