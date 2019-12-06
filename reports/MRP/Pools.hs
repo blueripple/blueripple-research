@@ -361,6 +361,12 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
         fmap fst . L.sortBy ((compare `on` snd.snd)) <$> traverse f predsByLocation
   sortedByYoungWomen <- sortedStates BR.Female
   _ <- K.addHvega Nothing Nothing $
+       vlPrefGapByState2
+       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Voters"
+       (FV.ViewConfig 800 800 10)
+       sortedByYoungWomen
+       longPrefs
+  _ <- K.addHvega Nothing Nothing $
        vlPrefGapByState
        "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Women"
        (FV.ViewConfig 800 800 10)
@@ -451,6 +457,24 @@ vlPrefGapByState title vc sortedStates sex rows =
       filter = GV.transform . GV.filter (GV.FExpr $ "datum.Sex == '" <> (T.pack $ show sex) <> "' && datum.Education == 'Grad'")
       encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
       encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
+      dotSpec = GV.asSpec [(GV.encoding . encY . encX . encColor) [], GV.mark GV.Point [], filter []]
+      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
+  in
+    FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
+
+vlPrefGapByState2 :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlPrefGapByState2 title vc sortedStates rows =
+  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
+                                          , ("Sex/Age", GV.Str $ (T.pack $ show a) <> "-" <>(T.pack $ show s))
+                                          , ("Education", GV.Str $ T.pack $ show e)
+                                          , ("D Votes Per Voter", GV.Number p)
+                                          ] []
+      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]      
+      encX = GV.position GV.X [GV.PName "D Votes Per Voter", GV.PmType GV.Quantitative]
+      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
+      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
+      encColor = GV.color [GV.MName "Sex/Age", GV.MmType GV.Nominal]
       dotSpec = GV.asSpec [(GV.encoding . encY . encX . encColor) [], GV.mark GV.Point [], filter []]
       lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
   in
