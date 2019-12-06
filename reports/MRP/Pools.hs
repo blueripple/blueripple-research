@@ -96,42 +96,127 @@ import MRP.CCES
 
 import qualified PreferenceModel.Common as PrefModel
 
-brIntro :: T.Text
-brIntro = [i|
-One benefit of working on Blue Ripple Politics is that we sometimes get
+brText1 :: T.Text
+brText1 = [i|
+One benefit of working on Blue Ripple Politics is that we get
 to talk with very smart analysts who point
 us in interesting directions.  A recent conversation with one of our favorite election modelers,
 Professor Rachel Bitecofer (LINK), reminded us of her spot-on analysis (LINK) of the 2018
-house races, one which focused on turnout among "pools of untapped Democratic voters" (CHECK QUOTE). 
+house races, one which focused on turnout among "pools of untapped Democratic voters" (CHECK QUOTE).
+In this post we look a bit at one of the pools that Professor Bitecofer is focused on in the 2020
+elections: college educated voters. 
 
+1. **Data and Methods**
+2. **How Many Votes is a Voter Worth?**
+3. **Female College Educated Voters and Age**
+4. **Battleground States**
+5. **What Does It Mean?**
+6. **Take Action**
+
+## Data and Methods
 In our research pieces so far, we've looked only at aggregate data, that
 is data which comes from adding together a large number of people: census
 counts or election results, for example.  In this piece we look at some
-per-person data, namely the CCES survey, which surveys about 60,000 people
+per-person data, namely the Cooperative Congressional Election Study
+[CCES][CCES],
+which surveys about 60,000 people
 in every election cycle. For each survey response,
 the CCES includes geographic and demographic information along with opinion about
 various political questions, whether the person is registered to vote, and whether they
 voted and who for in elections for Governor, House, Senate and President, whenever
-each is applicable.
+each is applicable. 
 
-The geographic information makes this interesting.  This allows
+The geographic information allows
 us to start estimating a variety of things at the state level, something we couldn't do using
 only aggregate data.  We do this using multi-level regression
 (the "MR" of "MRP", which stands for Multi-level Regression with Post-stratification), a technique
-we explain in more detail [here][MRP:Methods].
+explained in more detail [here][MRP:Summary] and about which we will have an explainer in the
+coming months. Very briefly: MR allows you to use all the data to get a baseline and then use
+the data in a specific "bucket" (e.g., college educated older women in Texas) to make an improved
+inference for that set of people; it balances the abundance of the data for everywhere with the need to
+use the local information for improved insight.
 
-In this post we consider voter preference among different demographic groups in the 2016
-presidential election.  We are thinking about boosting turnout among Democratic leaning
-voters and we want to know who those are in each state.  Once we infer voter preference
-by group, we'll look, via census data, at how many people in each groups live in the state and
-what we know about their turnout in 2016.  That will give us a rough idea of where the biggest
-numbers of potentially untapped democratic votes are and we'll use that lens to
-focus in on some battleground states.
+Our specific model uses a survey-weighted logistic MR to fit a
+binomial distribution to the Democratic votes, among voters who voted D or R,
+in each 408 groups:
+(states + DC) x (Female or Male) x (Non-College Grad or College Grad) x (Under 45 or 45 and over).
 
+As we've said in earlier posts, we recognize that these categories are vast oversimplifications
+of the electorate.  We are limited by what information is present in the survey--Gender is limited
+to "Female" and "Male" in the CCES, and by computational complexity, which is why we've limited
+our education and age breakdown to two categories each.
+
+If we are hoping to boost turnout among Democratic
+leaning voters in battleground states or crucial races, it helps to know which voters are
+most likely to be Democratic leaning *in that particular state or district.*  This data
+and these techniques allow us to do just that.
+
+## How Many Votes is a Voter Worth?
+According to our model, young college-educated women in Texas voted Democratic in the 2016
+presidential election about 72% of the time.  If we increased turnout among them by 100,000
+voters for 2020 and they were exactly as likely to vote Democratic as in 2016,
+how many votes would that extar 100,000 voters net the Democratic candidate?
+Of that 100,000, 72,000 (72% x 100,000)
+would vote for the democrat and 38,000 ((100% - 72%) x 100,000) for the Republican.
+So Dems would net 72,000 - 38,000 = 34,000 votes. In general, if x% of voters will vote for
+the Democrat, each such voter is "worth" $2x-100\\%$ votes.  We'll call that number "Votes Per Voter" or
+VPV. Note that a group with a voter preference of 50% has a VPV of 0. A group that votes
+Democratic 60% of the time has a VPV of 20%. And a group which votes for Democrats less
+than 50% of the time has a negative VPV.
+
+As a side note, this is why changing people's minds can be a more appealing avenue to getting
+votes: each changed mind of a voter is worth 2 votes: the one lost by the Republican and the
+one gained by the Democrat.
+
+## Female College Educated Voters and Age
+So let's look at college-educated women and how their VPV varies by state and by age.
+In the chart below we show the VPV of college-educated women, split by age at 45, for
+each state (and DC and the Nation as a whole).  The states are ordered by the VPV of
+young college-educated women.
+
+[CCES]: <https://cces.gov.harvard.edu/>
+[MRP:Summary]: <https://en.wikipedia.org/wiki/Multilevel_regression_with_poststratification>
 [MRP:Methods]: <${brGithubUrl (postPath PostMethods)}>
 [PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
 [PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 |]
+  
+brText2 :: T.Text
+brText2 = [i|
+Some quick observations:
+
+- Except in PA and NC, college-educated women under 45
+are more likely than their older counterparts to vote for Democrats.
+- The spread varies *a lot*: From an almost 50% VPV spread in Texas to almost no spread at all
+in North Carolina.
+- In a few states (TX, SD, AZ, UT, AR, SC, AL, ND), college-educated women 
+over 45 have negative VPV.
+
+Those last two observations lead to a tactical suggestion:  anyone working on
+registration or GOTV of college-educated women in Texas, ought to skew their efforts
+sharply toward younger voters.  Note: We strongly believe that everyone should
+vote and that all states should make that easy.  But if we were spending money
+or time on that effort in Texas in 2020, we would target *younger* college-educated
+women (and men, as we'll see below).
+
+Texas is interesting, both as a long-shot battleground in the presidential race, but
+more because there are many house seats in play.  The more presidential battleground
+states are worth focusing on here, and below we chart just those.  We've added men
+here as well. 
+
+
+[PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
+[PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
+|]
+
+brText3 :: T.Text
+brText3 = [i|
+Looking at each of these states, it seems clear that a battleground state turnout drive
+focused on all college-educated voters should skew young, especially one that targets men
+as well as women.  In many of the battleground states, college-educated men over 45
+have negative VPV.
+|]
+  
 
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ show x
@@ -344,7 +429,7 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
 _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forWWCChart)
 -}
   K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
-  brAddMarkDown brIntro
+  brAddMarkDown brText1
   let dvpv x = 2*x - 1
       melt (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, dvpv x)) $ M.toList cdM 
       longPrefs = concat $ fmap melt predsByLocation
@@ -383,14 +468,15 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
        (FV.ViewConfig 800 800 10)
        sortedByYoungWomen
        BR.Female
-       longPrefs
-       
+       longPrefs       
+  brAddMarkDown brText2     
   _ <- K.addHvega Nothing Nothing $
        vlPrefGapByStateBoth
        "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Voters"
        (FV.ViewConfig 800 800 10)
        sortedBGNat
        (L.filter (\(s,_,_) -> s `elem` sortedBGNat) $ longPrefs)
+  brAddMarkDown brText3     
        
 {-
   sortedByYoungMen <- sortedStates BR.Male
@@ -401,13 +487,13 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
        sortedByYoungMen
        BR.Male
        longPrefs
--}
 
   brAddRawHtmlTable
     "Democratic Voter Preference (%) by State and Category"
     (BHA.class_ "brTable")
     (colPrefByLocation allCatKeys emphasizeNational)
     predsByLocation
+-}
   brAddMarkDown brReadMore
 
 -- TODO: make this traversable
@@ -471,11 +557,11 @@ vlPrefGapByState title vc sortedStates sex rows =
                                           , ("Sex", GV.Str $ T.pack $ show s)
                                           , ("Education", GV.Str $ T.pack $ show e)
                                           , ("Age", GV.Str $ T.pack $ show a)
-                                          , ("D Votes Per Voter", GV.Number p)
+                                          , ("D VPV", GV.Number p)
                                           ] []
       dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]      
-      encX = GV.position GV.X [GV.PName "D Votes Per Voter", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "D VPV", GV.PmType GV.Quantitative]
       filter = GV.transform . GV.filter (GV.FExpr $ "datum.Sex == '" <> (T.pack $ show sex) <> "' && datum.Education == 'Grad'")
       encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
       encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
@@ -491,12 +577,12 @@ vlPrefGapByStateBoth title vc sortedStates rows =
                                           , ("Age", GV.Str $ (T.pack $ show a))
                                           , ("Sex",GV.Str $ (T.pack $ show s))
                                           , ("Education", GV.Str $ T.pack $ show e)
-                                          , ("D Votes Per Voter", GV.Number p)
+                                          , ("D VPV", GV.Number p)
                                           , ("Ref0", GV.Number 0)
                                           ] []
       dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
       encY = GV.position GV.Y [GV.PName "Sex", GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""]]      
-      encX = GV.position GV.X [GV.PName "D Votes Per Voter"
+      encX = GV.position GV.X [GV.PName "D VPV"
                               , GV.PmType GV.Quantitative
                               , GV.PAxis [GV.AxGrid False]
                               , GV.PScale [GV.SDomain $ GV.DNumbers [-0.5,0.5]]]
@@ -505,7 +591,7 @@ vlPrefGapByStateBoth title vc sortedStates rows =
       encDetail = GV.detail [GV.DName "Sex", GV.DmType GV.Nominal]
       encDColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
       encLColor = GV.color [GV.MName "Sex", GV.MmType GV.Nominal]
-      encRuleX = GV.position GV.X [GV.PName "Ref0", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "D Votes/Voter"]]
+      encRuleX = GV.position GV.X [GV.PName "Ref0", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "D VPV"]]
       dotPropS = [(GV.encoding . encX . encY . encDColor) [], GV.mark GV.Point [], filter []]
       linePropS = [(GV.encoding . encX . encY . encDetail) [], GV.mark GV.Line [], filter []]
       gridPropS = [(GV.encoding . encRuleX) [], GV.mark GV.Rule [GV.MOpacity 0.05]]
