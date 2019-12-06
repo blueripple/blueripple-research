@@ -66,6 +66,7 @@ import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
 
 import qualified Knit.Report                   as K
+import qualified Knit.Report.Cache             as K
 import qualified Polysemy                      as P
 import           Polysemy.Error                 ( Error, mapError, throw )
 import           Polysemy.Async                 (Async, asyncToIO, asyncToIOFinal) -- can't use final with this version of Knit-Haskell
@@ -78,7 +79,9 @@ import qualified System.Console.CmdArgs.Implicit as CA
 import System.Console.CmdArgs.Implicit ((&=))
 
 
-import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DataFrames as BR
+import           BlueRipple.Data.PrefModel as BR
+
 import           BlueRipple.Utilities.KnitUtils
 
 import qualified BlueRipple.Model.TurnoutAdjustment
@@ -113,9 +116,6 @@ survey responses.  Maybe that's not weird??
 
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
--- If writeFile is given then text is read and parsed into frame and then serialised into writeFile
--- if readFile is given then data is de-serialised from the file
--- if both are given, error out
 data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool } deriving (Show, Data, Typeable)
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
@@ -176,21 +176,30 @@ main = do
         csvParserOptions
         stateCrosswalkPath
         (const True)
-      aseDemographicsPath <- liftIO $ usePath ageSexEducationDemographicsLongCSV  
-      aseDemoGraphicsFrame :: F.Frame ASEDemographics <- loadToFrame
-        csvParserOptions
-        aseDemographicsPath
-        (const True)
-      aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
-      aseTurnoutFrame :: F.Frame TurnoutASE <- loadToFrame
-        csvParserOptions
-        aseTurnoutPath
-        (const True)
+      let aseDemographicsFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.ASEDemographics]
+          aseDemographicsFrame = FL.fold FL.list <$> do   
+            aseDemographicsPath <- liftIO $ usePath ageSexEducationDemographicsLongCSV  
+            loadToFrame
+              csvParserOptions
+              aseDemographicsPath
+              (const True)
+          aseDemographicsFrameCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASEDemographics] =
+            K.cacheAction "mrp/aseDemographics.bin" (fmap FS.toS <$> aseDemographicsFrame) (fmap FS.fromS)
+          aseTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.TurnoutASE]
+          aseTurnoutFrame = FL.fold FL.list <$> do
+            aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
+            loadToFrame
+              csvParserOptions
+              aseTurnoutPath
+              (const True)
+          aseTurnoutFrameCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASE] =
+            K.cacheAction "mrp/aseTurnout.bin" (fmap FS.toS <$> aseTurnoutFrame) (fmap FS.fromS)
         
-      let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame  
+      let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
+      
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-      let pubDateIntro = Time.fromGregorian 2019 12 1
+      let pubDateIntro = Time.fromGregorian 2019 12 1      
       when (PostIntro `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostIntro)
@@ -210,146 +219,10 @@ main = do
                         ]
           )
         )
-        $ Pools.post statesFromAbbreviations aseDemoGraphicsFrame aseTurnoutFrame (K.makeRunnable ccesListCA) --ccesFrameAll 
+        $ Pools.post statesFromAbbreviations (K.makeRunnable ccesListCA) --ccesFrameAll 
         
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "posts" namedDocs
     Left err -> putStrLn $ "pandoc error: " ++ show err
 
-{-
--- map reduce
-type Count = "Count" F.:-> Int
-type Successes = "Successes" F.:-> Int
-
--- some keys for aggregation
-type ByStateGender = '[StateAbbreviation, Gender]
-type ByStateGenderRace = '[StateAbbreviation, Gender, WhiteNonHispanic]
-type ByStateGenderRaceAge = '[StateAbbreviation, Gender, WhiteNonHispanic, Under45]
-type ByStateGenderEducationAge = '[StateAbbreviation, Gender, CollegeGrad, Under45]
-type ByStateGenderRaceEducation = '[StateAbbreviation, Gender, WhiteNonHispanic, CollegeGrad]
-
-binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
-binomialFold testRow =
-  let successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
-  in  (\s n -> s F.&: n F.&: V.RNil) <$> FL.length <*> successesF
-
-countFold :: forall k r d.(Ord (F.Record k)
-                          , F.RecVec (k V.++ '[Count, Successes])
-                          , k F.⊆ r
-                          , d F.⊆ r)
-          => (F.Record d -> Bool)
-          -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count,Successes])]
-countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR.foldAndAddKey $ binomialFold testData)
- 
-data CCESPredictor = P_Gender deriving (Show, Eq, Ord, Enum, Bounded)
-type CCESEffect = GLM.WithIntercept CCESPredictor
-ccesPredictor :: forall r. (F.ElemOf r Gender) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Gender = if (F.rgetField @Gender r == Female) then 0 else 1
-
-data CCESGroup = CCES_State deriving (Show, Eq, Ord, Enum, Bounded, A.Ix)
-ccesGroupLabels ::forall r.  F.ElemOf r StateAbbreviation => F.Record r -> CCESGroup -> T.Text
-ccesGroupLabels r CCES_State = F.rgetField @StateAbbreviation r
-
-getFraction r = (realToFrac $ F.rgetField @Successes r)/(realToFrac $ F.rgetField @Count r)
-fixedEffects :: GLM.FixedEffects CCESPredictor
-fixedEffects = GLM.allFixedEffects True
-
-groups = IS.fromList [CCES_State]
-
-lmePrepFrame
-  :: forall p g rs
-   . (Bounded p, Enum p, Ord g, Show g)
-  => (F.Record rs -> Double) -- ^ observations
-  -> GLM.FixedEffects p
-  -> IS.IndexedSet g
-  -> (F.Record rs -> p -> Double) -- ^ predictors
-  -> (F.Record rs -> g -> T.Text)  -- ^ classifiers
-  -> FL.Fold
-       (F.Record rs)
-       ( LA.Vector Double
-       , LA.Matrix Double
-       , Either T.Text (GLM.RowClassifier g)
-       ) -- ^ (X,y,(row-classifier, size of class))
-lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
-  = let
-      makeInfoVector
-        :: M.Map g (M.Map T.Text Int)
-        -> M.Map g T.Text
-        -> Either T.Text (VB.Vector GLM.ItemInfo)
-      makeInfoVector indexMaps labels =
-        let
-          g (grp, label) =
-            GLM.ItemInfo
-              <$> (maybe (Left $ "Failed on " <> (T.pack $ show (grp, label)))
-                         Right
-                  $ M.lookup grp indexMaps
-                  >>= M.lookup label
-                  )
-              <*> pure label
-        in  fmap VB.fromList $ traverse g $ M.toList labels
-      makeRowClassifier
-        :: Traversable f
-        => M.Map g (M.Map T.Text Int)
-        -> f (M.Map g T.Text)
-        -> Either T.Text (GLM.RowClassifier g)
-      makeRowClassifier indexMaps labels = do
-        let sizes = fmap M.size indexMaps
-        indexed <- traverse (makeInfoVector indexMaps) labels
-        return $ GLM.RowClassifier groupIndices
-                                   sizes
-                                   (VB.fromList $ FL.fold FL.list indexed)
-                                   indexMaps
-      getPredictorF' _   GLM.Intercept     = 1
-      getPredictorF' row (GLM.Predictor x) = getPredictorF row x
-      predictorF row = LA.fromList $ case fe of
-        GLM.FixedEffects indexedFixedEffects ->
-          fmap (getPredictorF' row) $ IS.members indexedFixedEffects
-        GLM.InterceptOnly -> [1]
-      getClassifierLabels :: F.Record rs -> M.Map g T.Text
-      getClassifierLabels r =
-        M.fromList $ fmap (\g -> (g, classifierLabelF r g)) $ IS.members
-          groupIndices
-      foldObs   = fmap LA.fromList $ FL.premap observationF FL.list
-      foldPred  = fmap LA.fromRows $ FL.premap predictorF FL.list
-      foldClass = FL.premap getClassifierLabels FL.list
-      g (vY, mX, ls) =
-        ( vY
-        , mX
-        , makeRowClassifier
-          (snd $ ST.execState (addAll ls) (M.empty, M.empty))
-          ls
-        )
-    in
-      fmap g $ ((,,) <$> foldObs <*> foldPred <*> foldClass)
-
-addOne
-  :: Ord g
-  => (g, T.Text)
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addOne (grp, label) = do
-  (nextIndexMap, groupIndexMaps) <- ST.get
-  let groupIndexMap = fromMaybe M.empty $ M.lookup grp groupIndexMaps
-  case M.lookup label groupIndexMap of
-    Nothing -> do
-      let index         = fromMaybe 0 $ M.lookup grp nextIndexMap
-          nextIndexMap' = M.insert grp (index + 1) nextIndexMap
-          groupIndexMaps' =
-            M.insert grp (M.insert label index groupIndexMap) groupIndexMaps
-      ST.put (nextIndexMap', groupIndexMaps')
-      return ()
-    _ -> return ()
-
-addMany
-  :: (Ord g, Traversable h)
-  => h (g, T.Text)
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addMany x = traverse addOne x >> return ()
-
-addAll
-  :: Ord g
-  => [M.Map g T.Text]
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addAll x = traverse (addMany . M.toList) x >> return ()
-
--}

@@ -17,6 +17,7 @@
 module BlueRipple.Data.PrefModel.SimpleAgeSexEducation where
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DemographicTypes
 import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.ASETypes
 
@@ -27,6 +28,7 @@ import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromMaybe)
 import           Data.Proxy                     ( Proxy(..) )
+import qualified Data.Serialize                as S
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import           Data.Ix                        ( Ix )
@@ -76,9 +78,6 @@ simpleASE2SimpleSE x = A.array (minBound,maxBound) [(FemaleNonGrad, x A.! OldFem
 
 type instance FI.VectorFor SimpleASE = V.Vector
 instance Hashable SimpleASE
-
-data SimpleEducation = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show)
-data SimpleAge = Old | Young
 
 -- map SimpleASE to triples (which then get mapped to labels from the data) of Age, Sex, Education
 

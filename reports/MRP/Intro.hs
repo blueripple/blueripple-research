@@ -80,6 +80,7 @@ import GHC.Generics (Generic)
 
 
 import BlueRipple.Data.DataFrames
+import qualified BlueRipple.Data.DemographicTypes as BR
 import MRP.Common
 import MRP.CCES
 
@@ -128,7 +129,7 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      -> K.Sem r ()
 post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
-  let isWWC r = (F.rgetField @WhiteNonHispanic r == True) && (F.rgetField @CollegeGrad r == False)
+  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
       countWWCDemHouseVotesF = MR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
                                ((== VP_Democratic) . F.rgetField @HouseVoteParty)

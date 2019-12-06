@@ -20,6 +20,7 @@ common deps
                , array
                , blaze-html
                , blueripple-data-sets
+               , cereal >= 0.5.7 && < 0.6
                , containers
                , Frames
                , Frames-map-reduce >= 0.1.0.1
@@ -49,6 +50,7 @@ library
   ghc-options: -O -fplugin=Polysemy.Plugin
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.FromDB
+                 , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.PrefModel
                  , BlueRipple.Data.PrefModel.ASRTypes
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace

@@ -17,6 +17,7 @@
 module BlueRipple.Data.PrefModel.SimpleAgeSexRace where
 
 import BlueRipple.Data.DataFrames
+import BlueRipple.Data.DemographicTypes
 import BlueRipple.Data.PrefModel
 import BlueRipple.Data.PrefModel.ASRTypes
 
@@ -51,8 +52,9 @@ import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic )
 
-import GHC.TypeLits (Symbol)
-import Data.Kind (Type)
+import           GHC.TypeLits (Symbol)
+import qualified Data.Serialize as S
+import           Data.Kind (Type)
 
 data SimpleASR = OldNonWhiteFemale
                | YoungNonWhiteFemale
@@ -81,12 +83,9 @@ simpleASR2SimpleAR x = A.array (minBound,maxBound) [(OldNonWhite, x A.! OldNonWh
                                                    ,(YoungWhite, x A.! YoungWhiteFemale + x A.! YoungWhiteMale)
                                                    ]
 
-
-
 type instance FI.VectorFor SimpleASR = V.Vector
 instance Hashable SimpleASR
 
-data SimpleAge = Old | Young
 ages :: SimpleAge -> [Age]
 ages Old = [A45To64,A65To74,A75AndOver]
 ages Young = [A18To24,A25To44]

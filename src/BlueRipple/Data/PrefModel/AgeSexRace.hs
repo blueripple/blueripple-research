@@ -17,6 +17,7 @@
 module BlueRipple.Data.PrefModel.AgeSexRace where
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DemographicTypes
 import           BlueRipple.Data.PrefModel
 import           BlueRipple.Data.PrefModel.ASRTypes
 

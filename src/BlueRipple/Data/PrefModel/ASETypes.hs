@@ -1,12 +1,25 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies      #-}
 module BlueRipple.Data.PrefModel.ASETypes where
 
-import qualified Data.Text                     as T
+import           BlueRipple.Data.DemographicTypes
 
-data ACSAge = A18To24 | A25To44 | A45To64 | A65AndOver deriving (Enum, Bounded, Eq, Ord, Show)
-data TurnoutAge = T18To24 | T25To44 | T45To64 | T65To74 | T75AndOver deriving (Enum, Bounded, Eq, Ord, Show)
-data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, Show)
-data Education = L9 | L12 | HS | SC | AS | BA | AD
+import qualified Data.Text                     as T
+import qualified Data.Serialize                as S
+import qualified Frames.InCore                 as FI
+import qualified Data.Vector                   as V
+import           GHC.Generics                   ( Generic )
+
+data ACSAge = A18To24 | A25To44 | A45To64 | A65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize ACSAge
+
+data TurnoutAge = T18To24 | T25To44 | T45To64 | T65To74 | T75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize TurnoutAge
+
+
+data Education = L9 | L12 | HS | SC | AS | BA | AD deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize Education
 
 aseACSLabel :: (ACSAge, Sex, Education) -> T.Text
 aseACSLabel (a, s, e) = acsSexLabel s <> acsAgeLabel a <> acsEducationLabel e

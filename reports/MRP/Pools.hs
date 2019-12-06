@@ -22,6 +22,7 @@ module MRP.Pools (post) where
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
 import qualified Data.Array                    as A
+import           Data.Function (on)
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map                      as M
@@ -87,6 +88,9 @@ import GHC.Generics (Generic)
 
 
 import BlueRipple.Data.DataFrames
+import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.PrefModel as BR
+import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import MRP.Common
 import MRP.CCES
 
@@ -138,24 +142,33 @@ locKeyPretty r =
   let stateAbbr = F.rgetField @StateAbbreviation r
   in stateAbbr
 
-type CatCols = '[Gender, CollegeGrad, Under45]
+type CatCols = '[Sex, SimpleEducation, SimpleAge]
+catKey :: BR.Sex -> BR.SimpleEducation -> BR.SimpleAge -> F.Record CatCols
+catKey s e a = s F.&: e F.&: a F.&: V.RNil
+
+unCatKey :: F.Record CatCols -> (BR.Sex, BR.SimpleEducation, BR.SimpleAge)
+unCatKey r =
+  let s = F.rgetField @Sex r
+      e = F.rgetField @SimpleEducation r
+      a = F.rgetField @SimpleAge r
+  in (s,e,a)
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
-predMap r = M.fromList [(P_Gender, if F.rgetField @Gender r == Female then 0 else 1)
+predMap r = M.fromList [(P_Sex, if F.rgetField @Sex r == BR.Female then 0 else 1)
 --                       ,(P_Race, if F.rgetField @WhiteNonHispanic r == True then 1 else 0)
-                       ,(P_Education, if F.rgetField @CollegeGrad r == True then 1 else 0)
-                       ,(P_Age, if F.rgetField @Under45 r == True then 1 else 0)
+                       ,(P_Education, if F.rgetField @SimpleEducation r == BR.NonGrad then 0 else 1)
+                       ,(P_Age, if F.rgetField @SimpleAge r == BR.Old then 0 else 1)
                        ]
-allCatKeys = [g F.&: e F.&: a F.&: V.RNil | a <- [False, True], e <- [False, True], g <- [Female,Male]]
+allCatKeys = [catKey s e a | a <- [BR.Old, BR.Young], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
 catPredMaps = M.fromList $ fmap (\k -> (k,predMap k)) allCatKeys
 
 catKeyColHeader :: F.Record CatCols -> T.Text
 catKeyColHeader r =
-  let g = F.rgetField @Gender r
+  let g = T.pack $ show $ F.rgetField @Sex r
 --      wnh = if F.rgetField @WhiteNonHispanic r then "White" else "NonWhite"
-      a = if F.rgetField @Under45 r then "Young" else "Old"
-      e = if F.rgetField @CollegeGrad r then "College" else "NonCollege"
-  in a <> "-" <> e <> "-" <> (T.pack $ show g)
+      a = T.pack $ show $ F.rgetField @SimpleAge r
+      e = T.pack $ show $ F.rgetField @SimpleEducation r
+  in a <> "-" <> e <> "-" <> g
 
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
@@ -164,17 +177,23 @@ type MRGroup = Proxy GroupCols
   
 post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> F.Frame ASEDemographics
-     -> F.Frame TurnoutASE
      -> K.CachedRunnable r [F.Record CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation _ _ ccesRecordListAllCR = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
-  K.logLE K.Info $ "Working on Intro post..."                                                                                
-  let isWWC r = (F.rgetField @WhiteNonHispanic r == True) && (F.rgetField @CollegeGrad r == False)
+post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+  K.logLE K.Info $ "Working on Intro post..."
+{-  
+  let (BR.DemographicStructure processDemoData processTurnoutData _ _) = BR.simpleAgeSexEducation  
+      makeASEDemographics y aseDemoFrame = do
+        knitX $ processDemoData y aseDemoFrame
+      makeASETurnout y aseTurnoutFrame = do
+        knitX $ processTurnoutData y
+-}
+  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
 {-      countDemHouseVotesF = MR.concatFold
                             $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
                             ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                             (F.rgetField @CCESWeightCumulative) -}
+                
       countDemPres2016VotesF = MR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
@@ -203,7 +222,7 @@ post stateNameByAbbreviation _ _ ccesRecordListAllCR = P.mapError glmErrorToPand
                                                in 1 / sqrt (designEffect mw vw) 
                                            ) counted -- VS.replicate (VS.length vCounts) 1.0
             fixedEffects = GLM.FixedEffects $ IS.fromList [GLM.Intercept
-                                                          , GLM.Predictor P_Gender
+                                                          , GLM.Predictor P_Sex
                                                           , GLM.Predictor P_Age
                                                           , GLM.Predictor P_Education
                                                           ]
@@ -297,12 +316,7 @@ post stateNameByAbbreviation _ _ ccesRecordListAllCR = P.mapError glmErrorToPand
                         ]
 -}
         let GLM.FixedEffectStatistics fep _ = fes            
---        predictionTable <- GLM.printPredictions mixedModel fep epg rowClassifier toPredict
---        K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
---        return (mixedModel, fes, epg, rowClassifier, bootstraps)
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
---  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
---  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
   let predictionsByLocation = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCR)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countDemPres2016VotesF 2016 ccesFrameAll
@@ -321,7 +335,7 @@ post stateNameByAbbreviation _ _ ccesRecordListAllCR = P.mapError glmErrorToPand
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" predictionsByLocation
-
+  
 {-
   forWWCChart <-  GLM.eitherToSem $ traverse (\tr -> do
                                             let sa = stateAbbr tr
@@ -329,8 +343,38 @@ post stateNameByAbbreviation _ _ ccesRecordListAllCR = P.mapError glmErrorToPand
                                             return (fullState, significantDeltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forWWCTable
 _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forWWCChart)
 -}
-  K.logLE K.Diagnostic $ T.pack $ show predsByLocation
+  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brIntro
+  let dvpv x = 2*x - 1
+      melt (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, dvpv x)) $ M.toList cdM 
+      longPrefs = concat $ fmap melt predsByLocation
+      sortedStates sex = K.knitMaybe "Error sorting locationHolders" $ do
+        let f lh@(LocationHolder n _ cdM) = do
+              yng <-  dvpv <$> M.lookup (catKey sex BR.Grad BR.Young) cdM
+              old <- dvpv <$> M.lookup (catKey sex BR.Grad BR.Old) cdM
+              let grp = if yng < 0
+                        then -1
+                        else if old > 0
+                             then 1
+                             else 0                              
+              return (n, (grp, yng))
+        fmap fst . L.sortBy ((compare `on` snd.snd)) <$> traverse f predsByLocation
+  sortedByYoungWomen <- sortedStates BR.Female
+  _ <- K.addHvega Nothing Nothing $
+       vlPrefGapByState
+       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Women"
+       (FV.ViewConfig 800 800 10)
+       sortedByYoungWomen
+       BR.Female
+       longPrefs
+  sortedByYoungMen <- sortedStates BR.Male
+  _ <- K.addHvega Nothing Nothing $
+       vlPrefGapByState
+       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Men"
+       (FV.ViewConfig 800 800 10)       
+       sortedByYoungMen
+       BR.Male
+       longPrefs       
   brAddRawHtmlTable
     "Democratic Voter Preference (%) by State and Category"
     (BHA.class_ "brTable")
@@ -343,6 +387,20 @@ data  LocationHolder f a =  LocationHolder { locName :: T.Text
                                            , locKey :: Maybe (F.Rec f LocationCols)
                                            , catData :: M.Map (F.Rec f CatCols) a
                                            } deriving (Generic)
+
+
+educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+educationGap s a (LocationHolder _ _ cd) = do  
+  datGrad <- M.lookup (catKey s BR.Grad a) cd
+  datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
+  return (datNonGrad, datGrad)
+
+ageGap :: BR.Sex -> BR.SimpleEducation -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+ageGap s e (LocationHolder _ _ cd) = do  
+  datYoung <- M.lookup (catKey s e BR.Young) cd
+  datOld <- M.lookup (catKey s e BR.Old) cd
+  return (datOld, datYoung)
+
 
 deriving instance Show a => Show (LocationHolder F.ElField a)
                   
@@ -378,6 +436,26 @@ colPrefByLocation cats cas =
         C.headed (hc $ h r) (toCell cas (h r) (h r) (maybeNumberToStyledHtml "%2.1f" . fmap (*100) . M.lookup r . catData))
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))
      <> mconcat (fmap rowFromCatKey cats)
+
+vlPrefGapByState :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> BR.Sex -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlPrefGapByState title vc sortedStates sex rows =
+  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
+                                          , ("Sex", GV.Str $ T.pack $ show s)
+                                          , ("Education", GV.Str $ T.pack $ show e)
+                                          , ("Age", GV.Str $ T.pack $ show a)
+                                          , ("D Votes Per Voter", GV.Number p)
+                                          ] []
+      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]      
+      encX = GV.position GV.X [GV.PName "D Votes Per Voter", GV.PmType GV.Quantitative]
+      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Sex == '" <> (T.pack $ show sex) <> "' && datum.Education == 'Grad'")
+      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
+      encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
+      dotSpec = GV.asSpec [(GV.encoding . encY . encX . encColor) [], GV.mark GV.Point [], filter []]
+      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
+  in
+    FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
+
 
 {-
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
