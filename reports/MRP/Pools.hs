@@ -359,13 +359,24 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
                              else 0                              
               return (n, (grp, yng))
         fmap fst . L.sortBy ((compare `on` snd.snd)) <$> traverse f predsByLocation
+  let battlegroundStates =
+        [ "AZ"
+        , "FL"
+        , "GA"
+        , "IA"
+        , "NC"
+        , "OH"
+        , "MI"
+        , "WI"
+        , "PA"
+        , "CO"
+        , "NH"
+        , "NV"
+        , "TX"
+        , "VA"
+        ]
+      sortedBGNat = "National" : L.sort battlegroundStates      
   sortedByYoungWomen <- sortedStates BR.Female
-  _ <- K.addHvega Nothing Nothing $
-       vlPrefGapByState2
-       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Voters"
-       (FV.ViewConfig 800 800 10)
-       sortedByYoungWomen
-       longPrefs
   _ <- K.addHvega Nothing Nothing $
        vlPrefGapByState
        "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Women"
@@ -373,6 +384,15 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
        sortedByYoungWomen
        BR.Female
        longPrefs
+       
+  _ <- K.addHvega Nothing Nothing $
+       vlPrefGapByStateBoth
+       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Voters"
+       (FV.ViewConfig 800 800 10)
+       sortedBGNat
+       (L.filter (\(s,_,_) -> s `elem` sortedBGNat) $ longPrefs)
+       
+{-
   sortedByYoungMen <- sortedStates BR.Male
   _ <- K.addHvega Nothing Nothing $
        vlPrefGapByState
@@ -380,7 +400,9 @@ _ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in W
        (FV.ViewConfig 800 800 10)       
        sortedByYoungMen
        BR.Male
-       longPrefs       
+       longPrefs
+-}
+
   brAddRawHtmlTable
     "Democratic Voter Preference (%) by State and Category"
     (BHA.class_ "brTable")
@@ -462,23 +484,34 @@ vlPrefGapByState title vc sortedStates sex rows =
   in
     FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
 
-vlPrefGapByState2 :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
-vlPrefGapByState2 title vc sortedStates rows =
+-- each state is it's own plot and we facet those
+vlPrefGapByStateBoth :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlPrefGapByStateBoth title vc sortedStates rows =
   let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
-                                          , ("Sex/Age", GV.Str $ (T.pack $ show a) <> "-" <>(T.pack $ show s))
+                                          , ("Age", GV.Str $ (T.pack $ show a))
+                                          , ("Sex",GV.Str $ (T.pack $ show s))
                                           , ("Education", GV.Str $ T.pack $ show e)
                                           , ("D Votes Per Voter", GV.Number p)
+                                          , ("Ref0", GV.Number 0)
                                           ] []
       dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
-      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]      
-      encX = GV.position GV.X [GV.PName "D Votes Per Voter", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "Sex", GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""]]      
+      encX = GV.position GV.X [GV.PName "D Votes Per Voter"
+                              , GV.PmType GV.Quantitative
+                              , GV.PAxis [GV.AxGrid False]
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [-0.5,0.5]]]
+      facetRow = GV.facetFlow [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
       filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
-      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
-      encColor = GV.color [GV.MName "Sex/Age", GV.MmType GV.Nominal]
-      dotSpec = GV.asSpec [(GV.encoding . encY . encX . encColor) [], GV.mark GV.Point [], filter []]
-      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
+      encDetail = GV.detail [GV.DName "Sex", GV.DmType GV.Nominal]
+      encDColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
+      encLColor = GV.color [GV.MName "Sex", GV.MmType GV.Nominal]
+      encRuleX = GV.position GV.X [GV.PName "Ref0", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "D Votes/Voter"]]
+      dotPropS = [(GV.encoding . encX . encY . encDColor) [], GV.mark GV.Point [], filter []]
+      linePropS = [(GV.encoding . encX . encY . encDetail) [], GV.mark GV.Line [], filter []]
+      gridPropS = [(GV.encoding . encRuleX) [], GV.mark GV.Rule [GV.MOpacity 0.05]]
+      allPropS = [GV.layer [GV.asSpec dotPropS, GV.asSpec linePropS, GV.asSpec gridPropS]]
   in
-    FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
+    FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetRow, dat]
 
 
 {-
