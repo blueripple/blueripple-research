@@ -107,7 +107,7 @@ In this post we look a bit at one of the pools that Professor Bitecofer is focus
 elections: college educated voters. 
 
 1. **Data and Methods**
-2. **How Many Votes is a Voter Worth?**
+2. **How Many Votes is a New Voter Worth?**
 3. **Female College Educated Voters and Age**
 4. **Battleground States**
 5. **What Does It Mean?**
@@ -151,22 +151,22 @@ leaning voters in battleground states or crucial races, it helps to know which v
 most likely to be Democratic leaning *in that particular state or district.*  This data
 and these techniques allow us to do just that.
 
-## How Many Votes is a Voter Worth?
+## How Many Votes is a New Voter Worth?
 According to our model, young college-educated women in Texas voted Democratic in the 2016
 presidential election about 72% of the time.  If we increased turnout among them by 100,000
 voters for 2020 and they were exactly as likely to vote Democratic as in 2016,
 how many votes would that extar 100,000 voters net the Democratic candidate?
 Of that 100,000, 72,000 (72% x 100,000)
 would vote for the democrat and 38,000 ((100% - 72%) x 100,000) for the Republican.
-So Dems would net 72,000 - 38,000 = 34,000 votes. In general, if x% of voters will vote for
+So Dems would net 72,000 - 38,000 = 34,000 votes. In general, if $x\\%$ of voters will vote for
 the Democrat, each such voter is "worth" $2x-100\\%$ votes.  We'll call that number "Votes Per Voter" or
 VPV. Note that a group with a voter preference of 50% has a VPV of 0. A group that votes
 Democratic 60% of the time has a VPV of 20%. And a group which votes for Democrats less
 than 50% of the time has a negative VPV.
 
-As a side note, this is why changing people's minds can be a more appealing avenue to getting
-votes: each changed mind of a voter is worth 2 votes: the one lost by the Republican and the
-one gained by the Democrat.
+As a side note, this is why changing people's minds can seem a more appealing avenue to getting
+votes: changing a Republican vote to a Democratic vote has a VPV of 2 votes (200%):
+the one lost by the Republican and the one gained by the Democrat.
 
 ## Female College Educated Voters and Age
 So let's look at college-educated women and how their VPV varies by state and by age.
@@ -187,6 +187,8 @@ Some quick observations:
 
 - Except in PA and NC, college-educated women under 45
 are more likely than their older counterparts to vote for Democrats.
+- The VPV, even of college-educated women under 45, is widely distributed, from under 10% in Indiana,
+to almost 65% in California.
 - The spread varies *a lot*: From an almost 50% VPV spread in Texas to almost no spread at all
 in North Carolina.
 - In a few states (TX, SD, AZ, UT, AR, SC, AL, ND), college-educated women 
@@ -199,10 +201,11 @@ vote and that all states should make that easy.  But if we were spending money
 or time on that effort in Texas in 2020, we would target *younger* college-educated
 women (and men, as we'll see below).
 
-Texas is interesting, both as a long-shot battleground in the presidential race, but
-more because there are many house seats in play.  The more presidential battleground
-states are worth focusing on here, and below we chart just those.  We've added men
-here as well. 
+Texas is interesting, maybe as a long-shot battleground in the presidential race, but
+more because there are many house seats in play.  The presidential battleground
+states are all worth focusing on here, and below we chart just those.  We've added men
+here as well, in order to clarify why people focus on college-educated *women* as a good
+source of Democratic votes.
 
 
 [PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
@@ -213,7 +216,7 @@ brText3 :: T.Text
 brText3 = [i|
 Looking at each of these states, it seems clear that a battleground state turnout drive
 focused on all college-educated voters should skew young, especially one that targets men
-as well as women.  In many of the battleground states, college-educated men over 45
+as well as women.  In all the battleground states except PA, college-educated men over 45
 have negative VPV.
 |]
   
@@ -586,7 +589,7 @@ vlPrefGapByStateBoth title vc sortedStates rows =
                               , GV.PmType GV.Quantitative
                               , GV.PAxis [GV.AxGrid False]
                               , GV.PScale [GV.SDomain $ GV.DNumbers [-0.5,0.5]]]
-      facetRow = GV.facetFlow [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
+      facetFlow = GV.facetFlow [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
       filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
       encDetail = GV.detail [GV.DName "Sex", GV.DmType GV.Nominal]
       encDColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
@@ -597,9 +600,19 @@ vlPrefGapByStateBoth title vc sortedStates rows =
       gridPropS = [(GV.encoding . encRuleX) [], GV.mark GV.Rule [GV.MOpacity 0.05]]
       allPropS = [GV.layer [GV.asSpec dotPropS, GV.asSpec linePropS, GV.asSpec gridPropS]]
   in
-    FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetRow, dat]
+    FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetFlow, dat]
 
 
+vlVPVDistribution :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlVPVDistribution title vc sortedStates rows =
+  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
+                                          , ("Age", GV.Str $ (T.pack $ show a))
+                                          , ("Sex",GV.Str $ (T.pack $ show s))
+                                          , ("Education", GV.Str $ T.pack $ show e)
+                                          , ("D VPV", GV.Number p)
+                                          ] []
+      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
+      
 {-
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
