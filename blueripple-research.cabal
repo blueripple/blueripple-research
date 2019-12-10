@@ -11,7 +11,7 @@ maintainer:          adam@blueripplepolitics.org
 -- copyright:
 category:            Numeric
 build-type:          Simple
-extra-source-files:  ChangeLog.md
+extra-source-files:  
 data-dir: data
 data-files: images/WWCV_Tweet.png
                       
@@ -38,7 +38,7 @@ common deps
                , polysemy >= 0.2.1.0 && < 1.3
                , polysemy-plugin >= 0.2.0.0 && < 0.3.0.0 
                , profunctors
-               , random-fu
+               , random-fu >= 0.2.7.3
                , random-source
                , statistics
                , text
@@ -61,8 +61,8 @@ library
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Utilities.KnitUtils
-                 , BlueRipple.Utilities.TableUtils
-                 , Paths_blueripple_research                 
+                 , BlueRipple.Utilities.TableUtils                                  
+                 , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
                      , beam-core >= 0.8.0.0
@@ -131,6 +131,7 @@ executable preference-model
                , PreferenceModel.AcrossTime
                , Explainer.WWCV
                , Paths_preference_model
+  autogen-modules: Paths_preference_model                           
   build-depends: base >= 4.11
                , blueripple-research
                , blaze-colonnade

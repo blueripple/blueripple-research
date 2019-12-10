@@ -118,7 +118,7 @@ mid-west: Indiana, Michigan, Ohio, Pennsylvania and Wisconsin.
 |]
 
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
-glmErrorToPandocError x = PE.PandocSomeError $ show x
+glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
 type GroupCols = '[StateAbbreviation]
 type CCESGroup = Proxy GroupCols

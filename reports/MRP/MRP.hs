@@ -199,7 +199,7 @@ main = do
       
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-      let pubDateIntro = Time.fromGregorian 2019 12 1      
+      let pubDateIntro = Time.fromGregorian 2019 12 9      
       when (PostIntro `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostIntro)

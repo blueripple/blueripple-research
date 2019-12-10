@@ -98,131 +98,214 @@ import qualified PreferenceModel.Common as PrefModel
 
 brText1 :: T.Text
 brText1 = [i|
-One benefit of working on Blue Ripple Politics is that we get
-to talk with very smart analysts who point
-us in interesting directions.  A recent conversation with one of our favorite election modelers,
-Professor Rachel Bitecofer (LINK), reminded us of her spot-on analysis (LINK) of the 2018
-house races, one which focused on turnout among "pools of untapped Democratic voters" (CHECK QUOTE).
-In this post we look a bit at one of the pools that Professor Bitecofer is focused on in the 2020
-elections: college educated voters. 
+In prior analyses ([here][BR:PM2018], focusing on 2018, and [here][BR:PMAcrossTime],
+considering trends 2010-2018),
+we asked a key question about Democratic strategy in 2020:
+should the focus be on turning out likely Dem voters, or changing the minds of folks
+who are less likely to vote for Team Blue? (TL;DR: We concluded that we should
+definitely get our base to turn out, but we shouldn't neglect subgroups outside
+of that group that align with us on key issues).
+
+Here, we ask an obvious follow-up question about turnout: if we want to mobilize
+likely Democratic voters, on whom should we focus? Is that answer the same
+in every state or district?  There is a tendency to imagine that the voting
+preferences of a demographic group are the same everywhere. That, for example,
+young voters in Texas are the same as young voters in Michigan.  But looking only
+at national averages obscures lots of interesting
+regional variation.  That regional variation *matters*, since house and senate
+campaigns contend for voters in specific places and, as long as the path to the
+presidency goes through the electoral college, the presidential race also has
+a strong geographic component.
+
+In this post, we focus specifically on college-educated voters, and mostly on female
+college-educated voters.
+We were inspired to begin our analysis here by one of our favorite election modelers,
+[Professor Rachel Bitecofer][Bitecofer:Bio], who generously spent some time chatting with us
+last month about our related interests.
+She reminded us of a core idea in her [spot-on analysis][Bitecofer:2018House] of the 2018
+house races: the presence of "large pools of untapped Democratic voters,"
+including college-educated voters, makes for places where Democrats can (and did in 2018!)
+outperform compared to 2016.
+
+In our work, we always try to keep an eye on how progressives and Democrats can best
+use their time and/or money in upcoming elections. Our [values][BR:AboutUs]
+make us particularly
+interested in work that emphasizes registration and voter turnout. In this post we
+examine if and *where* a college-educated-voter turnout drive might be most effective.
 
 1. **Data and Methods**
 2. **How Many Votes is a New Voter Worth?**
-3. **Female College Educated Voters and Age**
-4. **Battleground States**
-5. **What Does It Mean?**
-6. **Take Action**
+3. **College Educated Voters and Age**
+4. **Key Takeaways**
+5. **Take Action**
 
 ## Data and Methods
 In our research pieces so far, we've looked only at aggregate data, that
 is data which comes from adding together a large number of people: census
 counts or election results, for example.  In this piece we look at some
-per-person data, namely the Cooperative Congressional Election Study
+per-person data, namely the Cooperative Congressional Election Study, or 
 [CCES][CCES],
 which surveys about 60,000 people
 in every election cycle. For each survey response,
 the CCES includes geographic and demographic information along with opinion about
 various political questions, whether the person is registered to vote, and whether they
-voted and who for in elections for Governor, House, Senate and President, whenever
+voted and for whom in elections for Governor, House, Senate and President, whenever
 each is applicable. 
 
 The geographic information allows
-us to start estimating a variety of things at the state level, something we couldn't do using
-only aggregate data.  We do this using multi-level regression
+us to start estimating a variety of things at the state level, something that isn't possible
+using only aggregate data.  We do this using Multi-level Regression
 (the "MR" of "MRP", which stands for Multi-level Regression with Post-stratification), a technique
 explained in more detail [here][MRP:Summary] and about which we will have an explainer in the
-coming months. Very briefly: MR allows you to use all the data to get a baseline and then use
-the data in a specific "bucket" (e.g., college educated older women in Texas) to make an improved
-inference for that set of people; it balances the abundance of the data for everywhere with the need to
-use the local information for improved insight.
-
-Our specific model uses a survey-weighted logistic MR to fit a
-binomial distribution to the Democratic votes, among voters who voted D or R,
-in each 408 groups:
-(states + DC) x (Female or Male) x (Non-College Grad or College Grad) x (Under 45 or 45 and over).
-
-As we've said in earlier posts, we recognize that these categories are vast oversimplifications
-of the electorate.  We are limited by what information is present in the survey--Gender is limited
-to "Female" and "Male" in the CCES, and by computational complexity, which is why we've limited
-our education and age breakdown to two categories each.
+coming months. Very briefly: this method allows you to use all the data
+(e.g., all female-college-educated voters over 45 who voted for a Democrat or Republican)
+to get a baseline and then use
+the data in a specific "bucket" (e.g., those same voters, but just in Texas)
+to make an improved
+inference for that set of people. In other words,
+it balances the abundance of the non-specific data with the
+sparser local information for improved insight.
 
 If we are hoping to boost turnout among Democratic
 leaning voters in battleground states or crucial races, it helps to know which voters are
 most likely to be Democratic leaning *in that particular state or district.*  This data
 and these techniques allow us to do just that.
 
+(Quick aside for data geeks: Our specific model uses a survey-weighted, logistic MR to fit a
+binomial distribution to the likelihood of a Democratic vote in the 2016 presidential election,
+among voters who voted D or R,
+in each of 408 = 51 x 2 x 2 x 2 groups:
+(states + DC) x (Female or Male) x (Non-College Grad or College Grad) x (Under 45 or 45 and over).
+Also, as we've said in earlier posts, we recognize that these categories are vast oversimplifications
+of the electorate.  We are limited by what information is present in the survey---Sex is limited
+to "Female" and "Male" in the CCES---and by computational complexity, which is why we've limited
+our education and age breakdown to two categories each.  Its also important to note that the accuracy
+of these inferences depends on the number of voters in each category.  So the estimates for more
+populous states are likely to be more accurate.)
+
+In this post, we analyze the 2016 presidential election to measure Democratic voter preference
+among college-educated voters in each state (and DC). Given the results in the house
+races in 2018, we think that most college-educated voters have become *more likely* to vote
+for Democrats since 2016.  But there are inevitable differences between presidential elections
+and house races and we want to start with a straightforward question:  If the 2020 electorate
+was like the 2016 electorate, where might a college-educated-voter turnout drive be useful?
+
 ## How Many Votes is a New Voter Worth?
-According to our model, young college-educated women in Texas voted Democratic in the 2016
-presidential election about 72% of the time.  If we increased turnout among them by 100,000
+Before getting into the results, let's introduce a metric that we call "Votes Per Voter" (VPV),
+which reflects the "value" to Democrats of getting a single person in a particular group
+to show up on election day.
+
+Here's how VPV works: Let's say that our model tells us that in a certain state,
+young, female, college-educated people vote Democratic about 72% of the time.
+If we increased turnout among them by 100,000
 voters for 2020 and they were exactly as likely to vote Democratic as in 2016,
-how many votes would that extar 100,000 voters net the Democratic candidate?
+how many votes would that extra 100,000 voters net the Democratic candidate?
 Of that 100,000, 72,000 (72% x 100,000)
-would vote for the democrat and 38,000 ((100% - 72%) x 100,000) for the Republican.
-So Dems would net 72,000 - 38,000 = 34,000 votes. In general, if $x\\%$ of voters will vote for
-the Democrat, each such voter is "worth" $2x-100\\%$ votes.  We'll call that number "Votes Per Voter" or
-VPV. Note that a group with a voter preference of 50% has a VPV of 0. A group that votes
-Democratic 60% of the time has a VPV of 20%. And a group which votes for Democrats less
+would vote for the democrat and 28,000 ((100% - 72%) x 100,000) for the Republican.
+So Dems would net 72,000 - 28,000 = 44,000 votes. In general, if $x\\%$ of voters will vote for
+the Democrat, each such voter is "worth" $2x-100\\%$ votes. In other words, the VPV for this
+group is 0.44 (44,000 *net* Democratic votes out of 100,000 new voters in the group who show up to
+cast ballots).
+Note that a group with a Democratic voter preference of 50% has a VPV of 0, a group that votes
+Democratic 60% of the time has a VPV of 0.2. And a group which votes for Democrats less
 than 50% of the time has a negative VPV.
 
+This metric is useful because it highlights the connection between voter preference and
+votes gained by additional turnout.
+A group which leans only slightly Democratic is not a great place to invest resources
+on turnout since each voter is only slightly more likely to vote blue.  This is
+reflected by the near 0 VPV.
+
 As a side note, this is why changing people's minds can seem a more appealing avenue to getting
-votes: changing a Republican vote to a Democratic vote has a VPV of 2 votes (200%):
-the one lost by the Republican and the one gained by the Democrat.
+votes: changing a Republican vote to a Democratic vote has a VPV of 2 (200%):
+one vote is lost by the Republican and one is gained by the Democrat, so each such voter is "worth" 2 votes.
+(More on that in a later analysis---stay tuned!)
 
 ## Female College Educated Voters and Age
-So let's look at college-educated women and how their VPV varies by state and by age.
-In the chart below we show the VPV of college-educated women, split by age at 45, for
-each state (and DC and the Nation as a whole).  The states are ordered by the VPV of
-young college-educated women.
+Let's look first at female college-educated voters and how their VPV varies by state and by age.
+This demographic, one that has
+been [trending strongly Democratic since the early 2000s][NPR:CollegeWomen],
+is particularly important for Democrats.
+In the chart below we show the VPV of female college-educated voters, split by age at 45,
+for each state (and DC and the Nation as a whole).
+We've ordered the states (plus DC and the nation as a whole) by increasing VPV of
+female college-educated voters under 45.
 
 [CCES]: <https://cces.gov.harvard.edu/>
 [MRP:Summary]: <https://en.wikipedia.org/wiki/Multilevel_regression_with_poststratification>
 [MRP:Methods]: <${brGithubUrl (postPath PostMethods)}>
 [PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
 [PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
+[BR:PM2018]: <https://blueripple.github.io/research/preference-model/p1/main.html>
+[BR:PMAcrossTIme]: <https://blueripple.github.io/research/preference-model/p2/main.html>
+[BR:AboutUs]: <https://blueripplepolitics.org/about-us>
+[Bitecofer:Bio]: <http://cnu.edu/people/rachelbitecofer/>
+[Bitecofer:2018House]: <https://cnu.edu/wasoncenter/2018/09/26-signs-democrats-win-big/>
+[Bitecofer:2020Pres]: <https://cnu.edu/wasoncenter/2019/07/01-2020-election-forecast/>
+[NPR:CollegeWomen]: <https://www.npr.org/2018/09/24/650447848/the-womens-wave-backlash-to-trump-persists-reshaping-politics-in-2018>
 |]
   
 brText2 :: T.Text
 brText2 = [i|
-Some quick observations:
-
-- Except in PA and NC, college-educated women under 45
-are more likely than their older counterparts to vote for Democrats.
-- The VPV, even of college-educated women under 45, is widely distributed, from under 10% in Indiana,
-to almost 65% in California.
-- The spread varies *a lot*: From an almost 50% VPV spread in Texas to almost no spread at all
-in North Carolina.
-- In a few states (TX, SD, AZ, UT, AR, SC, AL, ND), college-educated women 
-over 45 have negative VPV.
-
-Those last two observations lead to a tactical suggestion:  anyone working on
-registration or GOTV of college-educated women in Texas, ought to skew their efforts
-sharply toward younger voters.  Note: We strongly believe that everyone should
-vote and that all states should make that easy.  But if we were spending money
-or time on that effort in Texas in 2020, we would target *younger* college-educated
-women (and men, as we'll see below).
-
-Texas is interesting, maybe as a long-shot battleground in the presidential race, but
-more because there are many house seats in play.  The presidential battleground
-states are all worth focusing on here, and below we chart just those.  We've added men
-here as well, in order to clarify why people focus on college-educated *women* as a good
-source of Democratic votes.
-
-
-[PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
-[PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
+We also looked specifically at some states we think are worth highlighting, including several
+classic presidential "battlegrounds" and others (like Texas and Georgia) that are moving towards
+battleground status and have important house seats in play. we've added male voters here as well,
+in order to clarify the focus on *female* college-educated voters as a good source of Democratic votes:
 |]
 
 brText3 :: T.Text
 brText3 = [i|
-Looking at each of these states, it seems clear that a battleground state turnout drive
-focused on all college-educated voters should skew young, especially one that targets men
-as well as women.  In all the battleground states except PA, college-educated men over 45
-have negative VPV.
+## Key Takeaways
+There's a lot of detail here, but we'd like to make a few main observations:
+
+- College-educated voters are not a monolithic group.  There's a lot of variation in
+VPV by state, by sex and by age. A GOTV strategy targeting **all** college-educated voters
+is not a good use of resources for Dems since it will target lots of voters with VPV below
+or near 0.
+- Should Dems turnout-efforts target *female* college-educated voters? It depends.
+They skew more Democratic (positive VPV),
+but the "yield" of targeting this group probably depends on the age distribution, because the over-45s are less blue.
+- What about *young* college-educated voters? If we compare males and females in this group across states,
+there's a pretty wide variability.
+Female college-educated voters under 45 all have positive VPV,
+but a strategy targeting young college-educated voters (of either sex)
+in battleground states would have different degrees of effectiveness between states.
+- Finally: should we micro-target *female* college-educated voters *under 45* for GOTV efforts?
+They're the most Dem-friendly subgroup we studied here,
+but their VPVs across the states are widely distributed,
+from under 0.1 in Indiana, to almost 0.65 in California.
+That variability is also pronounced in the battleground states:
+female college-educated voters under 45 have a much higher VPV in some places (TX, NH, NV) than others (PA, MI).
+- BOTTOM LINE: A GOTV strategy targeting young female college grads would likely help Dems,
+but may yield many more net Dem votes in some places than others.
+The success of broader strategies (e.g., targeting college grads more broadly)
+would depend on the relative sizes of different sub-groups -- which is a topic we'll explore in a subsequent post.
+
+## Take Action
+This early in the cycle it can be difficult to find organizations focused on specific groups within
+states.  But there are some groups which are clearly working in the same vein. If you know
+of local organizations doing work on youth/college-educated voter turnout, please email us with
+that information and we'll update this post.
+
+- [MOVE Texas][Org:MOVETexas], does GOTV work with young people in Texas.
+- [The Sunrise Movement][Org:SunriseMovement], a youth-focused environmental advocacy group
+has joined forces with various local organizations to work on registration and turnout among young voters.
+- [NextGen America][Org:NextGenAmerica] works on youth turnout nationally, holding registration events
+at many colleges and universities.
+
+[PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
+[PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
+[Org:MOVETexas]: <https://movetexas.org/>
+[Org:TurnPABlue]: <https://turnpablue.org/>
+[Org:WisDems]: <https://wisdems.org/>
+[Org:NextGenAmerica]: <https://nextgenamerica.org/>
+[Org:OhioStudentOrganization]: <https://ohiostudentassociation.org/campaign/voter-registration/>
+[Org:SunriseMovement]: <https://www.sunrisemovement.org/>
 |]
   
 
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
-glmErrorToPandocError x = PE.PandocSomeError $ show x
+glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
 type LocationCols = '[StateAbbreviation]
 locKeyPretty :: F.Record LocationCols -> T.Text
@@ -353,35 +436,10 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
                      th
                      betaU
         let bootstraps = []
-{-                     
-        K.logLE K.Info "Bootstrappping for confidence intervals..."
-        bootstraps <- GLM.parametricBootstrap mdVerbosity
-                      ML
-                      mixedModel
-                      randomEffectCalc
-                      cf
-                      th
-                      vMuSol
-                      (sqrt sigma2)
-                      200
-                      True
--}
         let GLM.FixedEffectStatistics _ mBetaCov = fes
 
         let f r = do
               let obs = getFractionWeighted r
-{-
-              bootWCI <- GLM.predictWithCI
-                         mixedModel
-                         (Just . ccesPredictor r)
-                         (Just . recordToGroupKey @GroupCols r)
-                         rowClassifier
-                         effectsByGroup
-                         betaU
-                         vb
-                         (ST.mkCL 0.95)
-                         (GLM.BootstrapCI GLM.BCI_Accelerated bootstraps)
--}                
               predictCVCI <- GLM.predictWithCI
                              mixedModel
                              (Just . ccesPredictor r)
@@ -398,11 +456,6 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
         K.logLE K.Diagnostic $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
         fixedEffectTable <- GLM.printFixedEffects fes
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
-{-        
-        let toPredict = [("WWC (all States)", M.fromList [(P_WWC, 1)], M.empty)
-                        ,("Non-WWC (all States)", M.fromList [(P_WWC, 0)], M.empty)
-                        ]
--}
         let GLM.FixedEffectStatistics fep _ = fes            
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
   let predictionsByLocation = do
@@ -423,14 +476,7 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" predictionsByLocation
-  
-{-
-  forWWCChart <-  GLM.eitherToSem $ traverse (\tr -> do
-                                            let sa = stateAbbr tr
-                                            fullState <- maybe (Left $ "Couldn't find " <> sa) Right $ M.lookup sa stateNameByAbbreviation
-                                            return (fullState, significantDeltaHouse tr)) $ filter (\tr -> (stateAbbr tr) /= "National") forWWCTable
-_ <- K.addHvega Nothing Nothing $ (vlPctStateChoropleth "Significant Change in WWC Dem Voter Preference 2016 to 2018" (FV.ViewConfig 800 400 10) forWWCChart)
--}
+
   K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
   let dvpv x = 2*x - 1
@@ -602,7 +648,7 @@ vlPrefGapByStateBoth title vc sortedStates rows =
   in
     FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetFlow, dat]
 
-
+{-
 vlVPVDistribution :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
 vlVPVDistribution title vc sortedStates rows =
   let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
@@ -612,7 +658,7 @@ vlVPVDistribution title vc sortedStates rows =
                                           , ("D VPV", GV.Number p)
                                           ] []
       dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
-      
+-}      
 {-
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
@@ -643,3 +689,4 @@ vlTest vc =
     mark = GV.mark GV.Geoshape [GV.MFill "lightgrey" ]
   in FV.configuredVegaLite vc [datGeo, mark, projection]
 -}
+

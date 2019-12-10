@@ -42,8 +42,8 @@ data Post = PostMethods | PostIntro | PostPools deriving (Show, Data, Typeable, 
 
 postRoute :: Post -> T.Text
 postRoute PostMethods = brMRPModelRootPath <> "methods/"
-postRoute PostIntro   = brMRPModelRootPath <> "p1/"
-postRoute PostPools   = brMRPModelRootPath <> "p2/"
+postRoute PostIntro   = brMRPModelRootPath <> "p2/"
+postRoute PostPools   = brMRPModelRootPath <> "p1/"
 
 postPath :: Post -> T.Text
 postPath x = postRoute x <> "main"
