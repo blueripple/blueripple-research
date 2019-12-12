@@ -130,8 +130,8 @@ executable preference-model
                , PreferenceModel.ExitPolls
                , PreferenceModel.AcrossTime
                , Explainer.WWCV
-               , Paths_preference_model
-  autogen-modules: Paths_preference_model                           
+               , Paths_blueripple_research
+--  autogen-modules: Paths_preference_model                           
   build-depends: base >= 4.11
                , blueripple-research
                , blaze-colonnade

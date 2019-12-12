@@ -346,11 +346,12 @@ type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this 
 type MRGroup = Proxy GroupCols 
 
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.CachedRunnable r [F.Record CCES_MRP]
+--     -> K.CachedRunnable r [F.Record CCES_MRP]
+     -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."
 {-  
   let (BR.DemographicStructure processDemoData processTurnoutData _ _) = BR.simpleAgeSexEducation  
@@ -459,7 +460,7 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
         let GLM.FixedEffectStatistics fep _ = fes            
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
   let predictionsByLocation = do
-        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCR)
+        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countDemPres2016VotesF 2016 ccesFrameAll
         let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
             allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            

@@ -123,11 +123,11 @@ glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 type GroupCols = '[StateAbbreviation]
 type CCESGroup = Proxy GroupCols
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.CachedRunnable r [F.Record CCES_MRP]
+     -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
       countWWCDemHouseVotesF = MR.concatFold
@@ -251,7 +251,7 @@ post stateNameByAbbreviation ccesRecordListAllCR = P.mapError glmErrorToPandocEr
 --  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do
-        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCR)
+        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- modelWWCV countWWCDemPres2016VotesF 2016 ccesFrameAll
         (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- modelWWCV countWWCDemHouseVotesF 2016 ccesFrameAll
         (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- modelWWCV countWWCDemHouseVotesF 2018 ccesFrameAll

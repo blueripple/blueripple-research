@@ -41,7 +41,7 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
 
 import PreferenceModel.Common
-import Paths_preference_model
+import Paths_blueripple_research
 
 post :: K.KnitOne r
      => K.Sem r ()

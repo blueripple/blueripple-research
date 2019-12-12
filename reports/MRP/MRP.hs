@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -155,7 +156,9 @@ main = do
   eitherDocs <-
     K.knitHtmls knitConfig $ runRandomIO $ do
       K.logLE K.Info "Loading data..."
-      let csvParserOptions =
+      let cachedRecordList = K.cacheTransformedAction (fmap FS.toS) (fmap FS.fromS)
+          cachedFrame = K.cacheTransformedAction (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS)
+          csvParserOptions =
             F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
           tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
           preFilterYears   = const True --FU.filterOnMaybeField @Year (`L.elem` [2016])
@@ -169,8 +172,8 @@ main = do
             FL.fold FL.list . fmap transformCCESRow
               <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
       -- This load and parse takes a while.  Cache the result for future runs              
-      let ccesListCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [F.Record CCES_MRP] =
-            K.cacheAction "mrp/ccesMRP.bin" (fmap FS.toS <$> ccesFrameFromCSV) (fmap FS.fromS)
+      let ccesListCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [F.Record CCES_MRP] =
+           cachedRecordList "mrp/ccesMRP.bin" ccesFrameFromCSV
       stateCrosswalkPath <- liftIO $ usePath statesCSV
       stateCrossWalkFrame :: F.Frame States <- loadToFrame
         csvParserOptions
@@ -183,8 +186,8 @@ main = do
               csvParserOptions
               aseDemographicsPath
               (const True)
-          aseDemographicsFrameCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASEDemographics] =
-            K.cacheAction "mrp/aseDemographics.bin" (fmap FS.toS <$> aseDemographicsFrame) (fmap FS.fromS)
+          aseDemographicsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASEDemographics] =
+            cachedRecordList "mrp/aseDemographics.bin" aseDemographicsFrame
           aseTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.TurnoutASE]
           aseTurnoutFrame = FL.fold FL.list <$> do
             aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
@@ -192,8 +195,8 @@ main = do
               csvParserOptions
               aseTurnoutPath
               (const True)
-          aseTurnoutFrameCA :: K.CachedAction (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASE] =
-            K.cacheAction "mrp/aseTurnout.bin" (fmap FS.toS <$> aseTurnoutFrame) (fmap FS.fromS)
+          aseTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASE] =
+            cachedRecordList "mrp/aseTurnout.bin" aseTurnoutFrame
         
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       
@@ -209,7 +212,7 @@ main = do
                         ]
           )
         )
-        $ Intro.post statesFromAbbreviations (K.makeRunnable ccesListCA) --ccesFrameAll
+        $ Intro.post statesFromAbbreviations ccesListCA
       when (PostPools `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostPools)
@@ -219,7 +222,7 @@ main = do
                         ]
           )
         )
-        $ Pools.post statesFromAbbreviations (K.makeRunnable ccesListCA) --ccesFrameAll 
+        $ Pools.post statesFromAbbreviations ccesListCA
         
   case eitherDocs of
     Right namedDocs ->

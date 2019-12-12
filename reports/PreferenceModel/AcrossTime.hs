@@ -42,7 +42,8 @@ import           Data.String.Here               ( here, i )
 import           BlueRipple.Configuration
 import           BlueRipple.Utilities.KnitUtils
 import qualified BlueRipple.Utilities.TableUtils as BT
-import           BlueRipple.Data.DataFrames 
+import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DemographicTypes   as BR
 import           BlueRipple.Data.PrefModel.SimpleAgeSexRace
 import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.Preference as PM
@@ -50,17 +51,16 @@ import qualified BlueRipple.Model.Preference as PM
 import PreferenceModel.Common
 
 
-data JustRace = NonWhite | White deriving (Enum, Bounded, Eq, Ord, A.Ix, Show)
-aggregateToJustRace :: PM.Aggregation JustRace SimpleASR
-aggregateToJustRace = PM.Aggregation children where
-  children :: JustRace -> [SimpleASR]
+aggregateToSimpleRace :: PM.Aggregation BR.SimpleRace SimpleASR
+aggregateToSimpleRace = PM.Aggregation children where
+  children :: BR.SimpleRace -> [SimpleASR]
   children x = case x of
     NonWhite -> [OldNonWhiteFemale, YoungNonWhiteFemale, OldNonWhiteMale, YoungNonWhiteMale]
     White -> [OldWhiteFemale, YoungWhiteFemale, OldWhiteMale, YoungWhiteMale]
 
-aggregateToSimpleEducation :: PM.Aggregation SimpleEducation SimpleASE
+aggregateToSimpleEducation :: PM.Aggregation BR.SimpleEducation SimpleASE
 aggregateToSimpleEducation = PM.Aggregation children where
-  children :: SimpleEducation -> [SimpleASE]
+  children :: BR.SimpleEducation -> [SimpleASE]
   children x = case x of
     NonGrad -> [OldFemaleNonGrad, YoungFemaleNonGrad, OldMaleNonGrad, YoungMaleNonGrad]
     Grad -> [OldFemaleCollegeGrad, YoungFemaleCollegeGrad, OldMaleCollegeGrad, YoungMaleCollegeGrad]
@@ -185,7 +185,7 @@ post modeledResultsASR modeledResultsASE {-modeledResultBG_ASR modeledResultBG_A
   brAddMarkDown brAcrossTimeIntro
   addParametersVsTime  modeledResultsASR
   brAddMarkDown brAcrossTimeASRPref
-  addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToJustRace . fmap FV.value) modeledResultsASR
+  addStackedArea $ fmap (PM.aggregatePreferenceResults aggregateToSimpleRace . fmap FV.value) modeledResultsASR
   brAddMarkDown brAcrossTimeASRVoteShare           
   addParametersVsTime  modeledResultsASE
   brAddMarkDown brAcrossTimeASEPref
