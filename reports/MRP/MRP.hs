@@ -90,8 +90,9 @@ import qualified BlueRipple.Model.TurnoutAdjustment
                                                
 import           MRP.CCES
 import           MRP.Common
-import qualified MRP.Intro as Intro
+import qualified MRP.WWC as WWC
 import qualified MRP.Pools as Pools
+import qualified MRP.EdVoters as EdVoters
 
 
 yamlAuthor :: T.Text
@@ -120,8 +121,9 @@ pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic
 data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool } deriving (Show, Data, Typeable)
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
-                                        [PostIntro] &= CA.name "intro" &= CA.help "knit \"Intro\"",
+                                        [PostWWC] &= CA.name "wwc" &= CA.help "knit \"WWC\"",
                                         [PostPools] &= CA.name "pools" &= CA.help "knit \"Pools\"",
+                                        [PostEdVoters] &= CA.name "edVoters" &= CA.help "knit \"EdVoters\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
@@ -203,16 +205,17 @@ main = do
       K.logLE K.Info "Knitting docs..."
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
       let pubDateIntro = Time.fromGregorian 2019 12 9      
-      when (PostIntro `elem` (posts args)) $ K.newPandoc
+      when (PostWWC `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
-         (postPath PostIntro)
+         (postPath PostWWC)
          (brAddDates (updated args) pubDateIntro curDate
           $ M.fromList [("pagetitle", "How did WWCV voter preference change from 2016 to 2018?")
                         ,("title","How did WWCV voter preference change from 2016 to 2018?")
                         ]
           )
         )
-        $ Intro.post statesFromAbbreviations ccesListCA
+        $ WWC.post statesFromAbbreviations ccesListCA
+      let pubDatePools = Time.fromGregorian 2019 12 9        
       when (PostPools `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostPools)
@@ -223,7 +226,17 @@ main = do
           )
         )
         $ Pools.post statesFromAbbreviations ccesListCA
-        
+      let pubDateEdVoter = Time.fromGregorian 2019 12 9                
+      when (PostEdVoters `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostEdVoters)
+         (brAddDates (updated args) pubDateIntro curDate
+          $ M.fromList [("pagetitle", "Deep Dive on Educated Voter Preference")
+                        ,("title","Deep Dive on Educated Voter Preference")
+                        ]
+          )
+        )
+        $ EdVoters.post statesFromAbbreviations ccesListCA        
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "posts" namedDocs

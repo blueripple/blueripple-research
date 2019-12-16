@@ -157,8 +157,9 @@ executable mrp-model
                 , MRP.CCESFrame
                 , MRP.Common
                 , PreferenceModel.Common
-                , MRP.Intro
+                , MRP.WWC
                 , MRP.Pools
+                , MRP.EdVoters
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs

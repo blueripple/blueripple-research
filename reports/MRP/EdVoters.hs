@@ -17,7 +17,7 @@
 
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.Pools (post) where
+module MRP.EdVoters (post) where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
@@ -41,9 +41,11 @@ import qualified Frames as F
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
+
+import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
-import qualified Frames.MapReduce              as MR
+import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
@@ -98,138 +100,13 @@ import qualified PreferenceModel.Common as PrefModel
 
 brText1 :: T.Text
 brText1 = [i|
-In prior analyses ([here][BR:PM2018], focusing on 2018, and [here][BR:PMAcrossTime],
-considering trends 2010-2018),
-we asked a key question about Democratic strategy in 2020:
-should the focus be on turning out likely Dem voters, or changing the minds of folks
-who are less likely to vote for Team Blue? (TL;DR: We concluded that we should
-definitely get our base to turn out, but we shouldn't neglect subgroups outside
-of that group that align with us on key issues).
 
-Here, we ask an obvious follow-up question about turnout: if we want to mobilize
-likely Democratic voters, on whom should we focus? Is that answer the same
-in every state or district?  There is a tendency to imagine that the voting
-preferences of a demographic group are the same everywhere. That, for example,
-young voters in Texas are the same as young voters in Michigan.  But looking only
-at national averages obscures lots of interesting
-regional variation.  That regional variation *matters*, since house and senate
-campaigns contend for voters in specific places and, as long as the path to the
-presidency goes through the electoral college, the presidential race also has
-a strong geographic component.
+1. **List 1**
+2. **List 2**
+3. **List 3**
+4. **List 4**
+5. **List 5**
 
-In this post, we focus specifically on college-educated voters, and mostly on female
-college-educated voters.
-We were inspired to begin our analysis here by one of our favorite election modelers,
-[Professor Rachel Bitecofer][Bitecofer:Bio], who generously spent some time chatting with us
-last month about our related interests.
-She reminded us of a core idea in her [spot-on analysis][Bitecofer:2018House] of the 2018
-house races: the presence of "large pools of untapped Democratic voters,"
-including college-educated voters, makes for places where Democrats can (and did in 2018!)
-outperform compared to 2016.
-
-In our work, we always try to keep an eye on how progressives and Democrats can best
-use their time and/or money in upcoming elections. Our [values][BR:AboutUs]
-make us particularly
-interested in work that emphasizes registration and voter turnout. In this post we
-examine if and *where* a college-educated-voter turnout drive might be most effective.
-
-1. **Data and Methods**
-2. **How Many Votes is a New Voter Worth?**
-3. **College Educated Voters and Age**
-4. **Key Takeaways**
-5. **Take Action**
-
-## Data and Methods
-In our research pieces so far, we've looked only at aggregate data, that
-is data which comes from adding together a large number of people: census
-counts or election results, for example.  In this piece we look at some
-per-person data, namely the Cooperative Congressional Election Study, or 
-[CCES][CCES],
-which surveys about 60,000 people
-in every election cycle. For each survey response,
-the CCES includes geographic and demographic information along with opinion about
-various political questions, whether the person is registered to vote, and whether they
-voted and for whom in elections for Governor, House, Senate and President, whenever
-each is applicable. 
-
-The geographic information allows
-us to start estimating a variety of things at the state level, something that isn't possible
-using only aggregate data.  We do this using Multi-level Regression
-(the "MR" of "MRP", which stands for Multi-level Regression with Post-stratification), a technique
-explained in more detail [here][MRP:Summary] and about which we will have an explainer in the
-coming months. Very briefly: this method allows you to use all the data
-(e.g., all female-college-educated voters over 45 who voted for a Democrat or Republican)
-to get a baseline and then use
-the data in a specific "bucket" (e.g., those same voters, but just in Texas)
-to make an improved
-inference for that set of people. In other words,
-it balances the abundance of the non-specific data with the
-sparser local information for improved insight.
-
-If we are hoping to boost turnout among Democratic
-leaning voters in battleground states or crucial races, it helps to know which voters are
-most likely to be Democratic leaning *in that particular state or district.*  This data
-and these techniques allow us to do just that.
-
-(Quick aside for data geeks: Our specific model uses a survey-weighted, logistic MR to fit a
-binomial distribution to the likelihood of a Democratic vote in the 2016 presidential election,
-among voters who voted D or R,
-in each of 408 = 51 x 2 x 2 x 2 groups:
-(states + DC) x (Female or Male) x (Non-College Grad or College Grad) x (Under 45 or 45 and over).
-Also, as we've said in earlier posts, we recognize that these categories are vast oversimplifications
-of the electorate.  We are limited by what information is present in the survey---Sex is limited
-to "Female" and "Male" in the CCES---and by computational complexity, which is why we've limited
-our education and age breakdown to two categories each.  Its also important to note that the accuracy
-of these inferences depends on the number of voters in each category.  So the estimates for more
-populous states are likely to be more accurate.)
-
-In this post, we analyze the 2016 presidential election to measure Democratic voter preference
-among college-educated voters in each state (and DC). Given the results in the house
-races in 2018, we think that most college-educated voters have become *more likely* to vote
-for Democrats since 2016.  But there are inevitable differences between presidential elections
-and house races and we want to start with a straightforward question:  If the 2020 electorate
-was like the 2016 electorate, where might a college-educated-voter turnout drive be useful?
-
-## How Many Votes is a New Voter Worth?
-Before getting into the results, let's introduce a metric that we call "Votes Per Voter" (VPV),
-which reflects the "value" to Democrats of getting a single person in a particular group
-to show up on election day.
-
-Here's how VPV works: Let's say that our model tells us that in a certain state,
-young, female, college-educated people vote Democratic about 72% of the time.
-If we increased turnout among them by 100,000
-voters for 2020 and they were exactly as likely to vote Democratic as in 2016,
-how many votes would that extra 100,000 voters net the Democratic candidate?
-Of that 100,000, 72,000 (72% x 100,000)
-would vote for the democrat and 28,000 ((100% - 72%) x 100,000) for the Republican.
-So Dems would net 72,000 - 28,000 = 44,000 votes. In general, if $x\\%$ of voters will vote for
-the Democrat, each such voter is "worth" $2x-100\\%$ votes. In other words, the VPV for this
-group is 0.44 (44,000 *net* Democratic votes out of 100,000 new voters in the group who show up to
-cast ballots).
-Note that a group with a Democratic voter preference of 50% has a VPV of 0, a group that votes
-Democratic 60% of the time has a VPV of 0.2. And a group which votes for Democrats less
-than 50% of the time has a negative VPV.
-
-This metric is useful because it highlights the connection between voter preference and
-votes gained by additional turnout.
-A group which leans only slightly Democratic is not a great place to invest resources
-on turnout since each voter is only slightly more likely to vote blue.  This is
-reflected by the near 0 VPV.
-
-As a side note, this is why changing people's minds can seem a more appealing avenue to getting
-votes: changing a Republican vote to a Democratic vote has a VPV of 2 (200%):
-one vote is lost by the Republican and one is gained by the Democrat, so each such voter is "worth" 2 votes.
-(More on that in a later analysis---stay tuned!)
-
-## Female College Educated Voters and Age
-Let's look first at female college-educated voters and how their VPV varies by state and by age.
-This demographic, one that has
-been [trending strongly Democratic since the early 2000s][NPR:CollegeWomen],
-is particularly important for Democrats.
-In the chart below we show the VPV of female college-educated voters, split by age at 45,
-for each state (and DC and the Nation as a whole).
-We've ordered the states (plus DC and the nation as a whole) by increasing VPV of
-female college-educated voters under 45.
 
 [CCES]: <https://cces.gov.harvard.edu/>
 [MRP:Summary]: <https://en.wikipedia.org/wiki/Multilevel_regression_with_poststratification>
@@ -244,63 +121,11 @@ female college-educated voters under 45.
 [Bitecofer:2020Pres]: <https://cnu.edu/wasoncenter/2019/07/01-2020-election-forecast/>
 [NPR:CollegeWomen]: <https://www.npr.org/2018/09/24/650447848/the-womens-wave-backlash-to-trump-persists-reshaping-politics-in-2018>
 |]
-  
-brText2 :: T.Text
-brText2 = [i|
-We also looked specifically at some states we think are worth highlighting, including several
-classic presidential "battlegrounds" and others (like Texas and Georgia) that are moving towards
-battleground status and have important house seats in play. we've added male voters here as well,
-in order to clarify the focus on *female* college-educated voters as a good source of Democratic votes:
-|]
 
-brText3 :: T.Text
-brText3 = [i|
-## Key Takeaways
-There's a lot of detail here, but we'd like to make a few main observations:
-
-- College-educated voters are not a monolithic group.  There's a lot of variation in
-VPV by state, by sex and by age. A GOTV strategy targeting **all** college-educated voters
-is not a good use of resources for Dems since it will target lots of voters with VPV below
-or near 0.
-- Should Dems turnout-efforts target *female* college-educated voters? It depends.
-They skew more Democratic (positive VPV),
-but the "yield" of targeting this group probably depends on the age distribution, because the over-45s are less blue.
-- What about *young* college-educated voters? If we compare males and females in this group across states,
-there's a pretty wide variability.
-Female college-educated voters under 45 all have positive VPV,
-but a strategy targeting young college-educated voters (of either sex)
-in battleground states would have different degrees of effectiveness between states.
-- Finally: should we micro-target *female* college-educated voters *under 45* for GOTV efforts?
-They're the most Dem-friendly subgroup we studied here,
-but their VPVs across the states are widely distributed,
-from under 0.1 in Indiana, to almost 0.65 in California.
-That variability is also pronounced in the battleground states:
-female college-educated voters under 45 have a much higher VPV in some places (TX, NH, NV) than others (PA, MI).
-- BOTTOM LINE: A GOTV strategy targeting young female college grads would likely help Dems,
-but may yield many more net Dem votes in some places than others.
-The success of broader strategies (e.g., targeting college grads more broadly)
-would depend on the relative sizes of different sub-groups -- which is a topic we'll explore in a subsequent post.
+brEnd :: T.Text
+brEnd = [i|
 
 ## Take Action
-This early in the cycle it can be difficult to find organizations focused on specific groups within
-states.  But there are some groups which are clearly working in the same vein. If you know
-of local organizations doing work on youth/college-educated voter turnout, please email us with
-that information and we'll update this post.
-
-- [MOVE Texas][Org:MOVETexas], does GOTV work with young people in Texas.
-- [The Sunrise Movement][Org:SunriseMovement], a youth-focused environmental advocacy group
-has joined forces with various local organizations to work on registration and turnout among young voters.
-- [NextGen America][Org:NextGenAmerica] works on youth turnout nationally, holding registration events
-at many colleges and universities.
-
-[PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
-[PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
-[Org:MOVETexas]: <https://movetexas.org/>
-[Org:TurnPABlue]: <https://turnpablue.org/>
-[Org:WisDems]: <https://wisdems.org/>
-[Org:NextGenAmerica]: <https://nextgenamerica.org/>
-[Org:OhioStudentOrganization]: <https://ohiostudentassociation.org/campaign/voter-registration/>
-[Org:SunriseMovement]: <https://www.sunrisemovement.org/>
 |]
   
 
@@ -336,7 +161,6 @@ catPredMaps = M.fromList $ fmap (\k -> (k,predMap k)) allCatKeys
 catKeyColHeader :: F.Record CatCols -> T.Text
 catKeyColHeader r =
   let g = T.pack $ show $ F.rgetField @Sex r
---      wnh = if F.rgetField @WhiteNonHispanic r then "White" else "NonWhite"
       a = T.pack $ show $ F.rgetField @SimpleAge r
       e = T.pack $ show $ F.rgetField @SimpleEducation r
   in a <> "-" <> e <> "-" <> g
@@ -351,28 +175,20 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members e
 --     -> K.CachedRunnable r [F.Record CCES_MRP]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
-  K.logLE K.Info $ "Working on Pools post..."
-{-  
-  let (BR.DemographicStructure processDemoData processTurnoutData _ _) = BR.simpleAgeSexEducation  
-      makeASEDemographics y aseDemoFrame = do
-        knitX $ processDemoData y aseDemoFrame
-      makeASETurnout y aseTurnoutFrame = do
-        knitX $ processTurnoutData y
--}
-  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
-{-      countDemHouseVotesF = MR.concatFold
-                            $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                            ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                            (F.rgetField @CCESWeightCumulative) -}
-                
-      countDemPres2016VotesF = MR.concatFold
+post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
+  K.logLE K.Info $ "Working on EdVoters post..."
+  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)                
+      countDemPres2016VotesF = FMR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
+      countDemHouseVotesF = FMR.concatFold
+                            $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
+                            ((== VP_Democratic) . F.rgetField @HouseVoteParty)
+                            (F.rgetField @CCESWeightCumulative)                               
       inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
               => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, WeightedSuccesses, MeanWeight, VarWeight]))
-              -> Int
+              -> Int -- year
               -> F.FrameRec CCES_MRP
               -> K.Sem r (GLM.MixedModel CCESPredictor MRGroup
                          , GLM.RowClassifier MRGroup
@@ -459,9 +275,9 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let GLM.FixedEffectStatistics fep _ = fes            
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
-  let predictionsByLocation = do
+  let predictionsByLocation countFold y = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countDemPres2016VotesF 2016 ccesFrameAll
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countFold y ccesFrameAll
         let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
             allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
             predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
@@ -476,24 +292,46 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
-  predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" predictionsByLocation
+  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" (predictionsByLocation countDemPres2016VotesF 2016)
+--  predsByLocation2014h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2014h" (predictionsByLocation countDemHouseVotesF 2014)
+  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2016h" (predictionsByLocation countDemHouseVotesF 2016)
+  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2018h" (predictionsByLocation countDemHouseVotesF 2018)
 
-  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
+--  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
   let dvpv x = 2*x - 1
-      melt (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, dvpv x)) $ M.toList cdM 
-      longPrefs = concat $ fmap melt predsByLocation
-      sortedStates sex = K.knitMaybe "Error sorting locationHolders" $ do
-        let f lh@(LocationHolder n _ cdM) = do
-              yng <-  dvpv <$> M.lookup (catKey sex BR.Grad BR.Young) cdM
-              old <- dvpv <$> M.lookup (catKey sex BR.Grad BR.Old) cdM
-              let grp = if yng < 0
-                        then -1
-                        else if old > 0
-                             then 1
-                             else 0                              
-              return (n, (grp, yng))
-        fmap fst . L.sortBy ((compare `on` snd.snd)) <$> traverse f predsByLocation
+      melt label (LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
+      longPrefs = concat
+                  $ (fmap (melt "2016 President") predsByLocation2016p)
+                  ++ (fmap (melt "2016 House") predsByLocation2016h)
+                  ++ (fmap (melt "2018 House") predsByLocation2018h)                  
+      sortedStates ck = K.knitMaybe "Error sorting locationHolders" $ do
+        let f lh@(LocationHolder name _ cdM) = do
+              x <-  dvpv <$> M.lookup ck cdM
+              return (name, x)
+        fmap fst . L.sortBy (compare `on` snd) <$> traverse f predsByLocation2016p
+      widenF = MR.mapReduceFold
+        MR.noUnpack
+        (MR.Assign (\(el, sn, ck, vpv) -> ((sn, ck),(el,vpv))))
+        (MR.foldAndLabel FL.map (\(sn,ck) m -> (sn, ck, m)))
+      widePrefs = FL.fold widenF longPrefs
+  vlScatter2016pVsh <- K.knitEither $ vlStateScatterVsElection
+                       "2016 President vs House: VPV of College-Educated Voters"
+                       (FV.ViewConfig 800 800 10)
+                       ("2016 President", "2016 House")
+                       widePrefs
+  _ <- K.addHvega Nothing Nothing vlScatter2016pVsh
+  vlScatter2016hVs2018h <- K.knitEither $ vlStateScatterVsElection
+                         "2016 House vs 2018 House: VPV of College-Educated Voters"
+                          (FV.ViewConfig 800 800 10)
+                          ("2016 House", "2018 House")
+                          widePrefs
+  _ <- K.addHvega Nothing Nothing vlScatter2016hVs2018h
+  longPrefsForChart <- K.knitEither $ flip traverse (L.filter (\(_,sn,_,_) -> sn /= "National") longPrefs) $ \(el,sn,ck,vpv) -> do
+    fullState <-  maybe (Left $ "Couldn't find " <> sn) Right $ M.lookup sn stateNameByAbbreviation
+    return (el, fullState, ck, vpv)
+  _ <- K.addHvega Nothing Nothing $ vlTest (FV.ViewConfig 300 300 10)
+  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "Test" (FV.ViewConfig 800 800 10)  $ longPrefsForChart
   let battlegroundStates =
         [ "AZ"
         , "FL"
@@ -511,7 +349,8 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
         , "VA"
         ]
       sortedBGNat = "National" : L.sort battlegroundStates      
-  sortedByYoungWomen <- sortedStates BR.Female
+  sortedByYoungWomen <- sortedStates (catKey BR.Female BR.Grad BR.Young)
+{-  
   _ <- K.addHvega Nothing Nothing $
        vlPrefGapByState
        "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Women"
@@ -519,31 +358,14 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
        sortedByYoungWomen
        BR.Female
        longPrefs       
-  brAddMarkDown brText2     
   _ <- K.addHvega Nothing Nothing $
        vlPrefGapByStateBoth
        "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Voters"
        (FV.ViewConfig 800 800 10)
        sortedBGNat
        (L.filter (\(s,_,_) -> s `elem` sortedBGNat) $ longPrefs)
-  brAddMarkDown brText3     
-       
-{-
-  sortedByYoungMen <- sortedStates BR.Male
-  _ <- K.addHvega Nothing Nothing $
-       vlPrefGapByState
-       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Men"
-       (FV.ViewConfig 800 800 10)       
-       sortedByYoungMen
-       BR.Male
-       longPrefs
-
-  brAddRawHtmlTable
-    "Democratic Voter Preference (%) by State and Category"
-    (BHA.class_ "brTable")
-    (colPrefByLocation allCatKeys emphasizeNational)
-    predsByLocation
 -}
+  brAddMarkDown brEnd       
   brAddMarkDown brReadMore
 
 -- TODO: make this traversable
@@ -601,24 +423,100 @@ colPrefByLocation cats cas =
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))
      <> mconcat (fmap rowFromCatKey cats)
 
-vlPrefGapByState :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> BR.Sex -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
-vlPrefGapByState title vc sortedStates sex rows =
+
+vlStateScatterVsElection :: Foldable f
+                         => T.Text                         
+                         -> FV.ViewConfig
+                         -> (T.Text, T.Text)
+                         -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), M.Map T.Text Double)
+                         -> Either T.Text GV.VegaLite
+vlStateScatterVsElection title vc (e1, e2) rows = do
+  let e1L = "VPV (" <> e1 <> ")"
+      e2L = "VPV (" <> e2 <> ")"
+      datRow d@(n, (s,e,a), vpvByElection) = do
+        vpv1 <- maybe (Left $ "couldn't find " <> e1 <> " for " <> (T.pack $ show d)) Right $ M.lookup e1 vpvByElection
+        vpv2 <- maybe (Left $ "couldn't find " <> e2 <> " for " <> (T.pack $ show d)) Right $ M.lookup e2 vpvByElection
+        return $ GV.dataRow [ ("State", GV.Str n)
+                            , ("Sex", GV.Str $ T.pack $ show s)
+                            , ("Education", GV.Str $ T.pack $ show e)
+                            , ("Age", GV.Str $ T.pack $ show a)
+                            , (e1L, GV.Number vpv1)
+                            , (e2L, GV.Number vpv2)
+                            ] []
+  processed <- traverse datRow $ FL.fold FL.list rows         
+  let dat = GV.dataFromRows [] $ concat $ processed
+      encX = GV.position GV.X [GV.PName e1L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle e1]]                              
+      encY = GV.position GV.Y [GV.PName e2L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle e2]]
+      encY2 = GV.position GV.Y [GV.PName e1L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+      encX2 = GV.position GV.X [GV.PName e2L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+      facet = GV.facet [GV.ColumnBy [GV.FName "Sex", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Age", GV.FmType GV.Nominal]]
+      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
+--      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
+--      encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY) [], GV.mark GV.Point [GV.MTooltip GV.TTData], filter []]
+      refLineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line [], filter []]
+      refLineSpec2 = GV.asSpec [(GV.encoding . encX2 . encY) [], GV.mark GV.Line [], filter []]
+      allProps = [GV.layer [refLineSpec1, refLineSpec2, dotSpec]]
+--      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
+  return $
+    FV.configuredVegaLite vc [FV.title title , GV.specification (GV.asSpec allProps), facet, dat]
+
+
+{-
+vlVPVDistribution :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlVPVDistribution title vc sortedStates rows =
   let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
-                                          , ("Sex", GV.Str $ T.pack $ show s)
+                                          , ("Age", GV.Str $ (T.pack $ show a))
+                                          , ("Sex",GV.Str $ (T.pack $ show s))
                                           , ("Education", GV.Str $ T.pack $ show e)
-                                          , ("Age", GV.Str $ T.pack $ show a)
                                           , ("D VPV", GV.Number p)
                                           ] []
       dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
-      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]      
-      encX = GV.position GV.X [GV.PName "D VPV", GV.PmType GV.Quantitative]
-      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Sex == '" <> (T.pack $ show sex) <> "' && datum.Education == 'Grad'")
-      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
-      encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
-      dotSpec = GV.asSpec [(GV.encoding . encY . encX . encColor) [], GV.mark GV.Point [], filter []]
-      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
-  in
-    FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
+-}      
+
+usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
+usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
+
+-- Lessons learned
+-- The data is the geography
+-- transform with lookup (properties.name) to add data
+-- to figure out the right lookup name you can just plot the geography (no transform, no encoding) and look at loaded data
+-- in vega editor
+vlVPVChoropleth :: Foldable f
+                     => T.Text -> FV.ViewConfig
+                     -> f (T.Text, T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge),Double)
+                     -> GV.VegaLite
+vlVPVChoropleth title vc stateData =
+  let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+      datRow (el, n, (s,e,a), vpv) = 
+        GV.dataRow [ ("State", GV.Str n)
+                   , ("Election", GV.Str el)
+                   , ("Sex", GV.Str $ T.pack $ show s)
+                   , ("Education", GV.Str $ T.pack $ show e)
+                   , ("Age", GV.Str $ T.pack $ show a)
+                   , ("VPV", GV.Number vpv)
+                   ] []
+      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData
+      dataSets = GV.datasets [("stateDat",datVal)]
+      facet = GV.facet [GV.ColumnBy [GV.FName "Age", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Election", GV.FmType GV.Nominal]]
+      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad' && datum.Sex == 'Female' && datum.Election == '2016 President' && datum.Age == 'Young'")
+      projection = GV.projection [GV.PrType GV.AlbersUsa]
+      transform = GV.transform . GV.lookup "properties.name" datVal "State" ["State","Election","Sex","Education","Age","VPV"]
+      mark = GV.mark GV.Geoshape []
+      colorEnc = GV.color [GV.MName "VPV", GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      --tooltip = GV.tooltips [[GV.TName "State", GV.TmType GV.Nominal],[GV.TName "VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      enc = GV.encoding .  colorEnc -- . tooltip
+      cSpec = GV.asSpec [enc [], mark, filter [], projection]
+  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark, filter []]
+
+vlTest :: FV.ViewConfig -> GV.VegaLite
+vlTest vc =
+  let
+    datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+    projection = GV.projection [GV.PrType GV.AlbersUsa]
+    mark = GV.mark GV.Geoshape [GV.MFill "lightgrey" ]
+  in FV.configuredVegaLite vc [datGeo, mark, projection]
+
 
 -- each state is it's own plot and we facet those
 vlPrefGapByStateBoth :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
@@ -636,7 +534,7 @@ vlPrefGapByStateBoth title vc sortedStates rows =
                               , GV.PmType GV.Quantitative
                               , GV.PAxis [GV.AxGrid False]
                               , GV.PScale [GV.SDomain $ GV.DNumbers [-0.5,0.5]]]
-      facetFlow = GV.facetFlow [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
+      facetFlow = GV.facetFlow [GV.FName "Sex", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
       filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
       encDetail = GV.detail [GV.DName "Sex", GV.DmType GV.Nominal]
       encDColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
@@ -649,45 +547,4 @@ vlPrefGapByStateBoth title vc sortedStates rows =
   in
     FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetFlow, dat]
 
-{-
-vlVPVDistribution :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
-vlVPVDistribution title vc sortedStates rows =
-  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
-                                          , ("Age", GV.Str $ (T.pack $ show a))
-                                          , ("Sex",GV.Str $ (T.pack $ show s))
-                                          , ("Education", GV.Str $ T.pack $ show e)
-                                          , ("D VPV", GV.Number p)
-                                          ] []
-      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
--}      
-{-
-usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
-usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
-
--- Lessons learned
--- The data is the geography
--- transform with lookup (properties.name) to add data
--- to figure out the right lookup name you can just plot the geography (no transform, no encoding) and look at loaded data
--- in vega editor
-vlPctStateChoropleth :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, Double) -> GV.VegaLite
-vlPctStateChoropleth title vc stateData =
-  let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-      datVal = GV.dataFromRows [] $ concat $ fmap (\(s,x) -> GV.dataRow [("state", GV.Str s),("value", GV.Number x)] []) $ FL.fold FL.list stateData
-      dataSets = GV.datasets [("stateNums",datVal)]
-      projection = GV.projection [GV.PrType GV.AlbersUsa]
-      transform = GV.transform . GV.lookup "properties.name" datVal "state" ["state","value"]
-      mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [GV.MName "value", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
-      tooltip = GV.tooltips [[GV.TName "state", GV.TmType GV.Nominal],[GV.TName "value", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
-      enc = GV.encoding .  colorEnc . tooltip
-  in FV.configuredVegaLite vc [FV.title title, datGeo, mark, projection, transform [], enc []]
-
-vlTest :: FV.ViewConfig -> GV.VegaLite
-vlTest vc =
-  let
-    datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-    projection = GV.projection [GV.PrType GV.AlbersUsa]
-    mark = GV.mark GV.Geoshape [GV.MFill "lightgrey" ]
-  in FV.configuredVegaLite vc [datGeo, mark, projection]
--}
 

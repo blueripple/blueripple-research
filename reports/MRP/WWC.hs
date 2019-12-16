@@ -14,7 +14,7 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.Intro (post) where
+module MRP.WWC (post) where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Array                    as A
