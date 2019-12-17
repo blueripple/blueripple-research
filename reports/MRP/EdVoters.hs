@@ -304,8 +304,12 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
       longPrefs = concat
                   $ (fmap (melt "2016 President") predsByLocation2016p)
                   ++ (fmap (melt "2016 House") predsByLocation2016h)
-                  ++ (fmap (melt "2018 House") predsByLocation2018h)                  
-      sortedStates ck = K.knitMaybe "Error sorting locationHolders" $ do
+                  ++ (fmap (melt "2018 House") predsByLocation2018h)
+      printLP (el, sn, (s,e,a), vpv) =
+        let ps = T.pack . show
+        in el <> "," <> sn <> "," <> ps s <> "," <> ps e <> "," <> ps a <> "," <> ps vpv
+--  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap printLP longPrefs)     
+  let sortedStates ck = K.knitMaybe "Error sorting locationHolders" $ do
         let f lh@(LocationHolder name _ cdM) = do
               x <-  dvpv <$> M.lookup ck cdM
               return (name, x)
@@ -330,8 +334,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
   longPrefsForChart <- K.knitEither $ flip traverse (L.filter (\(_,sn,_,_) -> sn /= "National") longPrefs) $ \(el,sn,ck,vpv) -> do
     fullState <-  maybe (Left $ "Couldn't find " <> sn) Right $ M.lookup sn stateNameByAbbreviation
     return (el, fullState, ck, vpv)
-  _ <- K.addHvega Nothing Nothing $ vlTest (FV.ViewConfig 300 300 10)
-  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "Test" (FV.ViewConfig 800 800 10)  $ longPrefsForChart
+  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "Test" (FV.ViewConfig 400 200 10)  $ longPrefsForChart
   let battlegroundStates =
         [ "AZ"
         , "FL"
@@ -499,15 +502,20 @@ vlVPVChoropleth title vc stateData =
       datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData
       dataSets = GV.datasets [("stateDat",datVal)]
       facet = GV.facet [GV.ColumnBy [GV.FName "Age", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Election", GV.FmType GV.Nominal]]
-      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad' && datum.Sex == 'Female' && datum.Election == '2016 President' && datum.Age == 'Young'")
+      encFacetRow = GV.row [GV.FName "Election", GV.FmType GV.Nominal]
+      encFacetCol = GV.column [GV.FName "Age", GV.FmType GV.Nominal]
+      filter = GV.filter (GV.FExpr $ "datum.Education == 'Grad' && datum.Sex == 'Female'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
       projection = GV.projection [GV.PrType GV.AlbersUsa]
-      transform = GV.transform . GV.lookup "properties.name" datVal "State" ["State","Election","Sex","Education","Age","VPV"]
+      transform = GV.transform . GV.lookup "properties.name" datVal "State" ["State","VPV", "Election","Sex","Education","Age"]
+      transform2 = GV.transform . GV.lookupAs "State" datGeo "properties.name" "geo" . filter
       mark = GV.mark GV.Geoshape []
       colorEnc = GV.color [GV.MName "VPV", GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
-      --tooltip = GV.tooltips [[GV.TName "State", GV.TmType GV.Nominal],[GV.TName "VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
-      enc = GV.encoding .  colorEnc -- . tooltip
-      cSpec = GV.asSpec [enc [], mark, filter [], projection]
-  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark, filter []]
+      shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
+      tooltip = GV.tooltips [[GV.TName "State", GV.TmType GV.Nominal],[GV.TName "VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
+      cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
+--  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark]
+  in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
 
 vlTest :: FV.ViewConfig -> GV.VegaLite
 vlTest vc =
