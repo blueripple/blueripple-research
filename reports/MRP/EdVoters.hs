@@ -100,10 +100,19 @@ import qualified PreferenceModel.Common as PrefModel
 
 brText1 :: T.Text
 brText1 = [i|
+In our last research post[LINK] we looked at college-educated-voter preference, expressed
+via "VPV"[LINK], roughly speaking, a number which captures the value of boosting turnout
+among some group of voters. We focused on preference as expressed in the 2016 presidential
+election.  But looking forward we are alos interested in how that VPV may be different for 2020.
+We considered using the shift from the 2016 house elections to the 2018 house elections as a proxy
+for whatever shift is happening in presidential vote preference. But house elections are
+different from presidential elections.
+So we decided to compare college-educated voter VPV in the 2016 presidential election,
+the 2016 house elections, and the 2018 house elections. 
 
-1. **List 1**
-2. **List 2**
-3. **List 3**
+1. **Review: MRP and VPV**
+2. **2016: Presidential Race vs. House Races**
+3. **2018 House Races vs. 2016 House Races**
 4. **List 4**
 5. **List 5**
 
@@ -299,19 +308,21 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
-  let dvpv x = 2*x - 1
-      melt label (LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
+  let vpv x = 2*x - 1
+      melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
+      meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
+      --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
       longPrefs = concat
-                  $ (fmap (melt "2016 President") predsByLocation2016p)
-                  ++ (fmap (melt "2016 House") predsByLocation2016h)
-                  ++ (fmap (melt "2018 House") predsByLocation2018h)
+                  $ (fmap (meltAndLabel vpv "2016 President") predsByLocation2016p)
+                  ++ (fmap (meltAndLabel vpv "2016 House") predsByLocation2016h)
+                  ++ (fmap (meltAndLabel vpv "2018 House") predsByLocation2018h)
       printLP (el, sn, (s,e,a), vpv) =
         let ps = T.pack . show
         in el <> "," <> sn <> "," <> ps s <> "," <> ps e <> "," <> ps a <> "," <> ps vpv
 --  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap printLP longPrefs)     
   let sortedStates ck = K.knitMaybe "Error sorting locationHolders" $ do
         let f lh@(LocationHolder name _ cdM) = do
-              x <-  dvpv <$> M.lookup ck cdM
+              x <- vpv <$> M.lookup ck cdM
               return (name, x)
         fmap fst . L.sortBy (compare `on` snd) <$> traverse f predsByLocation2016p
       widenF = MR.mapReduceFold
@@ -319,22 +330,45 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
         (MR.Assign (\(el, sn, ck, vpv) -> ((sn, ck),(el,vpv))))
         (MR.foldAndLabel FL.map (\(sn,ck) m -> (sn, ck, m)))
       widePrefs = FL.fold widenF longPrefs
+      dvpvLong pbl1 pbl2 = do
+        let sf = L.sortOn locName . L.filter ((/= "National") . locName)
+            longName x = do
+              let sn = locName x
+              ln <- K.knitMaybe ("Couldn't find " <> sn) $ M.lookup sn stateNameByAbbreviation
+              return $ x {locName = ln}              
+            dvpv (LocationHolder ln _ dMA) (LocationHolder _ _ dMB) = LocationHolder ln Nothing (M.unionWith (-) dMA dMB)
+        s1 <- traverse longName $ sf pbl1
+        return $ fmap (uncurry dvpv) $ zip s1 (sf pbl2)
+  presMinusHouse2016 <- concat . fmap (melt (*2)) <$> dvpvLong predsByLocation2016p predsByLocation2016h
+  house2018MinusHouse2016 <- concat . fmap (melt (*2)) <$> dvpvLong predsByLocation2018h predsByLocation2016h
   vlScatter2016pVsh <- K.knitEither $ vlStateScatterVsElection
                        "2016 President vs House: VPV of College-Educated Voters"
                        (FV.ViewConfig 800 800 10)
                        ("2016 President", "2016 House")
                        widePrefs
   _ <- K.addHvega Nothing Nothing vlScatter2016pVsh
+  _ <- K.addHvega Nothing Nothing $ vldVPVByState
+    "Change in VPV: President 2016 - House 2016"
+    (FV.ViewConfig 400 400 10)
+    presMinusHouse2016  
   vlScatter2016hVs2018h <- K.knitEither $ vlStateScatterVsElection
                          "2016 House vs 2018 House: VPV of College-Educated Voters"
                           (FV.ViewConfig 800 800 10)
                           ("2016 House", "2018 House")
                           widePrefs
   _ <- K.addHvega Nothing Nothing vlScatter2016hVs2018h
+{-  longPrefsForChart <- K.knitEither $ flip traverse (L.filter (\(_,sn,_,_) -> sn /= "National") longPrefs) $ \(el,sn,ck,vpv) -> do
+    fullState <-  maybe (Left $ "Couldn't find " <> sn) Right $ M.lookup sn stateNameByAbbreviation
+    return (el, fullState, ck, vpv) -}
+  _ <- K.addHvega Nothing Nothing $ vldVPVByState
+    "Change in VPV: House 2018 - House 2016"
+    (FV.ViewConfig 400 400 10)
+    house2018MinusHouse2016
+    
   longPrefsForChart <- K.knitEither $ flip traverse (L.filter (\(_,sn,_,_) -> sn /= "National") longPrefs) $ \(el,sn,ck,vpv) -> do
     fullState <-  maybe (Left $ "Couldn't find " <> sn) Right $ M.lookup sn stateNameByAbbreviation
-    return (el, fullState, ck, vpv)
-  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "Test" (FV.ViewConfig 400 200 10)  $ longPrefsForChart
+    return (el, fullState, ck, vpv)    
+  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "VPV: College Graduates" (FV.ViewConfig 400 200 10)  $ longPrefsForChart
   let battlegroundStates =
         [ "AZ"
         , "FL"
@@ -465,30 +499,48 @@ vlStateScatterVsElection title vc (e1, e2) rows = do
     FV.configuredVegaLite vc [FV.title title , GV.specification (GV.asSpec allProps), facet, dat]
 
 
-{-
-vlVPVDistribution :: Foldable f => T.Text -> FV.ViewConfig -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
-vlVPVDistribution title vc sortedStates rows =
-  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
-                                          , ("Age", GV.Str $ (T.pack $ show a))
-                                          , ("Sex",GV.Str $ (T.pack $ show s))
-                                          , ("Education", GV.Str $ T.pack $ show e)
-                                          , ("D VPV", GV.Number p)
-                                          ] []
-      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
--}      
 
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
 
--- Lessons learned
--- The data is the geography
--- transform with lookup (properties.name) to add data
--- to figure out the right lookup name you can just plot the geography (no transform, no encoding) and look at loaded data
--- in vega editor
+
+vldVPVByState :: Foldable f
+                 => T.Text
+                 -> FV.ViewConfig
+                 -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge),Double)
+                 -> GV.VegaLite
+vldVPVByState title vc stateData =
+  let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+      datRow (n, (s,e,a), dvpv) = 
+        GV.dataRow [ ("State", GV.Str n)
+                   , ("Sex", GV.Str $ T.pack $ show s)
+                   , ("Education", GV.Str $ T.pack $ show e)
+                   , ("Age", GV.Str $ T.pack $ show a)
+                   , ("Change in VPV", GV.Number dvpv)
+                   ] []
+      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData
+      dataSets = GV.datasets [("stateDat",datVal)]
+--      facet = GV.facet [GV.ColumnBy [GV.FName "Age", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Election", GV.FmType GV.Nominal]]
+      encFacetRow = GV.row [GV.FName "Sex", GV.FmType GV.Nominal]
+      encFacetCol = GV.column [GV.FName "Age", GV.FmType GV.Nominal]
+      filter = GV.filter (GV.FExpr $ "datum.Education == 'Grad'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
+      projection = GV.projection [GV.PrType GV.AlbersUsa]
+      transform2 = GV.transform . GV.lookupAs "State" datGeo "properties.name" "geo" . filter
+      mark = GV.mark GV.Geoshape []
+      colorEnc = GV.color [GV.MName "Change in VPV", GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
+      tooltip = GV.tooltips [[GV.TName "State", GV.TmType GV.Nominal],[GV.TName "Change in VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
+      cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
+--  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark]
+  in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
+
+
 vlVPVChoropleth :: Foldable f
-                     => T.Text -> FV.ViewConfig
-                     -> f (T.Text, T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge),Double)
-                     -> GV.VegaLite
+                => T.Text
+                -> FV.ViewConfig
+                -> f (T.Text, T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge),Double)
+                -> GV.VegaLite
 vlVPVChoropleth title vc stateData =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       datRow (el, n, (s,e,a), vpv) = 
