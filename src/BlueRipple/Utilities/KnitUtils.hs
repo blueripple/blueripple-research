@@ -8,8 +8,9 @@
 module BlueRipple.Utilities.KnitUtils where
 
 import qualified Knit.Report                   as K
-import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
-import qualified Knit.Report.Cache as KC
+import qualified Knit.Report.Input.MarkDown.PandocMarkDown
+                                               as K
+import qualified Knit.Report.Cache             as KC
 
 import qualified Control.Monad.Except          as X
 import qualified Data.Map                      as M
@@ -75,7 +76,9 @@ copyAsset sourcePath destDir = do
 brWriterOptionsF :: PA.WriterOptions -> PA.WriterOptions
 brWriterOptionsF o =
   let exts = PA.writerExtensions o
-  in  o { PA.writerExtensions  = PA.enableExtension PA.Ext_smart exts
+  in  o
+        { PA.writerExtensions  = PA.enableExtension PA.Ext_header_attributes
+                                   $ PA.enableExtension PA.Ext_smart exts
         , PA.writerSectionDivs = True
         }
 

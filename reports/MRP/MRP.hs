@@ -231,12 +231,13 @@ main = do
         (K.PandocInfo
          (postPath PostEdVoters)
          (brAddDates (updated args) pubDateIntro curDate
-          $ M.fromList [("pagetitle", "Deep Dive on Educated Voter Preference")
-                        ,("title","Deep Dive on Educated Voter Preference")
+          $ M.fromList [("pagetitle", "Deep Dive on Recent Dem VPV")
+                        ,("title","Deep Dive on Recent Dem VPV")
                         ]
           )
         )
-        $ EdVoters.post statesFromAbbreviations ccesListCA        
+        $ EdVoters.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA
+               
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "posts" namedDocs

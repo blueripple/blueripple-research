@@ -139,7 +139,7 @@ examine if and *where* a college-educated-voter turnout drive might be most effe
 4. **Key Takeaways**
 5. **Take Action**
 
-## Data and Methods
+## Data and Methods {#DataAndMethods}
 In our research pieces so far, we've looked only at aggregate data, that
 is data which comes from adding together a large number of people: census
 counts or election results, for example.  In this piece we look at some
@@ -190,7 +190,7 @@ for Democrats since 2016.  But there are inevitable differences between presiden
 and house races and we want to start with a straightforward question:  If the 2020 electorate
 was like the 2016 electorate, where might a college-educated-voter turnout drive be useful?
 
-## How Many Votes is a New Voter Worth?
+## How Many Votes is a New Voter Worth? {#VPV}
 Before getting into the results, let's introduce a metric that we call "Votes Per Voter" (VPV),
 which reflects the "value" to Democrats of getting a single person in a particular group
 to show up on election day.
@@ -221,7 +221,7 @@ votes: changing a Republican vote to a Democratic vote has a VPV of 2 (200%):
 one vote is lost by the Republican and one is gained by the Democrat, so each such voter is "worth" 2 votes.
 (More on that in a later analysis---stay tuned!)
 
-## Female College Educated Voters and Age
+## Female College Educated Voters and Age 
 Let's look first at female college-educated voters and how their VPV varies by state and by age.
 This demographic, one that has
 been [trending strongly Democratic since the early 2000s][NPR:CollegeWomen],

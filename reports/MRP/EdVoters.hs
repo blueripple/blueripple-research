@@ -26,7 +26,7 @@ import           Data.Function (on)
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map                      as M
-import           Data.Maybe (isJust)
+import           Data.Maybe (isJust, catMaybes)
 import           Data.Proxy (Proxy(..))
 --import  Data.Ord (Compare)
 
@@ -89,10 +89,11 @@ import qualified Statistics.Types              as ST
 import GHC.Generics (Generic)
 
 
-import BlueRipple.Data.DataFrames
+import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
+import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
 
@@ -100,15 +101,16 @@ import qualified PreferenceModel.Common as PrefModel
 
 brText1 :: T.Text
 brText1 = [i|
-In our last research post[LINK] we looked at college-educated-voter preference, expressed
-via "VPV"[LINK], roughly speaking, a number which captures the value of boosting turnout
+In our last research [post][BR:Pools] we looked at college-educated-voter preference, expressed
+via [VPV][BR:Pools:VPV]: roughly speaking, a number which captures the value of boosting turnout
 among some group of voters. We focused on preference as expressed in the 2016 presidential
-election.  But looking forward we are alos interested in how that VPV may be different for 2020.
+election.  But voter preferences/VPV change! Can we guess anything about
+college-educated-voter VPV in 2020?
 We considered using the shift from the 2016 house elections to the 2018 house elections as a proxy
 for whatever shift is happening in presidential vote preference. But house elections are
 different from presidential elections.
 So we decided to compare college-educated voter VPV in the 2016 presidential election,
-the 2016 house elections, and the 2018 house elections. 
+the 2016 house elections, and the 2018 house elections.  
 
 1. **Review: MRP and VPV**
 2. **2016: Presidential Race vs. House Races**
@@ -117,9 +119,34 @@ the 2016 house elections, and the 2018 house elections.
 5. **List 5**
 
 
+##MRP and VPV
+To recap:  we have data from the [CCES][CCES] survey which gives us information about
+individual voters: their location and reported votes for president in 2016 and the house
+in 2016 and 2018.  We use a technique called Multi-level Regression (MR) to combine the local
+data (e.g., college-educated female voters over 45 in a particular state) with the data for
+the same group in all the states in a sensible way and estimate Democratic voter preference
+of each group in each state.  From these numbers we compute VPV, which makes the value of
+turnout among these voters a bit clearer than voter preference.
+
+##2016: Presidential Race vs. House Races
+Though Trump won in 2016, it turns out he was almost uniformly less popular
+among college-educated voters than whatever Republican house candidate was running.
+In other words, in many states, college-educated voters were more likely to vote for Clinton
+for president than for the Dem in their local house race.
+Below we plot the Democratic VPV of the 2016 presidential
+vote vs. the Democratic VPV of the house vote for each state. In each plot we include the line
+showing equal VPV. Anything to the right of the line is a state where voters for president
+were *more* likely to vote for Clinton than their Democratic house nominee. Anything to
+the left is the opposite: states where Clinton was less popular than the Democratic house
+candidates.  The marks are colored differently for different combinations of age and sex among
+the college-educated electorate.
+
+
 [CCES]: <https://cces.gov.harvard.edu/>
 [MRP:Summary]: <https://en.wikipedia.org/wiki/Multilevel_regression_with_poststratification>
 [MRP:Methods]: <${brGithubUrl (postPath PostMethods)}>
+[BR:Pools]: <${brGithubUrl (postPath PostPools)}>
+[BR:Pools:VPV]: <${brGithubUrl (postPath PostPools)}/#VPV>
 [PrefModel:WWCV]: <${brGithubUrl (PrefModel.postPath PrefModel.PostWWCV)}>
 [PrefModel:AcrossTime]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 [BR:PM2018]: <https://blueripple.github.io/research/preference-model/p1/main.html>
@@ -141,10 +168,10 @@ brEnd = [i|
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
-type LocationCols = '[StateAbbreviation]
+type LocationCols = '[BR.StateAbbreviation]
 locKeyPretty :: F.Record LocationCols -> T.Text
 locKeyPretty r =
-  let stateAbbr = F.rgetField @StateAbbreviation r
+  let stateAbbr = F.rgetField @BR.StateAbbreviation r
   in stateAbbr
 
 type CatCols = '[Sex, SimpleEducation, SimpleAge]
@@ -157,6 +184,17 @@ unCatKey r =
       e = F.rgetField @SimpleEducation r
       a = F.rgetField @SimpleAge r
   in (s,e,a)
+
+simpleASEToCatKey :: BR.SimpleASE -> F.Record CatCols
+simpleASEToCatKey BR.OldFemaleNonGrad = catKey BR.Female BR.NonGrad BR.Old
+simpleASEToCatKey BR.YoungFemaleNonGrad = catKey BR.Female BR.NonGrad BR.Young
+simpleASEToCatKey BR.OldMaleNonGrad = catKey BR.Male BR.NonGrad BR.Old
+simpleASEToCatKey BR.YoungMaleNonGrad = catKey BR.Male BR.NonGrad BR.Young
+simpleASEToCatKey BR.OldFemaleCollegeGrad = catKey BR.Female BR.Grad BR.Old
+simpleASEToCatKey BR.YoungFemaleCollegeGrad = catKey BR.Female BR.Grad BR.Young
+simpleASEToCatKey BR.OldMaleCollegeGrad = catKey BR.Male BR.Grad BR.Old
+simpleASEToCatKey BR.YoungMaleCollegeGrad = catKey BR.Male BR.Grad BR.Young
+
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
 predMap r = M.fromList [(P_Sex, if F.rgetField @Sex r == BR.Female then 0 else 1)
@@ -174,19 +212,29 @@ catKeyColHeader r =
       e = T.pack $ show $ F.rgetField @SimpleEducation r
   in a <> "-" <> e <> "-" <> g
 
+type Election = "Election" F.:-> T.Text
+type DemPref    = "DemPref"    F.:-> Double
+type DemVPV     = "DemVPV"     F.:-> Double
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = Proxy GroupCols 
 
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
-     => M.Map T.Text T.Text -- state names from state abbreviations
+post :: (K.KnitOne r
+        , K.Member GLM.RandomFu r
+        , K.Members es r
+        , K.Members es1 r
+        , K.Members es2 r)
+     => F.Frame BR.States  -- state names from state abbreviations
 --     -> K.CachedRunnable r [F.Record CCES_MRP]
      -> K.Cached es [F.Record CCES_MRP]
+     -> K.Cached es1 [BR.ASEDemographics]
+     -> K.Cached es2 [BR.TurnoutASE]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
+post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
   K.logLE K.Info $ "Working on EdVoters post..."
-  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)                
+  let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
+      isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
       countDemPres2016VotesF = FMR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
@@ -208,7 +256,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
       inferMR cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("inferMR " <> (T.pack $ show y) <> ":") $ do
         let recFilter r =
               let party = F.rgetField @Pres2016VoteParty r
-              in (F.rgetField @Turnout r == T_Voted) && (F.rgetField @Year r == y) && ((party == VP_Republican) || (party == VP_Democratic))
+              in (F.rgetField @Turnout r == T_Voted) && (F.rgetField @BR.Year r == y) && ((party == VP_Republican) || (party == VP_Democratic))
             ccesFrame = F.filterFrame recFilter ccesFrameAll
             counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
@@ -287,7 +335,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
   let predictionsByLocation countFold y = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countFold y ccesFrameAll
-        let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
+        let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrameAll
             allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
             predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
             toPredict = [LocationHolder "National" Nothing catPredMaps] <> fmap predictLoc allStateKeys                           
@@ -309,7 +357,38 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
   let vpv x = 2*x - 1
-      melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
+      lhToRecsM election (LocationHolder _ lkM predMap) =
+        let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
+                        FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
+                        FT.mutate (const $ FT.recordSingleton @Election election)                        
+            g lk = fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
+        in fmap g lkM
+      pblToFrameFM election = MR.concatFoldM $ MR.mapReduceFoldM
+          (MR.UnpackM $ lhToRecsM election)
+          (MR.generalizeAssign $ MR.Assign (\x -> ((),x)))
+          (MR.generalizeReduce $ MR.ReduceFold (const FL.list))
+      pblToFrame (election, pbl) = FL.foldM (pblToFrameFM election) $ L.filter ((/= "National") . locName) pbl
+      
+  longFrame <- K.knitMaybe "Failed to make long-frame"
+               $ fmap (F.toFrame . concat)
+               $ traverse pblToFrame [("Pres2016",predsByLocation2016p)
+                                     ,("House2016",predsByLocation2016h)
+                                     ,("House2018",predsByLocation2018h)
+                                     ]
+  demographicsFrame <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
+  let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
+  -- Arrange demo/turnout data as we need
+      BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
+      years = [2016,2018]
+      sumPopToStateF = MR.concatFold $ MR.mapReduceFold
+        (MR.Unpack $ pure @[] . FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE)))
+        (FMR.assignKeysAndData @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge] @'[BR.PopCount])
+        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  p2016Pop <- FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2016 demographicsFrame)
+  p2018Pop <- FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2018 demographicsFrame)
+  -- need to put pops on longFrame but YEARS. So.
+  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ p2016Pop)     
+  let melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
       meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
       --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
       longPrefs = concat
@@ -342,7 +421,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
   presMinusHouse2016 <- concat . fmap (melt (*2)) <$> dvpvLong predsByLocation2016p predsByLocation2016h
   house2018MinusHouse2016 <- concat . fmap (melt (*2)) <$> dvpvLong predsByLocation2018h predsByLocation2016h
   vlScatter2016pVsh <- K.knitEither $ vlStateScatterVsElection
-                       "2016 President vs House: VPV of College-Educated Voters"
+                       "VPV: 2016 President vs House"
                        (FV.ViewConfig 800 800 10)
                        ("2016 President", "2016 House")
                        widePrefs
@@ -352,7 +431,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
     (FV.ViewConfig 400 400 10)
     presMinusHouse2016  
   vlScatter2016hVs2018h <- K.knitEither $ vlStateScatterVsElection
-                         "2016 House vs 2018 House: VPV of College-Educated Voters"
+                         "Dem VPV: 2016 House vs 2018 House"
                           (FV.ViewConfig 800 800 10)
                           ("2016 House", "2018 House")
                           widePrefs
@@ -467,16 +546,17 @@ vlStateScatterVsElection :: Foldable f
                          -> (T.Text, T.Text)
                          -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), M.Map T.Text Double)
                          -> Either T.Text GV.VegaLite
-vlStateScatterVsElection title vc (e1, e2) rows = do
+vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (e1, e2) rows = do
   let e1L = "VPV (" <> e1 <> ")"
       e2L = "VPV (" <> e2 <> ")"
       datRow d@(n, (s,e,a), vpvByElection) = do
         vpv1 <- maybe (Left $ "couldn't find " <> e1 <> " for " <> (T.pack $ show d)) Right $ M.lookup e1 vpvByElection
         vpv2 <- maybe (Left $ "couldn't find " <> e2 <> " for " <> (T.pack $ show d)) Right $ M.lookup e2 vpvByElection
         return $ GV.dataRow [ ("State", GV.Str n)
-                            , ("Sex", GV.Str $ T.pack $ show s)
                             , ("Education", GV.Str $ T.pack $ show e)
-                            , ("Age", GV.Str $ T.pack $ show a)
+--                            , ("Sex", GV.Str $ T.pack $ show s)
+--                            , ("Age", GV.Str $ T.pack $ show a)
+                            , ("Sex/Age", GV.Str $ T.pack $ show s ++ "/" ++ show a)
                             , (e1L, GV.Number vpv1)
                             , (e2L, GV.Number vpv2)
                             ] []
@@ -486,17 +566,21 @@ vlStateScatterVsElection title vc (e1, e2) rows = do
       encY = GV.position GV.Y [GV.PName e2L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle e2]]
       encY2 = GV.position GV.Y [GV.PName e1L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encX2 = GV.position GV.X [GV.PName e2L, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
-      facet = GV.facet [GV.ColumnBy [GV.FName "Sex", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Age", GV.FmType GV.Nominal]]
-      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
+      facet = GV.facet [GV.ColumnBy [GV.FName "Education", GV.FmType GV.Nominal]]--, GV.RowBy [GV.FName "Age", GV.FmType GV.Nominal]]
+      encFacetRow = GV.row [GV.FName "Education", GV.FmType GV.Nominal]
+      filterGrad = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
+      filterNonGrad = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'NonGrad'")
 --      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
---      encColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
-      dotSpec = GV.asSpec [(GV.encoding . encX . encY) [], GV.mark GV.Point [GV.MTooltip GV.TTData], filter []]
-      refLineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line [], filter []]
-      refLineSpec2 = GV.asSpec [(GV.encoding . encX2 . encY) [], GV.mark GV.Line [], filter []]
-      allProps = [GV.layer [refLineSpec1, refLineSpec2, dotSpec]]
+      encColor = GV.color [GV.MName "Sex/Age", GV.MmType GV.Nominal]
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], GV.mark GV.Point [GV.MTooltip GV.TTData], GV.width (w/2), GV.height h ]
+      dotSpecN = GV.asSpec [(GV.encoding . encX . encY . encColor) [], GV.mark GV.Point [GV.MTooltip GV.TTData, GV.MShape GV.SymSquare], filterNonGrad []]
+      refLineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line [], GV.width (w/2), GV.height h]
+      refLineSpec2 = GV.asSpec [(GV.encoding . encX2 . encY) [], GV.mark GV.Line [], GV.width (w/2), GV.height h]
+      layers = GV.layer [refLineSpec1, refLineSpec2, dotSpec]
+      allProps = [layers]
 --      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line [], filter []]
   return $
-    FV.configuredVegaLite vc [FV.title title , GV.specification (GV.asSpec allProps), facet, dat]
+    FV.configuredVegaLite vc [FV.title title ,GV.specification (GV.asSpec [layers]), facet , dat]
 
 
 
