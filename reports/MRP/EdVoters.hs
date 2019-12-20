@@ -38,6 +38,8 @@ import qualified Data.Vector.Storable               as VS
 import           Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Frames as F
+import qualified Frames.Melt as F
+import qualified Frames.InCore as FI
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -388,11 +390,41 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
   p2018Pop <- fmap (FT.mutate (const $ FT.recordSingleton @BR.Year 2018)) . FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2018 demographicsFrame)
   let popFrame  = p2016Pop <> p2018Pop
       longDatFrame = catMaybes $ fmap F.recMaybe $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) (F.toFrame longFrameWithState) popFrame
-{-      let postStratifyF :: forall k cd cw rs . (F.ElemOf cd rs, F.ElemOf cw rs, k F.⊆ rs)
-                        => FL.Fold (F.Record rs) [F.Record (k V.++ [cd,cw])]
-          postStratifyF = MR.concatFold $ MR.mapReduceFold
-                          (MR.noUnpack-}
-  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ longDatFrame)  
+  let postStratifyF :: forall k cd cw rs . ( F.ElemOf rs cd
+                                           , F.ElemOf rs cw
+                                           , k F.⊆ rs
+                                           , Ord (F.Record k)
+                                           , FI.RecVec (k V.++ '[cd])
+                                           , V.KnownField cd
+                                           , V.Snd cd ~ Double
+                                           , V.KnownField cw
+                                           , Real (V.Snd cw)
+                                           , F.ElemOf '[cd,cw] cw)
+                    => FL.Fold (F.Record rs) (F.FrameRec (k V.++ '[cd]))
+      postStratifyF = MR.concatFold $ MR.mapReduceFold
+                      MR.noUnpack
+                      (FMR.assignKeysAndData @k @[cd,cw])
+                      (FMR.foldAndAddKey $ (\sdw sw -> FT.recordSingleton @cd (sdw/realToFrac sw))
+                        <$> FL.premap (\x -> realToFrac (F.rgetField @cw x) * F.rgetField @cd x) FL.sum
+                        <*> FL.premap (F.rgetField @cw) FL.sum)
+      postStratified = FL.fold (postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @DemVPV @BR.PopCount) longDatFrame
+      widenPS office1 year1 office2 year2 =
+        let ps1 = fmap (FT.retypeColumn @DemVPV @'("X1",Double))
+                  $ F.filterFrame (\r -> F.rgetField @Office r == office1 && F.rgetField @BR.Year r == year1) postStratified
+            ps2 = fmap (FT.retypeColumn @DemVPV @'("X2",Double))
+                  $ F.filterFrame (\r -> F.rgetField @Office r == office2 && F.rgetField @BR.Year r == year2) postStratified
+        in fmap (F.rcast @[BR.StateAbbreviation, '("X1", Double), '("X2", Double)])
+           $ catMaybes
+           $ fmap F.recMaybe
+           $ (F.leftJoin @[BR.StateAbbreviation, BR.StateName]) ps1 ps2
+      presVhouse2016Frame = widenPS House 2016 President 2016   
+  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ presVhouse2016Frame)
+  K.addHvega Nothing Nothing
+    $ vlPostStratScatter
+    "Post Stratified VPV 2016 House vs 2016 President"
+    (FV.ViewConfig 800 800 10)
+    ("House 2016","President 2016")
+    presVhouse2016Frame
   let melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
       meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
       --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
@@ -544,6 +576,25 @@ colPrefByLocation cats cas =
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))
      <> mconcat (fmap rowFromCatKey cats)
 
+
+vlPostStratScatter :: Foldable f
+                   => T.Text
+                   -> FV.ViewConfig
+                   -> (T.Text, T.Text)
+                   -> f (F.Record [BR.StateAbbreviation, '("X1",Double), '("X2",Double)])
+                   -> GV.VegaLite
+vlPostStratScatter title vc (race1, race2) rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      encX = GV.position GV.X [FV.pName @'("X1",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
+      encY = GV.position GV.Y [FV.pName @'("X2",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
+      encX2 = GV.position GV.X [FV.pName @'("X2",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+      encY2 = GV.position GV.Y [FV.pName @'("X1",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+      encScatter = GV.encoding . encX . encY
+      scatterSpec = GV.asSpec [encScatter [], GV.mark GV.Point [GV.MFilled True,GV.MTooltip GV.TTData]]
+      lineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line []]
+      lineSpec2 = GV.asSpec [(GV.encoding . encX2 . encY) [], GV.mark GV.Line []]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [scatterSpec, lineSpec1, lineSpec2], dat]
+  
 
 vlStateScatterVsElection :: Foldable f
                          => T.Text                         
