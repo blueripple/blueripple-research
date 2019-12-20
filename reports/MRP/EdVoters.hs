@@ -407,24 +407,20 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                       (FMR.foldAndAddKey $ (\sdw sw -> FT.recordSingleton @cd (sdw/realToFrac sw))
                         <$> FL.premap (\x -> realToFrac (F.rgetField @cw x) * F.rgetField @cd x) FL.sum
                         <*> FL.premap (F.rgetField @cw) FL.sum)
-      postStratified = FL.fold (postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @DemVPV @BR.PopCount) longDatFrame
-      widenPS office1 year1 office2 year2 =
-        let ps1 = fmap (FT.retypeColumn @DemVPV @'("X1",Double))
-                  $ F.filterFrame (\r -> F.rgetField @Office r == office1 && F.rgetField @BR.Year r == year1) postStratified
-            ps2 = fmap (FT.retypeColumn @DemVPV @'("X2",Double))
-                  $ F.filterFrame (\r -> F.rgetField @Office r == office2 && F.rgetField @BR.Year r == year2) postStratified
-        in fmap (F.rcast @[BR.StateAbbreviation, '("X1", Double), '("X2", Double)])
-           $ catMaybes
-           $ fmap F.recMaybe
-           $ (F.leftJoin @[BR.StateAbbreviation, BR.StateName]) ps1 ps2
-      presVhouse2016Frame = widenPS House 2016 President 2016   
-  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ presVhouse2016Frame)
+      postStratified = FL.fold (postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @DemPref @BR.PopCount) longDatFrame
+  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ postStratified)
   K.addHvega Nothing Nothing
     $ vlPostStratScatter
-    "Post Stratified VPV 2016 House vs 2016 President"
-    (FV.ViewConfig 800 800 10)
+    "States: VPV 2016 House vs 2016 President"
+    (FV.ViewConfig 400 400 10)
     ("House 2016","President 2016")
-    presVhouse2016Frame
+    (fmap F.rcast $ postStratified)
+  K.addHvega Nothing Nothing
+    $ vlPostStratScatter
+    "States: VPV 2016 House vs 2018 House"
+    (FV.ViewConfig 400 400 10)
+    ("House 2016","House 2018")
+    (fmap F.rcast $ postStratified)    
   let melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
       meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
       --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
@@ -581,14 +577,20 @@ vlPostStratScatter :: Foldable f
                    => T.Text
                    -> FV.ViewConfig
                    -> (T.Text, T.Text)
-                   -> f (F.Record [BR.StateAbbreviation, '("X1",Double), '("X2",Double)])
+                   -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, DemPref])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
-  let dat = FV.recordsToVLData id FV.defaultParse rows
-      encX = GV.position GV.X [FV.pName @'("X1",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
-      encY = GV.position GV.Y [FV.pName @'("X2",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
-      encX2 = GV.position GV.X [FV.pName @'("X2",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
-      encY2 = GV.position GV.Y [FV.pName @'("X1",Double), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+  let pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemPref]
+        (\keyLabel dataLabel -> dataLabel <> "-" <> keyLabel)
+        (\r -> (T.pack $ show $ F.rgetField @Office r) <> " " <> (T.pack $ show $ F.rgetField @BR.Year r))
+        (\r -> [("Dem Pref",GV.Number $ F.rgetField @DemPref r)])        
+      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation]
+            pivotFold rows
+      vpvCol x = "Dem Pref" <> "-" <> x
+      encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
+      encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
+      encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
+      encY2 = GV.position GV.Y [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encScatter = GV.encoding . encX . encY
       scatterSpec = GV.asSpec [encScatter [], GV.mark GV.Point [GV.MFilled True,GV.MTooltip GV.TTData]]
       lineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line []]
@@ -642,7 +644,7 @@ vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (e1, e2) rows = do
 
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
-
+--usDistrictsTopoJSONUrl = "
 
 vldVPVByState :: Foldable f
                  => T.Text
