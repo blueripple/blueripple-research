@@ -317,6 +317,11 @@ parsePres2012VoteParty _ = VP_Other
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> VotePartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> VotePartyT 
 
+data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor OfficeT = V.Vector
+instance S.Serialize OfficeT
+
+type Office = "Office" F.:-> OfficeT
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw

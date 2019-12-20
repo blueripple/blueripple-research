@@ -70,8 +70,9 @@ library
                      , blaze-colonnade
                      , colonnade
                      , data-default
-                     , declarative
+                     , declarative                     
                      , directory >= 1.3.3 && < 1.4
+                     , discrimination >= 0.3 && < 0.5
                      , gamma
                      , hashable
                      , hmatrix
@@ -157,7 +158,6 @@ executable mrp-model
                 , MRP.CCESFrame
                 , MRP.Common
                 , PreferenceModel.Common
-                , MRP.WWC
                 , MRP.Pools
                 , MRP.EdVoters
   build-depends: base >= 4.11

@@ -212,7 +212,6 @@ catKeyColHeader r =
       e = T.pack $ show $ F.rgetField @SimpleEducation r
   in a <> "-" <> e <> "-" <> g
 
-type Election = "Election" F.:-> T.Text
 type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
 
@@ -357,23 +356,24 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
   let vpv x = 2*x - 1
-      lhToRecsM election (LocationHolder _ lkM predMap) =
+      lhToRecsM year office (LocationHolder _ lkM predMap) =
         let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
                         FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
-                        FT.mutate (const $ FT.recordSingleton @Election election)                        
+                        FT.mutate (const $ FT.recordSingleton @Office office).
+                        FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
             g lk = fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
         in fmap g lkM
-      pblToFrameFM election = MR.concatFoldM $ MR.mapReduceFoldM
-          (MR.UnpackM $ lhToRecsM election)
+      pblToFrameFM year office = MR.concatFoldM $ MR.mapReduceFoldM
+          (MR.UnpackM $ lhToRecsM year office)
           (MR.generalizeAssign $ MR.Assign (\x -> ((),x)))
           (MR.generalizeReduce $ MR.ReduceFold (const FL.list))
-      pblToFrame (election, pbl) = FL.foldM (pblToFrameFM election) $ L.filter ((/= "National") . locName) pbl
+      pblToFrame (year, office, pbl) = FL.foldM (pblToFrameFM year office) $ L.filter ((/= "National") . locName) pbl
       
   longFrame <- K.knitMaybe "Failed to make long-frame"
                $ fmap (F.toFrame . concat)
-               $ traverse pblToFrame [("Pres2016",predsByLocation2016p)
-                                     ,("House2016",predsByLocation2016h)
-                                     ,("House2018",predsByLocation2018h)
+               $ traverse pblToFrame [(2016,President,predsByLocation2016p)
+                                     ,(2016,House,predsByLocation2016h)
+                                     ,(2018,House,predsByLocation2018h)
                                      ]
   demographicsFrame <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
@@ -384,10 +384,15 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
         (MR.Unpack $ pure @[] . FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE)))
         (FMR.assignKeysAndData @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge] @'[BR.PopCount])
         (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-  p2016Pop <- FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2016 demographicsFrame)
-  p2018Pop <- FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2018 demographicsFrame)
-  -- need to put pops on longFrame but YEARS. So.
-  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ p2016Pop)     
+  p2016Pop <- fmap (FT.mutate (const $ FT.recordSingleton @BR.Year 2016)) . FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2016 demographicsFrame)
+  p2018Pop <- fmap (FT.mutate (const $ FT.recordSingleton @BR.Year 2018)) . FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2018 demographicsFrame)
+  let popFrame  = p2016Pop <> p2018Pop
+      longDatFrame = catMaybes $ fmap F.recMaybe $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) (F.toFrame longFrameWithState) popFrame
+{-      let postStratifyF :: forall k cd cw rs . (F.ElemOf cd rs, F.ElemOf cw rs, k F.⊆ rs)
+                        => FL.Fold (F.Record rs) [F.Record (k V.++ [cd,cw])]
+          postStratifyF = MR.concatFold $ MR.mapReduceFold
+                          (MR.noUnpack-}
+  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ longDatFrame)  
   let melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
       meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
       --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
