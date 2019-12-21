@@ -216,6 +216,11 @@ catKeyColHeader r =
 
 type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
+--type DemVPV_VAP = "DemVPV_VAP" F.:-> Double
+--type DemVPV_Voted = "DemVPV_Voters" F.:-> Double
+
+data PostStratifiedByT = Voted | VAP 
+type PostStratifiedBy = "PostStratifiedBy" F.:-> PostStratifiedByT
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = Proxy GroupCols 
@@ -377,50 +382,68 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                                      ,(2016,House,predsByLocation2016h)
                                      ,(2018,House,predsByLocation2018h)
                                      ]
-  demographicsFrame <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
+  demographicsFrameRaw <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
+  turnoutFrameRaw <- F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
   -- Arrange demo/turnout data as we need
       BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
-      years = [2016,2018]
-      sumPopToStateF = MR.concatFold $ MR.mapReduceFold
-        (MR.Unpack $ pure @[] . FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE)))
-        (FMR.assignKeysAndData @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge] @'[BR.PopCount])
-        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-  p2016Pop <- fmap (FT.mutate (const $ FT.recordSingleton @BR.Year 2016)) . FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2016 demographicsFrame)
-  p2018Pop <- fmap (FT.mutate (const $ FT.recordSingleton @BR.Year 2018)) . FL.fold sumPopToStateF <$> (BR.knitX $ pDD 2018 demographicsFrame)
-  let popFrame  = p2016Pop <> p2018Pop
-      longDatFrame = catMaybes $ fmap F.recMaybe $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) (F.toFrame longFrameWithState) popFrame
-  let postStratifyF :: forall k cd cw rs . ( F.ElemOf rs cd
-                                           , F.ElemOf rs cw
-                                           , k F.⊆ rs
+      years = [2016,2018]      
+      expandCategories = FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE))
+      demographicsFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pDD y demographicsFrameRaw)
+      turnoutFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pTD y turnoutFrameRaw)
+  demographicsFrame <- mconcat <$> traverse demographicsFrameAdapt years    
+  turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years    
+  let withDemographicsFrame = catMaybes
+                               $ fmap F.recMaybe
+                               $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) demographicsFrame (F.toFrame longFrameWithState)
+      withTurnoutFrame = catMaybes
+                         $ fmap F.recMaybe
+                         $ (F.leftJoin @[Sex,SimpleEducation,SimpleAge,BR.Year]) (F.toFrame withDemographicsFrame) turnoutFrame
+      postStratifyCell :: forall t q.(V.KnownField t, V.Snd t ~ Double)
+              => PostStratifiedByT -> (q -> Double) -> (q -> Double) -> FL.Fold q (F.Record '[PostStratifiedBy,t])
+      postStratifyCell psb weight count = (\sdw sw -> FT.recordSingleton @PostStratifiedBy psb `V.rappend` FT.recordSingleton @t (sdw/sw))
+                                          <$>  FL.premap (\x -> weight x * count x) FL.sum
+                                          <*> FL.premap weight FL.sum
+      postStratifyF :: forall k cs ts rs . (k F.⊆ rs
+                                           , cs F.⊆ rs
                                            , Ord (F.Record k)
-                                           , FI.RecVec (k V.++ '[cd])
-                                           , V.KnownField cd
-                                           , V.Snd cd ~ Double
-                                           , V.KnownField cw
-                                           , Real (V.Snd cw)
-                                           , F.ElemOf '[cd,cw] cw)
-                    => FL.Fold (F.Record rs) (F.FrameRec (k V.++ '[cd]))
-      postStratifyF = MR.concatFold $ MR.mapReduceFold
-                      MR.noUnpack
-                      (FMR.assignKeysAndData @k @[cd,cw])
-                      (FMR.foldAndAddKey $ (\sdw sw -> FT.recordSingleton @cd (sdw/realToFrac sw))
-                        <$> FL.premap (\x -> realToFrac (F.rgetField @cw x) * F.rgetField @cd x) FL.sum
-                        <*> FL.premap (F.rgetField @cw) FL.sum)
-      postStratified = FL.fold (postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @DemPref @BR.PopCount) longDatFrame
-  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ postStratified)
+                                           , FI.RecVec (k V.++ ts)
+                                          )
+                    => FL.Fold (F.Record cs) [F.Record ('[PostStratifiedBy] V.++ ts)]
+                    -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ '[PostStratifiedBy] V.++ ts))
+      postStratifyF cellFold = MR.concatFold $ MR.mapReduceFold
+                               MR.noUnpack
+                               (FMR.assignKeysAndData @k @cs)
+                               (FMR.foldAndAddKey cellFold)
+      psCellVPVByBothF =  (<>)
+                          <$> postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV)
+                          <*> postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV)
+      psVPVByPopF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount] @'[DemVPV]
+        ((postStratifyCell @DemVPV)
+                    (realToFrac . F.rgetField @BR.PopCount)
+                    (realToFrac . F.rgetField @DemVPV))
+      psVPVByVotedF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV]
+        ((postStratifyCell @DemVPV)
+                      (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r)
+                      (realToFrac . F.rgetField @DemVPV))
+      psVPVByBothF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
+        
+      psVPVByVAP = FL.fold psVPVByPopF withTurnoutFrame
+      psVPVByVoted = FL.fold psVPVByVotedF withTurnoutFrame
+      psVPVByBoth = FL.fold psVPVByBothF withTurnoutFrame
+--  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ withTurnoutFrame)
   K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2016 President"
     (FV.ViewConfig 400 400 10)
     ("House 2016","President 2016")
-    (fmap F.rcast $ postStratified)
+    (fmap F.rcast $ psVPVByBoth)
   K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2018 House"
     (FV.ViewConfig 400 400 10)
     ("House 2016","House 2018")
-    (fmap F.rcast $ postStratified)    
+    (fmap F.rcast $ psVPVByBoth)    
   let melt f (LocationHolder n _ cdM) = fmap (\(ck, x) -> (n,unCatKey ck, f x)) $ M.toList cdM
       meltAndLabel f label = fmap (\(n,ck,vpv) -> (label, n, ck, vpv)) . melt f
       --(LocationHolder n _ cdM) = fmap (\(ck, x) -> (label,n,unCatKey ck, dvpv x)) $ M.toList cdM 
@@ -577,16 +600,16 @@ vlPostStratScatter :: Foldable f
                    => T.Text
                    -> FV.ViewConfig
                    -> (T.Text, T.Text)
-                   -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, DemPref])
+                   -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, PostStratifiedBy, DemVPV])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
-  let pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemPref]
+  let pivotFold = FV.simplePivotFold @[Office, BR.Year, PostStratifiedBy] @'[DemVPV]
         (\keyLabel dataLabel -> dataLabel <> "-" <> keyLabel)
         (\r -> (T.pack $ show $ F.rgetField @Office r) <> " " <> (T.pack $ show $ F.rgetField @BR.Year r))
-        (\r -> [("Dem Pref",GV.Number $ F.rgetField @DemPref r)])        
+        (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
       dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation]
             pivotFold rows
-      vpvCol x = "Dem Pref" <> "-" <> x
+      vpvCol x = "Dem VPV" <> "-" <> x
       encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
       encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
       encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
