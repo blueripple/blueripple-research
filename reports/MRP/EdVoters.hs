@@ -10,6 +10,7 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
+{-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -32,6 +33,7 @@ import           Data.Proxy (Proxy(..))
 
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as SE
+import qualified Data.Vector as V
 import qualified Data.Vector.Storable               as VS
 
 
@@ -219,8 +221,11 @@ type DemVPV     = "DemVPV"     F.:-> Double
 --type DemVPV_VAP = "DemVPV_VAP" F.:-> Double
 --type DemVPV_Voted = "DemVPV_Voters" F.:-> Double
 
-data PostStratifiedByT = Voted | VAP 
+data PostStratifiedByT = Voted | VAP deriving (Enum, Bounded, Eq , Ord, Show)
 type PostStratifiedBy = "PostStratifiedBy" F.:-> PostStratifiedByT
+type instance FI.VectorFor PostStratifiedByT = V.Vector
+instance FV.ToVLDataValue (F.ElField PostStratifiedBy) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = Proxy GroupCols 
@@ -232,7 +237,6 @@ post :: (K.KnitOne r
         , K.Members es1 r
         , K.Members es2 r)
      => F.Frame BR.States  -- state names from state abbreviations
---     -> K.CachedRunnable r [F.Record CCES_MRP]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Cached es1 [BR.ASEDemographics]
      -> K.Cached es2 [BR.TurnoutASE]
@@ -407,29 +411,20 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
       postStratifyF :: forall k cs ts rs . (k F.⊆ rs
                                            , cs F.⊆ rs
                                            , Ord (F.Record k)
-                                           , FI.RecVec (k V.++ ts)
+                                           , FI.RecVec (k V.++ (PostStratifiedBy ': ts))
+                                           
                                           )
-                    => FL.Fold (F.Record cs) [F.Record ('[PostStratifiedBy] V.++ ts)]
-                    -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ '[PostStratifiedBy] V.++ ts))
-      postStratifyF cellFold = MR.concatFold $ MR.mapReduceFold
+                    => FL.Fold (F.Record cs) [F.Record (PostStratifiedBy ': ts)]
+                    -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ (PostStratifiedBy ': ts)))
+      postStratifyF cellFold = fmap (F.toFrame . concat) $ MR.mapReduceFold
                                MR.noUnpack
                                (FMR.assignKeysAndData @k @cs)
-                               (FMR.foldAndAddKey cellFold)
+                               (MR.ReduceFold (\k -> fmap (fmap (k `V.rappend`)) cellFold))
       psCellVPVByBothF =  (<>)
-                          <$> postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV)
-                          <*> postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV)
-      psVPVByPopF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount] @'[DemVPV]
-        ((postStratifyCell @DemVPV)
-                    (realToFrac . F.rgetField @BR.PopCount)
-                    (realToFrac . F.rgetField @DemVPV))
-      psVPVByVotedF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV]
-        ((postStratifyCell @DemVPV)
-                      (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r)
-                      (realToFrac . F.rgetField @DemVPV))
+                          <$> fmap pure (postStratifyCell @DemVPV VAP (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
+                          <*> fmap pure (postStratifyCell @DemVPV Voted (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
       psVPVByBothF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
         
-      psVPVByVAP = FL.fold psVPVByPopF withTurnoutFrame
-      psVPVByVoted = FL.fold psVPVByVotedF withTurnoutFrame
       psVPVByBoth = FL.fold psVPVByBothF withTurnoutFrame
 --  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ withTurnoutFrame)
   K.addHvega Nothing Nothing
@@ -503,7 +498,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
   longPrefsForChart <- K.knitEither $ flip traverse (L.filter (\(_,sn,_,_) -> sn /= "National") longPrefs) $ \(el,sn,ck,vpv) -> do
     fullState <-  maybe (Left $ "Couldn't find " <> sn) Right $ M.lookup sn stateNameByAbbreviation
     return (el, fullState, ck, vpv)    
-  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "VPV: College Graduates" (FV.ViewConfig 400 200 10)  $ longPrefsForChart
+  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "VPV: College Graduates" (FV.ViewConfig 400 200 10)  $ fmap F.rcast $ withTurnoutFrame 
   let battlegroundStates =
         [ "AZ"
         , "FL"
@@ -603,18 +598,21 @@ vlPostStratScatter :: Foldable f
                    -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, PostStratifiedBy, DemVPV])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
-  let pivotFold = FV.simplePivotFold @[Office, BR.Year, PostStratifiedBy] @'[DemVPV]
+  let pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemVPV]
         (\keyLabel dataLabel -> dataLabel <> "-" <> keyLabel)
-        (\r -> (T.pack $ show $ F.rgetField @Office r) <> " " <> (T.pack $ show $ F.rgetField @BR.Year r))
+        (\r -> (T.pack $ show $ F.rgetField @Office r)
+               <> " "
+               <> (T.pack $ show $ F.rgetField @BR.Year r))
         (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
-      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation]
+      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,PostStratifiedBy]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
       encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
       encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
+      encColor = GV.color [FV.mName @PostStratifiedBy]
       encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encY2 = GV.position GV.Y [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
-      encScatter = GV.encoding . encX . encY
+      encScatter = GV.encoding . encX . encY . encColor
       scatterSpec = GV.asSpec [encScatter [], GV.mark GV.Point [GV.MFilled True,GV.MTooltip GV.TTData]]
       lineSpec1 = GV.asSpec [(GV.encoding . encX . encY2) [], GV.mark GV.Line []]
       lineSpec2 = GV.asSpec [(GV.encoding . encX2 . encY) [], GV.mark GV.Line []]
@@ -704,31 +702,32 @@ vldVPVByState title vc stateData =
 vlVPVChoropleth :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
-                -> f (T.Text, T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge),Double)
+                -> f (F.Record [BR.StateName, BR.StateFIPS, BR.Year, Office, Sex, SimpleAge, SimpleEducation, DemVPV])
                 -> GV.VegaLite
-vlVPVChoropleth title vc stateData =
+vlVPVChoropleth title vc rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-      datRow (el, n, (s,e,a), vpv) = 
+      datVal = FV.recordsToVLData id FV.defaultParse rows
+{-      datRow (el, n, (s,e,a), vpv) = 
         GV.dataRow [ ("State", GV.Str n)
                    , ("Election", GV.Str el)
                    , ("Sex", GV.Str $ T.pack $ show s)
                    , ("Education", GV.Str $ T.pack $ show e)
                    , ("Age", GV.Str $ T.pack $ show a)
                    , ("VPV", GV.Number vpv)
-                   ] []
-      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData
-      dataSets = GV.datasets [("stateDat",datVal)]
-      facet = GV.facet [GV.ColumnBy [GV.FName "Age", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Election", GV.FmType GV.Nominal]]
-      encFacetRow = GV.row [GV.FName "Election", GV.FmType GV.Nominal]
-      encFacetCol = GV.column [GV.FName "Age", GV.FmType GV.Nominal]
-      filter = GV.filter (GV.FExpr $ "datum.Education == 'Grad' && datum.Sex == 'Female'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
+                   ] [] 
+      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData -}
+--      dataSets = GV.datasets [("stateDat",datVal)]
+--      facet = GV.facet [GV.ColumnBy [FV.fName @SimpleAge, GV.FmType GV.Nominal], GV.RowBy [FV.fName @Office, GV.FmType GV.Nominal]]
+      encFacetRow = GV.row [FV.fName @Office, GV.FmType GV.Nominal]
+      encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
+      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad' && datum.Sex == 'Female'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
       projection = GV.projection [GV.PrType GV.AlbersUsa]
-      transform = GV.transform . GV.lookup "properties.name" datVal "State" ["State","VPV", "Election","Sex","Education","Age"]
-      transform2 = GV.transform . GV.lookupAs "State" datGeo "properties.name" "geo" . filter
+--      transform = GV.transform . GV.lookup "properties.name" datVal "StateName" ["StateName","DemVPV", "Election","Sex","SimpleEducation","SimpleAge"]
+      transform2 = GV.transform . GV.lookupAs "StateName" datGeo "properties.name" "geo" . filter
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [GV.MName "VPV", GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
-      tooltip = GV.tooltips [[GV.TName "State", GV.TmType GV.Nominal],[GV.TName "VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal],[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
       cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
 --  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark]

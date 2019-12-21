@@ -65,6 +65,9 @@ import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
+import qualified Frames.Visualization.VegaLite.Data
+                                               as FV
+import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
@@ -138,6 +141,9 @@ intToSex n = case n of
   _ -> undefined
 
 type Sex = "Sex" F.:-> BR.Sex
+instance FV.ToVLDataValue (F.ElField Sex) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data EducationT = E_NoHS
                 | E_HighSchool
@@ -157,6 +163,9 @@ intToSimpleEducation n = if n >= 4 then BR.Grad else BR.NonGrad
 
 type Education = "Education" F.:-> EducationT
 type SimpleEducation = "CollegeGrad" F.:-> BR.SimpleEducation
+instance FV.ToVLDataValue (F.ElField SimpleEducation) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
@@ -166,12 +175,16 @@ intToRaceT :: Int -> RaceT
 intToRaceT = toEnum . minus1
 
 type Race = "Race" F.:-> RaceT
+instance FV.ToVLDataValue (F.ElField Race) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 raceToSimpleRace :: RaceT -> BR.SimpleRace
 raceToSimpleRace White = BR.White
 raceToSimpleRace _ = BR.NonWhite
 
 type SimpleRace = "SimpleRace" F.:-> BR.SimpleRace
+instance FV.ToVLDataValue (F.ElField SimpleRace) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 
 data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord, Generic)
@@ -191,6 +204,8 @@ intToSimpleAge n = if n < 45 then BR.Young else BR.Old
 
 type Age = "Age" F.:-> AgeT
 type SimpleAge = "Under45" F.:-> BR.SimpleAge
+instance FV.ToVLDataValue (F.ElField SimpleAge) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 data RegistrationT = R_Active
                    | R_NoRecord
@@ -202,6 +217,7 @@ data RegistrationT = R_Active
 type instance FI.VectorFor RegistrationT = V.Vector
 instance S.Serialize RegistrationT
 
+
 parseRegistration :: T.Text -> RegistrationT
 parseRegistration "Active" = R_Active
 parseRegistration "No Record Of Registration" = R_NoRecord
@@ -212,6 +228,8 @@ parseRegistration "Multiple Appearances" = R_Multiple
 parseRegistration _ = R_Missing
 
 type Registration = "Registration" F.:-> RegistrationT
+instance FV.ToVLDataValue (F.ElField Registration) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 data RegPartyT = RP_NoRecord
                | RP_Unknown
@@ -248,6 +266,9 @@ parseTurnout "No Voter File" = T_NoFile
 parseTurnout _ = T_Missing
 
 type Turnout = "Turnout" F.:-> TurnoutT
+instance FV.ToVLDataValue (F.ElField Turnout) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data PartisanIdentity3 = PI3_Democrat
                        | PI3_Republican
@@ -262,6 +283,9 @@ parsePartisanIdentity3 :: Int -> PartisanIdentity3
 parsePartisanIdentity3 = toEnum . minus1 . min 6
 
 type PartisanId3 = "PartisanId3" F.:-> PartisanIdentity3
+instance FV.ToVLDataValue (F.ElField PartisanId3) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data PartisanIdentity7 = PI7_StrongDem
                        | PI7_WeakDem
@@ -279,6 +303,9 @@ parsePartisanIdentity7 :: Int -> PartisanIdentity7
 parsePartisanIdentity7 = toEnum . minus1 . min 9
 
 type PartisanId7 = "PartisanId7" F.:-> PartisanIdentity7
+instance FV.ToVLDataValue (F.ElField PartisanId7) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data PartisanIdentityLeaner = PIL_Democrat
                             | PIL_Republican
@@ -292,6 +319,9 @@ parsePartisanIdentityLeaner :: Int -> PartisanIdentityLeaner
 parsePartisanIdentityLeaner = toEnum . minus1 . min 5
 
 type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
+instance FV.ToVLDataValue (F.ElField PartisanIdLeaner) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor VotePartyT = V.Vector
@@ -321,7 +351,11 @@ data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Or
 type instance FI.VectorFor OfficeT = V.Vector
 instance S.Serialize OfficeT
 
+
 type Office = "Office" F.:-> OfficeT
+instance FV.ToVLDataValue (F.ElField MRP.CCES.Office) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
