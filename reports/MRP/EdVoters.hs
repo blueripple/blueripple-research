@@ -254,7 +254,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                             ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                             (F.rgetField @CCESWeightCumulative)                               
       inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
-              => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, WeightedSuccesses, MeanWeight, VarWeight]))
+              => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
               -> Int -- year
               -> F.FrameRec CCES_MRP
               -> K.Sem r (GLM.MixedModel CCESPredictor MRGroup
@@ -366,6 +366,9 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
+  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+  let countHouse2018Frame = FL.fold countDemHouseVotesF $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ ccesFrameAll
+  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ countHouse2018Frame)
   let vpv x = 2*x - 1
       lhToRecsM year office (LocationHolder _ lkM predMap) =
         let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
@@ -707,30 +710,17 @@ vlVPVChoropleth :: Foldable f
 vlVPVChoropleth title vc rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       datVal = FV.recordsToVLData id FV.defaultParse rows
-{-      datRow (el, n, (s,e,a), vpv) = 
-        GV.dataRow [ ("State", GV.Str n)
-                   , ("Election", GV.Str el)
-                   , ("Sex", GV.Str $ T.pack $ show s)
-                   , ("Education", GV.Str $ T.pack $ show e)
-                   , ("Age", GV.Str $ T.pack $ show a)
-                   , ("VPV", GV.Number vpv)
-                   ] [] 
-      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData -}
---      dataSets = GV.datasets [("stateDat",datVal)]
---      facet = GV.facet [GV.ColumnBy [FV.fName @SimpleAge, GV.FmType GV.Nominal], GV.RowBy [FV.fName @Office, GV.FmType GV.Nominal]]
       encFacetRow = GV.row [FV.fName @Office, GV.FmType GV.Nominal]
       encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
-      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad' && datum.Sex == 'Female'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
+      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad' && datum.Sex == 'Female'")
       projection = GV.projection [GV.PrType GV.AlbersUsa]
---      transform = GV.transform . GV.lookup "properties.name" datVal "StateName" ["StateName","DemVPV", "Election","Sex","SimpleEducation","SimpleAge"]
       transform2 = GV.transform . GV.lookupAs "StateName" datGeo "properties.name" "geo" . filter
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
       tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal],[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
       cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
---  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark]
   in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
 
 vlTest :: FV.ViewConfig -> GV.VegaLite

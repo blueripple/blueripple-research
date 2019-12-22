@@ -448,21 +448,23 @@ countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR
 type MeanWeight = "MeanWeight" F.:-> Double
 type VarWeight = "VarWeight" F.:-> Double
 type WeightedSuccesses = "WeightedSuccesses" F.:-> Double
+type UnweightedSuccesses =  "UnweightedSuccesses" F.:-> Int
 
-weightedBinomialFold :: (F.Record r -> Bool) -> (F.Record r -> Double) -> FL.Fold (F.Record r) (F.Record '[Count, WeightedSuccesses, MeanWeight, VarWeight])
+weightedBinomialFold :: (F.Record r -> Bool) -> (F.Record r -> Double) -> FL.Fold (F.Record r) (F.Record '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])
 weightedBinomialFold testRow weightRow =
-  let successesF = FL.premap (\r -> if testRow r then weightRow r else 0) FL.sum
+  let wSuccessesF = FL.premap (\r -> if testRow r then weightRow r else 0) FL.sum
+      successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
       meanWeightF = FL.premap weightRow FL.mean
       varWeightF    = FL.premap weightRow FL.variance
-  in  (\n s mw vw -> n F.&: (s/mw) F.&: mw F.&: vw F.&: V.RNil) <$> FL.length <*> successesF <*> meanWeightF <*> varWeightF
+  in  (\n s ws mw vw -> n F.&: s F.&: (ws/mw) F.&: mw F.&: vw F.&: V.RNil) <$> FL.length <*> successesF <*> wSuccessesF <*> meanWeightF <*> varWeightF
 
 weightedCountFold :: forall k r d.(Ord (F.Record k)
-                                  , FI.RecVec (k V.++ '[Count, WeightedSuccesses, MeanWeight, VarWeight])
+                                  , FI.RecVec (k V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])
                                   , k F.⊆ r
                                   , d F.⊆ r)
                   => (F.Record d -> Bool)
                   -> (F.Record d -> Double)
-                  -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count, WeightedSuccesses, MeanWeight, VarWeight])]
+                  -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])]
 weightedCountFold testData weightData =
   MR.mapReduceFold
   MR.noUnpack

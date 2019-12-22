@@ -139,7 +139,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                   ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                   (F.rgetField @CCESWeightCumulative)
       modelWWCV :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
-                => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, WeightedSuccesses, MeanWeight, VarWeight]))
+                => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
                 -> Int
                 -> F.FrameRec CCES_MRP
                 -> K.Sem r (GLM.MixedModel CCESPredictor CCESGroup
