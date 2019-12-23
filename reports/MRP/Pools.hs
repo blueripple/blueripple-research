@@ -326,7 +326,6 @@ unCatKey r =
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
 predMap r = M.fromList [(P_Sex, if F.rgetField @Sex r == BR.Female then 0 else 1)
---                       ,(P_Race, if F.rgetField @WhiteNonHispanic r == True then 1 else 0)
                        ,(P_Education, if F.rgetField @SimpleEducation r == BR.NonGrad then 0 else 1)
                        ,(P_Age, if F.rgetField @SimpleAge r == BR.Old then 0 else 1)
                        ]
@@ -348,44 +347,20 @@ type MRGroup = Proxy GroupCols
   
 post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
      => M.Map T.Text T.Text -- state names from state abbreviations
---     -> K.CachedRunnable r [F.Record CCES_MRP]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
   K.logLE K.Info $ "Working on Pools post..."
-{-  
-  let (BR.DemographicStructure processDemoData processTurnoutData _ _) = BR.simpleAgeSexEducation  
-      makeASEDemographics y aseDemoFrame = do
-        knitX $ processDemoData y aseDemoFrame
-      makeASETurnout y aseTurnoutFrame = do
-        knitX $ processTurnoutData y
--}
   let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
-{-      countDemHouseVotesF = MR.concatFold
-                            $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                            ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                            (F.rgetField @CCESWeightCumulative) -}
-                
       countDemPres2016VotesF = MR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
+                                (\r -> (F.rgetField @Turnout r == T_Voted)
+                                      && (F.rgetField @Year r == 2016)
+                                      && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
-      inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
-              => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
-              -> Int
-              -> F.FrameRec CCES_MRP
-              -> K.Sem r (GLM.MixedModel CCESPredictor MRGroup
-                         , GLM.RowClassifier MRGroup
-                         , GLM.EffectsByGroup MRGroup CCESPredictor
-                         , GLM.BetaU
-                         , VS.Vector Double
-                         , [(GLM.BetaU, VS.Vector Double)]) 
       inferMR cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("inferMR " <> (T.pack $ show y) <> ":") $ do
-        let recFilter r =
-              let party = F.rgetField @Pres2016VoteParty r
-              in (F.rgetField @Turnout r == T_Voted) && (F.rgetField @Year r == y) && ((party == VP_Republican) || (party == VP_Democratic))
-            ccesFrame = F.filterFrame recFilter ccesFrameAll
-            counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
+        let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrameAll)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
             designEffect mw vw = 1 + (vw / (mw * mw))
             vWeights  = VS.fromList $ fmap (\r ->

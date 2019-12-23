@@ -461,13 +461,14 @@ weightedBinomialFold testRow weightRow =
 weightedCountFold :: forall k r d.(Ord (F.Record k)
                                   , FI.RecVec (k V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])
                                   , k F.⊆ r
-                                  , d F.⊆ r)
-                  => (F.Record d -> Bool)
-                  -> (F.Record d -> Double)
+                                  , d F.⊆ r)                     
+                  => (F.Record r -> Bool) -- ^ count this row?
+                  -> (F.Record d -> Bool) -- ^ success ?
+                  -> (F.Record d -> Double) -- ^ weight
                   -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])]
-weightedCountFold testData weightData =
+weightedCountFold filterData testData weightData =
   MR.mapReduceFold
-  MR.noUnpack
+  (MR.filterUnpack filterData)
   (MR.assignKeysAndData @k)
   (MR.foldAndAddKey $ weightedBinomialFold testData weightData)
 

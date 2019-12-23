@@ -130,34 +130,30 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members e
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
-      countWWCDemHouseVotesF = MR.concatFold
-                               $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                               ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                               (F.rgetField @CCESWeightCumulative)
       countWWCDemPres2016VotesF = MR.concatFold
                                   $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
+                                  (\r -> (F.rgetField @Turnout r == T_Voted)
+                                         && (F.rgetField @Year r == 2016)
+                                         && isWWC r
+                                         && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
                                   ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                   (F.rgetField @CCESWeightCumulative)
-      modelWWCV :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
-                => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
-                -> Int
-                -> F.FrameRec CCES_MRP
-                -> K.Sem r (GLM.MixedModel CCESPredictor CCESGroup
-                           , GLM.RowClassifier CCESGroup
-                           , GLM.EffectsByGroup CCESGroup CCESPredictor
-                           , GLM.BetaU
-                           , VS.Vector Double
-                           , [(GLM.BetaU, VS.Vector Double)]) 
+      countWWCDemHouseVotesF y = MR.concatFold
+                                 $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
+                                 (\r -> (F.rgetField @Turnout r == T_Voted)
+                                        && (F.rgetField @Year r == y)
+                                        && isWWC r
+                                        && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
+                                 ((== VP_Democratic) . F.rgetField @HouseVoteParty)
+                                 (F.rgetField @CCESWeightCumulative)                      
       modelWWCV cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("modelWWCV " <> (T.pack $ show y) <> ":") $ do
-        let recFilter r = (F.rgetField @Turnout r == T_Voted) && (F.rgetField @Year r == y)            
-            ccesFrame = F.filterFrame recFilter ccesFrameAll
-            counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
+        let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrameAll)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
             designEffect mw vw = 1 + (vw / (mw * mw))
             vWeights  = VS.fromList $ fmap (\r ->
-                                               let mw = F.rgetField @MeanWeight r
-                                                   vw = F.rgetField @VarWeight r
-                                               in 1 / sqrt (designEffect mw vw) 
+                                              let mw = F.rgetField @MeanWeight r
+                                                  vw = F.rgetField @VarWeight r
+                                              in 1 / sqrt (designEffect mw vw) 
                                            ) counted -- VS.replicate (VS.length vCounts) 1.0
             fixedEffects = GLM.FixedEffects $ IS.fromList [GLM.Intercept, GLM.Predictor P_WWC]
             groups = IS.fromList [Proxy]
@@ -165,8 +161,8 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
               (lmePrepFrame getFractionWeighted fixedEffects groups ccesPredictor (recordToGroupKey @GroupCols)) counted
             regressionModelSpec = GLM.RegressionModelSpec fixedEffects fixedEffectsModelMatrix observations
         rowClassifier <- case rcM of
-          Left msg -> K.knitError msg
-          Right x -> return x
+            Left msg -> K.knitError msg
+            Right x -> return x
         let effectsByGroup = M.fromList [(Proxy, IS.fromList [GLM.Intercept, GLM.Predictor P_WWC])]
         fitSpecByGroup <- GLM.fitSpecByGroup fixedEffects effectsByGroup rowClassifier        
         let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6
@@ -245,7 +241,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
             GLM.FixedEffectStatistics fep _ = fes            
         predictionTable <- GLM.printPredictions mixedModel fep epg rowClassifier toPredict
         K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
---        return (mixedModel, fes, epg, rowClassifier, bootstraps)
+      --        return (mixedModel, fes, epg, rowClassifier, bootstraps)
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
 --  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
 --  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
@@ -253,8 +249,8 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
       makeWWCTableRows = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- modelWWCV countWWCDemPres2016VotesF 2016 ccesFrameAll
-        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- modelWWCV countWWCDemHouseVotesF 2016 ccesFrameAll
-        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- modelWWCV countWWCDemHouseVotesF 2018 ccesFrameAll
+        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- modelWWCV (countWWCDemHouseVotesF 2016) 2016 ccesFrameAll
+        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- modelWWCV (countWWCDemHouseVotesF 2018) 2018 ccesFrameAll
         let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
             toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton Proxy (s F.&: V.RNil))) $ S.toList states)
             wwc = M.singleton P_WWC 1
