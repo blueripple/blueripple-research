@@ -246,13 +246,13 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
       countDemPres2016VotesF = FMR.concatFold
-                               $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
+                               $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeight]
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
-                               (F.rgetField @CCESWeightCumulative)
+                               (F.rgetField @CCESWeight)
       countDemHouseVotesF = FMR.concatFold
-                            $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
+                            $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeight]
                             ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                            (F.rgetField @CCESWeightCumulative)                               
+                            (F.rgetField @CCESWeight)                               
       inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
               => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
               -> Int -- year
