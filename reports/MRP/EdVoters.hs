@@ -253,19 +253,20 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                             $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeight]
                             ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                             (F.rgetField @CCESWeight)                               
-      inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+{-      inferMR :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
               => FL.Fold (F.Record CCES_MRP) (F.FrameRec (ByCCESPredictors V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]))
               -> Int -- year
+              -> (F.Record CCES_MRP -> 
               -> F.FrameRec CCES_MRP
               -> K.Sem r (GLM.MixedModel CCESPredictor MRGroup
                          , GLM.RowClassifier MRGroup
                          , GLM.EffectsByGroup MRGroup CCESPredictor
                          , GLM.BetaU
                          , VS.Vector Double
-                         , [(GLM.BetaU, VS.Vector Double)]) 
-      inferMR cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("inferMR " <> (T.pack $ show y) <> ":") $ do
+                         , [(GLM.BetaU, VS.Vector Double)]) -}
+      inferMR cf y getParty ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("inferMR " <> (T.pack $ show y) <> ":") $ do
         let recFilter r =
-              let party = F.rgetField @Pres2016VoteParty r
+              let party = getParty r
               in (F.rgetField @Turnout r == T_Voted) && (F.rgetField @BR.Year r == y) && ((party == VP_Republican) || (party == VP_Democratic))
             ccesFrame = F.filterFrame recFilter ccesFrameAll
             counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrame)
@@ -342,9 +343,9 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let GLM.FixedEffectStatistics fep _ = fes            
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
-  let predictionsByLocation countFold y = do
+  let predictionsByLocation countFold y getParty = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countFold y ccesFrameAll
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countFold y getParty ccesFrameAll
         let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrameAll
             allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
             predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
@@ -359,10 +360,10 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
-  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" (predictionsByLocation countDemPres2016VotesF 2016)
+  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" (predictionsByLocation countDemPres2016VotesF 2016 (F.rgetField @Pres2016VoteParty))
 --  predsByLocation2014h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2014h" (predictionsByLocation countDemHouseVotesF 2014)
-  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2016h" (predictionsByLocation countDemHouseVotesF 2016)
-  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2018h" (predictionsByLocation countDemHouseVotesF 2018)
+  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2016h" (predictionsByLocation countDemHouseVotesF 2016 (F.rgetField @HouseVoteParty))
+  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2018h" (predictionsByLocation countDemHouseVotesF 2018 (F.rgetField @HouseVoteParty))
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
