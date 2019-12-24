@@ -105,16 +105,13 @@ import qualified PreferenceModel.Common as PrefModel
 
 brText1 :: T.Text
 brText1 = [i|
-In our last research [post][BR:Pools] we looked at college-educated-voter preference, expressed
-via [VPV][BR:Pools:VPV]: roughly speaking, a number which captures the value of boosting turnout
-among some group of voters. We focused on preference as expressed in the 2016 presidential
-election.  But voter preferences/VPV change! Can we guess anything about
-college-educated-voter VPV in 2020?
-We considered using the shift from the 2016 house elections to the 2018 house elections as a proxy
-for whatever shift is happening in presidential vote preference. But house elections are
-different from presidential elections.
-So we decided to compare college-educated voter VPV in the 2016 presidential election,
-the 2016 house elections, and the 2018 house elections.  
+In our [last research post][BR:Pools] we looked at college-educated-voter preference, measured
+by "Votes Per Voter" ([VPV][BR:Pools:VPV]). VPV is
+a number which captures the value of boosting turnout
+among some group of voters. In that post we looked exclusively at the 2016 presidential
+election.  Here we broaden our view, looking at the 2016 house races to shed some light
+on the "Trump effect" among voters and then the 2018 house races to consider how the
+electorate might be shifting since 2016.
 
 1. **Review: MRP and VPV**
 2. **2016: Presidential Race vs. House Races**
@@ -130,13 +127,13 @@ in 2016 and 2018.  We use a technique called Multi-level Regression (MR) to comb
 data (e.g., college-educated female voters over 45 in a particular state) with the data for
 the same group in all the states in a sensible way and estimate Democratic voter preference
 of each group in each state.  From these numbers we compute VPV, which makes the value of
-turnout among these voters a bit clearer than voter preference.
+turnout among these voters a bit clearer than voter preference.  In particular, a group which
+is equally vote for the Democrat or the Republican in an election has a VPV of 0.
 
-Once we have estimated VPV for each of these groups in each state, we sometimes want to combine
-them to see what that implies for the VPV of the state as a whole.  One way to do
-this is called "Post-stratification" which means we combine the group level estimates
-using the numbers of people in each group rather than using the survey weights. In the
-post-stratified charts
+When we want o combine group estimates into an estimate of VPV for a congressional
+district or state, we "Post-stratify" (the "P" in MRP) them, which means weighting them
+by the population (from the census, e.g.) of that group in that region.
+In the post-stratified charts
 below we post-stratify using both the Voting Age Populaiton (VAP) and the number of votes
 (VAP * turnout for each group).
 
@@ -154,13 +151,16 @@ to vote for Clinton in the presidential race has a dot which is further up. Dots
 diagonal line are groups which were more Dem leaning in the presidential voting than in their
 house voting and vice-versa for dots to the right.
 
-Some things are immediately clear:
+A few things are immediately clear:
 
-- There is a strong correlation between Dem VPV in house voting and presidential voting.  
-- Younger voters (orange and light blue in the chart) are more Dem leaning in both races.
+- A group with high odds of voting for a Democrat in a house race
+is also likely to have preferred Clinton. This is exactly what we would expect.
+- Voters under 45 (orange and light blue circles) are more likely to vote for Democrats than
+their older counterparts.
 - Among college graduates, most voters--and almost all voters under 45--were more Dem leaning
 in the presidential race than in their local house races.
-
+- Conversely, among non-college graduates, voters over 45 were more Republican leaning in their
+votes for president than for their local house candidates.
 
 
 [CCES]: <https://cces.gov.harvard.edu/>
@@ -179,6 +179,22 @@ in the presidential race than in their local house races.
 [NPR:CollegeWomen]: <https://www.npr.org/2018/09/24/650447848/the-womens-wave-backlash-to-trump-persists-reshaping-politics-in-2018>
 |]
 
+brText2 :: T.Text
+brText2 = [i|
+Another way to look at this data is to plot the difference of VPV in the presidential election
+and the house election for different groups and overlay that on a map. Looking at just college
+graduates, we create a ["choropleth map"][Wikipedia:choropleth] for each combination of
+sex and age in the previous chart.
+
+In each of these maps, bluer indicates more Democratic presidential voting than
+house voting and green the opposite.  Here we also see that college-educated
+women under 45 had the biggest gap between their presidential voting and house
+voting and that this effect was fairly unifo
+
+
+[Wikipedia:choropleth]: <https://en.wikipedia.org/wiki/Choropleth_map>
+|]
+  
 brEnd :: T.Text
 brEnd = [i|
 
@@ -235,8 +251,7 @@ catKeyColHeader r =
 
 type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
---type DemVPV_VAP = "DemVPV_VAP" F.:-> Double
---type DemVPV_Voted = "DemVPV_Voters" F.:-> Double
+type DistrictGeoId = "DistrictGeoId" F.:-> T.Text
 
 data PostStratifiedByT = Voted | VAP deriving (Enum, Bounded, Eq , Ord, Show)
 type PostStratifiedBy = "PostStratifiedBy" F.:-> PostStratifiedByT
@@ -374,7 +389,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2018h" (predictionsByLocation (countDemHouseVotesF 2018) 2018)
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
-  brAddMarkDown brText1
+
 {-  
   ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)  
   let recFilter r =
@@ -440,17 +455,32 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (postStratifyCell @DemVPV VAP (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
                           <*> fmap pure (postStratifyCell @DemVPV Voted (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
-      psVPVByBothF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
+      psVPVByStateF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
         
-      psVPVByBoth = FL.fold psVPVByBothF withTurnoutFrame
---  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ withTurnoutFrame)
+      psVPVByBoth = FL.fold psVPVByStateF withTurnoutFrame
+      psVPVByDistrictF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] @[DemVPV, BR.PopCount, BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF
+--      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
+      toDistrictGeoId r =
+        let sf = F.rgetField @BR.StateFIPS r
+            cd = F.rgetField @BR.CongressionalDistrict r
+            dgidInt = 100*sf + cd
+            dgidText = (if dgidInt < 1000 then "0" else "" ) <> (T.pack $ show dgidInt)
+        in FT.recordSingleton @DistrictGeoId dgidText
+      psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withTurnoutFrame
+      psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
+                                                            && (F.rgetField @Office r == President)
+                                                            && (F.rgetField @PostStratifiedBy r == Voted)
+                                                            && (F.rgetField @BR.StateAbbreviation r == "GA")) psVPVByDistrict
+  -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
 
---  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap printLP longPrefs)     
+  brAddMarkDown brText1
+  _ <- K.addHvega Nothing Nothing $ vlVPVByDistrict "Test" (FV.ViewConfig 800 800 10) (fmap F.rcast psVPVByDistrictPres2016ByVoted)
   _ <- K.addHvega Nothing Nothing $ vlStateScatterVsElection
        "VPV: 2016 House vs. President"
        (FV.ViewConfig 800 800 10)
        ("House 2016", "President 2016")
        (fmap F.rcast longFrame)
+  brAddMarkDown brText2
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
     "Change in VPV: President 2016 - House 2016"
     (FV.ViewConfig 400 400 10)
@@ -623,7 +653,7 @@ vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (race1, race2) rows =
 
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
---usDistrictsTopoJSONUrl = "
+usDistrictsTopoJSONUrl = "https://raw.githubusercontent.com/blueripple/data-sets/master/data/geo/cd116_2018.topojson"
 
 vldVPVByState :: Foldable f
                  => T.Text
@@ -640,17 +670,7 @@ vldVPVByState title vc (race1, race2) rows =
                   (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
       datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName,Sex,SimpleEducation,SimpleAge]
                pivotFold rows
-{-      datRow (n, (s,e,a), dvpv) = 
-        GV.dataRow [ ("State", GV.Str n)
-                   , ("Sex", GV.Str $ T.pack $ show s)
-                   , ("Education", GV.Str $ T.pack $ show e)
-                   , ("Age", GV.Str $ T.pack $ show a)
-                   , ("Change in VPV", GV.Number dvpv)
-                   ] []
-      datVal = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list stateData
--}
       dataSets = GV.datasets [("stateDat",datVal)]
---      facet = GV.facet [GV.ColumnBy [GV.FName "Age", GV.FmType GV.Nominal], GV.RowBy [GV.FName "Election", GV.FmType GV.Nominal]]
       encFacetRow = GV.row [FV.fName @Sex, GV.FmType GV.Nominal]
       encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
       filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
@@ -666,7 +686,6 @@ vldVPVByState title vc (race1, race2) rows =
                             ]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
       cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
---  in FV.configuredVegaLite vc [FV.title title, datGeo, transform [], enc [], projection, mark]
   in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
 
 
@@ -688,45 +707,22 @@ vlVPVChoropleth title vc rows =
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
       tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal],[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
-      cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
+--      cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
   in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
 
-vlTest :: FV.ViewConfig -> GV.VegaLite
-vlTest vc =
-  let
-    datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-    projection = GV.projection [GV.PrType GV.AlbersUsa]
-    mark = GV.mark GV.Geoshape [GV.MFill "lightgrey" ]
-  in FV.configuredVegaLite vc [datGeo, mark, projection]
-
-
--- each state is it's own plot and we facet those
-vlPrefGapByStateBoth :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
-vlPrefGapByStateBoth title vc sortedStates rows =
-  let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
-                                          , ("Age", GV.Str $ (T.pack $ show a))
-                                          , ("Sex",GV.Str $ (T.pack $ show s))
-                                          , ("Education", GV.Str $ T.pack $ show e)
-                                          , ("D VPV", GV.Number p)
-                                          , ("Ref0", GV.Number 0)
-                                          ] []
-      dat = GV.dataFromRows [] $ concat $ fmap datRow $ FL.fold FL.list rows
-      encY = GV.position GV.Y [GV.PName "Sex", GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""]]      
-      encX = GV.position GV.X [GV.PName "D VPV"
-                              , GV.PmType GV.Quantitative
-                              , GV.PAxis [GV.AxGrid False]
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [-0.5,0.5]]]
-      facetFlow = GV.facetFlow [GV.FName "Sex", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates] ]
-      filter = GV.transform . GV.filter (GV.FExpr $ "datum.Education == 'Grad'")
-      encDetail = GV.detail [GV.DName "Sex", GV.DmType GV.Nominal]
-      encDColor = GV.color [GV.MName "Age", GV.MmType GV.Nominal]
-      encLColor = GV.color [GV.MName "Sex", GV.MmType GV.Nominal]
-      encRuleX = GV.position GV.X [GV.PName "Ref0", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "D VPV"]]
-      dotPropS = [(GV.encoding . encX . encY . encDColor) [], GV.mark GV.Point [], filter []]
-      linePropS = [(GV.encoding . encX . encY . encDetail) [], GV.mark GV.Line [], filter []]
-      gridPropS = [(GV.encoding . encRuleX) [], GV.mark GV.Rule [GV.MOpacity 0.05]]
-      allPropS = [GV.layer [GV.asSpec dotPropS, GV.asSpec linePropS, GV.asSpec gridPropS]]
-  in
-    FV.configuredVegaLite vc [FV.title title ,GV.columns 3, GV.specification (GV.asSpec allPropS), facetFlow, dat]
-
+vlVPVByDistrict :: Foldable f
+                => T.Text
+                -> FV.ViewConfig
+                -> f (F.Record [DistrictGeoId, DemVPV])
+                -> GV.VegaLite
+vlVPVByDistrict title vc rows =
+  let datGeo = GV.dataFromUrl usDistrictsTopoJSONUrl [GV.TopojsonFeature "cd116"]
+      datVal = FV.recordsToVLData id FV.defaultParse rows
+      projection = GV.projection [GV.PrType GV.AlbersUsa]
+      lookup = GV.lookupAs "DistrictGeoId" datGeo "properties.GEOID" "geo"
+      mark = GV.mark GV.Geoshape []
+      shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
+      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]
+      enc = GV.encoding . shapeEnc . colorEnc
+  in FV.configuredVegaLite vc [FV.title title, datVal, (GV.transform . lookup) [], enc [], mark, projection]
 
