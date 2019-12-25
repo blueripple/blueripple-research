@@ -467,14 +467,14 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
             dgidText = (if dgidInt < 1000 then "0" else "" ) <> (T.pack $ show dgidInt)
         in FT.recordSingleton @DistrictGeoId dgidText
       psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withTurnoutFrame
-      psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                                                            && (F.rgetField @Office r == President)
+      psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
+                                                            && (F.rgetField @Office r == House)
                                                             && (F.rgetField @PostStratifiedBy r == Voted)
-                                                            && (F.rgetField @BR.StateAbbreviation r == "GA")) psVPVByDistrict
+                                                            && (F.rgetField @BR.StateAbbreviation r == "TX")) psVPVByDistrict
   -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
 
   brAddMarkDown brText1
-  _ <- K.addHvega Nothing Nothing $ vlVPVByDistrict "Test" (FV.ViewConfig 800 800 10) (fmap F.rcast psVPVByDistrictPres2016ByVoted)
+--  _ <- K.addHvega Nothing Nothing $ vlVPVByDistrict "Test" (FV.ViewConfig 800 800 10) (fmap F.rcast psVPVByDistrictPres2016ByVoted)
   _ <- K.addHvega Nothing Nothing $ vlStateScatterVsElection
        "VPV: 2016 House vs. President"
        (FV.ViewConfig 800 800 10)
