@@ -38,12 +38,12 @@ brMRPModelRootPath = brResearchRootPath <> "mrp-model/"
 brMRPModelLocalPath :: T.Text
 brMRPModelLocalPath = "posts/preference-model/"
 -}
-data Post = PostMethods | PostWWC | PostPools | PostEdVoters deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
+data Post = PostMethods | PostWWC | PostPools | PostDeltaVPV deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
 
 postRoute :: Post -> T.Text
 postRoute PostMethods  = brMRPModelRootPath <> "methods/"
 postRoute PostPools    = brMRPModelRootPath <> "p1/"
-postRoute PostEdVoters = brMRPModelRootPath <> "p2/"
+postRoute PostDeltaVPV = brMRPModelRootPath <> "p2/"
 postRoute PostWWC      = brMRPModelRootPath <> "np1/"
 
 postPath :: Post -> T.Text

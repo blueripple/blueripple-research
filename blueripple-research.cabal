@@ -159,7 +159,7 @@ executable mrp-model
                 , MRP.Common
                 , PreferenceModel.Common
                 , MRP.Pools
-                , MRP.EdVoters
+                , MRP.DeltaVPV
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs

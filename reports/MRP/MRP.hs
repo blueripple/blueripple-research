@@ -92,7 +92,7 @@ import           MRP.CCES
 import           MRP.Common
 import qualified MRP.WWC as WWC
 import qualified MRP.Pools as Pools
-import qualified MRP.EdVoters as EdVoters
+import qualified MRP.DeltaVPV as DeltaVPV
 
 
 yamlAuthor :: T.Text
@@ -123,7 +123,7 @@ data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostWWC] &= CA.name "wwc" &= CA.help "knit \"WWC\"",
                                         [PostPools] &= CA.name "pools" &= CA.help "knit \"Pools\"",
-                                        [PostEdVoters] &= CA.name "edVoters" &= CA.help "knit \"EdVoters\"",
+                                        [PostDeltaVPV] &= CA.name "dVPV" &= CA.help "knit \"Delta VPV\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
@@ -226,17 +226,17 @@ main = do
           )
         )
         $ Pools.post statesFromAbbreviations ccesListCA
-      let pubDateEdVoter = Time.fromGregorian 2019 12 9                
-      when (PostEdVoters `elem` (posts args)) $ K.newPandoc
+      let pubDateDeltaVPV = Time.fromGregorian 2020 1 2                
+      when (PostDeltaVPV `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
-         (postPath PostEdVoters)
-         (brAddDates (updated args) pubDateIntro curDate
-          $ M.fromList [("pagetitle", "Deep Dive on Recent Dem VPV")
-                        ,("title","Deep Dive on Recent Dem VPV")
+         (postPath PostDeltaVPV)
+         (brAddDates (updated args) pubDateDeltaVPV curDate
+          $ M.fromList [("pagetitle", "Deep Dive on Variations in Democratic VPV")
+                        ,("title","Deep Dive on Variations in Democratic VPV")
                         ]
           )
         )
-        $ EdVoters.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA
+        $ DeltaVPV.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA
                
   case eitherDocs of
     Right namedDocs ->

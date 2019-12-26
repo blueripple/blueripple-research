@@ -18,7 +18,7 @@
 
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.EdVoters (post) where
+module MRP.DeltaVPV (post) where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
