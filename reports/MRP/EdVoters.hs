@@ -106,61 +106,64 @@ import qualified PreferenceModel.Common as PrefModel
 brText1 :: T.Text
 brText1 = [i|
 In our [last research post][BR:Pools] we looked at college-educated-voter preference, measured
-by "Votes Per Voter" ([VPV][BR:Pools:VPV]). VPV is
-a number which captures the value of boosting turnout
+by "Votes Per Voter" ([VPV][BR:Pools:VPV]). VPV captures the value of boosting turnout
 among some group of voters. In that post we looked exclusively at the 2016 presidential
 election.  Here we broaden our view, looking at the 2016 house races to shed some light
-on the "Trump effect" among voters and then the 2018 house races to consider how the
+on the "Trump effect" among voters and then the 2018 House races to consider how the
 electorate might be shifting since 2016.
+
+In the last post we were struck by how different
+some of the numbers were in different states.  We're going to hone in on that here as well:
+looking at our data on [choropleth-maps][Wikipedia:choropleth]
+so we can see the geographic variation more clearly.
 
 1. **Review: MRP and VPV**
 2. **2016: Presidential Race vs. House Races**
 3. **2018 House Races vs. 2016 House Races**
-4. **List 4**
-5. **List 5**
+4. **What Does It All Mean?**
+5. **Take Action**
 
 
 ##MRP and VPV
 To recap:  we have data from the [CCES][CCES] survey which gives us information about
 individual voters: their location and reported votes for president in 2016 and the house
 in 2016 and 2018.  We use a technique called Multi-level Regression (MR) to combine the local
-data (e.g., college-educated female voters over 45 in a particular state) with the data for
-the same group in all the states in a sensible way and estimate Democratic voter preference
+data (e.g., college-educated female voters over 45 in a particular state) in a sensible way
+with the data for the same group in all the states, and estimate Democratic voter preference
 of each group in each state.  From these numbers we compute VPV, which makes the value of
 turnout among these voters a bit clearer than voter preference.  In particular, a group which
-is equally vote for the Democrat or the Republican in an election has a VPV of 0.
+is equally likely to vote for the Democrat or the Republican in an election has a VPV of 0.
 
-When we want o combine group estimates into an estimate of VPV for a congressional
-district or state, we "Post-stratify" (the "P" in MRP) them, which means weighting them
-by the population (from the census, e.g.) of that group in that region.
-In the post-stratified charts
-below we post-stratify using both the Voting Age Populaiton (VAP) and the number of votes
-(VAP * turnout for each group).
+To combine group estimates into an estimate of VPV for a state,
+we "Post-stratify" (the "P" in MRP) them, which means weighting them
+by the number of people in each group.  For all the charts below, we will
+be post-stratifying by estimated numbers of voters, obtained from
+census estimates of voting age population in each group and voter turnout in each group.
+NB: the population estimates are state-and-group-specific but the turnout numbers
+are group-specific but not geographically specific.  So turnout variation among the
+states is not included in this analysis.
 
 ##2016: Presidential Race vs. House Races
-Though Trump won in 2016, it turns out he was almost uniformly less popular
-among college-educated voters than whatever Republican house candidate was running.
-In other words, in many states, college-educated voters were more likely to vote for Clinton
-for president than for the Dem in their local house race.
-Below we plot the Democratic VPV of the 2016 house
-vote vs. the 2016 presidential vote for each state. Each dot is a particular group
-(divided by Sex and Age) in a particular state.  There are separate charts for voters
-who graduated from college and voters who did not. A group which was more likely to vote
-for the Dem in a house race has a dot further to the right and a group which was more likely
-to vote for Clinton in the presidential race has a dot which is further up. Dots to the left of the
-diagonal line are groups which were more Dem leaning in the presidential voting than in their
-house voting and vice-versa for dots to the right.
+Was Clinton more or less popular than other Democratic candidates running for office in 2016?
+That turns out to depend on which voters you look at and where they live.
+In the charts below we look
+at the *change* in Democratic VPV from 2016 presidential voting to 2016 House voting, a measure
+of the difference in popularity of Clinton and local House candidates. We
+estimate VPV for presidential and House votes separately, keeping the same groups as in
+our last post: Non-College-Grad/College-Grad, Female/Male, and Over 45/Under 45. In each chart,
+a blue color indicates a place where Clinton was *more* popular than the Democrats running
+for the local House seats and a red color indicates the opposite.
 
-A few things are immediately clear:
+It's important to remember that these charts are showing *change* in VPV.  Red doesn't
+mean that the state voted Republican for President or House in 2016, just that it was
+more Republican in its presidential voting than house voting.
 
-- A group with high odds of voting for a Democrat in a house race
-is also likely to have preferred Clinton. This is exactly what we would expect.
-- Voters under 45 (orange and light blue circles) are more likely to vote for Democrats than
-their older counterparts.
-- Among college graduates, most voters--and almost all voters under 45--were more Dem leaning
-in the presidential race than in their local house races.
-- Conversely, among non-college graduates, voters over 45 were more Republican leaning in their
-votes for president than for their local house candidates.
+We plot all eight groups below, first college graduates and then non-graduates.
+Among college-educated young women, and to a lesser extent, college-educated young men,
+Clinton was clearly more popular than the local Democrat. Older college-educated voters
+are a mix, though with wide variation among states.
+Among older non-college-educated voters, though, Clinton is *less* popular than the
+local Democrat, and younger non-college-educated voters are a widely varying mix.
 
 
 [CCES]: <https://cces.gov.harvard.edu/>
@@ -177,28 +180,90 @@ votes for president than for their local house candidates.
 [Bitecofer:2018House]: <https://cnu.edu/wasoncenter/2018/09/26-signs-democrats-win-big/>
 [Bitecofer:2020Pres]: <https://cnu.edu/wasoncenter/2019/07/01-2020-election-forecast/>
 [NPR:CollegeWomen]: <https://www.npr.org/2018/09/24/650447848/the-womens-wave-backlash-to-trump-persists-reshaping-politics-in-2018>
+[Wikipedia:choropleth]: <https://en.wikipedia.org/wiki/Choropleth_map>
 |]
 
 brText2 :: T.Text
 brText2 = [i|
-Another way to look at this data is to plot the difference of VPV in the presidential election
-and the house election for different groups and overlay that on a map. Looking at just college
-graduates, we create a ["choropleth map"][Wikipedia:choropleth] for each combination of
-sex and age in the previous chart.
+Putting these all together, via post-stratification in each state,
+gives the map below. Of particular note:
 
-In each of these maps, bluer indicates more Democratic presidential voting than
-house voting and green the opposite.  Here we also see that college-educated
-women under 45 had the biggest gap between their presidential voting and house
-voting and that this effect was fairly unifo
+- Clinton underperformed local candidates significantly in the battleground state
+of WI, but outperformed significantly in PA and a smaller amount in MI, OH and FL.
+- Clinton's biggest underperformances were in heavily Democratic VT and MA.
+Her biggest outperformance was in heavily Republican AK.  
+- Clinton outperformed local candidates in TX and GA.
+This is interesting since Clinton *outperforming* the local Democrat looks the same
+(in this data) as Trump *underperforming* the local Republican.
+Trump underperformance in ever-less-Republican
+TX---where there has been a wave of [Republican retirements][TX:RR]---and
+GA---where Stacey Abrams [barely lost][GA:SA] the Governor's race in 2018---would
+be very interesting in 2020.
 
-
-[Wikipedia:choropleth]: <https://en.wikipedia.org/wiki/Choropleth_map>
+[TX:RR]: <https://www.theatlantic.com/politics/archive/2019/09/house-republicans-texas-are-retiring-2020/597406/>
+[GA:SA]: <https://www.nytimes.com/2018/11/16/us/elections/georgia-governor-race-kemp-abrams.html>
 |]
-  
+
+brText3 :: T.Text
+brText3 = [i|
+Now that we've looked at Presidential vs. House voting in 2016, let's look at the
+2018 Blue Wave in the House and compare that to House voting in 2016. We do the
+same breakdown as before. Young college-educated voters were noticeably
+more Democratic in their voting in 2018, as were older college-educated women.
+Among non-college-educted voters, things are mixed but with great variation among
+the states.  It's interesting and encouraging that young non-college-educated women
+shifted strongly Democratic in their house voting between 2016 and 2018.
+|]
+
+brText4 :: T.Text
+brText4 = [i|
+Again, we combine all these views via post-stratification, and we get a picture of the
+House voting shift from 2016 to 2018. Except for WI, which was similar in 2018 and 2016,
+all the mid-west battleground states, as well as FL, TX, NM, CO and AZ shifted
+toward the Dems in their House voting. So did KY, an encouraging thing when we consider
+unseating Mitch McConnell in the 2020 Senate race.
+|]  
+
 brEnd :: T.Text
 brEnd = [i|
+## What Does It All Mean?
+As with our last post, we think its important to consider various ways of looking
+at voters.  Demographic breakdowns are useful but they can also lead to oversimplified
+narratives and looking at geographic variation is a useful corrective.  There are
+also other demographic breakdowns (race, income, marital status, e.g.,) to consider
+as well as other geographic splits (urban/suburban/rural, e.g.,) and each of those
+complicates this picture.
+
+At Blue Ripple Politics we are keenly interested in where this data leads in terms
+of what you can do with your time or money to help elect progressives, take back the
+White House and Senate and hold the House.  As far as national strategy goes, we think
+the data we examined in this post leads us to focus turnout work on young female voters
+and registration work similarly.
+
+We don't mean to imply that this is the most important focus for turnout work.
+Voters-of-color, particularly black women, are hugely Democratic leaning
+and any work to support registration, turnout and to eliminate voter-suppression
+for those voters is crucial as well. 
 
 ## Take Action
+Here are some organizations that work specifically to encourage registration and
+turnout among young female voters.
+
+- The [League of Women Voters][LOWV] works on registration and turnout among female voters
+in general.  But they are keenly aware of how important the youth vote is and how much work
+remains to be done.
+- [Higher Heights for America][HHFA] works to support black women running for office
+*and* works on voter registration
+and turnout among black women.  Though we haven't addressed race in this post, women-of-color
+are much more Dem leaning in their voting than any other large demographic group.
+- [Get Her Elected][GHE] connects people willing to volunteer services to progressive female
+candidates with candidates in need of those services.  Progressive female
+candidates running for office and in office
+are likely to drive turnout and registration among young women. 
+
+[LOWV]: < https://www.lwv.org/blog/league-volunteers-track-register-voters-200-schools-spring>
+[HHFA]: <https://www.higherheightsforamerica.org/>
+[GHE]: <https://www.getherelected.com/>
 |]
   
 
@@ -470,23 +535,38 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
       psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
                                                             && (F.rgetField @Office r == House)
                                                             && (F.rgetField @PostStratifiedBy r == Voted)
-                                                            && (F.rgetField @BR.StateAbbreviation r == "TX")) psVPVByDistrict
+                                                            {-&& (F.rgetField @BR.StateAbbreviation r == "TX")-}) psVPVByDistrict
   -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
 
   brAddMarkDown brText1
 --  _ <- K.addHvega Nothing Nothing $ vlVPVByDistrict "Test" (FV.ViewConfig 800 800 10) (fmap F.rcast psVPVByDistrictPres2016ByVoted)
-  _ <- K.addHvega Nothing Nothing $ vlStateScatterVsElection
+{-  _ <- K.addHvega Nothing Nothing $ vlStateScatterVsElection
        "VPV: 2016 House vs. President"
        (FV.ViewConfig 800 800 10)
        ("House 2016", "President 2016")
        (fmap F.rcast longFrame)
-  brAddMarkDown brText2
+-}
+
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
-    "Change in VPV: President 2016 - House 2016"
-    (FV.ViewConfig 400 400 10)
+    "Change in College-Graduate VPV: President 2016 - House 2016"
+    (FV.ViewConfig 300 300 10)
     ("President2016","House2016")
+    BR.Grad
     (fmap F.rcast longFrameWithState) --presMinusHouse2016
-  K.addHvega Nothing Nothing
+  _ <- K.addHvega Nothing Nothing $ vldVPVByState
+    "Change in Non-College-Graduate VPV: President 2016 - House 2016"
+    (FV.ViewConfig 300 300 10)
+    ("President2016","House2016")
+    BR.NonGrad
+    (fmap F.rcast longFrameWithState) --presMinusHouse2016
+  brAddMarkDown brText2
+  _ <- K.addHvega Nothing Nothing $ vldVPVByStatePS
+    "Post-Stratified Dem VPV: President 2016 - House 2016"
+    (FV.ViewConfig 800 800 10)
+    ("President2016","House2016")
+    (fmap F.rcast $ F.filterFrame ((== Voted) . F.rgetField @PostStratifiedBy) psVPVByBoth)
+  brAddMarkDown brText3
+{-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2016 President"
     (FV.ViewConfig 800 800 10)
@@ -496,19 +576,34 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                          "Dem VPV: 2016 House vs 2018 House"
                           (FV.ViewConfig 800 800 10)
                           ("House 2016", "House 2018")
-                          (fmap F.rcast longFrame) 
+                          (fmap F.rcast longFrame)
+-}
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
-    "Change in VPV: House 2018 - House 2016"
-    (FV.ViewConfig 400 400 10)
+    "Change in College-Grad VPV: House 2018 - House 2016"
+    (FV.ViewConfig 300 300 10)
     ("House2018","House2016")
+    BR.Grad
     (fmap F.rcast longFrameWithState) -- house2018MinusHouse2016
-  K.addHvega Nothing Nothing
+  _ <- K.addHvega Nothing Nothing $ vldVPVByState
+    "Change in Non-College-Grad VPV: House 2018 - House 2016"
+    (FV.ViewConfig 300 300 10)
+    ("House2018","House2016")
+    BR.NonGrad
+    (fmap F.rcast longFrameWithState) -- house2018MinusHouse2016
+  brAddMarkDown brText4
+  _ <- K.addHvega Nothing Nothing $ vldVPVByStatePS
+    "Post-Stratified Dem VPV: House 2018 - House 2016"
+    (FV.ViewConfig 800 800 10)
+    ("House2018","House2016")
+    (fmap F.rcast $ F.filterFrame ((== Voted) . F.rgetField @PostStratifiedBy) psVPVByBoth)
+{-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2018 House"
     (FV.ViewConfig 800 800 10)
     ("House 2016","House 2018")
-    (fmap F.rcast $ psVPVByBoth)    
-  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "VPV: College Graduates" (FV.ViewConfig 400 200 10)  $ fmap F.rcast $ withTurnoutFrame 
+    (fmap F.rcast $ psVPVByBoth)
+-}
+--  _ <- K.addHvega Nothing Nothing $ vlVPVChoropleth "VPV: College Graduates" (FV.ViewConfig 400 200 10)  $ fmap F.rcast $ withTurnoutFrame 
   let battlegroundStates =
         [ "AZ"
         , "FL"
@@ -655,13 +750,16 @@ usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
 usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
 usDistrictsTopoJSONUrl = "https://raw.githubusercontent.com/blueripple/data-sets/master/data/geo/cd116_2018.topojson"
 
+choroColorScale = GV.MScale [GV.SScheme "redblue" [], GV.SDomain (GV.DNumbers [-0.7,0.7])]
+
 vldVPVByState :: Foldable f
                  => T.Text
                  -> FV.ViewConfig
                  -> (T.Text, T.Text)
+                 -> BR.SimpleEducation
                  -> f (F.Record [BR.StateName, Office, BR.Year, Sex, SimpleEducation, SimpleAge, DemVPV])
                  -> GV.VegaLite
-vldVPVByState title vc (race1, race2) rows =
+vldVPVByState title vc (race1, race2) edFilter rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemVPV]
                   (\keyLabel dataLabel -> keyLabel)
@@ -673,13 +771,16 @@ vldVPVByState title vc (race1, race2) rows =
       dataSets = GV.datasets [("stateDat",datVal)]
       encFacetRow = GV.row [FV.fName @Sex, GV.FmType GV.Nominal]
       encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
-      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
+      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == '" <> (T.pack $ show edFilter) <> "'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
       vpvCol x = x
       calcDiff = GV.calculateAs ("datum." <> vpvCol race1 <> "-" <> "datum." <> vpvCol race2) "Change in VPV"
       projection = GV.projection [GV.PrType GV.AlbersUsa]
       transform2 = GV.transform . GV.lookupAs (FV.colName @BR.StateName) datGeo "properties.name" "geo" . calcDiff . filter
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [GV.MName "Change in VPV", GV.MmType GV.Quantitative]--, GV.MScale [GV.SScheme "redyellowgreen" [], GV.SDomain (GV.DNumbers [-0.5,0.5])]]
+      colorEnc = GV.color [GV.MName "Change in VPV"
+                          , GV.MmType GV.Quantitative
+                          , choroColorScale
+                          ]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
       tooltip = GV.tooltips [[GV.TName (FV.colName @BR.StateName), GV.TmType GV.Nominal]
                             ,[GV.TName "Change in VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]
@@ -703,12 +804,47 @@ vlVPVChoropleth title vc rows =
       projection = GV.projection [GV.PrType GV.AlbersUsa]
       transform2 = GV.transform . GV.lookupAs "StateName" datGeo "properties.name" "geo" . filter
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]
+      colorEnc = GV.color [FV.mName @DemVPV
+                          , GV.MmType GV.Quantitative
+                          , choroColorScale
+                          ]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
-      tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal],[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+      tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal]
+                            ,[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
---      cSpec = GV.asSpec [datVal, transform2 [], enc [], mark, projection]
   in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
+
+vldVPVByStatePS :: Foldable f
+                => T.Text
+                -> FV.ViewConfig
+                -> (T.Text, T.Text)
+                -> f (F.Record [BR.StateName, BR.Year, Office, DemVPV])
+                -> GV.VegaLite
+vldVPVByStatePS title vc (race1, race2) rows =
+  let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+      pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemVPV]
+                  (\keyLabel dataLabel -> keyLabel)
+                  (\r -> (T.pack $ show $ F.rgetField @Office r)
+                         <> (T.pack $ show $ F.rgetField @BR.Year r))
+                  (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
+      datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName]
+               pivotFold rows
+      projection = GV.projection [GV.PrType GV.AlbersUsa]
+      lookup = GV.lookupAs "StateName" datGeo "properties.name" "geo"
+      calculate = GV.calculateAs ("datum." <> race1 <> " - " <> "datum." <> race2) "Change in VPV"
+      mark = GV.mark GV.Geoshape []
+      shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
+      colorEnc = GV.color [GV.MName "Change in VPV"
+                          , GV.MmType GV.Quantitative
+                          , choroColorScale
+                          ]
+      tooltipEnc = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal]
+                               ,[GV.TName "Change in VPV", GV.TmType GV.Quantitative, GV.TFormat ".0%"]
+                               ]
+      enc = GV.encoding . shapeEnc . colorEnc . tooltipEnc
+  in FV.configuredVegaLite vc [FV.title title, datVal, (GV.transform . calculate . lookup) [], enc [], mark, projection]
+
+
 
 vlVPVByDistrict :: Foldable f
                 => T.Text
@@ -722,7 +858,7 @@ vlVPVByDistrict title vc rows =
       lookup = GV.lookupAs "DistrictGeoId" datGeo "properties.GEOID" "geo"
       mark = GV.mark GV.Geoshape []
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
-      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative]
+      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative, choroColorScale]
       enc = GV.encoding . shapeEnc . colorEnc
   in FV.configuredVegaLite vc [FV.title title, datVal, (GV.transform . lookup) [], enc [], mark, projection]
 
