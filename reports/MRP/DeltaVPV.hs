@@ -108,14 +108,15 @@ brText1 = [i|
 In our [last research post][BR:Pools] we looked at college-educated-voter preference, measured
 by "Votes Per Voter" ([VPV][BR:Pools:VPV]). VPV captures the value of boosting turnout
 among some group of voters. In that post we looked exclusively at the 2016 presidential
-election.  Here we broaden our view, looking at the 2016 house races to shed some light
-on the "Trump effect" among voters and then the 2018 House races to consider how the
-electorate might be shifting since 2016.
+election.  Here we broaden our view, looking first at differences between the
+2016 Presidential and 2016 House races,  and then between the 2016 and 2018 House races. In both
+cases, we're interested in understanding which voters might be most promising when
+considering targeted registration or GOTV campaigns.
 
 In the last post we were struck by how different
 some of the numbers were in different states.  We're going to hone in on that here as well:
 looking at our data on [choropleth-maps][Wikipedia:choropleth]
-so we can see the geographic variation more clearly.
+so we can see the geographic variation clearly.
 
 1. **Review: MRP and VPV**
 2. **2016: Presidential Race vs. House Races**
