@@ -21,9 +21,9 @@
 <!-- MathJax -->
 <script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
 <!-- Vega and Vega Embed -->
-<script src="https://cdn.jsdelivr.net/npm/vega@4.4.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-lite@3.0.0-rc11"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-embed@3.28.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@4"></script>
 
 <!-- Extra styles -->
 <style>
@@ -250,7 +250,8 @@
 <p>The turnout numbers from the census are national averages and aren’t correct in any particular district. Since we don’t have more detailed turnout data, there’s not much we can do. But we do know the total number of votes observed in each district, and we should at least adjust the turnout numbers so that the total number of votes predicted by the turnout numbers and populations is close to the observed number of votes. For more on this adjustment, see below.</p>
 <p>How likely is a voter in each group to vote for the democratic candidate in a contested race?</p>
 <p>For each district, <span class="math inline">\(d\)</span>, we have the set of expected voters (the number of people in each group, <span class="math inline">\(i\)</span> in that region, <span class="math inline">\(N^{(d)}_i\)</span>, multiplied by the turnout, <span class="math inline">\(t_i\)</span> for that group), <span class="math inline">\(V^{(d)}_i\)</span>, the number of democratic votes, <span class="math inline">\(D^{(d)}\)</span>, republican votes, <span class="math inline">\(R^{(d)}\)</span> and total votes, <span class="math inline">\(T^{(d)}\)</span>, which may exceed <span class="math inline">\(D^{(d)} + R^{(d)}\)</span>, since there may be third party candidates. For the sake of simplicity, we assume that all groups are equally likely to vote for a third party candidate. We want to estimate <span class="math inline">\(p_i\)</span>, the probability that a voter (in any district) in the <span class="math inline">\(i\)</span>th group–given that they voted for a republican or democrat–will vote for the democratic candidate.</p>
-<p>the turnout numbers from the census, , multiplied by the poopulations of each group will <em>not</em> add up to the number of votes observed, since turnout varies district to district. We adjust these turnout numbers via a technique<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> from <a href="http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf">Ghitza and Gelman, 2013</a>.</p>
+<p><span id="turnout"></span></p>
+<p>The national turnout numbers from the census, multiplied by the populations of each group in the district will <em>not</em> add up to the number of votes observed, since actual turnout varies district to district. We adjust these turnout numbers via a technique<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> from <a href="http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf">Ghitza and Gelman, 2013</a>.</p>
 <ul>
 <li><p><a href="%3Chttps://en.wikipedia.org/wiki/Bayes%27_theorem">Bayes theorem</a> relates the probability of a model (our demographic voting probabilities <span class="math inline">\(\{p_i\}\)</span>), given the observed data (the number of democratic votes recorded in each district, <span class="math inline">\(\{D^{(d)}\}\)</span>) to the likelihood of observing that data given the model and some prior knowledge about the unconditional probability of the model itself <span class="math inline">\(P(\{p_i\})\)</span>, as well as <span class="math inline">\(P(\{D^{(d)}\})\)</span>, the unconditional probability of observing the “evidence”: <span class="math inline">\(\begin{equation} P(\{p_i\}|\{D^{(d)})P(\{D^{(d)}\}) = P(\{D^{(d)}\}|\{p_i\})P(\{p_i\}) \end{equation}\)</span> In this situation, the thing we wish to compute, <span class="math inline">\(P(\{p_i\}|\{D^{(d)}\})\)</span>, is referred to as the “posterior” distribution.</p></li>
 <li><p><span class="math inline">\(P(\{p_i\})\)</span> is called a “prior” and amounts to an assertion about what we think we know about the parameters before we have seen any of the data. In practice, this can often be set to something very boring, in our case, we will assume that our prior is just that any <span class="math inline">\(p_i \in [0,1]\)</span> is equally likely.</p></li>

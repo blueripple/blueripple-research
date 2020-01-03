@@ -97,9 +97,12 @@ We want to estimate $p_i$, the probability that
 a voter (in any district) in the $i$th group--given that they voted
 for a republican or democrat--will vote for the democratic candidate.                     
 
-the turnout numbers from the census, , multiplied by the
-poopulations of each group will *not* add up to the number of votes observed,
-since turnout varies district to district.
+<span id="turnout"></span>
+
+The national turnout numbers from the census, multiplied by the
+populations of each group in the district will *not* add up
+to the number of votes observed,
+since actual turnout varies district to district.
 We adjust these turnout numbers via a technique[^GGCorrection] from
 [Ghitza and Gelman, 2013](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf).
 

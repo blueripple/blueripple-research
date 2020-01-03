@@ -234,7 +234,7 @@ main = do
           )
         )
         $ Pools.post statesFromAbbreviations ccesListCA
-      let pubDateDeltaVPV = Time.fromGregorian 2020 1 2                
+      let pubDateDeltaVPV = Time.fromGregorian 2020 1 3                
       when (PostDeltaVPV `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostDeltaVPV)

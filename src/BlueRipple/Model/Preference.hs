@@ -193,7 +193,7 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
           )
         totalCounts = F.rgetField @(PopArray b) totalRec
         unAdjTurnout = nationalTurnout tr
-      tDelta <- liftIO $ TA.findDelta totalDRVotes totalCounts unAdjTurnout
+      tDelta <- liftIO $ TA.findDeltaA totalDRVotes totalCounts unAdjTurnout
       let adjTurnout = TA.adjTurnoutP tDelta unAdjTurnout        
       return (totalCounts, adjTurnout)
       
@@ -557,7 +557,7 @@ ggTurnoutAdj :: forall b rs r. (A.Ix b
 ggTurnoutAdj r totalVotesF unadjTurnoutP = do
   let population = F.rgetField @(PopArray b) r
       totalVotes = totalVotesF r
-  liftIO $ TA.findDelta totalVotes population unadjTurnoutP
+  liftIO $ TA.findDeltaA totalVotes population unadjTurnoutP
 
 adjVotersL :: A.Array b Double -> A.Array b Int -> [Double]
 adjVotersL turnoutPA popA = zipWith (*) (A.elems turnoutPA) (fmap realToFrac $ A.elems popA)

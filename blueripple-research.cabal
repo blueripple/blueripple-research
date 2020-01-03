@@ -57,6 +57,7 @@ library
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
                  , BlueRipple.Data.PrefModel.ASETypes
                  , BlueRipple.Data.PrefModel.AgeSexRace
+                 , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment

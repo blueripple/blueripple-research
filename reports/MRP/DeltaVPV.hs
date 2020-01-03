@@ -95,8 +95,11 @@ import GHC.Generics (Generic)
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.HouseElectionTotals as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
+import qualified BlueRipple.Model.TurnoutAdjustment as BR
+
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
@@ -142,7 +145,10 @@ we "Post-stratify" (the "P" in MRP) them, which means weighting the group VPV es
 by the number of people in each group.  For the post-stratified charts below, we will
 be post-stratifying by estimated numbers of voters, obtained from
 census estimates of voting age population in each group and state
-and national voter turnout rates in each group.
+and national voter turnout rates in each group. We adjust the turnout rates in
+each congressional district so that the total number of number of votes cast in the
+house race is the product of the turnout rates and the population from the census in
+that district.  See [here][BR:Methods:Turnout] for more details.
 
 ##2016: Presidential Race vs. House Races
 Was Clinton more or less popular than other Democratic candidates running for office in 2016?
@@ -180,6 +186,7 @@ local Democrat, and younger non-college-educated voters are a widely varying mix
 [BR:PM2018]: <https://blueripple.github.io/research/preference-model/p1/main.html>
 [BR:PMAcrossTIme]: <https://blueripple.github.io/research/preference-model/p2/main.html>
 [BR:AboutUs]: <https://blueripplepolitics.org/about-us>
+[BR:Methods:Turnout]: <https://blueripple.github.io/research/preference-model/methods/main.html/#turnout>
 [Bitecofer:Bio]: <http://cnu.edu/people/rachelbitecofer/>
 [Bitecofer:2018House]: <https://cnu.edu/wasoncenter/2018/09/26-signs-democrats-win-big/>
 [Bitecofer:2020Pres]: <https://cnu.edu/wasoncenter/2019/07/01-2020-election-forecast/>
@@ -374,9 +381,11 @@ post :: (K.KnitOne r
      -> K.Cached es2 [BR.TurnoutASE]
      -> K.Cached es3 [BR.HouseElections]
      -> K.Sem r ()
-post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResultsCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
-  K.logLE K.Info $ "Working on EdVoters post..."
+post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA houseElectionsCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "DeltaVPV" $ do
+  K.logLE K.Info $ "Working on DeltaVPV post..."
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
+      cachedFrame = K.cacheTransformedAction (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS)
+      cachedRecordList = K.cacheTransformedAction (fmap FS.toS) (fmap FS.fromS)
       isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
       countDemPres2016VotesF = FMR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
@@ -486,8 +495,8 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResu
         traverse predict toPredict
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" (predictionsByLocation countDemPres2016VotesF 2016)
 --  predsByLocation2014h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2014h" (predictionsByLocation countDemHouseVotesF 2014)
-  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2016h" (predictionsByLocation (countDemHouseVotesF 2016) 2016)
-  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2018h" (predictionsByLocation (countDemHouseVotesF 2018) 2018)
+  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h" (predictionsByLocation (countDemHouseVotesF 2016) 2016)
+  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h" (predictionsByLocation (countDemHouseVotesF 2018) 2018)
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
 
@@ -521,7 +530,8 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResu
                                      ]
   demographicsFrameRaw <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
   turnoutFrameRaw <- F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
-  resultsFrameRaw <- F.toFrame <$> P.raise (K.useCached electionResultsCA)  
+
+
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
   -- Arrange and join demo/turnout/result
       BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
@@ -530,14 +540,32 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResu
       demographicsFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pDD y demographicsFrameRaw)
       turnoutFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pTD y turnoutFrameRaw)
   demographicsFrame <- mconcat <$> traverse demographicsFrameAdapt years  
-  turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years    
-  let withDemographicsFrame = catMaybes
+  turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years
+  let popWithUnadjTurnout = catMaybes $ fmap F.recMaybe $ (F.leftJoin @[Sex,SimpleEducation,SimpleAge,BR.Year]) demographicsFrame turnoutFrame
+  let popWithAdjTurnout = do
+        houseElectionsFrame <- F.toFrame <$> P.raise (K.useCached houseElectionsCA)
+        let voteTotalsByYearAndDistrict = FL.fold BR.cdVoteTotalsFromHouseElectionResultsF
+              $ F.filterFrame ((`L.elem` years) . F.rgetField @BR.Year) houseElectionsFrame
+            getKey = F.rcast @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]
+            vtbcdMap = FL.fold (FL.premap (\r -> (getKey r, F.rgetField @BR.Totalvotes r)) FL.map) voteTotalsByYearAndDistrict
+            unpackM = FMR.generalizeUnpack FMR.noUnpack
+            assignM = FMR.generalizeAssign
+              $ FMR.assignKeysAndData @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict] @[Sex,SimpleEducation,SimpleAge,BR.PopCount,BR.VotedPctOfAll]              
+            adjustF ks =
+              let vtM = M.lookup ks vtbcdMap
+                  f x = case vtM of
+                    Nothing -> K.logLE K.Diagnostic ("Failed to find " <> (T.pack $ show ks) <> " in house election results. Leaving unadjusted.") >> return x
+                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[Sex,SimpleEducation,SimpleAge] @BR.PopCount @BR.VotedPctOfAll vt x
+              in MR.postMapM f $ FL.generalize FL.list
+            reduceM = FMR.makeRecsWithKeyM id (MR.ReduceFoldM adjustF)
+            adjF = FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
+        FL.foldM adjF (L.filter (((/=) "DC") . F.rgetField @BR.StateAbbreviation) popWithUnadjTurnout)          
+  popWithAdjTurnoutFrame  <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/deltaVPV/popWithAdjTurnout.bin" popWithAdjTurnout
+--  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list popWithAdjTurnout
+  let withPopAndAdjTurnoutFrame = catMaybes
                                $ fmap F.recMaybe
-                               $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) demographicsFrame (F.toFrame longFrameWithState)
-      withTurnoutFrame = catMaybes
-                         $ fmap F.recMaybe
-                         $ (F.leftJoin @[Sex,SimpleEducation,SimpleAge,BR.Year]) (F.toFrame withDemographicsFrame) turnoutFrame
-      postStratifyCell :: forall t q.(V.KnownField t, V.Snd t ~ Double)
+                               $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) popWithAdjTurnoutFrame (F.toFrame longFrameWithState)
+  let postStratifyCell :: forall t q.(V.KnownField t, V.Snd t ~ Double)
               => PostStratifiedByT -> (q -> Double) -> (q -> Double) -> FL.Fold q (F.Record '[PostStratifiedBy,t])
       postStratifyCell psb weight count = (\sdw sw -> FT.recordSingleton @PostStratifiedBy psb `V.rappend` FT.recordSingleton @t (sdw/sw))
                                           <$>  FL.premap (\x -> weight x * count x) FL.sum
@@ -559,7 +587,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResu
                           <*> fmap pure (postStratifyCell @DemVPV Voted (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
       psVPVByStateF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
         
-      psVPVByBoth = FL.fold psVPVByStateF withTurnoutFrame
+      psVPVByBoth = FL.fold psVPVByStateF withPopAndAdjTurnoutFrame
       psVPVByDistrictF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] @[DemVPV, BR.PopCount, BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF
 --      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
       toDistrictGeoId r =
@@ -568,7 +596,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResu
             dgidInt = 100*sf + cd
             dgidText = (if dgidInt < 1000 then "0" else "" ) <> (T.pack $ show dgidInt)
         in FT.recordSingleton @DistrictGeoId dgidText
-      psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withTurnoutFrame
+      psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withPopAndAdjTurnoutFrame
       psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
                                                             && (F.rgetField @Office r == House)
                                                             && (F.rgetField @PostStratifiedBy r == Voted)

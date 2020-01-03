@@ -1,9 +1,14 @@
-packages: ./ ~/DataScience/glm-haskell ~/DataScience/knit-haskell  ~/DataScience/Frames-hvega
+packages: ./ ~/DataScience/glm-haskell
 jobs: 4
 with-compiler: ghc
 
 allow-newer: knit-haskell
 
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 4fc85affee54b900ebcae6a3d19c23b6c4362a3e
 
 source-repository-package
   type: git
@@ -15,10 +20,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-utils
   tag: c8a7bc0a6f743be4ed90282d5f3d66a066854b82
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-hvega
---  tag: 95ee5512ba8f0662b884013ac79d24a8541f4799
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: 32bb2de2efdd7190d1090f7b2d4f1c525bf4a448
 
 source-repository-package
   type: git
