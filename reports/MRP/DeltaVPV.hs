@@ -186,7 +186,7 @@ local Democrat, and younger non-college-educated voters are a widely varying mix
 [BR:PM2018]: <https://blueripple.github.io/research/preference-model/p1/main.html>
 [BR:PMAcrossTIme]: <https://blueripple.github.io/research/preference-model/p2/main.html>
 [BR:AboutUs]: <https://blueripplepolitics.org/about-us>
-[BR:Methods:Turnout]: <https://blueripple.github.io/research/preference-model/methods/main.html/#turnout>
+[BR:Methods:Turnout]: <https://blueripple.github.io/research/preference-model/methods/main.html#turnout>
 [Bitecofer:Bio]: <http://cnu.edu/people/rachelbitecofer/>
 [Bitecofer:2018House]: <https://cnu.edu/wasoncenter/2018/09/26-signs-democrats-win-big/>
 [Bitecofer:2020Pres]: <https://cnu.edu/wasoncenter/2019/07/01-2020-election-forecast/>
