@@ -107,65 +107,68 @@ brText1 :: T.Text
 brText1 = [i|
 In our [last research post][BR:Pools] we looked at college-educated-voter preference, measured
 by "Votes Per Voter" ([VPV][BR:Pools:VPV]). VPV captures the value of boosting turnout
-among some group of voters. In that post we looked exclusively at the 2016 presidential
-election.  Here we broaden our view, looking first at differences between the
-2016 Presidential and 2016 House races,  and then between the 2016 and 2018 House races. In both
-cases, we're interested in understanding which voters might be most promising when
-considering targeted registration or GOTV campaigns.
+among some group of voters. In that post, we looked exclusively at the 2016 Presidential
+election. But is the 2016 Presidential election the right baseline for the 2020 Presidential
+election?  Or should we think of the 2018 House elections as a baseline?  Mid-terms are different
+from Presidential years and House elections are different from Presidential elections.
+Let's dive into those differences, looking first at
+2016 Presidential vs. House races,  and then at the 2016 vs. 2018 House races. 
 
 In the last post we were struck by how different
-some of the numbers were in different states.  We're going to hone in on that here as well:
+some of the VPV numbers were in different states.
+We're going to hone in on that here as well,
 looking at our data on [choropleth-maps][Wikipedia:choropleth]
 so we can see the geographic variation clearly.
 
 1. **Review: MRP and VPV**
 2. **2016: Presidential Race vs. House Races**
 3. **2018 House Races vs. 2016 House Races**
-4. **What Does It All Mean?**
+4. **Key Takeaways**
 5. **Take Action**
 
 
 ##MRP and VPV
 To recap:  we have data from the [CCES][CCES] survey which gives us information about
-individual voters: their location and reported votes for president in 2016 and the house
+individual voters, including their location and reported votes for President in 2016 and the House
 in 2016 and 2018.  We use a technique called Multi-level Regression (MR) to combine the local
 data (e.g., college-educated female voters over 45 in a particular state) in a sensible way
 with the data for the same group in all the states, and estimate Democratic voter preference
+(D votes/(D votes + R votes) among voters who voted D or R)
 of each group in each state.  From these numbers we compute VPV, which makes the value of
-turnout among these voters a bit clearer than voter preference.  In particular, a group which
-is equally likely to vote for the Democrat or the Republican in an election has a VPV of 0.
+turnout among these voters a bit clearer than voter preference.
 
 To combine group estimates into an estimate of VPV for a state,
-we "Post-stratify" (the "P" in MRP) them, which means weighting them
-by the number of people in each group.  For all the charts below, we will
+we "Post-stratify" (the "P" in MRP) them, which means weighting the group VPV estimates
+by the number of people in each group.  For the post-stratified charts below, we will
 be post-stratifying by estimated numbers of voters, obtained from
-census estimates of voting age population in each group and voter turnout in each group.
-NB: the population estimates are state-and-group-specific but the turnout numbers
-are group-specific but not geographically specific.  So turnout variation among the
-states is not included in this analysis.
+census estimates of voting age population in each group and state
+and national voter turnout rates in each group.
 
 ##2016: Presidential Race vs. House Races
 Was Clinton more or less popular than other Democratic candidates running for office in 2016?
 That turns out to depend on which voters you look at and where they live.
 In the charts below we look
-at the *change* in Democratic VPV from 2016 presidential voting to 2016 House voting, a measure
+at the *change* in Democratic VPV from 2016 Presidential voting to 2016 House voting, a measure
 of the difference in popularity of Clinton and local House candidates. We
-estimate VPV for presidential and House votes separately, keeping the same groups as in
+estimate VPV for Presidential and House votes separately, keeping the same groups as in
 our last post: Non-College-Grad/College-Grad, Female/Male, and Over 45/Under 45. In each chart,
 a blue color indicates a place where Clinton was *more* popular than the Democrats running
-for the local House seats and a red color indicates the opposite.
+for the local House seats and a red color indicates the opposite. Since we are considering
+only voters who voted D or R, anyplace Clinton out-performed local House candidates is also
+a place where Trump under-performed local House candidates. From this data there is no way to
+know what is underlying the differences between Presidential and House voting.
 
 It's important to remember that these charts are showing *change* in VPV.  Red doesn't
 mean that the state voted Republican for President or House in 2016, just that it was
-more Republican in its presidential voting than house voting.
+*more* Republican in its Presidential voting than House voting.
 
 We plot all eight groups below, first college graduates and then non-graduates.
-Among college-educated young women, and to a lesser extent, college-educated young men,
+Among college-educated young female voters, and to a lesser extent,
+college-educated young male voters,
 Clinton was clearly more popular than the local Democrat. Older college-educated voters
 are a mix, though with wide variation among states.
 Among older non-college-educated voters, though, Clinton is *less* popular than the
 local Democrat, and younger non-college-educated voters are a widely varying mix.
-
 
 [CCES]: <https://cces.gov.harvard.edu/>
 [MRP:Summary]: <https://en.wikipedia.org/wiki/Multilevel_regression_with_poststratification>
@@ -189,17 +192,21 @@ brText2 = [i|
 Putting these all together, via post-stratification in each state,
 gives the map below. Of particular note:
 
-- Clinton underperformed local candidates significantly in the battleground state
+- Clinton under-performed local candidates significantly in the battleground state
 of WI, but outperformed significantly in PA and a smaller amount in MI, OH and FL.
-- Clinton's biggest underperformances were in heavily Democratic VT and MA.
-Her biggest outperformance was in heavily Republican AK.  
 - Clinton outperformed local candidates in TX and GA.
 This is interesting since Clinton *outperforming* the local Democrat looks the same
-(in this data) as Trump *underperforming* the local Republican.
-Trump underperformance in ever-less-Republican
+(in this data) as Trump *under-performing* the local Republican.
+Trump under-performance in ever-less-Republican
 TX---where there has been a wave of [Republican retirements][TX:RR]---and
 GA---where Stacey Abrams [barely lost][GA:SA] the Governor's race in 2018---would
 be very interesting in 2020.
+- Clinton's biggest under-performances were in heavily Democratic VT and MA.
+Her biggest out-performance was in heavily Republican AK. We'd have to look at
+other races to be sure, but we imagine Democratic Presidential candidates often
+under-perform House voting in heavily blue states and out-perform in heavily red ones
+(and vice-versa with Republican Presidential candidates) because voters don't
+think their Presidential votes matter so they are less inclined to vote the party line.
 
 [TX:RR]: <https://www.theatlantic.com/politics/archive/2019/09/house-republicans-texas-are-retiring-2020/597406/>
 [GA:SA]: <https://www.nytimes.com/2018/11/16/us/elections/georgia-governor-race-kemp-abrams.html>
@@ -210,10 +217,10 @@ brText3 = [i|
 Now that we've looked at Presidential vs. House voting in 2016, let's look at the
 2018 Blue Wave in the House and compare that to House voting in 2016. We do the
 same breakdown as before. Young college-educated voters were noticeably
-more Democratic in their voting in 2018, as were older college-educated women.
-Among non-college-educted voters, things are mixed but with great variation among
-the states.  It's interesting and encouraging that young non-college-educated women
-shifted strongly Democratic in their house voting between 2016 and 2018.
+more Democratic in their voting in 2018, as were older college-educated female voters.
+Among non-college-educated voters, things are mixed but with great variation among
+the states.  It's interesting and encouraging that young non-college-educated female voters
+shifted strongly Democratic in their House voting between 2016 and 2018.
 |]
 
 brText4 :: T.Text
@@ -227,19 +234,43 @@ unseating Mitch McConnell in the 2020 Senate race.
 
 brEnd :: T.Text
 brEnd = [i|
-## What Does It All Mean?
-As with our last post, we think its important to consider various ways of looking
-at voters.  Demographic breakdowns are useful but they can also lead to oversimplified
-narratives and looking at geographic variation is a useful corrective.  There are
-also other demographic breakdowns (race, income, marital status, e.g.,) to consider
-as well as other geographic splits (urban/suburban/rural, e.g.,) and each of those
-complicates this picture.
+## Key Takeaways
+- In the Presidential battleground states,
+non-college-educated female voters under 45
+shifted much more strongly toward Dems as compared to other
+non-college-educated voters (except in
+Wisconsin). How do Dems hold on to or increase this shift in 2020?
+Was something really so different in Wisconsin?
+
+- Wisconsin is actually different from the other mid-western battlegrounds on
+nearly all these maps! Wisconsin voters of all sorts were less likely to vote for Clinton
+than for their local House candidates. And while young WI voters, with the
+exception of non-college-educated young males, were more likely to vote for
+Dems in the 2018 House races than in 2016, older *college-educated* voters shifted
+*Republican* from 2016 to 2018.  This makes Wisconsin look quite different
+from Ohio and Pennsylvania which moved solidly Democratic in their House voting
+from 2016 to 2018.  So Wisconsin might not be so much a
+["Tipping Point"][WI:TIP] state as an exception among the battlegrounds. 
+
+- Texas! Among nearly all groups in Texas,
+Clinton was more popular than local Dem House candidates in 2016. This appears
+as an 11% blue VPV shift on the post-stratified map.  A similar shift happens in
+the 2016 to 2018 House vote, this time about a 9% VPV shift toward Dem House candidates.
+But the House vote shift comes from combining *hugely different* shifts among groups:
+college-educated
+young females shifted slightly *Republican* in Texas House voting while young
+non-college educated males shifted heavily Democratic.  This seems worth
+trying to understand better. Texas has many opportunities for House pickups,
+a possible Senate flip and is shifting slowly to becoming a Presidential battleground,
+though that remains unlikely in 2020.
+
+Sometimes exploring the data leaves us with more questions than answers!
 
 At Blue Ripple Politics we are keenly interested in where this data leads in terms
 of what you can do with your time or money to help elect progressives, take back the
 White House and Senate and hold the House.  As far as national strategy goes, we think
-the data we examined in this post leads us to focus turnout work on young female voters
-and registration work similarly.
+the data we examined in this post suggests a continued and targeted effort at registering
+and GOTV among young female voters, particularly those with a college education.
 
 We don't mean to imply that this is the most important focus for turnout work.
 Voters-of-color, particularly black women, are hugely Democratic leaning
@@ -265,6 +296,7 @@ are likely to drive turnout and registration among young women.
 [LOWV]: < https://www.lwv.org/blog/league-volunteers-track-register-voters-200-schools-spring>
 [HHFA]: <https://www.higherheightsforamerica.org/>
 [GHE]: <https://www.getherelected.com/>
+[WI:TIP]: <https://www.washingtonpost.com/lifestyle/all-eyes-are-on-wisconsin-the-state-thats-gearing-up-to-define-the-presidential-election/2019/11/04/abf643dc-f40d-11e9-a285-882a8e386a96_story.html>
 |]
   
 
@@ -333,13 +365,16 @@ post :: (K.KnitOne r
         , K.Member GLM.RandomFu r
         , K.Members es r
         , K.Members es1 r
-        , K.Members es2 r)
+        , K.Members es2 r
+        , K.Members es3 r
+        )
      => F.Frame BR.States  -- state names from state abbreviations
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Cached es1 [BR.ASEDemographics]
      -> K.Cached es2 [BR.TurnoutASE]
+     -> K.Cached es3 [BR.HouseElections]
      -> K.Sem r ()
-post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
+post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA electionResultsCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "EdVoters" $ do
   K.logLE K.Info $ "Working on EdVoters post..."
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
@@ -486,14 +521,15 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA = P.mapError
                                      ]
   demographicsFrameRaw <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
   turnoutFrameRaw <- F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
+  resultsFrameRaw <- F.toFrame <$> P.raise (K.useCached electionResultsCA)  
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
-  -- Arrange and join demo/turnout
+  -- Arrange and join demo/turnout/result
       BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
       years = [2016,2018]      
       expandCategories = FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE))
       demographicsFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pDD y demographicsFrameRaw)
       turnoutFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pTD y turnoutFrameRaw)
-  demographicsFrame <- mconcat <$> traverse demographicsFrameAdapt years    
+  demographicsFrame <- mconcat <$> traverse demographicsFrameAdapt years  
   turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years    
   let withDemographicsFrame = catMaybes
                                $ fmap F.recMaybe
@@ -770,8 +806,8 @@ vldVPVByState title vc (race1, race2) edFilter rows =
       datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName,Sex,SimpleEducation,SimpleAge]
                pivotFold rows
       dataSets = GV.datasets [("stateDat",datVal)]
-      encFacetRow = GV.row [FV.fName @Sex, GV.FmType GV.Nominal]
-      encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
+      encFacetRow = GV.row [FV.fName @Sex, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
+      encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
       filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == '" <> (T.pack $ show edFilter) <> "'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
       vpvCol x = x
       calcDiff = GV.calculateAs ("datum." <> vpvCol race1 <> "-" <> "datum." <> vpvCol race2) "Change in VPV"
