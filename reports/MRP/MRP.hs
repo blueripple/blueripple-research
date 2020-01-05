@@ -199,15 +199,15 @@ main = do
               (const True)
           aseTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASE] =
             cachedRecordList "mrp/aseTurnout.bin" aseTurnoutFrame
-          houseElectionsFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.HouseElections]
-          houseElectionsFrame = FL.fold FL.list <$> do
-            houseElectionsPath <- liftIO $ usePath houseElectionsCSV
+          stateTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
+          stateTurnoutFrame = FL.fold FL.list <$> do
+            stateTurnoutPath <- liftIO $ usePath stateTurnoutCSV
             loadToFrame
               csvParserOptions
-              houseElectionsPath
+              stateTurnoutPath
               (const True)
-          houseElectionsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.HouseElections]
-          houseElectionsFrameCA = cachedRecordList "mrp/houseElections.bin" houseElectionsFrame          
+          stateTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.StateTurnout]
+          stateTurnoutFrameCA = cachedRecordList "mrp/stateTurnout.bin" stateTurnoutFrame          
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       
       K.logLE K.Info "Knitting docs..."
@@ -244,7 +244,7 @@ main = do
                         ]
           )
         )
-        $ DeltaVPV.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA houseElectionsFrameCA
+        $ DeltaVPV.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA stateTurnoutFrameCA
                
   case eitherDocs of
     Right namedDocs ->
