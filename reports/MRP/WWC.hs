@@ -129,7 +129,7 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members e
      -> K.Sem r ()
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
-  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
+  let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countWWCDemPres2016VotesF = MR.concatFold
                                   $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                   (\r -> (F.rgetField @Turnout r == T_Voted)

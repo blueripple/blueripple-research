@@ -93,7 +93,7 @@ import           MRP.Common
 import qualified MRP.WWC as WWC
 import qualified MRP.Pools as Pools
 import qualified MRP.DeltaVPV as DeltaVPV
-
+import qualified MRP.Kentucky as Kentucky
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -125,6 +125,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostPools] &= CA.name "pools" &= CA.help "knit \"Pools\"",
                                         [PostDeltaVPV] &= CA.name "dVPV" &= CA.help "knit \"Delta VPV\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
+                                        [PostKentucky] &= CA.name "kentucky" &= CA.help "knit \"Kentucky\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -245,7 +246,18 @@ main = do
           )
         )
         $ DeltaVPV.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA stateTurnoutFrameCA
-               
+      let pubDateKentucky = Time.fromGregorian 2020 1 5                
+      when (PostKentucky `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostKentucky)
+         (brAddDates (updated args) pubDateKentucky curDate
+          $ M.fromList [("pagetitle", "Explore Kentucky")
+                        ,("title","Explore Kentucky")
+                        ]
+          )
+        )
+        $ Kentucky.post aseDemographicsFrameCA
+
   case eitherDocs of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "posts" namedDocs

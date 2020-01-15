@@ -43,19 +43,20 @@ common deps
                , statistics
                , text
                , vector
-               , vinyl >= 0.10.0.1
+               , vinyl >= 0.12
                      
 library
   import: deps
   ghc-options: -O -fplugin=Polysemy.Plugin
   exposed-modules: BlueRipple.Configuration
-                 , BlueRipple.Data.FromDB
+--                 , BlueRipple.Data.FromDB
                  , BlueRipple.Data.DemographicTypes
+                 , BlueRipple.Data.ElectionTypes
                  , BlueRipple.Data.PrefModel
-                 , BlueRipple.Data.PrefModel.ASRTypes
+--                 , BlueRipple.Data.PrefModel.ASRTypes
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
-                 , BlueRipple.Data.PrefModel.ASETypes
+--                 , BlueRipple.Data.PrefModel.ASETypes
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Model.PreferenceBayes
@@ -66,12 +67,13 @@ library
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
-                     , beam-core >= 0.8.0.0
-                     , beam-sqlite >= 0.4.0.0
+--                     , beam-core >= 0.8.0.0
+--                     , beam-sqlite >= 0.4.0.0
                      , blaze-colonnade
                      , colonnade
                      , data-default
-                     , declarative                     
+                     , declarative
+                     , direct-sqlite >= 2.3.23
                      , directory >= 1.3.3 && < 1.4
                      , discrimination >= 0.3 && < 0.5
                      , gamma
@@ -83,11 +85,11 @@ library
                      , hmatrix-nlopt
                      , nonlinear-optimization >= 0.3.11 && < 0.4
                      , nonlinear-optimization-ad >= 0.2 && < 0.3
-                     , OpenFEC-beam
+--                     , OpenFEC-beam
                      , pandoc
                      , parallel
                      , random >= 1.1 && < 1.2.0.0
-                     , sqlite-simple
+--                     , sqlite-simple 
                      , template-haskell
                      , time
                      , tuple
@@ -95,18 +97,18 @@ library
   default-language:    Haskell2010
 
 
-executable dataLoader
-  import: deps
-  ghc-options: -O0
-  hs-source-dirs: dataLoader
-  main-is:        dataLoader.hs
-  build-depends: base >= 4.11
-               , blueripple-research
-               , beam-core >= 0.8.0.0
-               , beam-sqlite >= 0.4.0.0               
-               , OpenFEC-beam
-               , sqlite-simple
-  default-language: Haskell2010               
+--executable dataLoader
+--  import: deps
+--  ghc-options: -O0
+--  hs-source-dirs: dataLoader
+--  main-is:        dataLoader.hs
+--  build-depends: base >= 4.11
+--               , blueripple-research
+--               , beam-core >= 0.8.0.0
+--               , beam-sqlite >= 0.4.0.0               
+--               , OpenFEC-beam
+--               , sqlite-simple
+-- default-language: Haskell2010               
            
   
 executable mission
@@ -159,8 +161,10 @@ executable mrp-model
                 , MRP.CCESFrame
                 , MRP.Common
                 , PreferenceModel.Common
+                , MRP.WWC
                 , MRP.Pools
                 , MRP.DeltaVPV
+                , MRP.Kentucky
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs
@@ -170,7 +174,7 @@ executable mrp-model
                , hashable >= 1.2 && < 1.3.0
                , lens >= 4.16 && < 5
                , log-domain < 0.13
-               , mtl  >= 2.1 && < 2.3.0
+               , mtl >= 2.1 && < 2.3.0
                , pandoc
                , polysemy-RandomFu
                , blueripple-research

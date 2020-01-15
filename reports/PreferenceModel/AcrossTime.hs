@@ -58,9 +58,9 @@ aggregateToSimpleRace = PM.Aggregation children where
     NonWhite -> [OldNonWhiteFemale, YoungNonWhiteFemale, OldNonWhiteMale, YoungNonWhiteMale]
     White -> [OldWhiteFemale, YoungWhiteFemale, OldWhiteMale, YoungWhiteMale]
 
-aggregateToSimpleEducation :: PM.Aggregation BR.SimpleEducation SimpleASE
+aggregateToSimpleEducation :: PM.Aggregation BR.CollegeGrad SimpleASE
 aggregateToSimpleEducation = PM.Aggregation children where
-  children :: BR.SimpleEducation -> [SimpleASE]
+  children :: BR.CollegeGrad -> [SimpleASE]
   children x = case x of
     NonGrad -> [OldFemaleNonGrad, YoungFemaleNonGrad, OldMaleNonGrad, YoungMaleNonGrad]
     Grad -> [OldFemaleCollegeGrad, YoungFemaleCollegeGrad, OldMaleCollegeGrad, YoungMaleCollegeGrad]

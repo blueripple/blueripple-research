@@ -18,7 +18,7 @@
 
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.DeltaVPV (post) where
+module MRP.DeltaVPV where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
@@ -319,42 +319,42 @@ locKeyPretty r =
   let stateAbbr = F.rgetField @BR.StateAbbreviation r
   in stateAbbr
 
-type CatCols = '[Sex, SimpleEducation, SimpleAge]
-catKey :: BR.Sex -> BR.SimpleEducation -> BR.SimpleAge -> F.Record CatCols
+type CatCols = '[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
+catKey :: BR.Sex -> BR.CollegeGrad -> BR.SimpleAge -> F.Record CatCols
 catKey s e a = s F.&: e F.&: a F.&: V.RNil
 
-unCatKey :: F.Record CatCols -> (BR.Sex, BR.SimpleEducation, BR.SimpleAge)
+unCatKey :: F.Record CatCols -> (BR.Sex, BR.CollegeGrad, BR.SimpleAge)
 unCatKey r =
-  let s = F.rgetField @Sex r
-      e = F.rgetField @SimpleEducation r
-      a = F.rgetField @SimpleAge r
+  let s = F.rgetField @BR.SexC r
+      e = F.rgetField @BR.CollegeGradC r
+      a = F.rgetField @BR.SimpleAgeC r
   in (s,e,a)
 
 simpleASEToCatKey :: BR.SimpleASE -> F.Record CatCols
-simpleASEToCatKey BR.OldFemaleNonGrad = catKey BR.Female BR.NonGrad BR.Old
-simpleASEToCatKey BR.YoungFemaleNonGrad = catKey BR.Female BR.NonGrad BR.Young
-simpleASEToCatKey BR.OldMaleNonGrad = catKey BR.Male BR.NonGrad BR.Old
-simpleASEToCatKey BR.YoungMaleNonGrad = catKey BR.Male BR.NonGrad BR.Young
-simpleASEToCatKey BR.OldFemaleCollegeGrad = catKey BR.Female BR.Grad BR.Old
-simpleASEToCatKey BR.YoungFemaleCollegeGrad = catKey BR.Female BR.Grad BR.Young
-simpleASEToCatKey BR.OldMaleCollegeGrad = catKey BR.Male BR.Grad BR.Old
-simpleASEToCatKey BR.YoungMaleCollegeGrad = catKey BR.Male BR.Grad BR.Young
+simpleASEToCatKey BR.OldFemaleNonGrad = catKey BR.Female BR.NonGrad BR.EqualOrOver
+simpleASEToCatKey BR.YoungFemaleNonGrad = catKey BR.Female BR.NonGrad BR.Under
+simpleASEToCatKey BR.OldMaleNonGrad = catKey BR.Male BR.NonGrad BR.EqualOrOver
+simpleASEToCatKey BR.YoungMaleNonGrad = catKey BR.Male BR.NonGrad BR.Under
+simpleASEToCatKey BR.OldFemaleCollegeGrad = catKey BR.Female BR.Grad BR.EqualOrOver
+simpleASEToCatKey BR.YoungFemaleCollegeGrad = catKey BR.Female BR.Grad BR.Under
+simpleASEToCatKey BR.OldMaleCollegeGrad = catKey BR.Male BR.Grad BR.EqualOrOver
+simpleASEToCatKey BR.YoungMaleCollegeGrad = catKey BR.Male BR.Grad BR.Under
 
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
-predMap r = M.fromList [(P_Sex, if F.rgetField @Sex r == BR.Female then 0 else 1)
+predMap r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
 --                       ,(P_Race, if F.rgetField @WhiteNonHispanic r == True then 1 else 0)
-                       ,(P_Education, if F.rgetField @SimpleEducation r == BR.NonGrad then 0 else 1)
-                       ,(P_Age, if F.rgetField @SimpleAge r == BR.Old then 0 else 1)
+                       ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
+                       ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
-allCatKeys = [catKey s e a | a <- [BR.Old, BR.Young], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
+allCatKeys = [catKey s e a | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
 catPredMaps = M.fromList $ fmap (\k -> (k,predMap k)) allCatKeys
 
 catKeyColHeader :: F.Record CatCols -> T.Text
 catKeyColHeader r =
-  let g = T.pack $ show $ F.rgetField @Sex r
-      a = T.pack $ show $ F.rgetField @SimpleAge r
-      e = T.pack $ show $ F.rgetField @SimpleEducation r
+  let g = T.pack $ show $ F.rgetField @BR.SexC r
+      a = T.pack $ show $ F.rgetField @BR.SimpleAgeC r
+      e = T.pack $ show $ F.rgetField @BR.CollegeGradC r
   in a <> "-" <> e <> "-" <> g
 
 type DemPref    = "DemPref"    F.:-> Double
@@ -389,7 +389,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       cachedFrame = K.cacheTransformedAction (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS)
       cachedRecordList = K.cacheTransformedAction (fmap FS.toS) (fmap FS.fromS)
-      isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
+      isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countDemPres2016VotesF = FMR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                (\r -> (F.rgetField @Turnout r == T_Voted)
@@ -545,42 +545,42 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
   demoByCDFrame <- mconcat <$> traverse demographicsFrameAdapt years
   let demoByStateFrame =
         let unpack = MR.noUnpack
-            assign = FMR.assignKeysAndData @[BR.Year,BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge] @'[BR.PopCount]
+            assign = FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @'[BR.PopCount]
             reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
         in FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) demoByCDFrame        
   turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years
   let demoWithUnadjTurnoutByState =
         catMaybes
         $ fmap F.recMaybe
-        $ (F.leftJoin @[BR.Year,Sex,SimpleEducation,SimpleAge]) demoByStateFrame turnoutFrame
+        $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateFrame turnoutFrame
   let demoWithAdjTurnoutByCD = do
         stateTurnoutFrame <- F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
         let getKey = F.rcast @[BR.Year,BR.StateAbbreviation]
             vtbsMap = FL.fold (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map) stateTurnoutFrame
             unpackM = FMR.generalizeUnpack FMR.noUnpack
             assignM = FMR.generalizeAssign
-              $ FMR.assignKeysAndData @[BR.Year,BR.StateAbbreviation] @[Sex,SimpleEducation,SimpleAge,BR.PopCount,BR.VotedPctOfAll]              
+              $ FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll]              
             adjustF ks =
               let vtM = M.lookup ks vtbsMap
                   f x = case vtM of
                     Nothing -> K.logLE K.Diagnostic ("Failed to find " <> (T.pack $ show ks) <> " in state turnout. Leaving unadjusted.") >> return x
-                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[Sex,SimpleEducation,SimpleAge] @BR.PopCount @BR.VotedPctOfAll vt x
+                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @BR.PopCount @BR.VotedPctOfAll vt x
               in MR.postMapM f $ FL.generalize FL.list
             reduceM = FMR.makeRecsWithKeyM id (MR.ReduceFoldM adjustF)
             adjF = FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
         demoWithAdjTurnoutByState <- FL.foldM adjF demoWithUnadjTurnoutByState
         return
           $ F.toFrame
-          $ fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, Sex, SimpleEducation, SimpleAge, BR.PopCount, BR.VotedPctOfAll])
+          $ fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll])
           $ catMaybes
           $ fmap F.recMaybe
-          $ (F.leftJoin @[BR.Year,BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge]) demoByCDFrame demoWithAdjTurnoutByState
+          $ (F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByCDFrame demoWithAdjTurnoutByState
   demoWithAdjTurnoutByCDFrame  <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/deltaVPV/popWithAdjTurnoutByCD.bin" demoWithAdjTurnoutByCD
 --  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list popWithAdjTurnout
   let withDemoAndAdjTurnoutFrame =
         catMaybes
         $ fmap F.recMaybe
-        $ (F.leftJoin @[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge,BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
+        $ (F.leftJoin @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
   let postStratifyCell :: forall t q.(V.KnownField t, V.Snd t ~ Double)
               => PostStratifiedByT -> (q -> Double) -> (q -> Double) -> FL.Fold q (F.Record '[PostStratifiedBy,t])
       postStratifyCell psb weight count = (\sdw sw -> FT.recordSingleton @PostStratifiedBy psb `V.rappend` FT.recordSingleton @t (sdw/sw))
@@ -718,10 +718,10 @@ educationGap s a (LocationHolder _ _ cd) = do
   datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
   return (datNonGrad, datGrad)
 
-ageGap :: BR.Sex -> BR.SimpleEducation -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder F.ElField Double -> Maybe (Double, Double)
 ageGap s e (LocationHolder _ _ cd) = do  
-  datYoung <- M.lookup (catKey s e BR.Young) cd
-  datOld <- M.lookup (catKey s e BR.Old) cd
+  datYoung <- M.lookup (catKey s e BR.Under) cd
+  datOld <- M.lookup (catKey s e BR.EqualOrOver) cd
   return (datOld, datYoung)
 
 
@@ -793,7 +793,7 @@ vlStateScatterVsElection :: Foldable f
                          => T.Text                         
                          -> FV.ViewConfig
                          -> (T.Text, T.Text)
-                         -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, Sex, SimpleEducation, SimpleAge, DemVPV])
+                         -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, DemVPV])
                          -> GV.VegaLite
 vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (race1, race2) rows = 
   let pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemVPV]
@@ -802,15 +802,15 @@ vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (race1, race2) rows =
                <> " "
                <> (T.pack $ show $ F.rgetField @BR.Year r))
         (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
-      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,Sex,SimpleEducation,SimpleAge]
+      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
       encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]                              
       encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
       encY2 = GV.position GV.Y [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
-      facet = GV.facet [GV.ColumnBy [FV.fName @SimpleEducation, GV.FmType GV.Nominal]]--, GV.RowBy [GV.FName "Age", GV.FmType GV.Nominal]]
-      encFacetRow = GV.row [FV.fName @SimpleEducation, GV.FmType GV.Nominal]
+      facet = GV.facet [GV.ColumnBy [FV.fName @BR.CollegeGradC, GV.FmType GV.Nominal]]--, GV.RowBy [GV.FName "Age", GV.FmType GV.Nominal]]
+      encFacetRow = GV.row [FV.fName @BR.CollegeGradC, GV.FmType GV.Nominal]
       addSexAge = GV.calculateAs "datum.Sex + '/' + datum.Under45" "Sex/Age"
       encColor = GV.color [GV.MName "Sex/Age", GV.MmType GV.Nominal]
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) []
@@ -837,8 +837,8 @@ vldVPVByState :: Foldable f
                  => T.Text
                  -> FV.ViewConfig
                  -> (T.Text, T.Text)
-                 -> BR.SimpleEducation
-                 -> f (F.Record [BR.StateName, Office, BR.Year, Sex, SimpleEducation, SimpleAge, DemVPV])
+                 -> BR.CollegeGrad
+                 -> f (F.Record [BR.StateName, Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, DemVPV])
                  -> GV.VegaLite
 vldVPVByState title vc (race1, race2) edFilter rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
@@ -847,12 +847,12 @@ vldVPVByState title vc (race1, race2) edFilter rows =
                   (\r -> (T.pack $ show $ F.rgetField @Office r)
                     <> (T.pack $ show $ F.rgetField @BR.Year r))
                   (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
-      datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName,Sex,SimpleEducation,SimpleAge]
+      datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
                pivotFold rows
       dataSets = GV.datasets [("stateDat",datVal)]
-      encFacetRow = GV.row [FV.fName @Sex, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
-      encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
-      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == '" <> (T.pack $ show edFilter) <> "'") -- && datum.Election == '2016 President' && datum.Age == 'Young'")
+      encFacetRow = GV.row [FV.fName @BR.SexC, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
+      encFacetCol = GV.column [FV.fName @BR.SimpleAgeC, GV.FmType GV.Nominal, GV.FHeader [GV.HNoTitle]]
+      filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == '" <> (T.pack $ show edFilter) <> "'") -- && datum.Election == '2016 President' && datum.Age == 'Under'")
       vpvCol x = x
       calcDiff = GV.calculateAs ("datum." <> vpvCol race1 <> "-" <> "datum." <> vpvCol race2) "Change in VPV"
       projection = GV.projection [GV.PrType GV.AlbersUsa]
@@ -874,13 +874,13 @@ vldVPVByState title vc (race1, race2) edFilter rows =
 vlVPVChoropleth :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
-                -> f (F.Record [BR.StateName, BR.StateFIPS, BR.Year, Office, Sex, SimpleAge, SimpleEducation, DemVPV])
+                -> f (F.Record [BR.StateName, BR.StateFIPS, BR.Year, Office, BR.SexC, BR.SimpleAgeC, BR.CollegeGradC, DemVPV])
                 -> GV.VegaLite
 vlVPVChoropleth title vc rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
       datVal = FV.recordsToVLData id FV.defaultParse rows
       encFacetRow = GV.row [FV.fName @Office, GV.FmType GV.Nominal]
-      encFacetCol = GV.column [FV.fName @SimpleAge, GV.FmType GV.Nominal]
+      encFacetCol = GV.column [FV.fName @BR.SimpleAgeC, GV.FmType GV.Nominal]
       filter = GV.filter (GV.FExpr $ "datum.CollegeGrad == 'Grad' && datum.Sex == 'Female'")
       projection = GV.projection [GV.PrType GV.AlbersUsa]
       transform2 = GV.transform . GV.lookupAs "StateName" datGeo "properties.name" "geo" . filter

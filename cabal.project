@@ -2,7 +2,7 @@ packages: ./ ~/DataScience/glm-haskell
 jobs: 4
 with-compiler: ghc
 
-allow-newer: knit-haskell
+allow-newer: knit-haskell, vinyl
 
 
 source-repository-package

@@ -82,40 +82,25 @@ instance Hashable SimpleASE
 -- map SimpleASE to triples (which then get mapped to labels from the data) of Age, Sex, Education
 
 acsASE :: SimpleASE -> [(ACSAge, Sex, Education)]
-acsASE YoungFemaleNonGrad = [(a,Female,e) | a <- acsAges Young, e <- acsLevels NonGrad]
-acsASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- acsAges Young, e <- acsLevels Grad]
-acsASE OldFemaleNonGrad = [(a,Female,e) | a <- acsAges Old, e <- acsLevels NonGrad]
-acsASE OldFemaleCollegeGrad = [(a,Female,e) | a <- acsAges Old, e <- acsLevels Grad]
-acsASE YoungMaleNonGrad = [(a,Male,e) | a <- acsAges Young, e <- acsLevels NonGrad]
-acsASE YoungMaleCollegeGrad = [(a,Male,e) | a <- acsAges Young, e <- acsLevels Grad]
-acsASE OldMaleNonGrad = [(a,Male,e) | a <- acsAges Old, e <- acsLevels NonGrad]
-acsASE OldMaleCollegeGrad = [(a,Male,e) | a <- acsAges Old, e <- acsLevels Grad]
+acsASE YoungFemaleNonGrad = [(a,Female,e) | a <- simpleAgeACS Under, e <- acsLevels NonGrad]
+acsASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeACS Under, e <- acsLevels Grad]
+acsASE OldFemaleNonGrad = [(a,Female,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels NonGrad]
+acsASE OldFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels Grad]
+acsASE YoungMaleNonGrad = [(a,Male,e) | a <- simpleAgeACS Under, e <- acsLevels NonGrad]
+acsASE YoungMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeACS Under, e <- acsLevels Grad]
+acsASE OldMaleNonGrad = [(a,Male,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels NonGrad]
+acsASE OldMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels Grad]
 
 turnoutASE :: SimpleASE -> [(TurnoutAge, Sex, Education)]
-turnoutASE YoungFemaleNonGrad = [(a,Female,e) | a <- turnoutAges Young, e <- turnoutLevels NonGrad]
-turnoutASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- turnoutAges Young, e <- turnoutLevels Grad]
-turnoutASE OldFemaleNonGrad = [(a,Female,e) | a <- turnoutAges Old, e <- turnoutLevels NonGrad]
-turnoutASE OldFemaleCollegeGrad = [(a,Female,e) | a <- turnoutAges Old, e <- turnoutLevels Grad]
-turnoutASE YoungMaleNonGrad = [(a,Male,e) | a <- turnoutAges Young, e <- turnoutLevels NonGrad]
-turnoutASE YoungMaleCollegeGrad = [(a,Male,e) | a <- turnoutAges Young, e <- turnoutLevels Grad]
-turnoutASE OldMaleNonGrad = [(a,Male,e) | a <- turnoutAges Old, e <- turnoutLevels NonGrad]
-turnoutASE OldMaleCollegeGrad = [(a,Male,e) | a <- turnoutAges Old, e <- turnoutLevels Grad]   
+turnoutASE YoungFemaleNonGrad = [(a,Female,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels NonGrad]
+turnoutASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels Grad]
+turnoutASE OldFemaleNonGrad = [(a,Female,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels NonGrad]
+turnoutASE OldFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels Grad]
+turnoutASE YoungMaleNonGrad = [(a,Male,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels NonGrad]
+turnoutASE YoungMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels Grad]
+turnoutASE OldMaleNonGrad = [(a,Male,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels NonGrad]
+turnoutASE OldMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels Grad]   
 
-acsLevels :: SimpleEducation -> [Education]
-acsLevels NonGrad = [L9, L12, HS, SC, AS]
-acsLevels Grad = [BA, AD]
-
-turnoutLevels :: SimpleEducation -> [Education]
-turnoutLevels NonGrad = [L9, L12, HS, SC] -- NB: Turnout data did not contain an Associates Degree row
-turnoutLevels Grad = [BA, AD]
-
-acsAges :: SimpleAge -> [ACSAge]
-acsAges Old = [A45To64,A65AndOver]
-acsAges Young = [A18To24,A25To44]
-
-turnoutAges :: SimpleAge -> [TurnoutAge]
-turnoutAges Old = [T45To64,T65To74,T75AndOver]
-turnoutAges Young = [T18To24,T25To44]
 
 ---
 simpleAgeSexEducation :: DemographicStructure ASEDemographics TurnoutASE HouseElections SimpleASE

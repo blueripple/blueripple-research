@@ -27,9 +27,9 @@ module MRP.CCES
 
 import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
---import qualified BlueRipple.Data.PrefModel.ASETypes as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
---import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
+import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
+
 
 import           MRP.CCESFrame
 
@@ -108,13 +108,13 @@ type CCES_MRP = '[ Year
                  , CCESWeightCumulative
                  , StateAbbreviation
                  , CongressionalDistrict
-                 , Sex
+                 , BR.SexC
                  , Age
-                 , SimpleAge
+                 , BR.SimpleAgeC
                  , Education
-                 , SimpleEducation
+                 , BR.CollegeGradC
                  , Race
-                 , SimpleRace
+                 , BR.SimpleRaceC
                  , PartisanId3
                  , PartisanId7
                  , PartisanIdLeaner
@@ -140,10 +140,11 @@ intToSex n = case n of
   2 -> BR.Female
   _ -> undefined
 
+{-
 type Sex = "Sex" F.:-> BR.Sex
 instance FV.ToVLDataValue (F.ElField Sex) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
-
+-}
 
 data EducationT = E_NoHS
                 | E_HighSchool
@@ -158,14 +159,15 @@ instance S.Serialize EducationT
 intToEducationT :: Int -> EducationT
 intToEducationT = toEnum . minus1 . min 7
 
-intToSimpleEducation :: Int -> BR.SimpleEducation
-intToSimpleEducation n = if n >= 4 then BR.Grad else BR.NonGrad
+intToCollegeGrad :: Int -> BR.CollegeGrad
+intToCollegeGrad n = if n >= 4 then BR.Grad else BR.NonGrad
 
 type Education = "Education" F.:-> EducationT
-type SimpleEducation = "CollegeGrad" F.:-> BR.SimpleEducation
-instance FV.ToVLDataValue (F.ElField SimpleEducation) where
+{-
+type CollegeGrad = "CollegeGrad" F.:-> BR.CollegeGrad
+instance FV.ToVLDataValue (F.ElField CollegeGrad) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
-
+-}
 
 data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
@@ -182,10 +184,11 @@ raceToSimpleRace :: RaceT -> BR.SimpleRace
 raceToSimpleRace White = BR.White
 raceToSimpleRace _ = BR.NonWhite
 
+{-
 type SimpleRace = "SimpleRace" F.:-> BR.SimpleRace
 instance FV.ToVLDataValue (F.ElField SimpleRace) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
-
+-}
 
 data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor AgeT = V.Vector
@@ -200,12 +203,15 @@ intToAgeT x
   | otherwise = A75AndOver
 
 intToSimpleAge :: Int -> BR.SimpleAge
-intToSimpleAge n = if n < 45 then BR.Young else BR.Old
+intToSimpleAge n = if n < 45 then BR.Under else BR.EqualOrOver
 
 type Age = "Age" F.:-> AgeT
+
+{-
 type SimpleAge = "Under45" F.:-> BR.SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAge) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+-}
 
 data RegistrationT = R_Active
                    | R_NoRecord
@@ -379,16 +385,16 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
 -- fmap over Frame after load and throwing out bad rows
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
 transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
-  addGender = FT.recordSingleton @Sex . intToSex . F.rgetField @CCESGender
+  addGender = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @CCESGender
   addEducation = FT.recordSingleton @Education . intToEducationT . F.rgetField @CCESEduc
-  addSimpleEducation = FT.recordSingleton @SimpleEducation . intToSimpleEducation . F.rgetField @CCESEduc
+  addCollegeGrad = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @CCESEduc
   rInt q = F.rgetField @CCESRace q
   hInt q = F.rgetField @CCESHispanic q
   race q = if (hInt q == 1) then Hispanic else intToRaceT (rInt q)
   addRace = FT.recordSingleton @Race . race 
-  addSimpleRace = FT.recordSingleton @SimpleRace . raceToSimpleRace . race 
+  addSimpleRace = FT.recordSingleton @BR.SimpleRaceC . raceToSimpleRace . race 
   addAge = FT.recordSingleton @Age . intToAgeT . F.rgetField @CCESAge
-  addSimpleAge = FT.recordSingleton @SimpleAge . intToSimpleAge . F.rgetField @CCESAge
+  addSimpleAge = FT.recordSingleton @BR.SimpleAgeC . intToSimpleAge . F.rgetField @CCESAge
   addRegistration = FT.recordSingleton @Registration . parseRegistration  . F.rgetField @CCESVvRegstatus
   addTurnout = FT.recordSingleton @Turnout . parseTurnout . F.rgetField @CCESVvTurnoutGvm
   addHouseVoteParty = FT.recordSingleton @HouseVoteParty . parseHouseVoteParty . F.rgetField @CCESVotedRepParty
@@ -402,7 +408,7 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
            . FT.retypeColumn @CCESDistUp @CongressionalDistrict -- could be CCES_Dist or CCES_DistUp
            . FT.mutate addGender
            . FT.mutate addEducation
-           . FT.mutate addSimpleEducation
+           . FT.mutate addCollegeGrad
            . FT.mutate addRace
            . FT.mutate addSimpleRace
            . FT.mutate addAge
@@ -423,13 +429,13 @@ type Count = "Count" F.:-> Int
 type Successes = "Successes" F.:-> Int
 
 -- some keys for aggregation
-type ByStateSex = '[StateAbbreviation, Sex]
-type ByStateSexRace = '[StateAbbreviation, Sex, SimpleRace]
-type ByStateSexRaceAge = '[StateAbbreviation, Sex, SimpleRace, SimpleAge]
-type ByStateSexEducationAge = '[StateAbbreviation, Sex, SimpleEducation, SimpleAge]
-type ByStateSexRaceEducation = '[StateAbbreviation, Sex, SimpleRace, SimpleEducation]
-type ByStateSexRaceEducationAge = '[StateAbbreviation, Sex, SimpleRace, SimpleEducation, SimpleAge]
-type ByStateRaceEducation = '[StateAbbreviation, SimpleRace, SimpleEducation]
+type ByStateSex = '[StateAbbreviation, BR.SexC]
+type ByStateSexRace = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC]
+type ByStateSexRaceAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.SimpleAgeC]
+type ByStateSexEducationAge = '[StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
+type ByStateSexRaceEducation = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC]
+type ByStateSexRaceEducationAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
+type ByStateRaceEducation = '[StateAbbreviation, BR.SimpleRaceC, BR.CollegeGradC]
 
 binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
 binomialFold testRow =
@@ -472,18 +478,18 @@ weightedCountFold filterData testData weightData =
   (MR.assignKeysAndData @k)
   (MR.foldAndAddKey $ weightedBinomialFold testData weightData)
 
-type ByCCESPredictors = '[StateAbbreviation, Sex, SimpleRace, SimpleEducation, SimpleAge]
+type ByCCESPredictors = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
 data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
 type CCESEffect = GLM.WithIntercept CCESPredictor
-ccesPredictor :: forall r. (F.ElemOf r Sex
-                           , F.ElemOf r SimpleRace
-                           , F.ElemOf r SimpleEducation
-                           , F.ElemOf r SimpleAge) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Sex = if (F.rgetField @Sex r == BR.Male) then 1 else 0
-ccesPredictor r P_WWC    = if (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad) then 1 else 0
-ccesPredictor r P_Race    = if F.rgetField @SimpleRace r == BR.NonWhite then 0 else 1 -- non-white is baseline
-ccesPredictor r P_Education    = if F.rgetField @SimpleEducation r == BR.NonGrad then 0 else 1 -- non-college is baseline
-ccesPredictor r P_Age    = if F.rgetField @SimpleAge r == BR.Old then 0 else 1 -- >= 45  is baseline
+ccesPredictor :: forall r. (F.ElemOf r BR.SexC
+                           , F.ElemOf r BR.SimpleRaceC
+                           , F.ElemOf r BR.CollegeGradC
+                           , F.ElemOf r BR.SimpleAgeC) => F.Record r -> CCESPredictor -> Double
+ccesPredictor r P_Sex = if (F.rgetField @BR.SexC r == BR.Male) then 1 else 0
+ccesPredictor r P_WWC    = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
+ccesPredictor r P_Race    = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1 -- non-white is baseline
+ccesPredictor r P_Education    = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
+ccesPredictor r P_Age    = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 
 type instance GLM.GroupKey (Proxy k) = F.Record k
 recordToGroupKey :: forall k r. (k F.⊆ r) => F.Record r -> Proxy k -> F.Record k
@@ -507,7 +513,7 @@ groupByStateAndGenderKey r _ = (F.rgetField
 ccesGroupLabels ::forall r.  (F.ElemOf r StateAbbreviation
                              ,F.ElemOf r Gender
                              , F.ElemOf r BR.SimpleRace
-                             , F.ElemOf r BR.SimpleEducation
+                             , F.ElemOf r BR.CollegeGrad
                              , F.ElemOf r BR.SimpleAge)
                 => F.Record r -> CCESGroup -> T.Text
 ccesGroupLabels r G_State = F.rgetField @StateAbbreviation r

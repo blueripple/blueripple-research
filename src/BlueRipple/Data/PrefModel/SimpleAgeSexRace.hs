@@ -19,7 +19,7 @@ module BlueRipple.Data.PrefModel.SimpleAgeSexRace where
 import BlueRipple.Data.DataFrames
 import BlueRipple.Data.DemographicTypes
 import BlueRipple.Data.PrefModel
-import BlueRipple.Data.PrefModel.ASRTypes
+--import BlueRipple.Data.PrefModel.ASRTypes
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
@@ -87,8 +87,8 @@ type instance FI.VectorFor SimpleASR = V.Vector
 instance Hashable SimpleASR
 
 ages :: SimpleAge -> [Age]
-ages Old = [A45To64,A65To74,A75AndOver]
-ages Young = [A18To24,A25To44]
+ages EqualOrOver = [A45To64,A65To74,A75AndOver]
+ages Under = [A18To24,A25To44]
 
 --foldLookup :: Monad m => (b -> m c) -> FL.Fold c d -> FL.FoldM m b d 
 --foldLookup g fld = FL.premapM g $ FL.generalize fld
@@ -100,14 +100,14 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
    mergeACSCounts m = do
      let lookupX k = maybe (X.throwError $ "(mergeACSCounts) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          sumLookup g = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize FL.sum)) g
-     oldFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages Old]
-     youngFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages Young]
-     oldMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages Old]
-     youngMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages Young]
-     oldWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages Old]
-     youngWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages Young]
-     oldWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages Old]
-     youngWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages Young]
+     oldFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages EqualOrOver]
+     youngFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages Under]
+     oldMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages EqualOrOver]
+     youngMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages Under]
+     oldWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages EqualOrOver]
+     youngWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages Under]
+     oldWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages EqualOrOver]
+     youngWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages Under]
      let result =
            [ (OldNonWhiteFemale, oldFemale - oldWNHFemale) 
            , (YoungNonWhiteFemale, youngFemale - youngWNHFemale)
@@ -138,14 +138,14 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      let lookupX k = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          sumPair = FL.Fold (\(tA, tB) (a, b) -> (tA + a, tB +b)) (0, 0) id 
          sumLookup g = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize sumPair)) g
-     (oldFemaleP, oldFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages Old]
-     (youngFemaleP, youngFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages Young]
-     (oldMaleP, oldMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages Old]
-     (youngMaleP, youngMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages Young]
-     (oldWNHFemaleP, oldWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages Old]
-     (youngWNHFemaleP, youngWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages Young]
-     (oldWNHMaleP, oldWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages Old]
-     (youngWNHMaleP, youngWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages Young]
+     (oldFemaleP, oldFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages EqualOrOver]
+     (youngFemaleP, youngFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages Under]
+     (oldMaleP, oldMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages EqualOrOver]
+     (youngMaleP, youngMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages Under]
+     (oldWNHFemaleP, oldWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages EqualOrOver]
+     (youngWNHFemaleP, youngWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages Under]
+     (oldWNHMaleP, oldWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages EqualOrOver]
+     (youngWNHMaleP, youngWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages Under]
      let result =
            [ (OldNonWhiteFemale, oldFemaleP - oldWNHFemaleP, oldFemaleV - oldWNHFemaleV)
            , (YoungNonWhiteFemale, youngFemaleP - youngWNHFemaleP, youngFemaleV - youngWNHFemaleV)

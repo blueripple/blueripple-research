@@ -6,8 +6,12 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified Data.Text                     as T
 
 data Age = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Enum, Bounded, Eq, Ord, Show)
+
 data ACSRace = All | WhiteNonHispanic | NonWhite deriving (Enum, Bounded, Eq, Ord, Show)
 data TurnoutRace = White | Black | Asian | Hispanic
+
+
+
 ageLabel :: Age -> T.Text
 ageLabel A18To24    = "18To24"
 ageLabel A25To44    = "25To44"

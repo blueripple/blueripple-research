@@ -313,31 +313,31 @@ locKeyPretty r =
   let stateAbbr = F.rgetField @StateAbbreviation r
   in stateAbbr
 
-type CatCols = '[Sex, SimpleEducation, SimpleAge]
-catKey :: BR.Sex -> BR.SimpleEducation -> BR.SimpleAge -> F.Record CatCols
+type CatCols = '[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
+catKey :: BR.Sex -> BR.CollegeGrad -> BR.SimpleAge -> F.Record CatCols
 catKey s e a = s F.&: e F.&: a F.&: V.RNil
 
-unCatKey :: F.Record CatCols -> (BR.Sex, BR.SimpleEducation, BR.SimpleAge)
+unCatKey :: F.Record CatCols -> (BR.Sex, BR.CollegeGrad, BR.SimpleAge)
 unCatKey r =
-  let s = F.rgetField @Sex r
-      e = F.rgetField @SimpleEducation r
-      a = F.rgetField @SimpleAge r
+  let s = F.rgetField @BR.SexC r
+      e = F.rgetField @BR.CollegeGradC r
+      a = F.rgetField @BR.SimpleAgeC r
   in (s,e,a)
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
-predMap r = M.fromList [(P_Sex, if F.rgetField @Sex r == BR.Female then 0 else 1)
-                       ,(P_Education, if F.rgetField @SimpleEducation r == BR.NonGrad then 0 else 1)
-                       ,(P_Age, if F.rgetField @SimpleAge r == BR.Old then 0 else 1)
+predMap r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
+                       ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
+                       ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
-allCatKeys = [catKey s e a | a <- [BR.Old, BR.Young], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
+allCatKeys = [catKey s e a | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
 catPredMaps = M.fromList $ fmap (\k -> (k,predMap k)) allCatKeys
 
 catKeyColHeader :: F.Record CatCols -> T.Text
 catKeyColHeader r =
-  let g = T.pack $ show $ F.rgetField @Sex r
+  let g = T.pack $ show $ F.rgetField @BR.SexC r
 --      wnh = if F.rgetField @WhiteNonHispanic r then "White" else "NonWhite"
-      a = T.pack $ show $ F.rgetField @SimpleAge r
-      e = T.pack $ show $ F.rgetField @SimpleEducation r
+      a = T.pack $ show $ F.rgetField @BR.SimpleAgeC r
+      e = T.pack $ show $ F.rgetField @BR.CollegeGradC r
   in a <> "-" <> e <> "-" <> g
 
 
@@ -351,7 +351,7 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members e
      -> K.Sem r ()
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
   K.logLE K.Info $ "Working on Pools post..."
-  let isWWC r = (F.rgetField @SimpleRace r == BR.White) && (F.rgetField @SimpleEducation r == BR.NonGrad)
+  let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countDemPres2016VotesF = MR.concatFold
                                $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                 (\r -> (F.rgetField @Turnout r == T_Voted)
@@ -460,8 +460,8 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
       longPrefs = concat $ fmap melt predsByLocation
       sortedStates sex = K.knitMaybe "Error sorting locationHolders" $ do
         let f lh@(LocationHolder n _ cdM) = do
-              yng <-  dvpv <$> M.lookup (catKey sex BR.Grad BR.Young) cdM
-              old <- dvpv <$> M.lookup (catKey sex BR.Grad BR.Old) cdM
+              yng <-  dvpv <$> M.lookup (catKey sex BR.Grad BR.Under) cdM
+              old <- dvpv <$> M.lookup (catKey sex BR.Grad BR.EqualOrOver) cdM
               let grp = if yng < 0
                         then -1
                         else if old > 0
@@ -534,10 +534,10 @@ educationGap s a (LocationHolder _ _ cd) = do
   datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
   return (datNonGrad, datGrad)
 
-ageGap :: BR.Sex -> BR.SimpleEducation -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder F.ElField Double -> Maybe (Double, Double)
 ageGap s e (LocationHolder _ _ cd) = do  
-  datYoung <- M.lookup (catKey s e BR.Young) cd
-  datOld <- M.lookup (catKey s e BR.Old) cd
+  datYoung <- M.lookup (catKey s e BR.Under) cd
+  datOld <- M.lookup (catKey s e BR.EqualOrOver) cd
   return (datOld, datYoung)
 
 
@@ -576,7 +576,12 @@ colPrefByLocation cats cas =
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))
      <> mconcat (fmap rowFromCatKey cats)
 
-vlPrefGapByState :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> BR.Sex -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlPrefGapByState :: Foldable f
+                 => T.Text
+                 -> FV.ViewConfig
+                 -> [T.Text]
+                 -> BR.Sex
+                 -> f (T.Text, (BR.Sex, BR.CollegeGrad, BR.SimpleAge), Double) -> GV.VegaLite
 vlPrefGapByState title vc sortedStates sex rows =
   let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
                                           , ("Sex", GV.Str $ T.pack $ show s)
@@ -596,7 +601,11 @@ vlPrefGapByState title vc sortedStates sex rows =
     FV.configuredVegaLite vc [FV.title title ,GV.layer [dotSpec, lineSpec], dat]
 
 -- each state is it's own plot and we facet those
-vlPrefGapByStateBoth :: Foldable f => T.Text -> FV.ViewConfig -> [T.Text] -> f (T.Text, (BR.Sex, BR.SimpleEducation, BR.SimpleAge), Double) -> GV.VegaLite
+vlPrefGapByStateBoth :: Foldable f
+                     => T.Text
+                     -> FV.ViewConfig
+                     -> [T.Text]
+                     -> f (T.Text, (BR.Sex, BR.CollegeGrad, BR.SimpleAge), Double) -> GV.VegaLite
 vlPrefGapByStateBoth title vc sortedStates rows =
   let datRow (n, (s,e,a), p) = GV.dataRow [("State", GV.Str n)
                                           , ("Age", GV.Str $ (T.pack $ show a))
