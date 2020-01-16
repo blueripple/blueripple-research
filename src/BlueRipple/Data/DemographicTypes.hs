@@ -1,15 +1,20 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE TupleSections     #-}
 module BlueRipple.Data.DemographicTypes where
 
 import qualified BlueRipple.Data.DataFrames    as BR
 
+import qualified Control.Foldl                 as FL
 import qualified Data.Array                    as A
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
@@ -18,6 +23,7 @@ import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
+import qualified Frames.MapReduce              as FMR
 import qualified Data.Vector                   as Vec
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -196,7 +202,7 @@ acsASELabelMap =
       , s <- [(minBound :: Sex) ..]
       , e <- [(minBound :: Education) ..]
       ]
-    
+
 typedASEDemographics
   :: (F.ElemOf rs BR.ACSKey)
   => F.Record rs
@@ -241,4 +247,189 @@ typedASETurnout r = do
   return $ r `V.rappend` typedCols
 
 
-turnoutFold :: FL.Fold (F>Record
+{-
+Lets talk about aggregation!
+Suppose we have:
+keys, a of type A
+keys, b of type B
+data, d of type D
+An arrow, gA : A -> D, mapping keys in a to data, think the data in a row indexed by A
+An arrow,  aggBA : B -> Z[A], where Z[A] is the module of finite formal linear combinations of a in A with coeficients in Z
+An arrow, fold: Z[D] -> D, "folding" formal linear combinations of d in D (with coefficients in Z) into a d in D
+There is a covariant functor, FZ : Set -> Category of modules, FZ (X) = Z[X] and FZ (g : X -> Y) = Z[X] -> Z[Y]
+Then we can construct gB : B -> D, gB (b) = fold . FZ (gA) . aggBA b
+
+Suppose we have gAX : A x X -> D
+And aggBA : B -> Z[A]
+and aggYX : X -> Z[Y].
+Let's denote the coefficient in Z of the element A in some g in Z[A] via cA(g)
+And the tensor product of a in A and x in X as (a @ x). [We're doing this all in Hask, so a @ x = (a,x)]
+We can compose them to yield aggBXAY : B x X -> Z[A x Y], aggBC (b @ c) = sum_a sum_x (cA(aggBA b) + cX(aggYX x)) (a @ x)
+So we have gBY (b @ y) = fold . FZ (gAX) . aggBYAX (b @ y)
+
+Some thoughts:
+
+We don't need gA if all we want is gBY.  We only ever need a "getter" for the aggregated key.
+"fold" is the same, regardless of the aggregation since it is only a rule for collapsing the formal sum.  (Wait.  It's an F-algebra of FZ!)
+
+To summarize:  TO do an aggregation we need:
+1) a getter on the final key
+2) an aggregation from the inital to the final key, which we can make from aggregations on sub-keys
+3) an F-algebra (D, fold)
+
+-}
+-- finite formal sum of @a@ with integer coefficients
+data AggSum a where
+  AggSum :: Ord a => M.Map a Int -> AggSum a
+  deriving (Show, Functor)
+
+sum :: Ord a => [a] -> AggSum a
+sum as = AggSum $ M.fromList $ fmap (, 1) as
+
+diff :: Ord a => a -> a -> AggSum a
+diff a1 a2 = AggSum $ M.fromListWith (+) [(a1, 1), (a2, -1)]
+
+diffSum :: Ord a => a -> [a] -> AggSum a
+diffSum a as = AggSum $ M.fromListWith (+) $ (a, 1) : fmap (, -1) as
+
+type Aggregation b a = b -> AggSum a
+
+composeAggSums :: AggSum a -> AggSum b -> AggSum (a, b)
+composeAggSums (AggSum ma) (AggSum mb) = AggSum $ M.fromListWith (+) $ do
+  aa <- M.toList ma
+  ab <- M.toList mb
+  return ((fst aa, fst ab), (snd aa + snd ab))
+
+composeAggregations
+  :: Aggregation b a -> Aggregation y x -> Aggregation (b, y) (a, x)
+composeAggregations aggBA aggYX (b, y) = composeAggSums (aggBA b) (aggYX y)
+
+aggFold
+  :: forall k k' d
+   . Aggregation k' k
+  -> FL.Fold (d, Int) d
+  -> [k']
+  -> FL.FoldM (Either T.Text) (k, d) [(k', d)]
+aggFold agg alg newKeys = FMR.postMapM go (FL.generalize FL.map)
+ where
+  go :: M.Map k d -> Either T.Text [(k', d)]
+  go m = traverse (doOne m) newKeys
+  doOne :: M.Map k d -> k' -> (k', d)
+  doOne = traverse (`M.lookup` m) $ agg k'
+
+
+
+  {-
+data AggExpr a where
+  AggSingle :: a -> AggExpr a
+  AggSum :: [AggExpr a] -> AggExpr a
+  AggDiff :: AggExpr a -> AggExpr a -> AggExpr a
+  deriving (Functor, Show)
+
+aggregate :: Num b => (a -> b) -> AggExpr a -> b
+aggregate f (AggSingle a ) = f a
+aggregate f (AggSum    as) = FL.fold (FL.premap (aggregate f) FL.sum) as
+aggregate f (AggDiff a a') = aggregate f a - aggregate f a'
+
+aggregateM :: (Monad m, Num b) => (a -> m b) -> AggExpr a -> m b
+aggregateM f (AggSingle a) = f a
+aggregateM f (AggSum as) =
+  FL.foldM (FL.premapM (aggregateM f) (FL.generalize FL.sum)) as
+aggregateM f (AggDiff a a') = (-) <$> aggregateM f a <*> aggregateM f a'
+
+composeAggExpr :: AggExpr a -> AggExpr b -> AggExpr (a, b)
+composeAggExpr (AggSingle a) (AggSingle b) = AggSingle (a, b)
+composeAggExpr (AggSum as) aeb = AggSum $ fmap (`composeAggExpr` aeb) as
+composeAggExpr (AggDiff a a') aeb =
+  AggDiff (composeAggExpr a aeb) (composeAggExpr a' aeb)
+composeAggExpr aea (AggSum bs) = AggSum $ fmap (composeAggExpr aea) bs
+composeAggExpr aea (AggDiff b b') =
+  AggDiff (composeAggExpr aea b) (composeAggExpr aea b')
+
+aggAge4ToSimple :: SimpleAge -> AggExpr Age4
+aggAge4ToSimple x = AggSum $ fmap AggSingle $ simpleAgeFrom4 x
+
+aggAge5ToSimple :: SimpleAge -> AggExpr Age5
+aggAge5ToSimple x = AggSum $ fmap AggSingle $ simpleAgeFrom5 x
+
+aggACSToCollegeGrad :: CollegeGrad -> AggExpr Education
+aggACSToCollegeGrad x = AggSum $ fmap AggSingle $ acsLevels x
+
+aggTurnoutToCollegeGrad :: CollegeGrad -> AggExpr Education
+aggTurnoutToCollegeGrad x = AggSum $ fmap AggSingle $ turnoutLevels x
+
+aggSexToAll :: () -> AggExpr Sex
+aggSexToAll _ = AggSum $ fmap AggSingle [Female, Male]
+
+aggTurnoutRaceToSimple :: SimpleRace -> AggExpr TurnoutRace
+aggTurnoutRaceToSimple NonWhite =
+  AggSum $ fmap AggSingle [Turnout_Black, Turnout_Asian, Turnout_Hispanic]
+aggTurnoutRaceToSimple White = AggSingle Turnout_White
+
+aggACSRaceToSimple :: SimpleRace -> AggExpr ACSRace
+aggACSRaceToSimple NonWhite =
+  AggDiff (AggSingle ACS_All) (AggSingle ACS_WhiteNonHispanic)
+aggACSRaceToSimple White = AggSingle ACS_WhiteNonHispanic
+
+aggAE_ACS :: (SimpleAge, CollegeGrad) -> AggExpr (Age4, Education)
+aggAE_ACS (sa, cg) =
+  composeAggExpr (aggAge4ToSimple sa) (aggACSToCollegeGrad cg)
+
+aggAR_ACS :: (SimpleAge, SimpleRace) -> AggExpr (Age5, ACSRace)
+aggAR_ACS (sa, sr) =
+  composeAggExpr (aggAge5ToSimple sa) (aggACSRaceToSimple sr)
+
+aggAE_Turnout :: (SimpleAge, CollegeGrad) -> AggExpr (Age5, Education)
+aggAE_Turnout (sa, cg) =
+  composeAggExpr (aggAge5ToSimple sa) (aggTurnoutToCollegeGrad cg)
+
+aggAR_Turnout :: (SimpleAge, SimpleRace) -> AggExpr (Age5, TurnoutRace)
+aggAR_Turnout (sa, sr) =
+  composeAggExpr (aggAge5ToSimple sa) (aggTurnoutRaceToSimple sr)
+
+aggFold
+  :: forall k k' v
+   . (Show k, Show k', Show v, Num v, Ord k)
+  => [(k', AggExpr k)]
+  -> FL.FoldM (Either T.Text) (k, v) [(k', v)]
+aggFold keyedAE = FMR.postMapM go (FL.generalize FL.map)
+ where
+  getOne :: M.Map k v -> (k', AggExpr k) -> Either T.Text (k', v)
+  getOne m (k', ae) =
+    fmap (k', )
+      $ maybe
+          (  Left
+          $  "lookup failed in aggFold: aggExpr="
+          <> (T.pack $ show ae)
+          <> "; m="
+          <> (T.pack $ show m)
+          )
+          Right
+      $ aggregateM (`M.lookup` m) ae
+  go :: M.Map k v -> Either T.Text [(k', v)]
+  go m = traverse (getOne m) keyedAE
+
+aggFoldWeighted
+  :: forall k k' v w
+   . (Show k, Show k', Show v, Num v, Num w, Ord k)
+  => [(k', AggExpr k)]
+  -> FL.FoldM (Either T.Text) (k, (w, v)) [(k', v)]
+aggFoldWeighted keyedAE = FMR.postMapM go (FL.generalize FL.map)
+ where
+  getOne :: M.Map k v -> (k', AggExpr k) -> Either T.Text (k', v)
+  getOne m (k', ae) =
+    fmap (k', )
+      $ maybe
+          (  Left
+          $  "lookup failed in aggFold: aggExpr="
+          <> (T.pack $ show ae)
+          <> "; m="
+          <> (T.pack $ show m)
+          )
+          Right
+      $ aggregateM (`M.lookup` m) ae
+  go :: M.Map k v -> Either T.Text [(k', v)]
+  go m = traverse (getOne m) keyedAE  
+
+aggFoldRecords :: [(F.Record k', AggExp (V.Snd k'))] -> FL.FoldM (F.Record (k V.++ v) 
+-}
