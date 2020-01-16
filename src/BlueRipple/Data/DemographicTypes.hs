@@ -17,6 +17,7 @@ import qualified Data.Serialize                as S
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
+import qualified Frames.Folds                  as FF
 import qualified Data.Vector                   as Vec
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -195,7 +196,7 @@ acsASELabelMap =
       , s <- [(minBound :: Sex) ..]
       , e <- [(minBound :: Education) ..]
       ]
-
+    
 typedASEDemographics
   :: (F.ElemOf rs BR.ACSKey)
   => F.Record rs
@@ -210,6 +211,9 @@ typedASEDemographics r = do
     key
     acsASELabelMap
   return $ r `V.rappend` typedCols
+
+demographicsFold :: FL.Fold (F.Record '[BR.ACSCount]) (F.Record '[BR.ACSCount])
+demographicsFold = FF.foldAllConstrained @Num FL.sum
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =
@@ -237,3 +241,4 @@ typedASETurnout r = do
   return $ r `V.rappend` typedCols
 
 
+turnoutFold :: FL.Fold (F>Record
