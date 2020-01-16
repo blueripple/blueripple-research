@@ -19,7 +19,7 @@ module BlueRipple.Data.PrefModel.AgeSexRace where
 import           BlueRipple.Data.DataFrames
 import           BlueRipple.Data.DemographicTypes
 import           BlueRipple.Data.PrefModel
-import           BlueRipple.Data.PrefModel.ASRTypes
+--import           BlueRipple.Data.PrefModel.ASRTypes
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
@@ -147,26 +147,26 @@ ageSexRace = DemographicStructure processDemographicData processTurnoutData proc
    mergeTurnoutRows m = do
      let lookupX k = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          getPair x = lookupX (asrTurnoutLabel x) m
-     (am18To24P, am18To24V) <- getPair (A18To24,Male,All) 
-     (am25To44P, am25To44V) <- getPair (A25To44,Male,All)
-     (am45To64P, am45To64V) <- getPair (A45To64,Male,All)
-     (am65To74P, am65To74V) <- getPair (A65To74,Male,All)
-     (am75AndOverP, am75AndOverV) <- getPair (A75AndOver,Male,All)
-     (af18To24P, af18To24V) <- getPair (A18To24,Female,All)
-     (af25To44P, af25To44V) <- getPair (A25To44,Female,All)
-     (af45To64P, af45To64V) <- getPair (A45To64,Female,All)
-     (af65To74P, af65To74V) <- getPair (A65To74,Female,All)
-     (af75AndOverP, af75AndOverV) <- getPair (A75AndOver,Female,All)
-     (wnhm18To24P, wnhm18To24V) <- getPair (A18To24,Male,WhiteNonHispanic) 
-     (wnhm25To44P, wnhm25To44V) <- getPair (A25To44,Male,WhiteNonHispanic)
-     (wnhm45To64P, wnhm45To64V) <- getPair (A45To64,Male,WhiteNonHispanic)
-     (wnhm65To74P, wnhm65To74V) <- getPair (A65To74,Male,WhiteNonHispanic)
-     (wnhm75AndOverP, wnhm75AndOverV) <- getPair (A75AndOver,Male,WhiteNonHispanic)
-     (wnhf18To24P, wnhf18To24V) <- getPair (A18To24,Female,WhiteNonHispanic)
-     (wnhf25To44P, wnhf25To44V) <- getPair (A25To44,Female,WhiteNonHispanic)
-     (wnhf45To64P, wnhf45To64V) <- getPair (A45To64,Female,WhiteNonHispanic)
-     (wnhf65To74P, wnhf65To74V) <- getPair (A65To74,Female,WhiteNonHispanic)
-     (wnhf75AndOverP, wnhf75AndOverV) <- getPair (A75AndOver,Female,WhiteNonHispanic)
+     (am18To24P, am18To24V) <- getPair (A5_18To24,Male,ACS_All) 
+     (am25To44P, am25To44V) <- getPair (A5_25To44,Male,ACS_All)
+     (am45To64P, am45To64V) <- getPair (A5_45To64,Male,ACS_All)
+     (am65To74P, am65To74V) <- getPair (A5_65To74,Male,ACS_All)
+     (am75AndOverP, am75AndOverV) <- getPair (A5_75AndOver,Male,ACS_All)
+     (af18To24P, af18To24V) <- getPair (A5_18To24,Female,ACS_All)
+     (af25To44P, af25To44V) <- getPair (A5_25To44,Female,ACS_All)
+     (af45To64P, af45To64V) <- getPair (A5_45To64,Female,ACS_All)
+     (af65To74P, af65To74V) <- getPair (A5_65To74,Female,ACS_All)
+     (af75AndOverP, af75AndOverV) <- getPair (A5_75AndOver,Female,ACS_All)
+     (wnhm18To24P, wnhm18To24V) <- getPair (A5_18To24,Male,ACS_WhiteNonHispanic) 
+     (wnhm25To44P, wnhm25To44V) <- getPair (A5_25To44,Male,ACS_WhiteNonHispanic)
+     (wnhm45To64P, wnhm45To64V) <- getPair (A5_45To64,Male,ACS_WhiteNonHispanic)
+     (wnhm65To74P, wnhm65To74V) <- getPair (A5_65To74,Male,ACS_WhiteNonHispanic)
+     (wnhm75AndOverP, wnhm75AndOverV) <- getPair (A5_75AndOver,Male,ACS_WhiteNonHispanic)
+     (wnhf18To24P, wnhf18To24V) <- getPair (A5_18To24,Female,ACS_WhiteNonHispanic)
+     (wnhf25To44P, wnhf25To44V) <- getPair (A5_25To44,Female,ACS_WhiteNonHispanic)
+     (wnhf45To64P, wnhf45To64V) <- getPair (A5_45To64,Female,ACS_WhiteNonHispanic)
+     (wnhf65To74P, wnhf65To74V) <- getPair (A5_65To74,Female,ACS_WhiteNonHispanic)
+     (wnhf75AndOverP, wnhf75AndOverV) <- getPair (A5_75AndOver,Female,ACS_WhiteNonHispanic)
      let result =
            [
              (WhiteFemale18To24, wnhf18To24P, wnhf18To24V)

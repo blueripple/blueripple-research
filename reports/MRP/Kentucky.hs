@@ -98,7 +98,6 @@ import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.HouseElectionTotals as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
-import qualified BlueRipple.Data.PrefModel.ASETypes as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR

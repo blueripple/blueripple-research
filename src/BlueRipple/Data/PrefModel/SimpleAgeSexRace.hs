@@ -16,9 +16,9 @@
 
 module BlueRipple.Data.PrefModel.SimpleAgeSexRace where
 
-import BlueRipple.Data.DataFrames
-import BlueRipple.Data.DemographicTypes
-import BlueRipple.Data.PrefModel
+import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.PrefModel as BR
 --import BlueRipple.Data.PrefModel.ASRTypes
 
 import qualified Control.Foldl                 as FL
@@ -86,28 +86,24 @@ simpleASR2SimpleAR x = A.array (minBound,maxBound) [(OldNonWhite, x A.! OldNonWh
 type instance FI.VectorFor SimpleASR = V.Vector
 instance Hashable SimpleASR
 
-ages :: SimpleAge -> [Age]
-ages EqualOrOver = [A45To64,A65To74,A75AndOver]
-ages Under = [A18To24,A25To44]
-
 --foldLookup :: Monad m => (b -> m c) -> FL.Fold c d -> FL.FoldM m b d 
 --foldLookup g fld = FL.premapM g $ FL.generalize fld
 
-simpleAgeSexRace :: DemographicStructure ASRDemographics TurnoutASR HouseElections SimpleASR
-simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
+simpleAgeSexRace :: BR.DemographicStructure BR.ASRDemographics BR.TurnoutASR BR.HouseElections SimpleASR
+simpleAgeSexRace = BR.DemographicStructure processDemographicData processTurnoutData BR.processElectionData [minBound ..]
  where
    mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(SimpleASR, Int)]
    mergeACSCounts m = do
      let lookupX k = maybe (X.throwError $ "(mergeACSCounts) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          sumLookup g = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize FL.sum)) g
-     oldFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages EqualOrOver]
-     youngFemale <- sumLookup $ fmap asACSLabel  [(a,Female) | a<-ages Under]
-     oldMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages EqualOrOver]
-     youngMale <- sumLookup $ fmap asACSLabel  [(a,Male) | a<-ages Under]
-     oldWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages EqualOrOver]
-     youngWNHFemale <- sumLookup $ fmap asrACSLabel [(a,Female,WhiteNonHispanic) | a<-ages Under]
-     oldWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages EqualOrOver]
-     youngWNHMale <- sumLookup $ fmap asrACSLabel [(a,Male,WhiteNonHispanic) | a<-ages Under]
+     oldFemale <- sumLookup $ fmap BR.asACSLabel  [(a, BR.Female) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     youngFemale <- sumLookup $ fmap BR.asACSLabel  [(a, BR.Female) | a<-BR.simpleAgeFrom5 BR.Under]
+     oldMale <- sumLookup $ fmap BR.asACSLabel  [(a, BR.Male) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     youngMale <- sumLookup $ fmap BR.asACSLabel  [(a, BR.Male) | a<-BR.simpleAgeFrom5 BR.Under]
+     oldWNHFemale <- sumLookup $ fmap BR.asrACSLabel [(a, BR.Female, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     youngWNHFemale <- sumLookup $ fmap BR.asrACSLabel [(a, BR.Female, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.Under]
+     oldWNHMale <- sumLookup $ fmap BR.asrACSLabel [(a, BR.Male, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     youngWNHMale <- sumLookup $ fmap BR.asrACSLabel [(a, BR.Male, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.Under]
      let result =
            [ (OldNonWhiteFemale, oldFemale - oldWNHFemale) 
            , (YoungNonWhiteFemale, youngFemale - youngWNHFemale)
@@ -123,13 +119,13 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts")
      return result
      
-   processDemographicData :: Monad m => Int -> F.Frame ASRDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASR))
+   processDemographicData :: Monad m => Int -> F.Frame BR.ASRDemographics -> X.ExceptT Text m (F.FrameRec (BR.DemographicCounts SimpleASR))
    processDemographicData year dd = 
-     let makeRec :: (SimpleASR , Int) ->  F.Record [DemographicCategory SimpleASR, PopCount]
+     let makeRec :: (SimpleASR , Int) ->  F.Record [BR.DemographicCategory SimpleASR, BR.PopCount]
          makeRec (b, n) = b F.&: n F.&: V.RNil
-         fromRec r = (F.rgetField @ACSKey r, F.rgetField @ACSCount r)
-         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
-         assign = MR.generalizeAssign $ MR.assignKeysAndData @[StateAbbreviation,CongressionalDistrict] @[ACSKey,ACSCount]
+         fromRec r = (F.rgetField @BR.ACSKey r, F.rgetField @BR.ACSCount r)
+         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @BR.Year (==year)
+         assign = MR.generalizeAssign $ MR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.ACSKey, BR.ACSCount]
          reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeACSCounts $ FL.generalize $ FL.premap fromRec FL.map) 
      in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) dd
    
@@ -138,14 +134,14 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
      let lookupX k = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          sumPair = FL.Fold (\(tA, tB) (a, b) -> (tA + a, tB +b)) (0, 0) id 
          sumLookup g = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize sumPair)) g
-     (oldFemaleP, oldFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages EqualOrOver]
-     (youngFemaleP, youngFemaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Female,All) | a<-ages Under]
-     (oldMaleP, oldMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages EqualOrOver]
-     (youngMaleP, youngMaleV) <- sumLookup $ fmap asrTurnoutLabel  [(a,Male,All) | a<-ages Under]
-     (oldWNHFemaleP, oldWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages EqualOrOver]
-     (youngWNHFemaleP, youngWNHFemaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Female,WhiteNonHispanic) | a<-ages Under]
-     (oldWNHMaleP, oldWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages EqualOrOver]
-     (youngWNHMaleP, youngWNHMaleV) <- sumLookup $ fmap asrTurnoutLabel [(a,Male,WhiteNonHispanic) | a<-ages Under]
+     (oldFemaleP, oldFemaleV) <- sumLookup $ fmap BR.asrTurnoutLabel  [(a, BR.Female, BR.ACS_All) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     (youngFemaleP, youngFemaleV) <- sumLookup $ fmap BR.asrTurnoutLabel  [(a, BR.Female, BR.ACS_All) | a<-BR.simpleAgeFrom5 BR.Under]
+     (oldMaleP, oldMaleV) <- sumLookup $ fmap BR.asrTurnoutLabel  [(a, BR.Male, BR.ACS_All) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     (youngMaleP, youngMaleV) <- sumLookup $ fmap BR.asrTurnoutLabel  [(a, BR.Male, BR.ACS_All) | a<-BR.simpleAgeFrom5 BR.Under]
+     (oldWNHFemaleP, oldWNHFemaleV) <- sumLookup $ fmap BR.asrTurnoutLabel [(a, BR.Female, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     (youngWNHFemaleP, youngWNHFemaleV) <- sumLookup $ fmap BR.asrTurnoutLabel [(a, BR.Female, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.Under]
+     (oldWNHMaleP, oldWNHMaleV) <- sumLookup $ fmap BR.asrTurnoutLabel [(a, BR.Male, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.EqualOrOver]
+     (youngWNHMaleP, youngWNHMaleV) <- sumLookup $ fmap BR.asrTurnoutLabel [(a, BR.Male, BR.ACS_WhiteNonHispanic) | a<-BR.simpleAgeFrom5 BR.Under]
      let result =
            [ (OldNonWhiteFemale, oldFemaleP - oldWNHFemaleP, oldFemaleV - oldWNHFemaleV)
            , (YoungNonWhiteFemale, youngFemaleP - youngWNHFemaleP, youngFemaleV - youngWNHFemaleV)
@@ -167,14 +163,14 @@ simpleAgeSexRace = DemographicStructure processDemographicData processTurnoutDat
          
    processTurnoutData :: Monad m
      => Int
-     -> F.Frame TurnoutASR
-     -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASR, Population, VotedPctOfAll])
+     -> F.Frame BR.TurnoutASR
+     -> X.ExceptT Text m (F.FrameRec '[BR.DemographicCategory SimpleASR, BR.Population, BR.VotedPctOfAll])
    processTurnoutData year td = 
-    let makeRec :: (SimpleASR,Int,Int) -> F.Record [DemographicCategory SimpleASR, Population, VotedPctOfAll]
+    let makeRec :: (SimpleASR,Int,Int) -> F.Record [BR.DemographicCategory SimpleASR, BR.Population, BR.VotedPctOfAll]
         makeRec (b,p,v) = b F.&: p F.&: (realToFrac v/realToFrac p) F.&: V.RNil
-        fromRec r = (F.rgetField @Group r, (F.rgetField @Population r, F.rgetField @Voted r))
-        unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
-        assign = MR.generalizeAssign $ MR.assignKeysAndData @'[] @[Group,Population,Voted]
+        fromRec r = (F.rgetField @BR.Group r, (F.rgetField @BR.Population r, F.rgetField @BR.Voted r))
+        unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @BR.Year (==year)
+        assign = MR.generalizeAssign $ MR.assignKeysAndData @'[] @[BR.Group, BR.Population, BR.Voted]
         reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeTurnoutRows $ FL.generalize $ FL.premap fromRec FL.map) 
     in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) td
 

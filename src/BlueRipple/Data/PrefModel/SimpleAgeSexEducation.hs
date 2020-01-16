@@ -16,10 +16,9 @@
 
 module BlueRipple.Data.PrefModel.SimpleAgeSexEducation where
 
-import           BlueRipple.Data.DataFrames
-import           BlueRipple.Data.DemographicTypes
-import           BlueRipple.Data.PrefModel
-import           BlueRipple.Data.PrefModel.ASETypes
+import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.PrefModel as BR
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
@@ -81,35 +80,35 @@ instance Hashable SimpleASE
 
 -- map SimpleASE to triples (which then get mapped to labels from the data) of Age, Sex, Education
 
-acsASE :: SimpleASE -> [(ACSAge, Sex, Education)]
-acsASE YoungFemaleNonGrad = [(a,Female,e) | a <- simpleAgeACS Under, e <- acsLevels NonGrad]
-acsASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeACS Under, e <- acsLevels Grad]
-acsASE OldFemaleNonGrad = [(a,Female,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels NonGrad]
-acsASE OldFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels Grad]
-acsASE YoungMaleNonGrad = [(a,Male,e) | a <- simpleAgeACS Under, e <- acsLevels NonGrad]
-acsASE YoungMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeACS Under, e <- acsLevels Grad]
-acsASE OldMaleNonGrad = [(a,Male,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels NonGrad]
-acsASE OldMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeACS EqualOrOver, e <- acsLevels Grad]
+acsASE :: SimpleASE -> [(BR.Age4, BR.Sex, BR.Education)]
+acsASE YoungFemaleNonGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom4 BR.Under, e <- BR.acsLevels BR.NonGrad]
+acsASE YoungFemaleCollegeGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom4 BR.Under, e <- BR.acsLevels BR.Grad]
+acsASE OldFemaleNonGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom4 BR.EqualOrOver, e <- BR.acsLevels BR.NonGrad]
+acsASE OldFemaleCollegeGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom4 BR.EqualOrOver, e <- BR.acsLevels BR.Grad]
+acsASE YoungMaleNonGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom4 BR.Under, e <- BR.acsLevels BR.NonGrad]
+acsASE YoungMaleCollegeGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom4 BR.Under, e <- BR.acsLevels BR.Grad]
+acsASE OldMaleNonGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom4 BR.EqualOrOver, e <- BR.acsLevels BR.NonGrad]
+acsASE OldMaleCollegeGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom4 BR.EqualOrOver, e <- BR.acsLevels BR.Grad]
 
-turnoutASE :: SimpleASE -> [(TurnoutAge, Sex, Education)]
-turnoutASE YoungFemaleNonGrad = [(a,Female,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels NonGrad]
-turnoutASE YoungFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels Grad]
-turnoutASE OldFemaleNonGrad = [(a,Female,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels NonGrad]
-turnoutASE OldFemaleCollegeGrad = [(a,Female,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels Grad]
-turnoutASE YoungMaleNonGrad = [(a,Male,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels NonGrad]
-turnoutASE YoungMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeTurnout Under, e <- turnoutLevels Grad]
-turnoutASE OldMaleNonGrad = [(a,Male,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels NonGrad]
-turnoutASE OldMaleCollegeGrad = [(a,Male,e) | a <- simpleAgeTurnout EqualOrOver, e <- turnoutLevels Grad]   
+turnoutASE :: SimpleASE -> [(BR.Age5, BR.Sex, BR.Education)]
+turnoutASE YoungFemaleNonGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom5 BR.Under, e <- BR.turnoutLevels BR.NonGrad]
+turnoutASE YoungFemaleCollegeGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom5 BR.Under, e <- BR.turnoutLevels BR.Grad]
+turnoutASE OldFemaleNonGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom5 BR.EqualOrOver, e <- BR.turnoutLevels BR.NonGrad]
+turnoutASE OldFemaleCollegeGrad = [(a,BR.Female,e) | a <- BR.simpleAgeFrom5 BR.EqualOrOver, e <- BR.turnoutLevels BR.Grad]
+turnoutASE YoungMaleNonGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom5 BR.Under, e <- BR.turnoutLevels BR.NonGrad]
+turnoutASE YoungMaleCollegeGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom5 BR.Under, e <- BR.turnoutLevels BR.Grad]
+turnoutASE OldMaleNonGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom5 BR.EqualOrOver, e <- BR.turnoutLevels BR.NonGrad]
+turnoutASE OldMaleCollegeGrad = [(a,BR.Male,e) | a <- BR.simpleAgeFrom5 BR.EqualOrOver, e <- BR.turnoutLevels BR.Grad]   
 
 
 ---
-simpleAgeSexEducation :: DemographicStructure ASEDemographics TurnoutASE HouseElections SimpleASE
-simpleAgeSexEducation = DemographicStructure processDemographicData processTurnoutData processElectionData [minBound ..]
+simpleAgeSexEducation :: BR.DemographicStructure BR.ASEDemographics BR.TurnoutASE BR.HouseElections SimpleASE
+simpleAgeSexEducation = BR.DemographicStructure processDemographicData processTurnoutData BR.processElectionData [minBound ..]
  where
    mergeACSCounts :: Monad m => M.Map T.Text Int -> X.ExceptT Text m [(SimpleASE, Int)]
    mergeACSCounts m = do
      let lookupX k = maybe (X.throwError $ "(mergeACSCounts) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
-         sumLookup = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize FL.sum)) . fmap aseACSLabel
+         sumLookup = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize FL.sum)) . fmap BR.aseACSLabel
          allCats = [(minBound :: SimpleASE)..maxBound]
      resultSums <-  traverse (sumLookup . acsASE) allCats
      let result = zip allCats resultSums
@@ -118,13 +117,13 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
      X.when (totalInput /= totalResult) $ X.throwError ("Totals don't match in mergeACSCounts (SimpleASE)")
      return result
      
-   processDemographicData :: Monad m => Int -> F.Frame ASEDemographics -> X.ExceptT Text m (F.FrameRec (DemographicCounts SimpleASE))
+   processDemographicData :: Monad m => Int -> F.Frame BR.ASEDemographics -> X.ExceptT Text m (F.FrameRec (BR.DemographicCounts SimpleASE))
    processDemographicData year dd = 
-     let makeRec :: (SimpleASE , Int) ->  F.Record [DemographicCategory SimpleASE, PopCount]
+     let makeRec :: (SimpleASE , Int) ->  F.Record [BR.DemographicCategory SimpleASE, BR.PopCount]
          makeRec (b, n) = b F.&: n F.&: V.RNil
-         fromRec r = (F.rgetField @ACSKey r, F.rgetField @ACSCount r)
-         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
-         assign = MR.generalizeAssign $ MR.assignKeysAndData @[StateAbbreviation,CongressionalDistrict] @[ACSKey,ACSCount]
+         fromRec r = (F.rgetField @BR.ACSKey r, F.rgetField @BR.ACSCount r)
+         unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @BR.Year (==year)
+         assign = MR.generalizeAssign $ MR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.ACSKey, BR.ACSCount]
          reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeACSCounts $ FL.generalize $ FL.premap fromRec FL.map) 
      in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) dd
    
@@ -132,7 +131,7 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
    mergeTurnoutRows m = do
      let lookupX k = maybe (X.throwError $ "(mergeTurnoutRows) lookup failed for key=\"" <> k <> "\"") return . M.lookup k
          sumPair = FL.Fold (\(tA, tB) (a, b) -> (tA + a, tB +b)) (0, 0) id 
-         sumLookup = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize sumPair)) . fmap aseTurnoutLabel
+         sumLookup = FL.foldM (FL.premapM (flip lookupX m) (FL.generalize sumPair)) . fmap BR.aseTurnoutLabel
          allCats = [(minBound :: SimpleASE)..maxBound]
      resultSums <-  traverse (sumLookup . turnoutASE) allCats
      let result = zipWith (\c (p,v) -> (c,p,v)) allCats resultSums
@@ -144,14 +143,14 @@ simpleAgeSexEducation = DemographicStructure processDemographicData processTurno
          
    processTurnoutData :: Monad m
      => Int
-     -> F.Frame TurnoutASE
-     -> X.ExceptT Text m (F.FrameRec '[DemographicCategory SimpleASE, Population, VotedPctOfAll])
+     -> F.Frame BR.TurnoutASE
+     -> X.ExceptT Text m (F.FrameRec '[BR.DemographicCategory SimpleASE, BR.Population, BR.VotedPctOfAll])
    processTurnoutData year td = 
-    let makeRec :: (SimpleASE,Int,Int) -> F.Record [DemographicCategory SimpleASE, Population, VotedPctOfAll]
+    let makeRec :: (SimpleASE,Int,Int) -> F.Record [BR.DemographicCategory SimpleASE, BR.Population, BR.VotedPctOfAll]
         makeRec (b,p,v) = b F.&: p F.&: (realToFrac v/realToFrac p) F.&: V.RNil
-        fromRec r = (F.rgetField @Group r, (F.rgetField @Population r, F.rgetField @Voted r))
-        unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @Year (==year)
-        assign = MR.generalizeAssign $ MR.assignKeysAndData @'[] @[Group,Population,Voted]
+        fromRec r = (F.rgetField @BR.Group r, (F.rgetField @BR.Population r, F.rgetField @BR.Voted r))
+        unpack = MR.generalizeUnpack $ MR.unpackFilterOnField @BR.Year (==year)
+        assign = MR.generalizeAssign $ MR.assignKeysAndData @'[] @[BR.Group, BR.Population, BR.Voted]
         reduce = MR.makeRecsWithKeyM makeRec $ MR.ReduceFoldM (const $ MR.postMapM mergeTurnoutRows $ FL.generalize $ FL.premap fromRec FL.map) 
     in FL.foldM (MR.concatFoldM $ MR.mapReduceFoldM unpack assign reduce) td
 
