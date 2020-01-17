@@ -19,6 +19,7 @@ import qualified Data.Array                    as A
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
+import qualified Data.Set                      as Set
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
@@ -279,12 +280,24 @@ To summarize:  TO do an aggregation we need:
 
 -}
 -- finite formal sum of @a@ with integer coefficients
+-- i.e., an element of Z[a], the set of Z-modules over the set a
 data AggSum a where
   AggSum :: Ord a => M.Map a Int -> AggSum a
-  deriving (Show, Functor)
 
-sum :: Ord a => [a] -> AggSum a
-sum as = AggSum $ M.fromList $ fmap (, 1) as
+instance Show a => Show (AggSum a) where
+  show (AggSum x) = "AggSum " ++ show x
+
+instance Eq a => Eq (AggSum a) where
+  (AggSum a) == (AggSum b) = a == b
+
+aggSumAll :: (Enum a, Bounded a, Ord a) => AggSum a
+aggSumAll = AggSum $ M.fromList $ fmap (, 1) $ [minBound ..]
+
+aggSumToList :: AggSum a -> [(Int, a)]
+aggSumToList (AggSum as) = let swap (a, b) = (b, a) in fmap swap $ M.toList as
+
+unitSum :: Ord a => [a] -> AggSum a
+unitSum as = AggSum $ M.fromListWith (+) $ fmap (, 1) as
 
 diff :: Ord a => a -> a -> AggSum a
 diff a1 a2 = AggSum $ M.fromListWith (+) [(a1, 1), (a2, -1)]
@@ -292,18 +305,45 @@ diff a1 a2 = AggSum $ M.fromListWith (+) [(a1, 1), (a2, -1)]
 diffSum :: Ord a => a -> [a] -> AggSum a
 diffSum a as = AggSum $ M.fromListWith (+) $ (a, 1) : fmap (, -1) as
 
+aggSumAdd :: AggSum a -> AggSum a -> AggSum a
+aggSumAdd (AggSum as1) (AggSum as2) = AggSum $ M.unionWith (+) as1 as2
+
+-- this defines a multiplication which gives a Ring structure to the Z-module
+aggSumDot :: AggSum a -> AggSum a -> AggSum a
+aggSumDot (AggSum as1) (AggSum as2) = AggSum $ M.intersectionWith (*) as1 as2
+{-
+aggSumDot All All = All
+aggSumDot (AggSum as) All = AggSum as
+aggSumDot All (AggSum as) = AggSum as
+-}
+aggSumTensorProduct :: AggSum a -> AggSum b -> AggSum (a, b)
+aggSumTensorProduct (AggSum asa) (AggSum asb) = AggSum $ M.fromList $ do
+  a <- M.toList asa
+  b <- M.toList asb
+  return ((fst a, fst b), (snd a * snd b))
+
 type Aggregation b a = b -> AggSum a
 
-composeAggSums :: AggSum a -> AggSum b -> AggSum (a, b)
-composeAggSums (AggSum ma) (AggSum mb) = AggSum $ M.fromListWith (+) $ do
-  aa <- M.toList ma
-  ab <- M.toList mb
-  return ((fst aa, fst ab), (snd aa + snd ab))
+totalNonDuplicative
+  :: Ord a => Set.Set a -> Set.Set b -> Aggregation b a -> Bool
+totalNonDuplicative allA allB agg =
+  let aggSumAllA = AggSum $ M.fromList $ fmap (, 1) $ Set.toList allA
+      aggSumFromAllB =
+        FL.fold (FL.Fold aggSumAdd (AggSum mempty) id) $ fmap agg $ Set.toList
+          allB
+  in  aggSumAllA == aggSumFromAllB
 
 composeAggregations
-  :: Aggregation b a -> Aggregation y x -> Aggregation (b, y) (a, x)
-composeAggregations aggBA aggYX (b, y) = composeAggSums (aggBA b) (aggYX y)
+  :: AggSum a -- ^ one of each a 
+  -> AggSum x -- ^ one of each x
+  -> Aggregation b a
+  -> Aggregation y x
+  -> Aggregation (b, y) (a, x)
+composeAggregations allA allX aggBA aggYX (b, y) = aggSumDot
+  (aggSumTensorProduct (aggBA b) allX)
+  (aggSumTensorProduct allA (aggYX y))
 
+{-
 aggFold
   :: forall k k' d
    . Aggregation k' k
@@ -316,7 +356,7 @@ aggFold agg alg newKeys = FMR.postMapM go (FL.generalize FL.map)
   go m = traverse (doOne m) newKeys
   doOne :: M.Map k d -> k' -> (k', d)
   doOne = traverse (`M.lookup` m) $ agg k'
-
+-}
 
 
   {-
