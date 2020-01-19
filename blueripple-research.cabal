@@ -49,14 +49,12 @@ library
   import: deps
   ghc-options: -O -fplugin=Polysemy.Plugin
   exposed-modules: BlueRipple.Configuration
---                 , BlueRipple.Data.FromDB
+                 , BlueRipple.Data.Keyed
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
                  , BlueRipple.Data.PrefModel
---                 , BlueRipple.Data.PrefModel.ASRTypes
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
---                 , BlueRipple.Data.PrefModel.ASETypes
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Model.PreferenceBayes
@@ -67,8 +65,6 @@ library
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
---                     , beam-core >= 0.8.0.0
---                     , beam-sqlite >= 0.4.0.0
                      , blaze-colonnade
                      , colonnade
                      , data-default
@@ -85,11 +81,9 @@ library
                      , hmatrix-nlopt
                      , nonlinear-optimization >= 0.3.11 && < 0.4
                      , nonlinear-optimization-ad >= 0.2 && < 0.3
---                     , OpenFEC-beam
                      , pandoc
                      , parallel
                      , random >= 1.1 && < 1.2.0.0
---                     , sqlite-simple 
                      , template-haskell
                      , time
                      , tuple
