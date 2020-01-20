@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DefaultSignatures   #-}
+{-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
@@ -14,6 +16,7 @@
 module BlueRipple.Data.Keyed where
 
 import qualified Control.Foldl                 as FL
+import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
 import qualified Data.List                     as L
 import qualified Data.List.NonEmpty            as NE
@@ -63,6 +66,10 @@ is, which are partitions of a subset of K.
 -- a subset of A
 data KeyWeights a where
   KeyWeights :: [(Int, a)] -> KeyWeights a
+  deriving (Foldable, Traversable)
+
+keyWeightsList :: KeyWeights a -> [(Int, a)]
+keyWeightsList (KeyWeights x) = x
 
 instance Show a => Show (KeyWeights a) where
   show (KeyWeights kw) = "KeyWeights: " ++ show kw
@@ -112,11 +119,11 @@ simplify (KeyWeights kw)
     in
       KeyWeights $ fmap sum grouped
 
-(^==^) :: Eq a => KeyWeights a -> KeyWeights a -> Bool
+(^==^) :: Ord a => KeyWeights a -> KeyWeights a -> Bool
 kw1 ^==^ kw2 =
   let (KeyWeights kw1') = simplify kw1
       (KeyWeights kw2') = simplify kw2
-  in  kw1' == kw2'
+  in  L.sortOn snd kw1' == L.sortOn snd kw2'
 
 kwSwap :: (a, b) -> (b, a)
 kwSwap (x, y) = (y, x)
@@ -159,24 +166,36 @@ composeKeyWeights (KeyWeights kwa) (KeyWeights kwb) = KeyWeights $ do
 
 type Aggregation b a = b -> KeyWeights a
 
--- There is a functor
--- FZ : FiniteSet -> Ring, 
--- Where FZ is the Free Abelian Group functor which also
--- equips the finitely-generated Abelian group
--- with the natural elementwise on generators multiplication:
--- (n a_1 + m a_2) * (k a_1 + l * a_3) = (n*k) a_1
--- Since there is a forgetful functor U : Ring -> Set,
--- FZ . U is a monad, with unit
--- eta : Set -> Set, mapping A to the singleton sum, and multiplicatio
+-- The Free functor
+-- F : Set -> Ab and the forgetful functor
+-- U : Ab -> Set form an adjunction and their
+-- composition, U . F, is the Free Abelian Group Monad
+-- with unit (pure, return)
+-- eta : Set -> Set, mapping A to the singleton sum,
+-- and "multiplication" (join)
 -- mu: Z[Z[A]] -> Z[A], flattening the sums.
 
--- Given an aggregation (a : B -> Z[A])
--- we are especially interested in aggregations
--- where mu (FZ a) : Z[B] -> Z[A] is a Ring homomorphism.
--- It preserves 0, 1 and commutes with the ring operations
--- preserving 0: No addition of data
+-- When A is a finite set, Z[A] is finitely generated, and
+-- we can equip Z[A] with
+-- the natural (?) multiplication given by
+-- (\sum_{a \in A} c_a a) x (\sum_{b \in A} d_b b) =
+-- \sum_{a \in A} (c_a * d_a) a
+-- This multiplication:
+-- ditributes over the group action
+-- preserves the group identity
+-- has an identity, 1_A = \sum_{a \in A} a
+-- Z[A], thusly equipped, is a Ring.
+
+-- Given a map (a : B -> Z[A]), which we call
+-- an "aggregation", we consider mu . F a : Z[B] -> Z[A]
+-- A "Complete" aggregation, a, is one where mu . F a
+-- is a Ring homomorphism.
+-- It preserves 0, 1 and commutes with the ring operations.
+-- preserving 0: All data comes from other data
 -- preserving 1: All data goes someplace and only once
--- commuting with ^+^:  
+-- commuting with ^+^ and ^*^ is essentially preserving
+-- unions and intersections as queries.
+-- (Better way to say this!!)
 composeAggregations
   :: (FiniteSet a, FiniteSet x)
   => Aggregation b a
@@ -185,30 +204,75 @@ composeAggregations
 composeAggregations aggBA aggYX (b, y) =
   (composeKeyWeights (aggBA b) kwOne) ^*^ (composeKeyWeights kwOne (aggYX y))
 
-
 preservesOne :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesOne agg = (kwOne >>= agg) ^==^ kwOne
 
 preservesZero :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesZero agg = (kwZero >>= agg) ^==^ kwZero
 
+preservesIdentities :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
+preservesIdentities agg = preservesZero agg && preservesOne agg
+
+-- for testing in ghci
+data K1 = A | B | C deriving (Enum, Bounded, Eq, Ord, Show)
+instance FiniteSet K1
+
+data K2 = X | Y deriving (Enum, Bounded, Eq, Ord, Show)
+instance FiniteSet K2
+
+data Q1 = G | H | I deriving (Enum, Bounded, Eq, Ord, Show)
+instance FiniteSet Q1
+
+data Q2 = M | N deriving (Enum, Bounded, Eq, Ord, Show)
+instance FiniteSet Q2
+
+aggK k = case k of
+  X -> keyHas [A, B]
+  Y -> keyHas [C]
+
+aggQ q = case q of
+  M -> keyHas [H, I]
+  N -> keyHas [G]
+
+aggKQ = composeAggregations aggK aggQ
 
 
-{-
 aggFold
   :: forall k k' d
-   . Aggregation k' k
-  -> FL.Fold (d, Int) d
-  -> [k']
+   . (Show k, Show d, Ord k, FiniteSet k')
+  => Aggregation k' k
+  -> FL.Fold (Int, d) d
   -> FL.FoldM (Either T.Text) (k, d) [(k', d)]
-aggFold agg alg newKeys = FMR.postMapM go (FL.generalize FL.map)
+aggFold agg dataFold = FMR.postMapM go (FL.generalize FL.map)
  where
+  (KeyWeights kw) = kwOne
+  newKeys         = fmap snd kw
+  eitherLookup k m =
+    maybe
+        (  Left
+        $  "failed to find "
+        <> (T.pack $ show k)
+        <> " in "
+        <> (T.pack $ show m)
+        )
+        Right
+      $ M.lookup k m
   go :: M.Map k d -> Either T.Text [(k', d)]
   go m = traverse (doOne m) newKeys
-  doOne :: M.Map k d -> k' -> (k', d)
-  doOne = traverse (`M.lookup` m) $ agg k'
--}
+  doOne :: M.Map k d -> k' -> Either T.Text (k', d) --(k', d)
+  doOne m k' =
+    fmap ((k', ) . FL.fold dataFold . keyWeightsList)
+      $ traverse (`eitherLookup` m)
+      $ agg k'
 
+{-
+  let getWeights (KeyWeights x) = x
+      reAggregate (k, d) = fmap (\(n, k') -> (k', (n, d))) $ getWeights $ agg k
+      unpack = MR.Unpack reAggregate
+      assign = MR.Assign id -- already in tuple form from unpack
+      reduce = MR.ReduceFold (\k' -> fmap (k', ) dataFold)
+  in  MR.concatFold $ MR.mapReduceFold unpack assign reduce
+-}
 
   {-
 data AggExpr a where
