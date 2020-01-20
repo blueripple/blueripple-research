@@ -60,7 +60,7 @@ b. surjective f and a data-function to aggregate.
 We want to transform the data Keyed by A to data Keyed by B.
 The forms of Keyed data require different approaches.  In particular, there are functors:
 a. SumD: Set -> Set, S :-> D[S]
-b. List: Set -> Set, S :-> List(S)
+b. List: Set -> Set, S :-> List(S), we note that this may be a different functor but, haskell-wise it must be Foldable.
 
 so, for data-sums and data-lists, we can use those functors and f : A -> B to trivially map data-lists and, along
 with semigroup action in D, we can also map data-sums.
@@ -79,10 +79,37 @@ we have alg . SumZ gA . aggBA = gB : B -> D.
 -- With weights in {0,1}, this is a query, a way of describing
 -- a subset of A
 
+class Eq a => FiniteSet a where
+  elements :: Set.Set a
+  default elements :: (Enum a, Bounded a) => Set.Set a
+  elements = Set.fromAscList [minBound..]
+
+instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
+  elements = Set.fromAscList $ do
+    a <- Set.toAscList elements
+    b <- Set.toAscList elements
+    return (a, b)
+
+data FFSum a b where
+  FFSum :: Semigroup b => M.Map a b -> FFSum a b
+
+ffSumFromFoldable :: (Foldable f, Ord a, Semigroup b) => f (a, b) -> FFSum a b
+ffSumFromFoldable =
+  FL.fold (FL.Fold (\m (a, b) -> M.insertWith (<>) a b m) M.empty FFSum)
+
+
 data KeyedData a d where
   DataFunction :: (a -> d) -> KeyedData a d
-  DataSum :: M.Map a d -> KeyedData a d
-  DataList :: Foldable f => f (a,d) -> KeyedData a d
+  DataSum :: FFSum a d -> KeyedData a d
+  DataList :: (Foldable f, Functor f) => f (a,d) -> KeyedData a d
+
+-- our goal is a function
+-- reAggregate :: Semigroup d => (a -> b) -> KeyedData a d -> KeyedData b d
+-- which satisfies some laws:
+
+
+--data AggregationFunction a b where
+
 
 data KeyWeights a where
   KeyWeights :: [(Int, a)] -> KeyWeights a
@@ -112,16 +139,6 @@ instance Monad KeyWeights where
 
 -- We need this to define a multiplicative
 -- identity in Z[A]
-class Ord a => FiniteSet a where
-  elements :: Set.Set a
-  default elements :: (Enum a, Bounded a) => Set.Set a
-  elements = Set.fromList [minBound..]
-
-instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
-  elements = Set.fromList $ do
-    a <- Set.toList elements
-    b <- Set.toList elements
-    return (a, b)
 
 kwOne :: FiniteSet a => KeyWeights a
 kwOne = KeyWeights $ fmap (1, ) $ Set.toList $ elements
@@ -217,20 +234,21 @@ type Aggregation b a = b -> KeyWeights a
 -- unions and intersections as queries.
 -- (Better way to say this!!)
 composeAggregations
-  :: (FiniteSet a, FiniteSet x)
+  :: (Ord a, FiniteSet a, Ord x, FiniteSet x)
   => Aggregation b a
   -> Aggregation y x
   -> Aggregation (b, y) (a, x)
 composeAggregations aggBA aggYX (b, y) =
   (composeKeyWeights (aggBA b) kwOne) ^*^ (composeKeyWeights kwOne (aggYX y))
 
-preservesOne :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
+preservesOne :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesOne agg = (kwOne >>= agg) ^==^ kwOne
 
-preservesZero :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
+preservesZero :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesZero agg = (kwZero >>= agg) ^==^ kwZero
 
-preservesIdentities :: (FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
+preservesIdentities
+  :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesIdentities agg = preservesZero agg && preservesOne agg
 
 -- for testing in ghci
