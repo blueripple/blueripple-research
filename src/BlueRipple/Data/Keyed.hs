@@ -37,33 +37,53 @@ import qualified Data.Vinyl.TypeLevel          as V
 {-
 Lets talk about aggregation!
 Suppose we have:
-keys, a of type A
-keys, b of type B
-data, d of type D
-An arrow, gA : A -> D, mapping keys in a to data, think the data in a row indexed by A
-An arrow,  aggBA : B -> Z[A], where Z[A] is the module of finite formal linear combinations of a in A with coeficients in Z.
-We note that Z[A] is a Ring, using elementwise addition and multiplication.
-An arrow, fold: Z[D] -> D, "folding" formal linear combinations of d in D (with coefficients in Z) into a d in D
-There is a covariant functor, FZ : Set -> Category of modules, FZ (X) = Z[X] and FZ (g : X -> Y) = Z[X] -> Z[Y]
-Then we can construct gB : B -> D, gB (b) = fold . FZ (gA) . aggBA b
+1. keys, elements of a (usually finite) set A
+2. data, elements of a set D, usually a monoid.
 
-a "Filter", Q,  is just a subset of A.  And we can represent it by an element, filter(Q) of Z[A]
-such that any a in Q has a 1 and any a not in Q has coefficient 0. Also, any element of Z[A] with
-coefficients in {0,1} represents some filter.  That is, there is an isomorphism between filters 
-and elements of Z[A] with coefficients in {0,1}
+3. data, keyed by A, one of a
+  data-function: An arrow, gA : A -> D, mapping keys in A to an element in D. Or a
+  data-sum:      A element of D[A], a formal linear sum of A with coefficients in D. Or a
+  data-list:     A collection of A x D, that is an element of List(A x D), where List is the free monoid monad.
 
-We can compose filters two ways:
-1) Their union, the set of all things in either.  This corresponds to the elementwise sum of Z[A], WITH the
-rule that all non-zero coefficients are capped at 1.  This is *not* Z_2, where 1+1 = 0.  This also allows
-us to say something about which sums of filters preserve some notion of getting each ting only once.  That
-is, which are partitions of a subset of K.
+If A is a finite set, and D is a monoid, then data-functions and data-sums and 2 are isomorphic.  We can construct the
+finite formal sum by using the function to get the coefficients and we can construct the function from the sum by using the
+element of D from the sum and using the monoidal identity/zero  when an element of A is missing from the sum.
 
-2) Their intersection, the set of all things in both.  This is just the elementwise product.
+data-lists may have repeated or missing keys.  If D is a semigroup, we can map from the list to the finite formal sum.
+And if A is finite and D is a monoid, we can then map that to the data-function.
+
+4. A function f: A -> B, representing an aggregation of the keys A into new keys which are elements of B.
+For this aggregation to make sense, something we should define more formally, we need
+a. monoidal D and/or
+b. surjective f and a data-function to aggregate.
+
+We want to transform the data Keyed by A to data Keyed by B.
+The forms of Keyed data require different approaches.  In particular, there are functors:
+a. SumD: Set -> Set, S :-> D[S]
+b. List: Set -> Set, S :-> List(S)
+
+so, for data-sums and data-lists, we can use those functors and f : A -> B to trivially map data-lists and, along
+with semigroup action in D, we can also map data-sums.
+
+data-functions are harder, because f : A -> B doesn't help us directly make gA : A -> D into gB : B -> D.
+But for surjective f, we can construct the inverse image of f,
+an arrow,  aggBA : B -> Z[A], where Z[A] is the module of finite formal linear combinations of a in A
+with coeficients in Z.
+We note that Z[A] is a Ring, using elementwise addition and multiplication. And the functor,
+SumZ : Set -> Set, S :-> Z[S] allows us to form the composition  SumZ gA . aggBA : B -> Z[D].  If
+we then have a map (alg : Z[D] -> D), e.g., using the Monoidal structure on D,
+we have alg . SumZ gA . aggBA = gB : B -> D.  
 -}
 -- finite formal sum of @a@ with integer coefficients
 -- i.e., an element of Z[A], the set of Z-modules over the set a
 -- With weights in {0,1}, this is a query, a way of describing
 -- a subset of A
+
+data KeyedData a d where
+  DataFunction :: (a -> d) -> KeyedData a d
+  DataSum :: M.Map a d -> KeyedData a d
+  DataList :: Foldable f => f (a,d) -> KeyedData a d
+
 data KeyWeights a where
   KeyWeights :: [(Int, a)] -> KeyWeights a
   deriving (Foldable, Traversable)
