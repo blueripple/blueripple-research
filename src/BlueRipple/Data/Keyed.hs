@@ -1,18 +1,19 @@
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DefaultSignatures   #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DeriveTraversable   #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DefaultSignatures    #-}
+{-# LANGUAGE DeriveFoldable       #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE UndecidableInstances #-}
 module BlueRipple.Data.Keyed where
 
 import qualified Control.Foldl                 as FL
@@ -38,47 +39,59 @@ import qualified Data.Vinyl.TypeLevel          as V
 Lets talk about aggregation!
 Suppose we have:
 1. keys, elements of a (usually finite) set A
-2. data, elements of a set D, usually a monoid.
+2. data, elements of a set D, which, for the purposes of our aggregation,
+has at least a commutative semigroup structure, that is, commutative + operation.
 
 3. data, keyed by A, one of a
-  data-function: An arrow, gA : A -> D, mapping keys in A to an element in D. Or a
+  data-function: An arrow, gA : A -> D, mapping keys in A to an element in D. Or a  
   data-sum:      A element of D[A], a formal linear sum of A with coefficients in D. Or a
-  data-list:     A collection of A x D, that is an element of List(A x D), where List is the free monoid monad.
+  data-list:     A collection of A x D, that is an element of List(A x D), where List is the free monoid monad. 
 
-If A is a finite set, and D is a monoid, then data-functions and data-sums and 2 are isomorphic.  We can construct the
-finite formal sum by using the function to get the coefficients and we can construct the function from the sum by using the
-element of D from the sum and using the monoidal identity/zero  when an element of A is missing from the sum.
 
-data-lists may have repeated or missing keys.  If D is a semigroup, we can map from the list to the finite formal sum.
-And if A is finite and D is a monoid, we can then map that to the data-function.
+If A is a finite set, and D has a monoid structure, then data-functions and data-sums are isomorphic.  We can construct the
+finite formal sum by using the function to get the coefficients for each a in A. And we can construct
+the function from the sum by using the element of D from the sum and using the monoidal identity/zero  when an element
+of A is missing from the sum.
 
-4. A function f: A -> B, representing an aggregation of the keys A into new keys which are elements of B.
-For this aggregation to make sense, something we should define more formally, we need
-a. monoidal D and/or
-b. surjective f and a data-function to aggregate.
+data-lists may have repeated or missing keys.  If D has semigroup structure,
+we can map from the list to the finite formal sum.
+And if D has monoidal structure, we can then map that to the data-function, using the monoidal zero
+whenever a is not present in the sum.
+
+For our uses we are going to focus on monoidal D.  This allows us to think of all of our data as
+a data-function, gA : A -> D. 
+
+4. Another set of keys, B, and an aggregation, an arrow: aggBA : B -> Z[A]
+There might be simpler/different ways to specify some aggregations.  Sometimes our
+aggregation might be expressible as f : B -> A--easily lifted to  B -> Z[A]--or
+more easily expressed as A -> Z[B], which we can sometimes invert to get B -> Z[A].
 
 We want to transform the data Keyed by A to data Keyed by B.
+
+[
 The forms of Keyed data require different approaches.  In particular, there are functors:
-a. SumD: Set -> Set, S :-> D[S]
+a. SumD: Set -> Set, S :-> D[S], where D[S] is the set of finite formal sums of elements of S with coefficients in D
 b. List: Set -> Set, S :-> List(S), we note that this may be a different functor but, haskell-wise it must be Foldable.
+]
 
-so, for data-sums and data-lists, we can use those functors and f : A -> B to trivially map data-lists and, along
-with semigroup action in D, we can also map data-sums.
-
-data-functions are harder, because f : A -> B doesn't help us directly make gA : A -> D into gB : B -> D.
-But for surjective f, we can construct the inverse image of f,
-an arrow,  aggBA : B -> Z[A], where Z[A] is the module of finite formal linear combinations of a in A
-with coeficients in Z.
-We note that Z[A] is a Ring, using elementwise addition and multiplication. And the functor,
-SumZ : Set -> Set, S :-> Z[S] allows us to form the composition  SumZ gA . aggBA : B -> Z[D].  If
+We note that Z[A] is a Ring, using the abelian group structure
+and a multiplication: for all a,b in A, a not equal to b, n (aa) = n a and n (ab) = 0.
+And the functor, SumZ : Set -> Set, S :-> Z[S] allows us to construct  SumZ gA . aggBA : B -> Z[D].  If
 we then have a map (alg : Z[D] -> D), e.g., using the Monoidal structure on D,
 we have alg . SumZ gA . aggBA = gB : B -> D.  
--}
--- finite formal sum of @a@ with integer coefficients
--- i.e., an element of Z[A], the set of Z-modules over the set a
--- With weights in {0,1}, this is a query, a way of describing
--- a subset of A
 
+If D has a monoid structure, then alg : Z[D] -> D is obtained by treating the
+coefficients in Z as numbers of copies of the element d, and then combining those
+elements with the semigroup operation.
+In Haskell we will also use "Fold D D" to represent the algebra.
+But note that "Fold D D" is just a way of specifiying monoid structure
+on D:
+mempty = fold []
+d1 <> d2 = fold [d1, d2]
+or, conversely,
+Fold D D = Fold (<>) mempty id, this is @Control.Foldl.mconcat@
+
+-}
 class Eq a => FiniteSet a where
   elements :: Set.Set a
   default elements :: (Enum a, Bounded a) => Set.Set a
@@ -90,33 +103,55 @@ instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
     b <- Set.toAscList elements
     return (a, b)
 
-data FFSum a b where
-  FFSum :: Semigroup b => M.Map a b -> FFSum a b
+data FFSum a d where
+  FFSum :: M.Map a d -> FFSum a d
 
-ffSumFromFoldable :: (Foldable f, Ord a, Semigroup b) => f (a, b) -> FFSum a b
-ffSumFromFoldable =
-  FL.fold (FL.Fold (\m (a, b) -> M.insertWith (<>) a b m) M.empty FFSum)
+-- If d is a monoid we can avoid carrying all these folds around
+-- but it's easier to construct a Fold d d on the fly than a monoid instance
+-- and if d is a monoid then contructing the fold is as easy as FL.mconcat
+ffSumFold :: Ord a => FL.Fold d d -> FL.Fold (a, d) (FFSum a d)
+ffSumFold dFold = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty FFSum
+  where plus d1 d2 = FL.fold dFold [d1, d2]
+
+ffSumFoldSemi :: (Ord a, Semigroup d) => FL.Fold (a, d) (FFSum a d)
+ffSumFoldSemi = FL.Fold (\m (a, d) -> M.insertWith (<>) a d m) M.empty FFSum
+
+functionFromFFSum :: Ord a => FL.Fold d d -> FFSum a d -> (a -> d)
+functionFromFFSum dFold (FFSum m) a =
+  let zero = FL.fold dFold [] in maybe zero id $ M.lookup a m
+
+functionFold :: Ord a => FL.Fold d d -> FL.Fold (a, d) (a -> d)
+functionFold dFold = fmap (functionFromFFSum dFold) (ffSumFold dFold)
 
 
+-- now we do the work to get (b -> d) from (a -> d).
+-- That will get us (b -> FFSum Int a) -> FL.Fold (a,d) (b -> d)
+-- which, combined with a required set of B, will get us
+-- (b -> FFSum Int a) -> f b -> FL.Fold (a, d) (f b) 
+
+{-
 data KeyedData a d where
   DataFunction :: (a -> d) -> KeyedData a d
-  DataSum :: FFSum a d -> KeyedData a d
-  DataList :: (Foldable f, Functor f) => f (a,d) -> KeyedData a d
+  DataSum :: Ord a => FFSum a d -> KeyedData a d
+  DataList :: (Foldable f, Functor f, Semigroup d) => f (a,d) -> KeyedData a d
+-}
 
 -- our goal is a function
 -- reAggregate :: Semigroup d => (a -> b) -> KeyedData a d -> KeyedData b d
 -- which satisfies some laws:
 
 
---data AggregationFunction a b where
+-- finite formal sum of @a@ with integer coefficients
+-- i.e., an element of Z[A], the abelian group
+-- generated by the elements of A.
 
-
+-- we could use FFSum Int a here but it's more pain than it's worth. 
 data KeyWeights a where
   KeyWeights :: [(Int, a)] -> KeyWeights a
   deriving (Foldable, Traversable)
 
-keyWeightsList :: KeyWeights a -> [(Int, a)]
-keyWeightsList (KeyWeights x) = x
+kwList :: KeyWeights a -> [(Int, a)]
+kwList (KeyWeights x) = x
 
 instance Show a => Show (KeyWeights a) where
   show (KeyWeights kw) = "KeyWeights: " ++ show kw
@@ -124,6 +159,8 @@ instance Show a => Show (KeyWeights a) where
 instance Functor KeyWeights where
   fmap f (KeyWeights kw) = KeyWeights $ fmap (\(w,a) -> (w, f a)) kw
 
+
+-- like Applicative for [] but with the product of coefficients
 instance Applicative KeyWeights where
   pure a = KeyWeights [(1,a)]
   (KeyWeights kwFab) <*> (KeyWeights kwa) = KeyWeights $ do
@@ -131,6 +168,7 @@ instance Applicative KeyWeights where
     (aw, a) <- kwa
     return (fw * aw, f a)
 
+-- like Monad for [] but with the distribution of coefficients
 instance Monad KeyWeights where
   (KeyWeights kwa) >>= f =
     let distribute n (KeyWeights kwb) = fmap (\(m, b) -> (n * m, b)) kwb
@@ -139,6 +177,8 @@ instance Monad KeyWeights where
 
 -- We need this to define a multiplicative
 -- identity in Z[A]
+-- NB: This will be incorrect in some sense of your data is structured as "Total" "Type A"
+-- with a "Type B" which is Total - Type A.
 
 kwOne :: FiniteSet a => KeyWeights a
 kwOne = KeyWeights $ fmap (1, ) $ Set.toList $ elements
@@ -183,9 +223,9 @@ kw1 ^*^ kw2 = KeyWeights $ fmap kwSwap . M.toList $ M.intersectionWith
   (kwToMap kw2)
 
 
--- with these defintions, KeyWeights is a commutative ring (KeyWeights a, :+:, :*:)
--- multiplication corresponds to intersection, getting only things retrieved by both keys
--- addition corresponds to getting everything retrieved by either key.
+-- With these defintions, KeyWeights is a commutative ring (KeyWeights a, ^+^, ^*^)
+-- Multiplication corresponds to intersection, getting only things retrieved by both keys.
+-- Addition corresponds to getting everything retrieved by either key.
 keyHas :: Ord a => [a] -> KeyWeights a
 keyHas as = KeyWeights $ fmap (1, ) as
 
@@ -233,6 +273,9 @@ type Aggregation b a = b -> KeyWeights a
 -- commuting with ^+^ and ^*^ is essentially preserving
 -- unions and intersections as queries.
 -- (Better way to say this!!)
+-- NB: Because there are key choices where the natural identity is not the data identity,
+-- e.g., data where a total is provided along with the breakdown or total and breakdown less one
+-- category, not all useful aggregations are "Complete". 
 composeAggregations
   :: (Ord a, FiniteSet a, Ord x, FiniteSet x)
   => Aggregation b a
@@ -274,155 +317,90 @@ aggQ q = case q of
 
 aggKQ = composeAggregations aggK aggQ
 
+aggregate
+  :: forall q k d
+   . Aggregation q k
+  -> (KeyWeights d -> d)
+  -> (k -> d)
+  -> (q -> d)
+aggregate agg alg query q = alg $ fmap query (agg q)
+
+foldKWAlgebra :: FL.Fold d d -> KeyWeights d -> d
+foldKWAlgebra fld (KeyWeights kw) =
+  FL.fold fld $ concat $ fmap (\(n, d) -> replicate n d) kw
+
+monoidKWAlgebra :: Monoid d => KeyWeights d -> d
+monoidKWAlgebra = foldKWAlgebra FL.mconcat
 
 aggFold
-  :: forall k k' d
-   . (Show k, Show d, Ord k, FiniteSet k')
-  => Aggregation k' k
-  -> FL.Fold (Int, d) d
-  -> FL.FoldM (Either T.Text) (k, d) [(k', d)]
-aggFold agg dataFold = FMR.postMapM go (FL.generalize FL.map)
- where
-  (KeyWeights kw) = kwOne
-  newKeys         = fmap snd kw
-  eitherLookup k m =
-    maybe
-        (  Left
-        $  "failed to find "
-        <> (T.pack $ show k)
-        <> " in "
-        <> (T.pack $ show m)
-        )
-        Right
-      $ M.lookup k m
-  go :: M.Map k d -> Either T.Text [(k', d)]
-  go m = traverse (doOne m) newKeys
-  doOne :: M.Map k d -> k' -> Either T.Text (k', d) --(k', d)
-  doOne m k' =
-    fmap ((k', ) . FL.fold dataFold . keyWeightsList)
-      $ traverse (`eitherLookup` m)
-      $ agg k'
+  :: forall k q d f
+   . (Ord k, Functor f)
+  => Aggregation q k
+  -> FL.Fold d d
+  -> f q
+  -> FL.Fold (k, d) (f (q, d))
+aggFold agg dFold qs =
+  let apply g q = (q, g q)
+      fApply g = fmap (apply g) qs
+  in  fmap (fApply . aggregate agg (foldKWAlgebra dFold)) (functionFold dFold)
+
+aggFoldAll
+  :: forall k q d
+   . (Ord k, FiniteSet q)
+  => Aggregation q k
+  -> FL.Fold d d
+  -> FL.Fold (k, d) [(q, d)]
+aggFoldAll agg dFold = aggFold agg dFold (Set.toList elements)
+
+-- specialize things to Vinyl
+
+type RecAggregation qs ks = Aggregation (F.Record qs) (F.Record ks)
+
+toRecAggregation
+  :: forall k q
+   . (V.KnownField k, V.KnownField q)
+  => Aggregation (V.Snd q) (V.Snd k)
+  -> RecAggregation '[q] '[k]
+toRecAggregation agg recQ =
+  fmap (\x -> x F.&: V.RNil) $ agg (F.rgetField @q recQ)
+
+instance (V.KnownField t, FiniteSet (V.Snd t), Ord (F.Record '[t])) => FiniteSet (F.Record '[t]) where
+  elements = Set.mapMonotonic (\x -> x F.&: V.RNil) elements
+
+instance (V.KnownField t
+         , FiniteSet (V.Snd t)
+         , FiniteSet (F.Record rs)
+         , Ord (F.Record ('[t] V.++ rs))) => FiniteSet (F.Record (t ': rs)) where
+  elements = Set.fromAscList $ do
+    t <- Set.toAscList elements
+    recR <- Set.toAscList elements
+    return $ t F.&: recR
+
+composeRecAggregations
+  :: forall qs ks rs ls
+   . ( FiniteSet (F.Record ks)
+     , Ord (F.Record ks)
+     , FiniteSet (F.Record ls)
+     , Ord (F.Record ls)
+     , qs F.⊆ (qs V.++ rs)
+     , rs F.⊆ (qs V.++ rs)
+     )
+  => RecAggregation qs ks
+  -> RecAggregation rs ls
+  -> RecAggregation (qs V.++ rs) (ks V.++ ls)
+composeRecAggregations aggQK aggRL recQR =
+  fmap (uncurry V.rappend)
+    $ composeAggregations aggQK aggRL (F.rcast @qs recQR, F.rcast @rs recQR)
 
 {-
-  let getWeights (KeyWeights x) = x
-      reAggregate (k, d) = fmap (\(n, k') -> (k', (n, d))) $ getWeights $ agg k
-      unpack = MR.Unpack reAggregate
-      assign = MR.Assign id -- already in tuple form from unpack
-      reduce = MR.ReduceFold (\k' -> fmap (k', ) dataFold)
-  in  MR.concatFold $ MR.mapReduceFold unpack assign reduce
--}
-
-  {-
-data AggExpr a where
-  AggSingle :: a -> AggExpr a
-  AggSum :: [AggExpr a] -> AggExpr a
-  AggDiff :: AggExpr a -> AggExpr a -> AggExpr a
-  deriving (Functor, Show)
-
-aggregate :: Num b => (a -> b) -> AggExpr a -> b
-aggregate f (AggSingle a ) = f a
-aggregate f (AggSum    as) = FL.fold (FL.premap (aggregate f) FL.sum) as
-aggregate f (AggDiff a a') = aggregate f a - aggregate f a'
-
-aggregateM :: (Monad m, Num b) => (a -> m b) -> AggExpr a -> m b
-aggregateM f (AggSingle a) = f a
-aggregateM f (AggSum as) =
-  FL.foldM (FL.premapM (aggregateM f) (FL.generalize FL.sum)) as
-aggregateM f (AggDiff a a') = (-) <$> aggregateM f a <*> aggregateM f a'
-
-composeAggExpr :: AggExpr a -> AggExpr b -> AggExpr (a, b)
-composeAggExpr (AggSingle a) (AggSingle b) = AggSingle (a, b)
-composeAggExpr (AggSum as) aeb = AggSum $ fmap (`composeAggExpr` aeb) as
-composeAggExpr (AggDiff a a') aeb =
-  AggDiff (composeAggExpr a aeb) (composeAggExpr a' aeb)
-composeAggExpr aea (AggSum bs) = AggSum $ fmap (composeAggExpr aea) bs
-composeAggExpr aea (AggDiff b b') =
-  AggDiff (composeAggExpr aea b) (composeAggExpr aea b')
-
-aggAge4ToSimple :: SimpleAge -> AggExpr Age4
-aggAge4ToSimple x = AggSum $ fmap AggSingle $ simpleAgeFrom4 x
-
-aggAge5ToSimple :: SimpleAge -> AggExpr Age5
-aggAge5ToSimple x = AggSum $ fmap AggSingle $ simpleAgeFrom5 x
-
-aggACSToCollegeGrad :: CollegeGrad -> AggExpr Education
-aggACSToCollegeGrad x = AggSum $ fmap AggSingle $ acsLevels x
-
-aggTurnoutToCollegeGrad :: CollegeGrad -> AggExpr Education
-aggTurnoutToCollegeGrad x = AggSum $ fmap AggSingle $ turnoutLevels x
-
-aggSexToAll :: () -> AggExpr Sex
-aggSexToAll _ = AggSum $ fmap AggSingle [Female, Male]
-
-aggTurnoutRaceToSimple :: SimpleRace -> AggExpr TurnoutRace
-aggTurnoutRaceToSimple NonWhite =
-  AggSum $ fmap AggSingle [Turnout_Black, Turnout_Asian, Turnout_Hispanic]
-aggTurnoutRaceToSimple White = AggSingle Turnout_White
-
-aggACSRaceToSimple :: SimpleRace -> AggExpr ACSRace
-aggACSRaceToSimple NonWhite =
-  AggDiff (AggSingle ACS_All) (AggSingle ACS_WhiteNonHispanic)
-aggACSRaceToSimple White = AggSingle ACS_WhiteNonHispanic
-
-aggAE_ACS :: (SimpleAge, CollegeGrad) -> AggExpr (Age4, Education)
-aggAE_ACS (sa, cg) =
-  composeAggExpr (aggAge4ToSimple sa) (aggACSToCollegeGrad cg)
-
-aggAR_ACS :: (SimpleAge, SimpleRace) -> AggExpr (Age5, ACSRace)
-aggAR_ACS (sa, sr) =
-  composeAggExpr (aggAge5ToSimple sa) (aggACSRaceToSimple sr)
-
-aggAE_Turnout :: (SimpleAge, CollegeGrad) -> AggExpr (Age5, Education)
-aggAE_Turnout (sa, cg) =
-  composeAggExpr (aggAge5ToSimple sa) (aggTurnoutToCollegeGrad cg)
-
-aggAR_Turnout :: (SimpleAge, SimpleRace) -> AggExpr (Age5, TurnoutRace)
-aggAR_Turnout (sa, sr) =
-  composeAggExpr (aggAge5ToSimple sa) (aggTurnoutRaceToSimple sr)
-
-aggFold
-  :: forall k k' v
-   . (Show k, Show k', Show v, Num v, Ord k)
-  => [(k', AggExpr k)]
-  -> FL.FoldM (Either T.Text) (k, v) [(k', v)]
-aggFold keyedAE = FMR.postMapM go (FL.generalize FL.map)
- where
-  getOne :: M.Map k v -> (k', AggExpr k) -> Either T.Text (k', v)
-  getOne m (k', ae) =
-    fmap (k', )
-      $ maybe
-          (  Left
-          $  "lookup failed in aggFold: aggExpr="
-          <> (T.pack $ show ae)
-          <> "; m="
-          <> (T.pack $ show m)
-          )
-          Right
-      $ aggregateM (`M.lookup` m) ae
-  go :: M.Map k v -> Either T.Text [(k', v)]
-  go m = traverse (getOne m) keyedAE
-
-aggFoldWeighted
-  :: forall k k' v w
-   . (Show k, Show k', Show v, Num v, Num w, Ord k)
-  => [(k', AggExpr k)]
-  -> FL.FoldM (Either T.Text) (k, (w, v)) [(k', v)]
-aggFoldWeighted keyedAE = FMR.postMapM go (FL.generalize FL.map)
- where
-  getOne :: M.Map k v -> (k', AggExpr k) -> Either T.Text (k', v)
-  getOne m (k', ae) =
-    fmap (k', )
-      $ maybe
-          (  Left
-          $  "lookup failed in aggFold: aggExpr="
-          <> (T.pack $ show ae)
-          <> "; m="
-          <> (T.pack $ show m)
-          )
-          Right
-      $ aggregateM (`M.lookup` m) ae
-  go :: M.Map k v -> Either T.Text [(k', v)]
-  go m = traverse (getOne m) keyedAE  
-
-aggFoldRecords :: [(F.Record k', AggExp (V.Snd k'))] -> FL.FoldM (F.Record (k V.++ v) 
+aggFoldRec
+  :: forall ks qs ds f
+   . (Ord (F.Record ks), Functor f)
+  => RecAggregation qs ks
+  -> FL.Fold (F.Record ds) (F.Record ds)
+  -> f (F.Record qs)
+  -> FL.Fold
+       (F.Record ks, F.Record ds)
+       (f (F.Record qs, F.Record ds))
+aggFoldRec = aggFold
 -}
