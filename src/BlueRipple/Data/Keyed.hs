@@ -364,17 +364,24 @@ toRecAggregation
 toRecAggregation agg recQ =
   fmap (\x -> x F.&: V.RNil) $ agg (F.rgetField @q recQ)
 
-instance (V.KnownField t, FiniteSet (V.Snd t), Ord (F.Record '[t])) => FiniteSet (F.Record '[t]) where
+instance FiniteSet (F.Record '[]) where
+  elements = Set.fromAscList [V.RNil]
+
+{-
+instance (V.KnownField t
+         , FiniteSet (V.Snd t)
+         , Ord (F.Record '[t])) => FiniteSet (F.Record '[t]) where
   elements = Set.mapMonotonic (\x -> x F.&: V.RNil) elements
+-}
 
 instance (V.KnownField t
          , FiniteSet (V.Snd t)
          , FiniteSet (F.Record rs)
-         , Ord (F.Record ('[t] V.++ rs))) => FiniteSet (F.Record (t ': rs)) where
+         , Ord (F.Record (t ': rs))) => FiniteSet (F.Record (t ': rs)) where
   elements = Set.fromAscList $ do
-    t <- Set.toAscList elements
-    recR <- Set.toAscList elements
-    return $ t F.&: recR
+      t <- Set.toAscList elements
+      recR <- Set.toAscList elements
+      return $ t F.&: recR
 
 composeRecAggregations
   :: forall qs ks rs ls
@@ -392,15 +399,30 @@ composeRecAggregations aggQK aggRL recQR =
   fmap (uncurry V.rappend)
     $ composeAggregations aggQK aggRL (F.rcast @qs recQR, F.rcast @rs recQR)
 
-{-
+
 aggFoldRec
   :: forall ks qs ds f
-   . (Ord (F.Record ks), Functor f)
+   . (ks F.⊆ (ks V.++ ds), ds F.⊆ (ks V.++ ds), Ord (F.Record ks), Functor f)
   => RecAggregation qs ks
   -> FL.Fold (F.Record ds) (F.Record ds)
   -> f (F.Record qs)
-  -> FL.Fold
-       (F.Record ks, F.Record ds)
-       (f (F.Record qs, F.Record ds))
-aggFoldRec = aggFold
--}
+  -> FL.Fold (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ ds)))
+aggFoldRec agg dFold qs = fmap (fmap (uncurry V.rappend))
+  $ FL.premap split (aggFold agg dFold qs)
+  where split r = (F.rcast @ks r, F.rcast @ds r)
+
+
+aggFoldRecAll
+  :: forall ks qs ds f
+   . ( ks F.⊆ (ks V.++ ds)
+     , ds F.⊆ (ks V.++ ds)
+     , Ord (F.Record ks)
+     , FiniteSet (F.Record qs)
+     )
+  => RecAggregation qs ks
+  -> FL.Fold (F.Record ds) (F.Record ds)
+  -> FL.Fold (F.Record (ks V.++ ds)) [F.Record (qs V.++ ds)]
+aggFoldRecAll agg dFold = fmap (fmap (uncurry V.rappend))
+  $ FL.premap split (aggFoldAll agg dFold)
+  where split r = (F.rcast @ks r, F.rcast @ds r)
+

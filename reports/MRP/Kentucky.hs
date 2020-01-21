@@ -106,6 +106,7 @@ import MRP.CCES
 import MRP.DeltaVPV hiding (post)
 
 import qualified PreferenceModel.Common as PrefModel
+import qualified BlueRipple.Data.Keyed as BR
 
 text1 :: T.Text
 text1 = [i|
@@ -119,6 +120,25 @@ post :: (K.KnitOne r
 post aseDemoCA  = K.wrapPrefix "Kentucky" $ do
   demoFrameRaw <- F.toFrame <$> K.useCached aseDemoCA
   demoRecsTyped <- K.knitEither $ traverse BR.typedASEDemographics $ FL.fold FL.list demoFrameRaw
+  let demoRecsTest =
+        L.filter ((\r -> F.rgetField @BR.StateAbbreviation r == "MA"
+                         && F.rgetField @BR.CongressionalDistrict r == 1
+                         && F.rgetField @BR.Year r == 2010)) demoRecsTyped
+      aggAge = BR.toRecAggregation @BR.Age4C @BR.SimpleAgeC $ BR.keyHas . BR.simpleAgeFrom4 
+      aggEducation = BR.toRecAggregation @BR.EducationC @BR.CollegeGradC $BR.keyHas . BR.acsLevels 
+      aggSimple = BR.composeRecAggregations aggAge aggEducation
+      foldToSimple = FL.premap F.rcast $ BR.aggFoldRecAll aggSimple BR.demographicsFold
+      demoRecsSimpleFold = FMR.concatFold $ FMR.mapReduceFold
+        (MR.noUnpack)
+        (FMR.assignKeysAndData
+          @[BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation, BR.SexC]
+          @[BR.EducationC, BR.Age4C, BR.ACSCount]
+        )
+        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const foldToSimple)
+      newKeys :: S.Set (F.Record [BR.CollegeGradC, BR.SimpleAgeC]) =  BR.elements
+  K.logLE K.Info $ "Elements of new key: " <> (T.pack $ show $ newKeys)
+  K.logLE K.Info $ "Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) demoRecsTest)
+  K.logLE K.Info $ "After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold demoRecsSimpleFold demoRecsTest))
   brAddMarkDown text1
   brAddMarkDown brReadMore
 

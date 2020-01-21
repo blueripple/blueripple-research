@@ -13,6 +13,7 @@
 module BlueRipple.Data.DemographicTypes where
 
 import qualified BlueRipple.Data.DataFrames    as BR
+import qualified BlueRipple.Data.Keyed         as K
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Array                    as A
@@ -37,6 +38,7 @@ import qualified Graphics.Vega.VegaLite        as GV
 -- Serialize for caching
 -- FI.VectorFor for frames
 -- Grouping for leftJoin
+-- FiniteSet for composition of aggregations
 
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 
@@ -45,6 +47,7 @@ instance S.Serialize Sex
 type instance FI.VectorFor Sex = Vec.Vector
 
 instance Grouping Sex
+instance K.FiniteSet Sex
 
 type SexC = "Sex" F.:-> Sex
 
@@ -59,6 +62,7 @@ instance S.Serialize SimpleRace
 type instance FI.VectorFor SimpleRace = Vec.Vector
 
 instance Grouping SimpleRace
+instance K.FiniteSet SimpleRace
 
 type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
 
@@ -72,6 +76,7 @@ instance S.Serialize CollegeGrad
 type instance FI.VectorFor CollegeGrad = Vec.Vector
 
 instance Grouping CollegeGrad
+instance K.FiniteSet CollegeGrad
 
 type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
 
@@ -85,6 +90,7 @@ instance S.Serialize SimpleAge
 type instance FI.VectorFor SimpleAge = Vec.Vector
 
 instance Grouping SimpleAge
+instance K.FiniteSet SimpleAge
 
 type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
@@ -95,6 +101,7 @@ data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bou
 instance S.Serialize Age4
 type instance FI.VectorFor Age4 = Vec.Vector
 instance Grouping Age4
+instance K.FiniteSet Age4
 
 type Age4C = "Age4" F.:-> Age4
 
@@ -106,6 +113,7 @@ data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver derivin
 instance S.Serialize Age5
 type instance FI.VectorFor Age5 = Vec.Vector
 instance Grouping Age5
+instance K.FiniteSet Age5
 
 type Age5C = "Age5" F.:-> Age5
 
@@ -117,6 +125,7 @@ data Education = L9 | L12 | HS | SC | AS | BA | AD deriving (Enum, Bounded, Eq, 
 instance S.Serialize Education
 type instance FI.VectorFor Education = Vec.Vector
 instance Grouping Education
+instance K.FiniteSet Education
 
 type EducationC = "Education" F.:-> Education
 
@@ -221,6 +230,7 @@ typedASEDemographics r = do
 
 demographicsFold :: FL.Fold (F.Record '[BR.ACSCount]) (F.Record '[BR.ACSCount])
 demographicsFold = FF.foldAllConstrained @Num FL.sum
+
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =
