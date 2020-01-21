@@ -364,15 +364,9 @@ toRecAggregation
 toRecAggregation agg recQ =
   fmap (\x -> x F.&: V.RNil) $ agg (F.rgetField @q recQ)
 
+-- this is weird.  But otherwise the other case doesn't work.
 instance FiniteSet (F.Record '[]) where
   elements = Set.fromAscList [V.RNil]
-
-{-
-instance (V.KnownField t
-         , FiniteSet (V.Snd t)
-         , Ord (F.Record '[t])) => FiniteSet (F.Record '[t]) where
-  elements = Set.mapMonotonic (\x -> x F.&: V.RNil) elements
--}
 
 instance (V.KnownField t
          , FiniteSet (V.Snd t)
