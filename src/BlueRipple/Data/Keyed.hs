@@ -68,14 +68,9 @@ more easily expressed as A -> Z[B], which we can sometimes invert to get B -> Z[
 
 We want to transform the data Keyed by A to data Keyed by B.
 
-[
-The forms of Keyed data require different approaches.  In particular, there are functors:
-a. SumD: Set -> Set, S :-> D[S], where D[S] is the set of finite formal sums of elements of S with coefficients in D
-b. List: Set -> Set, S :-> List(S), we note that this may be a different functor but, haskell-wise it must be Foldable.
-]
-
-We note that Z[A] is a Ring, using the abelian group structure
-and a multiplication: for all a,b in A, a not equal to b, n (aa) = n a and n (ab) = 0.
+We note that Z[A] is a Ring, using the abelian group structure for (+) 
+and a multiplication, (*), defined thusly: f
+or all a,b in A, a not equal to b, n (a*a) = n a and n (a * b) = 0.
 And the functor, SumZ : Set -> Set, S :-> Z[S] allows us to construct  SumZ gA . aggBA : B -> Z[D].  If
 we then have a map (alg : Z[D] -> D), e.g., using the Monoidal structure on D,
 we have alg . SumZ gA . aggBA = gB : B -> D.  
@@ -293,29 +288,6 @@ preservesZero agg = (kwZero >>= agg) ^==^ kwZero
 preservesIdentities
   :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesIdentities agg = preservesZero agg && preservesOne agg
-
--- for testing in ghci
-data K1 = A | B | C deriving (Enum, Bounded, Eq, Ord, Show)
-instance FiniteSet K1
-
-data K2 = X | Y deriving (Enum, Bounded, Eq, Ord, Show)
-instance FiniteSet K2
-
-data Q1 = G | H | I deriving (Enum, Bounded, Eq, Ord, Show)
-instance FiniteSet Q1
-
-data Q2 = M | N deriving (Enum, Bounded, Eq, Ord, Show)
-instance FiniteSet Q2
-
-aggK k = case k of
-  X -> keyHas [A, B]
-  Y -> keyHas [C]
-
-aggQ q = case q of
-  M -> keyHas [H, I]
-  N -> keyHas [G]
-
-aggKQ = composeAggregations aggK aggQ
 
 aggregate
   :: forall q k d

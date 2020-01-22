@@ -16,6 +16,7 @@ import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.Keyed         as K
 
 import qualified Control.Foldl                 as FL
+import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
@@ -231,6 +232,51 @@ typedASEDemographics r = do
 demographicsFold :: FL.Fold (F.Record '[BR.ACSCount]) (F.Record '[BR.ACSCount])
 demographicsFold = FF.foldAllConstrained @Num FL.sum
 
+-- aggregate ACSKey to as
+aggACSKey :: K.RecAggregation '[Age4C, SexC, EducationC] '[BR.ACSKey]
+aggACSKey =
+  K.keyHas
+    . (\x -> [x F.&: V.RNil])
+    . aseACSLabel
+    . (\r ->
+        (F.rgetField @Age4C r, F.rgetField @SexC r, F.rgetField @EducationC r)
+      )
+
+aggAge4 :: K.RecAggregation '[SimpleAgeC] '[Age4C]
+aggAge4 = K.toRecAggregation $ K.keyHas . simpleAgeFrom4
+
+aggACSEducation :: K.RecAggregation '[CollegeGradC] '[EducationC]
+aggACSEducation = K.toRecAggregation $ K.keyHas . acsLevels
+
+aggACSASEToSimple
+  :: K.RecAggregation
+       '[SimpleAgeC, SexC, CollegeGradC]
+       '[Age4C, SexC, EducationC]
+aggACSASEToSimple =
+  let aggRecId = K.toRecAggregation (K.keyHas . pure . id)
+  in  K.composeRecAggregations (K.composeRecAggregations aggAge4 aggRecId)
+                               aggACSEducation
+
+
+aggACSKeyToSimple
+  :: K.RecAggregation '[SimpleAgeC, SexC, CollegeGradC] '[BR.ACSKey]
+aggACSKeyToSimple a = aggACSASEToSimple a >>= aggACSKey
+
+type ACSKeys = [BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation]
+
+simplifyACSASEFold
+  :: FL.Fold
+       BR.ASEDemographics
+       ( F.FrameRec
+           (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
+       )
+simplifyACSASEFold = FMR.concatFold $ FMR.mapReduceFold
+  MR.noUnpack
+  (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
+  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAll
+    aggACSKeyToSimple
+    demographicsFold
+  )
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =
