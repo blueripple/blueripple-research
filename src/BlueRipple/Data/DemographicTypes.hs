@@ -242,6 +242,7 @@ aggACSKey =
         (F.rgetField @Age4C r, F.rgetField @SexC r, F.rgetField @EducationC r)
       )
 
+{-
 aggAge4 :: K.RecAggregation '[SimpleAgeC] '[Age4C]
 aggAge4 = K.toRecAggregation $ K.keyHas . simpleAgeFrom4
 
@@ -260,7 +261,8 @@ aggACSASEToSimple =
 
 aggACSKeyToSimple
   :: K.RecAggregation '[SimpleAgeC, SexC, CollegeGradC] '[BR.ACSKey]
-aggACSKeyToSimple a = aggACSASEToSimple a >>= aggACSKey
+aggACSKeyToSimple a = aggACSASEToSimple a >>= aggACSKey -- this is surprisingly nice.  Kleisli!  I'll need to think on it...
+-}
 
 type ACSKeys = [BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation]
 
@@ -270,13 +272,19 @@ simplifyACSASEFold
        ( F.FrameRec
            (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
        )
-simplifyACSASEFold = FMR.concatFold $ FMR.mapReduceFold
-  MR.noUnpack
-  (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
-  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAll
-    aggACSKeyToSimple
-    demographicsFold
-  )
+simplifyACSASEFold =
+  let aggAge4         = K.toRecAggregation $ K.keyHas . simpleAgeFrom4
+      aggACSEducation = K.toRecAggregation $ K.keyHas . acsLevels
+      aggSex          = K.toRecAggregation (K.keyHas . pure . id)
+      aggASE          = aggAge4 K.|*| aggSex K.|*| aggACSEducation
+      agg x = aggASE x >>= aggACSKey -- Kleisli 
+  in  FMR.concatFold $ FMR.mapReduceFold
+        MR.noUnpack
+        (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
+        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAll
+          agg
+          demographicsFold
+        )
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =

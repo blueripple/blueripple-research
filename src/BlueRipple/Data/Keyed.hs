@@ -197,6 +197,8 @@ kw1 ^==^ kw2 =
       (KeyWeights kw2') = simplify kw2
   in  L.sortOn snd kw1' == L.sortOn snd kw2'
 
+infixl 7 ^==^
+
 kwSwap :: (a, b) -> (b, a)
 kwSwap (x, y) = (y, x)
 
@@ -207,6 +209,7 @@ kwToMap (KeyWeights kw) = M.fromListWith (+) $ fmap kwSwap kw
 kw1 ^+^ kw2 = KeyWeights . fmap kwSwap . M.toList $ M.unionWith (+)
                                                                 (kwToMap kw1)
                                                                 (kwToMap kw2)
+infixl 7 ^+^
 
 kwInvert :: KeyWeights a -> KeyWeights a
 kwInvert (KeyWeights kw) = KeyWeights $ fmap (\(n, a) -> (negate n, a)) kw
@@ -217,6 +220,7 @@ kw1 ^*^ kw2 = KeyWeights $ fmap kwSwap . M.toList $ M.intersectionWith
   (kwToMap kw1)
   (kwToMap kw2)
 
+infixl 7 ^*^
 
 -- With these defintions, KeyWeights is a commutative ring (KeyWeights a, ^+^, ^*^)
 -- Multiplication corresponds to intersection, getting only things retrieved by both keys.
@@ -278,6 +282,15 @@ composeAggregations
   -> Aggregation (b, y) (a, x)
 composeAggregations aggBA aggYX (b, y) =
   (composeKeyWeights (aggBA b) kwOne) ^*^ (composeKeyWeights kwOne (aggYX y))
+
+(<*>)
+  :: (Ord a, FiniteSet a, Ord x, FiniteSet x)
+  => Aggregation b a
+  -> Aggregation y x
+  -> Aggregation (b, y) (a, x)
+(<*>) = composeAggregations
+
+infixl 7 <*>
 
 preservesOne :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesOne agg = (kwOne >>= agg) ^==^ kwOne
@@ -365,6 +378,21 @@ composeRecAggregations aggQK aggRL recQR =
   fmap (uncurry V.rappend)
     $ composeAggregations aggQK aggRL (F.rcast @qs recQR, F.rcast @rs recQR)
 
+(|*|)
+  :: forall qs ks rs ls
+   . ( FiniteSet (F.Record ks)
+     , Ord (F.Record ks)
+     , FiniteSet (F.Record ls)
+     , Ord (F.Record ls)
+     , qs F.⊆ (qs V.++ rs)
+     , rs F.⊆ (qs V.++ rs)
+     )
+  => RecAggregation qs ks
+  -> RecAggregation rs ls
+  -> RecAggregation (qs V.++ rs) (ks V.++ ls)
+(|*|) = composeRecAggregations
+
+infixl 7 |*|
 
 aggFoldRec
   :: forall ks qs ds f
