@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -22,6 +23,7 @@ import qualified Data.Array                    as A
 import qualified Data.List                     as L
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
+import qualified Data.Profunctor               as P
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
 import qualified Data.Set                      as Set
@@ -235,12 +237,39 @@ diffSum :: Ord a => a -> [a] -> KeyWeights a
 diffSum a as = keyHas [a] ^+^ (kwInvert $ keyHas as)
 
 composeKeyWeights :: KeyWeights a -> KeyWeights b -> KeyWeights (a, b)
-composeKeyWeights (KeyWeights kwa) (KeyWeights kwb) = KeyWeights $ do
-  (n, a) <- kwa
-  (m, b) <- kwb
-  return (n * m, (a, b))
+composeKeyWeights kwa kwb = (,) <$> kwa <*> kwb
 
-type Aggregation b a = b -> KeyWeights a
+-- An aggregation is described by a map from the desired keys to a
+-- finite formal sum of the keys you are aggregating from
+-- we use this "fancy" type because then we get a bundle of instances
+-- for free: Functor, Applicative, Monad, Profunctor, Strong, Choice,
+-- Cochoice, Traversing, Representable, Sieve, Category
+-- Some of which we might use!!
+type Aggregation b a = P.Star KeyWeights b a
+
+-- Using these patterns allows users to ignore the "Star" type and act
+-- as if we done @newtype Aggregation b a = Aggregation { runAgg :: b -> KeyWeights a }@
+pattern Aggregation :: (b -> KeyWeights a) -> Aggregation b a
+pattern Aggregation f <- P.Star f where
+  Aggregation f = P.Star f
+
+runAgg :: Aggregation b a -> b -> KeyWeights a
+runAgg = P.runStar
+
+{-
+instance Functor (Aggregation b) where
+  fmap f (Aggregation g) = Aggregation (fmap f . g)
+
+instance Applicative (Aggregation b) where
+  pure a = Aggregation $ const $ pure a
+  (Aggregation bToZf) <*> (Aggregation bToZa) = Aggregation (\b -> bToZf b <*> bToZa b)
+
+instance Monad (Aggregation b) where
+  (Aggregation bToZa) >>= f = Aggregation (\b -> bToZa b >>= flip (agg . f) b)
+
+instance P.Profunctor Aggregation where
+  dimap f g (Aggregation agg) = Aggregation $ fmap g . agg . f 
+-}
 
 -- The Free functor
 -- F : Set -> Ab and the forgetful functor
@@ -276,27 +305,17 @@ type Aggregation b a = b -> KeyWeights a
 -- e.g., data where a total is provided along with the breakdown or total and breakdown less one
 -- category, not all useful aggregations are "Complete". 
 composeAggregations
-  :: (Ord a, FiniteSet a, Ord x, FiniteSet x)
-  => Aggregation b a
+  :: Aggregation b a
   -> Aggregation y x
   -> Aggregation (b, y) (a, x)
-composeAggregations aggBA aggYX (b, y) =
-  (composeKeyWeights (aggBA b) kwOne) ^*^ (composeKeyWeights kwOne (aggYX y))
+composeAggregations aggBA aggYX =
+  Aggregation $ \(b, y) -> (,) <$> (runAgg aggBA) b <*> (runAgg aggYX) y
 
-(<*>)
-  :: (Ord a, FiniteSet a, Ord x, FiniteSet x)
-  => Aggregation b a
-  -> Aggregation y x
-  -> Aggregation (b, y) (a, x)
-(<*>) = composeAggregations
+preservesOne :: (Ord a, FiniteSet b, FiniteSet a) => Aggregation b a -> Bool
+preservesOne agg = (kwOne >>= runAgg agg) ^==^ kwOne
 
-infixl 7 <*>
-
-preservesOne :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
-preservesOne agg = (kwOne >>= agg) ^==^ kwOne
-
-preservesZero :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
-preservesZero agg = (kwZero >>= agg) ^==^ kwZero
+preservesZero :: Ord a => Aggregation b a -> Bool
+preservesZero agg = (kwZero >>= runAgg agg) ^==^ kwZero
 
 preservesIdentities
   :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
@@ -308,7 +327,7 @@ aggregate
   -> (KeyWeights d -> d)
   -> (k -> d)
   -> (q -> d)
-aggregate agg alg query q = alg $ fmap query (agg q)
+aggregate agg alg query q = alg $ fmap query (runAgg agg q)
 
 foldKWAlgebra :: FL.Fold d d -> KeyWeights d -> d
 foldKWAlgebra fld (KeyWeights kw) =
@@ -340,14 +359,17 @@ aggFoldAll agg dFold = aggFold agg dFold (Set.toList elements)
 -- specialize things to Vinyl
 
 type RecAggregation qs ks = Aggregation (F.Record qs) (F.Record ks)
+pattern RecAggregation :: (F.Record b -> KeyWeights (F.Record a)) -> RecAggregation b a
+pattern RecAggregation f <- P.Star f where
+  RecAggregation f = P.Star f
 
 toRecAggregation
   :: forall k q
    . (V.KnownField k, V.KnownField q)
   => Aggregation (V.Snd q) (V.Snd k)
   -> RecAggregation '[q] '[k]
-toRecAggregation agg recQ =
-  fmap (\x -> x F.&: V.RNil) $ agg (F.rgetField @q recQ)
+toRecAggregation agg = RecAggregation $ \recQ ->
+  fmap (\x -> x F.&: V.RNil) $ runAgg agg (F.rgetField @q recQ)
 
 -- this is weird.  But otherwise the other case doesn't work.
 instance FiniteSet (F.Record '[]) where
@@ -362,29 +384,21 @@ instance (V.KnownField t
       recR <- Set.toAscList elements
       return $ t F.&: recR
 
+-- this is just like regular compose but we need to split on the way and append on the way out
 composeRecAggregations
   :: forall qs ks rs ls
-   . ( FiniteSet (F.Record ks)
-     , Ord (F.Record ks)
-     , FiniteSet (F.Record ls)
-     , Ord (F.Record ls)
-     , qs F.⊆ (qs V.++ rs)
+   . ( qs F.⊆ (qs V.++ rs)
      , rs F.⊆ (qs V.++ rs)
      )
   => RecAggregation qs ks
   -> RecAggregation rs ls
   -> RecAggregation (qs V.++ rs) (ks V.++ ls)
-composeRecAggregations aggQK aggRL recQR =
-  fmap (uncurry V.rappend)
-    $ composeAggregations aggQK aggRL (F.rcast @qs recQR, F.rcast @rs recQR)
+composeRecAggregations recAggQK recAggRL =
+  RecAggregation $ \recQR -> V.rappend <$> (runAgg recAggQK $ F.rcast recQR) <*> (runAgg recAggRL $ F.rcast recQR)
 
 (|*|)
   :: forall qs ks rs ls
-   . ( FiniteSet (F.Record ks)
-     , Ord (F.Record ks)
-     , FiniteSet (F.Record ls)
-     , Ord (F.Record ls)
-     , qs F.⊆ (qs V.++ rs)
+   . ( qs F.⊆ (qs V.++ rs)
      , rs F.⊆ (qs V.++ rs)
      )
   => RecAggregation qs ks
@@ -404,7 +418,6 @@ aggFoldRec
 aggFoldRec agg dFold qs = fmap (fmap (uncurry V.rappend))
   $ FL.premap split (aggFold agg dFold qs)
   where split r = (F.rcast @ks r, F.rcast @ds r)
-
 
 aggFoldRecAll
   :: forall ks qs ds f

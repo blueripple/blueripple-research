@@ -15,6 +15,7 @@ module BlueRipple.Data.DemographicTypes where
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.Keyed         as K
 
+import           Control.Arrow                  ( (>>>) )
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
@@ -235,7 +236,8 @@ demographicsFold = FF.foldAllConstrained @Num FL.sum
 -- aggregate ACSKey to as
 aggACSKey :: K.RecAggregation '[Age4C, SexC, EducationC] '[BR.ACSKey]
 aggACSKey =
-  K.keyHas
+  K.RecAggregation
+    $ K.keyHas
     . (\x -> [x F.&: V.RNil])
     . aseACSLabel
     . (\r ->
@@ -273,11 +275,12 @@ simplifyACSASEFold
            (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
        )
 simplifyACSASEFold =
-  let aggAge4         = K.toRecAggregation $ K.keyHas . simpleAgeFrom4
-      aggACSEducation = K.toRecAggregation $ K.keyHas . acsLevels
-      aggSex          = K.toRecAggregation (K.keyHas . pure . id)
-      aggASE          = aggAge4 K.|*| aggSex K.|*| aggACSEducation
-      agg x = aggASE x >>= aggACSKey -- Kleisli 
+  let aggAge4 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom4
+      aggACSEducation =
+        K.toRecAggregation $ K.Aggregation $ K.keyHas . acsLevels
+      aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
+      aggASE = aggAge4 K.|*| aggSex K.|*| aggACSEducation
+      agg    = aggASE >>> aggACSKey -- when all is said and done, aggregations compose nicely
   in  FMR.concatFold $ FMR.mapReduceFold
         MR.noUnpack
         (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
