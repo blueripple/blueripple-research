@@ -114,31 +114,28 @@ text1 = [i|
   
 post :: (K.KnitOne r
         , K.Members es1 r
+        , K.Members es2 r
         )
      => K.Cached es1 [BR.ASEDemographics]
+     -> K.Cached es2 [BR.ASRDemographics]
      -> K.Sem r ()
-post aseDemoCA  = K.wrapPrefix "Kentucky" $ do
-  demoFrameRaw <- K.useCached aseDemoCA
+post aseDemoCA  asrDemoCA = K.wrapPrefix "Kentucky" $ do
+  aseFrameRaw <- K.useCached aseDemoCA
+  asrFrameRaw <- K.useCached asrDemoCA
 --  demoRecsTyped <- K.knitEither $ traverse BR.typedASEDemographics $ FL.fold FL.list demoFrameRaw
-  let demoRecsTest =
-        L.filter ((\r -> F.rgetField @BR.StateAbbreviation r == "MA"
-                         && F.rgetField @BR.CongressionalDistrict r == 1
-                         && F.rgetField @BR.Year r == 2010)) demoFrameRaw
-{-      aggAge = BR.toRecAggregation @BR.Age4C @BR.SimpleAgeC $ BR.keyHas . BR.simpleAgeFrom4 
-      aggEducation = BR.toRecAggregation @BR.EducationC @BR.CollegeGradC $BR.keyHas . BR.acsLevels 
-      aggSimple = BR.composeRecAggregations aggAge aggEducation
-      foldToSimple = FL.premap F.rcast $ BR.aggFoldRecAll aggSimple BR.demographicsFold
-      demoRecsSimpleFold = FMR.concatFold $ FMR.mapReduceFold
-        (MR.noUnpack)
-        (FMR.assignKeysAndData
-          @[BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation, BR.SexC]
-          @[BR.EducationC, BR.Age4C, BR.ACSCount]
-        )
-        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const foldToSimple)-}
---      newKeys :: S.Set (F.Record [BR.SimpleAgeC]) =  BR.elements
---  K.logLE K.Info $ "Elements of new key: " <> (T.pack $ show $ newKeys)
-  K.logLE K.Info $ "Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) demoRecsTest)
-  K.logLE K.Info $ "After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACSASEFold demoRecsTest))
+  let g r = (F.rgetField @BR.StateAbbreviation r == "MA")
+                 && (F.rgetField @BR.CongressionalDistrict r == 1)
+                 && (F.rgetField @BR.Year r == 2010)
+      aseTest = L.filter g aseFrameRaw
+      asrTest = L.filter g asrFrameRaw
+  K.logLE K.Info $ "ASE Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) aseTest)
+  K.logLE K.Info $ "ASE After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASEFold aseTest))
+  
+  K.logLE K.Info $ "ASR Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) asrTest)
+  K.logLE K.Info $ "ASR After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASRFold asrTest))
+  let testKey :: F.Record [BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC] = BR.Under F.&: BR.Female F.&: BR.NonWhite F.&: V.RNil
+      aggResult = BR.runAgg BR.aggACS_ASR testKey
+  K.logLE K.Info $ "Agg " <> (T.pack $ show testKey) <> " = " <> (T.pack $ show aggResult)
   brAddMarkDown text1
   brAddMarkDown brReadMore
 

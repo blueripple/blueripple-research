@@ -28,6 +28,7 @@ common deps
                , Frames-utils
                , foldl
                , freer-simple
+               , groups
                , here
                , hvega >= 0.4.0 && < 0.5
                , hmatrix

@@ -28,6 +28,7 @@ import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
+import qualified Frames.Transform              as FT
 import qualified Data.Vector                   as Vec
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -187,8 +188,21 @@ turnoutEducationLabel BA = "BA"
 turnoutEducationLabel AD = "AD"
 
 
-data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show)
-data TurnoutRace = Turnout_White | Turnout_Black | Turnout_Asian | Turnout_Hispanic
+data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize ACSRace
+type instance FI.VectorFor ACSRace = Vec.Vector
+instance Grouping ACSRace
+instance K.FiniteSet ACSRace
+
+type ACSRaceC = "ACSRace" F.:-> ACSRace
+
+data TurnoutRace = Turnout_White | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize TurnoutRace
+type instance FI.VectorFor TurnoutRace = Vec.Vector
+instance Grouping TurnoutRace
+instance K.FiniteSet TurnoutRace
+
+type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
 acsRaceLabel :: ACSRace -> T.Text
 acsRaceLabel ACS_All              = "All"
@@ -197,6 +211,15 @@ acsRaceLabel ACS_NonWhite         = "NonWhite"
 
 asrACSLabel :: (Age5, Sex, ACSRace) -> T.Text
 asrACSLabel (a, s, r) = acsSexLabel s <> acsRaceLabel r <> age5Label a
+
+acsRaceLabel' :: ACSRace -> T.Text
+acsRaceLabel' ACS_All              = ""
+acsRaceLabel' ACS_WhiteNonHispanic = "WhiteNonHispanic"
+acsRaceLabel' ACS_NonWhite         = "NonWhite"
+
+asrACSLabel' :: (Age5, Sex, ACSRace) -> T.Text
+asrACSLabel' (a, s, r) = acsSexLabel s <> acsRaceLabel' r <> age5Label a
+
 
 asACSLabel :: (Age5, Sex) -> T.Text
 asACSLabel (a, s) = acsSexLabel s <> age5Label a
@@ -234,8 +257,8 @@ demographicsFold :: FL.Fold (F.Record '[BR.ACSCount]) (F.Record '[BR.ACSCount])
 demographicsFold = FF.foldAllConstrained @Num FL.sum
 
 -- aggregate ACSKey to as
-aggACSKey :: K.RecAggregation '[Age4C, SexC, EducationC] '[BR.ACSKey]
-aggACSKey =
+aggACS_ASEKey :: K.RecAggregation '[Age4C, SexC, EducationC] '[BR.ACSKey]
+aggACS_ASEKey =
   K.RecAggregation
     $ K.keyHas
     . (\x -> [x F.&: V.RNil])
@@ -244,43 +267,31 @@ aggACSKey =
         (F.rgetField @Age4C r, F.rgetField @SexC r, F.rgetField @EducationC r)
       )
 
-{-
-aggAge4 :: K.RecAggregation '[SimpleAgeC] '[Age4C]
-aggAge4 = K.toRecAggregation $ K.keyHas . simpleAgeFrom4
-
-aggACSEducation :: K.RecAggregation '[CollegeGradC] '[EducationC]
-aggACSEducation = K.toRecAggregation $ K.keyHas . acsLevels
-
-aggACSASEToSimple
-  :: K.RecAggregation
-       '[SimpleAgeC, SexC, CollegeGradC]
-       '[Age4C, SexC, EducationC]
-aggACSASEToSimple =
-  let aggRecId = K.toRecAggregation (K.keyHas . pure . id)
-  in  K.composeRecAggregations (K.composeRecAggregations aggAge4 aggRecId)
-                               aggACSEducation
-
-
-aggACSKeyToSimple
-  :: K.RecAggregation '[SimpleAgeC, SexC, CollegeGradC] '[BR.ACSKey]
-aggACSKeyToSimple a = aggACSASEToSimple a >>= aggACSKey -- this is surprisingly nice.  Kleisli!  I'll need to think on it...
--}
+aggACS_ASRKey :: K.RecAggregation '[Age5C, SexC, ACSRaceC] '[BR.ACSKey]
+aggACS_ASRKey =
+  K.RecAggregation
+    $ K.keyHas
+    . (\x -> [x F.&: V.RNil])
+    . asrACSLabel'
+    . (\r ->
+        (F.rgetField @Age5C r, F.rgetField @SexC r, F.rgetField @ACSRaceC r)
+      )
 
 type ACSKeys = [BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation]
 
-simplifyACSASEFold
+simplifyACS_ASEFold
   :: FL.Fold
        BR.ASEDemographics
        ( F.FrameRec
            (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
        )
-simplifyACSASEFold =
+simplifyACS_ASEFold =
   let aggAge4 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom4
       aggACSEducation =
         K.toRecAggregation $ K.Aggregation $ K.keyHas . acsLevels
       aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
       aggASE = aggAge4 K.|*| aggSex K.|*| aggACSEducation
-      agg    = aggASE >>> aggACSKey -- when all is said and done, aggregations compose nicely
+      agg    = aggASE >>> aggACS_ASEKey -- when all is said and done, aggregations compose nicely
   in  FMR.concatFold $ FMR.mapReduceFold
         MR.noUnpack
         (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
@@ -288,6 +299,46 @@ simplifyACSASEFold =
           agg
           demographicsFold
         )
+
+aggACS_ASR :: K.RecAggregation '[SimpleAgeC, SexC, SimpleRaceC] '[BR.ACSKey]
+aggACS_ASR =
+  let aggAge5 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom5
+      aggACSRace = K.toRecAggregation $ K.Aggregation $ \sr -> case sr of
+        NonWhite -> K.keyDiff ACS_All ACS_WhiteNonHispanic
+        White    -> K.keyHas [ACS_WhiteNonHispanic]
+      aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
+      aggASR = aggAge5 K.|*| aggSex K.|*| aggACSRace
+      agg    = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
+  in  agg
+
+simplifyACS_ASRFold
+  :: FL.Fold
+       BR.ASEDemographics
+       (F.FrameRec (ACSKeys V.++ '[SimpleAgeC, SexC, SimpleRaceC, BR.ACSCount]))
+simplifyACS_ASRFold =
+  let aggAge5 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom5
+      aggACSRace = K.toRecAggregation $ K.Aggregation $ \sr -> case sr of
+        NonWhite -> K.keyDiff ACS_All ACS_WhiteNonHispanic
+        White    -> K.keyHas [ACS_WhiteNonHispanic]
+      aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
+      aggASR = aggAge5 K.|*| aggSex K.|*| aggACSRace
+      agg    = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
+      ops    = K.GroupOps
+        (FT.recordSingleton 0)
+        (FT.recordSingleton . negate . F.rgetField @BR.ACSCount)
+        (\r1 r2 ->
+          FT.recordSingleton
+            $ F.rgetField @BR.ACSCount r1
+            + F.rgetField @BR.ACSCount r2
+        )
+  in  FMR.concatFold $ FMR.mapReduceFold
+        MR.noUnpack
+        (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
+        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAllGroup
+          agg
+          ops
+        )
+
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =

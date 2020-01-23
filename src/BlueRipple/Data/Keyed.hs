@@ -15,11 +15,43 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE UndecidableInstances #-}
-module BlueRipple.Data.Keyed where
+module BlueRipple.Data.Keyed
+  (
+    -- * Types
+    FiniteSet(..)
+  , KeyWeights 
+  , Aggregation (..)
+  , pattern Aggregation
+  , GroupOps (..)
+    -- * Combinators
+  , keyHas
+  , keyDiff
+  , keyDiffSum
+  , kwCompose
+  , composeAggregations
+  , (!*!)
+  , aggFold
+  , aggFoldAll
+  , aggFoldGroup
+  , aggFoldAllGroup
+    -- * For Vinyl/Frames
+  , RecAggregation (..)
+  , pattern RecAggregation
+  , toRecAggregation
+  , composeRecAggregations
+  , (|*|)
+  , aggFoldRec
+  , aggFoldRecAll
+  , aggFoldRecGroup
+  , aggFoldRecAllGroup
+    -- * Debugging
+  , runAgg    
+  ) where
 
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
-import qualified Data.Array                    as A
+--import qualified Data.Array                    as A
+import qualified Data.Group                    as G
 import qualified Data.List                     as L
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
@@ -70,14 +102,12 @@ more easily expressed as A -> Z[B], which we can sometimes invert to get B -> Z[
 
 We want to transform the data Keyed by A to data Keyed by B.
 
-We note that Z[A] is a Ring, using the abelian group structure for (+) 
-and a multiplication, (*), defined thusly: f
-or all a,b in A, a not equal to b, n (a*a) = n a and n (a * b) = 0.
-And the functor, SumZ : Set -> Set, S :-> Z[S] allows us to construct  SumZ gA . aggBA : B -> Z[D].  If
-we then have a map (alg : Z[D] -> D), e.g., using the Monoidal structure on D,
+We note that Z[A] is an Abelian Group.
+The functor, SumZ : Set -> Set, S :-> Z[S] allows us to construct  SumZ gA . aggBA : B -> Z[D].  If
+we then have an arrow (F-algebra ?), alg : Z[D] -> D,
 we have alg . SumZ gA . aggBA = gB : B -> D.  
 
-If D has a monoid structure, then alg : Z[D] -> D is obtained by treating the
+Note: If D has a monoid structure, then alg : Z[D] -> D is obtained by treating the
 coefficients in Z as numbers of copies of the element d, and then combining those
 elements with the semigroup operation.
 In Haskell we will also use "Fold D D" to represent the algebra.
@@ -87,8 +117,8 @@ mempty = fold []
 d1 <> d2 = fold [d1, d2]
 or, conversely,
 Fold D D = Fold (<>) mempty id, this is @Control.Foldl.mconcat@
-
 -}
+
 class Eq a => FiniteSet a where
   elements :: Set.Set a
   default elements :: (Enum a, Bounded a) => Set.Set a
@@ -100,25 +130,47 @@ instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
     b <- Set.toAscList elements
     return (a, b)
 
-data FFSum a d where
-  FFSum :: M.Map a d -> FFSum a d
-
 -- If d is a monoid we can avoid carrying all these folds around
--- but it's easier to construct a Fold d d on the fly than a monoid instance
--- and if d is a monoid then contructing the fold is as easy as FL.mconcat
-ffSumFold :: Ord a => FL.Fold d d -> FL.Fold (a, d) (FFSum a d)
-ffSumFold dFold = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty FFSum
+-- but it's easier to construct a @Fold d d@ on the fly than a monoid instance
+-- and if d is a monoid then contructing the fold is as easy as @FL.mconcat@
+
+-- Using @Map@ here is a performance choice.   We could get away with
+-- just @Eq a@ and use a list.  But this step may happen a lot.
+ffSumFold :: Ord a => FL.Fold d d -> FL.Fold (a, d) (M.Map a d)
+ffSumFold dFold = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
   where plus d1 d2 = FL.fold dFold [d1, d2]
 
-ffSumFoldSemi :: (Ord a, Semigroup d) => FL.Fold (a, d) (FFSum a d)
-ffSumFoldSemi = FL.Fold (\m (a, d) -> M.insertWith (<>) a d m) M.empty FFSum
+-- Mostly for reference
+ffSumFoldSemi :: (Ord a, Semigroup d) => FL.Fold (a, d) (M.Map a d)
+ffSumFoldSemi = FL.Fold (\m (a, d) -> M.insertWith (<>) a d m) M.empty id
 
-functionFromFFSum :: Ord a => FL.Fold d d -> FFSum a d -> (a -> d)
-functionFromFFSum dFold (FFSum m) a =
+-- Lookup in the finite formal sum. Use @fold []@ (monoidal identity)
+-- if/when a isn't found
+functionFromFFSum :: Ord a => FL.Fold d d -> M.Map a d -> (a -> d)
+functionFromFFSum dFold m a =
   let zero = FL.fold dFold [] in maybe zero id $ M.lookup a m
 
+-- Combining @ffSumFold@ and @functionFromFFSum@ we convert
+-- a collection of data to a function from key to data.
 functionFold :: Ord a => FL.Fold d d -> FL.Fold (a, d) (a -> d)
 functionFold dFold = fmap (functionFromFFSum dFold) (ffSumFold dFold)
+
+
+-- specify group operations, 0, invert, +
+data GroupOps a where
+  GroupOps :: a -> (a -> a) -> (a -> a -> a) -> GroupOps a
+
+groupOps :: G.Group a => GroupOps a
+groupOps = GroupOps mempty G.invert (<>)
+
+ffSumFoldGroup :: Ord a => GroupOps d -> FL.Fold (a, d) (M.Map a d)
+ffSumFoldGroup (GroupOps _ _ plus) = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
+
+functionFromFFSumGroup :: Ord a => GroupOps d -> M.Map a d -> (a -> d)
+functionFromFFSumGroup (GroupOps zero _ _) m a = maybe zero id $ M.lookup a m
+
+functionFoldGroup :: Ord a => GroupOps d -> FL.Fold (a, d) (a -> d)
+functionFoldGroup ops = fmap (functionFromFFSumGroup ops) (ffSumFoldGroup ops)
 
 
 -- now we do the work to get (b -> d) from (a -> d).
@@ -126,22 +178,10 @@ functionFold dFold = fmap (functionFromFFSum dFold) (ffSumFold dFold)
 -- which, combined with a required set of B, will get us
 -- (b -> FFSum Int a) -> f b -> FL.Fold (a, d) (f b) 
 
-{-
-data KeyedData a d where
-  DataFunction :: (a -> d) -> KeyedData a d
-  DataSum :: Ord a => FFSum a d -> KeyedData a d
-  DataList :: (Foldable f, Functor f, Semigroup d) => f (a,d) -> KeyedData a d
--}
-
--- our goal is a function
--- reAggregate :: Semigroup d => (a -> b) -> KeyedData a d -> KeyedData b d
--- which satisfies some laws:
-
 
 -- finite formal sum of @a@ with integer coefficients
 -- i.e., an element of Z[A], the abelian group
 -- generated by the elements of A.
-
 -- we could use FFSum Int a here but it's more pain than it's worth. 
 data KeyWeights a where
   KeyWeights :: [(Int, a)] -> KeyWeights a
@@ -155,7 +195,6 @@ instance Show a => Show (KeyWeights a) where
 
 instance Functor KeyWeights where
   fmap f (KeyWeights kw) = KeyWeights $ fmap (\(w,a) -> (w, f a)) kw
-
 
 -- like Applicative for [] but with the product of coefficients
 instance Applicative KeyWeights where
@@ -216,28 +255,17 @@ infixl 7 ^+^
 kwInvert :: KeyWeights a -> KeyWeights a
 kwInvert (KeyWeights kw) = KeyWeights $ fmap (\(n, a) -> (negate n, a)) kw
 
-(^*^) :: Ord a => KeyWeights a -> KeyWeights a -> KeyWeights a
-kw1 ^*^ kw2 = KeyWeights $ fmap kwSwap . M.toList $ M.intersectionWith
-  (*)
-  (kwToMap kw1)
-  (kwToMap kw2)
-
-infixl 7 ^*^
-
--- With these defintions, KeyWeights is a commutative ring (KeyWeights a, ^+^, ^*^)
--- Multiplication corresponds to intersection, getting only things retrieved by both keys.
--- Addition corresponds to getting everything retrieved by either key.
 keyHas :: Ord a => [a] -> KeyWeights a
 keyHas as = KeyWeights $ fmap (1, ) as
 
-diff :: Ord a => a -> a -> KeyWeights a
-diff a1 a2 = keyHas [a1] ^+^ (kwInvert $ keyHas [a2])
+keyDiff :: Ord a => a -> a -> KeyWeights a
+keyDiff a1 a2 = keyHas [a1] ^+^ (kwInvert $ keyHas [a2])
 
-diffSum :: Ord a => a -> [a] -> KeyWeights a
-diffSum a as = keyHas [a] ^+^ (kwInvert $ keyHas as)
+keyDiffSum :: Ord a => a -> [a] -> KeyWeights a
+keyDiffSum a as = keyHas [a] ^+^ (kwInvert $ keyHas as)
 
-composeKeyWeights :: KeyWeights a -> KeyWeights b -> KeyWeights (a, b)
-composeKeyWeights kwa kwb = (,) <$> kwa <*> kwb
+kwCompose :: KeyWeights a -> KeyWeights b -> KeyWeights (a, b)
+kwCompose kwa kwb = (,) <$> kwa <*> kwb
 
 -- An aggregation is described by a map from the desired keys to a
 -- finite formal sum of the keys you are aggregating from
@@ -248,28 +276,13 @@ composeKeyWeights kwa kwb = (,) <$> kwa <*> kwb
 type Aggregation b a = P.Star KeyWeights b a
 
 -- Using these patterns allows users to ignore the "Star" type and act
--- as if we done @newtype Aggregation b a = Aggregation { runAgg :: b -> KeyWeights a }@
+-- as if we'd done @newtype Aggregation b a = Aggregation { runAgg :: b -> KeyWeights a }@
 pattern Aggregation :: (b -> KeyWeights a) -> Aggregation b a
 pattern Aggregation f <- P.Star f where
   Aggregation f = P.Star f
 
 runAgg :: Aggregation b a -> b -> KeyWeights a
 runAgg = P.runStar
-
-{-
-instance Functor (Aggregation b) where
-  fmap f (Aggregation g) = Aggregation (fmap f . g)
-
-instance Applicative (Aggregation b) where
-  pure a = Aggregation $ const $ pure a
-  (Aggregation bToZf) <*> (Aggregation bToZa) = Aggregation (\b -> bToZf b <*> bToZa b)
-
-instance Monad (Aggregation b) where
-  (Aggregation bToZa) >>= f = Aggregation (\b -> bToZa b >>= flip (agg . f) b)
-
-instance P.Profunctor Aggregation where
-  dimap f g (Aggregation agg) = Aggregation $ fmap g . agg . f 
--}
 
 -- The Free functor
 -- F : Set -> Ab and the forgetful functor
@@ -311,6 +324,12 @@ composeAggregations
 composeAggregations aggBA aggYX =
   Aggregation $ \(b, y) -> (,) <$> (runAgg aggBA) b <*> (runAgg aggYX) y
 
+(!*!)
+  :: Aggregation b a
+  -> Aggregation y x
+  -> Aggregation (b, y) (a, x)
+aggBA !*! aggYX = composeAggregations aggBA aggYX
+
 preservesOne :: (Ord a, FiniteSet b, FiniteSet a) => Aggregation b a -> Bool
 preservesOne agg = (kwOne >>= runAgg agg) ^==^ kwOne
 
@@ -327,7 +346,18 @@ aggregate
   -> (KeyWeights d -> d)
   -> (k -> d)
   -> (q -> d)
-aggregate agg alg query q = alg $ fmap query (runAgg agg q)
+aggregate agg alg query = alg . fmap query . runAgg agg
+
+-- all we need to handle Applicative queries
+-- is an Applicative version of the algebra.  
+aggregateM :: forall q k d m. Applicative m
+  => Aggregation q k
+  -> (KeyWeights d -> d)
+  -> (k -> m d)
+  -> (q -> m d)
+aggregateM agg alg queryM =
+  let algM = fmap alg . sequenceA
+  in aggregate agg algM queryM
 
 foldKWAlgebra :: FL.Fold d d -> KeyWeights d -> d
 foldKWAlgebra fld (KeyWeights kw) =
@@ -335,6 +365,26 @@ foldKWAlgebra fld (KeyWeights kw) =
 
 monoidKWAlgebra :: Monoid d => KeyWeights d -> d
 monoidKWAlgebra = foldKWAlgebra FL.mconcat
+
+-- copied from Data.Group in groups
+pow :: Integral x => GroupOps m -> m -> x -> m
+pow (GroupOps zero invert plus) x0 n0 = case compare n0 0 of
+  LT -> invert . f x0 $ negate n0
+  EQ -> zero
+  GT -> f x0 n0
+  where
+    f x n 
+      | even n = f (x `plus` x) (n `quot` 2)
+      | n == 1 = x
+      | otherwise = g (x `plus` x) (n `quot` 2) x
+    g x n c
+      | even n = g (x `plus` x) (n `quot` 2) c
+      | n == 1 = x `plus` c
+      | otherwise = g (x `plus` x) (n `quot` 2) (x `plus` c)
+
+groupKWAlgebra :: GroupOps d -> KeyWeights d -> d
+groupKWAlgebra ops@(GroupOps zero _ plus) (KeyWeights kw) =
+  FL.fold (FL.Fold plus zero id) $ fmap (\(n, d) -> pow ops d n) kw
 
 aggFold
   :: forall k q d f
@@ -355,6 +405,27 @@ aggFoldAll
   -> FL.Fold d d
   -> FL.Fold (k, d) [(q, d)]
 aggFoldAll agg dFold = aggFold agg dFold (Set.toList elements)
+
+
+aggFoldGroup
+  :: forall k q d f
+   . (Ord k, Functor f)
+  => Aggregation q k
+  -> GroupOps d
+  -> f q
+  -> FL.Fold (k, d) (f (q, d))
+aggFoldGroup agg ops qs =
+  let apply g q = (q, g q)
+      fApply g = fmap (apply g) qs
+  in  fmap (fApply . aggregate agg (groupKWAlgebra ops)) (functionFoldGroup ops)
+
+aggFoldAllGroup
+  :: forall k q d
+   . (Ord k, FiniteSet q)
+  => Aggregation q k
+  -> GroupOps d
+  -> FL.Fold (k, d) [(q, d)]
+aggFoldAllGroup agg ops = aggFoldGroup agg ops (Set.toList elements)
 
 -- specialize things to Vinyl
 
@@ -431,5 +502,31 @@ aggFoldRecAll
   -> FL.Fold (F.Record (ks V.++ ds)) [F.Record (qs V.++ ds)]
 aggFoldRecAll agg dFold = fmap (fmap (uncurry V.rappend))
   $ FL.premap split (aggFoldAll agg dFold)
+  where split r = (F.rcast @ks r, F.rcast @ds r)
+
+
+aggFoldRecGroup
+  :: forall ks qs ds f
+   . (ks F.⊆ (ks V.++ ds), ds F.⊆ (ks V.++ ds), Ord (F.Record ks), Functor f)
+  => RecAggregation qs ks
+  -> GroupOps (F.Record ds)
+  -> f (F.Record qs)
+  -> FL.Fold (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ ds)))
+aggFoldRecGroup agg ops qs = fmap (fmap (uncurry V.rappend))
+  $ FL.premap split (aggFoldGroup agg ops qs)
+  where split r = (F.rcast @ks r, F.rcast @ds r)
+
+aggFoldRecAllGroup
+  :: forall ks qs ds f
+   . ( ks F.⊆ (ks V.++ ds)
+     , ds F.⊆ (ks V.++ ds)
+     , Ord (F.Record ks)
+     , FiniteSet (F.Record qs)
+     )
+  => RecAggregation qs ks
+  -> GroupOps (F.Record ds)
+  -> FL.Fold (F.Record (ks V.++ ds)) [F.Record (qs V.++ ds)]
+aggFoldRecAllGroup agg ops = fmap (fmap (uncurry V.rappend))
+  $ FL.premap split (aggFoldAllGroup agg ops)
   where split r = (F.rcast @ks r, F.rcast @ds r)
 

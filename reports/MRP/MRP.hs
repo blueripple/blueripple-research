@@ -191,6 +191,15 @@ main = do
               (const True)
           aseDemographicsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASEDemographics] =
             cachedRecordList "mrp/aseDemographics.bin" aseDemographicsFrame
+          asrDemographicsFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.ASRDemographics]
+          asrDemographicsFrame = FL.fold FL.list <$> do   
+            asrDemographicsPath <- liftIO $ usePath ageSexRaceDemographicsLongCSV  
+            loadToFrame
+              csvParserOptions
+              asrDemographicsPath
+              (const True)
+          asrDemographicsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASRDemographics] =
+            cachedRecordList "mrp/asrDemographics.bin" asrDemographicsFrame
           aseTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.TurnoutASE]
           aseTurnoutFrame = FL.fold FL.list <$> do
             aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
@@ -256,7 +265,7 @@ main = do
                         ]
           )
         )
-        $ Kentucky.post aseDemographicsFrameCA
+        $ Kentucky.post aseDemographicsFrameCA asrDemographicsFrameCA
 
   case eitherDocs of
     Right namedDocs ->
