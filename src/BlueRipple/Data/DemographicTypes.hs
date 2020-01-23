@@ -142,7 +142,7 @@ turnoutLevels NonGrad = [L9, L12, HS, SC] -- NB: Turnout data did not contain an
 turnoutLevels Grad    = [BA, AD]
 
 aseACSLabel :: (Age4, Sex, Education) -> T.Text
-aseACSLabel (a, s, e) = acsSexLabel s <> age4Label a <> acsEducationLabel e
+aseACSLabel (a, s, e) = sexLabel s <> age4Label a <> acsEducationLabel e
 
 age4Label :: Age4 -> T.Text
 age4Label A4_18To24    = "18To24"
@@ -150,9 +150,9 @@ age4Label A4_25To44    = "25To44"
 age4Label A4_45To64    = "45To64"
 age4Label A4_65AndOver = "65AndOver"
 
-acsSexLabel :: Sex -> T.Text
-acsSexLabel Female = "Female"
-acsSexLabel Male   = "Male"
+sexLabel :: Sex -> T.Text
+sexLabel Female = "Female"
+sexLabel Male   = "Male"
 
 acsEducationLabel :: Education -> T.Text
 acsEducationLabel L9  = "LessThan9th"
@@ -197,13 +197,6 @@ instance K.FiniteSet ACSRace
 
 type ACSRaceC = "ACSRace" F.:-> ACSRace
 
-data TurnoutRace = Turnout_White | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
-instance S.Serialize TurnoutRace
-type instance FI.VectorFor TurnoutRace = Vec.Vector
-instance Grouping TurnoutRace
-instance K.FiniteSet TurnoutRace
-
-type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
 acsRaceLabel :: ACSRace -> T.Text
 acsRaceLabel ACS_All              = "All"
@@ -211,7 +204,7 @@ acsRaceLabel ACS_WhiteNonHispanic = "WhiteNonHispanic"
 acsRaceLabel ACS_NonWhite         = "NonWhite"
 
 asrACSLabel :: (Age5, Sex, ACSRace) -> T.Text
-asrACSLabel (a, s, r) = acsSexLabel s <> acsRaceLabel r <> age5Label a
+asrACSLabel (a, s, r) = sexLabel s <> acsRaceLabel r <> age5Label a
 
 acsRaceLabel' :: ACSRace -> T.Text
 acsRaceLabel' ACS_All              = ""
@@ -219,14 +212,35 @@ acsRaceLabel' ACS_WhiteNonHispanic = "WhiteNonHispanic"
 acsRaceLabel' ACS_NonWhite         = "NonWhite"
 
 asrACSLabel' :: (Age5, Sex, ACSRace) -> T.Text
-asrACSLabel' (a, s, r) = acsSexLabel s <> acsRaceLabel' r <> age5Label a
+asrACSLabel' (a, s, r) = sexLabel s <> acsRaceLabel' r <> age5Label a
 
 
 asACSLabel :: (Age5, Sex) -> T.Text
-asACSLabel (a, s) = acsSexLabel s <> age5Label a
+asACSLabel (a, s) = sexLabel s <> age5Label a
+
+
+data TurnoutRace = Turnout_All | Turnout_WhiteNonHispanic | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize TurnoutRace
+type instance FI.VectorFor TurnoutRace = Vec.Vector
+instance Grouping TurnoutRace
+instance K.FiniteSet TurnoutRace
+
+type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
+
+turnoutRaceLabel :: TurnoutRace -> T.Text
+turnoutRaceLabel Turnout_All              = "All"
+turnoutRaceLabel Turnout_WhiteNonHispanic = "WhiteNonHispanic"
+turnoutRaceLabel Turnout_Black            = "Black"
+turnoutRaceLabel Turnout_Asian            = "Asian"
+turnoutRaceLabel Turnout_Hispanic         = "Hispanic"
+
+
+asrTurnoutLabel' :: (Age5, Sex, TurnoutRace) -> T.Text
+asrTurnoutLabel' (a, s, r) = turnoutRaceLabel r <> sexLabel s <> age5Label a
+
 
 asrTurnoutLabel :: (Age5, Sex, ACSRace) -> T.Text
-asrTurnoutLabel (a, s, r) = acsRaceLabel r <> acsSexLabel s <> age5Label a
+asrTurnoutLabel (a, s, r) = acsRaceLabel r <> sexLabel s <> age5Label a
 
 
 acsASELabelMap :: M.Map T.Text (Age4, Sex, Education)
@@ -329,15 +343,100 @@ simplifyACS_ASRFold =
           acsCountGroupOps
         )
 
-turnoutMonoidOps :: K.MonoidOps (F.Record '[BR.Population, BR.Voted])
+turnoutMonoidOps
+  :: K.MonoidOps
+       (F.Record '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
 turnoutMonoidOps = K.monoidOpsFromFold $ FF.foldAllConstrained @Num FL.sum
 
-turnoutGroupOps :: K.GroupOps (F.Record '[BR.Population, BR.Voted])
+turnoutGroupOps
+  :: K.GroupOps (F.Record '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
 turnoutGroupOps =
   let pop r = F.rgetField @BR.Population r
+      cit r = F.rgetField @BR.Population r
+      reg r = F.rgetField @BR.Registered r
       voted r = F.rgetField @BR.Voted r
-      invert r = negate (pop r) F.&: negate (voted r) F.&: V.RNil
+      invert r =
+        negate (pop r)
+          F.&: negate (cit r)
+          F.&: negate (reg r)
+          F.&: negate (voted r)
+          F.&: V.RNil
   in  K.GroupOps turnoutMonoidOps invert
+
+aggTurnout_ASEKey :: K.RecAggregation '[Age5C, SexC, EducationC] '[BR.Group]
+aggTurnout_ASEKey =
+  K.RecAggregation
+    $ K.keyHas
+    . (\x -> [x F.&: V.RNil])
+    . aseTurnoutLabel
+    . (\r ->
+        (F.rgetField @Age5C r, F.rgetField @SexC r, F.rgetField @EducationC r)
+      )
+
+turnoutSimpleASEAgg
+  :: K.RecAggregation '[SimpleAgeC, SexC, CollegeGradC] '[BR.Group]
+turnoutSimpleASEAgg
+  = let
+      aggAge5 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom5
+      aggSex  = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
+      aggEducation =
+        K.toRecAggregation $ K.Aggregation $ K.keyHas . turnoutLevels
+      aggASE = aggAge5 K.|*| aggSex K.|*| aggEducation
+    in
+      aggASE >>> aggTurnout_ASEKey
+
+simplifyTurnoutASEFold
+  :: FL.Fold
+       BR.TurnoutASE
+       ( F.FrameRec
+           '[BR.Year, SimpleAgeC, SexC, CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
+       )
+simplifyTurnoutASEFold = FMR.concatFold $ FMR.mapReduceFold
+  MR.noUnpack
+  (FMR.assignKeysAndData @'[BR.Year]
+    @'[BR.Group, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
+  )
+  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAllGroup
+    turnoutSimpleASEAgg
+    turnoutGroupOps
+  )
+
+aggTurnout_ASRKey :: K.RecAggregation '[Age5C, SexC, TurnoutRaceC] '[BR.Group]
+aggTurnout_ASRKey =
+  K.RecAggregation
+    $ K.keyHas
+    . (\x -> [x F.&: V.RNil])
+    . asrTurnoutLabel'
+    . (\r ->
+        (F.rgetField @Age5C r, F.rgetField @SexC r, F.rgetField @TurnoutRaceC r)
+      )
+
+turnoutSimpleASRAgg
+  :: K.RecAggregation '[SimpleAgeC, SexC, SimpleRaceC] '[BR.Group]
+turnoutSimpleASRAgg =
+  let aggAge5 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom5
+      aggSex  = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
+      aggRace = K.toRecAggregation $ K.Aggregation $ \sr -> case sr of
+        NonWhite -> K.keyDiff Turnout_All Turnout_WhiteNonHispanic
+        White    -> K.keyHas [Turnout_WhiteNonHispanic]
+      aggASR = aggAge5 K.|*| aggSex K.|*| aggRace
+  in  aggASR >>> aggTurnout_ASRKey
+
+simplifyTurnoutASRFold
+  :: FL.Fold
+       BR.TurnoutASR
+       ( F.FrameRec
+           '[BR.Year, SimpleAgeC, SexC, SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
+       )
+simplifyTurnoutASRFold = FMR.concatFold $ FMR.mapReduceFold
+  MR.noUnpack
+  (FMR.assignKeysAndData @'[BR.Year]
+    @'[BR.Group, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
+  )
+  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAllGroup
+    turnoutSimpleASRAgg
+    turnoutGroupOps
+  )
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =

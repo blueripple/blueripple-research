@@ -120,3 +120,30 @@ adjTurnoutLong total unAdj = do
   return $ fmap (\r -> flip (F.rputField @t) r $ adj delta $ F.rgetField @t r)
                 unAdj
 
+
+-- Want a generic fold such that given:
+-- 1. a Map (F.Record [State, Year]) Double -- TurnoutPct
+-- 2. A data frame with [State, Year] + [partitions of State] + TurnoutPct
+-- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
+-- So, for each state/year we need to sum over the partitions, get the adjustment, apply it the partitions.
+
+
+{-
+adjTurnoutFold :: 
+let demoWithAdjTurnoutByCD = do
+        stateTurnoutFrame <- F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
+        let getKey = F.rcast @[BR.Year,BR.StateAbbreviation]
+            vtbsMap = FL.fold (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map) stateTurnoutFrame
+            unpackM = FMR.generalizeUnpack FMR.noUnpack
+            assignM = FMR.generalizeAssign
+              $ FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll]              
+            adjustF ks =
+              let vtM = M.lookup ks vtbsMap
+                  f x = case vtM of
+                    Nothing -> K.logLE K.Diagnostic ("Failed to find " <> (T.pack $ show ks) <> " in state turnout. Leaving unadjusted.") >> return x
+                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @BR.PopCount @BR.VotedPctOfAll vt x
+              in MR.postMapM f $ FL.generalize FL.list
+            reduceM = FMR.makeRecsWithKeyM id (MR.ReduceFoldM adjustF)
+
+adjF = FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
+_]

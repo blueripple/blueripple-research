@@ -115,24 +115,37 @@ text1 = [i|
 post :: (K.KnitOne r
         , K.Members es1 r
         , K.Members es2 r
+        , K.Members es3 r
+        , K.Members es4 r
+        , K.Members es5 r
         )
      => K.Cached es1 [BR.ASEDemographics]
      -> K.Cached es2 [BR.ASRDemographics]
+     -> K.Cached es3 [BR.TurnoutASE]
+     -> K.Cached es4 [BR.TurnoutASR]
+     -> K.Cached es5 [BR.StateTurnout]
      -> K.Sem r ()
-post aseDemoCA  asrDemoCA = K.wrapPrefix "Kentucky" $ do
-  aseFrameRaw <- K.useCached aseDemoCA
-  asrFrameRaw <- K.useCached asrDemoCA
+post aseDemoCA  asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA = K.wrapPrefix "Kentucky" $ do
+  aseACSRaw <- K.useCached aseDemoCA
+  asrACSRaw <- K.useCached asrDemoCA
+  aseTurnoutRaw <- K.useCached aseTurnoutCA
+  asrTurnoutRaw <- K.useCached asrTurnoutCA
+  stateTurnoutRaw <- K.useCached stateTurnoutCA
 --  demoRecsTyped <- K.knitEither $ traverse BR.typedASEDemographics $ FL.fold FL.list demoFrameRaw
   let g r = (F.rgetField @BR.StateAbbreviation r == "MA")
                  && (F.rgetField @BR.CongressionalDistrict r == 1)
                  && (F.rgetField @BR.Year r == 2010)
-      aseTest = L.filter g aseFrameRaw
-      asrTest = L.filter g asrFrameRaw
+      aseTest = L.filter g aseACSRaw
+      asrTest = L.filter g asrACSRaw
   K.logLE K.Info $ "ASE Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) aseTest)
   K.logLE K.Info $ "ASE After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASEFold aseTest))
   
   K.logLE K.Info $ "ASR Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) asrTest)
   K.logLE K.Info $ "ASR After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASRFold asrTest))
+  K.logLE K.Info $ "Turnout ASE Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list aseTurnoutRaw)
+  K.logLE K.Info $ "Turnout ASE After:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list (FL.fold BR.simplifyTurnoutASEFold aseTurnoutRaw))
+  K.logLE K.Info $ "Turnout ASR Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list asrTurnoutRaw)
+  K.logLE K.Info $ "Turnout ASR After:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list (FL.fold BR.simplifyTurnoutASRFold asrTurnoutRaw))
   brAddMarkDown text1
   brAddMarkDown brReadMore
 
