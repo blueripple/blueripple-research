@@ -32,6 +32,7 @@ import qualified Frames.Transform              as FT
 import qualified Data.Vector                   as Vec
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+import qualified Data.Vinyl.XRec               as V
 import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
 import qualified Frames.Visualization.VegaLite.Data
@@ -279,6 +280,14 @@ aggACS_ASRKey =
 
 type ACSKeys = [BR.Year, BR.StateFIPS, BR.CongressionalDistrict, BR.StateName, BR.StateAbbreviation]
 
+acsCountMonoidOps :: K.MonoidOps (F.Record '[BR.ACSCount])
+acsCountMonoidOps = K.monoidOpsFromFold $ FF.foldAllConstrained @Num FL.sum
+
+acsCountGroupOps :: K.GroupOps (F.Record '[BR.ACSCount])
+acsCountGroupOps = K.GroupOps
+  acsCountMonoidOps
+  (FT.recordSingleton . negate . F.rgetField @BR.ACSCount)
+
 simplifyACS_ASEFold
   :: FL.Fold
        BR.ASEDemographics
@@ -295,21 +304,10 @@ simplifyACS_ASEFold =
   in  FMR.concatFold $ FMR.mapReduceFold
         MR.noUnpack
         (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
-        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAll
+        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAllGroup
           agg
-          demographicsFold
+          acsCountGroupOps
         )
-
-aggACS_ASR :: K.RecAggregation '[SimpleAgeC, SexC, SimpleRaceC] '[BR.ACSKey]
-aggACS_ASR =
-  let aggAge5 = K.toRecAggregation $ K.Aggregation $ K.keyHas . simpleAgeFrom5
-      aggACSRace = K.toRecAggregation $ K.Aggregation $ \sr -> case sr of
-        NonWhite -> K.keyDiff ACS_All ACS_WhiteNonHispanic
-        White    -> K.keyHas [ACS_WhiteNonHispanic]
-      aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
-      aggASR = aggAge5 K.|*| aggSex K.|*| aggACSRace
-      agg    = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
-  in  agg
 
 simplifyACS_ASRFold
   :: FL.Fold
@@ -323,22 +321,23 @@ simplifyACS_ASRFold =
       aggSex = K.toRecAggregation $ K.Aggregation $ K.keyHas . pure . id
       aggASR = aggAge5 K.|*| aggSex K.|*| aggACSRace
       agg    = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
-      ops    = K.GroupOps
-        (FT.recordSingleton 0)
-        (FT.recordSingleton . negate . F.rgetField @BR.ACSCount)
-        (\r1 r2 ->
-          FT.recordSingleton
-            $ F.rgetField @BR.ACSCount r1
-            + F.rgetField @BR.ACSCount r2
-        )
   in  FMR.concatFold $ FMR.mapReduceFold
         MR.noUnpack
         (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
         (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldRecAllGroup
           agg
-          ops
+          acsCountGroupOps
         )
 
+turnoutMonoidOps :: K.MonoidOps (F.Record '[BR.Population, BR.Voted])
+turnoutMonoidOps = K.monoidOpsFromFold $ FF.foldAllConstrained @Num FL.sum
+
+turnoutGroupOps :: K.GroupOps (F.Record '[BR.Population, BR.Voted])
+turnoutGroupOps =
+  let pop r = F.rgetField @BR.Population r
+      voted r = F.rgetField @BR.Voted r
+      invert r = negate (pop r) F.&: negate (voted r) F.&: V.RNil
+  in  K.GroupOps turnoutMonoidOps invert
 
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =

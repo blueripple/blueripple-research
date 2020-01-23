@@ -133,9 +133,6 @@ post aseDemoCA  asrDemoCA = K.wrapPrefix "Kentucky" $ do
   
   K.logLE K.Info $ "ASR Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) asrTest)
   K.logLE K.Info $ "ASR After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASRFold asrTest))
-  let testKey :: F.Record [BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC] = BR.Under F.&: BR.Female F.&: BR.NonWhite F.&: V.RNil
-      aggResult = BR.runAgg BR.aggACS_ASR testKey
-  K.logLE K.Info $ "Agg " <> (T.pack $ show testKey) <> " = " <> (T.pack $ show aggResult)
   brAddMarkDown text1
   brAddMarkDown brReadMore
 
