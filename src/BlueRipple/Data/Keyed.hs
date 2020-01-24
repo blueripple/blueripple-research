@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE DefaultSignatures    #-}
 {-# LANGUAGE DeriveFoldable       #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
@@ -60,6 +62,8 @@ module BlueRipple.Data.Keyed
 
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
+
+import Control.Monad (join)
 import           Data.Functor.Identity          (Identity (runIdentity))
 import qualified Data.Group                    as G
 import qualified Data.List                     as L
@@ -397,6 +401,47 @@ pattern Collapse g <- P.Costar g where
 runCollapse :: Collapse d c -> KeyWeights d -> c
 runCollapse = P.runCostar
 
+type CollapseM m d c = Collapse d (m c)
+
+{-
+type family IdEither (m1 :: * -> *) (m2 :: * -> *) :: (* -> *) where
+  IdEither Identity Identity = Identity
+  IdEither Identity (Either a) = Either a
+  IdEither (Either a) Identity = Either a
+  IdEither (Either a) (Either a) = Either a
+-}
+
+class (IdEither m1 m2 ~ IdEither m2 m1, Monad (IdEither m1 m2), Monad m1, Monad m2) => JoinIdEither m1 m2 where
+  type IdEither m1 m2 :: (* -> *)
+  joinIdEither :: forall a. m1 (m2 a) -> IdEither m1 m2 a
+  liftM1 :: forall a. m1 a -> IdEither m1 m2 a
+  liftM2 :: forall a. m2 a -> IdEither m1 m2 a
+
+instance JoinIdEither Identity Identity where
+  type IdEither Identity Identity = Identity
+  joinIdEither = join
+  liftM1 = id
+  liftM2 = id
+
+instance JoinIdEither Identity (Either a) where
+  type IdEither Identity (Either a) = Either a
+  joinIdEither = runIdentity
+  liftM1 = Right . runIdentity
+  liftM2 = id
+
+instance JoinIdEither (Either a) Identity where
+  type IdEither (Either a) Identity  = Either a
+  joinIdEither = fmap runIdentity
+  liftM1 = id
+  liftM2 = Right . runIdentity
+
+instance JoinIdEither (Either a) (Either a) where
+  type IdEither (Either a) (Either a) = Either a
+  joinIdEither = join
+  liftM1 = id
+  liftM2 = id
+
+
 aggregate
   :: Aggregation q k
   -> Collapse d c --(KeyWeights d -> c)
@@ -406,24 +451,26 @@ aggregate agg collapse query = runCollapse collapse . fmap query . runAgg agg
 
 -- all we need to handle Applicative queries
 -- is an Applicative version of the algebra.  
-aggregateM :: Applicative m
+aggregateM :: JoinIdEither m2 m1
   => Aggregation q k
-  -> Collapse d c --(KeyWeights d -> d)
-  -> (k -> m d)
-  -> (q -> m c)
+  -> CollapseM m1 d c --(KeyWeights d -> d)
+  -> (k -> m2 d)
+  -> (q -> (IdEither m1 m2) c)
 aggregateM agg collapse queryM =
   let (Collapse cf) = collapse
       collapseM = Collapse $ fmap cf . sequenceA
-  in aggregate agg collapseM queryM
-
+  in joinIdEither . aggregate agg collapseM queryM
 
 -- NB: This only makes sense if KeyWeights are all >= 0
 -- How do we enforce this??
-foldCollapse :: FL.Fold d c -> Collapse d c
+foldCollapse :: FL.Fold d c -> CollapseM AggEither d c
 foldCollapse fld = Collapse $ \(KeyWeights kw) ->
-  FL.fold fld $ concat $ fmap (\(n, d) -> replicate n d) kw
+  let anyNegative = FL.fold (FL.premap fst $ FL.any (< 0)) kw
+  in case anyNegative of
+    True -> Left $ NegativeWeight ""
+    False -> Right $ FL.fold fld $ concat $ fmap (\(n, d) -> replicate n d) kw
 
-monoidCollapse :: Monoid d => Collapse d d 
+monoidCollapse :: Monoid d => CollapseM AggEither d d 
 monoidCollapse = foldCollapse FL.mconcat
 
 data GroupOps a where
@@ -448,29 +495,31 @@ pow (GroupOps (MonoidOps zero plus) invert) x0 n0 = case compare n0 0 of
       | n == 1 = x `plus` c
       | otherwise = g (x `plus` x) (n `quot` 2) (x `plus` c)
 
-groupCollapse :: GroupOps d -> Collapse d d 
+groupCollapse :: GroupOps d -> CollapseM Identity d d 
 groupCollapse ops@(GroupOps (MonoidOps zero plus) _) = Collapse $ \(KeyWeights kw) ->
-  FL.fold (FL.Fold plus zero id) $ fmap (\(n, d) -> pow ops d n) kw
+  return $ FL.fold (FL.Fold plus zero id) $ fmap (\(n, d) -> pow ops d n) kw
 
 aggFold
-  ::  (Ord k, Traversable f, Monad m, Show k)
-  => DataOps d m
+  ::  forall m1 m2 k f d q c. (Ord k, Traversable f, Show k, JoinIdEither m1 m2)
+  => DataOps d m1
   -> Aggregation q k
-  -> Collapse d c
+  -> CollapseM m2 d c
   -> f q
-  -> FL.FoldM m (k, d) (f (q, c))
+  -> FL.FoldM (IdEither m1 m2) (k, d) (f (q, c))
 aggFold dOps agg collapse qs =
-  let apply g q = (q, g q)
+  let apply :: (q -> (IdEither m1 m2) c) -> q -> (q, IdEither m1 m2 c)
+      apply g q = (q, g q)
       sequenceTuple (a,mb) = (,) <$> pure a <*> mb
+      fApply :: (q -> IdEither m1 m2 c) -> IdEither m1 m2 (f (q, c))
       fApply g = traverse (sequenceTuple . apply g) qs -- m (f (q, c))
-  in  FMR.postMapM (fApply . aggregateM agg collapse) (functionFold dOps)
+  in  FMR.postMapM (fApply . aggregateM agg collapse) (FL.hoists (liftM1 @m1 @m2) $ functionFold @m1 dOps)
 
 aggFoldAll
-  :: (Ord k, Monad m, FiniteSet q, Show k)
-  => DataOps d m
+  :: (Ord k, JoinIdEither m1 m2, FiniteSet q, Show k)
+  => DataOps d m1
   -> Aggregation q k
-  -> Collapse d c
-  -> FL.FoldM m (k, d) [(q, c)]
+  -> CollapseM m2 d c
+  -> FL.FoldM (IdEither m1 m2) (k, d) [(q, c)]
 aggFoldAll dOps agg collapse = aggFold dOps agg collapse (Set.toList elements)
 
 -- use the GroupOps for both
@@ -543,35 +592,35 @@ composeRecAggregations recAggQK recAggRL =
 infixl 7 |*|
 
 aggFoldRec
-  :: forall ks qs ds cs f m
+  :: forall ks qs ds cs f m1 m2
    . (ks F.⊆ (ks V.++ ds)
      , ds F.⊆ (ks V.++ ds)
      , Ord (F.Record ks)
      , Show (F.Record ks)
      , Traversable f
-     , Monad m)
-  => DataOps (F.Record ds) m
+     , JoinIdEither m1 m2)
+  => DataOps (F.Record ds) m1
   -> RecAggregation qs ks
-  -> Collapse (F.Record ds) (F.Record cs) --FL.Fold (F.Record ds) (F.Record ds)
+  -> CollapseM m2 (F.Record ds) (F.Record cs) --FL.Fold (F.Record ds) (F.Record ds)
   -> f (F.Record qs)
-  -> FL.FoldM m (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ cs)))
+  -> FL.FoldM (IdEither m1 m2) (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ cs)))
 aggFoldRec dOps agg collapse qs = fmap (fmap (uncurry V.rappend))
   $ FL.premapM (return . split) (aggFold dOps agg collapse qs)
   where split r = (F.rcast @ks r, F.rcast @ds r)
 
 aggFoldRecAll
-  :: forall ks qs ds cs f m
+  :: forall ks qs ds cs f m1 m2
    . ( ks F.⊆ (ks V.++ ds)
      , ds F.⊆ (ks V.++ ds)
      , Ord (F.Record ks)
      , FiniteSet (F.Record qs)
-     , Monad m
+     , JoinIdEither m1 m2
      , Show (F.Record ks)
      )
-  => DataOps (F.Record ds) m
+  => DataOps (F.Record ds) m1
   -> RecAggregation qs ks
-  -> Collapse (F.Record ds) (F.Record cs)
-  -> FL.FoldM m (F.Record (ks V.++ ds)) [F.Record (qs V.++ cs)]
+  -> CollapseM m2 (F.Record ds) (F.Record cs)
+  -> FL.FoldM (IdEither m1 m2) (F.Record (ks V.++ ds)) [F.Record (qs V.++ cs)]
 aggFoldRecAll dOps agg collapse = fmap (fmap (uncurry V.rappend))
   $ FL.premapM (return . split) (aggFoldAll dOps agg collapse)
   where split r = (F.rcast @ks r, F.rcast @ds r)
