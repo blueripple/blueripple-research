@@ -16,16 +16,27 @@ subgroup.
 -}
 module BlueRipple.Model.TurnoutAdjustment where
 
+import qualified BlueRipple.Data.DataFrames    as BR
+import qualified BlueRipple.Data.DemographicTypes
+                                               as BR
+
+import qualified Knit.Report                   as K
+
 import qualified Data.Array                    as A
+import qualified Data.Map                      as M
+import qualified Data.Text                     as T
 import qualified Control.Foldl                 as FL
 
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
+import qualified Frames.InCore                 as FI
+import qualified Frames.MapReduce              as FMR
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CG
+
 
 logit :: Floating a => a -> a
 logit x = log (x / (1 - x))
@@ -100,19 +111,19 @@ findDelta totalVotes dat = do
 
 
 adjTurnoutLong
-  :: forall cs p t f
+  :: forall p t rs f
    . ( V.KnownField p
      , V.KnownField t
      , V.Snd p ~ Int
      , V.Snd t ~ Double
-     , F.ElemOf (cs V.++ '[p, t]) p
-     , F.ElemOf (cs V.++ '[p, t]) t
+     , F.ElemOf rs p -- F.ElemOf (cs V.++ '[p, t]) p
+     , F.ElemOf rs t --F.ElemOf (cs V.++ '[p, t]) t
      , Foldable f
      , Functor f
      )
   => Int
-  -> f (F.Record (cs V.++ '[p, t]))
-  -> IO (f (F.Record (cs V.++ '[p, t])))
+  -> f (F.Record rs) --(cs V.++ '[p, t])
+  -> IO (f (F.Record rs)) --(cs V.++ '[p, t])
 adjTurnoutLong total unAdj = do
   let adj d x = invLogit (logit x + d)
   delta <- findDelta total
@@ -127,23 +138,46 @@ adjTurnoutLong total unAdj = do
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it the partitions.
 
+type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
 
-{-
-adjTurnoutFold :: 
-let demoWithAdjTurnoutByCD = do
-        stateTurnoutFrame <- F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
-        let getKey = F.rcast @[BR.Year,BR.StateAbbreviation]
-            vtbsMap = FL.fold (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map) stateTurnoutFrame
-            unpackM = FMR.generalizeUnpack FMR.noUnpack
-            assignM = FMR.generalizeAssign
-              $ FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll]              
-            adjustF ks =
-              let vtM = M.lookup ks vtbsMap
-                  f x = case vtM of
-                    Nothing -> K.logLE K.Diagnostic ("Failed to find " <> (T.pack $ show ks) <> " in state turnout. Leaving unadjusted.") >> return x
-                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @BR.PopCount @BR.VotedPctOfAll vt x
-              in MR.postMapM f $ FL.generalize FL.list
-            reduceM = FMR.makeRecsWithKeyM id (MR.ReduceFoldM adjustF)
+adjTurnoutFold
+  :: forall p t rs f effs
+   . ( Foldable f
+     , K.KnitEffects effs
+     , F.ElemOf (WithYS rs) BR.Year
+     , F.ElemOf (WithYS rs) BR.StateAbbreviation
+     , rs F.⊆ (WithYS rs)
+     , F.ElemOf rs p
+     , F.ElemOf rs t
+     , V.KnownField p
+     , V.KnownField t
+     , V.Snd p ~ Int
+     , V.Snd t ~ Double
+     , FI.RecVec rs
+     )
+  => f BR.StateTurnout
+  -> FL.FoldM (K.Sem effs) (F.Record (WithYS rs)) (F.FrameRec (WithYS rs))
+adjTurnoutFold stateTurnoutFrame =
+  let getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
+      vtbsMap = FL.fold
+        (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map)
+        stateTurnoutFrame
+      unpackM = FMR.generalizeUnpack FMR.noUnpack
+      assignM =
+        FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
+      adjustF ks =
+        let vtM = M.lookup ks vtbsMap
+            f x = case vtM of
+              Nothing ->
+                K.logLE
+                    K.Diagnostic
+                    (  "Failed to find "
+                    <> (T.pack $ show ks)
+                    <> " in state turnout. Leaving unadjusted."
+                    )
+                  >> return x
+              Just vt -> K.liftKnit $ adjTurnoutLong @p @t @rs vt x
+        in  FMR.postMapM f $ FL.generalize FL.list
+      reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
+  in  FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
 
-adjF = FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
-_]

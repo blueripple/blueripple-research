@@ -60,7 +60,7 @@ module BlueRipple.Data.Keyed
 
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
---import qualified Data.Array                    as A
+import           Data.Functor.Identity          (Identity (runIdentity))
 import qualified Data.Group                    as G
 import qualified Data.List                     as L
 import qualified Data.List.NonEmpty            as NE
@@ -149,23 +149,45 @@ data MonoidOps a = MonoidOps a (a -> a -> a)
 monoidOps :: Monoid a => MonoidOps a
 monoidOps = MonoidOps mempty (<>)
 
+-- NB: This is only monoidal if the fold is associative:
+-- fold fld [fold fld [a,b], c] '==' fold fld [a, fold fld [b,c]]
 monoidOpsFromFold :: FL.Fold d d -> MonoidOps d
 monoidOpsFromFold fld = MonoidOps (FL.fold fld []) (\d1 d2 -> FL.fold fld [d1,d2])
 
+-- NB: These various things are not always errors.  But for some inputs/collapse choices they are.
+data AggregationError = DataMissing T.Text | DataDuplicated T.Text | NegativeWeight T.Text deriving (Show)
+
+type AggEither = Either AggregationError
+
+data DataOps d m where
+  DO_None      :: DataOps d AggEither -- requires exactly one of each key
+  DO_Semigroup :: (d -> d -> d) -> DataOps d AggEither -- at least one of each key
+  DO_Monoid    :: MonoidOps d -> DataOps d Identity -- 0, 1 or more of each key
+
 -- Using @Map@ here is a performance choice.   We could get away with
 -- just @Eq a@ and use a list.  But this step may happen a lot.
-ffSumFold :: Ord a => MonoidOps d -> FL.Fold (a, d) (M.Map a d)
-ffSumFold (MonoidOps _ plus) = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
+ffSumFold :: (Applicative m, Ord a, Show a) => DataOps d m -> FL.FoldM m (a, d) (M.Map a d)
+ffSumFold DO_None =
+  let errMsg a = "key=" <> (T.pack $ show a) 
+  in FL.FoldM (\m (a, d) -> if M.member a m then Left (DataDuplicated $ errMsg a) else Right (M.insert a d m )) (return M.empty) return
+ffSumFold (DO_Semigroup plus) = FL.generalize $ FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
+ffSumFold (DO_Monoid (MonoidOps _ plus)) = FL.generalize $ FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
 
 -- Lookup in the finite formal sum. Use @fold []@ (monoidal identity)
 -- if/when a isn't found
-functionFromFFSum :: Ord a => MonoidOps d -> M.Map a d -> (a -> d)
-functionFromFFSum (MonoidOps zero _) m a = maybe zero id $ M.lookup a m
+functionFromFFSum :: (Ord a, Applicative m, Show a) => DataOps d m -> M.Map a d -> (a -> m d)
+functionFromFFSum (DO_Monoid (MonoidOps zero _)) dm a = return $ maybe zero id $ M.lookup a dm
+functionFromFFSum (DO_Semigroup _)  dm a =
+  let errMsg a = "key=" <> (T.pack $ show a) 
+  in maybe (Left $ DataMissing $ errMsg a) Right $ M.lookup a dm
+functionFromFFSum DO_None dm a =
+  let errMsg a = "key=" <> (T.pack $ show a) 
+  in maybe (Left $ DataMissing $ errMsg a) Right $ M.lookup a dm
 
 -- Combining @ffSumFold@ and @functionFromFFSum@ we convert
 -- a collection of data to a function from key to data.
-functionFold :: Ord a => MonoidOps d -> FL.Fold (a, d) (a -> d)
-functionFold mOps = fmap (functionFromFFSum mOps) (ffSumFold mOps)
+functionFold :: (Applicative m, Ord a, Show a) => DataOps d m -> FL.FoldM m (a, d) (a -> m d)
+functionFold dOps = fmap (functionFromFFSum dOps) (ffSumFold dOps)
 
 {-
 -- specify group operations, 0, invert, +
@@ -180,15 +202,6 @@ functionFoldGroup :: Ord a => GroupOps d -> FL.Fold (a, d) (a -> d)
 functionFoldGroup ops = fmap (functionFromFFSumGroup ops) (ffSumFoldGroup ops)
 -}
 {-
--- NB: These various things are not always errors.  But for some inputs/collapse choices they are.
-data AggregationError a b = DataMissing a | DataDuplicated a | NegativeWeight a b (KeyWeights a) deriving (Show)
-
-aggErrorText :: (Show a, Show b) => AggregationError a b -> T.Text
-aggErrorText (DataMissing k) = "Missing data for key=" <> (T.pack $ show k)
-aggErrorText (DataDuplicated k) = "Missing data for key=" <> (T.pack $ show k)
-aggErrorText (NegativeWeight a b kw) = "Negative weight for key=" <> (T.pack $ show a) <> " in " <> (T.pack $ show kw) <> " for new key=" <> (T.pack $ show b)
-
-type AggEither a b = Either (AggregationError a b)
 
 data ToFunction a = UseMonoid a (a -> a -> a) | OneOfEach
 
@@ -386,7 +399,7 @@ runCollapse = P.runCostar
 
 aggregate
   :: Aggregation q k
-  -> Collapse d c --(KeyWeights d -> d)
+  -> Collapse d c --(KeyWeights d -> c)
   -> (k -> d)
   -> (q -> c)
 aggregate agg collapse query = runCollapse collapse . fmap query . runAgg agg
@@ -440,38 +453,38 @@ groupCollapse ops@(GroupOps (MonoidOps zero plus) _) = Collapse $ \(KeyWeights k
   FL.fold (FL.Fold plus zero id) $ fmap (\(n, d) -> pow ops d n) kw
 
 aggFold
-  ::  (Ord k, Functor f)
-  => MonoidOps d
+  ::  (Ord k, Traversable f, Monad m, Show k)
+  => DataOps d m
   -> Aggregation q k
   -> Collapse d c
   -> f q
-  -> FL.Fold (k, d) (f (q, c))
-aggFold mOps agg collapse qs =
+  -> FL.FoldM m (k, d) (f (q, c))
+aggFold dOps agg collapse qs =
   let apply g q = (q, g q)
-      fApply g = fmap (apply g) qs
-  in  fmap (fApply . aggregate agg collapse) (functionFold mOps)
+      sequenceTuple (a,mb) = (,) <$> pure a <*> mb
+      fApply g = traverse (sequenceTuple . apply g) qs -- m (f (q, c))
+  in  FMR.postMapM (fApply . aggregateM agg collapse) (functionFold dOps)
 
 aggFoldAll
-  :: (Ord k, FiniteSet q)
-  => MonoidOps d
+  :: (Ord k, Monad m, FiniteSet q, Show k)
+  => DataOps d m
   -> Aggregation q k
   -> Collapse d c
-  -> FL.Fold (k, d) [(q, c)]
-aggFoldAll mOps agg collapse = aggFold mOps agg collapse (Set.toList elements)
+  -> FL.FoldM m (k, d) [(q, c)]
+aggFoldAll dOps agg collapse = aggFold dOps agg collapse (Set.toList elements)
 
 -- use the GroupOps for both
 aggFoldGroup
-  :: forall k q d f
-   . (Ord k, Functor f)
+  :: (Ord k, Show k, Traversable f)
   => Aggregation q k
   -> GroupOps d
   -> f q
   -> FL.Fold (k, d) (f (q, d))
-aggFoldGroup agg gOps@(GroupOps mOps _) = aggFold mOps agg (groupCollapse gOps)
+aggFoldGroup agg gOps@(GroupOps mOps _) = FL.simplify . aggFold (DO_Monoid mOps) agg (groupCollapse gOps)
 
 aggFoldAllGroup
   :: forall k q d
-   . (Ord k, FiniteSet q)
+   . (Ord k, Show k, FiniteSet q)
   => Aggregation q k
   -> GroupOps d
   -> FL.Fold (k, d) [(q, d)]
@@ -530,35 +543,42 @@ composeRecAggregations recAggQK recAggRL =
 infixl 7 |*|
 
 aggFoldRec
-  :: forall ks qs ds cs f
-   . (ks F.⊆ (ks V.++ ds), ds F.⊆ (ks V.++ ds), Ord (F.Record ks), Functor f)
-  => MonoidOps (F.Record ds)
+  :: forall ks qs ds cs f m
+   . (ks F.⊆ (ks V.++ ds)
+     , ds F.⊆ (ks V.++ ds)
+     , Ord (F.Record ks)
+     , Show (F.Record ks)
+     , Traversable f
+     , Monad m)
+  => DataOps (F.Record ds) m
   -> RecAggregation qs ks
   -> Collapse (F.Record ds) (F.Record cs) --FL.Fold (F.Record ds) (F.Record ds)
   -> f (F.Record qs)
-  -> FL.Fold (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ cs)))
-aggFoldRec mOps agg collapse qs = fmap (fmap (uncurry V.rappend))
-  $ FL.premap split (aggFold mOps agg collapse qs)
+  -> FL.FoldM m (F.Record (ks V.++ ds)) (f (F.Record (qs V.++ cs)))
+aggFoldRec dOps agg collapse qs = fmap (fmap (uncurry V.rappend))
+  $ FL.premapM (return . split) (aggFold dOps agg collapse qs)
   where split r = (F.rcast @ks r, F.rcast @ds r)
 
 aggFoldRecAll
-  :: forall ks qs ds cs f
+  :: forall ks qs ds cs f m
    . ( ks F.⊆ (ks V.++ ds)
      , ds F.⊆ (ks V.++ ds)
      , Ord (F.Record ks)
      , FiniteSet (F.Record qs)
+     , Monad m
+     , Show (F.Record ks)
      )
-  => MonoidOps (F.Record ds)
+  => DataOps (F.Record ds) m
   -> RecAggregation qs ks
   -> Collapse (F.Record ds) (F.Record cs)
-  -> FL.Fold (F.Record (ks V.++ ds)) [F.Record (qs V.++ cs)]
-aggFoldRecAll mOps agg collapse = fmap (fmap (uncurry V.rappend))
-  $ FL.premap split (aggFoldAll mOps agg collapse)
+  -> FL.FoldM m (F.Record (ks V.++ ds)) [F.Record (qs V.++ cs)]
+aggFoldRecAll dOps agg collapse = fmap (fmap (uncurry V.rappend))
+  $ FL.premapM (return . split) (aggFoldAll dOps agg collapse)
   where split r = (F.rcast @ks r, F.rcast @ds r)
 
 aggFoldRecGroup
   :: forall ks qs ds f
-   . (ks F.⊆ (ks V.++ ds), ds F.⊆ (ks V.++ ds), Ord (F.Record ks), Functor f)
+   . (ks F.⊆ (ks V.++ ds), ds F.⊆ (ks V.++ ds), Ord (F.Record ks), Traversable f, Show (F.Record ks))
   => RecAggregation qs ks
   -> GroupOps (F.Record ds)
   -> f (F.Record qs)
@@ -568,11 +588,12 @@ aggFoldRecGroup agg ops qs = fmap (fmap (uncurry V.rappend))
   where split r = (F.rcast @ks r, F.rcast @ds r)
 
 aggFoldRecAllGroup
-  :: forall ks qs ds f
+  :: forall ks qs ds 
    . ( ks F.⊆ (ks V.++ ds)
      , ds F.⊆ (ks V.++ ds)
      , Ord (F.Record ks)
      , FiniteSet (F.Record qs)
+     , Show (F.Record ks)
      )
   => RecAggregation qs ks
   -> GroupOps (F.Record ds)

@@ -553,22 +553,9 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
         catMaybes
         $ fmap F.recMaybe
         $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateFrame turnoutFrame
-  let demoWithAdjTurnoutByCD = do
+      demoWithAdjTurnoutByCD = do
         stateTurnoutFrame <- F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
-        let getKey = F.rcast @[BR.Year,BR.StateAbbreviation]
-            vtbsMap = FL.fold (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map) stateTurnoutFrame
-            unpackM = FMR.generalizeUnpack FMR.noUnpack
-            assignM = FMR.generalizeAssign
-              $ FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll]              
-            adjustF ks =
-              let vtM = M.lookup ks vtbsMap
-                  f x = case vtM of
-                    Nothing -> K.logLE K.Diagnostic ("Failed to find " <> (T.pack $ show ks) <> " in state turnout. Leaving unadjusted.") >> return x
-                    Just vt -> K.liftKnit $  BR.adjTurnoutLong @[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @BR.PopCount @BR.VotedPctOfAll vt x
-              in MR.postMapM f $ FL.generalize FL.list
-            reduceM = FMR.makeRecsWithKeyM id (MR.ReduceFoldM adjustF)
-            adjF = FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
-        demoWithAdjTurnoutByState <- FL.foldM adjF demoWithUnadjTurnoutByState
+        demoWithAdjTurnoutByState <- FL.foldM (BR.adjTurnoutFold @BR.PopCount @BR.VotedPctOfAll stateTurnoutFrame) demoWithUnadjTurnoutByState
         return
           $ F.toFrame
           $ fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll])
