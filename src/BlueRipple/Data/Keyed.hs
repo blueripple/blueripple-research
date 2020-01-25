@@ -403,13 +403,9 @@ runCollapse = P.runCostar
 
 type CollapseM m d c = Collapse d (m c)
 
-{-
-type family IdEither (m1 :: * -> *) (m2 :: * -> *) :: (* -> *) where
-  IdEither Identity Identity = Identity
-  IdEither Identity (Either a) = Either a
-  IdEither (Either a) Identity = Either a
-  IdEither (Either a) (Either a) = Either a
--}
+-- This is a bit dependent-typeish.  We have an Idenity or Either from the DataOps bit
+-- And one from the collapse bit.  This allows to operate with whatever combination we
+-- get.
 
 class (IdEither m1 m2 ~ IdEither m2 m1, Monad (IdEither m1 m2), Monad m1, Monad m2) => JoinIdEither m1 m2 where
   type IdEither m1 m2 :: (* -> *)
@@ -499,6 +495,7 @@ groupCollapse :: GroupOps d -> CollapseM Identity d d
 groupCollapse ops@(GroupOps (MonoidOps zero plus) _) = Collapse $ \(KeyWeights kw) ->
   return $ FL.fold (FL.Fold plus zero id) $ fmap (\(n, d) -> pow ops d n) kw
 
+-- This is kind of a beast.
 aggFold
   ::  forall m1 m2 k f d q c. (Ord k, Traversable f, Show k, JoinIdEither m1 m2)
   => DataOps d m1
@@ -651,3 +648,41 @@ aggFoldRecAllGroup agg ops = fmap (fmap (uncurry V.rappend))
   $ FL.premap split (aggFoldAllGroup agg ops)
   where split r = (F.rcast @ks r, F.rcast @ds r)
 
+--- There's another way...
+--type AggFunction b a = P.Star a 
+
+data AggFunction b a where
+  AggFunction :: (b -> a -> Int) -> AggFunction b a
+
+composeAggFunctions :: AggFunction b a -> AggFunction y x -> AggFunction (b,y) (a,x)
+composeAggFunctions (AggFunction afBA) (AggFunction afYX) = AggFunction $ \(b, y) (a, x) -> (afBA b a) * (afYX y x)
+
+(%*%) :: AggFunction b a -> AggFunction y x -> AggFunction (b,y) (a,x)
+(%*%) = composeAggFunctions
+
+infixl 7 %*%
+
+foldToBs :: (Monad m, Traversable f)
+         => AggFunction b a
+         -> CollapseM m d c
+         -> f b
+         -> FL.FoldM m (a,d) (f (b,c))
+foldToBs af collapse bs =
+  let foldOne b = (,) <$> pure b <*> foldToB af collapse b
+  in traverse foldOne bs
+  
+foldToB :: Monad m
+           => AggFunction b a
+           -> CollapseM m d c
+           -> b
+           -> FL.FoldM m (a,d) c
+foldToB (AggFunction af) collapse b =
+  let weighted (a, d) = return (af b a, d)
+  in FL.premapM weighted $ MR.postMapM (runCollapse collapse . KeyWeights) $ FL.generalize $ FL.list 
+  
+
+foldToAllB :: (Monad m, FiniteSet b)
+           => AggFunction b a
+           -> CollapseM m d c
+           -> FL.FoldM m (a,d) [(b,c)]
+foldToAllB aggF collapse = foldToBs aggF collapse (Set.toList elements)
