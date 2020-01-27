@@ -69,6 +69,7 @@ import qualified Data.Group                    as G
 import qualified Data.List                     as L
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
+import qualified Data.Monoid                   as Mon
 import qualified Data.Profunctor               as P
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
@@ -124,33 +125,90 @@ Hom(B, C), as desired.
 As Haskell types, we want (We could relax Ord to Eq here but the code would be more complex):
 -}
 
-functionalize :: (Ord a, Monoid x) => (b -> [(a, x)]) -> b -> (a -> x)
-functionalize aggList b = \a -> maybe mempty id $ M.lookup a $ M.fromListWith (<>) (aggList b)
+-- For composing aggregations, we will also want our coefficients to
+-- have multiplicative monoid structure
+data Coefficient q where
+  Coefficient :: q -> (q -> q -> q) -> q -> (q -> q -> q) -> Coefficient q
 
-aggregateF :: Monoid q => (b -> a -> q) -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
+zeroQ :: Coefficient q -> q
+zeroQ (Coefficient x _ _ _) = x
+
+plusQ :: Coefficient q -> (q -> q -> q)
+plusQ (Coefficient _ op _ _) = op
+
+oneQ :: Coefficient q -> q
+oneQ (Coefficient _ _ x _) = x
+
+timesQ :: Coefficient q -> (q -> q -> q)
+timesQ (Coefficient _ _ _ op) = op
+
+numCoefficient :: Num a => Coefficient a
+numCoefficient = Coefficient (fromInteger 0) (+) (fromInteger 1) (*)
+
+type AggF x b a = b -> (a -> x)
+type AggList x b a = b -> [(a,x)]
+
+functionalize :: Ord a => Coefficient x -> AggList x b a -> AggF x b a
+functionalize cq aggList b = \a -> maybe (zeroQ cq) id $ M.lookup a $ M.fromListWith (plusQ cq) (aggList b)
+
+aggregateF :: AggF q b a -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
 aggregateF agg fld b = FL.premap (\(a, d) -> (agg b a, d)) fld
 
-aggregateList :: (Ord a, Monoid q) => (b -> [(a, q)]) -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
-aggregateList aggList = aggregateF (functionalize aggList)
-
+aggregateList :: Ord a => Coefficient q -> AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
+aggregateList cq aggList = aggregateF (functionalize cq aggList)
 
 {-
 For A a finite set, we might want to know if [(a, d)] is "complete"
 (has no missing entries) and is "exact" (has one entry for each element of a).
 -}
-data AggError = AggError T.Text
+data AggError = AggregationListError T.Text | AggregationFoldError T.Text
 
-completeList :: forall a d.(FiniteSet a, Ord a) => FL.FoldM AggEither (a, d) ()
+type AggE = Either AggError
+
+completeList :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
 completeList = MR.postMapM check $ FL.generalize FL.map where
-  check m = case (L.sort (M.keys m) == Set.toList (elements @a)) of
+  check m = case (L.sort (M.keys m) == Set.toList elements) of
     True -> Right ()
-    False -> Left $ AggError "is missing keys"
+    False -> Left $ AggregationListError "is missing keys"
 
-exactList :: forall a d.(FiniteSet a, Ord a) => FL.FoldM AggEither (a, d) ()
+exactList :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
 exactList = MR.postMapM check $ FL.generalize FL.list where
-  check ads = case (L.sort (fmap fst ads) == Set.toList (elements @a)) of
+  check ads = case (L.sort (fmap fst ads) == Set.toList elements) of
     True -> Right ()
-    False -> Left $ AggError "has missing or duplicate keys"
+    False -> Left $ AggregationListError "has missing or duplicate keys"
+
+{-
+It turns out to be very convenient to combine aggregation functions in two
+different ways:
+1. product :: agg b a -> agg y x -> agg (b, y) (a, x)
+2. compose :: agg b a -> agg c b -> agg c a
+
+It might also be nice to have an identity aggregation such that
+combining it with "compose" yields a category.
+
+For all of this we need Q to have more structure, namely a multiplication and
+a multiplicative identity.  So Q is a monoid two ways. 
+-}
+
+identityAggF :: Eq b => Coefficient q -> AggF q b b
+identityAggF cq b1 b2 = if b1 == b2 then oneQ cq else zeroQ cq
+
+identityAggList :: Coefficient q -> AggList q b b
+identityAggList cq b = pure (b, oneQ cq)
+
+-- we should verify that functionalize identityAggList = identityAggF
+
+composeAggF :: Coefficient q -> AggF q b a -> AggF q y x -> AggF q (b, y) (a, x)
+composeAggF cq baF yxF (b, y) = \(a, x) -> (timesQ cq) (baF b a) (yxF y x)
+
+composeAggList :: Coefficient q -> AggList q b a -> AggList q y x -> AggList q (b, y) (a, x)
+composeAggList cq baL yxL (b, y) = do
+  (a, qa) <- baL b
+  (x, qx) <- yxL y
+  return ((a, x), (timesQ cq) qa qx)
+
+-- we should also verify that these compositions commute with functionalize  
+
     
 {-
 Observations:
