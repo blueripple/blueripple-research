@@ -85,16 +85,105 @@ import qualified Data.Vinyl.TypeLevel          as V
 
 {-
 Lets talk about aggregation!
-Suppose we have:
-1. keys, elements of a (usually finite) set A
-2. data, elements of a set D, which, for the purposes of our aggregation,
-has at least a commutative semigroup structure, that is, commutative + operation.
+Suppose we have as things/types:
+1. keys, elements of a set A (type a)
+2. data, elements of a set D. (type d)
+3. A collection of A x D, that is an element of List(A x D), where List is the free monoid monad. (type [(a,d)])
+4. Another set, B, of keys (type b)
+5. Some relationship between the keys A and the keys B involving "coefficients" in a Set Q, assumed to have
+monoidal structure (Q,+,0).  There are two common possibilities:
+  a. an element of Hom(B, List(A x Q)) (type (b -> [(a, q)]))
+  b. an element of Hom(B, Hom(A, Q))   (type (b -> (a -> q)) = (b -> a -> q) = ((b, a) -> q))
 
-3. data, keyed by A, one of a
-  data-function: An arrow, gA : A -> D, mapping keys in A to an element in D. Or a  
-  data-sum:      A element of D[A], a formal linear sum of A with coefficients in D. Or a
-  data-list:     A collection of A x D, that is an element of List(A x D), where List is the free monoid monad. 
+6. Finally, a "fold", a map from Lists of (Q x D) to C, (type Fold (q,d) c), equivalently,
+an element Co of C and an "action" of (Q x D) on C (Q X D X C -> C).
 
+We seek, when possible, a "natural" function from a collection of (A x D)
+to a function B -> C.  We don't know what "natural" means yet.
+
+First an observation:  Consider two functors from the category
+of Monoids to the category of sets:
+1. List(A x -), taking a monoid to lists of pairs of elements of A and that monoid
+2. Hom(A,-), taking a monoid to arrows from A to the monoid.
+
+There is a map, functionalize_A: List(A x -) -> Hom(A, -), which
+uses the monoidal structure to sum repeated values and fill in missing values.
+This transformation is natural, that is it "commmutes" with monoid homomorphisms.
+
+So here's how we'll aggregate:
+1. If we are given an element Hom(B, List(A x Q)) we will post-compose
+with functionalize_A to get an element of Hom(B, Hom(A, Q)).
+
+2.  an element of Hom(A, Q) provides a map from List (A x D) to List(Q x D),
+alternately, that is the action of List(- x D) on arrows in Set. So we now have
+Hom(B, List(Q x D))
+
+3. Now we post-compose our fold (an arrow List(Q x D) -> C) and we have
+Hom(B, C), as desired.
+
+As Haskell types, we want (We could relax Ord to Eq here but the code would be more complex):
+-}
+
+functionalize :: (Ord a, Monoid x) => (b -> [(a, x)]) -> b -> (a -> x)
+functionalize aggList b = \a -> maybe mempty id $ M.lookup a $ M.fromListWith (<>) (aggList b)
+
+aggregateF :: Monoid q => (b -> a -> q) -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
+aggregateF agg fld b = FL.premap (\(a, d) -> (agg b a, d)) fld
+
+aggregateList :: (Ord a, Monoid q) => (b -> [(a, q)]) -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
+aggregateList aggList = aggregateF (functionalize aggList)
+
+
+{-
+For A a finite set, we might want to know if [(a, d)] is "complete"
+(has no missing entries) and is "exact" (has one entry for each element of a).
+-}
+data AggError = AggError T.Text
+
+completeList :: forall a d.(FiniteSet a, Ord a) => FL.FoldM AggEither (a, d) ()
+completeList = MR.postMapM check $ FL.generalize FL.map where
+  check m = case (L.sort (M.keys m) == Set.toList (elements @a)) of
+    True -> Right ()
+    False -> Left $ AggError "is missing keys"
+
+exactList :: forall a d.(FiniteSet a, Ord a) => FL.FoldM AggEither (a, d) ()
+exactList = MR.postMapM check $ FL.generalize FL.list where
+  check ads = case (L.sort (fmap fst ads) == Set.toList (elements @a)) of
+    True -> Right ()
+    False -> Left $ AggError "has missing or duplicate keys"
+    
+{-
+Observations:
+1. Under reasonable circumstances there might be "rules" for what constitutes
+a "good" aggregation, our starting Hom(B, List(A x Q)) or Hom(B, Hom(A, Q)).
+These would correspond to some "conservation" of data, that data is neither
+dupicated nor destroyed in the aggregation.
+
+Some examples:
+A: The set of US states
+D,C: Poopulation (Naturals)
+B: The set {Coastal, Non-Coastal}
+Q: {True, False) with + = Or and 0 = False
+
+Our aggregation function, b -> a -> Bool, maps "Coastal" to the function returning
+True for all the coastal states and false for the rest and vice-versa for Non-Coastal.
+
+
+If A is finite, that implies that there are elements of List(A) which represent all the elements of A, each present
+in the list only once.  There are many such elements, each the same length but differing by permutation.  Let's call
+the set of these lists, "elements(A)" (if A is totally ordered, we can choose a unique list). Choose one such
+l \in elements(A). Given f : A->D, in Set, there is an obvious f': A -> (A X D) , a -> (a, f a).
+List(f') l is an element of List(A x D).
+
+If (D,+,0) is a monoid, then any element of List(A x D) can be mapped to a function A -> D. Given a \in A,
+we find all the Ds with a as their key.  If there are none, f(a) = 0.  If there are some {d} \in D with a as
+their key, we sum them with the monoidal +.
+
+We note that these maps are not inverses unless we have a total ordering for A and insist our list is so ordered *and*
+we remove any elements of the list with d `==` 0.
+
+of there is an arrow Hom(A,D) ->  List(A x D), mapping any function A -> D to the list where  If (D,+,0) is a monoid,
+there is a map from and element of List(A x D) 
 
 If A is a finite set, and D has a monoid structure, then data-functions and data-sums are isomorphic.  We can construct the
 finite formal sum by using the function to get the coefficients for each a in A. And we can construct
@@ -193,35 +282,7 @@ functionFromFFSum DO_None dm a =
 functionFold :: (Applicative m, Ord a, Show a) => DataOps d m -> FL.FoldM m (a, d) (a -> m d)
 functionFold dOps = fmap (functionFromFFSum dOps) (ffSumFold dOps)
 
-{-
--- specify group operations, 0, invert, +
-
-ffSumFoldGroup :: Ord a => GroupOps d -> FL.Fold (a, d) (M.Map a d)
-ffSumFoldGroup (GroupOps _ _ plus) = FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
-
-functionFromFFSumGroup :: Ord a => GroupOps d -> M.Map a d -> (a -> d)
-functionFromFFSumGroup (GroupOps zero _ _) m a = maybe zero id $ M.lookup a m
-
-functionFoldGroup :: Ord a => GroupOps d -> FL.Fold (a, d) (a -> d)
-functionFoldGroup ops = fmap (functionFromFFSumGroup ops) (ffSumFoldGroup ops)
--}
-{-
-
-data ToFunction a = UseMonoid a (a -> a -> a) | OneOfEach
-
-ffSumFoldE :: Ord a => ToFunction d -> FL.FoldM (AggEither a b) (a,d) (M.Map a d)
-ffSumFoldE (UseMonoid _ plus) = FL.generalize $ FL.Fold (\m (a, d) -> M.insertWith plus a d m) M.empty id
-ffSumFoldE OneOfEach = FL.FoldM (\m (a, d) -> if M.member a m then Left (DataDuplicated a) else Right (M.insert a d m )) (return M.empty) return
-
-functionFromFFSumE :: Ord a => ToFunction d -> M.Map a d -> (a -> AggEither a b d)
-functionFromFFSumE (UseMonoid zero _) m = Right $ \a -> maybe zero id $ M.lookup a m
-functionFromFFSumE OneOfEach m a = maybe (Left $ DataMissing a) Right $ M.lookup a m
-
--- I think we can't do this.  We can't do @(a -> Either b d) -> Either b (a -> d)@
--- at least now without a FiniteSet constraint on so we can check them all.
--- Abandoning for now
-functionFoldE :: Ord a => 
--}
+-- we could also implement @Monoid d => (a -> d) -> [(a, d)]@ but I don't think we need it here.
 
 -- now we do the work to get (b -> d) from (a -> d).
 -- That will get us (b -> FFSum Int a) -> FL.Fold (a,d) (b -> d)
@@ -446,10 +507,10 @@ aggregate
 aggregate agg collapse query = runCollapse collapse . fmap query . runAgg agg
 
 -- all we need to handle Applicative queries
--- is an Applicative version of the algebra.  
+-- is an Applicative version of Collapse (the algebra).
 aggregateM :: JoinIdEither m2 m1
   => Aggregation q k
-  -> CollapseM m1 d c --(KeyWeights d -> d)
+  -> CollapseM m1 d c --(KeyWeights d -> m1 d)
   -> (k -> m2 d)
   -> (q -> (IdEither m1 m2) c)
 aggregateM agg collapse queryM =
@@ -457,8 +518,6 @@ aggregateM agg collapse queryM =
       collapseM = Collapse $ fmap cf . sequenceA
   in joinIdEither . aggregate agg collapseM queryM
 
--- NB: This only makes sense if KeyWeights are all >= 0
--- How do we enforce this??
 foldCollapse :: FL.Fold d c -> CollapseM AggEither d c
 foldCollapse fld = Collapse $ \(KeyWeights kw) ->
   let anyNegative = FL.fold (FL.premap fst $ FL.any (< 0)) kw
@@ -506,7 +565,7 @@ aggFold
 aggFold dOps agg collapse qs =
   let apply :: (q -> (IdEither m1 m2) c) -> q -> (q, IdEither m1 m2 c)
       apply g q = (q, g q)
-      sequenceTuple (a,mb) = (,) <$> pure a <*> mb
+      sequenceTuple (a, mb) = (,) <$> pure a <*> mb
       fApply :: (q -> IdEither m1 m2 c) -> IdEither m1 m2 (f (q, c))
       fApply g = traverse (sequenceTuple . apply g) qs -- m (f (q, c))
   in  FMR.postMapM (fApply . aggregateM agg collapse) (FL.hoists (liftM1 @m1 @m2) $ functionFold @m1 dOps)
