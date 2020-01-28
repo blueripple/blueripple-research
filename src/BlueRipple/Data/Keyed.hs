@@ -111,7 +111,6 @@ import qualified Numeric.Natural                  as Nat
 
 
 {-
-Lets talk about aggregation!
 Suppose we have as things/types:
 1. keys, elements of a set A (type a)
 2. data, elements of a set D. (type d)
@@ -204,7 +203,8 @@ runAggList al = getIndexedList . P.runStar al
 
 mapIndex :: (x -> y) -> IndexedList x a -> IndexedList y a
 mapIndex = BF.first
-  
+
+-- The natural transformation List(A x -) => Hom(A, -), where both are viewed as functors Mon -> Set 
 functionalize :: (Ord a, SR.Semiring x) => AggList x b a -> AggF x b a
 functionalize aggList = AggF $ \b a -> maybe SR.zero id $ M.lookup a $ M.fromListWith SR.plus (fmap swap $ runAggList aggList b) where
   swap (a, b) = (b, a)
