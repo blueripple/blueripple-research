@@ -41,6 +41,7 @@ common deps
                , profunctors
                , random-fu >= 0.2.7.3
                , random-source
+               , semirings >= 0.5 && < 0.6
                , statistics
                , text
                , vector

@@ -1,69 +1,93 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DeriveFoldable       #-}
-{-# LANGUAGE DeriveFunctor        #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DeriveTraversable    #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DeriveFoldable        #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DeriveTraversable     #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PatternSynonyms      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeApplications     #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PatternSynonyms       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE UndecidableInstances  #-}
+
 module BlueRipple.Data.Keyed
   (
     -- * Types
     FiniteSet(..)
-  , KeyWeights 
-  , Aggregation (..)
-  , pattern Aggregation
+  , IndexedList (..)
+  , AggF (..)
+  , AggList (..)
+  , pattern AggList
   , MonoidOps (..)
   , GroupOps (..)
   , Collapse (..)
   , pattern Collapse
+    -- * Checking Data
+  , complete
+  , exact
     -- * Building aggregations
+  , aggList
+  , liftAggList
+  , aggDiff
+  , aggDiffSum
+  , mapIndex
+  , functionalize
+    -- * Combining Aggregations
+  , aggFProduct'
+  , aggFProduct
+  , aggFCompose'
+  , aggFCompose
+  , aggListProduct'
+  , aggListProduct
+  , aggListCompose'
+  , aggListCompose
+    -- * Collapsing sums of data
   , monoidOps
   , monoidOpsFromFold
-  , keyHas
-  , keyDiff
-  , keyDiffSum
-  , kwCompose
-  , composeAggregations
-  , (!*!)
-    -- * Collapsing sums of data
-  , monoidCollapse 
+  , monoidFold
   , foldCollapse
+  , dataFoldCollapse
   , groupCollapse
     -- * Making folds from aggregations
   , aggFold
   , aggFoldAll
-  , aggFoldGroup
-  , aggFoldAllGroup
+  , aggFoldChecked
+  , aggFoldAllChecked
     -- * For Vinyl/Frames
-  , RecAggregation (..)
-  , pattern RecAggregation
-  , toRecAggregation
-  , composeRecAggregations
-  , (|*|)
+  , AggFRec
+  , AggListRec
+  , CollapseRec
+  , toAggFRec
+  , toAggListRec
+  , aggFProductRec'
+  , aggFProductRec
+  , aggListProductRec'
+  , aggListProductRec
   , aggFoldRec
-  , aggFoldRecAll
-  , aggFoldRecGroup
-  , aggFoldRecAllGroup
+  , aggFoldAllRec
+  , aggFoldCheckedRec
+  , aggFoldAllCheckedRec
+  , completeRec
+  , exactRec
     -- * Debugging
-  , runAgg    
   ) where
 
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 
-import Control.Monad (join)
+import           Control.Monad (join)
+import qualified Control.Category as Cat
+import qualified Data.Bifunctor                as BF
 import           Data.Functor.Identity          (Identity (runIdentity))
 import qualified Data.Group                    as G
 import qualified Data.List                     as L
@@ -72,16 +96,18 @@ import qualified Data.Map                      as M
 import qualified Data.Monoid                   as Mon
 import qualified Data.Profunctor               as P
 import qualified Data.Text                     as T
+import qualified Data.Semiring                 as SR
 import qualified Data.Serialize                as S
 import qualified Data.Set                      as Set
+import qualified Data.Vector                   as Vec
+import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Data.Vector                   as Vec
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
+import qualified Numeric.Natural                  as Nat
 
 
 {-
@@ -124,58 +150,90 @@ Hom(B, C), as desired.
 
 As Haskell types, we want (We could relax Ord to Eq here but the code would be more complex):
 -}
+-- For some operations on aggregations we may need sets to be Finite in the sense that we can
+-- get a list of their elements
+class Eq a => FiniteSet a where
+  elements :: Set.Set a
+  default elements :: (Enum a, Bounded a) => Set.Set a
+  elements = Set.fromAscList [minBound..]
+
+instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
+  elements = Set.fromAscList $ do
+    a <- Set.toAscList elements
+    b <- Set.toAscList elements
+    return (a, b)
 
 -- For composing aggregations, we will also want our coefficients to
--- have multiplicative monoid structure
-data Coefficient q where
-  Coefficient :: q -> (q -> q -> q) -> q -> (q -> q -> q) -> Coefficient q
+-- have multiplicative monoid structure, that is, to be semirings
 
-zeroQ :: Coefficient q -> q
-zeroQ (Coefficient x _ _ _) = x
+-- do we want a semiring constraint here??
+-- This is Star ( -> x) b a but that requires @Op@ for the opposite arrow and all we get
+-- is a free contravariant instance...
+data AggF x b a where
+  AggF :: SR.Semiring x => (b -> (a -> x)) -> AggF x b a
 
-plusQ :: Coefficient q -> (q -> q -> q)
-plusQ (Coefficient _ op _ _) = op
+runAggF :: AggF x b a -> b -> a -> x
+runAggF (AggF f) = f
 
-oneQ :: Coefficient q -> q
-oneQ (Coefficient _ _ x _) = x
+newtype IndexedList x a = IndexedList { getIndexedList :: [(x, a)] }
+  deriving stock (Functor, Show, Foldable, Traversable)
 
-timesQ :: Coefficient q -> (q -> q -> q)
-timesQ (Coefficient _ _ _ op) = op
+instance SR.Semiring x => Applicative (IndexedList x) where
+  pure a = IndexedList $ pure (SR.one, a)
+  IndexedList fs <*> IndexedList as = IndexedList $ do
+    (x1, f) <- fs
+    (x2, a) <- as
+    return (x1 `SR.times` x2, f a)
 
-numCoefficient :: Num a => Coefficient a
-numCoefficient = Coefficient (fromInteger 0) (+) (fromInteger 1) (*)
+instance SR.Semiring x => Monad (IndexedList x) where
+  (IndexedList as) >>= f = IndexedList $ do
+    (x1, a) <- as
+    (x2, b) <- getIndexedList $ f a
+    return (x1 `SR.times` x2, b)
 
-type AggF x b a = b -> (a -> x)
-type AggList x b a = b -> [(a,x)]
+instance BF.Bifunctor IndexedList where
+  bimap f g (IndexedList l) = IndexedList $ fmap (\(a, b) -> (f a, g b)) l  
 
-functionalize :: Ord a => Coefficient x -> AggList x b a -> AggF x b a
-functionalize cq aggList b = \a -> maybe (zeroQ cq) id $ M.lookup a $ M.fromListWith (plusQ cq) (aggList b)
+type AggList x b a = P.Star (IndexedList x) b a -- b -> [(a,x)]
+pattern AggList :: (b -> IndexedList x a) -> AggList x b a
+pattern AggList f <- P.Star f where
+  AggList f = P.Star f
+
+runAggList :: AggList x b a -> b -> [(x, a)]
+runAggList al = getIndexedList . P.runStar al
+
+mapIndex :: (x -> y) -> IndexedList x a -> IndexedList y a
+mapIndex = BF.first
+  
+functionalize :: (Ord a, SR.Semiring x) => AggList x b a -> AggF x b a
+functionalize aggList = AggF $ \b a -> maybe SR.zero id $ M.lookup a $ M.fromListWith SR.plus (fmap swap $ runAggList aggList b) where
+  swap (a, b) = (b, a)
 
 aggregateF :: AggF q b a -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
-aggregateF agg fld b = FL.premap (\(a, d) -> (agg b a, d)) fld
+aggregateF agg fld b = FL.premap (\(a, d) -> (runAggF agg b a, d)) fld
 
-aggregateList :: Ord a => Coefficient q -> AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
-aggregateList cq aggList = aggregateF (functionalize cq aggList)
+aggregateList :: (Ord a, SR.Semiring q) => AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
+aggregateList aggList = aggregateF (functionalize aggList)
 
 {-
 For A a finite set, we might want to know if [(a, d)] is "complete"
-(has no missing entries) and is "exact" (has one entry for each element of a).
+(has no missing entries) and/or is "exact" (has one entry for each element of a).
 -}
-data AggError = AggregationListError T.Text | AggregationFoldError T.Text
+--data AggregationError = AggregationError T.Text 
 
-type AggE = Either AggError
+type AggE = Either T.Text
 
-completeList :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
-completeList = MR.postMapM check $ FL.generalize FL.map where
+complete :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
+complete = MR.postMapM check $ FL.generalize FL.map where
   check m = case (L.sort (M.keys m) == Set.toList elements) of
     True -> Right ()
-    False -> Left $ AggregationListError "is missing keys"
+    False -> Left "is missing keys"
 
-exactList :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
-exactList = MR.postMapM check $ FL.generalize FL.list where
+exact :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
+exact = MR.postMapM check $ FL.generalize FL.list where
   check ads = case (L.sort (fmap fst ads) == Set.toList elements) of
     True -> Right ()
-    False -> Left $ AggregationListError "has missing or duplicate keys"
+    False -> Left "has missing or duplicate keys"
 
 {-
 It turns out to be very convenient to combine aggregation functions in two
@@ -187,29 +245,339 @@ It might also be nice to have an identity aggregation such that
 combining it with "compose" yields a category.
 
 For all of this we need Q to have more structure, namely a multiplication and
-a multiplicative identity.  So Q is a monoid two ways. 
+a multiplicative identity.  So Q is a monoid two ways: a semiring.
 -}
 
-identityAggF :: Eq b => Coefficient q -> AggF q b b
-identityAggF cq b1 b2 = if b1 == b2 then oneQ cq else zeroQ cq
+identityAggF :: (Eq b, SR.Semiring q) => AggF q b b
+identityAggF = AggF $ \b1 b2 -> if b1 == b2 then SR.one else SR.zero
 
-identityAggList :: Coefficient q -> AggList q b b
-identityAggList cq b = pure (b, oneQ cq)
+aggFProduct' :: SR.Semiring s => (q -> r -> s) -> AggF q b a -> AggF r y x -> AggF s (b, y) (a, x)
+aggFProduct' op aggFba aggFyx = AggF $ \(b,y) -> \(a, x) -> (runAggF aggFba b a) `op` (runAggF aggFyx y x)
+
+aggFProduct :: SR.Semiring q => AggF q b a -> AggF q y x -> AggF q (b, y) (a, x)
+aggFProduct = aggFProduct' SR.times
+
+-- here we need to sum over intermediate states which we can only do if B is finite.  Can this be expressed
+-- more generally?
+aggFCompose' :: (FiniteSet b, SR.Semiring s) => (q -> r -> s) -> AggF q b a -> AggF r c b -> AggF s c a
+aggFCompose' times aggFba aggFcb =
+  AggF $ \c -> \a -> FL.fold (FL.premap (\b -> runAggF aggFba b a `times` runAggF aggFcb c b) (FL.Fold SR.plus SR.zero id)) elements
+
+-- this is all much clearer when everything uses the same semiring for coefficients
+aggFCompose :: (FiniteSet b, SR.Semiring q) => AggF q b a -> AggF q c b -> AggF q c a
+aggFCompose = aggFCompose' SR.times
+
+-- This is a (Haskell) category if we could constrain to (Eq, FiniteSet)
+
+-- productAggF SR.times identityAggF x = product SR.times x identityAggF
+
+aggListId :: SR.Semiring q => AggList q b b
+aggListId = AggList pure 
 
 -- we should verify that functionalize identityAggList = identityAggF
 
-composeAggF :: Coefficient q -> AggF q b a -> AggF q y x -> AggF q (b, y) (a, x)
-composeAggF cq baF yxF (b, y) = \(a, x) -> (timesQ cq) (baF b a) (yxF y x)
+aggListProduct' :: (q -> r -> s) -> AggList q b a -> AggList r y x -> AggList s (b, y) (a, x)
+aggListProduct' times aggLba aggLyx = AggList $ \(b, y) -> IndexedList $ do
+  (qa, a) <- runAggList aggLba b
+  (qx, x) <- runAggList aggLyx y
+  return (qa `times` qx, (a, x))
 
-composeAggList :: Coefficient q -> AggList q b a -> AggList q y x -> AggList q (b, y) (a, x)
-composeAggList cq baL yxL (b, y) = do
-  (a, qa) <- baL b
-  (x, qx) <- yxL y
-  return ((a, x), (timesQ cq) qa qx)
+aggListProduct :: SR.Semiring q => AggList q b a -> AggList q y x -> AggList q (b, y) (a, x)
+aggListProduct = aggListProduct' SR.times
 
+-- This is also doing a sum over intermediate b, but we don't need b to be Finite here since we
+-- get whichever bs have non-zero coefficient from the lists.
+aggListCompose' :: (q -> r -> s) -> AggList q b a -> AggList r c b -> AggList s c a
+aggListCompose' times aggLba aggLcb = AggList $ \c -> IndexedList $ do
+  (x1, b) <- runAggList aggLcb c
+  (x2, a) <- runAggList aggLba b
+  return (x2 `times` x1, a)
+
+aggListCompose :: SR.Semiring q =>  AggList q b a -> AggList q c b -> AggList q c a
+aggListCompose =  (Cat.<<<) -- aggListCompose' SR.times -- This is also Kleisli composition
+
+
+{- This is already true from Star 
+instance SR.Semiring q => Cat.Category (AggList q) where
+  id = aggListId
+  (.) = aggListCompose
+-}
 -- we should also verify that these compositions commute with functionalize  
 
-    
+
+-- Collapse represents the combining of the data at each new key.
+-- This may be from a fold or group structure
+-- or it may be specific to one aggregation
+type Collapse q d c = P.Costar (IndexedList q) d c
+pattern Collapse :: (IndexedList q d -> c) -> Collapse q d c
+pattern Collapse g <- P.Costar g where
+  Collapse g = P.Costar g
+
+runCollapse :: Collapse q d c -> IndexedList q d -> c
+runCollapse = P.runCostar
+
+foldCollapse :: FL.Fold (q, d) c -> Collapse q d c
+foldCollapse fld = Collapse $ FL.fold fld . getIndexedList 
+
+dataFoldCollapse :: (q -> d -> d) -> FL.Fold d d -> Collapse q d d
+dataFoldCollapse action fld = Collapse $ FL.fold (FL.premap (uncurry action) fld) . getIndexedList
+
+-- our data is going to need some way of being combined
+-- It often has monoid or group structure
+data MonoidOps a = MonoidOps a (a -> a -> a)
+
+monoidOps :: Monoid a => MonoidOps a
+monoidOps = MonoidOps mempty (<>)
+
+-- NB: This is only monoidal if the fold is associative:
+-- fold fld [fold fld [a,b], c] '==' fold fld [a, fold fld [b,c]]
+monoidOpsFromFold :: FL.Fold d d -> MonoidOps d
+monoidOpsFromFold fld = MonoidOps (FL.fold fld []) (\d1 d2 -> FL.fold fld [d1,d2])
+
+monoidFold :: MonoidOps d -> FL.Fold d d
+monoidFold (MonoidOps zero plus) = FL.Fold plus zero id
+
+data GroupOps a where
+  GroupOps :: MonoidOps a -> (a -> a) -> GroupOps a
+  
+groupOps :: G.Group a => GroupOps a
+groupOps = GroupOps monoidOps G.invert
+
+-- copied from Data.Group in groups
+pow :: Integral x => GroupOps m -> m -> x -> m
+pow (GroupOps (MonoidOps zero plus) invert) x0 n0 = case compare n0 0 of
+  LT -> invert . f x0 $ negate n0
+  EQ -> zero
+  GT -> f x0 n0
+  where
+    f x n 
+      | even n = f (x `plus` x) (n `quot` 2)
+      | n == 1 = x
+      | otherwise = g (x `plus` x) (n `quot` 2) x
+    g x n c
+      | even n = g (x `plus` x) (n `quot` 2) c
+      | n == 1 = x `plus` c
+      | otherwise = g (x `plus` x) (n `quot` 2) (x `plus` c)
+
+groupCollapse :: GroupOps d -> Collapse Int d d
+groupCollapse gOps@(GroupOps mOps _ ) = dataFoldCollapse (flip $ pow gOps) (monoidFold mOps) 
+
+
+-- To use these with aggLists we have to functionalize the aggList
+aggFold :: Traversable f
+         => AggF q b a
+         -> Collapse q d c
+         -> f b
+         -> FL.Fold (a,d) (f (b,c))
+aggFold af collapse bs =
+  let foldOne b = (,) <$> pure b <*> foldToB af collapse b
+  in traverse foldOne bs
+  
+foldToB :: AggF q b a
+        -> Collapse q d c
+        -> b
+        -> FL.Fold (a,d) c
+foldToB aggFba collapse b =
+  let weighted (a, d) = (runAggF aggFba b a, d)
+  in FL.premap weighted $ fmap (runCollapse collapse . IndexedList) $ FL.list 
+  
+
+aggFoldAll :: FiniteSet b
+           => AggF q b a
+           -> Collapse q d c
+           -> FL.Fold (a,d) [(b,c)]
+aggFoldAll aggF collapse = aggFold aggF collapse (Set.toList elements)
+
+
+-- checked Folds
+aggFoldChecked :: (FiniteSet a, Ord a, Traversable f)
+               => FL.FoldM AggE (a,d) ()
+               -> AggF q b a
+               -> Collapse q d c
+               -> f b
+               -> FL.FoldM AggE (a,d) (f (b,c))
+aggFoldChecked checkFold af collapse bs = fmap fst ((,) <$> FL.generalize (aggFold af collapse bs) <*> checkFold)
+
+
+aggFoldAllChecked :: (FiniteSet b, FiniteSet a, Ord a)
+                  => FL.FoldM AggE (a,d) ()
+                  -> AggF q b a
+                  -> Collapse q d c
+                  -> FL.FoldM AggE (a,d) [(b,c)]
+aggFoldAllChecked checkFold aggF collapse = aggFoldChecked checkFold  aggF collapse (Set.toList elements)
+
+-- functions to build list aggregations
+aggList :: SR.Semiring q => [a] -> IndexedList q a
+aggList = IndexedList . fmap (SR.one, ) 
+
+liftAggList :: SR.Semiring q => (b -> [a]) -> AggList q b a
+liftAggList f = AggList $ aggList . f 
+
+-- I think (Semiring q, Group q) should imply (Ring q)
+-- but the Haskell classes for all this are not in the same place
+aggDiff :: (SR.Semiring q, G.Group q) => a -> a -> IndexedList q a
+aggDiff a1 a2 = IndexedList [(SR.one, a1), (G.invert SR.one, a2)]
+
+aggDiffSum :: (SR.Semiring q, G.Group q) => a -> [a] -> IndexedList q a
+aggDiffSum a as = IndexedList $ ([(SR.one, a)] ++ fmap (\(x,a) -> (G.invert x, a)) (getIndexedList $ aggList as))
+
+-- specializations to Vinyl
+-- this is weird.  But otherwise the other case doesn't work.
+instance FiniteSet (F.Record '[]) where
+  elements = Set.fromAscList [V.RNil]
+
+instance (V.KnownField t
+         , FiniteSet (V.Snd t)
+         , FiniteSet (F.Record rs)
+         , Ord (F.Record (t ': rs))) => FiniteSet (F.Record (t ': rs)) where
+  elements = Set.fromAscList $ do
+      t <- Set.toAscList elements
+      recR <- Set.toAscList elements
+      return $ t F.&: recR
+
+
+type AggFRec q b a = AggF q (F.Record b) (F.Record a)
+type AggListRec q b a = AggList q (F.Record b) (F.Record a)
+type CollapseRec q d c = Collapse q (F.Record d) (F.Record c)
+
+toAggFRec :: forall q a b.(SR.Semiring q, V.KnownField b, V.KnownField a) => AggF q (V.Snd b) (V.Snd a) -> AggFRec q '[b] '[a]
+toAggFRec aggF = AggF $ \recB recA -> runAggF aggF (F.rgetField @b recB) (F.rgetField @a recA)
+
+toAggListRec :: forall q a b.(V.KnownField b, V.KnownField a) => AggList q (V.Snd b) (V.Snd a) -> AggListRec q '[b] '[a]
+toAggListRec aggF = AggList $ \recB -> IndexedList $ fmap (\(x, a) -> (x, a F.&: V.RNil)) $ runAggList aggF (F.rgetField @b recB) 
+
+aggFProductRec'
+  :: ( SR.Semiring s
+     , b F.⊆ (b V.++ y)
+     , y F.⊆ (b V.++ y)
+     , a F.⊆ (a V.++ x)
+     , x F.⊆ (a V.++ x)
+     )     
+  => (q -> r -> s)
+  -> AggFRec q b a
+  -> AggFRec r y x
+  -> AggFRec s (b V.++ y) (a V.++ x)
+aggFProductRec' times aggFba aggFyx =
+  AggF $ \rby rax -> runAggF (aggFProduct' times aggFba aggFyx) (F.rcast rby, F.rcast rby) (F.rcast rax, F.rcast rax)
+
+aggFProductRec :: ( SR.Semiring q
+                  , b F.⊆ (b V.++ y)
+                  , y F.⊆ (b V.++ y)
+                  , a F.⊆ (a V.++ x)
+                  , x F.⊆ (a V.++ x)
+                    )
+  => AggFRec q b a
+  -> AggFRec q y x
+  -> AggFRec q (b V.++ y) (a V.++ x)
+aggFProductRec = aggFProductRec' SR.times
+
+aggListProductRec' :: ( b F.⊆ (b V.++ y)
+                      , y F.⊆ (b V.++ y)
+                      )     
+                   => (q -> r -> s)
+                   -> AggListRec q b a
+                   -> AggListRec r y x
+                   -> AggListRec s (b V.++ y) (a V.++ x)
+aggListProductRec' times aggLba aggLyx =
+  AggList $ \r -> IndexedList $ fmap (\(x, (a,b)) -> (x, V.rappend a b)) $ runAggList (aggListProduct' times aggLba aggLyx) (F.rcast r, F.rcast r)
+
+aggListProductRec :: ( SR.Semiring q
+                     , b F.⊆ (b V.++ y)
+                     , y F.⊆ (b V.++ y)
+                     )     
+                   => AggListRec q b a
+                   -> AggListRec q y x
+                   -> AggListRec q (b V.++ y) (a V.++ x)
+aggListProductRec = aggListProductRec' SR.times                     
+
+
+aggFoldRec :: ( Traversable f
+              , a F.⊆ (a V.++ d)
+              , d F.⊆ (a V.++ d)
+              )
+           => AggFRec q b a
+           -> CollapseRec q d c
+           -> f (F.Record b)
+           -> FL.Fold (F.Record (a V.++ d)) (f (F.Record (b V.++ c)))
+aggFoldRec af collapse bs =
+  let foldOne b = V.rappend <$> pure b <*> (FL.premap (\r -> (F.rcast r, F.rcast r)) $ foldToB af collapse b)
+  in traverse foldOne bs
+
+
+aggFoldAllRec :: (FiniteSet (F.Record b)
+                 , a F.⊆ (a V.++ d)
+                 , d F.⊆ (a V.++ d)
+                 )  
+              => AggFRec q b a
+              -> CollapseRec q d c
+              -> FL.Fold (F.Record (a V.++ d)) [F.Record (b V.++ c)]
+aggFoldAllRec aggF collapse = aggFoldRec aggF collapse (Set.toList elements)
+
+
+-- checked Folds
+completeRec :: forall a d.(FiniteSet (F.Record a)
+                          , Ord (F.Record a)
+                          , a F.⊆ (a V.++ d)
+                          ) => FL.FoldM AggE (F.Record (a V.++ d)) ()
+completeRec = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rcast @a r, ())) FL.map
+  where
+    check m = case (L.sort (M.keys m) == Set.toList elements) of
+      True -> Right ()
+      False -> Left "is missing keys"
+
+exactRec :: forall a d.(FiniteSet (F.Record a)
+                       , Ord (F.Record a)
+                       , a F.⊆ (a V.++ d)
+                       ) => FL.FoldM AggE (F.Record (a V.++ d)) ()
+exactRec = MR.postMapM check $ FL.generalize $ FL.premap (F.rcast @a) FL.list where
+  check as = case (L.sort as == Set.toList elements) of
+    True -> Right ()
+    False -> Left "has missing or duplicate keys"
+
+aggFoldCheckedRec :: (FiniteSet (F.Record a)
+                     , Ord (F.Record a)
+                     , Traversable f
+                     , a F.⊆ (a V.++ d)
+                     , d F.⊆ (a V.++ d)
+                     )
+                  => FL.FoldM AggE (F.Record (a V.++ d)) ()
+                  -> AggFRec q b a
+                  -> CollapseRec q d c
+                  -> f (F.Record b)
+                  -> FL.FoldM AggE (F.Record (a V.++ d)) (f (F.Record (b V.++ c)))
+aggFoldCheckedRec checkFold af collapse bs = fmap fst ((,)
+                                                       <$> FL.generalize (aggFoldRec af collapse bs)
+                                                       <*> checkFold)
+
+
+aggFoldAllCheckedRec :: (FiniteSet (F.Record a)
+                        , FiniteSet (F.Record b)
+                        , Ord (F.Record a)
+                        , a F.⊆ (a V.++ d)
+                        , d F.⊆ (a V.++ d)
+                        )
+                     => FL.FoldM AggE (F.Record (a V.++ d)) ()
+                     -> AggFRec q b a
+                     -> CollapseRec q d c
+                     -> FL.FoldM AggE (F.Record (a V.++ d)) [F.Record (b V.++ c)]
+aggFoldAllCheckedRec checkFold aggF collapse = aggFoldCheckedRec checkFold aggF collapse (Set.toList elements) 
+
+{-
+aggFoldAllChecked :: (FiniteSet b, FiniteSet a, Ord a)
+                  => FL.FoldM AggE (a,d) ()
+                  -> AggF q b a
+                  -> Collapse q d c
+                  -> FL.FoldM AggE (a,d) [(b,c)]
+aggFoldAllChecked checkFold aggF collapse = aggFoldChecked checkFold  aggF collapse (Set.toList elements)
+
+-}
+
+{-
+aggListProduct :: SR.Semiring q => AggList q b a -> AggList q y x -> AggList q (b, y) (a, x)
+aggListProduct = aggListProduct' SR.times
+-}
+
+{-    
 {-
 Observations:
 1. Under reasonable circumstances there might be "rules" for what constitutes
@@ -279,31 +647,13 @@ d1 <> d2 = fold [d1, d2]
 or, conversely,
 Fold D D = Fold (<>) mempty id, this is @Control.Foldl.mconcat@
 -}
-class Eq a => FiniteSet a where
-  elements :: Set.Set a
-  default elements :: (Enum a, Bounded a) => Set.Set a
-  elements = Set.fromAscList [minBound..]
-
-instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
-  elements = Set.fromAscList $ do
-    a <- Set.toAscList elements
-    b <- Set.toAscList elements
-    return (a, b)
 
 -- To turn a collection of data @~[(a,d)]@ into @a -> d@ we need a default
 -- value of @d@, when a key is missing, and a way to add @d@ to itself,
 -- when a key is duplicated.  That is, we need @d@ to be a monoid.
 -- Rather than use the class here, we pass the operations explicitly
 -- so the user may choose the operations on the fly more easily.
-data MonoidOps a = MonoidOps a (a -> a -> a)
 
-monoidOps :: Monoid a => MonoidOps a
-monoidOps = MonoidOps mempty (<>)
-
--- NB: This is only monoidal if the fold is associative:
--- fold fld [fold fld [a,b], c] '==' fold fld [a, fold fld [b,c]]
-monoidOpsFromFold :: FL.Fold d d -> MonoidOps d
-monoidOpsFromFold fld = MonoidOps (FL.fold fld []) (\d1 d2 -> FL.fold fld [d1,d2])
 
 -- NB: These various things are not always errors.  But for some inputs/collapse choices they are.
 data AggregationError = DataMissing T.Text | DataDuplicated T.Text | NegativeWeight T.Text deriving (Show)
@@ -509,18 +859,6 @@ preservesIdentities
   :: (Ord a, FiniteSet a, FiniteSet b) => Aggregation b a -> Bool
 preservesIdentities agg = preservesZero agg && preservesOne agg
 
--- Collapse represents the combining of the data at each new key.
--- This may be from a fold or group structure
--- or it may be specific to one aggregation
-type Collapse d c = P.Costar KeyWeights d c
-pattern Collapse :: (KeyWeights d -> c) -> Collapse d c
-pattern Collapse g <- P.Costar g where
-  Collapse g = P.Costar g
-
-runCollapse :: Collapse d c -> KeyWeights d -> c
-runCollapse = P.runCostar
-
-type CollapseM m d c = Collapse d (m c)
 
 -- This is a bit dependent-typeish.  We have an Idenity or Either from the DataOps bit
 -- And one from the collapse bit.  This allows to operate with whatever combination we
@@ -586,27 +924,6 @@ foldCollapse fld = Collapse $ \(KeyWeights kw) ->
 monoidCollapse :: Monoid d => CollapseM AggEither d d 
 monoidCollapse = foldCollapse FL.mconcat
 
-data GroupOps a where
-  GroupOps :: MonoidOps a -> (a -> a) -> GroupOps a
-
-groupOps :: G.Group a => GroupOps a
-groupOps = GroupOps monoidOps G.invert
-
--- copied from Data.Group in groups
-pow :: Integral x => GroupOps m -> m -> x -> m
-pow (GroupOps (MonoidOps zero plus) invert) x0 n0 = case compare n0 0 of
-  LT -> invert . f x0 $ negate n0
-  EQ -> zero
-  GT -> f x0 n0
-  where
-    f x n 
-      | even n = f (x `plus` x) (n `quot` 2)
-      | n == 1 = x
-      | otherwise = g (x `plus` x) (n `quot` 2) x
-    g x n c
-      | even n = g (x `plus` x) (n `quot` 2) c
-      | n == 1 = x `plus` c
-      | otherwise = g (x `plus` x) (n `quot` 2) (x `plus` c)
 
 groupCollapse :: GroupOps d -> CollapseM Identity d d 
 groupCollapse ops@(GroupOps (MonoidOps zero plus) _) = Collapse $ \(KeyWeights kw) ->
@@ -768,38 +1085,4 @@ aggFoldRecAllGroup agg ops = fmap (fmap (uncurry V.rappend))
 --- There's another way...
 --type AggFunction b a = P.Star a 
 
-data AggFunction b a where
-  AggFunction :: (b -> a -> Int) -> AggFunction b a
-
-composeAggFunctions :: AggFunction b a -> AggFunction y x -> AggFunction (b,y) (a,x)
-composeAggFunctions (AggFunction afBA) (AggFunction afYX) = AggFunction $ \(b, y) (a, x) -> (afBA b a) * (afYX y x)
-
-(%*%) :: AggFunction b a -> AggFunction y x -> AggFunction (b,y) (a,x)
-(%*%) = composeAggFunctions
-
-infixl 7 %*%
-
-foldToBs :: (Monad m, Traversable f)
-         => AggFunction b a
-         -> CollapseM m d c
-         -> f b
-         -> FL.FoldM m (a,d) (f (b,c))
-foldToBs af collapse bs =
-  let foldOne b = (,) <$> pure b <*> foldToB af collapse b
-  in traverse foldOne bs
-  
-foldToB :: Monad m
-           => AggFunction b a
-           -> CollapseM m d c
-           -> b
-           -> FL.FoldM m (a,d) c
-foldToB (AggFunction af) collapse b =
-  let weighted (a, d) = return (af b a, d)
-  in FL.premapM weighted $ MR.postMapM (runCollapse collapse . KeyWeights) $ FL.generalize $ FL.list 
-  
-
-foldToAllB :: (Monad m, FiniteSet b)
-           => AggFunction b a
-           -> CollapseM m d c
-           -> FL.FoldM m (a,d) [(b,c)]
-foldToAllB aggF collapse = foldToBs aggF collapse (Set.toList elements)
+-}
