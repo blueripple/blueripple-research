@@ -100,7 +100,9 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESVvTurnoutGvm
                      , CCESVotedRepParty
                      , CCESVotedPres16
-                     , CCESVotedPres12]
+                     , CCESVotedPres12
+                     , CCESVotedPres08
+                     ]
                     
 type CCES_MRP = '[ Year
                  , CCESCaseId
@@ -123,6 +125,7 @@ type CCES_MRP = '[ Year
                  , HouseVoteParty
                  , Pres2016VoteParty
                  , Pres2012VoteParty
+                 , Pres2008VoteParty
                  ]                
 
 -- these are orphans but where could they go?
@@ -350,8 +353,14 @@ parsePres2012VoteParty "Barack Obama" = VP_Democratic
 parsePres2012VoteParty "Mitt Romney" = VP_Republican
 parsePres2012VoteParty _ = VP_Other
 
+parsePres2008VoteParty :: T.Text -> VotePartyT
+parsePres2008VoteParty "Barack Obama" = VP_Democratic
+parsePres2008VoteParty "John McCain" = VP_Republican
+parsePres2008VoteParty _ = VP_Other
+
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> VotePartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> VotePartyT 
+type Pres2008VoteParty = "Pres2008VoteParty" F.:-> VotePartyT
 
 data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor OfficeT = V.Vector
@@ -398,6 +407,7 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
   addRegistration = FT.recordSingleton @Registration . parseRegistration  . F.rgetField @CCESVvRegstatus
   addTurnout = FT.recordSingleton @Turnout . parseTurnout . F.rgetField @CCESVvTurnoutGvm
   addHouseVoteParty = FT.recordSingleton @HouseVoteParty . parseHouseVoteParty . F.rgetField @CCESVotedRepParty
+  addPres2008VoteParty = FT.recordSingleton @Pres2008VoteParty . parsePres2008VoteParty . F.rgetField @CCESVotedPres08
   addPres2012VoteParty = FT.recordSingleton @Pres2012VoteParty . parsePres2012VoteParty . F.rgetField @CCESVotedPres12
   addPres2016VoteParty = FT.recordSingleton @Pres2016VoteParty . parsePres2016VoteParty . F.rgetField @CCESVotedPres16
   addPID3 = FT.recordSingleton @PartisanId3 . parsePartisanIdentity3 . F.rgetField @CCESPid3
@@ -416,6 +426,7 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
            . FT.mutate addRegistration
            . FT.mutate addTurnout
            . FT.mutate addHouseVoteParty
+           . FT.mutate addPres2008VoteParty
            . FT.mutate addPres2012VoteParty
            . FT.mutate addPres2016VoteParty           
            . FT.mutate addPID3
@@ -425,8 +436,6 @@ transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
 
 
 -- map reduce folds for counting
-type Count = "Count" F.:-> Int
-type Successes = "Successes" F.:-> Int
 
 -- some keys for aggregation
 type ByStateSex = '[StateAbbreviation, BR.SexC]
@@ -437,6 +446,7 @@ type ByStateSexRaceEducation = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.
 type ByStateSexRaceEducationAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
 type ByStateRaceEducation = '[StateAbbreviation, BR.SimpleRaceC, BR.CollegeGradC]
 
+{-
 binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
 binomialFold testRow =
   let successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
@@ -451,6 +461,8 @@ countFold :: forall k r d.(Ord (F.Record k)
 countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR.foldAndAddKey $ binomialFold testData)
 
 
+type Count = "Count" F.:-> Int
+type Successes = "Successes" F.:-> Int
 type MeanWeight = "MeanWeight" F.:-> Double
 type VarWeight = "VarWeight" F.:-> Double
 type WeightedSuccesses = "WeightedSuccesses" F.:-> Double
@@ -477,6 +489,7 @@ weightedCountFold filterData testData weightData =
   (MR.filterUnpack filterData)
   (MR.assignKeysAndData @k)
   (MR.foldAndAddKey $ weightedBinomialFold testData weightData)
+-}
 
 type ByCCESPredictors = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
 data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
@@ -491,9 +504,11 @@ ccesPredictor r P_Race    = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then
 ccesPredictor r P_Education    = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
 ccesPredictor r P_Age    = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 
+{-
 type instance GLM.GroupKey (Proxy k) = F.Record k
 recordToGroupKey :: forall k r. (k F.⊆ r) => F.Record r -> Proxy k -> F.Record k
 recordToGroupKey r _ = F.rcast r
+-}
 
 {-
 data GroupByState = GroupByState deriving (Show, Eq, Ord)
@@ -524,15 +539,17 @@ ccesGroupLabels r G_SG = F.rgetField @StateAbbreviation r <> "-" <> (T.pack $ sh
       cd = F.rgetField @CongressionalDistrict r
   in sa <> "-" <> (T.pack $ show cd)
 -}
+{-
 getFraction r = (realToFrac $ F.rgetField @Successes r)/(realToFrac $ F.rgetField @Count r)
 getFractionWeighted r = (F.rgetField @WeightedSuccesses r)/(realToFrac $ F.rgetField @Count r)
+-}
 --fixedEffects :: GLM.FixedEffects CCESPredictor
 --fixedEffects = GLM.allFixedEffects True
 
 --groups = IS.fromList [CCES_State]
 
 -- This really really needs to be someplace central...
-
+{-
 lmePrepFrame
   :: forall p g rs
    . (GLM.PredictorC p, GLM.GroupC g)
@@ -631,7 +648,7 @@ addAll
   -> ST.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
 addAll x = traverse (addMany . M.toList) x >> return ()
 
-
+-}
 
 {-
 lmePrepFrame

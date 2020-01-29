@@ -91,6 +91,7 @@ import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
+import qualified BlueRipple.Model.MRP_Pref as BR
 import MRP.Common
 import MRP.CCES
 
@@ -352,13 +353,13 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members e
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
   K.logLE K.Info $ "Working on Pools post..."
   let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
-      countDemPres2016VotesF = MR.concatFold
-                               $ weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
+      countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                 (\r -> (F.rgetField @Turnout r == T_Voted)
                                       && (F.rgetField @Year r == 2016)
                                       && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
+{-                               
       inferMR cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("inferMR " <> (T.pack $ show y) <> ":") $ do
         let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrameAll)
             vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
@@ -434,9 +435,23 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let GLM.FixedEffectStatistics fep _ = fes            
         return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
+-}
   let predictionsByLocation = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- inferMR countDemPres2016VotesF 2016 ccesFrameAll
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
+                                                                                                      ,BR.SexC
+                                                                                                      ,BR.SimpleRaceC
+                                                                                                      ,BR.CollegeGradC
+                                                                                                      ,BR.SimpleAgeC          
+                                                                                                      ]
+                                                                   countDemPres2016VotesF
+                                                                   [GLM.Intercept
+                                                                   , GLM.Predictor P_Sex
+                                                                   , GLM.Predictor P_Age
+                                                                   , GLM.Predictor P_Education
+                                                                   ]
+                                                                   ccesPredictor
+                                                                   (F.filterFrame ((== 2016) . F.rgetField @Year) ccesFrameAll)
         let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
             allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
             predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps

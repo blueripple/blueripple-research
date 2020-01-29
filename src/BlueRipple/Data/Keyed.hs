@@ -33,7 +33,9 @@ module BlueRipple.Data.Keyed
   , Collapse (..)
   , pattern Collapse
     -- * Checking Data
+  , hasAll
   , complete
+  , hasOneOfEach
   , exact
     -- * Building aggregations
   , aggList
@@ -77,7 +79,9 @@ module BlueRipple.Data.Keyed
   , aggFoldAllRec
   , aggFoldCheckedRec
   , aggFoldAllCheckedRec
+  , hasAllRec
   , completeRec
+  , hasOneOfEachRec
   , exactRec
     -- * Debugging
   ) where
@@ -223,17 +227,35 @@ For A a finite set, we might want to know if [(a, d)] is "complete"
 
 type AggE = Either T.Text
 
-complete :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
-complete = MR.postMapM check $ FL.generalize FL.map where
-  check m = case (L.sort (M.keys m) == Set.toList elements) of
-    True -> Right ()
-    False -> Left "is missing keys"
+hasAll :: (Show a, Ord a) => Set.Set a -> FL.FoldM AggE (a, d) ()
+hasAll elements = MR.postMapM check $ FL.generalize FL.map where
+  check m =
+    let expected =  Set.toList elements
+        got = L.sort (M.keys m)
+    in case (got == expected) of
+      True -> Right ()
+      False -> Left $ "Aggregation hasAll failed! Expected="
+               <> (T.pack $ show $ Set.toList elements)
+               <> "; Got="
+               <> (T.pack $ show $ L.sort (M.keys m))
 
-exact :: (FiniteSet a, Ord a) => FL.FoldM AggE (a, d) ()
-exact = MR.postMapM check $ FL.generalize FL.list where
-  check ads = case (L.sort (fmap fst ads) == Set.toList elements) of
-    True -> Right ()
-    False -> Left "has missing or duplicate keys"
+complete :: (FiniteSet a, Ord a, Show a) => FL.FoldM AggE (a, d) ()
+complete = hasAll elements
+
+hasOneOfEach :: (Show a, Ord a) => Set.Set a -> FL.FoldM AggE (a, d) ()
+hasOneOfEach elements = MR.postMapM check $ FL.generalize FL.list where
+  check ads =
+    let expected = Set.toList elements
+        got = L.sort (fmap fst ads)
+    in case (got == expected) of
+      True -> Right ()
+      False -> Left $ "Aggregation hasOneOfEach failed! Expected="
+               <> (T.pack $ show expected)
+               <> "; Got="
+               <> (T.pack $ show  got)
+              
+exact :: (FiniteSet a, Ord a, Show a) => FL.FoldM AggE (a, d) ()
+exact = hasOneOfEach elements
 
 {-
 It turns out to be very convenient to combine aggregation functions in two
@@ -390,7 +412,7 @@ aggFoldAll aggF collapse = aggFold aggF collapse (Set.toList elements)
 
 
 -- checked Folds
-aggFoldChecked :: (FiniteSet a, Ord a, Traversable f)
+aggFoldChecked :: Traversable f
                => FL.FoldM AggE (a,d) ()
                -> AggF q b a
                -> Collapse q d c
@@ -399,7 +421,7 @@ aggFoldChecked :: (FiniteSet a, Ord a, Traversable f)
 aggFoldChecked checkFold af collapse bs = fmap fst ((,) <$> FL.generalize (aggFold af collapse bs) <*> checkFold)
 
 
-aggFoldAllChecked :: (FiniteSet b, FiniteSet a, Ord a)
+aggFoldAllChecked :: FiniteSet b
                   => FL.FoldM AggE (a,d) ()
                   -> AggF q b a
                   -> Collapse q d c
@@ -515,28 +537,57 @@ aggFoldAllRec aggF collapse = aggFoldRec aggF collapse (Set.toList elements)
 
 
 -- checked Folds
-completeRec :: forall a d.(FiniteSet (F.Record a)
-                          , Ord (F.Record a)
-                          , a F.⊆ (a V.++ d)
-                          ) => FL.FoldM AggE (F.Record (a V.++ d)) ()
-completeRec = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rcast @a r, ())) FL.map
+-- None missing
+
+hasAllRec :: forall a rs.(Ord (F.Record a)
+                         , Show (F.Record a)
+                         , a F.⊆ rs
+                         ) => Set.Set (F.Record a) -> FL.FoldM AggE (F.Record rs) ()
+hasAllRec elements  = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rcast @a r, ())) FL.map
   where
-    check m = case (L.sort (M.keys m) == Set.toList elements) of
+    check m =
+      let expected = Set.toList elements
+          got = L.sort (M.keys m)
+      in case (expected == got) of
+        True -> Right ()
+        False -> Left $ "Aggregation hasAllRec failed! Expected="
+                 <> (T.pack $ show expected)
+                 <> "; Got="
+                 <> (T.pack $ show got)
+  
+
+completeRec :: forall a rs.(FiniteSet (F.Record a)
+                           , Show (F.Record a)
+                           , Ord (F.Record a)
+                           , a F.⊆ rs
+                           ) => FL.FoldM AggE (F.Record rs) ()
+completeRec = hasAllRec @a elements
+
+-- one row for each element of a
+hasOneOfEachRec :: forall a rs.( Ord (F.Record a)
+                               , Show (F.Record a)
+                               , a F.⊆ rs
+                               ) => Set.Set (F.Record a) -> FL.FoldM AggE (F.Record rs) ()
+hasOneOfEachRec elements = MR.postMapM check $ FL.generalize $ FL.premap (F.rcast @a) FL.list where
+  check as =
+    let expected = Set.toList elements
+        got = L.sort as
+    in case (got == expected) of
       True -> Right ()
-      False -> Left "is missing keys"
+      False -> Left $ "Aggregate hasOneOfEachRec failed! Expected="
+               <> (T.pack $ show expected)
+               <> "; Got="
+               <> (T.pack $ show got)
 
-exactRec :: forall a d.(FiniteSet (F.Record a)
-                       , Ord (F.Record a)
-                       , a F.⊆ (a V.++ d)
-                       ) => FL.FoldM AggE (F.Record (a V.++ d)) ()
-exactRec = MR.postMapM check $ FL.generalize $ FL.premap (F.rcast @a) FL.list where
-  check as = case (L.sort as == Set.toList elements) of
-    True -> Right ()
-    False -> Left "has missing or duplicate keys"
 
-aggFoldCheckedRec :: (FiniteSet (F.Record a)
-                     , Ord (F.Record a)
-                     , Traversable f
+exactRec :: forall a rs.(FiniteSet (F.Record a)
+                        , Ord (F.Record a)
+                        , Show (F.Record a)
+                        , a F.⊆ rs
+                       ) => FL.FoldM AggE (F.Record rs) ()
+exactRec = hasOneOfEachRec @a elements
+
+aggFoldCheckedRec :: (Traversable f
                      , a F.⊆ (a V.++ d)
                      , d F.⊆ (a V.++ d)
                      )
@@ -550,9 +601,7 @@ aggFoldCheckedRec checkFold af collapse bs = fmap fst ((,)
                                                        <*> checkFold)
 
 
-aggFoldAllCheckedRec :: (FiniteSet (F.Record a)
-                        , FiniteSet (F.Record b)
-                        , Ord (F.Record a)
+aggFoldAllCheckedRec :: ( FiniteSet (F.Record b)
                         , a F.⊆ (a V.++ d)
                         , d F.⊆ (a V.++ d)
                         )

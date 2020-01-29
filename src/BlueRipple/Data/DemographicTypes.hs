@@ -254,6 +254,46 @@ acsASELabelMap =
       , e <- [(minBound :: Education) ..]
       ]
 
+allTextKeys
+  :: forall t
+   . (V.KnownField t, V.Snd t ~ T.Text)
+  => [T.Text]
+  -> Set.Set (F.Record '[t])
+allTextKeys = Set.fromList . fmap (\x -> x F.&: V.RNil)
+
+
+allASE_ACSKeys = allTextKeys @BR.ACSKey $ fmap
+  aseACSLabel
+  [ (a, s, e)
+  | a <- [(minBound :: Age4) ..]
+  , s <- [(minBound :: Sex) ..]
+  , e <- [(minBound :: Education) ..]
+  ]
+
+allASR_ACSKeys = allTextKeys @BR.ACSKey $ fmap
+  asrACSLabel'
+  [ (a, s, r)
+  | a <- [(minBound :: Age5) ..]
+  , s <- [(minBound :: Sex) ..]
+  , r <- [ACS_All, ACS_WhiteNonHispanic]
+  ] -- this is how we have the data.  We infer ACS_White from .this
+
+allASR_TurnoutKeys = allTextKeys @BR.Group $ fmap
+  asrTurnoutLabel'
+  [ (a, s, r)
+  | a <- [(minBound :: Age5) ..]
+  , s <- [(minBound :: Sex) ..]
+  , r <- [(minBound :: TurnoutRace) ..]
+  ]
+
+allASE_TurnoutKeys = allTextKeys @BR.Group $ fmap
+  aseTurnoutLabel
+  [ (a, s, e)
+  | a <- [(minBound :: Age5) ..]
+  , s <- [(minBound :: Sex) ..]
+  , e <- [L9, L12, HS, SC, BA, AD]
+  ] -- no associates degree in turnout data
+
 typedASEDemographics
   :: (F.ElemOf rs BR.ACSKey)
   => F.Record rs
@@ -303,9 +343,12 @@ acsCountGroupOps = K.GroupOps
   acsCountMonoidOps
   (FT.recordSingleton . negate . F.rgetField @BR.ACSCount)
 
-
+-- We can't check these for exactness because T.Text is not finite.
+-- Maybe we should add checks for a finite lits of values and implement
+-- exact and complete in terms of that?
 simplifyACS_ASEFold
-  :: FL.Fold
+  :: FL.FoldM
+       (Either T.Text)
        BR.ASEDemographics
        ( F.FrameRec
            (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
@@ -319,16 +362,20 @@ simplifyACS_ASEFold =
       aggAge4 `K.aggListProductRec` aggSex `K.aggListProductRec` aggACSEducation
     agg = aggASE >>> aggACS_ASEKey -- when all is said and done, aggregations compose nicely
   in
-    FMR.concatFold $ FMR.mapReduceFold
-      MR.noUnpack
-      (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
-      (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldAllRec
+    FMR.concatFoldM $ FMR.mapReduceFoldM
+      (FMR.generalizeUnpack MR.noUnpack)
+      ( FMR.generalizeAssign
+      $ FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount]
+      )
+      (FMR.makeRecsWithKeyM id $ MR.ReduceFoldM $ const $ K.aggFoldAllCheckedRec
+        (K.hasOneOfEachRec allASE_ACSKeys)
         (K.functionalize agg)
         (K.groupCollapse acsCountGroupOps)
       )
 
 simplifyACS_ASRFold
-  :: FL.Fold
+  :: FL.FoldM
+       (Either T.Text)
        BR.ASEDemographics
        (F.FrameRec (ACSKeys V.++ '[SimpleAgeC, SexC, SimpleRaceC, BR.ACSCount]))
 simplifyACS_ASRFold
@@ -342,12 +389,17 @@ simplifyACS_ASRFold
         aggAge5 `K.aggListProductRec` aggSex `K.aggListProductRec` aggACSRace
       agg = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
     in
-      FMR.concatFold $ FMR.mapReduceFold
-        MR.noUnpack
-        (FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount])
-        (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldAllRec
-          (K.functionalize agg)
-          (K.groupCollapse acsCountGroupOps)
+      FMR.concatFoldM $ FMR.mapReduceFoldM
+        (FMR.generalizeUnpack MR.noUnpack)
+        ( FMR.generalizeAssign
+        $ FMR.assignKeysAndData @ACSKeys @'[BR.ACSKey, BR.ACSCount]
+        )
+        ( FMR.makeRecsWithKeyM id
+        $ MR.ReduceFoldM
+        $ const
+        $ K.aggFoldAllCheckedRec (K.hasOneOfEachRec allASR_ACSKeys)
+                                 (K.functionalize agg)
+                                 (K.groupCollapse acsCountGroupOps)
         )
 
 turnoutMonoidOps
@@ -393,17 +445,20 @@ turnoutSimpleASEAgg =
     aggASE >>> aggTurnout_ASEKey
 
 simplifyTurnoutASEFold
-  :: FL.Fold
+  :: FL.FoldM
+       (Either T.Text)
        BR.TurnoutASE
        ( F.FrameRec
            '[BR.Year, SimpleAgeC, SexC, CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
        )
-simplifyTurnoutASEFold = FMR.concatFold $ FMR.mapReduceFold
-  MR.noUnpack
-  (FMR.assignKeysAndData @'[BR.Year]
+simplifyTurnoutASEFold = FMR.concatFoldM $ FMR.mapReduceFoldM
+  (MR.generalizeUnpack MR.noUnpack)
+  ( MR.generalizeAssign
+  $ FMR.assignKeysAndData @'[BR.Year]
     @'[BR.Group, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
   )
-  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldAllRec
+  (FMR.makeRecsWithKeyM id $ MR.ReduceFoldM $ const $ K.aggFoldAllCheckedRec
+    (K.hasOneOfEachRec allASE_TurnoutKeys)
     (K.functionalize turnoutSimpleASEAgg)
     (K.groupCollapse turnoutGroupOps)
   )
@@ -434,17 +489,20 @@ turnoutSimpleASRAgg
       aggASR >>> aggTurnout_ASRKey
 
 simplifyTurnoutASRFold
-  :: FL.Fold
+  :: FL.FoldM
+       (Either T.Text)
        BR.TurnoutASR
        ( F.FrameRec
            '[BR.Year, SimpleAgeC, SexC, SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
        )
-simplifyTurnoutASRFold = FMR.concatFold $ FMR.mapReduceFold
-  MR.noUnpack
-  (FMR.assignKeysAndData @'[BR.Year]
+simplifyTurnoutASRFold = FMR.concatFoldM $ FMR.mapReduceFoldM
+  (MR.generalizeUnpack MR.noUnpack)
+  ( MR.generalizeAssign
+  $ FMR.assignKeysAndData @'[BR.Year]
     @'[BR.Group, BR.Population, BR.Citizen, BR.Registered, BR.Voted]
   )
-  (FMR.makeRecsWithKey id $ MR.ReduceFold $ const $ K.aggFoldAllRec
+  (FMR.makeRecsWithKeyM id $ MR.ReduceFoldM $ const $ K.aggFoldAllCheckedRec
+    (K.hasOneOfEachRec allASR_TurnoutKeys)
     (K.functionalize turnoutSimpleASRAgg)
     (K.groupCollapse turnoutGroupOps)
   )

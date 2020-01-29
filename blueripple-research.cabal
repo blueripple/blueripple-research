@@ -28,6 +28,7 @@ common deps
                , Frames-utils
                , foldl
                , freer-simple
+               , glm-haskell
                , groups
                , here
                , hvega >= 0.4.0 && < 0.5
@@ -62,6 +63,7 @@ library
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
+                 , BlueRipple.Model.MRP_Pref
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils                                  
                  , Paths_blueripple_research
@@ -161,6 +163,7 @@ executable mrp-model
                 , MRP.Pools
                 , MRP.DeltaVPV
                 , MRP.Kentucky
+                , MRP.Wisconsin
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs

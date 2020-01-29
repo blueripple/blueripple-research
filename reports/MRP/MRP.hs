@@ -94,6 +94,7 @@ import qualified MRP.WWC as WWC
 import qualified MRP.Pools as Pools
 import qualified MRP.DeltaVPV as DeltaVPV
 import qualified MRP.Kentucky as Kentucky
+import qualified MRP.Wisconsin as Wisconsin
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -125,7 +126,8 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostPools] &= CA.name "pools" &= CA.help "knit \"Pools\"",
                                         [PostDeltaVPV] &= CA.name "dVPV" &= CA.help "knit \"Delta VPV\"",
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
-                                        [PostKentucky] &= CA.name "kentucky" &= CA.help "knit \"Kentucky\"",
+                                        [PostKentucky] &= CA.name "KY" &= CA.help "knit \"Kentucky\"",
+                                        [PostWisconsin] &= CA.name "WI" &= CA.help "knit \"Wisconsin\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -275,6 +277,17 @@ main = do
           )
         )
         $ Kentucky.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA
+      let pubDateWisconsin = Time.fromGregorian 2020 2 5                
+      when (PostWisconsin `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostWisconsin)
+         (brAddDates (updated args) pubDateWisconsin curDate
+          $ M.fromList [("pagetitle", "Explore Wisconsin")
+                        ,("title","Explore Wisconsin")
+                        ]
+          )
+        )
+        $ Wisconsin.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
 
   case eitherDocs of
     Right namedDocs ->
