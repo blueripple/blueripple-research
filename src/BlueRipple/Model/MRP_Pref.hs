@@ -165,6 +165,7 @@ getFractionWeighted r =
   (F.rgetField @WeightedSuccesses r) / (realToFrac $ F.rgetField @Count r)
 
 type instance GLM.GroupKey (Proxy k) = F.Record k
+
 recordToGroupKey
   :: forall k r . (k F.⊆ r) => F.Record r -> Proxy k -> F.Record k
 recordToGroupKey r _ = F.rcast r
