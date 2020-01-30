@@ -227,11 +227,12 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                         FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
             g lkM = let lk = fromMaybe (lp F.&: V.RNil) lkM in fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
         in g lkM
-      doMR = F.toFrame . concat <$> do        
+      doMR = F.toFrame . concat <$> do
+        K.logLE K.Info "Doing MR..."
         predsByLocationPres2008 <- fmap (lhToRecs 2008 President) <$> predictionsByLocation countDemPres2008VotesF
---        predsByLocationPres2012 <- predictionsByLocation countDemPres2012VotesF
---        predsByLocationPres2016 <- predictionsByLocation countDemPres2016VotesF
---        predsByLocationHouse <- traverse (\y <- fmap (y,) $ predictionsByLocation countDemHouseVotes y) [2008,2010,2012,2014,2016,2018]
+        predsByLocationPres2012 <- fmap (lhToRecs 2012 President) <$> predictionsByLocation countDemPres2012VotesF
+        predsByLocationPres2016 <- fmap (lhToRecs 2016 President) <$> predictionsByLocation countDemPres2016VotesF
+        predsByLocationHouse <- traverse (\y <- fmap (y,) $ predictionsByLocation countDemHouseVotes y) [2008,2010,2012,2014,2016,2018]
         return $ predsByLocationPres2008
   inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doMR   
   brAddMarkDown text1
