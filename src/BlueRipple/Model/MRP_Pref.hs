@@ -239,7 +239,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
                                                     , GLM.Predictor P_Education
                                                     ]
 -}
-          groups       = IS.fromList [Proxy]
+          groups       = IS.fromList [Proxy :: g]
           (observations, fixedEffectsModelMatrix, rcM) = FL.fold
             (lmePrepFrame getFractionWeighted
                           fixedEffects
@@ -255,10 +255,11 @@ inferMR cf fixedEffectList getFixedEffect rows =
         rowClassifier <- case rcM of
           Left  msg -> K.knitError msg
           Right x   -> return x
-        let effectsByGroup = M.fromList [(Proxy, IS.fromList [GLM.Intercept])]
-        fitSpecByGroup <- GLM.fitSpecByGroup fixedEffects
-                                             effectsByGroup
-                                             rowClassifier
+        let effectsByGroup =
+              M.fromList [(Proxy :: g, IS.fromList [GLM.Intercept])]
+        fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
+                                                   effectsByGroup
+                                                   rowClassifier
         let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6
             lmmSpec     = GLM.LinearMixedModelSpec
               (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup)

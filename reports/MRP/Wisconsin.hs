@@ -15,7 +15,6 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module MRP.Wisconsin where
@@ -27,7 +26,7 @@ import           Data.Function (on)
 import qualified Data.List as L
 import qualified Data.Set as S
 import qualified Data.Map                      as M
-import           Data.Maybe (isJust, catMaybes)
+import           Data.Maybe (isJust, catMaybes, fromMaybe)
 import           Data.Proxy (Proxy(..))
 --import  Data.Ord (Compare)
 
@@ -104,7 +103,7 @@ import qualified BlueRipple.Model.MRP_Pref as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
-import MRP.DeltaVPV hiding (post)
+import MRP.DeltaVPV (DemVPV, locKeyPretty)
 
 import qualified PreferenceModel.Common as PrefModel
 import qualified BlueRipple.Data.Keyed as BR
@@ -114,10 +113,28 @@ text1 = [i|
 |]
 
 type LocationCols = '[BR.StateAbbreviation]
-type CatCols = '[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.SimpleRaceC]
+type CatCols = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
+catKey :: BR.SimpleAge -> BR.Sex -> BR.CollegeGrad -> BR.SimpleRace -> F.Record CatCols
+catKey a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
-post :: (K.KnitOne r
+predMap :: F.Record CatCols -> M.Map CCESPredictor Double
+predMap r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
+                       ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
+                       ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
+                       ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
+                       ]
+
+allCatKeys = [catKey a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.White, BR.NonWhite]]
+catPredMaps = M.fromList $ fmap (\k -> (k, predMap k)) allCatKeys
+
+data  LocationHolder f a =  LocationHolder { locName :: T.Text
+                                           , locKey :: Maybe (F.Rec f LocationCols)
+                                           , catData :: M.Map (F.Rec f CatCols) a
+                                           } deriving (Generic)
+
+post :: forall es r.(K.KnitOne r
         , K.Members es r
+        , K.Member GLM.RandomFu r
         )
      => K.Cached es [BR.ASEDemographics]
      -> K.Cached es [BR.ASRDemographics]
@@ -126,14 +143,14 @@ post :: (K.KnitOne r
      -> K.Cached es [BR.StateTurnout]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post aseDemoCA  asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesMRP = K.wrapPrefix "Wisconsin" $ do
+post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let stateAbbr = "WI"
       stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)      
-  aseACSRaw <- K.useCached aseDemoCA
-  asrACSRaw <- K.useCached asrDemoCA
-  aseTurnoutRaw <- K.useCached aseTurnoutCA
-  asrTurnoutRaw <- K.useCached asrTurnoutCA
-  stateTurnoutRaw <- K.useCached stateTurnoutCA
+  aseACSRaw <- P.raise $ K.useCached aseDemoCA
+  asrACSRaw <- P.raise $ K.useCached asrDemoCA
+  aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
+  asrTurnoutRaw <- P.raise $ K.useCached asrTurnoutCA
+  stateTurnoutRaw <- P.raise $ K.useCached stateTurnoutCA
   aseACS <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/acs_simpleASE.bin"
             $ K.logLE K.Diagnostic "re-keying aseACS" >> (K.knitEither $ FL.foldM BR.simplifyACS_ASEFold aseACSRaw)
 
@@ -170,7 +187,7 @@ post aseDemoCA  asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesMRP = K.w
                                      && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
                               ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                               (F.rgetField @CCESWeightCumulative)
-      states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrameAll
+
       predictionsByLocation countFold = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.StateAbbreviation
@@ -188,33 +205,35 @@ post aseDemoCA  asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesMRP = K.w
                                                                    ccesPredictor
                                                                    ccesFrameAll
 
-            let allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
-                predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
-                toPredict = [LocationHolder "National" Nothing catPredMaps] <> fmap predictLoc allStateKeys                           
-                predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
-                  let predictFrom catKey predMap =
-                        let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
-                            emptyAsNationalGKM = case groupKeyM of
-                              Nothing -> Nothing
-                              Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k Proxy
-                        in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
-                  cpreds <- M.traverseWithKey predictFrom cpms
-                  return $ LocationHolder n lkM cpreds
+        let allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
+            states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrameAll
+            predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
+            toPredict = [LocationHolder "National" Nothing catPredMaps] <> fmap predictLoc allStateKeys                           
+            predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
+              let predictFrom catKey predMap =
+                    let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
+                        emptyAsNationalGKM = case groupKeyM of
+                          Nothing -> Nothing
+                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k Proxy
+                    in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
+              cpreds <- M.traverseWithKey predictFrom cpms
+              return $ LocationHolder n lkM cpreds
         traverse predict toPredict
       vpv x = 2*x - 1
-      lhToRecs year office = (LocationHolder _ lkM predMap) =
-        let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
+      lhToRecs year office (LocationHolder lp lkM predMap) =
+        let addCols p = FT.mutate (const $ FT.recordSingleton @BR.DemPref p) .
                         FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
                         FT.mutate (const $ FT.recordSingleton @Office office).
                         FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
-            g lk = fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
-        in fmap g lkM
-      doMR = do        
+            g lkM = let lk = fromMaybe (lp F.&: V.RNil) lkM in fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
+        in g lkM
+      doMR = F.toFrame . concat <$> do        
         predsByLocationPres2008 <- fmap (lhToRecs 2008 President) <$> predictionsByLocation countDemPres2008VotesF
-        predsByLocationPres2012 <- predictionsByLocation countDemPres2012VotesF
-        predsByLocationPres2016 <- predictionsByLocation countDemPres2016VotesF
-        predsByLocationHouse <- traverse (\y <- fmap (y,) $ predictionsByLocation countDemHouseVotes y) [2008,2010,2012,2014,2016,2018]
-        
+--        predsByLocationPres2012 <- predictionsByLocation countDemPres2012VotesF
+--        predsByLocationPres2016 <- predictionsByLocation countDemPres2016VotesF
+--        predsByLocationHouse <- traverse (\y <- fmap (y,) $ predictionsByLocation countDemHouseVotes y) [2008,2010,2012,2014,2016,2018]
+        return $ predsByLocationPres2008
+  inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doMR   
   brAddMarkDown text1
   brAddMarkDown brReadMore
 
