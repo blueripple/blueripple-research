@@ -31,7 +31,7 @@ import           Data.Maybe                     ( isJust
                                                 , catMaybes
                                                 , fromMaybe
                                                 )
-import           Data.Proxy                     ( Proxy(..) )
+--import           Data.Proxy                     ( Proxy(..) )
 --import  Data.Ord (Compare)
 
 import qualified Data.Text                     as T
@@ -164,11 +164,14 @@ getFraction r =
 getFractionWeighted r =
   (F.rgetField @WeightedSuccesses r) / (realToFrac $ F.rgetField @Count r)
 
-type instance GLM.GroupKey (Proxy k) = F.Record k
+data RecordColsProxy k = RecordColsProxy deriving (Show, Enum, Bounded, A.Ix, Eq, Ord)
+type instance GLM.GroupKey (RecordColsProxy k) = F.Record k
+
+--type instance GLM.GroupKey (Proxy k) = F.Record k
 
 recordToGroupKey
-  :: forall k r . (k F.⊆ r) => F.Record r -> Proxy k -> F.Record k
-recordToGroupKey r _ = F.rcast r
+  :: forall k r . (k F.⊆ r) => F.Record r -> RecordColsProxy k -> F.Record k
+recordToGroupKey r _ = F.rcast @k r
 
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
@@ -203,7 +206,7 @@ inferMR
      , Enum b
      , Bounded b
      , Ord (F.Record (GroupCols ls cs))
-     , g ~ Proxy (GroupCols ls cs)
+     , g ~ RecordColsProxy (GroupCols ls cs)
      )
   => FL.Fold (F.Record rs) (F.FrameRec (k V.++ CountCols))
   -> [GLM.WithIntercept b] -- fixed effects to fit
@@ -240,7 +243,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
                                                     , GLM.Predictor P_Education
                                                     ]
 -}
-          groups       = IS.fromList [Proxy :: g]
+          groups       = IS.fromList [RecordColsProxy]
           (observations, fixedEffectsModelMatrix, rcM) = FL.fold
             (lmePrepFrame getFractionWeighted
                           fixedEffects
@@ -257,7 +260,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
           Left  msg -> K.knitError msg
           Right x   -> return x
         let effectsByGroup =
-              M.fromList [(Proxy :: g, IS.fromList [GLM.Intercept])]
+              M.fromList [(RecordColsProxy, IS.fromList [GLM.Intercept])]
         fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
                                                    effectsByGroup
                                                    rowClassifier

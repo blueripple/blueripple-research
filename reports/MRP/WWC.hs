@@ -283,7 +283,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                                              ccesFrameAll
 
         let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
-            toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton Proxy (s F.&: V.RNil))) $ S.toList states)
+            toPredict = [("National", M.empty)] <> (fmap (\s -> (s,M.singleton BR.RecordColsProxy (s F.&: V.RNil))) $ S.toList states)
             wwc = M.singleton P_WWC 1
             addPredictions (s, groupMap) = P.mapError glmErrorToPandocError $ do
               let cl = ST.mkCL 0.95

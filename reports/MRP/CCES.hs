@@ -354,9 +354,17 @@ parsePres2012VoteParty "Mitt Romney" = VP_Republican
 parsePres2012VoteParty _ = VP_Other
 
 parsePres2008VoteParty :: T.Text -> VotePartyT
+parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
+                           then VP_Democratic
+                           else if T.isInfixOf "John McCain" t
+                                then VP_Republican
+                                     else VP_Other
+
+{-                                          
 parsePres2008VoteParty "Barack Obama" = VP_Democratic
 parsePres2008VoteParty "John McCain" = VP_Republican
 parsePres2008VoteParty _ = VP_Other
+-}
 
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> VotePartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> VotePartyT 

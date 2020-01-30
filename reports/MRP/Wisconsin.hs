@@ -164,26 +164,22 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                 $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list        
       countDemHouseVotesF y =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                           (\r -> (F.rgetField @Turnout r == T_Voted)
-                                  && (F.rgetField @BR.Year r == y)
+                           (\r -> (F.rgetField @BR.Year r == y)
                                   && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
                            ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                            (F.rgetField @CCESWeightCumulative)
       countDemPres2008VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2008VoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @Turnout r == T_Voted)
-                                     && (F.rgetField @BR.Year r == 2008)
-                                     && (F.rgetField @Pres2008VoteParty r `elem` [VP_Republican, VP_Democratic]))
+                                (\r -> (F.rgetField @BR.Year r == 2008)
+                                   && (F.rgetField @Pres2008VoteParty r `elem` [VP_Republican, VP_Democratic]))
                             ((== VP_Democratic) . F.rgetField @Pres2008VoteParty)
                               (F.rgetField @CCESWeightCumulative)
-      counDemtPres2012VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2012VoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @Turnout r == T_Voted)
-                                     && (F.rgetField @BR.Year r == 2012)
+      countDemPres2012VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2012VoteParty,CCESWeightCumulative]
+                              (\r -> (F.rgetField @BR.Year r == 2012)
                                      && (F.rgetField @Pres2012VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                              ((== VP_Democratic) . F.rgetField @Pres2012VoteParty)
+                                ((== VP_Democratic) . F.rgetField @Pres2012VoteParty)
                               (F.rgetField @CCESWeightCumulative)
       countDemPres2016VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @Turnout r == T_Voted)
-                                     && (F.rgetField @BR.Year r == 2016)
+                              (\r -> (F.rgetField @BR.Year r == 2016)
                                      && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
                               ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                               (F.rgetField @CCESWeightCumulative)
@@ -214,7 +210,7 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                     let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
                         emptyAsNationalGKM = case groupKeyM of
                           Nothing -> Nothing
-                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k Proxy
+                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k BR.RecordColsProxy
                     in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
@@ -232,8 +228,13 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
         predsByLocationPres2008 <- fmap (lhToRecs 2008 President) <$> predictionsByLocation countDemPres2008VotesF
         predsByLocationPres2012 <- fmap (lhToRecs 2012 President) <$> predictionsByLocation countDemPres2012VotesF
         predsByLocationPres2016 <- fmap (lhToRecs 2016 President) <$> predictionsByLocation countDemPres2016VotesF
-        predsByLocationHouse <- traverse (\y <- fmap (y,) $ predictionsByLocation countDemHouseVotes y) [2008,2010,2012,2014,2016,2018]
-        return $ predsByLocationPres2008
+        predsByLocationHouse <- traverse (\y -> fmap (lhToRecs y House) <$> predictionsByLocation (countDemHouseVotesF y)) [2008,2010,2012,2014,2016,2018]
+        return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse  
+  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+  let withKey r = (r, BR.recordToGroupKey r (BR.RecordColsProxy @(BR.GroupCols LocationCols CatCols)))
+      counted = fmap withKey $ L.take 10 $ FL.fold FL.list $ FL.fold countDemPres2008VotesF ccesFrameAll
+  K.logLE K.Info $ "withKeys: " <> (T.pack $ show counted)
+
   inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doMR   
   brAddMarkDown text1
   brAddMarkDown brReadMore

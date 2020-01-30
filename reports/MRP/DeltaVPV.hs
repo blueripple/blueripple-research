@@ -369,7 +369,7 @@ instance FV.ToVLDataValue (F.ElField PostStratifiedBy) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
-type MRGroup = Proxy GroupCols 
+type MRGroup = BR.RecordColsProxy GroupCols 
 
   
 post :: (K.KnitOne r
@@ -428,7 +428,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                     let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
                         emptyAsNationalGKM = case groupKeyM of
                           Nothing -> Nothing
-                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k Proxy
+                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k BR.RecordColsProxy
                     in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
