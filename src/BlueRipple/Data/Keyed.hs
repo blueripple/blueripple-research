@@ -63,6 +63,7 @@ module BlueRipple.Data.Keyed
     -- * Making folds from aggregations
   , aggFold
   , aggFoldAll
+  , addDefault
   , aggFoldChecked
   , aggFoldAllChecked
     -- * For Vinyl/Frames
@@ -77,6 +78,7 @@ module BlueRipple.Data.Keyed
   , aggListProductRec
   , aggFoldRec
   , aggFoldAllRec
+  , addDefaultRec
   , aggFoldCheckedRec
   , aggFoldAllCheckedRec
   , hasAllRec
@@ -270,8 +272,8 @@ For all of this we need Q to have more structure, namely a multiplication and
 a multiplicative identity.  So Q is a monoid two ways: a semiring.
 -}
 
-identityAggF :: (Eq b, SR.Semiring q) => AggF q b b
-identityAggF = AggF $ \b1 b2 -> if b1 == b2 then SR.one else SR.zero
+aggFId :: (Eq b, SR.Semiring q) => AggF q b b
+aggFId = AggF $ \b1 b2 -> if b1 == b2 then SR.one else SR.zero
 
 aggFProduct' :: SR.Semiring s => (q -> r -> s) -> AggF q b a -> AggF r y x -> AggF s (b, y) (a, x)
 aggFProduct' op aggFba aggFyx = AggF $ \(b,y) -> \(a, x) -> (runAggF aggFba b a) `op` (runAggF aggFyx y x)
@@ -410,6 +412,12 @@ aggFoldAll :: FiniteSet b
            -> FL.Fold (a,d) [(b,c)]
 aggFoldAll aggF collapse = aggFold aggF collapse (Set.toList elements)
 
+-- | Given a default value of d, and a collection of (b, d) where b is finite,
+-- this adds "rows" with that default to a collection which is missing some values of b.
+addDefault :: forall b d. FiniteSet b
+            => d
+            -> FL.Fold (b,d) [(b,d)]
+addDefault d = aggFoldAll aggFId (foldCollapse (FL.Fold (\d (b,d') -> if b then d' else d) d id)) 
 
 -- checked Folds
 aggFoldChecked :: Traversable f
@@ -535,6 +543,17 @@ aggFoldAllRec :: (FiniteSet (F.Record b)
               -> FL.Fold (F.Record (a V.++ d)) [F.Record (b V.++ c)]
 aggFoldAllRec aggF collapse = aggFoldRec aggF collapse (Set.toList elements)
 
+
+-- | Given a default value of d, and a collection of (b, d) where b is finite,
+-- this adds "rows" with that default to a collection which is missing some values of b.
+addDefaultRec :: forall bs ds.
+                 ( FiniteSet (F.Record bs)
+                 , bs F.⊆ (bs V.++ ds)
+                 , ds F.⊆ (bs V.++ ds)
+                 )
+            => F.Record ds
+            -> FL.Fold (F.Record (bs V.++ ds)) [F.Record (bs V.++ ds)]
+addDefaultRec ds = P.dimap (\r -> (F.rcast @bs r, F.rcast @ds r)) (fmap $ uncurry V.rappend) $ addDefault ds 
 
 -- checked Folds
 -- None missing

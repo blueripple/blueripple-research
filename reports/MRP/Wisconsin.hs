@@ -162,6 +162,7 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
 
   asrTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASR.bin"
                 $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
+  
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list        
       countDemHouseVotesF y =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
                            (\r -> (F.rgetField @BR.Year r == y)
@@ -223,17 +224,19 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                         FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
             g lkM = let lk = fromMaybe (lp F.&: V.RNil) lkM in fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
         in g lkM
-      doMR = F.toFrame . concat <$> do
+      lhsToFrame y o = F.toFrame . concat . fmap (lhToRecs y o) 
+      doMR = do
         K.logLE K.Info "Doing MR..."
-        predsByLocationPres2008 <- fmap (lhToRecs 2008 President) <$> predictionsByLocation countDemPres2008VotesF
-        predsByLocationPres2012 <- fmap (lhToRecs 2012 President) <$> predictionsByLocation countDemPres2012VotesF
-        predsByLocationPres2016 <- fmap (lhToRecs 2016 President) <$> predictionsByLocation countDemPres2016VotesF
-        predsByLocationHouse <- traverse (\y -> fmap (lhToRecs y House) <$> predictionsByLocation (countDemHouseVotesF y)) [2008,2010,2012,2014,2016,2018]
+        let cacheIt cn fa = K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) cn fa
+        predsByLocationPres2008 <- cacheIt "mrp/tmp/pres2008" (lhsToFrame 2008 President <$> predictionsByLocation countDemPres2008VotesF)
+        predsByLocationPres2012 <- cacheIt "mrp/tmp/pres2012" (lhsToFrame 2012 President <$> predictionsByLocation countDemPres2012VotesF)
+        predsByLocationPres2016 <- cacheIt "mrp/tmp/pres2016" (lhsToFrame 2016 President <$> predictionsByLocation countDemPres2016VotesF)
+        predsByLocationHouse <- traverse (\y -> cacheIt ("mrp/tmp/house" <> T.pack (show y)) (lhsToFrame y House <$> predictionsByLocation (countDemHouseVotesF y))) [2008,2010,2012,2014,2016,2018]
         return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse  
-  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-  let withKey r = (r, BR.recordToGroupKey r (BR.RecordColsProxy @(BR.GroupCols LocationCols CatCols)))
-      counted = fmap withKey $ L.take 10 $ FL.fold FL.list $ FL.fold countDemPres2008VotesF ccesFrameAll
-  K.logLE K.Info $ "withKeys: " <> (T.pack $ show counted)
+--  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+--  let withKey r = (r, BR.recordToGroupKey r (BR.RecordColsProxy @(BR.GroupCols LocationCols CatCols)))
+--      counted = fmap withKey $ L.take 10 $ FL.fold FL.list $ FL.fold countDemPres2008VotesF ccesFrameAll
+--  K.logLE K.Info $ "withKeys: " <> (T.pack $ show counted)
 
   inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doMR   
   brAddMarkDown text1

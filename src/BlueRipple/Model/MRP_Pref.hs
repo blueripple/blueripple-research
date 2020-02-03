@@ -19,6 +19,8 @@
 
 module BlueRipple.Model.MRP_Pref where
 
+import qualified BlueRipple.Data.Keyed         as K
+
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
 import qualified Control.Monad.State           as State
@@ -108,15 +110,12 @@ countFold testData = MR.mapReduceFold
   (FMR.assignKeysAndData @k)
   (FMR.foldAndAddKey $ binomialFold testData)
 
+type CountCols = '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
 
 weightedBinomialFold
   :: (F.Record r -> Bool)
   -> (F.Record r -> Double)
-  -> FL.Fold
-       (F.Record r)
-       ( F.Record
-           '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
-       )
+  -> FL.Fold (F.Record r) (F.Record CountCols)
 weightedBinomialFold testRow weightRow =
   let wSuccessesF =
         FL.premap (\r -> if testRow r then weightRow r else 0) FL.sum
@@ -132,32 +131,19 @@ weightedBinomialFold testRow weightRow =
 
 weightedCountFold
   :: forall k r d
-   . ( Ord (F.Record k)
-     , FI.RecVec
-         ( k
-             V.++
-             '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
-         )
-     , k F.⊆ r
-     , d F.⊆ r
-     )
+   . (Ord (F.Record k), FI.RecVec (k V.++ CountCols), k F.⊆ r, d F.⊆ r)
   => (F.Record r -> Bool) -- ^ count this row?
   -> (F.Record d -> Bool) -- ^ success ?
   -> (F.Record d -> Double) -- ^ weight
-  -> FL.Fold
-       (F.Record r)
-       ( F.FrameRec
-           ( k
-               V.++
-               '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
-           )
-       )
-
+  -> FL.Fold (F.Record r) (F.FrameRec (k V.++ CountCols))
 weightedCountFold filterData testData weightData =
   FMR.concatFold $ FMR.mapReduceFold
     (MR.filterUnpack filterData)
     (FMR.assignKeysAndData @k)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
+
+zeroCount :: F.Record CountCols
+zeroCount = 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
 
 getFraction r =
   (realToFrac $ F.rgetField @Successes r) / (realToFrac $ F.rgetField @Count r)
@@ -176,7 +162,7 @@ recordToGroupKey r _ = F.rcast @k r
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
-type CountCols = '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
+
 type GroupCols gs cs = gs V.++ cs
 type CountedCols gs cs = (GroupCols gs cs) V.++ CountCols
 
@@ -192,20 +178,41 @@ inferMR
    . ( Foldable f
      , Functor f
      , K.KnitEffects effs
-     , CountedCols ls cs F.⊆ (k V.++ CountCols)
-     , (GroupCols ls cs) F.⊆ (k V.++ CountCols)
+     , ( F.RDeleteAll
+           (cs V.++ CountCols)
+           (k V.++ CountCols)
+           V.++
+           (cs V.++ CountCols)
+       )
+         ~
+         (k V.++ CountCols)
+     , (F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols))
+         F.⊆
+         (k V.++ CountCols)
+     , (cs V.++ CountCols) F.⊆ (k V.++ CountCols)
+     , cs F.⊆ (cs V.++ CountCols)
+     , FI.RecVec (k V.++ CountCols)
+     , Show (F.Record (ls V.++ cs))
+     , F.ElemOf (cs V.++ CountCols) Count
+     , F.ElemOf (cs V.++ CountCols) MeanWeight
+     , F.ElemOf (cs V.++ CountCols) VarWeight
+     , F.ElemOf (cs V.++ CountCols) WeightedSuccesses
+     , F.ElemOf (cs V.++ CountCols) UnweightedSuccesses
      , F.ElemOf (k V.++ CountCols) Count
      , F.ElemOf (k V.++ CountCols) MeanWeight
      , F.ElemOf (k V.++ CountCols) VarWeight
      , F.ElemOf (k V.++ CountCols) WeightedSuccesses
+     , F.ElemOf (k V.++ CountCols) UnweightedSuccesses
+     , (ls V.++ cs) F.⊆ (k V.++ CountCols)
      , (GroupCols ls cs) F.⊆ (CountedCols ls cs)
-     , Show (F.Record (GroupCols ls cs))
+     , K.FiniteSet (F.Record cs)
      , Show (F.Record (k V.++ CountCols))
      , Ord b
      , Show b
      , Enum b
      , Bounded b
      , Ord (F.Record (GroupCols ls cs))
+     , Ord (F.Record (F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols)))
      , g ~ RecordColsProxy (GroupCols ls cs)
      )
   => FL.Fold (F.Record rs) (F.FrameRec (k V.++ CountCols))
@@ -226,7 +233,19 @@ inferMR cf fixedEffectList getFixedEffect rows =
     $ K.wrapPrefix ("inferMR")
     $ do
         let
-          counted = FL.fold FL.list $ FL.fold cf rows
+          addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
+            (FMR.noUnpack)
+            (FMR.assignKeysAndData
+              @(F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols))
+              @(cs V.++ CountCols)
+            )
+            ( FMR.makeRecsWithKey id
+            $ FMR.ReduceFold
+            $ const
+            $ K.addDefaultRec @cs zeroCount
+            )
+
+          counted = FL.fold FL.list $ FL.fold addZeroCountsF $ FL.fold cf rows
           vCounts = VS.fromList $ fmap (F.rgetField @Count) counted
           designEffect mw vw = 1 + (vw / (mw * mw))
           vWeights = VS.fromList $ fmap
@@ -237,12 +256,6 @@ inferMR cf fixedEffectList getFixedEffect rows =
             )
             counted -- VS.replicate (VS.length vCounts) 1.0
           fixedEffects = GLM.FixedEffects $ IS.fromList fixedEffectList
-    {-      [GLM.Intercept
-                                                    , GLM.Predictor P_Sex
-                                                    , GLM.Predictor P_Age
-                                                    , GLM.Predictor P_Education
-                                                    ]
--}
           groups       = IS.fromList [RecordColsProxy]
           (observations, fixedEffectsModelMatrix, rcM) = FL.fold
             (lmePrepFrame getFractionWeighted

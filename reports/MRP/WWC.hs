@@ -83,7 +83,7 @@ import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
 import MRP.Common
-import MRP.CCES
+import MRP.CCES as CCES
 
 import qualified PreferenceModel.Common as PrefModel
 
@@ -127,126 +127,25 @@ type CatCols = '[]
   
 post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.Cached es [F.Record CCES_MRP]
+     -> K.Cached es [F.Record CCES.CCES_MRP]
      -> K.Sem r ()
 post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
-      countWWCDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
-                                  (\r -> (F.rgetField @Turnout r == T_Voted)
+      countWWCDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES.CCES_MRP @'[CCES.Pres2016VoteParty,CCES.CCESWeightCumulative]
+                                  (\r -> (F.rgetField @CCES.Turnout r == CCES.T_Voted)
                                          && (F.rgetField @Year r == 2016)
                                          && isWWC r
-                                         && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                                  ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
-                                  (F.rgetField @CCESWeightCumulative)
-      countWWCDemHouseVotesF y = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                                 (\r -> (F.rgetField @Turnout r == T_Voted)
+                                         && (F.rgetField @CCES.Pres2016VoteParty r `elem` [CCES.VP_Republican, CCES.VP_Democratic]))
+                                  ((== CCES.VP_Democratic) . F.rgetField @CCES.Pres2016VoteParty)
+                                  (F.rgetField @CCES.CCESWeightCumulative)
+      countWWCDemHouseVotesF y = BR.weightedCountFold @ByCCESPredictors @CCES.CCES_MRP @'[CCES.HouseVoteParty,CCES.CCESWeightCumulative]
+                                 (\r -> (F.rgetField @CCES.Turnout r == CCES.T_Voted)
                                         && (F.rgetField @Year r == y)
                                         && isWWC r
-                                        && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
-                                 ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                                 (F.rgetField @CCESWeightCumulative)
-{-                                 
-      modelWWCV cf y ccesFrameAll = P.mapError glmErrorToPandocError $ K.wrapPrefix ("modelWWCV " <> (T.pack $ show y) <> ":") $ do
-        let counted = FL.fold FL.list $ FL.fold cf (fmap F.rcast ccesFrameAll)
-            vCounts  = VS.fromList $ fmap (F.rgetField @Count) counted
-            designEffect mw vw = 1 + (vw / (mw * mw))
-            vWeights  = VS.fromList $ fmap (\r ->
-                                              let mw = F.rgetField @MeanWeight r
-                                                  vw = F.rgetField @VarWeight r
-                                              in 1 / sqrt (designEffect mw vw) 
-                                           ) counted -- VS.replicate (VS.length vCounts) 1.0
-            fixedEffects = GLM.FixedEffects $ IS.fromList [GLM.Intercept, GLM.Predictor P_WWC]
-            groups = IS.fromList [Proxy]
-            (observations, fixedEffectsModelMatrix, rcM) = FL.fold
-              (lmePrepFrame getFractionWeighted fixedEffects groups ccesPredictor (recordToGroupKey @GroupCols)) counted
-            regressionModelSpec = GLM.RegressionModelSpec fixedEffects fixedEffectsModelMatrix observations
-        rowClassifier <- case rcM of
-            Left msg -> K.knitError msg
-            Right x -> return x
-        let effectsByGroup = M.fromList [(Proxy, IS.fromList [GLM.Intercept, GLM.Predictor P_WWC])]
-        fitSpecByGroup <- GLM.fitSpecByGroup fixedEffects effectsByGroup rowClassifier        
-        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6
-            lmmSpec = GLM.LinearMixedModelSpec (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup) lmmControls
-            cc = GLM.PIRLSConvergenceCriterion GLM.PCT_Deviance 1e-6 20
-            glmmControls = GLM.GLMMControls GLM.UseCanonical 10 cc
-            glmmSpec = GLM.GeneralizedLinearMixedModelSpec lmmSpec vWeights (GLM.Binomial vCounts) glmmControls
-            mixedModel = GLM.GeneralizedLinearMixedModel glmmSpec
-        randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix fitSpecByGroup rowClassifier
-        let randomEffectCalc = GLM.RandomEffectCalculated randomEffectsModelMatrix (GLM.makeLambda fitSpecByGroup)
-            th0 = GLM.setCovarianceVector fitSpecByGroup 1 0
-            mdVerbosity = MDVNone
-        GLM.checkProblem mixedModel randomEffectCalc
-        K.logLE K.Info "Fitting data..."
-        ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance mdVerbosity ML mixedModel randomEffectCalc th0
-        GLM.report mixedModel randomEffectsModelMatrix (GLM.bu_vBeta betaU) (SD.toSparseVector vb)          
-        let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU
-        K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
-        epg <- GLM.effectParametersByGroup rowClassifier effectsByGroup vb
-        K.logLE K.Diagnostic $ "EffectParametersByGroup: " <> (T.pack $ show epg)
-        gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th      
-        K.logLE K.Diagnostic $ "EffectCovariancesByGroup: " <> (T.pack $ show gec)
-        rebl <- GLM.randomEffectsByLabel epg rowClassifier
-        K.logLE K.Diagnostic
-          $  "Random Effects:\n"
-          <> GLM.printRandomEffectsByLabel rebl
-        smCondVar <- GLM.conditionalCovariances mixedModel
-                     cf
-                     randomEffectCalc
-                     th
-                     betaU
-        K.logLE K.Info "Bootstrappping for confidence intervals..."
-        bootstraps <- GLM.parametricBootstrap mdVerbosity
-                      ML
-                      mixedModel
-                      randomEffectCalc
-                      cf
-                      th
-                      vMuSol
-                      (sqrt sigma2)
-                      200
-                      True
-        let GLM.FixedEffectStatistics _ mBetaCov = fes                      
-        let f r = do
-              let obs = getFractionWeighted r
-              bootWCI <- GLM.predictWithCI
-                         mixedModel
-                         (Just . ccesPredictor r)
-                         (Just . recordToGroupKey @GroupCols r)
-                         rowClassifier
-                         effectsByGroup
-                         betaU
-                         vb
-                         (ST.mkCL 0.95)
-                         (GLM.BootstrapCI GLM.BCI_Accelerated bootstraps)
-                
-              predictCVCI <- GLM.predictWithCI
-                             mixedModel
-                             (Just . ccesPredictor r)
-                             (Just . recordToGroupKey @GroupCols r)
-                             rowClassifier
-                             effectsByGroup
-                             betaU
-                             vb
-                             (ST.mkCL 0.95)
-                             (GLM.NaiveCondVarCI mBetaCov smCondVar)
-
-              return (r, obs, bootWCI, predictCVCI)
-        fitted <- traverse f (FL.fold FL.list counted)
-        K.logLE K.Diagnostic $ "Fitted:\n" <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
-        fixedEffectTable <- GLM.printFixedEffects fes
-        K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
-        let toPredict = [("WWC (all States)", M.fromList [(P_WWC, 1)], M.empty)
-                        ,("Non-WWC (all States)", M.fromList [(P_WWC, 0)], M.empty)
-                        ]
-            GLM.FixedEffectStatistics fep _ = fes            
-        predictionTable <- GLM.printPredictions mixedModel fep epg rowClassifier toPredict
-        K.logLE K.Diagnostic $ "Predictions:\n" <> predictionTable
-      --        return (mixedModel, fes, epg, rowClassifier, bootstraps)
-        return (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
--}
---  wwcModelByYear <- M.fromList <$> (traverse (\y -> (modelWWCV y >>= (\x -> return (y,x)))) $ [2016,2018])
---  (mm2016p, (GLM.FixedEffectStatistics fep2016p _), epg2016p, rc2016p) <- K.knitRetrieveOrMake "mrp/intro/demPres2016.bin" $ modelWWCV countWWCDemPres2016VotesF 2016
+                                        && (F.rgetField @CCES.HouseVoteParty r `elem` [CCES.VP_Republican, CCES.VP_Democratic]))
+                                 ((== CCES.VP_Democratic) . F.rgetField @CCES.HouseVoteParty)
+                                 (F.rgetField @CCES.CCESWeightCumulative)
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
@@ -254,12 +153,11 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                                                                                       ,BR.SexC
                                                                                                       ,BR.SimpleRaceC
                                                                                                       ,BR.CollegeGradC
-                                                                                                      ,BR.SimpleAgeC          
-                                                                                                      ]
+                                                                                                      ,BR.SimpleAgeC]
                                                                    countWWCDemPres2016VotesF
-                                                                   [GLM.Intercept, GLM.Predictor P_WWC]
+                                                                   [GLM.Intercept, GLM.Predictor CCES.P_WWC]
                                                                    ccesPredictor
-                                                                   ccesFrameAll
+                                                                   (fmap F.rcast ccesFrameAll)
         
         (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
                                                                                                 ,BR.SexC
