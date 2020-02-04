@@ -406,8 +406,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                               
       predictionsByLocation countFold y = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.StateAbbreviation
-                                                                                                      ,BR.SexC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                       ,BR.SimpleRaceC
                                                                                                       ,BR.CollegeGradC
                                                                                                       ,BR.SimpleAgeC]

@@ -164,6 +164,7 @@ executable mrp-model
                 , MRP.DeltaVPV
                 , MRP.Kentucky
                 , MRP.Wisconsin
+                , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade
                , cmdargs

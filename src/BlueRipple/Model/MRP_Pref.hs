@@ -146,9 +146,14 @@ zeroCount :: F.Record CountCols
 zeroCount = 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
 
 getFraction r =
-  (realToFrac $ F.rgetField @Successes r) / (realToFrac $ F.rgetField @Count r)
+  let n = F.rgetField @Count r
+  in  if n == 0
+        then 0
+        else (realToFrac $ F.rgetField @Successes r) / (realToFrac n)
+
 getFractionWeighted r =
-  (F.rgetField @WeightedSuccesses r) / (realToFrac $ F.rgetField @Count r)
+  let n = F.rgetField @Count r
+  in  if n == 0 then 0 else (F.rgetField @WeightedSuccesses r) / (realToFrac n)
 
 data RecordColsProxy k = RecordColsProxy deriving (Show, Enum, Bounded, A.Ix, Eq, Ord)
 type instance GLM.GroupKey (RecordColsProxy k) = F.Record k
@@ -174,50 +179,41 @@ type CountedCols gs cs = (GroupCols gs cs) V.++ CountCols
 -- b: Fixed Effect type
 -- g: group type
 inferMR
-  :: forall ls cs k b g f rs effs
+  :: forall ls cs ks b g f rs effs
    . ( Foldable f
      , Functor f
      , K.KnitEffects effs
-     , ( F.RDeleteAll
-           (cs V.++ CountCols)
-           (k V.++ CountCols)
-           V.++
-           (cs V.++ CountCols)
-       )
-         ~
-         (k V.++ CountCols)
-     , (F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols))
-         F.⊆
-         (k V.++ CountCols)
-     , (cs V.++ CountCols) F.⊆ (k V.++ CountCols)
-     , cs F.⊆ (cs V.++ CountCols)
-     , FI.RecVec (k V.++ CountCols)
+     , F.RDeleteAll ls (ls V.++ ks V.++ CountCols) ~ (ks V.++ CountCols)
+     , (ls V.++ ks V.++ CountCols) ~ (ls V.++ (ks V.++ CountCols))
+     , Ord (F.Record ls)
+     , ls F.⊆ (ls V.++ ks V.++ CountCols)
+     , (ks V.++ CountCols) F.⊆ (ls V.++ ks V.++ CountCols)
+     , ks F.⊆ (ks V.++ CountCols)
+     , (ls V.++ cs) F.⊆ (ls V.++ (ks V.++ CountCols))
+     , Show (F.Record (ls V.++ ks V.++ CountCols))
+     , FI.RecVec (ls V.++ (ks V.++ CountCols))
+     , F.ElemOf (ks V.++ CountCols) Count
+     , F.ElemOf (ks V.++ CountCols) MeanWeight
+     , F.ElemOf (ks V.++ CountCols) VarWeight
+     , F.ElemOf (ks V.++ CountCols) WeightedSuccesses
+     , F.ElemOf (ks V.++ CountCols) UnweightedSuccesses
+     , F.ElemOf (ls V.++ ks V.++ CountCols) Count
+     , F.ElemOf (ls V.++ ks V.++ CountCols) MeanWeight
+     , F.ElemOf (ls V.++ ks V.++ CountCols) VarWeight
+     , F.ElemOf (ls V.++ ks V.++ CountCols) WeightedSuccesses
+     , F.ElemOf (ls V.++ ks V.++ CountCols) UnweightedSuccesses
      , Show (F.Record (ls V.++ cs))
-     , F.ElemOf (cs V.++ CountCols) Count
-     , F.ElemOf (cs V.++ CountCols) MeanWeight
-     , F.ElemOf (cs V.++ CountCols) VarWeight
-     , F.ElemOf (cs V.++ CountCols) WeightedSuccesses
-     , F.ElemOf (cs V.++ CountCols) UnweightedSuccesses
-     , F.ElemOf (k V.++ CountCols) Count
-     , F.ElemOf (k V.++ CountCols) MeanWeight
-     , F.ElemOf (k V.++ CountCols) VarWeight
-     , F.ElemOf (k V.++ CountCols) WeightedSuccesses
-     , F.ElemOf (k V.++ CountCols) UnweightedSuccesses
-     , (ls V.++ cs) F.⊆ (k V.++ CountCols)
-     , (GroupCols ls cs) F.⊆ (CountedCols ls cs)
-     , K.FiniteSet (F.Record cs)
-     , Show (F.Record (k V.++ CountCols))
+     , K.FiniteSet (F.Record ks)
      , Ord b
      , Show b
      , Enum b
      , Bounded b
      , Ord (F.Record (GroupCols ls cs))
-     , Ord (F.Record (F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols)))
      , g ~ RecordColsProxy (GroupCols ls cs)
      )
-  => FL.Fold (F.Record rs) (F.FrameRec (k V.++ CountCols))
+  => FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ CountCols))
   -> [GLM.WithIntercept b] -- fixed effects to fit
-  -> (F.Record (k V.++ CountCols) -> b -> Double)  -- how to get a fixed effect value from a record
+  -> (F.Record (ls V.++ ks V.++ CountCols) -> b -> Double)  -- how to get a fixed effect value from a record
   -> f (F.Record rs)
   -> K.Sem
        effs
@@ -235,17 +231,15 @@ inferMR cf fixedEffectList getFixedEffect rows =
         let
           addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
             (FMR.noUnpack)
-            (FMR.assignKeysAndData
-              @(F.RDeleteAll (cs V.++ CountCols) (k V.++ CountCols))
-              @(cs V.++ CountCols)
-            )
+            (FMR.splitOnKeys @ls)
             ( FMR.makeRecsWithKey id
             $ FMR.ReduceFold
             $ const
-            $ K.addDefaultRec @cs zeroCount
+            $ K.addDefaultRec @ks zeroCount
             )
-
           counted = FL.fold FL.list $ FL.fold addZeroCountsF $ FL.fold cf rows
+--        K.logLE K.Diagnostic $ T.intercalate "\n" $ fmap (T.pack . show) counted
+        let
           vCounts = VS.fromList $ fmap (F.rgetField @Count) counted
           designEffect mw vw = 1 + (vw / (mw * mw))
           vWeights = VS.fromList $ fmap

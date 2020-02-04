@@ -362,8 +362,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 
   let predictionsByLocation = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
-                                                                                                      ,BR.SexC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                       ,BR.SimpleRaceC
                                                                                                       ,BR.CollegeGradC
                                                                                                       ,BR.SimpleAgeC          

@@ -108,6 +108,8 @@ import MRP.DeltaVPV (DemVPV, locKeyPretty)
 import qualified PreferenceModel.Common as PrefModel
 import qualified BlueRipple.Data.Keyed as BR
 
+import qualified Visualizations.StatePrefs as BR
+
 text1 :: T.Text
 text1 = [i|
 |]
@@ -187,8 +189,7 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
 
       predictionsByLocation countFold = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.StateAbbreviation
-                                                                                                      ,BR.SexC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                       ,BR.SimpleRaceC
                                                                                                       ,BR.CollegeGradC
                                                                                                       ,BR.SimpleAgeC]
@@ -233,12 +234,9 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
         predsByLocationPres2016 <- cacheIt "mrp/tmp/pres2016" (lhsToFrame 2016 President <$> predictionsByLocation countDemPres2016VotesF)
         predsByLocationHouse <- traverse (\y -> cacheIt ("mrp/tmp/house" <> T.pack (show y)) (lhsToFrame y House <$> predictionsByLocation (countDemHouseVotesF y))) [2008,2010,2012,2014,2016,2018]
         return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse  
---  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
---  let withKey r = (r, BR.recordToGroupKey r (BR.RecordColsProxy @(BR.GroupCols LocationCols CatCols)))
---      counted = fmap withKey $ L.take 10 $ FL.fold FL.list $ FL.fold countDemPres2008VotesF ccesFrameAll
---  K.logLE K.Info $ "withKeys: " <> (T.pack $ show counted)
+  inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin" doMR
 
-  inferredPrefs <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doMR   
   brAddMarkDown text1
+  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Test" "WI" (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefs
   brAddMarkDown brReadMore
 

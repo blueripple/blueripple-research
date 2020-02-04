@@ -149,8 +149,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
-                                                                                                      ,BR.SexC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                       ,BR.SimpleRaceC
                                                                                                       ,BR.CollegeGradC
                                                                                                       ,BR.SimpleAgeC]
@@ -159,8 +158,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                                                    ccesPredictor
                                                                    (fmap F.rcast ccesFrameAll)
         
-        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
-                                                                                                ,BR.SexC
+        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                 ,BR.SimpleRaceC
                                                                                                 ,BR.CollegeGradC
                                                                                                 ,BR.SimpleAgeC]
@@ -170,8 +168,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                                              ccesPredictor
                                                              ccesFrameAll
                                                              
-        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- BR.inferMR @LocationCols @CatCols @[StateAbbreviation
-                                                                                                ,BR.SexC
+        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
                                                                                                 ,BR.SimpleRaceC
                                                                                                 ,BR.CollegeGradC
                                                                                                 ,BR.SimpleAgeC]
