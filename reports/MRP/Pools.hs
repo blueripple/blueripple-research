@@ -55,7 +55,7 @@ import qualified Frames.Visualization.VegaLite.ParameterPlots
 
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
-import qualified Polysemy.Error                as P (mapError)
+import qualified Polysemy.Error                as P (mapError, Error)
 import qualified Polysemy                      as P (raise)
 import           Text.Pandoc.Error             as PE
 import qualified Text.Blaze.Colonnade          as BC
@@ -308,11 +308,13 @@ at many colleges and universities.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
+{-
 type LocationCols = '[StateAbbreviation]
 locKeyPretty :: F.Record LocationCols -> T.Text
 locKeyPretty r =
   let stateAbbr = F.rgetField @StateAbbreviation r
   in stateAbbr
+-}
 
 type CatCols = '[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
 catKey :: BR.Sex -> BR.CollegeGrad -> BR.SimpleAge -> F.Record CatCols
@@ -346,7 +348,7 @@ type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this 
 type MRGroup = BR.RecordColsProxy GroupCols 
 
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
+post :: forall es r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
      => M.Map T.Text T.Text -- state names from state abbreviations
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
@@ -360,12 +362,13 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
 
+{-  
   let predictionsByLocation = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
-                                                                                                      ,BR.SimpleRaceC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
+                                                                                                      ,BR.SexC
                                                                                                       ,BR.CollegeGradC
-                                                                                                      ,BR.SimpleAgeC          
+                                                                                                      ,BR.SimpleRaceC
                                                                                                       ]
                                                                    countDemPres2016VotesF
                                                                    [GLM.Intercept
@@ -389,7 +392,11 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
-  predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" predictionsByLocation
+-}
+  let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+  predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
+                      $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
+    
 
   K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
   brAddMarkDown brText1
@@ -459,35 +466,28 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 -}
   brAddMarkDown brReadMore
 
+{-
 -- TODO: make this traversable
+
 data  LocationHolder f a =  LocationHolder { locName :: T.Text
                                            , locKey :: Maybe (F.Rec f LocationCols)
                                            , catData :: M.Map (F.Rec f CatCols) a
                                            } deriving (Generic)
 
 
-educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+-}
+educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
 educationGap s a (LocationHolder _ _ cd) = do  
   datGrad <- M.lookup (catKey s BR.Grad a) cd
   datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
   return (datNonGrad, datGrad)
 
-ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
 ageGap s e (LocationHolder _ _ cd) = do  
   datYoung <- M.lookup (catKey s e BR.Under) cd
   datOld <- M.lookup (catKey s e BR.EqualOrOver) cd
   return (datOld, datYoung)
 
-
-deriving instance Show a => Show (LocationHolder F.ElField a)
-                  
-instance SE.Serialize a => SE.Serialize (LocationHolder FS.SElField a)
-
-lhToS :: LocationHolder F.ElField a -> LocationHolder FS.SElField a
-lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
-
-lhFromS :: LocationHolder FS.SElField a -> LocationHolder F.ElField a
-lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
 
                 
 --emphasizeStates s = CellStyle (\tr _ -> if inStates s tr then highlightCellBlue else "")
@@ -503,12 +503,12 @@ significantGivenCI (loA, hiA) (loB, hiB) =
                     
 colPrefByLocation
   :: [F.Record CatCols]
-  -> CellStyle (LocationHolder F.ElField Double) T.Text
-  -> C.Colonnade C.Headed (LocationHolder F.ElField Double) BC.Cell
+  -> CellStyle (LocationHolder CatCols F.ElField Double) T.Text
+  -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
 colPrefByLocation cats cas =
   let h = catKeyColHeader
       hc c = BC.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
-      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (LocationHolder F.ElField Double) BC.Cell
+      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
       rowFromCatKey r =
         C.headed (hc $ h r) (toCell cas (h r) (h r) (maybeNumberToStyledHtml "%2.1f" . fmap (*100) . M.lookup r . catData))
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))

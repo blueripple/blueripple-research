@@ -49,12 +49,12 @@ vlPrefVsTime title stateAbbr vc@(FV.ViewConfig w h _) rows
       encX = GV.position GV.X [FV.pName @BR.Year, GV.PmType GV.Ordinal]
       encY = GV.position GV.Y [FV.pName @BR.DemPref, GV.PmType GV.Quantitative]
       addRegionOffice = GV.calculateAs
-        "datum.state_abbreviation + '/' + datum.Office"
-        "Region/Office"
-      encColor = GV.color [GV.MName "Region/Office", GV.MmType GV.Nominal]
-      encDetail = GV.detail [GV.DName "Region/Office", GV.DmType GV.Nominal]
+        "datum.state_abbreviation + '-' + datum.Office"
+        "Region-Office"
+      encColor = GV.color [GV.MName "Region-Office", GV.MmType GV.Nominal]
+      encDetail = GV.detail [GV.DName "Region-Office", GV.DmType GV.Nominal]
       addDemographic = GV.calculateAs
-        "datum.SimpleAge + '/' + datum.Sex +'/' + datum.CollegeGrad + '/' + datum.SimpleRace"
+        "(datum.SimpleAge == 'Under' ? 'Under 45' : '45 And Over') + '-' + datum.Sex +'-' + datum.CollegeGrad + '-' + datum.SimpleRace"
         "Demographic"
       linesSpec = GV.asSpec
         [ (GV.encoding . encX . encY . encColor . encDetail) []

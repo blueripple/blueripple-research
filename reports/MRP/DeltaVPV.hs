@@ -314,11 +314,13 @@ are likely to drive turnout and registration among young women.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
+{-
 type LocationCols = '[BR.StateAbbreviation]
 locKeyPretty :: F.Record LocationCols -> T.Text
 locKeyPretty r =
   let stateAbbr = F.rgetField @BR.StateAbbreviation r
   in stateAbbr
+-}
 
 type CatCols = '[BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
 catKey :: BR.Sex -> BR.CollegeGrad -> BR.SimpleAge -> F.Record CatCols
@@ -403,13 +405,14 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                                      && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
                               ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                               (F.rgetField @CCESWeightCumulative)
-                              
+{-                              
       predictionsByLocation countFold y = do
         ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SexC
-                                                                                                      ,BR.SimpleRaceC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
+                                                                                                      ,BR.SexC
                                                                                                       ,BR.CollegeGradC
-                                                                                                      ,BR.SimpleAgeC]
+                                                                                                      ,BR.SimpleRaceC
+                                                                                                      ]
                                                                    countFold 
                                                                    [GLM.Intercept
                                                                    , GLM.Predictor P_Sex
@@ -432,10 +435,14 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
               cpreds <- M.traverseWithKey predictFrom cpms
               return $ LocationHolder n lkM cpreds
         traverse predict toPredict
-  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation" (predictionsByLocation countDemPres2016VotesF 2016)
---  predsByLocation2014h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/edVoters/predsByLocation2014h" (predictionsByLocation countDemHouseVotesF 2014)
-  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h" (predictionsByLocation (countDemHouseVotesF 2016) 2016)
-  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h" (predictionsByLocation (countDemHouseVotesF 2018) 2018)
+-}
+  let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
+    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
+  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
+    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA (countDemHouseVotesF 2016) preds catPredMaps)
+  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
+    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA (countDemHouseVotesF 2018) preds catPredMaps)
 
 --  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
 
@@ -628,36 +635,18 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
   brAddMarkDown brEnd       
   brAddMarkDown brReadMore
 
--- TODO: make this traversable
-data  LocationHolder f a =  LocationHolder { locName :: T.Text
-                                           , locKey :: Maybe (F.Rec f LocationCols)
-                                           , catData :: M.Map (F.Rec f CatCols) a
-                                           } deriving (Generic)
 
-
-educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
 educationGap s a (LocationHolder _ _ cd) = do  
   datGrad <- M.lookup (catKey s BR.Grad a) cd
   datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
   return (datNonGrad, datGrad)
 
-ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder F.ElField Double -> Maybe (Double, Double)
+ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
 ageGap s e (LocationHolder _ _ cd) = do  
   datYoung <- M.lookup (catKey s e BR.Under) cd
   datOld <- M.lookup (catKey s e BR.EqualOrOver) cd
   return (datOld, datYoung)
-
-
-deriving instance Show a => Show (LocationHolder F.ElField a)
-                  
-instance SE.Serialize a => SE.Serialize (LocationHolder FS.SElField a)
-
-lhToS :: LocationHolder F.ElField a -> LocationHolder FS.SElField a
-lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
-
-lhFromS :: LocationHolder FS.SElField a -> LocationHolder F.ElField a
-lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
-
                 
 --emphasizeStates s = CellStyle (\tr _ -> if inStates s tr then highlightCellBlue else "")
 emphasizeNational = CellStyle (\x _ -> if  locName x == "National" then highlightCellPurple else "")
@@ -672,12 +661,12 @@ significantGivenCI (loA, hiA) (loB, hiB) =
                     
 colPrefByLocation
   :: [F.Record CatCols]
-  -> CellStyle (LocationHolder F.ElField Double) T.Text
-  -> C.Colonnade C.Headed (LocationHolder F.ElField Double) BC.Cell
+  -> CellStyle (LocationHolder CatCols F.ElField Double) T.Text
+  -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
 colPrefByLocation cats cas =
   let h = catKeyColHeader
       hc c = BC.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
-      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (LocationHolder F.ElField Double) BC.Cell
+      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
       rowFromCatKey r =
         C.headed (hc $ h r) (toCell cas (h r) (h r) (maybeNumberToStyledHtml "%2.1f" . fmap (*100) . M.lookup r . catData))
   in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))

@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -29,6 +30,7 @@ import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
+import qualified BlueRipple.Model.MRP_Pref as BR
 
 
 import           MRP.CCESFrame
@@ -65,18 +67,26 @@ import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
+import qualified Frames.Serialize              as FS
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
+import qualified Numeric.GLM.ModelTypes      as GLM
+import qualified Numeric.GLM.Predict            as GLM
 import qualified Numeric.LinearAlgebra         as LA
 
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
 --import qualified Data.Vector.Boxed             as VB
-import           GHC.Generics                   ( Generic )
+import           GHC.Generics                   ( Generic, Rep )
+
+import qualified Knit.Report as K
+import qualified Polysemy.Error                as P (mapError, Error)
+import qualified Polysemy                as P (raise)
+
 
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
@@ -454,52 +464,8 @@ type ByStateSexRaceEducation = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.
 type ByStateSexRaceEducationAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
 type ByStateRaceEducation = '[StateAbbreviation, BR.SimpleRaceC, BR.CollegeGradC]
 
-{-
-binomialFold :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
-binomialFold testRow =
-  let successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
-  in  (\n s -> n F.&: s F.&: V.RNil) <$> FL.length <*> successesF
 
-countFold :: forall k r d.(Ord (F.Record k)
-                          , FI.RecVec (k V.++ '[Count, Successes])
-                          , k F.⊆ r
-                          , d F.⊆ r)
-          => (F.Record d -> Bool)
-          -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count,Successes])]
-countFold testData = MR.mapReduceFold MR.noUnpack (MR.assignKeysAndData @k)  (MR.foldAndAddKey $ binomialFold testData)
-
-
-type Count = "Count" F.:-> Int
-type Successes = "Successes" F.:-> Int
-type MeanWeight = "MeanWeight" F.:-> Double
-type VarWeight = "VarWeight" F.:-> Double
-type WeightedSuccesses = "WeightedSuccesses" F.:-> Double
-type UnweightedSuccesses =  "UnweightedSuccesses" F.:-> Int
-
-weightedBinomialFold :: (F.Record r -> Bool) -> (F.Record r -> Double) -> FL.Fold (F.Record r) (F.Record '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])
-weightedBinomialFold testRow weightRow =
-  let wSuccessesF = FL.premap (\r -> if testRow r then weightRow r else 0) FL.sum
-      successesF = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
-      meanWeightF = FL.premap weightRow FL.mean
-      varWeightF    = FL.premap weightRow FL.variance
-  in  (\n s ws mw vw -> n F.&: s F.&: (ws/mw) F.&: mw F.&: vw F.&: V.RNil) <$> FL.length <*> successesF <*> wSuccessesF <*> meanWeightF <*> varWeightF
-
-weightedCountFold :: forall k r d.(Ord (F.Record k)
-                                  , FI.RecVec (k V.++ '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])
-                                  , k F.⊆ r
-                                  , d F.⊆ r)                     
-                  => (F.Record r -> Bool) -- ^ count this row?
-                  -> (F.Record d -> Bool) -- ^ success ?
-                  -> (F.Record d -> Double) -- ^ weight
-                  -> FL.Fold (F.Record r) [F.FrameRec (k V.++ [Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight])]
-weightedCountFold filterData testData weightData =
-  MR.mapReduceFold
-  (MR.filterUnpack filterData)
-  (MR.assignKeysAndData @k)
-  (MR.foldAndAddKey $ weightedBinomialFold testData weightData)
--}
-
-type ByCCESPredictors = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
+type ByCCESPredictors = '[StateAbbreviation, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
 type CCESEffect = GLM.WithIntercept CCESPredictor
 ccesPredictor :: forall r. (F.ElemOf r BR.SexC
@@ -512,245 +478,80 @@ ccesPredictor r P_Race    = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then
 ccesPredictor r P_Education    = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
 ccesPredictor r P_Age    = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 
-{-
-type instance GLM.GroupKey (Proxy k) = F.Record k
-recordToGroupKey :: forall k r. (k F.⊆ r) => F.Record r -> Proxy k -> F.Record k
-recordToGroupKey r _ = F.rcast r
--}
+data  LocationHolder c f a =  LocationHolder { locName :: T.Text
+                                             , locKey :: Maybe (F.Rec f LocationCols)
+                                             , catData :: M.Map (F.Rec f c) a
+                                             } deriving (Generic)
 
-{-
-data GroupByState = GroupByState deriving (Show, Eq, Ord)
-type instance GLM.GroupKey GroupByState = F.Record '[StateAbbreviation]
-groupByStateKey :: forall r.  (F.ElemOf r StateAbbreviation) => F.Record r -> GroupByState -> GLM.GroupKey GroupByState
-groupByStateKey r _ = F.rcast r
+deriving instance (V.RMap c
+                  , V.ReifyConstraint Show F.ElField c
+                  , V.RecordToList c
+                  , Show a) => Show (LocationHolder c F.ElField a)
+                  
+instance (S.Serialize a
+         , Ord (F.Rec FS.SElField c)
+         , S.GSerializePut
+           (Rep (F.Rec FS.SElField c))
+         , S.GSerializeGet (Rep (F.Rec FS.SElField c))
+         , (Generic (F.Rec FS.SElField c))
+         ) => S.Serialize (LocationHolder c FS.SElField a)
 
-data GroupByStateAndGender = GroupByStateAndGender deriving (Show, Eq, Ord)
-type instance GLM.GroupKey GroupByStateAndGender = (T.Text, GenderT)
-groupByStateAndGenderKey :: forall r.  (F.ElemOf r StateAbbreviation
-                                       , F.ElemOf r Gender
-                                       )
-                         => F.Record r -> GroupByStateAndGender -> GLM.GroupKey GroupByStateAndGender
-groupByStateAndGenderKey r _ = (F.rgetField                          
+lhToS :: (Ord (F.Rec FS.SElField c)
+         , V.RMap c
+         )
+      => LocationHolder c F.ElField a -> LocationHolder c FS.SElField a
+lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
 
+lhFromS :: (Ord (F.Rec F.ElField c)
+           , V.RMap c
+         ) => LocationHolder c FS.SElField a -> LocationHolder c F.ElField a
+lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
 
-ccesGroupLabels ::forall r.  (F.ElemOf r StateAbbreviation
-                             ,F.ElemOf r Gender
-                             , F.ElemOf r BR.SimpleRace
-                             , F.ElemOf r BR.CollegeGrad
-                             , F.ElemOf r BR.SimpleAge)
-                => F.Record r -> CCESGroup -> T.Text
-ccesGroupLabels r G_State = F.rgetField @StateAbbreviation r
-ccesGroupLabels r G_SG = F.rgetField @StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @Gender r)
--}
-{-ccesGroupLabels r G_District =
-  let sa = F.rgetField @StateAbbreviation r
-      cd = F.rgetField @CongressionalDistrict r
-  in sa <> "-" <> (T.pack $ show cd)
--}
-{-
-getFraction r = (realToFrac $ F.rgetField @Successes r)/(realToFrac $ F.rgetField @Count r)
-getFractionWeighted r = (F.rgetField @WeightedSuccesses r)/(realToFrac $ F.rgetField @Count r)
--}
---fixedEffects :: GLM.FixedEffects CCESPredictor
---fixedEffects = GLM.allFixedEffects True
+type LocationCols = '[StateAbbreviation]
+locKeyPretty :: F.Record LocationCols -> T.Text
+locKeyPretty r =
+  let stateAbbr = F.rgetField @StateAbbreviation r
+  in stateAbbr
 
---groups = IS.fromList [CCES_State]
-
--- This really really needs to be someplace central...
-{-
-lmePrepFrame
-  :: forall p g rs
-   . (GLM.PredictorC p, GLM.GroupC g)
-  => (F.Record rs -> Double) -- ^ observations
-  -> GLM.FixedEffects p
-  -> IS.IndexedSet g
-  -> (F.Record rs -> p -> Double) -- ^ predictors
-  -> (F.Record rs -> g -> GLM.GroupKey g)  -- ^ classifiers
-  -> FL.Fold
-       (F.Record rs)
-       ( LA.Vector Double
-       , LA.Matrix Double
-       , Either Text (GLM.RowClassifier g)
-       ) -- ^ (X,y,(row-classifier, size of class))
-lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
-  = let
-      makeInfoVector
-        :: M.Map g (M.Map (GLM.GroupKey g) Int)
-        -> M.Map g (GLM.GroupKey g)
-        -> Either Text (V.Vector (GLM.ItemInfo g))
-      makeInfoVector indexMaps groupKeys =
-        let
-          g (grp, groupKey) =
-            GLM.ItemInfo
-              <$> (   maybe
-                      (Left $ "Failed on " <> (T.pack $ show (grp, groupKey)))
-                      Right
-                  $   M.lookup grp indexMaps
-                  >>= M.lookup groupKey
-                  )
-              <*> pure groupKey
-        in  fmap V.fromList $ traverse g $ M.toList groupKeys
-      makeRowClassifier
-        :: Traversable f
-        => M.Map g (M.Map (GLM.GroupKey g) Int)
-        -> f (M.Map g (GLM.GroupKey g))
-        -> Either Text (GLM.RowClassifier g)
-      makeRowClassifier indexMaps labels = do
-        let sizes = fmap M.size indexMaps
-        indexed <- traverse (makeInfoVector indexMaps) labels
-        return $ GLM.RowClassifier groupIndices
-                                   sizes
-                                   (V.fromList $ FL.fold FL.list indexed)
-                                   indexMaps
-      getPredictorF' _   GLM.Intercept     = 1
-      getPredictorF' row (GLM.Predictor x) = getPredictorF row x
-      predictorF row = LA.fromList $ case fe of
-        GLM.FixedEffects indexedFixedEffects ->
-          fmap (getPredictorF' row) $ IS.members indexedFixedEffects
-        GLM.InterceptOnly -> [1]
-      getClassifierLabels :: F.Record rs -> M.Map g (GLM.GroupKey g)
-      getClassifierLabels r =
-        M.fromList $ fmap (\g -> (g, classifierLabelF r g)) $ IS.members
-          groupIndices
-      foldObs   = fmap LA.fromList $ FL.premap observationF FL.list
-      foldPred  = fmap LA.fromRows $ FL.premap predictorF FL.list
-      foldClass = FL.premap getClassifierLabels FL.list
-      g (vY, mX, ls) =
-        ( vY
-        , mX
-        , makeRowClassifier
-          (snd $ ST.execState (addAll ls) (M.empty, M.empty))
-          ls
-        )
-    in
-      fmap g $ ((,,) <$> foldObs <*> foldPred <*> foldClass)
-
-
-
-addOne
-  :: GLM.GroupC g
-  => (g, GLM.GroupKey g)
-  -> ST.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
-addOne (grp, label) = do
-  (nextIndexMap, groupIndexMaps) <- ST.get
-  let groupIndexMap = fromMaybe M.empty $ M.lookup grp groupIndexMaps
-  case M.lookup label groupIndexMap of
-    Nothing -> do
-      let index         = fromMaybe 0 $ M.lookup grp nextIndexMap
-          nextIndexMap' = M.insert grp (index + 1) nextIndexMap
-          groupIndexMaps' =
-            M.insert grp (M.insert label index groupIndexMap) groupIndexMaps
-      ST.put (nextIndexMap', groupIndexMaps')
-      return ()
-    _ -> return ()
-
-addMany
-  :: (GLM.GroupC g, Traversable h)
-  => h (g, GLM.GroupKey g)
-  -> ST.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
-addMany x = traverse addOne x >> return ()
-
-addAll
-  :: GLM.GroupC g
-  => [M.Map g (GLM.GroupKey g)]
-  -> ST.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
-addAll x = traverse (addMany . M.toList) x >> return ()
-
--}
-
-{-
-lmePrepFrame
-  :: forall p g rs
-   . (Bounded p, Enum p, Ord g, Show g)
-  => (F.Record rs -> Double) -- ^ observations
-  -> GLM.FixedEffects p
-  -> IS.IndexedSet g
-  -> (F.Record rs -> p -> Double) -- ^ predictors
-  -> (F.Record rs -> g -> T.Text)  -- ^ classifiers
-  -> FL.Fold
-       (F.Record rs)
-       ( LA.Vector Double
-       , LA.Matrix Double
-       , Either T.Text (GLM.RowClassifier g)
-       ) -- ^ (X,y,(row-classifier, size of class))
-lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
-  = let
-      makeInfoVector
-        :: M.Map g (M.Map T.Text Int)
-        -> M.Map g T.Text
-        -> Either T.Text (V.Vector GLM.ItemInfo)
-      makeInfoVector indexMaps labels =
-        let
-          g (grp, label) =
-            GLM.ItemInfo
-              <$> (maybe (Left $ "Failed on " <> (T.pack $ show (grp, label)))
-                         Right
-                  $ M.lookup grp indexMaps
-                  >>= M.lookup label
-                  )
-              <*> pure label
-        in  fmap V.fromList $ traverse g $ M.toList labels
-      makeRowClassifier
-        :: Traversable f
-        => M.Map g (M.Map T.Text Int)
-        -> f (M.Map g T.Text)
-        -> Either T.Text (GLM.RowClassifier g)
-      makeRowClassifier indexMaps labels = do
-        let sizes = fmap M.size indexMaps
-        indexed <- traverse (makeInfoVector indexMaps) labels
-        return $ GLM.RowClassifier groupIndices
-                                   sizes
-                                   (V.fromList $ FL.fold FL.list indexed)
-                                   indexMaps
-      getPredictorF' _   GLM.Intercept     = 1
-      getPredictorF' row (GLM.Predictor x) = getPredictorF row x
-      predictorF row = LA.fromList $ case fe of
-        GLM.FixedEffects indexedFixedEffects ->
-          fmap (getPredictorF' row) $ IS.members indexedFixedEffects
-        GLM.InterceptOnly -> [1]
-      getClassifierLabels :: F.Record rs -> M.Map g T.Text
-      getClassifierLabels r =
-        M.fromList $ fmap (\g -> (g, classifierLabelF r g)) $ IS.members
-          groupIndices
-      foldObs   = fmap LA.fromList $ FL.premap observationF FL.list
-      foldPred  = fmap LA.fromRows $ FL.premap predictorF FL.list
-      foldClass = FL.premap getClassifierLabels FL.list
-      g (vY, mX, ls) =
-        ( vY
-        , mX
-        , makeRowClassifier
-          (snd $ ST.execState (addAll ls) (M.empty, M.empty))
-          ls
-        )
-    in
-      fmap g $ ((,,) <$> foldObs <*> foldPred <*> foldClass)
-
-addOne
-  :: Ord g
-  => (g, T.Text)
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addOne (grp, label) = do
-  (nextIndexMap, groupIndexMaps) <- ST.get
-  let groupIndexMap = fromMaybe M.empty $ M.lookup grp groupIndexMaps
-  case M.lookup label groupIndexMap of
-    Nothing -> do
-      let index         = fromMaybe 0 $ M.lookup grp nextIndexMap
-          nextIndexMap' = M.insert grp (index + 1) nextIndexMap
-          groupIndexMaps' =
-            M.insert grp (M.insert label index groupIndexMap) groupIndexMaps
-      ST.put (nextIndexMap', groupIndexMaps')
-      return ()
-    _ -> return ()
-
-addMany
-  :: (Ord g, Traversable h)
-  => h (g, T.Text)
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addMany x = traverse addOne x >> return ()
-
-addAll
-  :: Ord g
-  => [M.Map g T.Text]
-  -> ST.State (M.Map g Int, M.Map g (M.Map T.Text Int)) ()
-addAll x = traverse (addMany . M.toList) x >> return ()
--}
+type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
+predictionsByLocation ::
+  forall cc es r. (cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
+                  , Show (F.Record cc)
+                  , V.RMap cc
+                  , V.ReifyConstraint Show V.ElField cc
+                  , V.RecordToList cc
+                  , Ord (F.Record cc)
+                  , K.KnitOne r
+--                  , K.Member (P.Error GLM.GLMError) r
+                  , K.Members es r
+             )
+  => K.Cached es [F.Record CCES_MRP]
+  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ASER V.++ BR.CountCols))  
+  -> [GLM.WithIntercept CCESPredictor]
+  -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
+  -> K.Sem r [LocationHolder cc V.ElField Double]
+predictionsByLocation ccesRecordListAllCA countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ do
+  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+  (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @cc @[BR.SimpleAgeC
+                                                             ,BR.SexC
+                                                             ,BR.CollegeGradC
+                                                             ,BR.SimpleRaceC]
+                                                             countFold
+                                                             predictors                                                     
+                                                             ccesPredictor
+                                                             ccesFrameAll
+  
+  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
+      allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
+      predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
+      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+      predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
+        let predictFrom catKey predMap =
+              let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
+                  emptyAsNationalGKM = case groupKeyM of
+                                         Nothing -> Nothing
+                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ cc))
+              in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+        cpreds <- M.traverseWithKey predictFrom cpms
+        return $ LocationHolder n lkM cpreds
+  traverse predict toPredict

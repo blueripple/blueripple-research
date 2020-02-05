@@ -55,6 +55,7 @@ library
                  , BlueRipple.Data.Keyed
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
+                 , BlueRipple.Data.UsefulDataJoins
                  , BlueRipple.Data.PrefModel
                  , BlueRipple.Data.PrefModel.SimpleAgeSexRace
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
