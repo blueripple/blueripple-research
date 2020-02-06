@@ -99,8 +99,9 @@ import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.PostStratify as BR
 import qualified BlueRipple.Data.UsefulDataJoins as BR
-
+import qualified MRP.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
@@ -175,7 +176,8 @@ post :: forall es r.(K.KnitOne r
      -> K.Sem r ()
 post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let stateAbbr = "WI"
-      stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)      
+      stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)
+      stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` [stateAbbr, "National"])
   aseACSRaw <- P.raise $ K.useCached aseDemoCA
   asrACSRaw <- P.raise $ K.useCached asrDemoCA
   aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
@@ -193,84 +195,78 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
   asrTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASR.bin"
                 $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
   
-  let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list        
-      countDemHouseVotesF y =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                           (\r -> (F.rgetField @BR.Year r == y)
-                                  && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
-                           ((== VP_Democratic) . F.rgetField @HouseVoteParty)
-                           (F.rgetField @CCESWeightCumulative)
-      countDemPres2008VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2008VoteParty,CCESWeightCumulative]
-                                (\r -> (F.rgetField @BR.Year r == 2008)
-                                   && (F.rgetField @Pres2008VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                            ((== VP_Democratic) . F.rgetField @Pres2008VoteParty)
-                              (F.rgetField @CCESWeightCumulative)
-      countDemPres2012VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2012VoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @BR.Year r == 2012)
-                                     && (F.rgetField @Pres2012VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                                ((== VP_Democratic) . F.rgetField @Pres2012VoteParty)
-                              (F.rgetField @CCESWeightCumulative)
-      countDemPres2016VotesF =  BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @BR.Year r == 2016)
-                                     && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                              ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
-                              (F.rgetField @CCESWeightCumulative)
-      vpv x = 2*x - 1
-      lhToRecs year office (LocationHolder lp lkM predMap) =
-        let addCols p = FT.mutate (const $ FT.recordSingleton @BR.DemPref p) .
-                        FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
-                        FT.mutate (const $ FT.recordSingleton @Office office).
-                        FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
-            g lkM = let lk = fromMaybe (lp F.&: V.RNil) lkM in fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
-        in g lkM
-      lhsToFrame y o = F.toFrame . concat . fmap (lhToRecs y o) 
-      doASER = do
-        K.logLE K.Info "Doing ASER MR..."
-        let cacheIt cn fa = K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) cn fa
-        let predictorsASER = [GLM.Intercept
-                             , GLM.Predictor P_Sex
-                             , GLM.Predictor P_Age
-                             , GLM.Predictor P_Education
-                             , GLM.Predictor P_Race
-                             ]
-        predsByLocationPres2008 <- cacheIt "mrp/tmp/pres2008" (lhsToFrame 2008 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2008VotesF predictorsASER catPredMapASER))
-        predsByLocationPres2012 <- cacheIt "mrp/tmp/pres2012" (lhsToFrame 2012 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2012VotesF predictorsASER catPredMapASER))
-        predsByLocationPres2016 <- cacheIt "mrp/tmp/pres2016" (lhsToFrame 2016 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2016VotesF predictorsASER catPredMapASER))
-        predsByLocationHouse <- traverse (\y -> cacheIt ("mrp/tmp/house" <> T.pack (show y)) (lhsToFrame y House <$> P.raise (predictionsByLocation ccesRecordListAllCA (countDemHouseVotesF y) predictorsASER catPredMapASER))) [2008,2010,2012,2014,2016,2018]
-        return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse
-      doASE = do
-        K.logLE K.Info "Doing ASE MR..."
-        let cacheIt cn fa = K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) cn fa
-        let predictorsASE = [GLM.Intercept
-                             , GLM.Predictor P_Age
-                             , GLM.Predictor P_Sex
-                             , GLM.Predictor P_Education
-                             ]
-        predsByLocationPres2008 <- cacheIt "mrp/tmp/ase/pres2008" (lhsToFrame 2008 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2008VotesF predictorsASE catPredMapASE))
-        predsByLocationPres2012 <- cacheIt "mrp/tmp/ase/pres2012" (lhsToFrame 2012 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2012VotesF predictorsASE catPredMapASE))
-        predsByLocationPres2016 <- cacheIt "mrp/tmp/ase/pres2016" (lhsToFrame 2016 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2016VotesF predictorsASE catPredMapASE))
-        predsByLocationHouse <- traverse (\y -> cacheIt ("mrp/tmp/ase/house" <> T.pack (show y)) (lhsToFrame y House <$> P.raise (predictionsByLocation ccesRecordListAllCA (countDemHouseVotesF y) predictorsASE catPredMapASE))) [2008,2010,2012,2014,2016,2018]
-        return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse
-      doASR = do
-        K.logLE K.Info "Doing ASR MR..."
-        let cacheIt cn fa = K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) cn fa
-        let predictorsASR = [GLM.Intercept
-                             , GLM.Predictor P_Age
-                             , GLM.Predictor P_Sex
-                             , GLM.Predictor P_Race
-                             ]
-        predsByLocationPres2008 <- cacheIt "mrp/tmp/asr/pres2008" (lhsToFrame 2008 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2008VotesF predictorsASR catPredMapASR))
-        predsByLocationPres2012 <- cacheIt "mrp/tmp/asr/pres2012" (lhsToFrame 2012 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2012VotesF predictorsASR catPredMapASR))
-        predsByLocationPres2016 <- cacheIt "mrp/tmp/asr/pres2016" (lhsToFrame 2016 President <$> P.raise (predictionsByLocation ccesRecordListAllCA countDemPres2016VotesF predictorsASR catPredMapASR))
-        predsByLocationHouse <- traverse (\y -> cacheIt ("mrp/tmp/asr/house" <> T.pack (show y)) (lhsToFrame y House <$> P.raise (predictionsByLocation ccesRecordListAllCA (countDemHouseVotesF y) predictorsASR catPredMapASR))) [2008,2010,2012,2014,2016,2018]
-        return $ predsByLocationPres2008 <> predsByLocationPres2012 <> predsByLocationPres2016 <> mconcat predsByLocationHouse        
-  inferredPrefsASER <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin" doASER
-  inferredPrefsASE <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doASE
-  inferredPrefsASR <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin" doASR
-
+  let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
+  let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
+      predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
+      predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
+  inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
+                        (P.raise $ BR.mrpPrefs @CatColsASER ccesRecordListAllCA predictorsASER catPredMapASER) 
+  inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
+                       (P.raise $ BR.mrpPrefs @CatColsASE ccesRecordListAllCA predictorsASE catPredMapASE) 
+  inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
+                       (P.raise $ BR.mrpPrefs @CatColsASR ccesRecordListAllCA predictorsASR catPredMapASR) 
   brAddMarkDown text1
-  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Test" "WI" (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
-  -- post-stratify
-  demographicsAndTurnoutASE <- P.raise $ BR.aseDemographicsWithAdjTurnoutByCD aseACS aseTurnout stateTurnoutRaw
-  demographicsAndTurnoutASR <- BR.asrDemographicsWithAdjTurnoutByCD asrACS asrTurnout stateTurnoutRaw
+  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
+  -- get adjusted turnouts (national rates, adj by state) for each CD
+  demographicsAndTurnoutASE <- stateOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
+  demographicsAndTurnoutASR <- stateOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
+  -- join with the prefs
+  K.logLE K.Info "Joining turnout by CD and prefs"
+  let aseTurnoutAndPrefs = catMaybes
+                           $ fmap F.recMaybe
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
+      asrTurnoutAndPrefs = catMaybes
+                           $ fmap F.recMaybe
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
+      labelPSBy x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
+      psCellVPVByBothF =  (<>)
+                          <$> fmap pure (fmap (labelPSBy BR.VAP)
+                                         $ BR.postStratifyCell @DemVPV
+                                         (realToFrac . F.rgetField @BR.ACSCount)
+                                         (realToFrac . F.rgetField @DemVPV))
+                          <*> fmap pure (fmap (labelPSBy BR.Voted)
+                                         $ BR.postStratifyCell @DemVPV
+                                         (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
+                                         (realToFrac . F.rgetField @DemVPV))
+      psVPVByDistrictF =  BR.postStratifyF
+                          @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+                          @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
+                          @[BR.PostStratifiedBy, DemVPV]
+                          psCellVPVByBothF
+      vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
+      vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
+--      plotEmAll :: Int -> OfficeT -> K.Sem r ()
+      plotEmAll y o r = do
+        let tStart = (T.pack $ show y) <> " " <> (T.pack $ show o)
+            cs = Just $ BR.vpvChoroColorScale (negate r) r
+            vc = FV.ViewConfig 800 800 10
+        _ <- K.addHvega Nothing Nothing
+             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
+             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
+                                    && (F.rgetField @Office r == o)
+                                    && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
+                             ) vpvPostStratifiedByASE
+        return ()                     
+        _ <- K.addHvega Nothing Nothing
+             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
+             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
+                               && (F.rgetField @Office r == o)
+                               && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
+                             ) vpvPostStratifiedByASR
+        _ <- K.addHvega Nothing Nothing
+          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
+          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
+                                 && (F.rgetField @Office r == President)
+                                 && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
+                          ) vpvPostStratifiedByASE
+        _ <- K.addHvega Nothing Nothing
+          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
+          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
+                            && (F.rgetField @Office r == President)
+                            && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
+                          ) vpvPostStratifiedByASR
+        return ()
+  plotEmAll 2016 President 0.25
+  plotEmAll 2018 House 0.35
   brAddMarkDown brReadMore
 

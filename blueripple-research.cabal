@@ -66,6 +66,7 @@ library
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Model.MRP_Pref
+                 , BlueRipple.Model.PostStratify
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils                                  
                  , Paths_blueripple_research
@@ -159,6 +160,7 @@ executable mrp-model
   other-modules:  MRP.CCESPath
                 , MRP.CCES
                 , MRP.CCESFrame
+                , MRP.CCES_MRP_Analysis
                 , MRP.Common
                 , PreferenceModel.Common
                 , MRP.WWC

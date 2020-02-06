@@ -100,6 +100,7 @@ import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.PostStratify as BR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
@@ -364,11 +365,7 @@ type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
 type DistrictGeoId = "DistrictGeoId" F.:-> T.Text
 
-data PostStratifiedByT = Voted | VAP deriving (Enum, Bounded, Eq , Ord, Show)
-type PostStratifiedBy = "PostStratifiedBy" F.:-> PostStratifiedByT
-type instance FI.VectorFor PostStratifiedByT = V.Vector
-instance FV.ToVLDataValue (F.ElField PostStratifiedBy) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = BR.RecordColsProxy GroupCols 
@@ -405,37 +402,6 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                                      && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic]))
                               ((== VP_Democratic) . F.rgetField @HouseVoteParty)
                               (F.rgetField @CCESWeightCumulative)
-{-                              
-      predictionsByLocation countFold y = do
-        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
-                                                                                                      ,BR.SexC
-                                                                                                      ,BR.CollegeGradC
-                                                                                                      ,BR.SimpleRaceC
-                                                                                                      ]
-                                                                   countFold 
-                                                                   [GLM.Intercept
-                                                                   , GLM.Predictor P_Sex
-                                                                   , GLM.Predictor P_Age
-                                                                   , GLM.Predictor P_Education
-                                                                   ]
-                                                                   ccesPredictor
-                                                                   (F.filterFrame ((== y) . F.rgetField @BR.Year) ccesFrameAll)
-        let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrameAll
-            allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
-            predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
-            toPredict = [LocationHolder "National" Nothing catPredMaps] <> fmap predictLoc allStateKeys                           
-            predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
-              let predictFrom catKey predMap =
-                    let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
-                        emptyAsNationalGKM = case groupKeyM of
-                          Nothing -> Nothing
-                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k BR.RecordColsProxy
-                    in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
-              cpreds <- M.traverseWithKey predictFrom cpms
-              return $ LocationHolder n lkM cpreds
-        traverse predict toPredict
--}
   let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
     $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
@@ -444,16 +410,6 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
     $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA (countDemHouseVotesF 2018) preds catPredMaps)
 
---  K.logLE K.Diagnostic $ T.pack $ show predsByLocation  
-
-{-  
-  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)  
-  let recFilter r =
-        let party = F.rgetField @HouseVoteParty r
-        in (F.rgetField @Turnout r == T_Voted) && (F.rgetField @BR.Year r == 2018) && ((party == VP_Republican) || (party == VP_Democratic))
-  let countHouse2018Frame = FL.fold countDemHouseVotesF $ F.filterFrame recFilter ccesFrameAll
-  K.logLE K.Info $ "\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ countHouse2018Frame)
--}
   let vpv x = 2*x - 1
       lhToRecsM year office (LocationHolder _ lkM predMap) =
         let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
@@ -511,30 +467,22 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
         catMaybes
         $ fmap F.recMaybe
         $ (F.leftJoin @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
-  let postStratifyCell :: forall t q.(V.KnownField t, V.Snd t ~ Double)
-              => PostStratifiedByT -> (q -> Double) -> (q -> Double) -> FL.Fold q (F.Record '[PostStratifiedBy,t])
-      postStratifyCell psb weight count = (\sdw sw -> FT.recordSingleton @PostStratifiedBy psb `V.rappend` FT.recordSingleton @t (sdw/sw))
-                                          <$>  FL.premap (\x -> weight x * count x) FL.sum
-                                          <*> FL.premap weight FL.sum
-      postStratifyF :: forall k cs ts rs . (k F.⊆ rs
-                                           , cs F.⊆ rs
-                                           , Ord (F.Record k)
-                                           , FI.RecVec (k V.++ (PostStratifiedBy ': ts))
-                                           
-                                          )
-                    => FL.Fold (F.Record cs) [F.Record (PostStratifiedBy ': ts)]
-                    -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ (PostStratifiedBy ': ts)))
-      postStratifyF cellFold = fmap (F.toFrame . concat) $ MR.mapReduceFold
-                               MR.noUnpack
-                               (FMR.assignKeysAndData @k @cs)
-                               (MR.ReduceFold (\k -> fmap (fmap (k `V.rappend`)) cellFold))
+      labelCell x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (postStratifyCell @DemVPV VAP (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
-                          <*> fmap pure (postStratifyCell @DemVPV Voted (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
-      psVPVByStateF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateName] @[DemVPV,BR.PopCount,BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF 
+                          <$> fmap pure (fmap (labelCell BR.VAP) $ BR.postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
+                          <*> fmap pure (fmap (labelCell BR.Voted) $ BR.postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
+      psVPVByStateF = BR.postStratifyF
+                      @[BR.Year, Office, BR.StateAbbreviation, BR.StateName]
+                      @[DemVPV,BR.PopCount,BR.VotedPctOfAll]
+                      @[BR.PostStratifiedBy,DemVPV]
+                      psCellVPVByBothF 
         
       psVPVByBoth = FL.fold psVPVByStateF withDemoAndAdjTurnoutFrame
-      psVPVByDistrictF = postStratifyF @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] @[DemVPV, BR.PopCount, BR.VotedPctOfAll] @'[DemVPV] psCellVPVByBothF
+      psVPVByDistrictF = BR.postStratifyF
+                         @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+                         @[DemVPV, BR.PopCount, BR.VotedPctOfAll]
+                         @[BR.PostStratifiedBy,DemVPV]
+                         psCellVPVByBothF
 --      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
       toDistrictGeoId r =
         let sf = F.rgetField @BR.StateFIPS r
@@ -545,7 +493,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
       psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withDemoAndAdjTurnoutFrame
       psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
                                                             && (F.rgetField @Office r == House)
-                                                            && (F.rgetField @PostStratifiedBy r == Voted)
+                                                            && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
                                                             {-&& (F.rgetField @BR.StateAbbreviation r == "TX")-}) psVPVByDistrict
   -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
 
@@ -575,7 +523,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
     "Post-Stratified Dem VPV: President 2016 - House 2016"
     (FV.ViewConfig 800 800 10)
     ("President2016","House2016")
-    (fmap F.rcast $ F.filterFrame ((== Voted) . F.rgetField @PostStratifiedBy) psVPVByBoth)
+    (fmap F.rcast $ F.filterFrame ((== BR.Voted) . F.rgetField @BR.PostStratifiedBy) psVPVByBoth)
   brAddMarkDown brText3
 {-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
@@ -606,7 +554,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
     "Post-Stratified Dem VPV: House 2018 - House 2016"
     (FV.ViewConfig 800 800 10)
     ("House2018","House2016")
-    (fmap F.rcast $ F.filterFrame ((== Voted) . F.rgetField @PostStratifiedBy) psVPVByBoth)
+    (fmap F.rcast $ F.filterFrame ((== BR.Voted) . F.rgetField @BR.PostStratifiedBy) psVPVByBoth)
 {-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2018 House"
@@ -677,7 +625,7 @@ vlPostStratScatter :: Foldable f
                    => T.Text
                    -> FV.ViewConfig
                    -> (T.Text, T.Text)
-                   -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, PostStratifiedBy, DemVPV])
+                   -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, BR.PostStratifiedBy, DemVPV])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
   let pivotFold = FV.simplePivotFold @[Office, BR.Year] @'[DemVPV]
@@ -686,12 +634,12 @@ vlPostStratScatter title vc (race1, race2) rows =
                <> " "
                <> (T.pack $ show $ F.rgetField @BR.Year r))
         (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
-      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,PostStratifiedBy]
+      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,BR.PostStratifiedBy]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
       encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
       encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
-      encColor = GV.color [FV.mName @PostStratifiedBy]
+      encColor = GV.color [FV.mName @BR.PostStratifiedBy]
       encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encY2 = GV.position GV.Y [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encScatter = GV.encoding . encX . encY . encColor
