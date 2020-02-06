@@ -99,6 +99,7 @@ import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Data.UsefulDataJoins as BR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
@@ -265,8 +266,11 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
   inferredPrefsASER <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin" doASER
   inferredPrefsASE <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin" doASE
   inferredPrefsASR <-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin" doASR
-  -- post-stratify 
+
   brAddMarkDown text1
-  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Test" "WI" (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER
+  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Test" "WI" (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
+  -- post-stratify
+  demographicsAndTurnoutASE <- P.raise $ BR.aseDemographicsWithAdjTurnoutByCD aseACS aseTurnout stateTurnoutRaw
+  demographicsAndTurnoutASR <- BR.asrDemographicsWithAdjTurnoutByCD asrACS asrTurnout stateTurnoutRaw
   brAddMarkDown brReadMore
 

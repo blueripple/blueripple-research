@@ -33,7 +33,7 @@ import           Data.Maybe                     ( isJust
 
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as SE
-
+import           Data.Serialize.Text            ( )
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
@@ -72,8 +72,9 @@ import qualified BlueRipple.Utilities.KnitUtils
                                                as BR
 
 type ASECols = [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC]
+type ASRCols = [BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC]
 
-demoWithAdjTurnoutByCD
+aseDemographicsWithAdjTurnoutByCD
   :: forall es r
    . (K.KnitOne r, K.Members es r)
   => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASECols V.++ '[BR.ACSCount]))
@@ -98,32 +99,112 @@ demoWithAdjTurnoutByCD
                '[BR.ACSCount, BR.VotedPctOfAll]
            )
        )
-demoWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
-  demo         <- K.useCached demoCA
-  turnout      <- K.useCached turnoutCA
-  stateTurnout <- K.useCached stateTurnoutCA
-  let demoByState =
-        let unpack = MR.noUnpack
-            assign =
-              FMR.assignKeysAndData
-                @('[BR.Year, BR.StateAbbreviation] V.++ ASECols)
-                @'[BR.ACSCount]
-            reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
-        in  FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce)
-                    demo
-      demoWithUnAdjTurnoutByState =
-        catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ ASECols)
-          demoByState
+aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
+  let
+    action = do
+      demo         <- K.useCached demoCA
+      turnout      <- K.useCached turnoutCA
+      stateTurnout <- K.useCached stateTurnoutCA
+      let
+        demoByState =
+          let unpack = MR.noUnpack
+              assign =
+                FMR.assignKeysAndData
+                  @('[BR.Year, BR.StateAbbreviation] V.++ ASECols)
+                  @'[BR.ACSCount]
+              reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
+          in  FL.fold
+                (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce)
+                demo
+        votedPct r = realToFrac (F.rgetField @BR.Voted r)
+          / realToFrac (F.rgetField @BR.Population r)
+        turnoutWithPct = fmap
+          (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPct)
           turnout
-  demoWithAdjTurnoutByState <- FL.foldM
-    (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
-    demoWithUnAdjTurnoutByState
-  return
-    $ F.toFrame
-    $ fmap F.rcast
-    $ catMaybes
-    $ fmap F.recMaybe
-    $ F.leftJoin @('[BR.Year, BR.StateAbbreviation] V.++ ASECols)
-        demo
-        demoWithAdjTurnoutByState
+        demoWithUnAdjTurnoutByState =
+          catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ ASECols)
+            demoByState
+            turnoutWithPct
+      demoWithAdjTurnoutByState <- FL.foldM
+        (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
+        demoWithUnAdjTurnoutByState
+      return
+        $ F.toFrame
+        $ fmap F.rcast
+        $ catMaybes
+        $ fmap F.recMaybe
+        $ F.leftJoin @('[BR.Year, BR.StateAbbreviation] V.++ ASECols)
+            demo
+            demoWithAdjTurnoutByState
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list)
+                              (F.toFrame . fmap FS.fromS)
+                              "mrp/useful/aseDemoWithAdjTurnout.bin"
+                              action
 
+
+asrDemographicsWithAdjTurnoutByCD
+  :: forall es r
+   . (K.KnitOne r, K.Members es r)
+  => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASRCols V.++ '[BR.ACSCount]))
+  -> K.Cached
+       es
+       ( F.FrameRec
+           ( '[BR.Year]
+               V.++
+               ASRCols
+               V.++
+               '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
+           )
+       )
+  -> K.Cached es [BR.StateTurnout]
+  -> K.Sem
+       r
+       ( F.FrameRec
+           ( BR.ACSKeys
+               V.++
+               ASRCols
+               V.++
+               '[BR.ACSCount, BR.VotedPctOfAll]
+           )
+       )
+asrDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
+  let
+    action = do
+      demo         <- K.useCached demoCA
+      turnout      <- K.useCached turnoutCA
+      stateTurnout <- K.useCached stateTurnoutCA
+      let
+        demoByState =
+          let unpack = MR.noUnpack
+              assign =
+                FMR.assignKeysAndData
+                  @('[BR.Year, BR.StateAbbreviation] V.++ ASRCols)
+                  @'[BR.ACSCount]
+              reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
+          in  FL.fold
+                (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce)
+                demo
+        votedPct r = realToFrac (F.rgetField @BR.Voted r)
+          / realToFrac (F.rgetField @BR.Population r)
+        turnoutWithPct = fmap
+          (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPct)
+          turnout
+        demoWithUnAdjTurnoutByState =
+          catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ ASRCols)
+            demoByState
+            turnoutWithPct
+      demoWithAdjTurnoutByState <- FL.foldM
+        (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
+        demoWithUnAdjTurnoutByState
+      return
+        $ F.toFrame
+        $ fmap F.rcast
+        $ catMaybes
+        $ fmap F.recMaybe
+        $ F.leftJoin @('[BR.Year, BR.StateAbbreviation] V.++ ASRCols)
+            demo
+            demoWithAdjTurnoutByState
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list)
+                              (F.toFrame . fmap FS.fromS)
+                              "mrp/useful/asrDemoWithAdjTurnout.bin"
+                              action

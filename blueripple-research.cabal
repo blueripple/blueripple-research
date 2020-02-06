@@ -21,6 +21,7 @@ common deps
                , blaze-html
                , blueripple-data-sets
                , cereal >= 0.5.7 && < 0.6
+               , cereal-text >= 0.1.0 && < 0.2
                , containers
                , Frames
                , Frames-map-reduce >= 0.1.0.1
