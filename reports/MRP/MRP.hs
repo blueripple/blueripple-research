@@ -13,6 +13,7 @@
 --{-# LANGUAGE AllowAmbiguousTypes       #-}
 
 import qualified Control.Foldl                 as FL
+import           Control.Lens                   ((%~))
 import qualified Control.Monad.State           as ST
 import Control.Monad (when)
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
@@ -65,6 +66,7 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
+import qualified Frames.MaybeUtils             as FM
 
 import qualified Knit.Report                   as K
 import qualified Knit.Report.Cache             as K
@@ -95,6 +97,7 @@ import qualified MRP.Pools as Pools
 import qualified MRP.DeltaVPV as DeltaVPV
 import qualified MRP.Kentucky as Kentucky
 import qualified MRP.Wisconsin as Wisconsin
+import qualified MRP.TurnoutScenarios as TurnoutScenarios
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -128,6 +131,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [PostKentucky] &= CA.name "KY" &= CA.help "knit \"Kentucky\"",
                                         [PostWisconsin] &= CA.name "WI" &= CA.help "knit \"Wisconsin\"",
+                                        [PostTurnoutScenarios] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -220,15 +224,34 @@ main = do
               (const True)
           asrTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASR] =
             cachedRecordList "mrp/asrTurnout.bin" asrTurnoutFrame
-          stateTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
+          stateTurnoutFromCSV :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
+          stateTurnoutFromCSV = FL.fold FL.list <$> do
+            K.logLE K.Info $ "Loading USEP State Turnout from csv (" <> (T.pack stateTurnoutCSV) <> ") and parsing..."
+            let missingOETo0 :: F.Rec (Maybe F.:. F.ElField) '[OverseasEligible] -> F.Rec (Maybe F.:. F.ElField) '[OverseasEligible]
+                missingOETo0 = FM.fromMaybeMono 0
+                missingBCVEPTo0 :: F.Rec (Maybe F.:. F.ElField) '[BallotsCountedVEP] -> F.Rec (Maybe F.:. F.ElField) '[BallotsCountedVEP]
+                missingBCVEPTo0 = FM.fromMaybeMono 0                
+                missingBCTo0 :: F.Rec (Maybe F.:. F.ElField) '[BallotsCounted] -> F.Rec (Maybe F.:. F.ElField) '[BallotsCounted]
+                missingBCTo0 = FM.fromMaybeMono 0
+            stateTurnoutPath <- liftIO $ usePath stateTurnoutCSV
+            turnoutMaybeRecs <- loadToMaybeRecs @(F.RecordColumns BR.StateTurnout) @(F.RecordColumns BR.StateTurnout)
+                                csvParserOptions
+                                (const True)
+                                stateTurnoutPath
+            maybeRecsToFrame
+              ((F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0))
+              (const True)
+              turnoutMaybeRecs
+{-          stateTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
           stateTurnoutFrame = FL.fold FL.list <$> do
             stateTurnoutPath <- liftIO $ usePath stateTurnoutCSV
             loadToFrame
               csvParserOptions
               stateTurnoutPath
               (const True)
+-}
           stateTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.StateTurnout]
-          stateTurnoutFrameCA = cachedRecordList "mrp/stateTurnout.bin" stateTurnoutFrame          
+          stateTurnoutFrameCA = cachedRecordList "mrp/stateTurnout.bin" stateTurnoutFromCSV         
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       
       K.logLE K.Info "Knitting docs..."
@@ -248,7 +271,7 @@ main = do
       when (PostPools `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
          (postPath PostPools)
-         (brAddDates (updated args) pubDateIntro curDate
+         (brAddDates (updated args) pubDatePools curDate
           $ M.fromList [("pagetitle", "Where Do We Look for Democratic Votes in 2020?")
                         ,("title","Where Do We Look For Democratic Votes in 2020?")
                         ]
@@ -288,6 +311,17 @@ main = do
           )
         )
         $ Wisconsin.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
+      let pubDateTurnoutScenarios = Time.fromGregorian 2020 2 5                
+      when (PostTurnoutScenarios `elem` (posts args)) $ K.newPandoc
+        (K.PandocInfo
+         (postPath PostTurnoutScenarios)
+         (brAddDates (updated args) pubDateTurnoutScenarios curDate
+          $ M.fromList [("pagetitle", "What If Everybody Voted, Redux")
+                        ,("title","What If Everybody Voted, Redux")
+                        ]
+          )
+        )
+        $ TurnoutScenarios.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
 
   case eitherDocs of
     Right namedDocs ->

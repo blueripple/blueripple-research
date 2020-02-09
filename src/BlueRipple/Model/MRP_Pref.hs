@@ -37,6 +37,7 @@ import           Data.Maybe                     ( isJust
 --import  Data.Ord (Compare)
 
 import qualified Data.Text                     as T
+import qualified Data.Profunctor               as P
 import qualified Data.Serialize                as SE
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Storable          as VS
@@ -444,3 +445,24 @@ addAll
   => [M.Map g (GLM.GroupKey g)]
   -> State.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
 addAll x = traverse (addMany . M.toList) x >> return ()
+
+-- useful data folds
+weightedSumF :: (Real w, Real v, Fractional y) => FL.Fold (w, v) y
+weightedSumF =
+  (/)
+    <$> FL.premap (\(w, v) -> realToFrac w * realToFrac v) FL.sum
+    <*> P.dimap fst realToFrac FL.sum
+
+weightedSumRecF
+  :: forall w v y rs
+   . ( V.KnownField w
+     , V.KnownField v
+     , Fractional y
+     , F.ElemOf rs w
+     , F.ElemOf rs v
+     , Real (V.Snd w)
+     , Real (V.Snd v)
+     )
+  => FL.Fold (F.Record rs) y
+weightedSumRecF =
+  FL.premap (\r -> (F.rgetField @w r, F.rgetField @v r)) weightedSumF

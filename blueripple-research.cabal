@@ -24,7 +24,7 @@ common deps
                , cereal-text >= 0.1.0 && < 0.2
                , containers
                , Frames
-               , Frames-map-reduce >= 0.1.0.1
+               , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
                , Frames-utils
                , foldl
@@ -168,6 +168,7 @@ executable mrp-model
                 , MRP.DeltaVPV
                 , MRP.Kentucky
                 , MRP.Wisconsin
+                , MRP.TurnoutScenarios
                 , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade

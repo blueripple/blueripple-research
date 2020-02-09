@@ -13,6 +13,7 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown
 import qualified Knit.Report.Cache             as KC
 
 import qualified Control.Monad.Except          as X
+import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import qualified Data.Text.Lazy                as TL
@@ -31,7 +32,7 @@ import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import qualified Frames.Serialize              as FS
-
+import qualified Frames                        as F
 
 knitX
   :: forall r a
@@ -106,3 +107,10 @@ brAddDates updated pubDate updateDate tMap =
         False -> M.empty
   in  tMap <> pubT <> updT
 
+
+logFrame
+  :: (K.KnitOne r, Foldable f, Show (F.Record rs))
+  => f (F.Record rs)
+  -> K.Sem r ()
+logFrame =
+  K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list

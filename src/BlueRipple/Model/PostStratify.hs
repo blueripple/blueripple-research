@@ -52,6 +52,7 @@ import qualified Frames.Visualization.VegaLite.Data
 import qualified Graphics.Vega.VegaLite        as GV
 import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
+
 postStratifyCell
   :: forall t q
    . (V.KnownField t, V.Snd t ~ Double)

@@ -157,27 +157,29 @@ adjTurnoutFold
      )
   => f BR.StateTurnout
   -> FL.FoldM (K.Sem effs) (F.Record (WithYS rs)) (F.FrameRec (WithYS rs))
-adjTurnoutFold stateTurnoutFrame =
-  let getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
+adjTurnoutFold stateTurnoutFrame
+  = let
+      getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
       vtbsMap = FL.fold
-        (FL.premap (\r -> (getKey r, F.rgetField @BR.BallotsCounted r)) FL.map)
+        (FL.premap (\r -> (getKey r, F.rgetField @BR.VotesHighestOffice r))
+                   FL.map
+        )
         stateTurnoutFrame
       unpackM = FMR.generalizeUnpack FMR.noUnpack
       assignM =
         FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
       adjustF ks =
-        let vtM = M.lookup ks vtbsMap
-            f x = case vtM of
-              Nothing ->
-                K.logLE
-                    K.Diagnostic
-                    (  "Failed to find "
-                    <> (T.pack $ show ks)
-                    <> " in state turnout. Leaving unadjusted."
-                    )
-                  >> return x
-              Just vt -> K.liftKnit $ adjTurnoutLong @p @t @rs vt x
-        in  FMR.postMapM f $ FL.generalize FL.list
+        let
+          vtM = M.lookup ks vtbsMap
+          f x = case vtM of
+            Nothing ->
+              K.knitError
+                ("Failed to find " <> (T.pack $ show ks) <> " in state turnout."
+                )
+            Just vt -> K.liftKnit $ adjTurnoutLong @p @t @rs vt x
+        in
+          FMR.postMapM f $ FL.generalize FL.list
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
-  in  FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
+    in
+      FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
 

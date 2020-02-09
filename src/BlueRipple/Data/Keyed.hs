@@ -282,7 +282,7 @@ aggFProduct :: SR.Semiring q => AggF q b a -> AggF q y x -> AggF q (b, y) (a, x)
 aggFProduct = aggFProduct' SR.times
 
 -- here we need to sum over intermediate states which we can only do if B is finite.  Can this be expressed
--- more generally?
+-- more generally?  
 aggFCompose' :: (FiniteSet b, SR.Semiring s) => (q -> r -> s) -> AggF q b a -> AggF r c b -> AggF s c a
 aggFCompose' times aggFba aggFcb =
   AggF $ \c -> \a -> FL.fold (FL.premap (\b -> runAggF aggFba b a `times` runAggF aggFcb c b) (FL.Fold SR.plus SR.zero id)) elements

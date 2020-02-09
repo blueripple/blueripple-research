@@ -17,7 +17,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.Wisconsin where
+module MRP.TurnoutScenarios where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
@@ -179,10 +179,10 @@ post :: forall es r.(K.KnitOne r
      -> K.Cached es [BR.StateTurnout]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
-  let stateAbbr = "WI"
-      stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)
-      stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` [stateAbbr, "National"])
+post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+  let states = ["AZ", "FL", "GA", "IA", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
+      statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
+      stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
   aseACSRaw <- P.raise $ K.useCached aseDemoCA
   asrACSRaw <- P.raise $ K.useCached asrDemoCA
   aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
@@ -211,10 +211,9 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @CatColsASR ccesRecordListAllCA predictorsASR catPredMapASR) 
   brAddMarkDown text1
-  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- stateOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
-  demographicsAndTurnoutASR <- stateOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
+  demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
+  demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
   -- join with the prefs
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
@@ -223,6 +222,21 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
       asrTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
+
+      -- fold these to state level
+  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @Office r == President)    
+      aseDemoF = FMR.concatFold $ FMR.mapReduceFold
+                 (FMR.unpackFilterRow justPres2016)
+                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.foldAndAddKey foldPrefAndTurnoutData)
+      asrDemoF = FMR.concatFold $ FMR.mapReduceFold
+                 (FMR.unpackFilterRow justPres2016)
+                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.foldAndAddKey foldPrefAndTurnoutData)              
+      asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
+      aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
+  logFrame asrByState
+{-  
       labelPSBy x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy BR.VAP)
@@ -240,50 +254,6 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                           psCellVPVByBothF
       vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
       vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
---      plotEmAll :: Int -> OfficeT -> K.Sem r ()
-      plotEmAll y o r = do
-        let tStart = (T.pack $ show y) <> " " <> (T.pack $ show o)
-            cs = Just $ BR.vpvChoroColorScale (negate r) r
-            vc = FV.ViewConfig 800 800 10
-        _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
-             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                                    && (F.rgetField @Office r == o)
-                                    && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
-                             ) vpvPostStratifiedByASE
-        return ()                     
-        _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
-             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                               && (F.rgetField @Office r == o)
-                               && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
-                             ) vpvPostStratifiedByASR
-        _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
-          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                                 && (F.rgetField @Office r == President)
-                                 && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
-                          ) vpvPostStratifiedByASE
-        _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
-          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                            && (F.rgetField @Office r == President)
-                            && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
-                          ) vpvPostStratifiedByASR
-        return ()
-  plotEmAll 2016 President 0.25
-  plotEmAll 2018 House 0.35
-  let aseDemoF = FMR.concatFold $ FMR.mapReduceFold
-              (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-              (FMR.foldAndAddKey foldPrefAndTurnoutData)
-  let asrDemoF = FMR.concatFold $ FMR.mapReduceFold
-              (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-              (FMR.foldAndAddKey foldPrefAndTurnoutData)              
-      asrSums = FL.fold asrDemoF asrTurnoutAndPrefs
-      aseSums = FL.fold aseDemoF aseTurnoutAndPrefs
-  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list aseSums
-  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list asrSums
+-}
   brAddMarkDown brReadMore
 
