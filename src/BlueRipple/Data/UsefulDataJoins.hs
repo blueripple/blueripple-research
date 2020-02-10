@@ -125,7 +125,6 @@ aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
           catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ ASECols)
             demoByState
             turnoutWithPct
-      BR.logFrame stateTurnout
       demoWithAdjTurnoutByState <- FL.foldM
         (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
         demoWithUnAdjTurnoutByState

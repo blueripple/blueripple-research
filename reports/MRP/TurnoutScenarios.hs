@@ -227,33 +227,57 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
   let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @Office r == President)    
       aseDemoF = FMR.concatFold $ FMR.mapReduceFold
                  (FMR.unpackFilterRow justPres2016)
-                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)
       asrDemoF = FMR.concatFold $ FMR.mapReduceFold
                  (FMR.unpackFilterRow justPres2016)
-                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
-  logFrame asrByState
-{-  
       labelPSBy x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy BR.VAP)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @BR.DemPref
                                          (realToFrac . F.rgetField @BR.ACSCount)
-                                         (realToFrac . F.rgetField @DemVPV))
+                                         (realToFrac . F.rgetField @BR.DemPref))
                           <*> fmap pure (fmap (labelPSBy BR.Voted)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @BR.DemPref
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
-                                         (realToFrac . F.rgetField @DemVPV))
+                                         (realToFrac . F.rgetField @BR.DemPref))
       psVPVByDistrictF =  BR.postStratifyF
-                          @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                          @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
-                          @[BR.PostStratifiedBy, DemVPV]
+                          @[BR.Year, Office, BR.StateAbbreviation]
+                          @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
+                          @[BR.PostStratifiedBy, BR.DemPref]
                           psCellVPVByBothF
-      vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
-      vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
--}
+      vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseByState
+      vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrByState
+  _ <-  K.addHvega Nothing Nothing
+        $ vlTurnoutGap
+        "Battleground Preference Post-Stratified by Age, Sex and Education (Voted=Actual Turnout, VAP=Equal Proportion)"
+        (FV.ViewConfig 800 800 10)
+        $ fmap F.rcast vpvPostStratifiedByASE
+  _ <-  K.addHvega Nothing Nothing
+        $ vlTurnoutGap
+        "Battleground Preference Post-Stratified by Age, Sex and Race (Voted=Actual Turnout, VAP=Equal Proportion)"
+        (FV.ViewConfig 800 800 10)
+        $ fmap F.rcast vpvPostStratifiedByASR
+  logFrame vpvPostStratifiedByASR
   brAddMarkDown brReadMore
 
+vlTurnoutGap :: Foldable f
+             => T.Text -- title
+             -> FV.ViewConfig
+             -> f (F.Record [BR.StateAbbreviation, BR.PostStratifiedBy, BR.DemPref])
+             -> GV.VegaLite
+vlTurnoutGap title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
+      encY = GV.position GV.Y [FV.pName @BR.StateAbbreviation, GV.PmType GV.Nominal]
+      encColor = GV.color [FV.mName @BR.PostStratifiedBy, GV.MmType GV.Nominal]
+      encDetail = GV.detail [FV.dName @BR.StateAbbreviation, GV.DmType GV.Nominal]
+      encoding = GV.encoding . encDetail . encX . encY 
+      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], GV.mark GV.Line []]
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], GV.mark GV.Point []]
+  in
+    FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec], dat]
