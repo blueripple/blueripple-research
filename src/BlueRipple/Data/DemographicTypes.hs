@@ -45,6 +45,19 @@ import qualified Graphics.Vega.VegaLite        as GV
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
 
+data DemographicGrouping = ASE | ASR | ASER deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+instance S.Serialize DemographicGrouping
+
+type instance FI.VectorFor DemographicGrouping = Vec.Vector
+
+instance Grouping DemographicGrouping
+instance K.FiniteSet DemographicGrouping
+
+type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
+
+instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 
 instance S.Serialize Sex

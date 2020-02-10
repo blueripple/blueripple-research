@@ -49,16 +49,19 @@ module BlueRipple.Data.Keyed
   , aggFProduct
   , aggFCompose'
   , aggFCompose
+  , aggFReduce
   , aggListProduct'
   , aggListProduct
   , aggListCompose'
   , aggListCompose
+  , aggListReduce
     -- * Collapsing sums of data
   , monoidOps
   , monoidOpsFromFold
   , monoidFold
   , foldCollapse
   , dataFoldCollapse
+  , dataFoldCollapseBool
   , groupCollapse
     -- * Making folds from aggregations
   , aggFold
@@ -74,8 +77,10 @@ module BlueRipple.Data.Keyed
   , toAggListRec
   , aggFProductRec'
   , aggFProductRec
+  , aggFReduceRec
   , aggListProductRec'
   , aggListProductRec
+  , aggListReduceRec
   , aggFoldRec
   , aggFoldAllRec
   , addDefaultRec
@@ -291,6 +296,9 @@ aggFCompose' times aggFba aggFcb =
 aggFCompose :: (FiniteSet b, SR.Semiring q) => AggF q b a -> AggF q c b -> AggF q c a
 aggFCompose = aggFCompose' SR.times
 
+aggFReduce :: (Eq a, SR.Semiring q) => AggF q a (a,a')
+aggFReduce = AggF $ \x (y, _) -> if x == y then SR.one else SR.zero  
+
 -- This is a (Haskell) category if we could constrain to (Eq, FiniteSet)
 
 -- productAggF SR.times identityAggF x = product SR.times x identityAggF
@@ -320,6 +328,8 @@ aggListCompose' times aggLba aggLcb = AggList $ \c -> IndexedList $ do
 aggListCompose :: SR.Semiring q =>  AggList q b a -> AggList q c b -> AggList q c a
 aggListCompose =  (Cat.<<<) -- aggListCompose' SR.times -- This is also Kleisli composition
 
+aggListReduce :: forall q a a'.(Eq a, SR.Semiring q, FiniteSet a') => AggList q a (a, a')
+aggListReduce = AggList $ \x -> IndexedList $ fmap (\y -> (SR.one, (x,y))) $ Set.toList elements
 
 {- This is already true from Star 
 instance SR.Semiring q => Cat.Category (AggList q) where
@@ -343,8 +353,14 @@ runCollapse = P.runCostar
 foldCollapse :: FL.Fold (q, d) c -> Collapse q d c
 foldCollapse fld = Collapse $ FL.fold fld . getIndexedList 
 
-dataFoldCollapse :: (q -> d -> d) -> FL.Fold d d -> Collapse q d d
+dataFoldCollapse :: (q -> d -> d) -> FL.Fold d c -> Collapse q d c
 dataFoldCollapse action fld = Collapse $ FL.fold (FL.premap (uncurry action) fld) . getIndexedList
+
+dataFoldCollapseBool :: FL.Fold d c -> Collapse Bool d c
+dataFoldCollapseBool fld =
+  let g (b, x) = b
+      fld' = FL.prefilter g $ P.lmap snd fld -- Fold (Bool, d) c
+  in foldCollapse fld'
 
 -- our data is going to need some way of being combined
 -- It often has monoid or group structure
@@ -501,6 +517,13 @@ aggFProductRec :: ( SR.Semiring q
   -> AggFRec q (b V.++ y) (a V.++ x)
 aggFProductRec = aggFProductRec' SR.times
 
+aggFReduceRec :: forall q a a'.(SR.Semiring q
+                               , Eq (F.Record a)
+                               , a F.⊆ (a V.++ a')
+                               , a' F.⊆ (a V.++ a'))
+              => AggFRec q a (a V.++ a')
+aggFReduceRec = AggF $ \r r' -> runAggF aggFReduce r (F.rcast @a r', F.rcast @a' r')
+
 aggListProductRec' :: ( b F.⊆ (b V.++ y)
                       , y F.⊆ (b V.++ y)
                       )     
@@ -520,6 +543,15 @@ aggListProductRec :: ( SR.Semiring q
                    -> AggListRec q (b V.++ y) (a V.++ x)
 aggListProductRec = aggListProductRec' SR.times                     
 
+
+aggListReduceRec ::  forall q a a'.(SR.Semiring q
+                     ,Eq (F.Record a)
+                     , a F.⊆ (a V.++ a')
+                     , a' F.⊆ (a V.++ a')
+                     , FiniteSet (F.Record a'))
+                 => AggListRec q a (a V.++ a')
+aggListReduceRec = AggList $ \r -> IndexedList $ fmap (\(x, (r1, r2)) -> (x, r1 `V.rappend` r2))
+                                   $ runAggList (aggListReduce @q @(F.Record a) @(F.Record a')) r 
 
 aggFoldRec :: ( Traversable f
               , a F.⊆ (a V.++ d)

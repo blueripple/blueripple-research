@@ -97,7 +97,7 @@ import qualified MRP.Pools as Pools
 import qualified MRP.DeltaVPV as DeltaVPV
 import qualified MRP.Kentucky as Kentucky
 import qualified MRP.Wisconsin as Wisconsin
-import qualified MRP.TurnoutScenarios as TurnoutScenarios
+import qualified MRP.TurnoutGaps as TurnoutGaps
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -131,7 +131,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostMethods] &= CA.name "methods" &= CA.help "knit \"Methods\"",
                                         [PostKentucky] &= CA.name "KY" &= CA.help "knit \"Kentucky\"",
                                         [PostWisconsin] &= CA.name "WI" &= CA.help "knit \"Wisconsin\"",
-                                        [PostTurnoutScenarios] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
+                                        [PostTurnoutGaps] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -311,17 +311,17 @@ main = do
           )
         )
         $ Wisconsin.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
-      let pubDateTurnoutScenarios = Time.fromGregorian 2020 2 5                
-      when (PostTurnoutScenarios `elem` (posts args)) $ K.newPandoc
+      let pubDateTurnoutGaps = Time.fromGregorian 2020 2 5                
+      when (PostTurnoutGaps `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
-         (postPath PostTurnoutScenarios)
-         (brAddDates (updated args) pubDateTurnoutScenarios curDate
+         (postPath PostTurnoutGaps)
+         (brAddDates (updated args) pubDateTurnoutGaps curDate
           $ M.fromList [("pagetitle", "What If Everybody Voted, Redux")
                         ,("title","What If Everybody Voted, Redux")
                         ]
           )
         )
-        $ TurnoutScenarios.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
+        $ TurnoutGaps.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
 
   case eitherDocs of
     Right namedDocs ->

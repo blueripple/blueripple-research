@@ -168,7 +168,7 @@ executable mrp-model
                 , MRP.DeltaVPV
                 , MRP.Kentucky
                 , MRP.Wisconsin
-                , MRP.TurnoutScenarios
+                , MRP.TurnoutGaps
                 , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade
