@@ -83,6 +83,7 @@ import System.Console.CmdArgs.Implicit ((&=))
 
 
 import           BlueRipple.Data.DataFrames as BR
+import           BlueRipple.Data.Loaders as BR
 import           BlueRipple.Data.PrefModel as BR
 
 import           BlueRipple.Utilities.KnitUtils
@@ -312,16 +313,15 @@ main = do
         )
         $ Wisconsin.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
       let pubDateTurnoutGaps = Time.fromGregorian 2020 2 5                
-      when (PostTurnoutGaps `elem` (posts args)) $ K.newPandoc
-        (K.PandocInfo
-         (postPath PostTurnoutGaps)
-         (brAddDates (updated args) pubDateTurnoutGaps curDate
-          $ M.fromList [("pagetitle", "What If Everybody Voted, Redux")
-                        ,("title","What If Everybody Voted, Redux")
-                        ]
-          )
-        )
-        $ TurnoutGaps.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
+      when (PostTurnoutGaps `elem` (posts args))
+        $ TurnoutGaps.post
+        (updated args)
+        aseDemographicsFrameCA
+        asrDemographicsFrameCA
+        aseTurnoutFrameCA
+        asrTurnoutFrameCA
+        stateTurnoutFrameCA
+        ccesListCA
 
   case eitherDocs of
     Right namedDocs ->

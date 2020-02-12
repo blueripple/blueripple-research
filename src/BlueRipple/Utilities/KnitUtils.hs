@@ -109,7 +109,7 @@ brAddDates updated pubDate updateDate tMap =
 
 
 logFrame
-  :: (K.KnitOne r, Foldable f, Show (F.Record rs))
+  :: (K.KnitEffects r, Foldable f, Show (F.Record rs))
   => f (F.Record rs)
   -> K.Sem r ()
 logFrame =

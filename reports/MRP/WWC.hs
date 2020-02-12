@@ -81,6 +81,7 @@ import GHC.Generics (Generic)
 
 import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP_Pref as BR
 import MRP.Common
 import MRP.CCES as CCES
@@ -136,15 +137,15 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                   (\r -> (F.rgetField @CCES.Turnout r == CCES.T_Voted)
                                          && (F.rgetField @Year r == 2016)
                                          && isWWC r
-                                         && (F.rgetField @CCES.Pres2016VoteParty r `elem` [CCES.VP_Republican, CCES.VP_Democratic]))
-                                  ((== CCES.VP_Democratic) . F.rgetField @CCES.Pres2016VoteParty)
+                                         && (F.rgetField @CCES.Pres2016VoteParty r `elem` [ET.Republican, ET.Democratic]))
+                                  ((== ET.Democratic) . F.rgetField @CCES.Pres2016VoteParty)
                                   (F.rgetField @CCES.CCESWeightCumulative)
       countWWCDemHouseVotesF y = BR.weightedCountFold @ByCCESPredictors @CCES.CCES_MRP @'[CCES.HouseVoteParty,CCES.CCESWeightCumulative]
                                  (\r -> (F.rgetField @CCES.Turnout r == CCES.T_Voted)
                                         && (F.rgetField @Year r == y)
                                         && isWWC r
-                                        && (F.rgetField @CCES.HouseVoteParty r `elem` [CCES.VP_Republican, CCES.VP_Democratic]))
-                                 ((== CCES.VP_Democratic) . F.rgetField @CCES.HouseVoteParty)
+                                        && (F.rgetField @CCES.HouseVoteParty r `elem` [ET.Republican, ET.Democratic]))
+                                 ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty)
                                  (F.rgetField @CCES.CCESWeightCumulative)
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do

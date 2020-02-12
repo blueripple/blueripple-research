@@ -94,6 +94,7 @@ import GHC.Generics (Generic)
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
@@ -234,13 +235,13 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
                                          (realToFrac . F.rgetField @DemVPV))
       psVPVByDistrictF =  BR.postStratifyF
-                          @[BR.Year, Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+                          @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
                           @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
                           @[BR.PostStratifiedBy, DemVPV]
                           psCellVPVByBothF
       vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
       vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
---      plotEmAll :: Int -> OfficeT -> K.Sem r ()
+--      plotEmAll :: Int -> ET.OfficeT -> K.Sem r ()
       plotEmAll y o r = do
         let tStart = (T.pack $ show y) <> " " <> (T.pack $ show o)
             cs = Just $ BR.vpvChoroColorScale (negate r) r
@@ -248,31 +249,31 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
         _ <- K.addHvega Nothing Nothing
              $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                                    && (F.rgetField @Office r == o)
+                                    && (F.rgetField @ET.Office r == o)
                                     && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
                              ) vpvPostStratifiedByASE
         return ()                     
         _ <- K.addHvega Nothing Nothing
              $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                               && (F.rgetField @Office r == o)
+                               && (F.rgetField @ET.Office r == o)
                                && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
                              ) vpvPostStratifiedByASR
         _ <- K.addHvega Nothing Nothing
           $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                                 && (F.rgetField @Office r == President)
+                                 && (F.rgetField @ET.Office r == ET.President)
                                  && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
                           ) vpvPostStratifiedByASE
         _ <- K.addHvega Nothing Nothing
           $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                            && (F.rgetField @Office r == President)
+                            && (F.rgetField @ET.Office r == ET.President)
                             && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
                           ) vpvPostStratifiedByASR
         return ()
-  plotEmAll 2016 President 0.25
-  plotEmAll 2018 House 0.35
+  plotEmAll 2016 ET.President 0.25
+  plotEmAll 2018 ET.House 0.35
   let aseDemoF = FMR.concatFold $ FMR.mapReduceFold
               (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
               (FMR.assignKeysAndData @CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])

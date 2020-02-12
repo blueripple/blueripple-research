@@ -108,6 +108,7 @@ import           GHC.Generics                   ( Generic
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals
                                                as BR
 import qualified BlueRipple.Data.PrefModel     as BR
@@ -136,9 +137,9 @@ countDemHouseVotesF y =
     @'[HouseVoteParty, CCESWeightCumulative]
     (\r ->
       (F.rgetField @BR.Year r == y)
-        && (F.rgetField @HouseVoteParty r `elem` [VP_Republican, VP_Democratic])
+        && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic])
     )
-    ((== VP_Democratic) . F.rgetField @HouseVoteParty)
+    ((== ET.Democratic) . F.rgetField @HouseVoteParty)
     (F.rgetField @CCESWeightCumulative)
 
 countDemPres2008VotesF =
@@ -147,10 +148,10 @@ countDemPres2008VotesF =
     (\r ->
       (F.rgetField @BR.Year r == 2008)
         && (      F.rgetField @Pres2008VoteParty r
-           `elem` [VP_Republican, VP_Democratic]
+           `elem` [ET.Republican, ET.Democratic]
            )
     )
-    ((== VP_Democratic) . F.rgetField @Pres2008VoteParty)
+    ((== ET.Democratic) . F.rgetField @Pres2008VoteParty)
     (F.rgetField @CCESWeightCumulative)
 
 countDemPres2012VotesF =
@@ -159,10 +160,10 @@ countDemPres2012VotesF =
     (\r ->
       (F.rgetField @BR.Year r == 2012)
         && (      F.rgetField @Pres2012VoteParty r
-           `elem` [VP_Republican, VP_Democratic]
+           `elem` [ET.Republican, ET.Democratic]
            )
     )
-    ((== VP_Democratic) . F.rgetField @Pres2012VoteParty)
+    ((== ET.Democratic) . F.rgetField @Pres2012VoteParty)
     (F.rgetField @CCESWeightCumulative)
 
 countDemPres2016VotesF =
@@ -171,26 +172,26 @@ countDemPres2016VotesF =
     (\r ->
       (F.rgetField @BR.Year r == 2016)
         && (      F.rgetField @Pres2016VoteParty r
-           `elem` [VP_Republican, VP_Democratic]
+           `elem` [ET.Republican, ET.Democratic]
            )
     )
-    ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
+    ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
     (F.rgetField @CCESWeightCumulative)
 
 mrpPrefs
   :: forall cc es r
-   . ( K.KnitOne r
+   . ( K.KnitEffects r
      , K.Members es r
      , K.Member GLM.RandomFu r
-     , ( (((cc V.++ '[BR.Year]) V.++ '[Office]) V.++ '[DemVPV])
+     , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[DemVPV])
            V.++
            '[BR.DemPref]
        )
          ~
-         (cc V.++ '[BR.Year, Office, DemVPV, BR.DemPref])
-     , FS.RecSerialize (cc V.++ '[BR.Year, Office, DemVPV, BR.DemPref])
-     , FI.RecVec (cc V.++ '[BR.Year, Office, DemVPV, BR.DemPref])
-     , V.RMap (cc V.++ '[BR.Year, Office, DemVPV, BR.DemPref])
+         (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
+     , FS.RecSerialize (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
+     , FI.RecVec (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
+     , V.RMap (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
      , cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
      , V.RMap cc
      , V.ReifyConstraint Show V.ElField cc
@@ -207,7 +208,7 @@ mrpPrefs
                V.++
                cc
                V.++
-               '[BR.Year, Office, DemVPV, BR.DemPref]
+               '[BR.Year, ET.Office, DemVPV, BR.DemPref]
            )
        )
 mrpPrefs ccesRecordListAllCA predictor catPredMap = do
@@ -216,7 +217,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
         let addCols p =
               FT.mutate (const $ FT.recordSingleton @BR.DemPref p)
                 . FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p))
-                . FT.mutate (const $ FT.recordSingleton @Office office)
+                . FT.mutate (const $ FT.recordSingleton @ET.Office office)
                 . FT.mutate (const $ FT.recordSingleton @BR.Year year)
             g lkM =
               let lk = fromMaybe (lp F.&: V.RNil) lkM
@@ -232,7 +233,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
         fa
   predsByLocationPres2008 <- cacheIt
     "mrp/tmp/pres2008"
-    (   lhsToFrame 2008 President
+    (   lhsToFrame 2008 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2008VotesF
                                predictor
@@ -241,7 +242,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
     )
   predsByLocationPres2012 <- cacheIt
     "mrp/tmp/pres2012"
-    (   lhsToFrame 2012 President
+    (   lhsToFrame 2012 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2012VotesF
                                predictor
@@ -250,7 +251,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
     )
   predsByLocationPres2016 <- cacheIt
     "mrp/tmp/pres2016"
-    (   lhsToFrame 2016 President
+    (   lhsToFrame 2016 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2016VotesF
                                predictor
@@ -260,7 +261,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
   predsByLocationHouse <- traverse
     (\y -> cacheIt
       ("mrp/tmp/house" <> T.pack (show y))
-      (   lhsToFrame y House
+      (   lhsToFrame y ET.House
       <$> (predictionsByLocation ccesRecordListAllCA
                                  (countDemHouseVotesF y)
                                  predictor

@@ -28,6 +28,7 @@ module MRP.CCES
 
 import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
@@ -341,34 +342,35 @@ type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
 instance FV.ToVLDataValue (F.ElField PartisanIdLeaner) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
-
+{-
 data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor VotePartyT = V.Vector
 instance S.Serialize VotePartyT
+-}
 
-parseHouseVoteParty :: T.Text -> VotePartyT
-parseHouseVoteParty "Democratic" = VP_Democratic
-parseHouseVoteParty "Republican" = VP_Republican
-parseHouseVoteParty _ = VP_Other
+parseHouseVoteParty :: T.Text -> ET.PartyT
+parseHouseVoteParty "Democratic" = ET.Democratic
+parseHouseVoteParty "Republican" = ET.Republican
+parseHouseVoteParty _ = ET.Other
 
-type HouseVoteParty = "HouseVoteParty" F.:-> VotePartyT
+type HouseVoteParty = "HouseVoteParty" F.:-> ET.PartyT
 
-parsePres2016VoteParty :: T.Text -> VotePartyT
-parsePres2016VoteParty "Hilary Clinton" = VP_Democratic
-parsePres2016VoteParty "Donald Trump" = VP_Republican
-parsePres2016VoteParty _ = VP_Other
+parsePres2016VoteParty :: T.Text -> ET.PartyT
+parsePres2016VoteParty "Hilary Clinton" = ET.Democratic
+parsePres2016VoteParty "Donald Trump" = ET.Republican
+parsePres2016VoteParty _ = ET.Other
 
-parsePres2012VoteParty :: T.Text -> VotePartyT
-parsePres2012VoteParty "Barack Obama" = VP_Democratic
-parsePres2012VoteParty "Mitt Romney" = VP_Republican
-parsePres2012VoteParty _ = VP_Other
+parsePres2012VoteParty :: T.Text -> ET.PartyT
+parsePres2012VoteParty "Barack Obama" = ET.Democratic
+parsePres2012VoteParty "Mitt Romney" = ET.Republican
+parsePres2012VoteParty _ = ET.Other
 
-parsePres2008VoteParty :: T.Text -> VotePartyT
+parsePres2008VoteParty :: T.Text -> ET.PartyT
 parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
-                           then VP_Democratic
+                           then ET.Democratic
                            else if T.isInfixOf "John McCain" t
-                                then VP_Republican
-                                     else VP_Other
+                                then ET.Republican
+                                     else ET.Other
 
 {-                                          
 parsePres2008VoteParty "Barack Obama" = VP_Democratic
@@ -376,10 +378,11 @@ parsePres2008VoteParty "John McCain" = VP_Republican
 parsePres2008VoteParty _ = VP_Other
 -}
 
-type Pres2016VoteParty = "Pres2016VoteParty" F.:-> VotePartyT
-type Pres2012VoteParty = "Pres2012VoteParty" F.:-> VotePartyT 
-type Pres2008VoteParty = "Pres2008VoteParty" F.:-> VotePartyT
+type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
+type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT 
+type Pres2008VoteParty = "Pres2008VoteParty" F.:-> ET.PartyT
 
+{-
 data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor OfficeT = V.Vector
 instance S.Serialize OfficeT
@@ -388,7 +391,7 @@ instance S.Serialize OfficeT
 type Office = "Office" F.:-> OfficeT
 instance FV.ToVLDataValue (F.ElField MRP.CCES.Office) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
-
+-}
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
@@ -521,7 +524,7 @@ predictionsByLocation ::
                   , V.ReifyConstraint Show V.ElField cc
                   , V.RecordToList cc
                   , Ord (F.Record cc)
-                  , K.KnitOne r
+                  , K.KnitEffects r
 --                  , K.Member (P.Error GLM.GLMError) r
                   , K.Members es r
              )

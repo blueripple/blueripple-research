@@ -91,9 +91,14 @@ import qualified Numeric.SparseDenseConversions as SD
 import qualified Statistics.Types              as ST
 import GHC.Generics (Generic)
 
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Clock               as Time
+import qualified Data.Time.Format              as Time
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
@@ -177,20 +182,47 @@ gaps made a big difference.
 text2 :: T.Text
 text2 = [i|
 Let's return to GA and TX for a minute.  These are not traditional battleground states. TX
-voted for Trump by almost 10 pts in 2016. But changing
+voted for Trump by almost a 10% margin in 2016. But changing
 demographics---racial and educational---are making Texas more purple.  And the large shift
 in preference we see from just the turnout gap suggests that TX is already more purple than
-recent outcomes suggest.  This is particularly interesting this year because Texas has a number
-of retirements in the house, making a number of more competitive house elections and those
-can drive higher and more balanced turnout. This is consistent with the Economist piece,
-which shows TX going blue under the everybody votes scenario.
+recent outcomes suggest.  This year, because Texas has a number
+of retirements in the house, the local house races will be more competitive house and that
+often drives higher and more balanced turnout. GA, also traditionally a red state,
+was closer than TX in 2016 with Trump winning by about 5%. And GA, by our simple model, could
+shift about 6pts bluer if there were no turnout gaps.
 
-GA, also traditionally a red state,  was closer than TX in 2016.
-Trump won by 5 pts. And GA, by our simple model, could
-shift about 6pts bluer if there were no turnout gaps.  Like TX, the
-Economist model has GA going blue in an everybody votes in equal propotion
-scenario.
+What we see from this analysis is that turnout gaps are different in different states.  This
+can already help you focus your efforts: if enfranchisement and turnout are something you care about,
+this analysis suggests that putting your effort (or money) into groups working in AZ, FL, NV and PA, or
+specific house or state legislative candidates in those same states, might be the best choice in terms of
+affecting the outcome of the presidential race.
+Devoting energy to closing turnout gaps in GA and TX is also likely to be worthwhile, helping
+to win house and state legislative races and putting pressure on Republican efforts to hold the
+state in the Presidential race (and, in the case of TX, the senate race).
+Once the primaries are done, we will start focusing on the house races in those states to see
+which might have useful overlap with turnout efforts.
 
+Now we've identified some battleground states where turnout gaps are important to presidential vote outcomes.
+But *how much* would turnout need to change in any of these states to flip them or even seriously shift
+the outcome?  And how much might that cost? Let's consider
+a plan in each battleground state to increase turnout in any demographic group which leans 60/40 or more
+Democratic. In the chart below we plot a point for each of the battleground states we looked at above.  The horizontal
+position of the dot reflects the % turnout shift in Dem leaning voters required to reach a 50/50 preference split,
+The vertical position indicates the cost of that effort at $33/new voter---a reasonable estimate for
+cost per voter, as explained in our [last post][BR:TurnoutHowHigh].
+
+Figuring out the boost required to reach 50/50 in overall preference involves some simple but messy algebra.
+We've put the details on a [separate page][BR:BoostNotes].
+
+[BR:Home]: <https://blueripplepolitics.org>
+[BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
+[BR:BoostNotes]: <${brGithubUrl ((postRoute PostTurnoutGaps) <> "turnoutBoostExplainer")}#>
+[Economist:EveryoneVoted]: <https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798>
+[FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+|]
+
+text3 :: T.Text
+text3 = [i|
 
 One of our themes at [Blue Ripple Politics][BR:Home]
 is that we believe that Democracy works better if everyone votes, and that we should prioritize laws and policies that
@@ -257,18 +289,52 @@ foldPrefAndTurnoutData =  FF.sequenceRecFold
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
                           V.:& V.RNil
 
-post :: forall es r.(K.KnitOne r
+type BoostA = "boostA" F.:-> Double
+type BoostB = "boostB" F.:-> Double
+type BoostPop = "boostPop" F.:-> Int
+type ToFlip = "ToFlip" F.:-> Double
+
+
+foldPrefAndTurnoutDataBoost :: Double
+                            -> FL.Fold (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref, BoostA, BoostB, BoostPop, ToFlip])
+foldPrefAndTurnoutDataBoost thresh =
+  let t r = F.rgetField @BR.DemPref r > thresh
+      dVotesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.DemPref r * F.rgetField @BR.VotedPctOfAll r) FL.sum
+      votesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r) FL.sum 
+      popF = FL.prefilter t $ FL.premap (F.rgetField @BR.ACSCount) FL.sum
+      aNF = FL.prefilter t $ FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * realToFrac (F.rgetField @BR.DemPref r)) FL.sum
+      aDF = dVotesF
+      aF = (/) <$> aNF <*> aDF
+      bNF = popF
+      bDF = votesF
+      bF = (/) <$> fmap realToFrac bNF <*> bDF
+      prefF = (/) <$> dVotesF <*> votesF
+      toFlipF = (\p a b -> let d = (0.5 - p)/p in d/(a - (1.0 + d)*b)) <$> prefF <*> aF <*> bF
+    in FF.sequenceRecFold
+       $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
+       V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+       V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @DemVPV)
+       V.:& FF.toFoldRecord prefF
+       V.:& FF.toFoldRecord aF
+       V.:& FF.toFoldRecord bF
+       V.:& FF.toFoldRecord bNF
+       V.:& FF.toFoldRecord toFlipF       
+       V.:& V.RNil                          
+
+post :: forall es r.(K.KnitMany r
         , K.Members es r
         , K.Member GLM.RandomFu r
         )
-     => K.Cached es [BR.ASEDemographics]
+     => Bool
+     -> K.Cached es [BR.ASEDemographics]
      -> K.Cached es [BR.ASRDemographics]
      -> K.Cached es [BR.TurnoutASE]
      -> K.Cached es [BR.TurnoutASR]
      -> K.Cached es [BR.StateTurnout]
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   let states = ["AZ", "FL", "GA", "IA", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
       statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
       stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
@@ -313,14 +379,14 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
 
       -- fold these to state level
-  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @Office r == President)    
+  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)    
       aseDemoF = FMR.concatFold $ FMR.mapReduceFold
                  (FMR.unpackFilterRow justPres2016)
-                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)
       asrDemoF = FMR.concatFold $ FMR.mapReduceFold
                  (FMR.unpackFilterRow justPres2016)
-                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
@@ -335,48 +401,63 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
                                          (realToFrac . F.rgetField @BR.DemPref))
       psVPVByDistrictF =  BR.postStratifyF
-                          @[BR.Year, Office, BR.StateAbbreviation]
+                          @[BR.Year, ET.Office, BR.StateAbbreviation]
                           @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
                           @[BR.PostStratifiedBy, BR.DemPref]
                           psCellVPVByBothF
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByDistrictF aseByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByDistrictF asrByState
       vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
-{-      
-      vpvPostStratifiedVAPByASE = FL.fold
+      vpvPostStratifiedVAPByASR = FL.fold
                                   (BR.aggFoldRec
-                                   (BR.aggFReduceRec @Bool @[BR.Year, Office, BR.StateAbbreviation] @(CatColsASE V.++ '[BR.CongressionalDistrict]))
-                                   (BR.dataFoldCollapseBool foldPrefAndTurnoutData)                                
-                                   (FL.fold (K.dimap F.rcast S.toList FL.set) aseTurnoutAndPrefs)
+                                   (BR.aggFReduceRec @Bool @[BR.Year, ET.Office, BR.StateAbbreviation] @CatColsASR)
+                                   (BR.dataFoldCollapseBool $ foldPrefAndTurnoutDataBoost 0.5)                                
+                                   (FL.fold (K.dimap F.rcast S.toList FL.set) asrByState)
                                   )
-                                  $ fmap F.rcast aseTurnoutAndPrefs
-  logFrame  vpvPostStratifiedVAPByASE
--}
-  brAddMarkDown text1
-  _ <-  K.addHvega Nothing (Just $ "\"Voted\" is Actual Turnout and \"VAP\" (Voting Age Population) is equal proportion.")
-        $ vlTurnoutGap
-        "Battleground Preference Post-Stratified by Age, Sex and Race"
-        (FV.ViewConfig 800 800 10)
-        $ fmap F.rcast vpvPostStratifiedByASR
-  brAddMarkDown text2
-{-  _ <-  K.addHvega Nothing Nothing
-        $ vlTurnoutGap
-        "Battleground Preference Post-Stratified by Age, Sex and Race (Voted=Actual Turnout, VAP=Equal Proportion)"
-        (FV.ViewConfig 800 800 10)
-        $ fmap F.rcast vpvPostStratifiedByASR
--}
---  logFrame vpvPostStratifiedByASE
-  brAddMarkDown brReadMore
-
+                                  $ fmap F.rcast asrByState
+  logFrame  vpvPostStratifiedVAPByASR
+  presByStateFrame <- BR.presidentialByStateFrame 
+  logFrame presByStateFrame 
+  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+  let pubDateTurnoutGaps =  Time.fromGregorian 2020 2 15
+  K.newPandoc
+    (K.PandocInfo ((postRoute PostTurnoutGaps) <> "main")
+      (brAddDates updated pubDateTurnoutGaps curDate
+       $ M.fromList [("pagetitle", "What If Everybody Voted, Redux")
+                    ,("title","What If Everybody Voted, Redux")
+                    ]
+      ))
+      $ do        
+        brAddMarkDown text1
+        _ <-  K.addHvega Nothing (Just $ "\"Voted\" is Actual Turnout and \"VAP\" (Voting Age Population) is equal proportion.")
+          $ vlTurnoutGap
+          "Battleground Preference Post-Stratified by Age, Sex and Race"
+          (FV.ViewConfig 800 800 10)
+          $ fmap F.rcast vpvPostStratifiedByASR
+        brAddMarkDown text2
+    --
+        brAddMarkDown text3
+        brAddMarkDown brReadMore
+     
+  K.newPandoc
+    (K.PandocInfo ((postRoute PostTurnoutGaps) <> "turnoutBoostExplainer")
+      (brAddDates updated pubDateTurnoutGaps curDate
+       $ M.fromList [("pagetitle", "Turnout Boost Details")
+                    ,("title","Turnout Boost Details")
+                    ]
+      ))
+    $ do
+    brAddMarkDown turnoutBoostExplainerMD
+         
 vlTurnoutGap :: Foldable f
              => T.Text -- title
              -> FV.ViewConfig
-             -> f (F.Record [BR.StateAbbreviation, Office, BR.Year, BR.DemographicGroupingC, BR.PostStratifiedBy, BR.DemPref])
+             -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, BR.DemographicGroupingC, BR.PostStratifiedBy, BR.DemPref])
              -> GV.VegaLite
 vlTurnoutGap title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
---      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
-      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office" "State/Race" 
+--      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
+      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office" "State/Race" 
       encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
       encY = GV.position GV.Y [GV.PName "State/Race", GV.PmType GV.Nominal]
       encColor = GV.color [FV.mName @BR.PostStratifiedBy, GV.MmType GV.Nominal]
@@ -387,3 +468,58 @@ vlTurnoutGap title vc rows =
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec], dat]
+
+
+turnoutBoostExplainerMD :: T.Text
+turnoutBoostExplainerMD = [here|
+Let's label our groups by $g$, with turnout $T_g$, population $N_g$ and
+Dem preference $P_g$. If the votes cast for dems are $V_D$ out of the total votes $V$,
+then post-stratified preference is
+
+$\begin{equation}
+P = \frac{V_D}{V}=\frac{\sum_g T_g N_g P_g}{\sum_g T_g N_g}
+\end{equation}$
+
+splitting into dem leaners (denoted by $g\in D$) and others ($g \in R$):
+
+$\begin{equation}
+P = \frac{\sum_{g\in D} T_g N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} T_g N_g + \sum_{g \in R} T_g N_g}
+\end{equation}$
+
+Suppose we boost turnout in Dem leaning groups by x (so for a 1% boost, x would be 0.01):
+
+$\begin{equation}
+P(x) = \frac{\sum_{g\in D} (T_g + x) N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} (T_g + x) N_g + \sum_{g \in R} T_g N_g}
+=\frac{x\sum_{g \in D}N_g P_g + V_D}{x\sum_{g \in D} N_g + V}
+=\frac{V_D}{V}\frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V} = P \frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V}
+\end{equation}$
+
+Usually, we're curious about what $x$ we need for a certain $P(x)$.  For example, $P(x)=0.5$ is the level required to "flip" a state.  So let's
+call the $P(x)$ we're hoping for $P_h$ and write $P_h =P\times(1 + \delta)$ or $\delta = \frac{P_h - P}{P}$.
+Also, just to simplify things, we'll define $a = \sum_{g \in D}N_g P_g/V_D$ and $b =  \sum_{g \in D} N_g/V$.  So we have
+
+$\begin{equation}
+P\times(1 + \delta) = P \frac {1 + ax}{1 + bx}
+\end{equation}$
+
+which we can solve for $x$:
+
+$\begin{equation}
+x = \frac{\delta}{a - (1+\delta)b}
+\end{equation}$
+
+We can understand this formula a bit. We need a boost that is proportional to $\delta$, the gap we need to make up.
+Making up ground is easier when Dem preference is high in the groups we are boosting ($a - b$, more or less).
+
+Let's look at a simple example. Imagine 800 voters in group A with 50% voter turnout and leaning 75/25 toward Dems
+and 1000 voters in group B with 60% voter turnout and leaning 65/35 toward Republicans.
+A Democrat would get 280 votes from the Dem leaners and 210 votes from
+the R leaners, for a total of 490.
+The Republican would get 120 votes from the Dem leaners and 390 from the R leaners, for a total of 510. So
+$P_0=\frac{V_D}{V} = \frac{490}{1000} = 0.49$
+
+How much do we need to boost turnout in group A to flip the state, that is to get P_h = 0.5?
+Plugging the numbers above into the equation for $P(x)$ ($\delta = 0.02$; $a = 560/510 = 1.1$; $b = 800/1000 = 0.8$),
+we get $x = 0.11 = 11\%$. That is, we'd need to boost turnout in group A by 11%, from 50% to 61%.
+|]
+

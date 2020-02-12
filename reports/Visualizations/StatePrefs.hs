@@ -29,6 +29,7 @@ import           MRP.DeltaVPV                   ( DemVPV
 
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames    as BR
                                          hiding ( Office )
 import qualified MRP.CCES                      as BR
@@ -41,7 +42,7 @@ vlPrefVsTime
   -> FV.ViewConfig
   -> f
        ( F.Record
-           '[BR.StateAbbreviation, BR.Office, BR.Year, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC, DemPref]
+           '[BR.StateAbbreviation, ET.Office, BR.Year, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC, DemPref]
        )
   -> GV.VegaLite
 vlPrefVsTime title stateAbbr vc@(FV.ViewConfig w h _) rows

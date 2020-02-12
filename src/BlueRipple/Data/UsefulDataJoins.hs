@@ -76,7 +76,7 @@ type ASRCols = [BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC]
 
 aseDemographicsWithAdjTurnoutByCD
   :: forall es r
-   . (K.KnitOne r, K.Members es r)
+   . (K.KnitEffects r, K.Members es r)
   => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASECols V.++ '[BR.ACSCount]))
   -> K.Cached
        es
@@ -144,7 +144,7 @@ aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
 
 asrDemographicsWithAdjTurnoutByCD
   :: forall es r
-   . (K.KnitOne r, K.Members es r)
+   . (K.KnitEffects r, K.Members es r)
   => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASRCols V.++ '[BR.ACSCount]))
   -> K.Cached
        es

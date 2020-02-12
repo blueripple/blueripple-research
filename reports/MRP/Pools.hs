@@ -89,6 +89,7 @@ import GHC.Generics (Generic)
 
 import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.PrefModel as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
@@ -358,8 +359,8 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
       countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                 (\r -> (F.rgetField @Turnout r == T_Voted)
                                       && (F.rgetField @Year r == 2016)
-                                      && (F.rgetField @Pres2016VoteParty r `elem` [VP_Republican, VP_Democratic]))
-                               ((== VP_Democratic) . F.rgetField @Pres2016VoteParty)
+                                      && (F.rgetField @Pres2016VoteParty r `elem` [ET.Republican, ET.Democratic]))
+                               ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
 
 {-  

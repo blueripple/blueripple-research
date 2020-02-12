@@ -466,3 +466,22 @@ weightedSumRecF
   => FL.Fold (F.Record rs) y
 weightedSumRecF =
   FL.premap (\r -> (F.rgetField @w r, F.rgetField @v r)) weightedSumF
+
+
+sumProdIfRecF
+  :: forall w v t y rs
+   . ( V.KnownField w
+     , V.KnownField v
+     , V.KnownField t
+     , Fractional y
+     , F.ElemOf rs w
+     , F.ElemOf rs v
+     , F.ElemOf rs t
+     , Real (V.Snd w)
+     , Real (V.Snd v)
+     )
+  => (V.Snd t -> Bool)
+  -> FL.Fold (F.Record rs) y
+sumProdIfRecF test = FL.prefilter (test . F.rgetField @t) $ FL.premap
+  (\r -> (realToFrac (F.rgetField @w r) * realToFrac (F.rgetField @v r)))
+  FL.sum
