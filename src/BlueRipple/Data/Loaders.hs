@@ -78,15 +78,14 @@ fixPresidentialElectionRow r = F.rcast @PresidentialElectionCols (mutate r)
 
 presidentialByStateFrame
   :: K.KnitEffects r => K.Sem r (F.FrameRec PresidentialElectionCols)
-presidentialByStateFrame =
-  cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols
-    (T.pack BR.presidentialByStateCSV)
-    Nothing
-    (const True)
-    id
-    fixPresidentialElectionRow
-    Nothing
-    "presByState.bin"
+presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns BR.PresidentialByState)
+  (T.pack BR.presidentialByStateCSV)
+  Nothing
+  (const True)
+  id
+  fixPresidentialElectionRow
+  Nothing
+  "presByState.bin"
 
 cachedFrameLoader
   :: forall qs rs r
@@ -126,7 +125,8 @@ cachedFrameLoader filePath parserOptionsM fixRow cachePathM key = do
 
 cachedMaybeFrameLoader
   :: forall qs ls rs r
-   . ( V.RMap rs
+   .   -- ^ we load with ls, rcast to qs before fixing maybes then transform qs to rs before caching and returning 
+     ( V.RMap rs
      , V.RMap qs
      , V.RMap ls
      , V.RFoldMap qs
