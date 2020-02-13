@@ -52,6 +52,10 @@ import qualified Frames.Serialize              as FS
 
 
 
+electoralCollegeFrame :: K.KnitEffects r => K.Sem r (F.Frame BR.ElectoralCollege)
+electoralCollegeFrame = cachedFrameLoader (T.pack BR.electorsCSV) Nothing id Nothing "electoralCollege.bin"
+
+
 parsePEParty :: T.Text -> ET.PartyT
 parsePEParty "democrat"   = ET.Democratic
 parsePEParty "republican" = ET.Republican

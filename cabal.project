@@ -12,7 +12,7 @@ allow-newer: knit-haskell, vinyl
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: d56918c0960eb82e95a8fff47a7f018761c6439e
+  tag: 5441fa441fdd1e821931abbe2a1ba77296a2d885
 
 source-repository-package
   type: git
