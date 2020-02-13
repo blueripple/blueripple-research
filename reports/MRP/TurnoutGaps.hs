@@ -74,7 +74,7 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import           BlueRipple.Configuration 
 import           BlueRipple.Utilities.KnitUtils 
-import           BlueRipple.Utilities.TableUtils 
+import qualified BlueRipple.Utilities.TableUtils as BR
 --import           BlueRipple.Data.DataFrames 
 
 import qualified Data.IndexedSet               as IS
@@ -351,9 +351,10 @@ post :: forall es r.(K.KnitMany r
      -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
 post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
-  let states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
-      statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
-      stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
+  let --states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
+    states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
+    statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
+    stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
   aseACSRaw <- P.raise $ K.useCached aseDemoCA
   asrACSRaw <- P.raise $ K.useCached asrDemoCA
   aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
@@ -484,17 +485,19 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                       $ fmap F.recMaybe
                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
   logFrame toFlipWithEV
-  let boostColonnade =
+  let boostColonnade cas =
         let toFlipD = F.rgetField @'("ToFlipDems",Double)
+            toFlipAll = F.rgetField @'("ToFlipAll",Double)
             evs = F.rgetField @BR.Electors
+            pop  = F.rgetField @BR.ACSCount 
             bPop = F.rgetField @'("BoostPopDems",Int)
-        in mconcat
-           [C.headed "State" (F.rgetField @BR.StateAbbreviation)
-           ,C.headed "Electoral Votes" (T.pack . show . evs)
-           ,C.headed "Boosting All Requires (%)" (\r -> T.pack . show $ (100 * F.rgetField @'("ToFlipAll",Double) r))
-           ,C.headed "Boosting Dems Requires (%)" (\r -> T.pack . show $ (100 * toFlipD r))
-           ,C.headed "Cost/Ev ($)" (\r -> T.pack . show $ 33 * realToFrac (bPop r) * toFlipD r / realToFrac (evs r))
-           ]
+        in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
+           <> C.headed "Electoral Votes" (BR.toCell cas "Electoral Votes" "EVs" (BR.numberToStyledHtml "%d". evs))
+           <> C.headed "Population (000s)" (BR.toCell cas "Population" "Pop" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (pop r)/1000)) :: Int)))
+           <> C.headed "Dem Leaners (000s)" (BR.toCell cas "Leaners" "Leaners" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (bPop r)/1000)) :: Int)))
+           <> C.headed "Boosting All Requires (%)" (BR.toCell cas "BoostAll" "% Of All" (BR.numberToStyledHtml "%2.2f" . (*100) . toFlipAll))
+           <> C.headed "Boosting Dems Requires (%)" (BR.toCell cas "BoostDem" "% Of Dems" (BR.numberToStyledHtml "%2.2f" . (*100) . toFlipD))
+           <> C.headed "New Voters/Ev" (BR.toCell cas "VotersPerEv" "Voters/EV" (BR.numberToStyledHtml "%d" . (\r -> (round (realToFrac (bPop r) * toFlipD r / realToFrac (evs r))) :: Int)))
         
   
   
@@ -530,7 +533,8 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
           (FV.ViewConfig 800 800 10)
           $ fmap F.rcast vpvPostStratifiedByASR
         brAddMarkDown text2
-        K.addColonnadeTextTable boostColonnade toFlipWithEV
+--        K.addColonnadeTextTable boostColonnade toFlipWithEV
+        BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3
         brAddMarkDown brReadMore
      
