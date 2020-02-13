@@ -294,10 +294,9 @@ type BoostB = "boostB" F.:-> Double
 type BoostPop = "boostPop" F.:-> Int
 type ToFlip = "ToFlip" F.:-> Double
 
-
 foldPrefAndTurnoutDataBoost :: Double
                             -> FL.Fold (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref, BoostA, BoostB, BoostPop, ToFlip])
+                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref, BoostA, BoostB, BoostPop])
 foldPrefAndTurnoutDataBoost thresh =
   let t r = F.rgetField @BR.DemPref r > thresh
       dVotesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.DemPref r * F.rgetField @BR.VotedPctOfAll r) FL.sum
@@ -310,7 +309,7 @@ foldPrefAndTurnoutDataBoost thresh =
       bDF = votesF
       bF = (/) <$> fmap realToFrac bNF <*> bDF
       prefF = (/) <$> dVotesF <*> votesF
-      toFlipF = (\p a b -> let d = (0.5 - p)/p in d/(a - (1.0 + d)*b)) <$> prefF <*> aF <*> bF
+--      toFlipF = (\p a b -> let d = (0.5 - p)/p in d/(a - (1.0 + d)*b)) <$> prefF <*> aF <*> bF
     in FF.sequenceRecFold
        $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
        V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
@@ -319,8 +318,21 @@ foldPrefAndTurnoutDataBoost thresh =
        V.:& FF.toFoldRecord aF
        V.:& FF.toFoldRecord bF
        V.:& FF.toFoldRecord bNF
-       V.:& FF.toFoldRecord toFlipF       
        V.:& V.RNil                          
+
+type PresPrefDem = "PresPrefDem" F.:-> Double
+
+presByStateToDemPrefF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[PresPrefDem])
+presByStateToDemPrefF =
+  let
+    party = F.rgetField @ET.Party
+    votes = F.rgetField @ET.Votes
+    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
+    demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
+    demPrefF = demPref <$> demVotesF <*> demRepVotesF
+  in fmap (FT.recordSingleton @PresPrefDem) demPrefF
+
 
 post :: forall es r.(K.KnitMany r
         , K.Members es r
@@ -370,6 +382,15 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
   demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
   -- join with the prefs
+  K.logLE K.Info "Computing pres-election based prefs"
+  presPrefByStateFrame <- do
+    let fld = FMR.concatFold $ FMR.mapReduceFold
+              MR.noUnpack
+              (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
+              (FMR.foldAndAddKey presByStateToDemPrefF)
+    presByStateFrame <- BR.presidentialByStateFrame
+    return $ FL.fold fld
+      presByStateFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
@@ -408,16 +429,25 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByDistrictF aseByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByDistrictF asrByState
       vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
-      vpvPostStratifiedVAPByASR = FL.fold
-                                  (BR.aggFoldRec
-                                   (BR.aggFReduceRec @Bool @[BR.Year, ET.Office, BR.StateAbbreviation] @CatColsASR)
-                                   (BR.dataFoldCollapseBool $ foldPrefAndTurnoutDataBoost 0.5)                                
-                                   (FL.fold (K.dimap F.rcast S.toList FL.set) asrByState)
-                                  )
-                                  $ fmap F.rcast asrByState
-  logFrame  vpvPostStratifiedVAPByASR
-  presByStateFrame <- BR.presidentialByStateFrame 
-  logFrame presByStateFrame 
+      postStratifiedWithBoostByASR = FL.fold
+                                     (FMR.concatFold $ FMR.mapReduceFold
+                                      MR.noUnpack
+                                      (FMR.assignKeysAndData @[BR.Year, ET.Office, BR.StateAbbreviation])
+                                      (FMR.foldAndAddKey $ foldPrefAndTurnoutDataBoost 0.5)
+                                     )
+                                  asrByState
+      asrByStateWithPresPref =  catMaybes
+                                $ fmap F.recMaybe
+                                $ F.leftJoin @[BR.StateAbbreviation, BR.Year] postStratifiedWithBoostByASR
+                                $ fmap (F.rcast @[BR.Year, BR.StateAbbreviation, PresPrefDem]) presPrefByStateFrame
+      toFlip r =
+        let a = F.rgetField @BoostA r
+            b = F.rgetField @BoostB r
+            p = F.rgetField @PresPrefDem r
+            d = (0.5 - p)/p
+        in FT.recordSingleton @ToFlip $ d/(a - (1.0 + d) * b)
+      asrBoosts = fmap (FT.mutate toFlip) asrByStateWithPresPref          
+  logFrame asrBoosts                       
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateTurnoutGaps =  Time.fromGregorian 2020 2 15
   K.newPandoc
