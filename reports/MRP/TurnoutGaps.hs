@@ -391,7 +391,77 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
   demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
-  -- join with the prefs
+  K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
+  let asrTurnoutComparison yPrefs yPop yT1 yT2 =
+        let isYear y r = (F.rgetField @BR.Year r == y)
+            isYearPres y r = isYear y r && (F.rgetField @ET.Office r == ET.President)
+
+            turnoutByCD y = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR V.++ '[BR.VotedPctOfAll]))
+                               $ F.filterFrame (isYear y)  demographicsAndTurnoutASR
+            popByCD y = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR V.++ '[BR.ACSCount]))
+                           $ F.filterFrame (isYear y)  demographicsAndTurnoutASR
+            prefsByState y =  fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.DemPref]))
+                              $ F.filterFrame (isYearPres y) inferredPrefsASR
+            turnoutAndPopToStateF :: FL.Fold (F.Record ([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
+                                             (F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
+            turnoutAndPopToStateF = FMR.concatFold $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.splitOnKeys @('[BR.StateAbbreviation] V.++ CatColsASR))
+                                    (FMR.foldAndAddKey
+                                      (FF.sequenceRecFold
+                                      $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
+                                      V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                                      V.:& V.RNil)
+                                    )
+            turnoutAndPopByState y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
+                                     $ FL.fold turnoutAndPopToStateF
+                                     (catMaybes
+                                       $ fmap F.recMaybe
+                                       $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR) (popByCD yPop) (turnoutByCD y))
+            allJoined y =  fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
+                           $ catMaybes
+                           $ fmap F.recMaybe
+                           $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) (prefsByState yPrefs) (turnoutAndPopByState y) 
+            turnoutF = FF.sequenceRecFold 
+                          $ FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                          V.:& FF.toFoldRecord (FL.prefilter ((> 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                          V.:& V.RNil
+            comparisonF :: FL.Fold (F.Record ('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
+                           (F.FrameRec [BR.StateAbbreviation, '("Turnout", Double), '("DTurnout", Double)])
+            comparisonF = FMR.concatFold $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.splitOnKeys @'[BR.StateAbbreviation])
+                          (FMR.foldAndAddKey turnoutF)
+            turnout1 = fmap  (FT.retypeColumn @'("Turnout",Double) @'("T1",Double)
+                              . FT.retypeColumn @'("DTurnout",Double) @'("DT1",Double))
+                             $  FL.fold (FL.premap F.rcast comparisonF) (allJoined yT1)                       
+            turnout2 = fmap (FT.retypeColumn @'("Turnout",Double) @'("T2",Double)
+                              . FT.retypeColumn @'("DTurnout",Double) @'("DT2",Double))
+                       . fmap (F.rcast @[BR.StateAbbreviation,  '("Turnout",Double),  '("DTurnout",Double)])
+                       $ FL.fold (FL.premap F.rcast comparisonF) (allJoined yT2)
+            result = catMaybes
+                     $ fmap F.recMaybe
+                     $ F.leftJoin @'[BR.StateAbbreviation] turnout1 turnout2
+        in result
+        
+      turnoutCompColonnade cas =
+        let t1 = F.rgetField @'("T1",Double)
+            t2 = F.rgetField @'("T2",Double)
+            diff r = t1 r - t2 r 
+            dt1 = F.rgetField @'("DT1",Double)
+            dt2 = F.rgetField @'("DT2",Double)
+            ddiff r = dt1 r - dt2 r 
+            st = F.rgetField @BR.StateAbbreviation
+        in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . st))
+           <> C.headed "2012 Turnout (%)" (BR.toCell cas "2012 Turnout" "2012 Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . t1))
+           <> C.headed "2012 Dem Turnout (%)" (BR.toCell cas "2012 Dem Turnout" "2012 Dem Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . dt1))
+           <> C.headed "2016 Turnout (%)" (BR.toCell cas "2016 Turnout" "2016 Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . t2))
+           <> C.headed "2016 Dem Turnout (%)" (BR.toCell cas "2016 Dem Turnout" "2016 Dem Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . dt2))
+           <> C.headed ("Change (%)") (BR.toCell cas "Change" "Change" (BR.numberToStyledHtml "%2.2f" . (*100) . diff))
+           <> C.headed ("Dem Change (%)") (BR.toCell cas "Dem Change" "Dem Change" (BR.numberToStyledHtml "%2.2f" . (*100) . ddiff))
+  
+  logFrame (asrTurnoutComparison 2016 2018 2012 2016)
+  
   K.logLE K.Info "Computing pres-election based prefs"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
@@ -532,8 +602,8 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
           "Battleground Preference Post-Stratified by Age, Sex and Race"
           (FV.ViewConfig 800 800 10)
           $ fmap F.rcast vpvPostStratifiedByASR
+        BR.brAddRawHtmlTable "Turnout Comparison 2012 to 2016" (BHA.class_ "brTable")  (turnoutCompColonnade mempty) (asrTurnoutComparison 2016 2018 2012 2016)
         brAddMarkDown text2
---        K.addColonnadeTextTable boostColonnade toFlipWithEV
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3
         brAddMarkDown brReadMore
