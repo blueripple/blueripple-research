@@ -253,7 +253,7 @@ predMapASER r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
 
-allCatKeysASER = [catKeyASER a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.White, BR.NonWhite]]
+allCatKeysASER = [catKeyASER a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 
 type CatColsASE = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC]
@@ -273,12 +273,12 @@ catKeyASR :: BR.SimpleAge -> BR.Sex -> BR.SimpleRace -> F.Record CatColsASR
 catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
 predMapASR :: F.Record CatColsASR -> M.Map CCESPredictor Double
-predMapASR r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
+predMapASR r = M.fromList [(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
+                          ,(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
                           ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
-                          ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                           ]
 
-allCatKeysASR = [catKeyASR a s r | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], r <- [BR.White, BR.NonWhite]]
+allCatKeysASR = [catKeyASR a s r | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 catPredMap pmF acks = M.fromList $ fmap (\k -> (k, pmF k)) acks
 catPredMapASER = catPredMap predMapASER allCatKeysASER
@@ -379,14 +379,14 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
-      predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
-      predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
+      predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
+      predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER ccesRecordListAllCA predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesRecordListAllCA predictorsASER catPredMapASER) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE ccesRecordListAllCA predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesRecordListAllCA predictorsASE catPredMapASE) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR ccesRecordListAllCA predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesRecordListAllCA predictorsASR catPredMapASR) 
 
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
@@ -501,14 +501,17 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                                          $ BR.postStratifyCell @BR.DemPref
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
                                          (realToFrac . F.rgetField @BR.DemPref))
-      psVPVByDistrictF =  BR.postStratifyF
+      psVPVByStateF =  BR.postStratifyF
                           @[BR.Year, ET.Office, BR.StateAbbreviation]
                           @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
                           @[BR.PostStratifiedBy, BR.DemPref]
                           psCellVPVByBothF
-      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByDistrictF aseByState
-      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByDistrictF asrByState
-      vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
+      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
+      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
+  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) inferredPrefsASR 
+  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) asrByState 
+  logFrame $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) vpvPostStratifiedByASR
+  let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
       -- assemble set with updated demographics
       toFlip r =
         let a = F.rgetField @BoostA r

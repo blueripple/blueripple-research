@@ -198,7 +198,8 @@ mrpPrefs
      , V.RecordToList cc
      , Ord (F.Record cc)
      )
-  => K.Cached es [F.Record CCES_MRP]
+  => Maybe T.Text
+  -> K.Cached es [F.Record CCES_MRP]
   -> [GLM.WithIntercept CCESPredictor]
   -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
   -> K.Sem
@@ -211,7 +212,7 @@ mrpPrefs
                '[BR.Year, ET.Office, DemVPV, BR.DemPref]
            )
        )
-mrpPrefs ccesRecordListAllCA predictor catPredMap = do
+mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
   let vpv x = 2 * x - 1
       lhToRecs year office (LocationHolder lp lkM predMap) =
         let addCols p =
@@ -226,13 +227,15 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
         in  g lkM
       lhsToFrame y o = F.toFrame . concat . fmap (lhToRecs y o)
   K.logLE K.Info "Doing ASER MR..."
-  let cacheIt cn fa = K.retrieveOrMakeTransformed
-        (fmap FS.toS . FL.fold FL.list)
-        (F.toFrame . fmap FS.fromS)
-        cn
-        fa
+  let cacheIt cn fa = case cacheTmpDirM of
+        Nothing -> fa
+        Just tmpDir -> K.retrieveOrMakeTransformed
+                         (fmap FS.toS . FL.fold FL.list)
+                         (F.toFrame . fmap FS.fromS)
+                         ("mrp/tmp/" <> tmpDir <> "/" <> cn)
+                         fa
   predsByLocationPres2008 <- cacheIt
-    "mrp/tmp/pres2008"
+    "pres2008"
     (   lhsToFrame 2008 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2008VotesF
@@ -241,7 +244,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
         )
     )
   predsByLocationPres2012 <- cacheIt
-    "mrp/tmp/pres2012"
+    "pres2012"
     (   lhsToFrame 2012 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2012VotesF
@@ -250,7 +253,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
         )
     )
   predsByLocationPres2016 <- cacheIt
-    "mrp/tmp/pres2016"
+    "pres2016"
     (   lhsToFrame 2016 ET.President
     <$> (predictionsByLocation ccesRecordListAllCA
                                countDemPres2016VotesF
@@ -260,7 +263,7 @@ mrpPrefs ccesRecordListAllCA predictor catPredMap = do
     )
   predsByLocationHouse <- traverse
     (\y -> cacheIt
-      ("mrp/tmp/house" <> T.pack (show y))
+      ("house" <> T.pack (show y))
       (   lhsToFrame y ET.House
       <$> (predictionsByLocation ccesRecordListAllCA
                                  (countDemHouseVotesF y)

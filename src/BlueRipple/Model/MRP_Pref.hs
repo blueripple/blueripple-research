@@ -113,6 +113,9 @@ countFold testData = MR.mapReduceFold
 
 type CountCols = '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
 
+zeroCount :: F.Record CountCols
+zeroCount = 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
+
 weightedBinomialFold
   :: (F.Record r -> Bool)
   -> (F.Record r -> Double)
@@ -143,8 +146,6 @@ weightedCountFold filterData testData weightData =
     (FMR.assignKeysAndData @k)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
 
-zeroCount :: F.Record CountCols
-zeroCount = 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
 
 getFraction r =
   let n = F.rgetField @Count r

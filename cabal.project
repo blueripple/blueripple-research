@@ -1,13 +1,13 @@
-packages: ./ ~/DataScience/knit-haskell
+packages: ./ 
 jobs: 4
 with-compiler: ghc
 
 allow-newer: knit-haskell, vinyl
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/knit-haskell
---  tag: 865addd8ac0fe8510adcb697129ffa247a225357
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 9e45538bc17ce809a803dc1710d2f137e00464cd
 
 source-repository-package
   type: git

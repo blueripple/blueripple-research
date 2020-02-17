@@ -471,15 +471,16 @@ type ByStateRaceEducation = '[StateAbbreviation, BR.SimpleRaceC, BR.CollegeGradC
 type ByCCESPredictors = '[StateAbbreviation, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
 type CCESEffect = GLM.WithIntercept CCESPredictor
+
 ccesPredictor :: forall r. (F.ElemOf r BR.SexC
                            , F.ElemOf r BR.SimpleRaceC
                            , F.ElemOf r BR.CollegeGradC
                            , F.ElemOf r BR.SimpleAgeC) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Sex = if (F.rgetField @BR.SexC r == BR.Male) then 1 else 0
-ccesPredictor r P_WWC    = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
-ccesPredictor r P_Race    = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1 -- non-white is baseline
-ccesPredictor r P_Education    = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
-ccesPredictor r P_Age    = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
+ccesPredictor r P_Sex       = if F.rgetField @BR.SexC r == BR.Female then 0 else 1
+ccesPredictor r P_Race      = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1 -- non-white is baseline
+ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
+ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
+ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
 
 data  LocationHolder c f a =  LocationHolder { locName :: T.Text
                                              , locKey :: Maybe (F.Rec f LocationCols)
@@ -525,7 +526,6 @@ predictionsByLocation ::
                   , V.RecordToList cc
                   , Ord (F.Record cc)
                   , K.KnitEffects r
---                  , K.Member (P.Error GLM.GLMError) r
                   , K.Members es r
              )
   => K.Cached es [F.Record CCES_MRP]
@@ -550,7 +550,7 @@ predictionsByLocation ccesRecordListAllCA countFold predictors catPredMap = P.ma
       toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
       predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
         let predictFrom catKey predMap =
-              let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
+              let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
                   emptyAsNationalGKM = case groupKeyM of
                                          Nothing -> Nothing
                                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ cc))

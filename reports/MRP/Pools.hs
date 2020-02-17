@@ -363,37 +363,6 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
 
-{-  
-  let predictionsByLocation = do
-        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
-                                                                                                      ,BR.SexC
-                                                                                                      ,BR.CollegeGradC
-                                                                                                      ,BR.SimpleRaceC
-                                                                                                      ]
-                                                                   countDemPres2016VotesF
-                                                                   [GLM.Intercept
-                                                                   , GLM.Predictor P_Sex
-                                                                   , GLM.Predictor P_Age
-                                                                   , GLM.Predictor P_Education
-                                                                   ]
-                                                                   ccesPredictor
-                                                                   (F.filterFrame ((== 2016) . F.rgetField @Year) ccesFrameAll)
-        let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
-            allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states            
-            predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMaps
-            toPredict = [LocationHolder "National" Nothing catPredMaps] <> fmap predictLoc allStateKeys                           
-            predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
-              let predictFrom catKey predMap =
-                    let groupKeyM = lkM >>= \lk -> return $ lk `V.rappend` catKey
-                        emptyAsNationalGKM = case groupKeyM of
-                          Nothing -> Nothing
-                          Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc2016p k BR.RecordColsProxy
-                    in GLM.predictFromBetaUB mm2016p (flip M.lookup predMap) (const emptyAsNationalGKM) rc2016p ebg2016p bu2016p vb2016p     
-              cpreds <- M.traverseWithKey predictFrom cpms
-              return $ LocationHolder n lkM cpreds
-        traverse predict toPredict
--}
   let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
                       $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
@@ -450,15 +419,6 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
   brAddMarkDown brText3     
        
 {-
-  sortedByYoungMen <- sortedStates BR.Male
-  _ <- K.addHvega Nothing Nothing $
-       vlPrefGapByState
-       "2016 Presidential Election: Preference Gap Between Older and Younger College Educated Men"
-       (FV.ViewConfig 800 800 10)       
-       sortedByYoungMen
-       BR.Male
-       longPrefs
-
   brAddRawHtmlTable
     "Democratic Voter Preference (%) by State and Category"
     (BHA.class_ "brTable")
@@ -467,16 +427,6 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 -}
   brAddMarkDown brReadMore
 
-{-
--- TODO: make this traversable
-
-data  LocationHolder f a =  LocationHolder { locName :: T.Text
-                                           , locKey :: Maybe (F.Rec f LocationCols)
-                                           , catData :: M.Map (F.Rec f CatCols) a
-                                           } deriving (Generic)
-
-
--}
 educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
 educationGap s a (LocationHolder _ _ cd) = do  
   datGrad <- M.lookup (catKey s BR.Grad a) cd

@@ -348,7 +348,7 @@ simpleASEToCatKey BR.YoungMaleCollegeGrad = catKey BR.Male BR.Grad BR.Under
 
 predMap :: F.Record CatCols -> M.Map CCESPredictor Double
 predMap r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
---                       ,(P_Race, if F.rgetField @WhiteNonHispanic r == True then 1 else 0)
+--                       ,(P_Race, if F.rgetField @BR.NonWhite r == True then 0 else 1)
                        ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]

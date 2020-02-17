@@ -206,11 +206,11 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER ccesRecordListAllCA predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesRecordListAllCA predictorsASER catPredMapASER) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE ccesRecordListAllCA predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesRecordListAllCA predictorsASE catPredMapASE) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR ccesRecordListAllCA predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesRecordListAllCA predictorsASR catPredMapASR) 
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
