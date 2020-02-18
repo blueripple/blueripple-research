@@ -117,8 +117,8 @@ import qualified BlueRipple.Data.Keyed as BR
 
 import qualified Visualizations.StatePrefs as BR
 
-text1 :: T.Text
-text1 = [i|
+text1a :: T.Text
+text1a = [i|
 In 2016, Trump won states that Clinton would likely have won if every demographic group voted in equal proportion. This reflects
 a "turnout gap" between likely R voters and likely D voters. As we've talked about in earlier pieces [LINKS],
 one simplistic but useful way to look at an election is to consider some
@@ -131,9 +131,23 @@ we'll address this a bit at the end when we discuss actions you can take, but th
 In our [last post][BR:TurnoutHowHigh], we looked at how high turnout could go and the most efficient ways to boost turnout.
 Here we take up a related question: what would changes in turnout do to the electoral landscape in the race for the White House? 
 
+1. **Turnout Gaps**
 1. **What If Everybody Voted?**
 2. **Battleground States**
 
+
+## **Turnout Gaps** {#TurnoutGaps}
+As a starting point, let's look at the turnout gap in some battleground states.
+We're defining *turnout gap* as the difference in turnout between groups that lean
+Democratic vs the turnout of groups that lean Republican.  In the chart
+below we compare these for the
+2012 and 2016 presidential elections as well as the 2018 house election.  
+
+[FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+|]
+
+text1b :: T.Text
+text1b = [i|
 ## What If Everybody Voted? {#EverybodyVoted}
 Last year, The Economist ran a fascinating data-journalism article entitled
 ["Would Donald Trump be president if all Americans actually voted?"][Economist:EveryoneVoted].  Using
@@ -165,7 +179,7 @@ scenario where every demographic group votes in equal proportion.  Weighting by 
 corresponds to what happened, turnout-wise, in the 2016 election. 
 
 In the chart below we do both weightings and compare.  This gives us a window into the effects of turnout
-gaps in varioius states.  The effect of the gap in an individual state depends on turnout of course, but also
+gaps in various states.  The effect of the gap in an individual state depends on turnout of course, but also
 the demographics and preferences in that particular state.
 
 There are a few things to note in the chart.  Some states have large differences between the equal-proportion
@@ -180,7 +194,7 @@ gaps made a big difference.
 [BR:Home]: <https://blueripplepolitics.org>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
 [Economist:EveryoneVoted]: <https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798>
-[FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+
 |]
 
 text2 :: T.Text
@@ -392,7 +406,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
   demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
-  let asrTurnoutComparison yPrefs yPop yT1 yT2 =
+  let asrTurnoutComparison yPrefs yPop years =
         let isYear y r = (F.rgetField @BR.Year r == y)
             isYearPres y r = isYear y r && (F.rgetField @ET.Office r == ET.President)
 
@@ -418,32 +432,25 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                                      (catMaybes
                                        $ fmap F.recMaybe
                                        $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR) (popByCD yPop) (turnoutByCD y))
-            allJoined y =  fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
+            allJoined y =  fmap ((FT.recordSingleton @BR.Year y `V.rappend`) . F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
                            $ catMaybes
                            $ fmap F.recMaybe
                            $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) (prefsByState yPrefs) (turnoutAndPopByState y) 
             turnoutF = FF.sequenceRecFold 
-                          $ FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                          V.:& FF.toFoldRecord (FL.prefilter ((> 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                          $ FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                          V.:& FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @BR.ACSCount) FL.sum)
+                          V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+                          V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @BR.ACSCount) FL.sum)
                           V.:& V.RNil
-            comparisonF :: FL.Fold (F.Record ('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
-                           (F.FrameRec [BR.StateAbbreviation, '("Turnout", Double), '("DTurnout", Double)])
+            comparisonF :: FL.Fold (F.Record ('[BR.Year, BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
+                           (F.FrameRec [BR.Year, BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
             comparisonF = FMR.concatFold $ FMR.mapReduceFold
                           FMR.noUnpack
-                          (FMR.splitOnKeys @'[BR.StateAbbreviation])
+                          (FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation])
                           (FMR.foldAndAddKey turnoutF)
-            turnout1 = fmap  (FT.retypeColumn @'("Turnout",Double) @'("T1",Double)
-                              . FT.retypeColumn @'("DTurnout",Double) @'("DT1",Double))
-                             $  FL.fold (FL.premap F.rcast comparisonF) (allJoined yT1)                       
-            turnout2 = fmap (FT.retypeColumn @'("Turnout",Double) @'("T2",Double)
-                              . FT.retypeColumn @'("DTurnout",Double) @'("DT2",Double))
-                       . fmap (F.rcast @[BR.StateAbbreviation,  '("Turnout",Double),  '("DTurnout",Double)])
-                       $ FL.fold (FL.premap F.rcast comparisonF) (allJoined yT2)
-            result = catMaybes
-                     $ fmap F.recMaybe
-                     $ F.leftJoin @'[BR.StateAbbreviation] turnout1 turnout2
-        in result
-        
+            allRows = mconcat $ fmap ( FL.fold (FL.premap F.rcast comparisonF) .  allJoined) years
+        in allRows
+{-        
       turnoutCompColonnade cas =
         let t1 = F.rgetField @'("T1",Double)
             t2 = F.rgetField @'("T2",Double)
@@ -459,8 +466,15 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
            <> C.headed "2016 Dem Turnout (%)" (BR.toCell cas "2016 Dem Turnout" "2016 Dem Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . dt2))
            <> C.headed ("Change (%)") (BR.toCell cas "Change" "Change" (BR.numberToStyledHtml "%2.2f" . (*100) . diff))
            <> C.headed ("Dem Change (%)") (BR.toCell cas "Dem Change" "Dem Change" (BR.numberToStyledHtml "%2.2f" . (*100) . ddiff))
-  
-  logFrame (asrTurnoutComparison 2016 2018 2012 2016)
+  -}
+  let turnoutGaps = asrTurnoutComparison 2016 2018 [2012, 2016, 2018]
+  logFrame turnoutGaps
+  let turnoutGapsForTable = FL.fold (FMR.mapReduceFold
+                            FMR.noUnpack
+                            (FMR.splitOnKeys @'[BR.StateAbbreviation])
+                            (FMR.ReduceFold $ \k -> fmap (k,) FL.list))
+                            turnoutGaps
+  K.logLE K.Info $ T.pack $ show turnoutGapsForTable
   
   K.logLE K.Info "Computing pres-election based prefs"
   presPrefByStateFrame <- do
@@ -599,13 +613,15 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                     ]
       ))
       $ do        
-        brAddMarkDown text1
+        brAddMarkDown text1a
+--        BR.brAddRawHtmlTable "Turnout Comparison 2012 to 2016" (BHA.class_ "brTable")  (turnoutCompColonnade mempty) (asrTurnoutComparison 2016 2018 2012 2016)        
+        brAddMarkDown text1b
         _ <-  K.addHvega Nothing (Just $ "\"Voted\" is Actual Turnout and \"VAP\" (Voting Age Population) is equal proportion.")
           $ vlTurnoutGap
           "Battleground Preference Post-Stratified by Age, Sex and Race"
           (FV.ViewConfig 800 800 10)
           $ fmap F.rcast vpvPostStratifiedByASR
-        BR.brAddRawHtmlTable "Turnout Comparison 2012 to 2016" (BHA.class_ "brTable")  (turnoutCompColonnade mempty) (asrTurnoutComparison 2016 2018 2012 2016)
+
         brAddMarkDown text2
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3
