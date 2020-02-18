@@ -87,7 +87,6 @@ import qualified Numeric.GLM.Report            as GLM
 import qualified Numeric.GLM.Predict            as GLM
 import qualified Numeric.GLM.Confidence            as GLM
 import qualified Numeric.SparseDenseConversions as SD
-
 import qualified Statistics.Types              as ST
 import GHC.Generics (Generic)
 
@@ -120,7 +119,7 @@ import qualified Visualizations.StatePrefs as BR
 text1a :: T.Text
 text1a = [i|
 In 2016, Trump won states that Clinton would likely have won if every demographic group voted in equal proportion. This reflects
-a "turnout gap" between likely R voters and likely D voters. As we've talked about in earlier pieces [LINKS],
+a "turnout gap" between likely R voters and likely D voters. As we've talked about in [earlier pieces][BR:BlueWave],
 one simplistic but useful way to look at an election is to consider some
 demographic breakdown of voters (e.g., Age, Sex and Race), estimate how many eligible voters are in each group,
 how likely each is to vote, and who they are likely to vote for.  We can look at this nationwide or in a single congressional district:
@@ -149,7 +148,7 @@ We compute turnout as a percentage of the *voting-age-population* (VAP) rather t
 *voting-eligible-population* (VEP)---we don't have a source for VEP split by demographic groups.
 Using VAP lowers all of our turnout rates, especially in
 AZ, FL and TX where there are large numbers of immigrants who are voting age but not citizens and
-thus not voting eligible. As a demographic group, those voters tend to
+thus not eligible to vote. As a demographic group, those voters tend to
 vote for Democrats so using VAP also has the effect of
 showing a higher turnout gap than actually exists among eligible voters.
 
@@ -159,6 +158,7 @@ to vote for Democrats, turnout is 24% lower.
 What the table does show is that the gaps are large: much improved outcomes for Democrats
 might be achieved if we could improve turnout among Democratic leaning groups.
 
+[BR:BlueWave]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 [FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
 |]
@@ -224,7 +224,7 @@ recent outcomes suggest.  This year, because Texas has a number
 of retirements in the house, the local house races will be more competitive, which
 often drives higher and more balanced turnout. GA, also traditionally a red state,
 was closer than TX in 2016 with Trump winning by about 5%. And GA, by our simple model, could
-shift about 6pts bluer if there were no turnout gaps.
+shift about 6% bluer if there were no turnout gaps.
 
 What we see so far is that turnout gaps are different in different states.  This
 can already help you focus your efforts: time or money spent on  groups working in AZ, FL, NV and PA, or
@@ -243,7 +243,7 @@ But we haven't addressed how much we would need to boost turnout in order to fli
 piece discussed, boosting turnout a few % is possible but boosting it 20% isn't likely.  To put this more concretely,
 let's consider two different plans for boosting turnout in each of these states.  In one, we focus on efforts
 that increase turnout for everyone and in the other, we focus exclusively on Dem leaning voters. In either case,
-is GOTV work alone enought to flip any of these states? Using the voter preferences and turnout
+is GOTV work alone enough to flip any of these states? Using the voter preferences and turnout
 from the 2016 presidential election and the demographics from 2018, we compute the turnout boost
 required to flip each battleground state. The math is straightforward but messy so we've put the
 details [here][BR:BoostNotes].
@@ -288,7 +288,7 @@ in terms of the Presidential election.  We encourage you to get involved with an
 those states.
 
 Below, we highlight national organizations that are targeting the states we think are easiest
-to flip and/or demogrpahic groups which are crucial in those states.
+to flip and/or demographic groups which are crucial in those states.
 We're also interested in local organizations in any of these states, so let us know of any you
 come across.
 
@@ -668,8 +668,8 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGaps) <> "main")
       (brAddDates updated pubDateTurnoutGaps curDate
-       $ M.fromList [("pagetitle", "What If Everybody Voted, Redux")
-                    ,("title","What If Everybody Voted, Redux")
+       $ M.fromList [("pagetitle", "Voter Turnout Gaps in the Battleground States")
+                    ,("title","Voter Turnout Gaps in the Battleground States")
                     ]
       ))
       $ do        
