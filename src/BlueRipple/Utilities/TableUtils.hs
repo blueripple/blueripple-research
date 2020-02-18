@@ -86,3 +86,7 @@ brAddRawHtmlTable title attr colonnade rows =
   brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
     BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
     BC.encodeCellTable attr colonnade rows
+
+
+
+-- pivot helper

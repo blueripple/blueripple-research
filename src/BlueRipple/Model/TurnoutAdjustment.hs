@@ -31,6 +31,7 @@ import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.MapReduce              as FMR
+import qualified Frames.Transform              as FT
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
@@ -136,7 +137,7 @@ adjTurnoutLong total unAdj = do
 -- 1. a Map (F.Record [State, Year]) Double -- TurnoutPct
 -- 2. A data frame with [State, Year] + [partitions of State] + TurnoutPct
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
--- So, for each state/year we need to sum over the partitions, get the adjustment, apply it the partitions.
+-- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
 
 type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
 
@@ -153,21 +154,38 @@ adjTurnoutFold
      , V.KnownField t
      , V.Snd p ~ Int
      , V.Snd t ~ Double
-     , FI.RecVec rs
+     , FI.RecVec (rs V.++ '[BR.VEP, BR.VotedPct])
      )
   => f BR.StateTurnout
-  -> FL.FoldM (K.Sem effs) (F.Record (WithYS rs)) (F.FrameRec (WithYS rs))
+  -> FL.FoldM
+       (K.Sem effs)
+       (F.Record (WithYS rs))
+       (F.FrameRec (WithYS rs V.++ '[BR.VEP, BR.VotedPct]))
 adjTurnoutFold stateTurnoutFrame
   = let
       getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
       vtbsMap = FL.fold
-        (FL.premap (\r -> (getKey r, F.rgetField @BR.VotesHighestOffice r))
-                   FL.map
+        (FL.premap
+          (\r ->
+            ( getKey r
+            , ( F.rgetField @BR.VotesHighestOffice r
+              , F.rgetField @BR.VAP r
+              , F.rgetField @BR.VEP r
+              )
+            )
+          )
+          FL.map
         )
         stateTurnoutFrame
       unpackM = FMR.generalizeUnpack FMR.noUnpack
       assignM =
         FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
+      makeVEP stateVAP stateVEP r =
+        let x      = (realToFrac stateVEP / realToFrac stateVAP)
+            vepRec = FT.recordSingleton @BR.VEP
+              $ round (x * (realToFrac $ F.rgetField @p r))
+            vPctRec = FT.recordSingleton @BR.VotedPct $ (F.rgetField @t r / x)
+        in  vepRec `V.rappend` vPctRec
       adjustF ks =
         let
           vtM = M.lookup ks vtbsMap
@@ -176,7 +194,9 @@ adjTurnoutFold stateTurnoutFrame
               K.knitError
                 ("Failed to find " <> (T.pack $ show ks) <> " in state turnout."
                 )
-            Just vt -> K.liftKnit $ adjTurnoutLong @p @t @rs vt x
+            Just (vts, stateVAP, stateVEP) -> do
+              adjusted <- K.liftKnit $ adjTurnoutLong @p @t @rs vts x
+              return $ fmap (FT.mutate (makeVEP stateVAP stateVEP)) adjusted
         in
           FMR.postMapM f $ FL.generalize FL.list
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)

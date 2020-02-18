@@ -132,18 +132,35 @@ In our [last post][BR:TurnoutHowHigh], we looked at how high turnout could go an
 Here we take up a related question: what would changes in turnout do to the electoral landscape in the race for the White House? 
 
 1. **Turnout Gaps**
-1. **What If Everybody Voted?**
-2. **Battleground States**
+2. **What If Everybody Voted?**
+3. **Battleground States**
+4. **What Does It Take**
+5. **Key Takeaways**
+6. **Take Action**
 
-
-## **Turnout Gaps** {#TurnoutGaps}
-As a starting point, let's look at the turnout gap in some battleground states.
-We're defining *turnout gap* as the difference in turnout between groups that lean
-Democratic vs the turnout of groups that lean Republican.  In the chart
+## Demographic Turnout Gaps {#TurnoutGaps}
+As a starting point, let's look at the demographic turnout gap in some battleground states.
+We're defining the *demographic turnout gap* as the difference in turnout between groups that lean
+Democratic vs the turnout of groups that lean Republican.  In the table
 below we compare these for the
-2012 and 2016 presidential elections as well as the 2018 house election.  
+2012 and 2016 presidential elections.  We've
+split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M), and race (non-white, white non-Hispanic).
+We compute turnout as a percentage of the *voting-age-population* (VAP) rather than 
+*voting-eligible-population* (VEP)---we don't have a source for VEP split by demographic groups.
+Using VAP lowers all of our turnout rates, especially in
+AZ, FL and TX where there are large numbers of immigrants who are voting age but not citizens and
+thus not voting eligible. As a demographic group, those voters tend to
+vote for Democrats so using VAP also has the effect of
+showing a higher turnout gap than actually exists among eligible voters.
+
+We should not read this table as meaning that, for example, in AZ in 2016, 24% fewer Democrats
+showed up at the polls.  Instead, what the table indicates is that among people most likely (by age, sex and race)
+to vote for Democrats, turnout is 24% lower.
+What the table does show is that the gaps are large: much improved outcomes for Democrats
+might be achieved if we could improve turnout among Democratic leaning groups.
 
 [FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+[BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
 |]
 
 text1b :: T.Text
@@ -151,32 +168,33 @@ text1b = [i|
 ## What If Everybody Voted? {#EverybodyVoted}
 Last year, The Economist ran a fascinating data-journalism article entitled
 ["Would Donald Trump be president if all Americans actually voted?"][Economist:EveryoneVoted].  Using
-a variety of sophisticated methods (exaplined in the linked piece) they attempted to simulate the
+a variety of sophisticated methods (explained in the linked piece) they attempted to simulate the
 2016 presidential election under the assumption that every eligible voter cast a vote.  They concluded that
 Clinton would have won the election.  Though the model is complex, the result comes down to understanding
 the demographics in each state and the voter preferences of those groups.  The idea that everyone would vote in
 a country where roughly 65% of eligible voters actually vote seems far-fetched.  So it's important to
 realize that what the Economist modeled is the result we'd expect if everybody voted *in equal proportion*.
-It doesn't matter if everyone votes, just that every demographic group is equally likely to vote in each state.
+It doesn't matter if everyone votes, just that people in every
+demographic group are equally likely to vote in each state.
 
-Here we're going to perform a similar analysis, but just focused on the battleground states.
-Our model of voter preference is substantially simpler than the Economist.  They broke the
-electorate into many groups by sex, age, education and race.  Here we are just going to look
-at Age (45 or Over/Under 45), Sex (F/M), and Race (Non-White/White-Non-Hispanic).  That's more than
+Here we're going to perform a similar analysis, focused only on the battleground states.
+Our model of voter preference is substantially simpler than the one used by the Economist.
+They broke the electorate into many groups by sex, age, education and race.  Here we are just going to look
+at age (45 or Over/Under 45), sex (F/M), and race (Non-White/White-Non-Hispanic).  That's more than
 enough to see the central point: in many crucial states, the gaps in turnout between likely R and likely D
-voters were enough to cost Clinton many battleground states.
+voters were enough to cost Clinton the election.
 
 Though we're focusing on 2016, we're not interested in re-hashing that election!  We want to know where
 to focus our energies now.  Where can efforts to raise turnout make the most difference?
 
 ## Battleground States {#Battlegrounds}
 Below we show a chart of the modeled Democratic preference of the electorate in each battleground state.
-Our MR model [LINK] allows us to infer the preference of each demographic group in each state.  To
+Our [MR model][BR:Pools:DataMethods] allows us to infer the preference of each demographic group in each state.  To
 get an overall preference for the state, we have to weigh those groups.  That step is called
-"post-stratification" (the "P" in "MRP").  But do we post-stratify by the number of *eligible voters*
-or the number of *likely voters* in each group? Weighting by eligible voters corresponds to a
+"post-stratification" (the "P" in "MRP").  But do we post-stratify by the voting-age-population
+or the number of *likely voters* in each group? Weighting by population corresponds to a
 scenario where every demographic group votes in equal proportion.  Weighting by likely voters
-corresponds to what happened, turnout-wise, in the 2016 election. 
+corresponds to more-or-less what actually happened in the 2016 election. 
 
 In the chart below we do both weightings and compare.  This gives us a window into the effects of turnout
 gaps in various states.  The effect of the gap in an individual state depends on turnout of course, but also
@@ -186,13 +204,12 @@ There are a few things to note in the chart.  Some states have large differences
 scenario and the likely-voter scenario.  For those the turnout gaps
 are significant for electoral outcomes.  Is the difference sufficient to push the state to a preference
 above 50%?  Then turnout gaps alone might make the difference between winning and losing the state.
-In AZ, FL, GA, NC, NV, TX an VA, turnout gaps create differences of over 3% in final preference.
+In AZ, FL, GA, NC, and TX, turnout gaps create differences of over 3% in final preference.
 While driving a smaller gap in MI, PA and WI, those states were both very close in 2016 and those smaller
-gaps made a big difference.
+gaps were enough to explain all three losses.
 
-
+[BR:Pools:DataMethods]: <${brGithubUrl (postPath PostPools)}/#DataAndMethods>
 [BR:Home]: <https://blueripplepolitics.org>
-[BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
 [Economist:EveryoneVoted]: <https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798>
 
 |]
@@ -204,14 +221,13 @@ voted for Trump by almost a 10% margin in 2016. But changing
 demographics---racial and educational---are making Texas more purple.  And the large shift
 in preference we see from just the turnout gap suggests that TX is already more purple than
 recent outcomes suggest.  This year, because Texas has a number
-of retirements in the house, the local house races will be more competitive house and that
+of retirements in the house, the local house races will be more competitive, which
 often drives higher and more balanced turnout. GA, also traditionally a red state,
 was closer than TX in 2016 with Trump winning by about 5%. And GA, by our simple model, could
 shift about 6pts bluer if there were no turnout gaps.
 
 What we see so far is that turnout gaps are different in different states.  This
-can already help you focus your efforts: if enfranchisement and turnout are something you care about,
-this analysis suggests that putting your effort (or money) into groups working in AZ, FL, NV and PA, or
+can already help you focus your efforts: time or money spent on  groups working in AZ, FL, NV and PA, or
 specific house or state legislative candidates in those same states, might be the best choice in terms of
 affecting the outcome of the presidential race.
 Devoting energy to closing turnout gaps in GA and TX is also likely to be worthwhile, helping
@@ -220,17 +236,33 @@ state in the Presidential race (and, in the case of TX, the senate race).
 Once the primaries are done, we will start focusing on the house races in those states to see
 which might have useful overlap with turnout efforts.
 
+
+## What Does It Take?
 Now we've identified some battleground states where turnout gaps are important to presidential vote outcomes.
 But we haven't addressed how much we would need to boost turnout in order to flip these states. As our previous
-piece discussed, boosting turnout a few % is possible but boosting it 20% isn't.  To put this more concretely,
+piece discussed, boosting turnout a few % is possible but boosting it 20% isn't likely.  To put this more concretely,
 let's consider two different plans for boosting turnout in each of these states.  In one, we focus on efforts
 that increase turnout for everyone and in the other, we focus exclusively on Dem leaning voters. In either case,
 is GOTV work alone enought to flip any of these states? Using the voter preferences and turnout
-from the 2016 presidential election and the demographics from 2018, we compute the turnout boost, if possible,
+from the 2016 presidential election and the demographics from 2018, we compute the turnout boost
 required to flip each battleground state. The math is straightforward but messy so we've put the
 details [here][BR:BoostNotes].
 
-In the chart below, we summarize the results.
+In the table below we summarize the results.  With just a glance, it's apparent that efforts
+to improve Dem turnout would be particularly valuable in FL, MI, PA, and WI.  Those are states
+where less than a 6% increase in Dem turnout could flip the state.  In MI, boosting turnout
+among *all* voters just 3.5% would also likely flip the state.  It's remarkable that in most
+of these states, boosting turnout among all voters could flip them.  This is a result of the
+fact that in Republican leaning voters are usually less Republican leaning than Democratic
+leaning voters are Democratic leaning.
+
+These states are very different sizes and so the number of voters we would need to turn out
+to flip these states is very different. One way to put them all on a similar scale, is to
+consider how many extra voters we need to turn out to flip the state per electoral vote the
+state is worth in the general election.  Here we see some nuances, for example, though
+FL is easier to flip than WI in pure percentage turnout, WI is "cheaper", requiring only half
+as many voters per EV. And while neither GA nor AZ look easy to flip via just GOTV, GA is
+slightly easier in votes/EV terms.
 
 [BR:Home]: <https://blueripplepolitics.org>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
@@ -242,13 +274,34 @@ In the chart below, we summarize the results.
 text3 :: T.Text
 text3 = [i|
 
+## Key Takeaways
+* Demographic turnout gaps are large.  In particular, young voters and Latinx voters turnout less than older white voters.
+* Closing demographic turnout gaps is one way to win battleground states and make TX and GA into battleground states.
+* In FL, MI, PA, WI, achievable improvements in Dem leaning turnout might be enough.
+
+## Take Action
 One of our themes at [Blue Ripple Politics][BR:Home]
 is that we believe that Democracy works better if everyone votes, and that we should prioritize laws and policies that
 make voting easier for everyone, e.g., same-day-registration, vote-by-mail, making election day a federal holiday, 
-having more polling places, etc.  
+having more polling places, etc.  We've identified 4 states where GOTV work should have the highest payoff
+in terms of the Presidential election.  We encourage you to get involved with an organization doing GOTV work in
+those states.
 
+Below, we highlight national organizations that are targeting the states we think are easiest
+to flip and/or demogrpahic groups which are crucial in those states.
+We're also interested in local organizations in any of these states, so let us know of any you
+come across.
 
+* [For Our Future Action Fund][FOFAF] organizes GOTV drives in FL, NV, OH, PA, WI, VA and MI. You can donate
+money or volunteer in the states where they are active.
+* [Progressive Turnout Project][PTP] also runs state-level GOTV in these states (as well as others).
+* [Voto Latino][VL] organizes Latinx voters nationwide.  While this is not as single-state focused, the Latinx
+vote is crucial in many of the states which are flippable in the 2020 election and plays a crucial
+role in many a close house district.  
 
+[VL]: <https://votolatino.org/>
+[FOFAF]: <https://forourfuturefund.org/>
+[PTP]: <https://www.turnoutpac.org/>
 [BR:Home]: <https://blueripplepolitics.org>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
 [Economist:EveryoneVoted]: <https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798>
@@ -390,7 +443,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
 
   asrTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASR.bin"
                 $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
-  
+  logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
@@ -450,31 +503,37 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                           (FMR.foldAndAddKey turnoutF)
             allRows = mconcat $ fmap ( FL.fold (FL.premap F.rcast comparisonF) .  allJoined) years
         in allRows
-{-        
-      turnoutCompColonnade cas =
-        let t1 = F.rgetField @'("T1",Double)
-            t2 = F.rgetField @'("T2",Double)
-            diff r = t1 r - t2 r 
-            dt1 = F.rgetField @'("DT1",Double)
-            dt2 = F.rgetField @'("DT2",Double)
-            ddiff r = dt1 r - dt2 r 
-            st = F.rgetField @BR.StateAbbreviation
-        in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . st))
-           <> C.headed "2012 Turnout (%)" (BR.toCell cas "2012 Turnout" "2012 Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . t1))
-           <> C.headed "2012 Dem Turnout (%)" (BR.toCell cas "2012 Dem Turnout" "2012 Dem Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . dt1))
-           <> C.headed "2016 Turnout (%)" (BR.toCell cas "2016 Turnout" "2016 Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . t2))
-           <> C.headed "2016 Dem Turnout (%)" (BR.toCell cas "2016 Dem Turnout" "2016 Dem Turnout" (BR.numberToStyledHtml "%2.2f" . (*100) . dt2))
-           <> C.headed ("Change (%)") (BR.toCell cas "Change" "Change" (BR.numberToStyledHtml "%2.2f" . (*100) . diff))
-           <> C.headed ("Dem Change (%)") (BR.toCell cas "Dem Change" "Dem Change" (BR.numberToStyledHtml "%2.2f" . (*100) . ddiff))
-  -}
-  let turnoutGaps = asrTurnoutComparison 2016 2018 [2012, 2016, 2018]
+
+  
+  let turnoutTableYears = [2012, 2016]
+      turnoutGaps = asrTurnoutComparison 2016 2018 turnoutTableYears
   logFrame turnoutGaps
   let turnoutGapsForTable = FL.fold (FMR.mapReduceFold
                             FMR.noUnpack
                             (FMR.splitOnKeys @'[BR.StateAbbreviation])
                             (FMR.ReduceFold $ \k -> fmap (k,) FL.list))
                             turnoutGaps
-  K.logLE K.Info $ T.pack $ show turnoutGapsForTable
+  K.logLE K.Info $ T.pack $ show turnoutGapsForTable  
+  let turnoutCompColonnade years cas =
+        let dVAP = F.rgetField @'("DPop",Int)
+            dTurnout = F.rgetField @'("DTurnout",Double)
+            rVAP = F.rgetField @'("RPop",Int)
+            rTurnout = F.rgetField @'("RTurnout",Double)
+            st = F.rgetField @BR.StateAbbreviation . fst            
+            getForYear y = L.find ((== y) . F.rgetField @BR.Year) . snd
+            colsForYear y =
+              let ty = T.pack $ show y
+                  hDVAP = (ty <> " Dem VAP")
+                  hDTurnout = (ty <> " Dem Turnout")
+                  hRVAP = (ty <> " Rep VAP")
+                  hRTurnout = (ty <> " Rep Turnout")
+              in C.headed (BC.Cell mempty $ BH.toHtml hDTurnout) (BR.toCell cas hDTurnout hDTurnout (BR.maybeNumberToStyledHtml "%2.2f" . fmap ((*100.0) . dTurnout) . getForYear y))
+--                 <> C.headed (BC.Cell mempty $ BH.toHtml hRVAP) (BR.toCell cas hRVAP hRVAP (BR.maybeNumberToStyledHtml "%d" . fmap rVAP . getForYear y))
+                 <> C.headed (BC.Cell mempty $ BH.toHtml hRTurnout) (BR.toCell cas hRTurnout hRTurnout (BR.maybeNumberToStyledHtml "%2.2f" . fmap ((*100.0) . rTurnout) . getForYear y))
+                 <> C.headed "Gap" (BR.toCell cas "Gap" "Gap" (BR.maybeNumberToStyledHtml "%2.2f" . fmap ((*100) . (\r -> dTurnout r - rTurnout r)) . getForYear y))
+        in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . st))
+           <> mconcat (fmap colsForYear years)
+
   
   K.logLE K.Info "Computing pres-election based prefs"
   presPrefByStateFrame <- do
@@ -573,18 +632,19 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
   logFrame toFlipWithEV
   let boostColonnade cas =
-        let toFlipD = F.rgetField @'("ToFlipDems",Double)
-            toFlipAll = F.rgetField @'("ToFlipAll",Double)
+        let toFlipDM r = let x = F.rgetField @'("ToFlipDems",Double) r in if x > 0 then Just x else Nothing
+            toFlipAllM r = let x = F.rgetField @'("ToFlipAll",Double) r in if x > 0 then Just x else Nothing
             evs = F.rgetField @BR.Electors
             pop  = F.rgetField @BR.ACSCount 
             bPop = F.rgetField @'("BoostPopDems",Int)
+            votersPerEvM r = fmap (\x -> (round (x * realToFrac (bPop r) / realToFrac (evs r))):: Int) (toFlipDM r)
         in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
            <> C.headed "Electoral Votes" (BR.toCell cas "Electoral Votes" "EVs" (BR.numberToStyledHtml "%d". evs))
            <> C.headed "Population (000s)" (BR.toCell cas "Population" "Pop" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (pop r)/1000)) :: Int)))
            <> C.headed "Dem Leaners (000s)" (BR.toCell cas "Leaners" "Leaners" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (bPop r)/1000)) :: Int)))
-           <> C.headed "Boosting All Requires (%)" (BR.toCell cas "BoostAll" "% Of All" (BR.numberToStyledHtml "%2.2f" . (*100) . toFlipAll))
-           <> C.headed "Boosting Dems Requires (%)" (BR.toCell cas "BoostDem" "% Of Dems" (BR.numberToStyledHtml "%2.2f" . (*100) . toFlipD))
-           <> C.headed "New Voters/Ev" (BR.toCell cas "VotersPerEv" "Voters/EV" (BR.numberToStyledHtml "%d" . (\r -> (round (realToFrac (bPop r) * toFlipD r / realToFrac (evs r))) :: Int)))
+           <> C.headed "Boosting All Requires (%)" (BR.toCell cas "BoostAll" "% Of All" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipAllM))
+           <> C.headed "Boosting Dems Requires (%)" (BR.toCell cas "BoostDem" "% Of Dems" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipDM))
+           <> C.headed "New Voters/Ev" (BR.toCell cas "VotersPerEv" "Voters/EV" (BR.maybeNumberToStyledHtml "%d" . votersPerEvM))
         
   
   
@@ -604,7 +664,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   logFrame asrBoosts
 -}
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDateTurnoutGaps =  Time.fromGregorian 2020 2 15
+  let pubDateTurnoutGaps =  Time.fromGregorian 2020 2 21
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGaps) <> "main")
       (brAddDates updated pubDateTurnoutGaps curDate
@@ -614,14 +674,13 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       ))
       $ do        
         brAddMarkDown text1a
---        BR.brAddRawHtmlTable "Turnout Comparison 2012 to 2016" (BHA.class_ "brTable")  (turnoutCompColonnade mempty) (asrTurnoutComparison 2016 2018 2012 2016)        
+        BR.brAddRawHtmlTable "Turnout Comparison" (BHA.class_ "brTable")  (turnoutCompColonnade turnoutTableYears mempty) turnoutGapsForTable
         brAddMarkDown text1b
-        _ <-  K.addHvega Nothing (Just $ "\"Voted\" is Actual Turnout and \"VAP\" (Voting Age Population) is equal proportion.")
+        _ <-  K.addHvega Nothing Nothing
           $ vlTurnoutGap
           "Battleground Preference Post-Stratified by Age, Sex and Race"
           (FV.ViewConfig 800 800 10)
           $ fmap F.rcast vpvPostStratifiedByASR
-
         brAddMarkDown text2
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3

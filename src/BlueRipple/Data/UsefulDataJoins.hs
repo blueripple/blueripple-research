@@ -96,7 +96,7 @@ aseDemographicsWithAdjTurnoutByCD
                V.++
                ASECols
                V.++
-               '[BR.ACSCount, BR.VotedPctOfAll]
+               '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
            )
        )
 aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
@@ -116,10 +116,10 @@ aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
           in  FL.fold
                 (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce)
                 demo
-        votedPct r = realToFrac (F.rgetField @BR.Voted r)
+        votedPctOfAll r = realToFrac (F.rgetField @BR.Voted r)
           / realToFrac (F.rgetField @BR.Population r)
         turnoutWithPct = fmap
-          (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPct)
+          (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPctOfAll)
           turnout
         demoWithUnAdjTurnoutByState =
           catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ ASECols)
@@ -164,7 +164,7 @@ asrDemographicsWithAdjTurnoutByCD
                V.++
                ASRCols
                V.++
-               '[BR.ACSCount, BR.VotedPctOfAll]
+               '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
            )
        )
 asrDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
