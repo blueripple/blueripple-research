@@ -125,8 +125,8 @@ demographic breakdown of voters (e.g., Age, Sex and Race), estimate how many eli
 how likely each is to vote, and who they are likely to vote for.  We can look at this nationwide or in a single congressional district:
 any region where we can estimate the demographics, turnout and preferences.
 
-In this piece we focus on turnout gaps in the battleground states.  We're not going to talk about why these gaps exist, though
-we'll address this a bit at the end when we discuss actions you can take, but there's a great rundown at [FairVote][FV:Turnout].
+In this piece we focus on turnout gaps in the battleground states.  We're not going to talk about why these gaps exist,
+but there's a great rundown at [FairVote][FV:Turnout].
 In our [last post][BR:TurnoutHowHigh], we looked at how high turnout could go and the most efficient ways to boost turnout.
 Here we take up a related question: what would changes in turnout do to the electoral landscape in the race for the White House? 
 
@@ -140,23 +140,37 @@ Here we take up a related question: what would changes in turnout do to the elec
 ## Demographic Turnout Gaps {#TurnoutGaps}
 As a starting point, let's look at the demographic turnout gap in some battleground states.
 We're defining the *demographic turnout gap* as the difference in turnout between groups that lean
-Democratic vs the turnout of groups that lean Republican.  In the table
-below we compare these for the
-2012 and 2016 presidential elections.  We've
-split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M), and race (non-white, white non-Hispanic).
+Democratic vs the turnout of groups that lean Republican.  This is *not* the turnout gap between Republicans
+and Democrats.  Each demographic group has some Democratic and some Republican voters.  Here we're
+imagining targeting GOTV by age (for instance) and so we consider turnout by demographic groups. 
+
+In the table below we compare these for the 2012 and 2016 presidential elections. The gaps
+in this table are large and that can seem discouraging. But instead we think it shows an opportunity
+to use GOTV work to generate votes for Democratic candidates.  In what follows we will try to
+focus that opportunity; to see where it might be most productive in the upcoming presidential election.
+It's important to remember that these states were very close in the 2016 election
+(except for TX and GA). How can this be if the turnout gaps are so large? 
+Among the groups we are looking at,
+Democratic leaning groups, are much more likely to vote for Democrats than the 
+Republican leaners are to vote for Republicans. This also means, as we'll explore
+in detail below, that we *do not* have to close those gaps in order to win these
+states.  Just closing those gaps slightly is enough in many of the battleground states.
+
+We've split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M),
+and race (non-white, white non-Hispanic).
 We compute turnout as a percentage of the *voting-age-population* (VAP) rather than 
-*voting-eligible-population* (VEP)---we don't have a source for VEP split by demographic groups.
+*voting-eligible-population* (VEP) because we don't have a source for
+VEP split by demographic groups.
 Using VAP lowers all of our turnout rates, especially in
 AZ, FL and TX where there are large numbers of immigrants who are voting age but not citizens and
 thus not eligible to vote. As a demographic group, those voters tend to
 vote for Democrats so using VAP also has the effect of
-showing a higher turnout gap than actually exists among eligible voters.
+showing a higher turnout gap than actually exists among eligible voters. 
 
 We should not read this table as meaning that, for example, in AZ in 2016, 24% fewer Democrats
-showed up at the polls.  Instead, what the table indicates is that among people most likely (by age, sex and race)
-to vote for Democrats, turnout is 24% lower.
-What the table does show is that the gaps are large: much improved outcomes for Democrats
-might be achieved if we could improve turnout among Democratic leaning groups.
+showed up at the polls. Instead, the table says that in 2016,
+turnout among people most likely (by age, sex, and race) to vote for Democrats
+was 24% lower than it was among the folks most likely to vote Republican.
 
 [BR:BlueWave]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 [FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
@@ -190,7 +204,8 @@ to focus our energies now.  Where can efforts to raise turnout make the most dif
 ## Battleground States {#Battlegrounds}
 Below we show a chart of the modeled Democratic preference of the electorate in each battleground state.
 Our [MR model][BR:Pools:DataMethods] allows us to infer the preference of each demographic group in each state.  To
-get an overall preference for the state, we have to weigh those groups.  That step is called
+get an overall preference for the state, we have to weigh those groups by their relative sizes.
+That step is called
 "post-stratification" (the "P" in "MRP").  But do we post-stratify by the voting-age-population
 or the number of *likely voters* in each group? Weighting by population corresponds to a
 scenario where every demographic group votes in equal proportion.   
@@ -213,7 +228,6 @@ in equal proportion, Democrats would still likely lose the state.
 [BR:Pools:DataMethods]: <${brGithubUrl (postPath PostPools)}/#DataAndMethods>
 [BR:Home]: <https://blueripplepolitics.org>
 [Economist:EveryoneVoted]: <https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798>
-
 |]
 
 text2 :: T.Text
@@ -709,10 +723,11 @@ vlTurnoutGap title vc rows =
       encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
       encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
       encY = GV.position GV.Y [GV.PName "State/Race", GV.PmType GV.Nominal]
-      encColor = GV.color [FV.mName @ET.PrefType, GV.MmType GV.Nominal]
+      renamePrefType = GV.calculateAs "if (datum.PrefType == 'PSByVAP', 'Equal Proportion', 'Actual')" "Vote Share"
+      encColor = GV.color [GV.MName "Vote Share", GV.MmType GV.Nominal, GV.MNoTitle]
       encDetail = GV.detail [GV.DName "State/Race", GV.DmType GV.Nominal]
       encoding = GV.encoding . encDetail . encX . encY
-      transform = GV.transform . makeYVal
+      transform = GV.transform . makeYVal . renamePrefType
       lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
       ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []] 
