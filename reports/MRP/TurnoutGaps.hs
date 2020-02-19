@@ -133,7 +133,7 @@ Here we take up a related question: what would changes in turnout do to the elec
 1. **Turnout Gaps**
 2. **What If Everybody Voted?**
 3. **Battleground States**
-4. **What Does It Take**
+4. **How Much Turnout Do We Need?**
 5. **Key Takeaways**
 6. **Take Action**
 
@@ -193,20 +193,22 @@ Our [MR model][BR:Pools:DataMethods] allows us to infer the preference of each d
 get an overall preference for the state, we have to weigh those groups.  That step is called
 "post-stratification" (the "P" in "MRP").  But do we post-stratify by the voting-age-population
 or the number of *likely voters* in each group? Weighting by population corresponds to a
-scenario where every demographic group votes in equal proportion.  Weighting by likely voters
-corresponds to more-or-less what actually happened in the 2016 election. 
+scenario where every demographic group votes in equal proportion.   
 
-In the chart below we do both weightings and compare.  This gives us a window into the effects of turnout
-gaps in various states.  The effect of the gap in an individual state depends on turnout of course, but also
+In the chart below we compare the 2-party Democratic vote-share in the 2016
+presidential elections with the post-stratified preference assuming everybody votes in
+equal proportion. This gives us a window into the effects of turnout
+gaps in various states.  The effect of the gap in an individual state depends on
 the demographics and preferences in that particular state.
 
 There are a few things to note in the chart.  Some states have large differences between the equal-proportion
-scenario and the likely-voter scenario.  For those the turnout gaps
+scenario and the vote-share.  For those the turnout gaps
 are significant for electoral outcomes.  Is the difference sufficient to push the state to a preference
 above 50%?  Then turnout gaps alone might make the difference between winning and losing the state.
-In AZ, FL, GA, NC, and TX, turnout gaps create differences of over 3% in final preference.
-While driving a smaller gap in MI, PA and WI, those states were both very close in 2016 and those smaller
-gaps were enough to explain all three losses.
+In AZ, FL, GA, NC, PA, and TX, turnout gaps create differences of over 3% in final preference.
+While driving a smaller gap in MI, and WI, those states were both very close in 2016 and those smaller
+gaps were enough to explain all three losses. OH is the only one of these states where even if all voters voted
+in equal proportion, Democrats would still likely lose the state.
 
 [BR:Pools:DataMethods]: <${brGithubUrl (postPath PostPools)}/#DataAndMethods>
 [BR:Home]: <https://blueripplepolitics.org>
@@ -237,7 +239,7 @@ Once the primaries are done, we will start focusing on the house races in those 
 which might have useful overlap with turnout efforts.
 
 
-## What Does It Take?
+## How Much Turnout Do We Need?
 Now we've identified some battleground states where turnout gaps are important to presidential vote outcomes.
 But we haven't addressed how much we would need to boost turnout in order to flip these states. As our previous
 piece discussed, boosting turnout a few % is possible but boosting it 20% isn't likely.  To put this more concretely,
@@ -391,9 +393,7 @@ foldPrefAndTurnoutDataBoost thresh =
        V.:& FF.toFoldRecord bNF
        V.:& V.RNil                          
 
-type PresPrefDem = "PresPrefDem" F.:-> Double
-
-presByStateToDemPrefF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[PresPrefDem])
+presByStateToDemPrefF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[ET.PrefType, BR.DemPref])
 presByStateToDemPrefF =
   let
     party = F.rgetField @ET.Party
@@ -402,7 +402,7 @@ presByStateToDemPrefF =
     demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
     demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
-  in fmap (FT.recordSingleton @PresPrefDem) demPrefF
+  in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
 
 post :: forall es r.(K.KnitMany r
@@ -564,20 +564,20 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
-      labelPSBy x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
+      labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelPSBy BR.VAP)
+                          <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
                                          $ BR.postStratifyCell @BR.DemPref
                                          (realToFrac . F.rgetField @BR.ACSCount)
                                          (realToFrac . F.rgetField @BR.DemPref))
-                          <*> fmap pure (fmap (labelPSBy BR.Voted)
+                          <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
                                          $ BR.postStratifyCell @BR.DemPref
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
                                          (realToFrac . F.rgetField @BR.DemPref))
       psVPVByStateF =  BR.postStratifyF
                           @[BR.Year, ET.Office, BR.StateAbbreviation]
                           @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
-                          @[BR.PostStratifiedBy, BR.DemPref]
+                          @[ET.PrefType, BR.DemPref]
                           psCellVPVByBothF
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
@@ -589,7 +589,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       toFlip r =
         let a = F.rgetField @BoostA r
             b = F.rgetField @BoostB r
-            p = F.rgetField @PresPrefDem r
+            p = F.rgetField @BR.DemPref r
             d = (0.5 - p)/p
         in FT.recordSingleton @ToFlip $ d/(a - (1.0 + d) * b)
 
@@ -610,7 +610,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                             )
                             asrUpdatedDemo
                             
-            presPref2016 = fmap (F.rcast @[BR.StateAbbreviation, PresPrefDem]) $ F.filterFrame (filter 2016) presPrefByStateFrame
+            presPref2016 = fmap (F.rcast @[BR.StateAbbreviation, BR.DemPref]) $ F.filterFrame (filter 2016) presPrefByStateFrame
             asrUpdated =  catMaybes
                                 $ fmap F.recMaybe
                                 $ F.leftJoin @'[BR.StateAbbreviation] asrWithBoosts
@@ -618,7 +618,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
         in fmap (FT.mutate toFlip) asrUpdated
       toFlipAll = F.toFrame $ fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
                                     . FT.retypeColumn @BoostPop @'("BoostPopAll",Int)
-                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, PresPrefDem, BoostPop, ToFlip]) $  toFlipASR 0.0
+                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, BR.DemPref, BoostPop, ToFlip]) $  toFlipASR 0.0
       toFlipDems = F.toFrame $ fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
                                       . FT.retypeColumn @BoostPop @'("BoostPopDems",Int)
                                       . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASR 0.5
@@ -674,13 +674,15 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       ))
       $ do        
         brAddMarkDown text1a
-        BR.brAddRawHtmlTable "Turnout Comparison" (BHA.class_ "brTable")  (turnoutCompColonnade turnoutTableYears mempty) turnoutGapsForTable
+        BR.brAddRawHtmlTable "Turnout Comparison" (BHA.class_ "brTable")  (turnoutCompColonnade turnoutTableYears mempty) turnoutGapsForTable        
         brAddMarkDown text1b
+        let presVoteShareFrame = statesOnly $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) presPrefByStateFrame
+            asrPostStratifiedFrame = F.filterFrame ((== ET.PSByVAP) . F.rgetField @ET.PrefType) vpvPostStratifiedByASR
         _ <-  K.addHvega Nothing Nothing
           $ vlTurnoutGap
           "Battleground Preference Post-Stratified by Age, Sex and Race"
           (FV.ViewConfig 800 800 10)
-          $ fmap F.rcast vpvPostStratifiedByASR
+          $ (fmap F.rcast asrPostStratifiedFrame <> fmap F.rcast presVoteShareFrame)
         brAddMarkDown text2
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3
@@ -695,26 +697,29 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       ))
     $ do
     brAddMarkDown turnoutBoostExplainerMD
-         
+      
 vlTurnoutGap :: Foldable f
              => T.Text -- title
              -> FV.ViewConfig
-             -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, BR.DemographicGroupingC, BR.PostStratifiedBy, BR.DemPref])
+             -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, BR.DemPref])
              -> GV.VegaLite
 vlTurnoutGap title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
 --      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
-      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office" "State/Race" 
+      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office" "State/Race"
+      makeRuleVal = GV.calculateAs "0.5" "Evenly Split"
       encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
+      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
       encY = GV.position GV.Y [GV.PName "State/Race", GV.PmType GV.Nominal]
-      encColor = GV.color [FV.mName @BR.PostStratifiedBy, GV.MmType GV.Nominal]
+      encColor = GV.color [FV.mName @ET.PrefType, GV.MmType GV.Nominal]
       encDetail = GV.detail [GV.DName "State/Race", GV.DmType GV.Nominal]
       encoding = GV.encoding . encDetail . encX . encY
       transform = GV.transform . makeYVal
       lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
+      ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []] 
   in
-    FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec], dat]
+    FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec, ruleSpec], dat]
 
 
 turnoutBoostExplainerMD :: T.Text

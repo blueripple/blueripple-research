@@ -11,6 +11,7 @@ import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
 import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
+import qualified Data.Serialize                as SE
 import qualified Data.Vinyl                    as V
 import qualified Data.Vector                   as Vec
 import           GHC.Generics                   ( Generic )
@@ -69,3 +70,15 @@ instance FV.ToVLDataValue (F.ElField Votes) where
 type TotalVotes = "TotalVotes" F.:-> Int
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq , Ord, Show, Generic)
+
+type PrefType = "PrefType" F.:-> PrefTypeT
+type instance FI.VectorFor PrefTypeT = Vec.Vector
+instance Grouping PrefTypeT
+instance SE.Serialize PrefTypeT
+
+instance FV.ToVLDataValue (F.ElField PrefType) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+

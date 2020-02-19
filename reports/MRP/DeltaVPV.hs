@@ -468,21 +468,21 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
         catMaybes
         $ fmap F.recMaybe
         $ (F.leftJoin @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
-      labelCell x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
+      labelCell x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelCell BR.VAP) $ BR.postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
-                          <*> fmap pure (fmap (labelCell BR.Voted) $ BR.postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
+                          <$> fmap pure (fmap (labelCell ET.PSByVAP) $ BR.postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
+                          <*> fmap pure (fmap (labelCell ET.PSByVoted) $ BR.postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
       psVPVByStateF = BR.postStratifyF
                       @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateName]
                       @[DemVPV,BR.PopCount,BR.VotedPctOfAll]
-                      @[BR.PostStratifiedBy,DemVPV]
+                      @[ET.PrefType,DemVPV]
                       psCellVPVByBothF 
         
       psVPVByBoth = FL.fold psVPVByStateF withDemoAndAdjTurnoutFrame
       psVPVByDistrictF = BR.postStratifyF
                          @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
                          @[DemVPV, BR.PopCount, BR.VotedPctOfAll]
-                         @[BR.PostStratifiedBy,DemVPV]
+                         @[ET.PrefType,DemVPV]
                          psCellVPVByBothF
 --      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
       toDistrictGeoId r =
@@ -494,7 +494,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
       psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withDemoAndAdjTurnoutFrame
       psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
                                                             && (F.rgetField @ET.Office r == ET.House)
-                                                            && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
+                                                            && (F.rgetField @ET.PrefType r == ET.PSByVoted)
                                                             {-&& (F.rgetField @BR.StateAbbreviation r == "TX")-}) psVPVByDistrict
   -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
 
@@ -524,7 +524,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
     "Post-Stratified Dem VPV: President 2016 - House 2016"
     (FV.ViewConfig 800 800 10)
     ("President2016","House2016")
-    (fmap F.rcast $ F.filterFrame ((== BR.Voted) . F.rgetField @BR.PostStratifiedBy) psVPVByBoth)
+    (fmap F.rcast $ F.filterFrame ((== ET.PSByVoted) . F.rgetField @ET.PrefType) psVPVByBoth)
   brAddMarkDown brText3
 {-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
@@ -555,7 +555,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
     "Post-Stratified Dem VPV: House 2018 - House 2016"
     (FV.ViewConfig 800 800 10)
     ("House2018","House2016")
-    (fmap F.rcast $ F.filterFrame ((== BR.Voted) . F.rgetField @BR.PostStratifiedBy) psVPVByBoth)
+    (fmap F.rcast $ F.filterFrame ((== ET.PSByVoted) . F.rgetField @ET.PrefType) psVPVByBoth)
 {-  K.addHvega Nothing Nothing
     $ vlPostStratScatter
     "States: VPV 2016 House vs 2018 House"
@@ -626,7 +626,7 @@ vlPostStratScatter :: Foldable f
                    => T.Text
                    -> FV.ViewConfig
                    -> (T.Text, T.Text)
-                   -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, BR.PostStratifiedBy, DemVPV])
+                   -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, DemVPV])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
   let pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[DemVPV]
@@ -635,12 +635,12 @@ vlPostStratScatter title vc (race1, race2) rows =
                <> " "
                <> (T.pack $ show $ F.rgetField @BR.Year r))
         (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
-      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,BR.PostStratifiedBy]
+      dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,ET.PrefType]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
       encX = GV.position GV.X [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race1]]
       encY = GV.position GV.Y [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle race2]]
-      encColor = GV.color [FV.mName @BR.PostStratifiedBy]
+      encColor = GV.color [FV.mName @ET.PrefType]
       encX2 = GV.position GV.X [GV.PName (vpvCol race2), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encY2 = GV.position GV.Y [GV.PName (vpvCol race1), GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle ""]]
       encScatter = GV.encoding . encX . encY . encColor

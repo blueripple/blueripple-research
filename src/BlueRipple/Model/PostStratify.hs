@@ -88,11 +88,4 @@ labeledPostStratifyF
 labeledPostStratifyF lv cf =
   postStratifyF @k $ fmap (V.rappend (FT.recordSingleton @p lv)) <$> cf
 
-data PostStratifiedByT = Voted | VAP deriving (Enum, Bounded, Eq , Ord, Show, Generic)
-type PostStratifiedBy = "PostStratifiedBy" F.:-> PostStratifiedByT
-type instance FI.VectorFor PostStratifiedByT = V.Vector
-instance Grouping PostStratifiedByT
-instance SE.Serialize PostStratifiedByT
 
-instance FV.ToVLDataValue (F.ElField PostStratifiedBy) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)

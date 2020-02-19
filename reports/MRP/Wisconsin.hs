@@ -224,20 +224,20 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
       asrTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
-      labelPSBy x = V.rappend (FT.recordSingleton @BR.PostStratifiedBy x)
+      labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelPSBy BR.VAP)
+                          <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
                                          $ BR.postStratifyCell @DemVPV
                                          (realToFrac . F.rgetField @BR.ACSCount)
                                          (realToFrac . F.rgetField @DemVPV))
-                          <*> fmap pure (fmap (labelPSBy BR.Voted)
+                          <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
                                          $ BR.postStratifyCell @DemVPV
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
                                          (realToFrac . F.rgetField @DemVPV))
       psVPVByDistrictF =  BR.postStratifyF
                           @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
                           @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
-                          @[BR.PostStratifiedBy, DemVPV]
+                          @[ET.PrefType, DemVPV]
                           psCellVPVByBothF
       vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
       vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
@@ -250,26 +250,26 @@ post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordList
              $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
                                     && (F.rgetField @ET.Office r == o)
-                                    && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
+                                    && (F.rgetField @ET.PrefType r == ET.PSByVAP)
                              ) vpvPostStratifiedByASE
         return ()                     
         _ <- K.addHvega Nothing Nothing
              $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
                                && (F.rgetField @ET.Office r == o)
-                               && (F.rgetField @BR.PostStratifiedBy r == BR.VAP)
+                               && (F.rgetField @ET.PrefType r == ET.PSByVAP)
                              ) vpvPostStratifiedByASR
         _ <- K.addHvega Nothing Nothing
           $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
                                  && (F.rgetField @ET.Office r == ET.President)
-                                 && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
+                                 && (F.rgetField @ET.PrefType r == ET.PSByVoted)
                           ) vpvPostStratifiedByASE
         _ <- K.addHvega Nothing Nothing
           $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
                             && (F.rgetField @ET.Office r == ET.President)
-                            && (F.rgetField @BR.PostStratifiedBy r == BR.Voted)
+                            && (F.rgetField @ET.PrefType r == ET.PSByVoted)
                           ) vpvPostStratifiedByASR
         return ()
   plotEmAll 2016 ET.President 0.25
