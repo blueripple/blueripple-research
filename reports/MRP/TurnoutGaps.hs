@@ -369,7 +369,7 @@ type ToFlip = "ToFlip" F.:-> Double
 
 foldPrefAndTurnoutDataBoost :: Double
                             -> FL.Fold (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref, BoostA, BoostB, BoostPop])
+                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, BoostA, BoostB, BoostPop])
 foldPrefAndTurnoutDataBoost thresh =
   let t r = F.rgetField @BR.DemPref r > thresh
       dVotesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.DemPref r * F.rgetField @BR.VotedPctOfAll r) FL.sum
@@ -383,11 +383,9 @@ foldPrefAndTurnoutDataBoost thresh =
       bF = (/) <$> fmap realToFrac bNF <*> bDF
       prefF = (/) <$> dVotesF <*> votesF
 --      toFlipF = (\p a b -> let d = (0.5 - p)/p in d/(a - (1.0 + d)*b)) <$> prefF <*> aF <*> bF
-    in FF.sequenceRecFold
+    in FF.sequenceRecFold 
        $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
        V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-       V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @DemVPV)
-       V.:& FF.toFoldRecord prefF
        V.:& FF.toFoldRecord aF
        V.:& FF.toFoldRecord bF
        V.:& FF.toFoldRecord bNF
