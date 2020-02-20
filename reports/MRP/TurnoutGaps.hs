@@ -153,8 +153,8 @@ It's important to remember that these states were very close in the 2016 electio
 Among the groups we are looking at,
 Democratic leaning groups, are much more likely to vote for Democrats than the 
 Republican leaners are to vote for Republicans. This also means, as we'll explore
-in detail below, that we *do not* have to close those gaps in order to win these
-states.  Just closing those gaps slightly is enough in many of the battleground states.
+in detail below, that we do not have to close those gaps to win these
+states.  Just shrinking the gaps slightly is enough in many of the battleground states.
 
 We've split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M),
 and race (non-white, white non-Hispanic).
@@ -216,10 +216,14 @@ equal proportion. This gives us a window into the effects of turnout
 gaps in various states.  The effect of the gap in an individual state depends on
 the demographics and preferences in that particular state.
 
-There are a few things to note in the chart.  Some states have large differences between the equal-proportion
-scenario and the vote-share.  For those the turnout gaps
-are significant for electoral outcomes.  Is the difference sufficient to push the state to a preference
-above 50%?  Then turnout gaps alone might make the difference between winning and losing the state.
+There are a few things to note in the chart. While all of these states have
+higher Democratic Vote Share in the everybody-votes scenario, some shift by
+more than others.  This reflects the different sizes of the groups and the
+intensity of the D lean among the D leaners and the R lean among the R leaners.
+Except for OH, all the states here would move to the Democratic column if 
+
+Is the difference sufficient to push the state to a preference
+above 50%? Then turnout gaps alone might make the difference between winning and losing the state.
 In AZ, FL, GA, NC, PA, and TX, turnout gaps create differences of over 3% in final preference.
 While driving a smaller gap in MI, and WI, those states were both very close in 2016 and those smaller
 gaps were enough to explain all three losses. OH is the only one of these states where even if all voters voted
@@ -242,23 +246,17 @@ often drives higher and more balanced turnout. GA, also traditionally a red stat
 was closer than TX in 2016 with Trump winning by about 5%. And GA, by our simple model, could
 shift about 6% bluer if there were no turnout gaps.
 
-What we see so far is that turnout gaps are different in different states.  This
-can already help you focus your efforts: time or money spent on  groups working in AZ, FL, NV and PA, or
-specific house or state legislative candidates in those same states, might be the best choice in terms of
-affecting the outcome of the presidential race.
-Devoting energy to closing turnout gaps in GA and TX is also likely to be worthwhile, helping
-to win house and state legislative races and putting pressure on Republican efforts to hold the
-state in the Presidential race (and, in the case of TX, the senate race).
-Once the primaries are done, we will start focusing on the house races in those states to see
-which might have useful overlap with turnout efforts.
-
-
 ## How Much Turnout Do We Need?
-Now we've identified some battleground states where turnout gaps are important to presidential vote outcomes.
-But we haven't addressed how much we would need to boost turnout in order to flip these states. As our previous
-piece discussed, boosting turnout a few % is possible but boosting it 20% isn't likely.  To put this more concretely,
-let's consider two different plans for boosting turnout in each of these states.  In one, we focus on efforts
-that increase turnout for everyone and in the other, we focus exclusively on Dem leaning voters. In either case,
+Hopefully by now we've convinced you that the turnout gap exists and that shrinking or closing it could
+be enough to flip some states.  Looking at that chart, you can see that some states don't need to move much from
+the actual 2016 outcome towards the everybody-voted scenario to flip.  Let's quantify that.
+To put this more concretely,
+let's consider two different plans for boosting turnout in each of these states:
+
+- Option 1: Boost turnout for everyone in the state
+- Option 2: Focus GOTV efforts exclusively on Dem leaning voters
+
+In either case,
 is GOTV work alone enough to flip any of these states? Using the voter preferences and turnout
 from the 2016 presidential election and the demographics from 2018, we compute the turnout boost
 required to flip each battleground state. The math is straightforward but messy so we've put the
@@ -277,8 +275,7 @@ to flip these states is very different. One way to put them all on a similar sca
 consider how many extra voters we need to turn out to flip the state per electoral vote the
 state is worth in the general election.  Here we see some nuances, for example, though
 FL is easier to flip than WI in pure percentage turnout, WI is "cheaper", requiring only half
-as many voters per EV. And while neither GA nor AZ look easy to flip via just GOTV, GA is
-slightly easier in votes/EV terms.
+as many voters per EV.
 
 [BR:Home]: <https://blueripplepolitics.org>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
@@ -291,9 +288,11 @@ text3 :: T.Text
 text3 = [i|
 
 ## Key Takeaways
-* Demographic turnout gaps are large.  In particular, young voters and Latinx voters turnout less than older white voters.
-* Closing demographic turnout gaps is one way to win battleground states and make TX and GA into battleground states.
-* In FL, MI, PA, WI, achievable improvements in Dem leaning turnout might be enough.
+* Demographic turnout gaps are large, which means there's room for GOTV work to generate Democratoc votes.
+* When grouping by age, sex and race, Dem leaning voters are more Dem leaning than R leaning voters are R leaning.
+* Shrinking demographic turnout gaps is one way to win battleground states and make TX and GA into battleground states.
+* Of the battlegrounds, FL, MI, PA, and WI offer the best opportunities to win the state
+by focusing GOTV on Dem-leaning groups. 
 
 ## Take Action
 One of our themes at [Blue Ripple Politics][BR:Home]
@@ -680,8 +679,8 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGaps) <> "main")
       (brAddDates updated pubDateTurnoutGaps curDate
-       $ M.fromList [("pagetitle", "Voter Turnout Gaps in the Battleground States")
-                    ,("title","Voter Turnout Gaps in the Battleground States")
+       $ M.fromList [("pagetitle", "Voter Turnout in Battleground States: Where Can We Win?")
+                    ,("title","Voter Turnout in Battleground States: Where Can We Win?")
                     ]
       ))
       $ do        
@@ -710,24 +709,27 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
     $ do
     brAddMarkDown turnoutBoostExplainerMD
       
-vlTurnoutGap :: Foldable f
+vlTurnoutGap :: (Functor f, Foldable f)
              => T.Text -- title
              -> FV.ViewConfig
              -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, BR.DemPref])
              -> GV.VegaLite
 vlTurnoutGap title vc rows =
-  let dat = FV.recordsToVLData id FV.defaultParse rows
+  let mapPrefs p = case p of
+        ET.PSByVAP -> "Voted in Equal Proportion"
+        ET.VoteShare -> "Actual"
+        _ -> "N/A"
+      dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @ET.PrefType @'("Vote Share",T.Text) mapPrefs rows)
 --      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
       makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office" "State/Race"
       makeRuleVal = GV.calculateAs "0.5" "Evenly Split"
-      encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
-      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]]]
+      encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]], GV.PTitle "2 Party Vote Share"]
+      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]], GV.PNoTitle]
       encY = GV.position GV.Y [GV.PName "State/Race", GV.PmType GV.Nominal]
-      renamePrefType = GV.calculateAs "if (datum.PrefType == 'PSByVAP', 'Equal Proportion', 'Actual')" "Vote Share"
       encColor = GV.color [GV.MName "Vote Share", GV.MmType GV.Nominal, GV.MNoTitle]
       encDetail = GV.detail [GV.DName "State/Race", GV.DmType GV.Nominal]
       encoding = GV.encoding . encDetail . encX . encY
-      transform = GV.transform . makeYVal . renamePrefType
+      transform = GV.transform . makeYVal
       lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
       ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []] 

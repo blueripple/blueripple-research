@@ -1,4 +1,4 @@
-packages: ./ 
+packages: ./
 jobs: 4
 with-compiler: ghc
 
@@ -22,7 +22,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega
-  tag: f63344329a9d8e084b7f0d9a967481fd4caf70ed
+  tag: 5395e137ee08ecf8cd8b5eec75c091181507dee3
 
 source-repository-package
   type: git
