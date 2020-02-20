@@ -144,14 +144,16 @@ Democratic vs the turnout of groups that lean Republican.  This is *not* the tur
 and Democrats.  Each demographic group has some Democratic and some Republican voters.  Here we're
 imagining targeting GOTV by age (for instance) and so we consider turnout by demographic groups. 
 
-In the table below we compare these for the 2012 and 2016 presidential elections. The gaps
+In table below we illustrate these gaps for the 2012 and 2016 presidential
+elections---we've included 2012 just to indicate that while these numbers do fluctuate,
+the numbers we see in 2016 are fairly typical of recent presidential elections. The gaps
 in this table are large and that can seem discouraging. But instead we think it shows an opportunity
 to use GOTV work to generate votes for Democratic candidates.  In what follows we will try to
 focus that opportunity; to see where it might be most productive in the upcoming presidential election.
 It's important to remember that these states were very close in the 2016 election
 (except for TX and GA). How can this be if the turnout gaps are so large? 
 Among the groups we are looking at,
-Democratic leaning groups, are much more likely to vote for Democrats than the 
+Democratic leaning groups are much more likely to vote for Democrats than the 
 Republican leaners are to vote for Republicans. This also means, as we'll explore
 in detail below, that we do not have to close those gaps to win these
 states.  Just shrinking the gaps slightly is enough in many of the battleground states.
@@ -171,6 +173,8 @@ We should not read this table as meaning that, for example, in AZ in 2016, 24% f
 showed up at the polls. Instead, the table says that in 2016,
 turnout among people most likely (by age, sex, and race) to vote for Democrats
 was 24% lower than it was among the folks most likely to vote Republican.
+
+
 
 [BR:BlueWave]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 [FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
@@ -270,12 +274,21 @@ of these states, boosting turnout among all voters could flip them.  This is a r
 fact that in Republican leaning voters are usually less Republican leaning than Democratic
 leaning voters are Democratic leaning.
 
-These states are very different sizes and so the number of voters we would need to turn out
-to flip these states is very different. One way to put them all on a similar scale, is to
-consider how many extra voters we need to turn out to flip the state per electoral vote the
-state is worth in the general election.  Here we see some nuances, for example, though
-FL is easier to flip than WI in pure percentage turnout, WI is "cheaper", requiring only half
-as many voters per EV.
+In our [previous post][BR:TurnoutHowHigh] we examined some history and scholarship about
+turnout, concluding that 5% boosts in turnout were plausible, given high levels of
+voter intensity and strong GOTV work.  Looking at the table, that puts MI and PA in the
+"achievable" range, FL at the edge of that and WI just barely above. If you want to do GOTV
+work, or donate to groups doing that work, these are the best places to start.
+
+One last point: these
+states are very different sizes, so the number of "extra" voters needed to increase
+Dem turnout by, e.g.,  1% can vary greatly.  But the larger states are also larger electoral
+prizes---they have more electoral votes.  That is, it's much more work to boost turnout 4.4%
+among Dems in FL than to boost it 5.5% in WI, but FL is worth almost 3 times as many electoral votes.
+So the difference in work may be worth it.  It's a little more complicated than that
+because each state has a different proportion and intensity of Dem leaners.
+The bottom line: in terms of bang-for-buck, the best bets for GOTV work are MI, WI, PA and then FL.
+
 
 [BR:Home]: <https://blueripplepolitics.org>
 [BR:TurnoutHowHigh]: <https://blueripplepolitics.org/blog/gotv-data>
@@ -288,15 +301,14 @@ text3 :: T.Text
 text3 = [i|
 
 ## Key Takeaways
-* Demographic turnout gaps are large, which means there's room for GOTV work to generate Democratoc votes.
-* When grouping by age, sex and race, Dem leaning voters are more Dem leaning than R leaning voters are R leaning.
-* Shrinking demographic turnout gaps is one way to win battleground states and make TX and GA into battleground states.
-* Of the battlegrounds, FL, MI, PA, and WI offer the best opportunities to win the state
-by focusing GOTV on Dem-leaning groups. 
+* Demographic turnout gaps are large, which means there's room for GOTV work to generate Democratic votes.
+* Of the battlegrounds, broad-based GOTV efforts in MI are likely to flip the state blue,
+and increasing turnout within Dem-leaning groups will likely close the gap in WI and PA and maybe FL.
+* GA and TX could turn into battleground states if we significantly boost turnout among Dem-leaning groups.
 
 ## Take Action
 One of our themes at [Blue Ripple Politics][BR:Home]
-is that we believe that Democracy works better if everyone votes, and that we should prioritize laws and policies that
+is that we believe that democracy works better if everyone votes, and that we should prioritize laws and policies that
 make voting easier for everyone, e.g., same-day-registration, vote-by-mail, making election day a federal holiday, 
 having more polling places, etc.  We've identified 4 states where GOTV work should have the highest payoff
 in terms of the Presidential election.  We encourage you to get involved with an organization doing GOTV work in
@@ -655,7 +667,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
            <> C.headed "Dem Leaners (000s)" (BR.toCell cas "Leaners" "Leaners" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (bPop r)/1000)) :: Int)))
            <> C.headed "Boosting All Requires (%)" (BR.toCell cas "BoostAll" "% Of All" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipAllM))
            <> C.headed "Boosting Dems Requires (%)" (BR.toCell cas "BoostDem" "% Of Dems" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipDM))
-           <> C.headed "New Voters/Ev" (BR.toCell cas "VotersPerEv" "Voters/EV" (BR.maybeNumberToStyledHtml "%d" . votersPerEvM))
+--           <> C.headed "New Voters/Ev" (BR.toCell cas "VotersPerEv" "Voters/EV" (BR.maybeNumberToStyledHtml "%d" . votersPerEvM))
         
   
   
@@ -691,8 +703,8 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
             asrPostStratifiedFrame = F.filterFrame ((== ET.PSByVAP) . F.rgetField @ET.PrefType) vpvPostStratifiedByASR
         _ <-  K.addHvega Nothing Nothing
           $ vlTurnoutGap
-          "Battleground Preference Post-Stratified by Age, Sex and Race"
-          (FV.ViewConfig 800 800 10)
+          "Democratic Vote Share in the Battleground States"
+          (FV.ViewConfig 800 400 10)
           $ (fmap F.rcast asrPostStratifiedFrame <> fmap F.rcast presVoteShareFrame)
         brAddMarkDown text2
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
@@ -717,22 +729,24 @@ vlTurnoutGap :: (Functor f, Foldable f)
 vlTurnoutGap title vc rows =
   let mapPrefs p = case p of
         ET.PSByVAP -> "Voted in Equal Proportion"
-        ET.VoteShare -> "Actual"
+        ET.VoteShare -> "Actual 2016 Vote"
         _ -> "N/A"
-      dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @ET.PrefType @'("Vote Share",T.Text) mapPrefs rows)
+      dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @ET.PrefType @'("Vote Share Type",T.Text) mapPrefs rows)
 --      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
-      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.Office" "State/Race"
-      makeRuleVal = GV.calculateAs "0.5" "Evenly Split"
-      encX = GV.position GV.X [FV.pName @BR.DemPref, GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]], GV.PTitle "2 Party Vote Share"]
-      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0.40, 0.60]], GV.PNoTitle]
-      encY = GV.position GV.Y [GV.PName "State/Race", GV.PmType GV.Nominal]
-      encColor = GV.color [GV.MName "Vote Share", GV.MmType GV.Nominal, GV.MNoTitle]
-      encDetail = GV.detail [GV.DName "State/Race", GV.DmType GV.Nominal]
+      makeYVal = GV.calculateAs "datum.state_abbreviation" "State"
+      makeRuleVal = GV.calculateAs "50" "Evenly Split"
+      makeVS = GV.calculateAs "100 * datum.DemPref" "Vote Share"
+      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [40, 60]], GV.PTitle "2 Party Vote Share (%)"]
+      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [40, 60]], GV.PNoTitle]
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal]
+      encColor = GV.color [GV.MName "Vote Share Type", GV.MmType GV.Nominal, GV.MNoTitle]
+      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
       encoding = GV.encoding . encDetail . encX . encY
-      transform = GV.transform . makeYVal
+      transform = GV.transform . makeYVal . makeVS
+      config = FV.viewConfigAsHvega vc
       lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
       dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
-      ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []] 
+      ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []]      
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec, ruleSpec], dat]
 

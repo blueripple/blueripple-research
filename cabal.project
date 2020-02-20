@@ -2,12 +2,19 @@ packages: ./
 jobs: 4
 with-compiler: ghc
 
-allow-newer: knit-haskell, vinyl
+--allow-newer: base, primitive, 
+allow-newer: vinyl, hvega               
 
 source-repository-package
   type: git
+  location: https://github.com/acowley/Frames
+  tag: 02411e5f2682058bddf63b098c5ad24e3b194acf
+
+             
+source-repository-package
+  type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: 9e45538bc17ce809a803dc1710d2f137e00464cd
+  tag: 153e6c046d60b1243b990324f696a350ed540e6f
 
 source-repository-package
   type: git
@@ -17,12 +24,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: b69e35c3e83fb4152290ff50aaf253617d482787
+  tag: 78a62992fc81615960bd7ae44a00f5b832bba682
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega
-  tag: 5395e137ee08ecf8cd8b5eec75c091181507dee3
+  tag: cfb7d0ff2eaf907c06d33900523976557ca94fed
 
 source-repository-package
   type: git
@@ -38,12 +45,6 @@ source-repository-package
   type: git
   location: https://github.com/adamConnerSax/glm-haskell
   tag: ec3d0454232664e470b7be213052187c6e9d71a1
-
-  
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/data-science-utils
---  tag: ebe141ad7e929fb6780d3b95e19d09074551eead
 
 --source-repository-package
 --  type: git
