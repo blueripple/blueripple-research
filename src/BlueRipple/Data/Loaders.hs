@@ -39,6 +39,7 @@ import           GHC.Generics                   ( Generic
 import qualified Data.Text                     as T
 
 import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
@@ -90,6 +91,70 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
   fixPresidentialElectionRow
   Nothing
   "presByState.bin"
+
+aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
+aseDemographicsLoader =
+  cachedFrameLoader
+  (T.pack BR.ageSexEducationDemographicsLongCSV)
+  Nothing
+  id
+  Nothing
+  "aseDemographics.bin"
+
+simpleASEDemographicsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.ACSCount]))
+simpleASEDemographicsLoader =
+  let make = do
+         aseACSRaw <- aseDemographicsLoader
+         K.knitEither $ FL.foldM DT.simplifyACS_ASEFold aseACSRaw
+  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASE.bin" make
+  
+asrDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASRDemographics)
+asrDemographicsLoader =
+  cachedFrameLoader
+  (T.pack BR.ageSexEducationDemographicsLongCSV)
+  Nothing
+  id
+  Nothing
+  "asrDemographics.bin"
+
+simpleASRDemographicsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount]))
+simpleASRDemographicsLoader =
+  let make = do
+         asrACSRaw <- aseDemographicsLoader
+         K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrACSRaw
+  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" make
+
+aseTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASE)
+aseTurnoutLoader =
+  cachedFrameLoader
+  (T.pack BR.detailedASETurnoutCSV)
+  Nothing
+  id
+  Nothing
+  "aseTurnout.bin"
+
+simpleASETurnoutLoader :: K.KnitEffects r => K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])
+simpleASETurnoutLoader =
+  let make = do
+         aseTurnoutRaw <- aseTurnoutLoader
+         K.knitEither $ FL.foldM DT.simplifyTurnoutASEFold aseTurnoutRaw
+  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASE.bin" make
+
+asrTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASR)
+asrTurnoutLoader =
+  cachedFrameLoader
+  (T.pack BR.detailedASRTurnoutCSV)
+  Nothing
+  id
+  Nothing
+  "asrTurnout.bin"
+
+simpleASRTurnoutLoader :: K.KnitEffects r => K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])
+simpleASRTurnoutLoader =
+  let make = do
+         asrTurnoutRaw <- asrTurnoutLoader
+         K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
+  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" make
 
 cachedFrameLoader
   :: forall qs rs r
