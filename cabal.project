@@ -3,13 +3,34 @@ jobs: 4
 with-compiler: ghc
 
 --allow-newer: base, primitive, 
-allow-newer: vinyl, hvega               
+allow-newer: vinyl, hvega, hashable, base               
+
+-- ghc-8.8 forks
+             
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames
+  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
 
 source-repository-package
   type: git
-  location: https://github.com/acowley/Frames
-  tag: 02411e5f2682058bddf63b098c5ad24e3b194acf
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: random-fu
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: random-source
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: 81e67b5596c173720032f7fa83610c4e4138b839
+  subdir: rvar
+    
+--- ghc-8.8 forks ends
              
 source-repository-package
   type: git
@@ -24,7 +45,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 78a62992fc81615960bd7ae44a00f5b832bba682
+  tag: 2fc28f64cee937e7ef7313afc645bcc07fbb3c67
 
 source-repository-package
   type: git

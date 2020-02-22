@@ -1,0 +1,627 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voter Turnout in Battleground States: Where Can We Win?</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@4"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex; 
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;      
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .brTable {
+      font-size: 180t
+  }
+  .brTableTitle {
+      text-align: center;
+      font-size:  14pt
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 600px) {
+     .content-wrapper {
+	 margin-left: 218px;
+	 margin-right: 218px
+     }   
+  }
+  @media screen and (max-width: 600px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }		       
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;		
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px		       
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;      		       
+  }  
+  table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+      
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+      
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+      
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+
+</style>
+
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>	
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<div class="published">February 21, 2020 </div>
+<header>
+<h1 class="title">Voter Turnout in Battleground States: Where Can We Win?</h1>
+</header>
+<p>In 2016, Trump won states that Clinton would likely have won if every demographic group voted in equal proportion. This reflects a “turnout gap” between likely R voters and likely D voters. As we’ve talked about in <a href="https://blueripple.github.io/research/preference-model/p2/main.html">earlier pieces</a>, one simplistic but useful way to look at an election is to consider some demographic breakdown of voters (e.g., Age, Sex and Race), estimate how many eligible voters are in each group, how likely each is to vote, and who they are likely to vote for. We can look at this nationwide or in a single congressional district: any region where we can estimate the demographics, turnout and preferences.</p>
+<p>In this piece we focus on turnout gaps in the battleground states. We’re not going to talk about why these gaps exist, but there’s a great rundown at <a href="https://www.fairvote.org/voter_turnout#voter_turnout_101">FairVote</a>. In our <a href="https://blueripplepolitics.org/blog/gotv-data">last post</a>, we looked at how high turnout could go and the most efficient ways to boost turnout. Here we take up a related question: what would changes in turnout do to the electoral landscape in the race for the White House?</p>
+<ol type="1">
+<li><strong>Turnout Gaps</strong></li>
+<li><strong>What If Everybody Voted?</strong></li>
+<li><strong>Battleground States</strong></li>
+<li><strong>How Much Turnout Do We Need?</strong></li>
+<li><strong>Key Takeaways</strong></li>
+<li><strong>Take Action</strong></li>
+</ol>
+<section id="TurnoutGaps" class="level2">
+<h2>Demographic Turnout Gaps</h2>
+<p>As a starting point, let’s look at the demographic turnout gap in some battleground states. We’re defining the <em>demographic turnout gap</em> as the difference in turnout between groups that lean Democratic vs the turnout of groups that lean Republican. This is <em>not</em> the turnout gap between Republicans and Democrats. Each demographic group has some Democratic and some Republican voters. Here we’re imagining targeting GOTV by age (for instance) and so we consider turnout by demographic groups.</p>
+<p>In table below we illustrate these gaps for the 2012 and 2016 presidential elections—we’ve included 2012 just to indicate that while these numbers do fluctuate, the numbers we see in 2016 are fairly typical of recent presidential elections. The gaps in this table are large and that can seem discouraging. But instead we think it shows an opportunity to use GOTV work to generate votes for Democratic candidates. In what follows we will try to focus that opportunity; to see where it might be most productive in the upcoming presidential election. It’s important to remember that these states were very close in the 2016 election (except for TX and GA). How can this be if the turnout gaps are so large? Among the groups we are looking at, Democratic leaning groups are much more likely to vote for Democrats than the Republican leaners are to vote for Republicans. This also means, as we’ll explore in detail below, that we do not have to close those gaps to win these states. Just shrinking the gaps slightly is enough in many of the battleground states.</p>
+<p>We’ve split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M), and race (non-white, white non-Hispanic). We compute turnout as a percentage of the <em>voting-age-population</em> (VAP) rather than <em>voting-eligible-population</em> (VEP) because we don’t have a source for VEP split by demographic groups. Using VAP lowers all of our turnout rates, especially in AZ, FL and TX where there are large numbers of immigrants who are voting age but not citizens and thus not eligible to vote. As a demographic group, those voters tend to vote for Democrats so using VAP also has the effect of showing a higher turnout gap than actually exists among eligible voters.</p>
+<p>We should not read this table as meaning that, for example, in AZ in 2016, 24% fewer Democrats showed up at the polls. Instead, the table says that in 2016, turnout among people most likely (by age, sex, and race) to vote for Democrats was 24% lower than it was among the folks most likely to vote Republican.</p>
+<div class="brTableTitle">Turnout Comparison</div>
+<table class="brTable"><thead><tr><th>State</th><th>2012 Dem Turnout</th><th>2012 Rep Turnout</th><th>Gap</th><th>2016 Dem Turnout</th><th>2016 Rep Turnout</th><th>Gap</th></tr></thead><tbody><tr><td style="; " data-label="State">AZ</td><td style="; color: green" data-label="2012 Dem Turnout">35.81</td><td style="; color: green" data-label="2012 Rep Turnout">58.10</td><td style="; color: red" data-label="Gap">(22.28)</td><td style="; color: green" data-label="2016 Dem Turnout">37.32</td><td style="; color: green" data-label="2016 Rep Turnout">61.49</td><td style="; color: red" data-label="Gap">(24.17)</td></tr><tr><td style="; " data-label="State">FL</td><td style="; color: green" data-label="2012 Dem Turnout">46.38</td><td style="; color: green" data-label="2012 Rep Turnout">69.23</td><td style="; color: red" data-label="Gap">(22.85)</td><td style="; color: green" data-label="2016 Dem Turnout">48.02</td><td style="; color: green" data-label="2016 Rep Turnout">71.75</td><td style="; color: red" data-label="Gap">(23.73)</td></tr><tr><td style="; " data-label="State">GA</td><td style="; color: green" data-label="2012 Dem Turnout">42.03</td><td style="; color: green" data-label="2012 Rep Turnout">60.93</td><td style="; color: red" data-label="Gap">(18.90)</td><td style="; color: green" data-label="2016 Dem Turnout">40.33</td><td style="; color: green" data-label="2016 Rep Turnout">62.61</td><td style="; color: red" data-label="Gap">(22.29)</td></tr><tr><td style="; " data-label="State">MI</td><td style="; color: green" data-label="2012 Dem Turnout">52.36</td><td style="; color: green" data-label="2012 Rep Turnout">67.98</td><td style="; color: red" data-label="Gap">(15.62)</td><td style="; color: green" data-label="2016 Dem Turnout">51.29</td><td style="; color: green" data-label="2016 Rep Turnout">68.49</td><td style="; color: red" data-label="Gap">(17.20)</td></tr><tr><td style="; " data-label="State">NC</td><td style="; color: green" data-label="2012 Dem Turnout">48.20</td><td style="; color: green" data-label="2012 Rep Turnout">66.72</td><td style="; color: red" data-label="Gap">(18.52)</td><td style="; color: green" data-label="2016 Dem Turnout">45.85</td><td style="; color: green" data-label="2016 Rep Turnout">67.78</td><td style="; color: red" data-label="Gap">(21.93)</td></tr><tr><td style="; " data-label="State">OH</td><td style="; color: green" data-label="2012 Dem Turnout">53.30</td><td style="; color: green" data-label="2012 Rep Turnout">72.90</td><td style="; color: red" data-label="Gap">(19.60)</td><td style="; color: green" data-label="2016 Dem Turnout">51.54</td><td style="; color: green" data-label="2016 Rep Turnout">71.21</td><td style="; color: red" data-label="Gap">(19.67)</td></tr><tr><td style="; " data-label="State">PA</td><td style="; color: green" data-label="2012 Dem Turnout">46.93</td><td style="; color: green" data-label="2012 Rep Turnout">67.94</td><td style="; color: red" data-label="Gap">(21.01)</td><td style="; color: green" data-label="2016 Dem Turnout">51.02</td><td style="; color: green" data-label="2016 Rep Turnout">71.41</td><td style="; color: red" data-label="Gap">(20.39)</td></tr><tr><td style="; " data-label="State">TX</td><td style="; color: green" data-label="2012 Dem Turnout">33.88</td><td style="; color: green" data-label="2012 Rep Turnout">55.46</td><td style="; color: red" data-label="Gap">(21.58)</td><td style="; color: green" data-label="2016 Dem Turnout">34.92</td><td style="; color: green" data-label="2016 Rep Turnout">58.86</td><td style="; color: red" data-label="Gap">(23.94)</td></tr><tr><td style="; " data-label="State">WI</td><td style="; color: green" data-label="2012 Dem Turnout">60.12</td><td style="; color: green" data-label="2012 Rep Turnout">74.02</td><td style="; color: red" data-label="Gap">(13.89)</td><td style="; color: green" data-label="2016 Dem Turnout">55.56</td><td style="; color: green" data-label="2016 Rep Turnout">71.22</td><td style="; color: red" data-label="Gap">(15.66)</td></tr></tbody></table>
+</section>
+<section id="EverybodyVoted" class="level2">
+<h2>What If Everybody Voted?</h2>
+<p>Last year, The Economist ran a fascinating data-journalism article entitled <a href="https://medium.economist.com/would-donald-trump-be-president-if-all-americans-actually-voted-95c4f960798">“Would Donald Trump be president if all Americans actually voted?”</a>. Using a variety of sophisticated methods (explained in the linked piece) they attempted to simulate the 2016 presidential election under the assumption that every eligible voter cast a vote. They concluded that Clinton would have won the election. Though the model is complex, the result comes down to understanding the demographics in each state and the voter preferences of those groups. The idea that everyone would vote in a country where roughly 65% of eligible voters actually vote seems far-fetched. So it’s important to realize that what the Economist modeled is the result we’d expect if everybody voted <em>in equal proportion</em>. It doesn’t matter if everyone votes, just that people in every demographic group are equally likely to vote in each state.</p>
+<p>Here we’re going to perform a similar analysis, focused only on the battleground states. Our model of voter preference is substantially simpler than the one used by the Economist. They broke the electorate into many groups by sex, age, education and race. Here we are just going to look at age (45 or Over/Under 45), sex (F/M), and race (Non-White/White-Non-Hispanic). That’s more than enough to see the central point: in many crucial states, the gaps in turnout between likely R and likely D voters were enough to cost Clinton the election.</p>
+<p>Though we’re focusing on 2016, we’re not interested in re-hashing that election! We want to know where to focus our energies now. Where can efforts to raise turnout make the most difference?</p>
+</section>
+<section id="Battlegrounds" class="level2">
+<h2>Battleground States</h2>
+<p>Below we show a chart of the modeled Democratic preference of the electorate in each battleground state. Our <a href="https://blueripple.github.io/research/mrp-model/p1/main.html/#DataAndMethods">MR model</a> allows us to infer the preference of each demographic group in each state. To get an overall preference for the state, we have to weigh those groups by their relative sizes. That step is called “post-stratification” (the “P” in “MRP”). But do we post-stratify by the voting-age-population or the number of <em>likely voters</em> in each group? Weighting by population corresponds to a scenario where every demographic group votes in equal proportion.</p>
+<p>In the chart below we compare the 2-party Democratic vote-share in the 2016 presidential elections with the post-stratified preference assuming everybody votes in equal proportion. This gives us a window into the effects of turnout gaps in various states. The effect of the gap in an individual state depends on the demographics and preferences in that particular state.</p>
+<p>There are a few things to note in the chart. While all of these states have higher Democratic Vote Share in the everybody-votes scenario, some shift by more than others. This reflects the different sizes of the groups and the intensity of the D lean among the D leaners and the R lean among the R leaners. Except for OH, all the states here would move to the Democratic column if</p>
+<p>Is the difference sufficient to push the state to a preference above 50%? Then turnout gaps alone might make the difference between winning and losing the state. In AZ, FL, GA, NC, PA, and TX, turnout gaps create differences of over 3% in final preference. While driving a smaller gap in MI, and WI, those states were both very close in 2016 and those smaller gaps were enough to explain all three losses. OH is the only one of these states where even if all voters voted in equal proportion, Democrats would still likely lose the state.</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 400,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 400,
+            "continuousWidth": 800,
+            "discreteHeight": 400,
+            "discreteWidth": 800
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "DemPref": 0.5388011129819729,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "AZ",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5582246809077388,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "FL",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5429460074847133,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "GA",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5156106407046284,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "MI",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.538632567922012,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "NC",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.492938478466435,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "OH",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5356145995367437,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "PA",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5565154077474657,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "TX",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.5147780980786874,
+                "Office": "President",
+                "PrefType": "PSByVAP",
+                "state_abbreviation": "WI",
+                "year": 2016,
+                "Vote Share Type": "Voted in Equal Proportion"
+            },
+            {
+                "DemPref": 0.481108795538633,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "AZ",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.4938116452722452,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "FL",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.47338827400696787,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "GA",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.4988233178303845,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "MI",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.48096254196281285,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "NC",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.45732315422864095,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "OH",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.4962446419250984,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "PA",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.45286774422028014,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "TX",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            },
+            {
+                "DemPref": 0.49592010961970284,
+                "Office": "President",
+                "PrefType": "VoteShare",
+                "state_abbreviation": "WI",
+                "year": 2016,
+                "Vote Share Type": "Actual 2016 Vote"
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 800,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Democratic Vote Share in the Battleground States",
+    "layer": [
+        {
+            "transform": [
+                {
+                    "as": "State",
+                    "calculate": "datum.state_abbreviation"
+                },
+                {
+                    "as": "Vote Share",
+                    "calculate": "100 * datum.DemPref"
+                }
+            ],
+            "mark": "line",
+            "encoding": {
+                "x": {
+                    "field": "Vote Share",
+                    "scale": {
+                        "domain": [
+                            40,
+                            60
+                        ]
+                    },
+                    "title": "2 Party Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "detail": {
+                    "field": "State",
+                    "type": "nominal"
+                },
+                "y": {
+                    "field": "State",
+                    "type": "nominal"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "State",
+                    "calculate": "datum.state_abbreviation"
+                },
+                {
+                    "as": "Vote Share",
+                    "calculate": "100 * datum.DemPref"
+                }
+            ],
+            "mark": "point",
+            "encoding": {
+                "color": {
+                    "field": "Vote Share Type",
+                    "title": null,
+                    "type": "nominal"
+                },
+                "x": {
+                    "field": "Vote Share",
+                    "scale": {
+                        "domain": [
+                            40,
+                            60
+                        ]
+                    },
+                    "title": "2 Party Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "State",
+                    "type": "nominal"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "Evenly Split",
+                    "calculate": "50"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "x": {
+                    "field": "Evenly Split",
+                    "scale": {
+                        "domain": [
+                            40,
+                            60
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        }
+    ],
+    "padding": 10
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
+<p>Let’s return to GA and TX for a minute. These are not traditional battleground states. TX voted for Trump by almost a 10% margin in 2016. But changing demographics—racial and educational—are making Texas more purple. And the large shift in preference we see from just the turnout gap suggests that TX is already more purple than recent outcomes suggest. This year, because Texas has a number of retirements in the house, the local house races will be more competitive, which often drives higher and more balanced turnout. GA, also traditionally a red state, was closer than TX in 2016 with Trump winning by about 5%. And GA, by our simple model, could shift about 6% bluer if there were no turnout gaps.</p>
+</section>
+<section id="how-much-turnout-do-we-need" class="level2">
+<h2>How Much Turnout Do We Need?</h2>
+<p>Hopefully by now we’ve convinced you that the turnout gap exists and that shrinking or closing it could be enough to flip some states. Looking at that chart, you can see that some states don’t need to move much from the actual 2016 outcome towards the everybody-voted scenario to flip. Let’s quantify that. To put this more concretely, let’s consider two different plans for boosting turnout in each of these states:</p>
+<ul>
+<li>Option 1: Boost turnout for everyone in the state</li>
+<li>Option 2: Focus GOTV efforts exclusively on Dem leaning voters</li>
+</ul>
+<p>In either case, is GOTV work alone enough to flip any of these states? Using the voter preferences and turnout from the 2016 presidential election and the demographics from 2018, we compute the turnout boost required to flip each battleground state. The math is straightforward but messy so we’ve put the details <a href="https://blueripple.github.io/research/mrp-model/p3/turnoutBoostExplainer.html#">here</a>.</p>
+<p>In the table below we summarize the results. With just a glance, it’s apparent that efforts to improve Dem turnout would be particularly valuable in FL, MI, PA, and WI. Those are states where less than a 6% increase in Dem turnout could flip the state. In MI, boosting turnout among <em>all</em> voters just 3.5% would also likely flip the state. It’s remarkable that in most of these states, boosting turnout among all voters could flip them. This is a result of the fact that in Republican leaning voters are usually less Republican leaning than Democratic leaning voters are Democratic leaning.</p>
+<p>In our <a href="https://blueripplepolitics.org/blog/gotv-data">previous post</a> we examined some history and scholarship about turnout, concluding that 5% boosts in turnout were plausible, given high levels of voter intensity and strong GOTV work. Looking at the table, that puts MI and PA in the “achievable” range, FL at the edge of that and WI just barely above. If you want to do GOTV work, or donate to groups doing that work, these are the best places to start.</p>
+<p>One last point: these states are very different sizes, so the number of “extra” voters needed to increase Dem turnout by, e.g., 1% can vary greatly. But the larger states are also larger electoral prizes—they have more electoral votes. That is, it’s much more work to boost turnout 4.4% among Dems in FL than to boost it 5.5% in WI, but FL is worth almost 3 times as many electoral votes. So the difference in work may be worth it. It’s a little more complicated than that because each state has a different proportion and intensity of Dem leaners. The bottom line: in terms of bang-for-buck, the best bets for GOTV work are MI, WI, PA and then FL.</p>
+<div class="brTableTitle">Turnout Boosts to Flip Battlegrounds</div>
+<table class="brTable"><thead><tr><th>State</th><th>Electoral Votes</th><th>Population (000s)</th><th>Dem Leaners (000s)</th><th>Boosting All Requires (%)</th><th>Boosting Dems Requires (%)</th></tr></thead><tbody><tr><td style="; " data-label="State">AZ</td><td style="; color: green" data-label="EVs">11</td><td style="; color: green" data-label="Pop">5530</td><td style="; color: green" data-label="Leaners">2879</td><td style="; color: green" data-label="% Of All">35.21</td><td style="; color: green" data-label="% Of Dems">10.29</td></tr><tr><td style="; " data-label="State">FL</td><td style="; color: green" data-label="EVs">29</td><td style="; color: green" data-label="Pop">17071</td><td style="; color: green" data-label="Leaners">10667</td><td style="; color: green" data-label="% Of All">12.90</td><td style="; color: green" data-label="% Of Dems">4.39</td></tr><tr><td style="; " data-label="State">GA</td><td style="; color: green" data-label="EVs">16</td><td style="; color: green" data-label="Pop">8016</td><td style="; color: green" data-label="Leaners">3609</td><td style="; color: green" data-label="% Of All">47.33</td><td style="; color: green" data-label="% Of Dems">10.40</td></tr><tr><td style="; " data-label="State">MI</td><td style="; color: green" data-label="EVs">16</td><td style="; color: green" data-label="Pop">7832</td><td style="; color: green" data-label="Leaners">2992</td><td style="; color: green" data-label="% Of All">3.46</td><td style="; color: green" data-label="% Of Dems">1.10</td></tr><tr><td style="; " data-label="State">NC</td><td style="; color: green" data-label="EVs">15</td><td style="; color: green" data-label="Pop">8087</td><td style="; color: green" data-label="Leaners">2766</td><td style="; color: green" data-label="% Of All">91.25</td><td style="; color: green" data-label="% Of Dems">14.25</td></tr><tr><td style="; " data-label="State">OH</td><td style="; color: green" data-label="EVs">18</td><td style="; color: green" data-label="Pop">9099</td><td style="; color: green" data-label="Leaners">4778</td><td style="; " data-label="% Of All">N/A</td><td style="; color: green" data-label="% Of Dems">51.47</td></tr><tr><td style="; " data-label="State">PA</td><td style="; color: green" data-label="EVs">20</td><td style="; color: green" data-label="Pop">10159</td><td style="; color: green" data-label="Leaners">5284</td><td style="; color: green" data-label="% Of All">10.66</td><td style="; color: green" data-label="% Of Dems">3.68</td></tr><tr><td style="; " data-label="State">TX</td><td style="; color: green" data-label="EVs">38</td><td style="; color: green" data-label="Pop">21302</td><td style="; color: green" data-label="Leaners">13783</td><td style="; " data-label="% Of All">N/A</td><td style="; color: green" data-label="% Of Dems">31.36</td></tr><tr><td style="; " data-label="State">WI</td><td style="; color: green" data-label="EVs">10</td><td style="; color: green" data-label="Pop">4541</td><td style="; color: green" data-label="Leaners">1482</td><td style="; color: green" data-label="% Of All">23.55</td><td style="; color: green" data-label="% Of Dems">5.47</td></tr></tbody></table>
+</section>
+<section id="key-takeaways" class="level2">
+<h2>Key Takeaways</h2>
+<ul>
+<li>Demographic turnout gaps are large, which means there’s room for GOTV work to generate Democratic votes.</li>
+<li>Of the battlegrounds, broad-based GOTV efforts in MI are likely to flip the state blue, and increasing turnout within Dem-leaning groups will likely close the gap in WI and PA and maybe FL.</li>
+<li>GA and TX could turn into battleground states if we significantly boost turnout among Dem-leaning groups.</li>
+</ul>
+</section>
+<section id="take-action" class="level2">
+<h2>Take Action</h2>
+<p>One of our themes at <a href="https://blueripplepolitics.org">Blue Ripple Politics</a> is that we believe that democracy works better if everyone votes, and that we should prioritize laws and policies that make voting easier for everyone, e.g., same-day-registration, vote-by-mail, making election day a federal holiday, having more polling places, etc. We’ve identified 4 states where GOTV work should have the highest payoff in terms of the Presidential election. We encourage you to get involved with an organization doing GOTV work in those states.</p>
+<p>Below, we highlight national organizations that are targeting the states we think are easiest to flip and/or demographic groups which are crucial in those states. We’re also interested in local organizations in any of these states, so let us know of any you come across.</p>
+<ul>
+<li><a href="https://forourfuturefund.org/">For Our Future Action Fund</a> organizes GOTV drives in FL, NV, OH, PA, WI, VA and MI. You can donate money or volunteer in the states where they are active.</li>
+<li><a href="https://www.turnoutpac.org/">Progressive Turnout Project</a> also runs state-level GOTV in these states (as well as others).</li>
+<li><a href="https://votolatino.org/">Voto Latino</a> organizes Latinx voters nationwide. While this is not as single-state focused, the Latinx vote is crucial in many of the states which are flippable in the 2020 election and plays a crucial role in many a close house district.</li>
+</ul>
+</section>
+<section id="Update" class="level2">
+<h2>Update</h2>
+<p>G. Elliot Morris (@gelliotmorris) <a href="https://twitter.com/gelliottmorris/status/1230877174493786114">points out</a> that we should not interpret these results as indicating a path to victory in these states. We agree! We should’ve been more clear: we don’t think only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can succesfully target only Dems—though here we should note that our imagined targeting is demographic, for example targeting only young voters, which is slightly more plausible than targeting only Dems. Our goal is here is twofold: to figure out where GOTV work is <em>most</em> valuable and to observe that the numbers in those places are in the realm of turnout shifts we’ve seen in the past. Some questions we didn’t/couldn’t answer but are interested in:</p>
+<ul>
+<li>What are the relative (Dem leaning vs. R leaning) shifts in turnout in these states over the past few presidential elections?</li>
+<li>How probable is any given shift in turnout?</li>
+<li>How much of a difference does GOTV work make in that dsitribution?</li>
+</ul>
+<p>We can actually say something about that first question. The table at the beginning of this post shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016. The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%. We’ll try to expand that window and look at more elections. So swings of ~3% not impossible, election to election. That is not to say that we know how to <em>produce</em> those shifts, but that such shifts are not implausible.</p>
+<p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
+</section>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>

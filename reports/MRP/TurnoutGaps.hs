@@ -326,6 +326,29 @@ money or volunteer in the states where they are active.
 vote is crucial in many of the states which are flippable in the 2020 election and plays a crucial
 role in many a close house district.  
 
+## Update {#Update}
+G. Elliot Morris (@gelliotmorris) [points out][GEMTweet] that we should not interpret these results as
+indicating a path to victory in these states.  We agree!  We should've been more clear:  we don't think
+only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can succesfully target only
+Dems---though here we should note that our imagined targeting is demographic, for example targeting only
+young voters, which is slightly more plausible than targeting only Dems.  Our goal is here is twofold:
+to figure out where GOTV work is *most* valuable and to observe that the numbers in those places are
+in the realm of turnout shifts we've seen in the past.  Some questions we didn't/couldn't answer but are
+interested in:
+
+- What are the relative (Dem leaning vs. R leaning)
+shifts in turnout in these states over the past few presidential elections?
+- How probable is any given shift in turnout?
+- How much of a difference does GOTV work make in that dsitribution?
+
+We can actually say something about that first question. The table at the beginning of this post
+shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
+The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%. We'll try
+to expand that window and look at more elections.
+So swings of ~3% not impossible, election to election.
+That is not to say that we know how to *produce* those shifts, but that such shifts are not implausible.
+
+[GEMTweet]: <https://twitter.com/gelliottmorris/status/1230877174493786114>
 [VL]: <https://votolatino.org/>
 [FOFAF]: <https://forourfuturefund.org/>
 [PTP]: <https://www.turnoutpac.org/>
@@ -535,7 +558,7 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
                             FMR.noUnpack
                             (FMR.splitOnKeys @'[BR.StateAbbreviation])
                             (FMR.ReduceFold $ \k -> fmap (k,) FL.list))
-                            turnoutGaps
+                            turnoutGaps    
   K.logLE K.Info $ T.pack $ show turnoutGapsForTable  
   let turnoutCompColonnade years cas =
         let dVAP = F.rgetField @'("DPop",Int)

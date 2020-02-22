@@ -18,7 +18,6 @@ examples/html
 *.ps
 *.aux
 *.png
-/posts
 reports/MRP/data
 .knit-haskell-cache
 bigData
