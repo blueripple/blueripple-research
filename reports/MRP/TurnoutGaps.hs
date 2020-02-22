@@ -327,7 +327,7 @@ vote is crucial in many of the states which are flippable in the 2020 election a
 role in many a close house district.  
 
 ## Update {#Update}
-G. Elliot Morris (@gelliotmorris) [points out][GEMTweet] that we should not interpret these results as
+G. Elliot Morris (@gelliotmorris) and others [point out][GEMTweet] that we should not interpret these results as
 indicating a path to victory in these states.  We agree!  We should've been more clear:  we don't think
 only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can succesfully target only
 Dems---though here we should note that our imagined targeting is demographic, for example targeting only
@@ -336,17 +336,17 @@ to figure out where GOTV work is *most* valuable and to observe that the numbers
 in the realm of turnout shifts we've seen in the past.  Some questions we didn't/couldn't answer but are
 interested in:
 
-- What are the relative (Dem leaning vs. R leaning)
+- What are the relative (D leaning vs. R leaning)
 shifts in turnout in these states over the past few presidential elections?
 - How probable is any given shift in turnout?
-- How much of a difference does GOTV work make in that dsitribution?
+- How much of a difference does GOTV work make in that distribution?
 
 We can actually say something about that first question. The table at the beginning of this post
 shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
-The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%. We'll try
-to expand that window and look at more elections.
+The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%.
 So swings of ~3% not impossible, election to election.
 That is not to say that we know how to *produce* those shifts, but that such shifts are not implausible.
+We'll try to look a bit further back to get a better sense of those numbers over more elections.
 
 [GEMTweet]: <https://twitter.com/gelliottmorris/status/1230877174493786114>
 [VL]: <https://votolatino.org/>

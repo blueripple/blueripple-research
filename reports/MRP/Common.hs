@@ -52,7 +52,7 @@ postRoute PostPools       = brMRPModelRootPath <> "p1/"
 postRoute PostDeltaVPV    = brMRPModelRootPath <> "p2/"
 postRoute PostWWC         = brMRPModelRootPath <> "np1/"
 postRoute PostKentucky    = brMRPModelRootPath <> "np2/"
-postRoute PostTurnoutGaps = brMRPModelRootPath <> "p3/"
+postRoute PostTurnoutGaps = brMRPModelRootPath <> "up3/"
 postRoute PostWisconsin   = brMRPModelRootPath <> "np4/"
 
 postPath :: Post -> T.Text
