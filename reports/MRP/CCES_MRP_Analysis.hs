@@ -179,9 +179,8 @@ countDemPres2016VotesF =
     (F.rgetField @CCESWeightCumulative)
 
 mrpPrefs
-  :: forall cc es r
+  :: forall cc r
    . ( K.KnitEffects r
-     , K.Members es r
      , K.Member GLM.RandomFu r
      , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[DemVPV])
            V.++
@@ -199,7 +198,7 @@ mrpPrefs
      , Ord (F.Record cc)
      )
   => Maybe T.Text
-  -> K.Cached es [F.Record CCES_MRP]
+  -> K.Sem r (F.FrameRec CCES_MRP)
   -> [GLM.WithIntercept CCESPredictor]
   -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
   -> K.Sem
@@ -212,7 +211,7 @@ mrpPrefs
                '[BR.Year, ET.Office, DemVPV, BR.DemPref]
            )
        )
-mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
+mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
   let vpv x = 2 * x - 1
       lhToRecs year office (LocationHolder lp lkM predMap) =
         let addCols p =
@@ -237,7 +236,7 @@ mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
   predsByLocationPres2008 <- cacheIt
     "pres2008"
     (   lhsToFrame 2008 ET.President
-    <$> (predictionsByLocation ccesRecordListAllCA
+    <$> (predictionsByLocation ccesDataAction
                                countDemPres2008VotesF
                                predictor
                                catPredMap
@@ -246,7 +245,7 @@ mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
   predsByLocationPres2012 <- cacheIt
     "pres2012"
     (   lhsToFrame 2012 ET.President
-    <$> (predictionsByLocation ccesRecordListAllCA
+    <$> (predictionsByLocation ccesDataAction
                                countDemPres2012VotesF
                                predictor
                                catPredMap
@@ -255,7 +254,7 @@ mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
   predsByLocationPres2016 <- cacheIt
     "pres2016"
     (   lhsToFrame 2016 ET.President
-    <$> (predictionsByLocation ccesRecordListAllCA
+    <$> (predictionsByLocation ccesDataAction
                                countDemPres2016VotesF
                                predictor
                                catPredMap
@@ -265,7 +264,7 @@ mrpPrefs cacheTmpDirM ccesRecordListAllCA predictor catPredMap = do
     (\y -> cacheIt
       ("house" <> T.pack (show y))
       (   lhsToFrame y ET.House
-      <$> (predictionsByLocation ccesRecordListAllCA
+      <$> (predictionsByLocation ccesDataAction
                                  (countDemHouseVotesF y)
                                  predictor
                                  catPredMap

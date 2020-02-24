@@ -126,11 +126,11 @@ glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 type CatCols = '[]
 --type CCESGroup = Proxy (BR.GroupCols Location
   
-post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
+post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.Cached es [F.Record CCES.CCES_MRP]
+--     -> K.Cached es [F.Record CCES.CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countWWCDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES.CCES_MRP @'[CCES.Pres2016VoteParty,CCES.CCESWeightCumulative]
@@ -149,7 +149,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
                                  (F.rgetField @CCES.CCESWeightCumulative)
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do
-        ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+        ccesFrameAll <- ccesDataLoader -- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
         (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
                                                                                                       ,BR.SexC
                                                                                                       ,BR.CollegeGradC

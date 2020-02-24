@@ -32,7 +32,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
-
+import qualified BlueRipple.Data.Loaders as BR
 
 import           MRP.CCESFrame
 
@@ -92,6 +92,16 @@ import qualified Polysemy                as P (raise)
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
+ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
+ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP_Raw @CCES_MRP
+             (T.pack ccesCSV)
+             Nothing
+             (const True)
+             fixCCESRow
+             transformCCESRow
+             Nothing
+             "ccesMRP.bin"
+                          
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId
                      , CCESWeight
@@ -519,22 +529,21 @@ locKeyPretty r =
 
 type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 predictionsByLocation ::
-  forall cc es r. (cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
-                  , Show (F.Record cc)
-                  , V.RMap cc
-                  , V.ReifyConstraint Show V.ElField cc
-                  , V.RecordToList cc
-                  , Ord (F.Record cc)
-                  , K.KnitEffects r
-                  , K.Members es r
+  forall cc r. (cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
+               , Show (F.Record cc)
+               , V.RMap cc
+               , V.ReifyConstraint Show V.ElField cc
+               , V.RecordToList cc
+               , Ord (F.Record cc)
+               , K.KnitEffects r
              )
-  => K.Cached es [F.Record CCES_MRP]
+  => K.Sem r (F.FrameRec CCES_MRP)
   -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ASER V.++ BR.CountCols))  
   -> [GLM.WithIntercept CCESPredictor]
   -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
   -> K.Sem r [LocationHolder cc V.ElField Double]
-predictionsByLocation ccesRecordListAllCA countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ do
-  ccesFrameAll <- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ do
+  ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
   (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @cc @[BR.SimpleAgeC
                                                              ,BR.SexC
                                                              ,BR.CollegeGradC
@@ -542,9 +551,9 @@ predictionsByLocation ccesRecordListAllCA countFold predictors catPredMap = P.ma
                                                              countFold
                                                              predictors                                                     
                                                              ccesPredictor
-                                                             ccesFrameAll
+                                                             ccesFrame
   
-  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrameAll
+  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
       allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
       predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
       toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           

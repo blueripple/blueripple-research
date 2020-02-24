@@ -165,97 +165,9 @@ main = do
         }      
   eitherDocs <-
     K.knitHtmls knitConfig $ runRandomIO $ do
-      K.logLE K.Info "Loading data..."
-      let cachedRecordList = K.cacheTransformedAction (fmap FS.toS) (fmap FS.fromS)
-          cachedFrame = K.cacheTransformedAction (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS)
-          csvParserOptions =
-            F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-          tsvParserOptions = csvParserOptions { F.columnSeparator = "," }
-          preFilterYears   = const True --FU.filterOnMaybeField @Year (`L.elem` [2016])
-      let ccesFrameFromCSV :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [F.Record CCES_MRP]
-          ccesFrameFromCSV = do
-            K.logLE K.Info $ "Loading CCES data from csv (" <> (T.pack $ ccesCSV) <> ") and parsing..."
-            ccesMaybeRecs <- loadToMaybeRecs @CCES_MRP_Raw @(F.RecordColumns CCES)
-                             tsvParserOptions
-                             preFilterYears
-                             ccesCSV
-            FL.fold FL.list . fmap transformCCESRow
-              <$> maybeRecsToFrame fixCCESRow (const True) ccesMaybeRecs
-      -- This load and parse takes a while.  Cache the result for future runs              
-      let ccesListCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [F.Record CCES_MRP] =
-           cachedRecordList "mrp/ccesMRP.bin" ccesFrameFromCSV
-      stateCrosswalkPath <- liftIO $ usePath statesCSV
-      stateCrossWalkFrame :: F.Frame States <- loadToFrame
-        csvParserOptions
-        stateCrosswalkPath
-        (const True)
-      let aseDemographicsFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.ASEDemographics]
-          aseDemographicsFrame = FL.fold FL.list <$> do   
-            aseDemographicsPath <- liftIO $ usePath ageSexEducationDemographicsLongCSV  
-            loadToFrame
-              csvParserOptions
-              aseDemographicsPath
-              (const True)
-          aseDemographicsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASEDemographics] =
-            cachedRecordList "mrp/aseDemographics.bin" aseDemographicsFrame
-          asrDemographicsFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.ASRDemographics]
-          asrDemographicsFrame = FL.fold FL.list <$> do   
-            asrDemographicsPath <- liftIO $ usePath ageSexRaceDemographicsLongCSV  
-            loadToFrame
-              csvParserOptions
-              asrDemographicsPath
-              (const True)
-          asrDemographicsFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.ASRDemographics] =
-            cachedRecordList "mrp/asrDemographics.bin" asrDemographicsFrame
-          aseTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.TurnoutASE]
-          aseTurnoutFrame = FL.fold FL.list <$> do
-            aseTurnoutPath <- liftIO $ usePath detailedASETurnoutCSV
-            loadToFrame
-              csvParserOptions
-              aseTurnoutPath
-              (const True)
-          aseTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASE] =
-            cachedRecordList "mrp/aseTurnout.bin" aseTurnoutFrame
-          asrTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.TurnoutASR]
-          asrTurnoutFrame = FL.fold FL.list <$> do
-            asrTurnoutPath <- liftIO $ usePath detailedASRTurnoutCSV
-            loadToFrame
-              csvParserOptions
-              asrTurnoutPath
-              (const True)
-          asrTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.TurnoutASR] =
-            cachedRecordList "mrp/asrTurnout.bin" asrTurnoutFrame
-          stateTurnoutFromCSV :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
-          stateTurnoutFromCSV = FL.fold FL.list <$> do
-            K.logLE K.Info $ "Loading USEP State Turnout from csv (" <> (T.pack stateTurnoutCSV) <> ") and parsing..."
-            let missingOETo0 :: F.Rec (Maybe F.:. F.ElField) '[OverseasEligible] -> F.Rec (Maybe F.:. F.ElField) '[OverseasEligible]
-                missingOETo0 = FM.fromMaybeMono 0
-                missingBCVEPTo0 :: F.Rec (Maybe F.:. F.ElField) '[BallotsCountedVEP] -> F.Rec (Maybe F.:. F.ElField) '[BallotsCountedVEP]
-                missingBCVEPTo0 = FM.fromMaybeMono 0                
-                missingBCTo0 :: F.Rec (Maybe F.:. F.ElField) '[BallotsCounted] -> F.Rec (Maybe F.:. F.ElField) '[BallotsCounted]
-                missingBCTo0 = FM.fromMaybeMono 0
-            stateTurnoutPath <- liftIO $ usePath stateTurnoutCSV
-            turnoutMaybeRecs <- loadToMaybeRecs @(F.RecordColumns BR.StateTurnout) @(F.RecordColumns BR.StateTurnout)
-                                csvParserOptions
-                                (const True)
-                                stateTurnoutPath
-            maybeRecsToFrame
-              ((F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0))
-              (const True)
-              turnoutMaybeRecs
-{-          stateTurnoutFrame :: P.Members (P.Embed IO ': K.PrefixedLogEffectsLE) r => K.Sem r [BR.StateTurnout]
-          stateTurnoutFrame = FL.fold FL.list <$> do
-            stateTurnoutPath <- liftIO $ usePath stateTurnoutCSV
-            loadToFrame
-              csvParserOptions
-              stateTurnoutPath
-              (const True)
--}
-          stateTurnoutFrameCA :: K.Cached (P.Embed IO ': K.PrefixedLogEffectsLE) [BR.StateTurnout]
-          stateTurnoutFrameCA = cachedRecordList "mrp/stateTurnout.bin" stateTurnoutFromCSV         
+      stateCrossWalkFrame <- BR.stateAbbrCrosswalkLoader
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
-      
-      K.logLE K.Info "Knitting docs..."
+      K.logLE K.Info "Knitting docs..."      
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
       let pubDateIntro = Time.fromGregorian 2019 12 9      
       when (PostWWC `elem` (posts args)) $ K.newPandoc
@@ -267,7 +179,7 @@ main = do
                         ]
           )
         )
-        $ WWC.post statesFromAbbreviations ccesListCA
+        $ WWC.post statesFromAbbreviations 
       let pubDatePools = Time.fromGregorian 2019 12 9        
       when (PostPools `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
@@ -278,7 +190,7 @@ main = do
                         ]
           )
         )
-        $ Pools.post statesFromAbbreviations ccesListCA
+        $ Pools.post statesFromAbbreviations
       let pubDateDeltaVPV = Time.fromGregorian 2020 1 5                
       when (PostDeltaVPV `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
@@ -289,7 +201,7 @@ main = do
                         ]
           )
         )
-        $ DeltaVPV.post stateCrossWalkFrame ccesListCA aseDemographicsFrameCA aseTurnoutFrameCA stateTurnoutFrameCA
+        $ DeltaVPV.post stateCrossWalkFrame 
       let pubDateKentucky = Time.fromGregorian 2020 1 5                
       when (PostKentucky `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
@@ -300,7 +212,7 @@ main = do
                         ]
           )
         )
-        $ Kentucky.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA
+        $ Kentucky.post
       let pubDateWisconsin = Time.fromGregorian 2020 2 5                
       when (PostWisconsin `elem` (posts args)) $ K.newPandoc
         (K.PandocInfo
@@ -311,17 +223,11 @@ main = do
                         ]
           )
         )
-        $ Wisconsin.post aseDemographicsFrameCA asrDemographicsFrameCA aseTurnoutFrameCA asrTurnoutFrameCA stateTurnoutFrameCA ccesListCA
+        $ Wisconsin.post 
       let pubDateTurnoutGaps = Time.fromGregorian 2020 2 5                
       when (PostTurnoutGaps `elem` (posts args))
         $ TurnoutGaps.post
         (updated args)
-        aseDemographicsFrameCA
-        asrDemographicsFrameCA
-        aseTurnoutFrameCA
-        asrTurnoutFrameCA
-        stateTurnoutFrameCA
-        ccesListCA
 
   case eitherDocs of
     Right namedDocs ->

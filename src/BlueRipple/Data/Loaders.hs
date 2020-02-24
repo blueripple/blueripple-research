@@ -25,6 +25,7 @@ import qualified Knit.Report                   as K
 import qualified Knit.Report.Cache             as K
 import qualified Polysemy                      as P
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import           Control.Lens                   ((%~))
 
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
@@ -155,6 +156,58 @@ simpleASRTurnoutLoader =
          asrTurnoutRaw <- asrTurnoutLoader
          K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
   in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" make
+
+
+stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (F.Frame BR.States)
+stateAbbrCrosswalkLoader = cachedFrameLoader (T.pack BR.statesCSV) Nothing id Nothing "stateAbbr.bin"
+
+type StateTurnoutCols = F.RecordColumns BR.StateTurnout
+
+stateTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.StateTurnout)
+stateTurnoutLoader = cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
+                     (T.pack BR.stateTurnoutCSV)
+                     Nothing
+                     (const True)
+                     fixMaybes
+                     id
+                     Nothing
+                     "stateTurnout.bin"
+  where
+    missingOETo0 :: F.Rec (Maybe F.:. F.ElField) '[BR.OverseasEligible] -> F.Rec (Maybe F.:. F.ElField) '[BR.OverseasEligible]
+    missingOETo0 = FM.fromMaybeMono 0
+    missingBCVEPTo0 :: F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCountedVEP] -> F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCountedVEP]
+    missingBCVEPTo0 = FM.fromMaybeMono 0                
+    missingBCTo0 :: F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCounted] -> F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCounted]
+    missingBCTo0 = FM.fromMaybeMono 0
+    fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
+
+type HouseElectionCols = [BR.Year
+                         , BR.StateAbbreviation
+                         , BR.StateFIPS
+                         , BR.Office
+                         , BR.CongressionalDistrict
+                         , BR.Stage
+                         , BR.Runoff
+                         , BR.Special
+                         , ET.Party
+                         , ET.Votes
+                         , ET.TotalVotes]
+
+processHouseElectionRow :: BR.HouseElections -> F.Record HouseElectionCols
+processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
+ where
+  mutate =
+    FT.retypeColumn @BR.StatePo @BR.StateAbbreviation
+    . FT.retypeColumn @BR.StateFips @BR.StateFIPS
+    . FT.mutate (const $ FT.recordSingleton @ET.Office ET.House)
+    . FT.retypeColumn @BR.District @BR.CongressionalDistrict
+    . FT.retypeColumn @BR.Candidatevotes @ET.Votes
+    . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
+    . FT.mutate
+          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
+
+houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
+houseElectionsLoader = cachedFrameLoader (T.pack BR.houseElectionsCSV) Nothing processHouseElectionRow Nothing "houseElections.bin"
 
 cachedFrameLoader
   :: forall qs rs r

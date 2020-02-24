@@ -329,22 +329,29 @@ role in many a close house district.
 ## Update {#Update}
 G. Elliot Morris (@gelliotmorris) and others [point out][GEMTweet] that we should not interpret these results as
 indicating a path to victory in these states.  We agree!  We should've been more clear:  we don't think
-only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can succesfully target only
+only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can successfully target only
 Dems---though here we should note that our imagined targeting is demographic, for example targeting only
 young voters, which is slightly more plausible than targeting only Dems.  Our goal is here is twofold:
-to figure out where GOTV work is *most* valuable and to observe that the numbers in those places are
-in the realm of turnout shifts we've seen in the past.  Some questions we didn't/couldn't answer but are
-interested in:
+to figure out *where GOTV work is most valuable* and to observe that the necessary numbers in those places are
+in the realm of turnout shifts we've seen in the past.
 
-- What are the relative (D leaning vs. R leaning)
+One way to reframe this:  the numbers we calculated are
+very approximate amounts by which a D leaning turnout boost needs
+to exceed an R leaning turnout boost to close the 2016 vote-share gap.
+E.g., in MI, we would need a 1% greater boost in Dem leaning turnout than
+R leaning turnout. 
+
+Some questions we didn't/couldn't answer but are interested in:
+
+- What are the *relative* (D leaning vs. R leaning)
 shifts in turnout in these states over the past few presidential elections?
 - How probable is any given shift in turnout?
 - How much of a difference does GOTV work make in that distribution?
 
-We can actually say something about that first question. The table at the beginning of this post
-shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
+A very partial answer to the first question is contained in the table at the beginning of this post.
+It shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
 The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%.
-So swings of ~3% not impossible, election to election.
+So 3% net swings in favor of Dems are not impossible, election to election.
 That is not to say that we know how to *produce* those shifts, but that such shifts are not implausible.
 We'll try to look a bit further back to get a better sense of those numbers over more elections.
 
@@ -451,59 +458,36 @@ presByStateToDemPrefF =
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
 
-post :: forall es r.(K.KnitMany r
-        , K.Members es r
-        , K.Member GLM.RandomFu r
-        )
-     => Bool
-     -> K.Cached es [BR.ASEDemographics]
-     -> K.Cached es [BR.ASRDemographics]
-     -> K.Cached es [BR.TurnoutASE]
-     -> K.Cached es [BR.TurnoutASR]
-     -> K.Cached es [BR.StateTurnout]
-     -> K.Cached es [F.Record CCES_MRP]
-     -> K.Sem r ()
-post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
+post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   let --states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
     states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
     statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
     stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
-  aseACSRaw <- P.raise $ K.useCached aseDemoCA
-  asrACSRaw <- P.raise $ K.useCached asrDemoCA
-  aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
-  asrTurnoutRaw <- P.raise $ K.useCached asrTurnoutCA
-  stateTurnoutRaw <- P.raise $ K.useCached stateTurnoutCA
-  aseACS <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/acs_simpleASE.bin"
-            $ K.logLE K.Diagnostic "re-keying aseACS" >> (K.knitEither $ FL.foldM BR.simplifyACS_ASEFold aseACSRaw)
-
-  asrACS <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/acs_simpleASR.bin"
-            $   K.logLE K.Diagnostic "re-keying asrACS" >> (K.knitEither $ FL.foldM BR.simplifyACS_ASRFold asrACSRaw)
-
+  stateTurnoutRaw <- BR.stateTurnoutLoader --P.raise $ K.useCached stateTurnoutCA
+  aseACS <- BR.simpleASEDemographicsLoader 
+  asrACS <- BR.simpleASRDemographicsLoader 
   let acsASRByStateF = FMR.concatFold $ FMR.mapReduceFold
                        FMR.noUnpack
                        (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation] V.++ CatColsASR) @'[BR.ACSCount])
-                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-  
-  aseTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASE.bin"
-                $   K.logLE K.Diagnostic "re-keying aseTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw)
-
-  asrTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASR.bin"
-                $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
+                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)  
+  aseTurnout <- BR.simpleASETurnoutLoader 
+  asrTurnout <- BR.simpleASRTurnoutLoader 
   logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesRecordListAllCA predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesRecordListAllCA predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesRecordListAllCA predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
 
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
-  demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
+  demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
   let asrTurnoutComparison yPrefs yPop years =
         let isYear y r = (F.rgetField @BR.Year r == y)
@@ -743,6 +727,21 @@ post updated aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRe
       ))
     $ do
     brAddMarkDown turnoutBoostExplainerMD
+  let pubDateTurnoutGapsCD =  Time.fromGregorian 2020 3 1
+  K.newPandoc
+    (K.PandocInfo ((postRoute PostTurnoutGapsCD) <> "main" )
+    (brAddDates updated pubDateTurnoutGapsCD curDate
+       $ M.fromList [("pagetitle", "Turnout Gap Analysis: House District Edition")
+                    ,("title","Turnout Gap Analysis: House District Edition")
+                    ]
+      ))
+      $ do
+    brAddMarkDown cdText1
+    
+
+cdText1 :: T.Text
+cdText1 = [i|
+|]
       
 vlTurnoutGap :: (Functor f, Foldable f)
              => T.Text -- title

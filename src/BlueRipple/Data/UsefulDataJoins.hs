@@ -75,11 +75,10 @@ type ASECols = [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC]
 type ASRCols = [BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC]
 
 aseDemographicsWithAdjTurnoutByCD
-  :: forall es r
-   . (K.KnitEffects r, K.Members es r)
-  => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASECols V.++ '[BR.ACSCount]))
-  -> K.Cached
-       es
+  :: forall r
+   . (K.KnitEffects r)
+  => K.Sem r (F.FrameRec (BR.ACSKeys V.++ ASECols V.++ '[BR.ACSCount]))
+  -> K.Sem r
        ( F.FrameRec
            ( '[BR.Year]
                V.++
@@ -88,7 +87,7 @@ aseDemographicsWithAdjTurnoutByCD
                '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
            )
        )
-  -> K.Cached es [BR.StateTurnout]
+  -> K.Sem r (F.Frame BR.StateTurnout)
   -> K.Sem
        r
        ( F.FrameRec
@@ -99,12 +98,12 @@ aseDemographicsWithAdjTurnoutByCD
                '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
            )
        )
-aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
+aseDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA = do
   let
     action = do
-      demo         <- K.useCached demoCA
-      turnout      <- K.useCached turnoutCA
-      stateTurnout <- K.useCached stateTurnoutCA
+      demo         <- demoA
+      turnout      <- turnoutA
+      stateTurnout <- stateTurnoutA
       let
         demoByState =
           let unpack = MR.noUnpack
@@ -143,11 +142,11 @@ aseDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
 
 
 asrDemographicsWithAdjTurnoutByCD
-  :: forall es r
-   . (K.KnitEffects r, K.Members es r)
-  => K.Cached es (F.FrameRec (BR.ACSKeys V.++ ASRCols V.++ '[BR.ACSCount]))
-  -> K.Cached
-       es
+  :: forall r
+   . (K.KnitEffects r)
+  => K.Sem r (F.FrameRec (BR.ACSKeys V.++ ASRCols V.++ '[BR.ACSCount]))
+  -> K.Sem
+       r
        ( F.FrameRec
            ( '[BR.Year]
                V.++
@@ -156,7 +155,7 @@ asrDemographicsWithAdjTurnoutByCD
                '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
            )
        )
-  -> K.Cached es [BR.StateTurnout]
+  -> K.Sem r (F.Frame BR.StateTurnout)
   -> K.Sem
        r
        ( F.FrameRec
@@ -167,12 +166,12 @@ asrDemographicsWithAdjTurnoutByCD
                '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
            )
        )
-asrDemographicsWithAdjTurnoutByCD demoCA turnoutCA stateTurnoutCA = do
+asrDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA = do
   let
     action = do
-      demo         <- K.useCached demoCA
-      turnout      <- K.useCached turnoutCA
-      stateTurnout <- K.useCached stateTurnoutCA
+      demo         <- demoA
+      turnout      <- turnoutA
+      stateTurnout <- stateTurnoutA
       let
         demoByState =
           let unpack = MR.noUnpack

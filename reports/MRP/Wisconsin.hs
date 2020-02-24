@@ -93,6 +93,7 @@ import GHC.Generics (Generic)
 
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR
@@ -169,53 +170,31 @@ foldPrefAndTurnoutData =  FF.sequenceRecFold
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
                           V.:& V.RNil
 
-post :: forall es r.(K.KnitOne r
-        , K.Members es r
-        , K.Member GLM.RandomFu r
-        )
-     => K.Cached es [BR.ASEDemographics]
-     -> K.Cached es [BR.ASRDemographics]
-     -> K.Cached es [BR.TurnoutASE]
-     -> K.Cached es [BR.TurnoutASR]
-     -> K.Cached es [BR.StateTurnout]
-     -> K.Cached es [F.Record CCES_MRP]
-     -> K.Sem r ()
-post aseDemoCA asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA ccesRecordListAllCA = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
+post :: forall es r.(K.KnitOne r , K.Member GLM.RandomFu r) => K.Sem r ()
+post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let stateAbbr = "WI"
       stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)
       stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` [stateAbbr, "National"])
-  aseACSRaw <- P.raise $ K.useCached aseDemoCA
-  asrACSRaw <- P.raise $ K.useCached asrDemoCA
-  aseTurnoutRaw <- P.raise $ K.useCached aseTurnoutCA
-  asrTurnoutRaw <- P.raise $ K.useCached asrTurnoutCA
-  stateTurnoutRaw <- P.raise $ K.useCached stateTurnoutCA
-  aseACS <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/acs_simpleASE.bin"
-            $ K.logLE K.Diagnostic "re-keying aseACS" >> (K.knitEither $ FL.foldM BR.simplifyACS_ASEFold aseACSRaw)
-
-  asrACS <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/acs_simpleASR.bin"
-            $   K.logLE K.Diagnostic "re-keying asrACS" >> (K.knitEither $ FL.foldM BR.simplifyACS_ASRFold asrACSRaw)
-            
-  aseTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASE.bin"
-                $   K.logLE K.Diagnostic "re-keying aseTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw)
-
-  asrTurnout <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/turnout_simpleASR.bin"
-                $   K.logLE K.Diagnostic "re-keying asrTurnout" >> (K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw)
-  
+  stateTurnoutRaw <- BR.stateTurnoutLoader -- P.raise $ K.useCached stateTurnoutCA
+  aseACS <- BR.simpleASEDemographicsLoader 
+  asrACS <- BR.simpleASRDemographicsLoader 
+  aseTurnout <- BR.simpleASETurnoutLoader 
+  asrTurnout <- BR.simpleASRTurnoutLoader 
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesRecordListAllCA predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesRecordListAllCA predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesRecordListAllCA predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- stateOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (K.asCached aseACS) (K.asCached aseTurnout) (K.asCached stateTurnoutRaw)
-  demographicsAndTurnoutASR <- stateOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (K.asCached asrACS) (K.asCached asrTurnout) (K.asCached stateTurnoutRaw)
+  demographicsAndTurnoutASE <- stateOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASR <- stateOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
   -- join with the prefs
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes

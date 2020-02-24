@@ -94,6 +94,7 @@ import GHC.Generics (Generic)
 
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR
@@ -374,22 +375,12 @@ type MRGroup = BR.RecordColsProxy GroupCols
   
 post :: (K.KnitOne r
         , K.Member GLM.RandomFu r
-        , K.Members es r
-        , K.Members es r
-        , K.Members es r
-        , K.Members es r
         )
      => F.Frame BR.States  -- state names from state abbreviations
-     -> K.Cached es [F.Record CCES_MRP]
-     -> K.Cached es [BR.ASEDemographics]
-     -> K.Cached es [BR.TurnoutASE]
-     -> K.Cached es [BR.StateTurnout]
      -> K.Sem r ()
-post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnoutCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "DeltaVPV" $ do
+post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "DeltaVPV" $ do
   K.logLE K.Info $ "Working on DeltaVPV post..."
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
-      cachedFrame = K.cacheTransformedAction (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS)
-      cachedRecordList = K.cacheTransformedAction (fmap FS.toS) (fmap FS.fromS)
       isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                (\r -> (F.rgetField @Turnout r == T_Voted)
@@ -405,11 +396,11 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                               (F.rgetField @CCESWeightCumulative)
   let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader countDemPres2016VotesF preds catPredMaps)
   predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA (countDemHouseVotesF 2016) preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (countDemHouseVotesF 2016) preds catPredMaps)
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA (countDemHouseVotesF 2018) preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (countDemHouseVotesF 2018) preds catPredMaps)
 
   let vpv x = 2*x - 1
       lhToRecsM year office (LocationHolder _ lkM predMap) =
@@ -431,8 +422,8 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
                                      ,(2016, ET.House, predsByLocation2016h)
                                      ,(2018, ET.House, predsByLocation2018h)
                                      ]
-  demographicsFrameRaw <- F.toFrame <$> P.raise (K.useCached aseDemoCA)
-  turnoutFrameRaw <- F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
+  demographicsFrameRaw <- BR.aseDemographicsLoader --F.toFrame <$> P.raise (K.useCached aseDemoCA)
+  turnoutFrameRaw <- BR.aseTurnoutLoader --F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
 
 
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
@@ -454,7 +445,7 @@ post stateCrossWalkFrame ccesRecordListAllCA aseDemoCA aseTurnoutCA stateTurnout
         $ fmap F.recMaybe
         $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateFrame turnoutFrame
       demoWithAdjTurnoutByCD = do
-        stateTurnoutFrame <- F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
+        stateTurnoutFrame <- BR.stateTurnoutLoader --F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
         demoWithAdjTurnoutByState <- FL.foldM (BR.adjTurnoutFold @BR.PopCount @BR.VotedPctOfAll stateTurnoutFrame) demoWithUnadjTurnoutByState
         return
           $ F.toFrame

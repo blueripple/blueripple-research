@@ -349,11 +349,10 @@ type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this 
 type MRGroup = BR.RecordColsProxy GroupCols 
 
   
-post :: forall es r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r, K.Members es r)
+post :: forall r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
-     -> K.Cached es [F.Record CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
+post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do
   K.logLE K.Info $ "Working on Pools post..."
   let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
@@ -365,7 +364,7 @@ post stateNameByAbbreviation ccesRecordListAllCA = P.mapError glmErrorToPandocEr
 
   let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
-                      $ P.raise (predictionsByLocation @CatCols ccesRecordListAllCA countDemPres2016VotesF preds catPredMaps)
+                      $ P.raise (predictionsByLocation @CatCols ccesDataLoader countDemPres2016VotesF preds catPredMaps)
     
 
   K.logLE K.Diagnostic $ T.pack $ show predsByLocation  

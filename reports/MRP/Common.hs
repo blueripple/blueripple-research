@@ -44,16 +44,18 @@ data Post = PostMethods
           | PostDeltaVPV
           | PostKentucky
           | PostTurnoutGaps
+          | PostTurnoutGapsCD
           | PostWisconsin deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
 
 postRoute :: Post -> T.Text
-postRoute PostMethods     = brMRPModelRootPath <> "methods/"
-postRoute PostPools       = brMRPModelRootPath <> "p1/"
-postRoute PostDeltaVPV    = brMRPModelRootPath <> "p2/"
-postRoute PostWWC         = brMRPModelRootPath <> "np1/"
-postRoute PostKentucky    = brMRPModelRootPath <> "np2/"
-postRoute PostTurnoutGaps = brMRPModelRootPath <> "up3/"
-postRoute PostWisconsin   = brMRPModelRootPath <> "np4/"
+postRoute PostMethods       = brMRPModelRootPath <> "methods/"
+postRoute PostPools         = brMRPModelRootPath <> "p1/"
+postRoute PostDeltaVPV      = brMRPModelRootPath <> "p2/"
+postRoute PostWWC           = brMRPModelRootPath <> "np1/"
+postRoute PostKentucky      = brMRPModelRootPath <> "np2/"
+postRoute PostTurnoutGaps   = brMRPModelRootPath <> "p3/"
+postRoute PostWisconsin     = brMRPModelRootPath <> "np3/"
+postRoute PostTurnoutGapsCD = brMRPModelRootPath <> "np4/"
 
 postPath :: Post -> T.Text
 postPath x = postRoute x <> "main"

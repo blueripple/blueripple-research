@@ -94,6 +94,7 @@ import GHC.Generics (Generic)
 
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.HouseElectionTotals as BR
 import qualified BlueRipple.Data.PrefModel as BR
@@ -112,49 +113,17 @@ text1 :: T.Text
 text1 = [i|
 |]
   
-post :: (K.KnitOne r
-        , K.Members es1 r
-        , K.Members es2 r
-        , K.Members es3 r
-        , K.Members es4 r
-        , K.Members es5 r
-        )
-     => K.Cached es1 [BR.ASEDemographics]
-     -> K.Cached es2 [BR.ASRDemographics]
-     -> K.Cached es3 [BR.TurnoutASE]
-     -> K.Cached es4 [BR.TurnoutASR]
-     -> K.Cached es5 [BR.StateTurnout]
-     -> K.Sem r ()
-post aseDemoCA  asrDemoCA aseTurnoutCA asrTurnoutCA stateTurnoutCA = K.wrapPrefix "Kentucky" $ do
-  aseACSRaw <- K.useCached aseDemoCA
-  asrACSRaw <- K.useCached asrDemoCA
-  aseTurnoutRaw <- K.useCached aseTurnoutCA
-  asrTurnoutRaw <- K.useCached asrTurnoutCA
-  stateTurnoutRaw <- K.useCached stateTurnoutCA
-  K.logLE K.Info "re-keying aseACS"
-  aseACS <- K.knitEither $ FL.foldM BR.simplifyACS_ASEFold aseACSRaw
-  K.logLE K.Info "re-keying asrACS"
-  asrACS <- K.knitEither $ FL.foldM BR.simplifyACS_ASRFold asrACSRaw
-  K.logLE K.Info "re-keying aseTurnout"
-  aseTurnout <- K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw
-  K.logLE K.Info "re-keying asrTurnout"
-  asrTurnout <- K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw
+post :: K.KnitOne r => K.Sem r ()
+post = K.wrapPrefix "Kentucky" $ do
+  aseACS <- BR.simpleASEDemographicsLoader --
+  asrACS <- BR.simpleASRDemographicsLoader 
+  aseTurnout <- BR.simpleASETurnoutLoader -- K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw
+  asrTurnout <- BR.simpleASRTurnoutLoader --K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw
   let g r = (F.rgetField @BR.StateAbbreviation r == "MA")
                  && (F.rgetField @BR.CongressionalDistrict r == 1)
                  && (F.rgetField @BR.Year r == 2010)
       showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
---      aseTest = L.filter g aseACSRaw
---      asrTest = L.filter g asrACSRaw
---  K.logLE K.Info $ "ASE Before:\n" <> showRecs (F.filterFrame g aseACSRaw) --T.intercalate "\n" (fmap (T.pack . show) aseTest)
-  K.logLE K.Info $ "ASE After:\n" <>  showRecs (F.filterFrame g aseACS) --T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASEFold aseTest))
-{-  
-  K.logLE K.Info $ "ASR Before:\n" <> showRecs (F.T.intercalate "\n" (fmap (T.pack . show) asrTest)
-  K.logLE K.Info $ "ASR After:\n" <>  T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list $ (FL.fold BR.simplifyACS_ASRFold asrTest))
-  K.logLE K.Info $ "Turnout ASE Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list aseTurnoutRaw)
-  K.logLE K.Info $ "Turnout ASE After:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list (FL.fold BR.simplifyTurnoutASEFold aseTurnoutRaw))
-  K.logLE K.Info $ "Turnout ASR Before:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list asrTurnoutRaw)
-  K.logLE K.Info $ "Turnout ASR After:\n" <> T.intercalate "\n" (fmap (T.pack . show) $ FL.fold FL.list (FL.fold BR.simplifyTurnoutASRFold asrTurnoutRaw))
--}
+  K.logLE K.Info $ "ASE After:\n" <>  showRecs (F.filterFrame g aseACS) 
   brAddMarkDown text1
   brAddMarkDown brReadMore
 
