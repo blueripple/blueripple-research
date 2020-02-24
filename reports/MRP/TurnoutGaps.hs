@@ -446,8 +446,8 @@ foldPrefAndTurnoutDataBoost thresh =
        V.:& FF.toFoldRecord bNF
        V.:& V.RNil                          
 
-presByStateToDemPrefF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[ET.PrefType, BR.DemPref])
-presByStateToDemPrefF =
+votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[ET.PrefType, BR.DemPref])
+votesToVoteShareF =
   let
     party = F.rgetField @ET.Party
     votes = F.rgetField @ET.Votes
@@ -473,7 +473,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)  
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
-  logFrame aseTurnout
+--  logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
@@ -537,13 +537,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   
   let turnoutTableYears = [2012, 2016]
       turnoutGaps = asrTurnoutComparison 2016 2018 turnoutTableYears
-  logFrame turnoutGaps
+--  logFrame turnoutGaps
   let turnoutGapsForTable = FL.fold (FMR.mapReduceFold
                             FMR.noUnpack
                             (FMR.splitOnKeys @'[BR.StateAbbreviation])
                             (FMR.ReduceFold $ \k -> fmap (k,) FL.list))
                             turnoutGaps    
-  K.logLE K.Info $ T.pack $ show turnoutGapsForTable  
+--  K.logLE K.Info $ T.pack $ show turnoutGapsForTable  
   let turnoutCompColonnade years cas =
         let dVAP = F.rgetField @'("DPop",Int)
             dTurnout = F.rgetField @'("DTurnout",Double)
@@ -565,15 +565,26 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
            <> mconcat (fmap colsForYear years)
 
   
-  K.logLE K.Info "Computing pres-election based prefs"
+  K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
               MR.noUnpack
               (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
-              (FMR.foldAndAddKey presByStateToDemPrefF)
+              (FMR.foldAndAddKey votesToVoteShareF)
     presByStateFrame <- BR.presidentialByStateFrame
-    return $ FL.fold fld
-      presByStateFrame
+    return $ FL.fold fld presByStateFrame    
+  K.logLE K.Info "Computing house election 2-party vote share"
+  let houseElectionFilter r = (F.rgetField @BR.Stage r == "gen")
+                              && (F.rgetField @BR.Runoff r == False)
+                              && (F.rgetField @BR.Special r == False)
+                              && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
+  houseElectionFrame <- F.filterFrame houseElectionFilter <$> BR.houseElectionsLoader
+  let houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
+                        FMR.noUnpack
+                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, ET.Office])
+                        (FMR.foldAndAddKey votesToVoteShareF)
+      houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
+--  logFrame houseVoteShareFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
@@ -611,9 +622,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                           psCellVPVByBothF
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
-  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) inferredPrefsASR 
-  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) asrByState 
-  logFrame $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) vpvPostStratifiedByASR
+--  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) inferredPrefsASR 
+--  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) asrByState 
+--  logFrame $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) vpvPostStratifiedByASR
   let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
       -- assemble set with updated demographics
       toFlip r =
@@ -660,7 +671,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let toFlipWithEV =  catMaybes
                       $ fmap F.recMaybe
                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
-  logFrame toFlipWithEV
+--  logFrame toFlipWithEV
   let boostColonnade cas =
         let toFlipDM r = let x = F.rgetField @'("ToFlipDems",Double) r in if x > 0 then Just x else Nothing
             toFlipAllM r = let x = F.rgetField @'("ToFlipAll",Double) r in if x > 0 then Just x else Nothing

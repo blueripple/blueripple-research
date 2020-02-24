@@ -182,9 +182,10 @@ stateTurnoutLoader = cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
 
 type HouseElectionCols = [BR.Year
+                         , BR.State
                          , BR.StateAbbreviation
                          , BR.StateFIPS
-                         , BR.Office
+                         , ET.Office
                          , BR.CongressionalDistrict
                          , BR.Stage
                          , BR.Runoff
