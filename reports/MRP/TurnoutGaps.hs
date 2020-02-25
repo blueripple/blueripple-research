@@ -422,11 +422,11 @@ type BoostB = "boostB" F.:-> Double
 type BoostPop = "boostPop" F.:-> Int
 type ToFlip = "ToFlip" F.:-> Double
 
-foldPrefAndTurnoutDataBoost :: Double
+foldPrefAndTurnoutDataBoost :: (Double -> Bool)
                             -> FL.Fold (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                             (F.Record [BR.ACSCount, BR.VotedPctOfAll, BoostA, BoostB, BoostPop])
-foldPrefAndTurnoutDataBoost thresh =
-  let t r = F.rgetField @BR.DemPref r > thresh
+foldPrefAndTurnoutDataBoost prefTest =
+  let t r = prefTest $ F.rgetField @BR.DemPref r
       dVotesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.DemPref r * F.rgetField @BR.VotedPctOfAll r) FL.sum
       votesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r) FL.sum 
       popF = FL.prefilter t $ FL.premap (F.rgetField @BR.ACSCount) FL.sum
@@ -622,9 +622,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                           psCellVPVByBothF
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
---  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) inferredPrefsASR 
---  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.StateAbbreviation r == "GA") && (F.rgetField @BR.Year r == 2016)) asrByState 
---  logFrame $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) vpvPostStratifiedByASR
   let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
       -- assemble set with updated demographics
       toFlip r =
@@ -634,7 +631,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
             d = (0.5 - p)/p
         in FT.recordSingleton @ToFlip $ d/(a - (1.0 + d) * b)
 
-      toFlipASR x =
+      toFlipASRByState x =
         let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.President
             asrPrefTurnout2016 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ [BR.VotedPctOfAll, DemVPV, BR.DemPref]))
                                  $ F.filterFrame (filter 2016) asrByState
@@ -647,7 +644,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                             (FMR.concatFold $ FMR.mapReduceFold
                               MR.noUnpack
                               (FMR.assignKeysAndData @'[BR.StateAbbreviation])
-                              (FMR.foldAndAddKey $ foldPrefAndTurnoutDataBoost x)
+                              (FMR.foldAndAddKey $ foldPrefAndTurnoutDataBoost (>x))
                             )
                             asrUpdatedDemo
                             
@@ -659,10 +656,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         in fmap (FT.mutate toFlip) asrUpdated
       toFlipAll = F.toFrame $ fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
                                     . FT.retypeColumn @BoostPop @'("BoostPopAll",Int)
-                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, BR.DemPref, BoostPop, ToFlip]) $  toFlipASR 0.0
+                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, BR.DemPref, BoostPop, ToFlip]) $  toFlipASRByState 0.0
       toFlipDems = F.toFrame $ fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
                                       . FT.retypeColumn @BoostPop @'("BoostPopDems",Int)
-                                      . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASR 0.5
+                                      . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASRByState 0.5
       toFlipJoined =   F.toFrame
                        $ catMaybes
                        $ fmap F.recMaybe
@@ -736,9 +733,62 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     ,("title","Turnout Boost Details")
                     ]
       ))
-    $ do
-    brAddMarkDown turnoutBoostExplainerMD
-  let pubDateTurnoutGapsCD =  Time.fromGregorian 2020 3 1
+      $ brAddMarkDown turnoutBoostExplainerMD
+        
+  let toFlipASRHouse t =
+        let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.House
+            asrPrefTurnout2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR V.++ [BR.VotedPctOfAll, DemVPV, BR.DemPref]))
+                                 $ F.filterFrame (filter 2018) $ F.toFrame $ asrTurnoutAndPrefs
+            asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR V.++ '[BR.ACSCount]))
+                          $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) asrACS
+            asrUpdatedDemo = catMaybes
+                             $ fmap F.recMaybe
+                             $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CatColsASR) asrPrefTurnout2018 asrDemo2018
+            asrWithBoosts = FL.fold
+                            (FMR.concatFold $ FMR.mapReduceFold
+                             MR.noUnpack
+                             (FMR.assignKeysAndData @'[BR.StateAbbreviation, BR.CongressionalDistrict])
+                              (FMR.foldAndAddKey $ foldPrefAndTurnoutDataBoost t)
+                            )
+                            asrUpdatedDemo
+                            
+            houseVoteShare2018 = fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, BR.DemPref]) $ F.filterFrame (filter 2018) houseVoteShareFrame
+            asrUpdated =  catMaybes
+                          $ fmap F.recMaybe
+                          $ F.leftJoin @'[BR.StateAbbreviation, BR.CongressionalDistrict] asrWithBoosts
+                          $ houseVoteShare2018
+        in fmap (FT.mutate toFlip) asrUpdated
+  let prefFilter l u r = let p = F.rgetField @BR.DemPref r in p >= l && p <= u
+      demFlippable = F.toFrame $ L.sortOn (F.rgetField @ToFlip) $ L.filter (prefFilter 0.45 0.5) $ toFlipASRHouse (>0.5)
+      demDefend = F.toFrame $ L.sortOn (F.rgetField @ToFlip) $ L.filter (prefFilter 0.5 0.55) $ toFlipASRHouse (<0.5) 
+  logFrame demFlippable
+  logFrame demDefend
+  let houseFlipColonnade cas =
+        let toFlip r = F.rgetField @ToFlip r
+            dPref r = F.rgetField @BR.DemPref r
+            pop  = F.rgetField @BR.ACSCount 
+            bPop = F.rgetField @'("BoostPop",Int)
+        in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
+           <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict))
+           <> C.headed "2018 2-party D Vote Share (%)" (BR.toCell cas "DVoteSharePct" "D Vote Share (%)" (BR.numberToStyledHtml "%2.2f" . (*100) . dPref))
+           <> C.headed "Turnout Differential to Flip (%)" (BR.toCell cas "TurnoutDiffToFlipPct" "Turnout Diff To Flip (%)" (BR.numberToStyledHtml "%2.2f" . (*100) . toFlip))
+{-    
+  let toFlipAll = F.toFrame $ fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
+                                    . FT.retypeColumn @BoostPop @'("BoostPopAll",Int)
+                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, BR.DemPref, BoostPop, ToFlip]) $  toFlipASRByState 0.0
+      toFlipDems = F.toFrame $ fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
+                                      . FT.retypeColumn @BoostPop @'("BoostPopDems",Int)
+                                      . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASRByState 0.5
+      toFlipJoined =   F.toFrame
+                       $ catMaybes
+                       $ fmap F.recMaybe
+                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipAll toFlipDems
+  evFrame <- fmap (F.rcast @[BR.StateAbbreviation, BR.Electors]) . F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) <$> BR.electoralCollegeFrame
+  let toFlipWithEV =  catMaybes
+                      $ fmap F.recMaybe
+                      $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
+-}
+  let pubDateTurnoutGapsCD =  Time.fromGregorian 2020 3 1  
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGapsCD) <> "main" )
     (brAddDates updated pubDateTurnoutGapsCD curDate
@@ -747,7 +797,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     ]
       ))
       $ do
-    brAddMarkDown cdText1
+        brAddMarkDown cdText1
+        BR.brAddRawHtmlTable "Turnout Diff to Gain" (BHA.class_ "brTable") (houseFlipColonnade mempty) demFlippable
+        BR.brAddRawHtmlTable "Turnout Diff to Lose" (BHA.class_ "brTable") (houseFlipColonnade mempty) demDefend
+        
     
 
 cdText1 :: T.Text
