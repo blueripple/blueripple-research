@@ -127,8 +127,39 @@ for how to group the data: by demographic charactersitics?  by location?  both?
 But let's suppose we accept the preferences, however derived.  How do we go from those
 to a modeled election result?  To do that we need a model of the *electorate*, that is
 how many people of each type (in the country or each state or district) are likely to vote
-in the election.  That question is usually broken down into two parts: knowing the demographics
-of the region
+in the election.  That question is usually broken down into two parts:
+knowing the demographics of the country/state/region, that is knowing how many people
+are in each group and then knowing how many of those people will vote on election day.
+The number of people in each group is usually straightforwardly derived from census data.
+But the second part---what fraction of each group will vote, aka the electoral weights---
+that's extremely hard to figure out.
+
+There are a number of standard approaches:
+
+1. Ask them! Some surveys ask the respondent if they intend to vote and then use that
+(or some modeled fraction of that) to create a set of weights with as much specificity
+as the survey allows.
+
+2. Assume the next election will be like the last election:
+- The census tracks nationwide demographically split turnout for previous
+elections and we can use those weights, though they lack any geographic specificity.
+- Some surveys match respondents with voter-file data and thus turnout.  These can then be used
+to build a set of weights, however specific the survey allows.
+
+3. Model the electorate using some combination of the above data---previous elections,
+surveys---and whatever other variables, e.g., negative partisanship of a district,
+to predict how the current electorate might differ from the past.
+
+Rather than opine on the best model, which is not our expertise,
+in this piece we want to show how important the choice of electoral weights turns out to be.
+We want to help you become a more informed reader of polls and academic work
+which predicts electoral results.
+
+This piece was partially inspired by a recent [Vox article][Vox:BernieYouth], which used
+a novel survey to look at how each candidate in the democratic primary might fare against
+Donald Trump.
+
+[Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
 |]
   
 type CatColsASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]

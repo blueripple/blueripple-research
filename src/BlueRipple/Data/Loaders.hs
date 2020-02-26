@@ -112,7 +112,7 @@ simpleASEDemographicsLoader =
 asrDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASRDemographics)
 asrDemographicsLoader =
   cachedFrameLoader
-  (T.pack BR.ageSexEducationDemographicsLongCSV)
+  (T.pack BR.ageSexRaceDemographicsLongCSV)
   Nothing
   id
   Nothing
@@ -121,7 +121,7 @@ asrDemographicsLoader =
 simpleASRDemographicsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount]))
 simpleASRDemographicsLoader =
   let make = do
-         asrACSRaw <- aseDemographicsLoader
+         asrACSRaw <- asrDemographicsLoader
          K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrACSRaw
   in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" make
 
