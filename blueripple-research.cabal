@@ -23,7 +23,7 @@ common deps
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , containers
-               , Frames
+               , Frames >= 0.6.1 && < 0.7
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
                , Frames-utils
@@ -63,6 +63,8 @@ library
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.Loaders
+                 , BlueRipple.Data.ACS_PUMS_Path
+                 , BlueRipple.Data.ACS_PUMS_Frame                 
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment

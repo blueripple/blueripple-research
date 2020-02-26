@@ -52,6 +52,7 @@ import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
+import qualified Frames.Constraints            as FC
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -165,9 +166,9 @@ possible sets of weights and comparing the projected popular vote and electoral 
 that they predict from the *same set of preferences*---in this case, preferences derived from
 our [MRP model][BR:MRP] based on the [CCES][CCES].  Here are the weights we'll explore:
 
-- Census2012: nationwide weights from the 2012 election, tabulated by the census.
-- Census2016: nationwide weights from the 2016 election, tabulated by the census.
-- Census2018: nationwide weights from the 2018 (mid-term) election, tabulated by the census.
+- Census2012: Nationwide weights from the 2012 election, tabulated by the census.
+- Census2016: Nationwide weights from the 2016 election, tabulated by the census.
+- Census2018: Nationwide weights from the 2018 (mid-term) election, tabulated by the census.
 - CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.
 - CCES2016b: State-level weights derived from turnout data in the CCES survey itself.
 
@@ -241,12 +242,12 @@ votesToVoteShareF =
 
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+  K.logLE K.Info "Loading re-keyed demographic and turnout data."
   stateTurnoutRaw <- BR.stateTurnoutLoader 
   aseACS <- BR.simpleASEDemographicsLoader 
   asrACS <- BR.simpleASRDemographicsLoader 
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
---  logFrame aseTurnout
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
@@ -260,6 +261,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
   demographicsAndTurnoutASR <- BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
+
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
@@ -287,36 +289,71 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                            $ fmap F.recMaybe
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
       -- fold these to state level
-  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)    
       aseDemoF = FMR.concatFold $ FMR.mapReduceFold
-                 (FMR.unpackFilterRow justPres2016)
+                 FMR.noUnpack
                  (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)
       asrDemoF = FMR.concatFold $ FMR.mapReduceFold
-                 (FMR.unpackFilterRow justPres2016)
+                 FMR.noUnpack
                  (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
-      labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
-      psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
-                                         $ BR.postStratifyCell @BR.DemPref
-                                         (realToFrac . F.rgetField @BR.ACSCount)
-                                         (realToFrac . F.rgetField @BR.DemPref))
-                          <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
-                                         $ BR.postStratifyCell @BR.DemPref
-                                         (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
-                                         (realToFrac . F.rgetField @BR.DemPref))
-      psVPVByStateF =  BR.postStratifyF
-                          @[BR.Year, ET.Office, BR.StateAbbreviation]
-                          @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
-                          @[ET.PrefType, BR.DemPref]
-                          psCellVPVByBothF
-      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
-      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
-  let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
+  electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> BR.electoralCollegeFrame
+  let yearOfficeFilter y o r =  F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == o
 
+      asrPrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.DemPref]))
+                     $ F.filterFrame (yearOfficeFilter y o) asrByState
+      asrDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.ACSCount]))
+                    $ F.filterFrame (yearOfficeFilter y o) asrByState
+      asrCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.VotedPctOfAll]))
+                        $ F.filterFrame (yearOfficeFilter y o) asrByState
+                   
+
+      asrWgtdByCensus2012 = mergeASRElectionData
+                            (asrDemo 2018 ET.House)
+                            (asrPrefs 2016 ET.President)
+                            Census2012
+                            (asrCensusEW 2012 ET.President)
+                            electoralVotesByStateFrame
+      asrWgtdByCensus2016 = mergeASRElectionData
+                            (asrDemo 2018 ET.House)
+                            (asrPrefs 2016 ET.President)
+                            Census2016
+                            (asrCensusEW 2016 ET.President)
+                            electoralVotesByStateFrame
+      asrWgtd = asrWgtdByCensus2012 <> asrWgtdByCensus2016
+      
+      ewResultsF = FMR.concatFold $ FMR.mapReduceFold
+                   FMR.noUnpack
+                   (FMR.assignKeysAndData @'[ElectoralWeight])
+                   (FMR.foldAndAddKey mergedElectionDataToResultF)
+      asrEwResults = FL.fold ewResultsF asrWgtd
+  logFrame asrWgtd
+  logFrame asrEwResults
+  let asePrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.DemPref]))
+                     $ F.filterFrame (yearOfficeFilter y o) aseByState
+      aseDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.ACSCount]))
+                    $ F.filterFrame (yearOfficeFilter y o) aseByState
+      aseCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.VotedPctOfAll]))
+                        $ F.filterFrame (yearOfficeFilter y o) aseByState
+      aseWgtdByCensus2012 = mergeASEElectionData
+                            (aseDemo 2018 ET.House)
+                            (asePrefs 2016 ET.President)
+                            Census2012
+                            (aseCensusEW 2012 ET.President)
+                            electoralVotesByStateFrame
+      aseWgtdByCensus2016 = mergeASEElectionData
+                            (aseDemo 2018 ET.House)
+                            (asePrefs 2016 ET.President)
+                            Census2016
+                            (aseCensusEW 2016 ET.President)
+                            electoralVotesByStateFrame
+      aseWgtd = aseWgtdByCensus2012 <> aseWgtdByCensus2016
+      
+      aseEwResults = FL.fold ewResultsF aseWgtd
+  logFrame aseWgtd
+  logFrame aseEwResults
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
   K.newPandoc
@@ -330,4 +367,101 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         brAddMarkDown text1
         brAddMarkDown brReadMore
      
+
+data ElectoralWeightT = Census2012 | Census2016 | CCES2016a | CCES2016b deriving (Enum, Bounded, Eq, Ord, Show)
+
+type ElectoralWeight = "ElectoralWeight" F.:-> ElectoralWeightT
+type instance FI.VectorFor ElectoralWeightT = V.Vector
+
+
+-- I'd like this to be CatCols generic but that leads to a nightmare of constraints
+-- maybe a @LeftJoinC@ ?? Tried that.  Still messy.
+mergeASRElectionData :: 
+  F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.ACSCount])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.DemPref])
+  -> ElectoralWeightT
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.VotedPctOfAll])
+  -> F.Frame BR.ElectoralCollege
+  -> F.FrameRec [ElectoralWeight, BR.StateAbbreviation, BR.Electors, BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]
+mergeASRElectionData demographics prefs ewType ews eCollege =
+  -- join and fold
+  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) demographics prefs
+      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) demoPref ews
+      catFold :: FL.Fold (F.Record (CatColsASR V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
+                           (F.Record [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll])
+      catFold =
+        let pop = F.rgetField @BR.ACSCount
+            pref = F.rgetField @BR.DemPref
+            wgt = F.rgetField @BR.VotedPctOfAll
+            popSumF = FL.premap pop FL.sum
+            voteSumF = FL.premap (\r -> realToFrac (pop r) * wgt r) FL.sum
+            wgtdPrefF = FL.premap (\r -> realToFrac (pop r) * wgt r * pref r) FL.sum
+        in  FF.sequenceRecFold
+            $ FF.toFoldRecord (FL.premap pop FL.sum)
+            V.:& FF.toFoldRecord ((/) <$> wgtdPrefF <*> voteSumF)
+            V.:& FF.toFoldRecord ((/) <$> voteSumF <*> (fmap realToFrac popSumF))
+            V.:& V.RNil
+      psFold = FMR.concatFold $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @'[BR.StateAbbreviation])
+               (FMR.foldAndAddKey catFold)
+      postStratified = FL.fold psFold demoPrefWeight
+      psWithElectors = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[BR.StateAbbreviation] postStratified eCollege
+  in fmap (F.rcast . FT.mutate (const $ FT.recordSingleton @ElectoralWeight ewType)) psWithElectors
+
+mergeASEElectionData :: 
+  F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.ACSCount])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.DemPref])
+  -> ElectoralWeightT
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.VotedPctOfAll])
+  -> F.Frame BR.ElectoralCollege
+  -> F.FrameRec [ElectoralWeight, BR.StateAbbreviation, BR.Electors, BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]
+mergeASEElectionData demographics prefs ewType ews eCollege =
+  -- join and fold
+  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASE) demographics prefs
+      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASE) demoPref ews
+      catFold :: FL.Fold (F.Record (CatColsASE V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
+                           (F.Record [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll])
+      catFold =
+        let pop = F.rgetField @BR.ACSCount
+            pref = F.rgetField @BR.DemPref
+            wgt = F.rgetField @BR.VotedPctOfAll
+            popSumF = FL.premap pop FL.sum
+            voteSumF = FL.premap (\r -> realToFrac (pop r) * wgt r) FL.sum
+            wgtdPrefF = FL.premap (\r -> realToFrac (pop r) * wgt r * pref r) FL.sum
+        in  FF.sequenceRecFold
+            $ FF.toFoldRecord (FL.premap pop FL.sum)
+            V.:& FF.toFoldRecord ((/) <$> wgtdPrefF <*> voteSumF)
+            V.:& FF.toFoldRecord ((/) <$> voteSumF <*> (fmap realToFrac popSumF))
+            V.:& V.RNil
+      psFold = FMR.concatFold $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @'[BR.StateAbbreviation])
+               (FMR.foldAndAddKey catFold)
+      postStratified = FL.fold psFold demoPrefWeight
+      psWithElectors = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @'[BR.StateAbbreviation] postStratified eCollege
+  in fmap (F.rcast . FT.mutate (const $ FT.recordSingleton @ElectoralWeight ewType)) psWithElectors
+
+
+
+type ElectorsD = "ElectorsD" F.:-> Int
+type ElectorsR = "ElectorsR" F.:-> Int
+
+mergedElectionDataToResultF :: FL.Fold (F.Record [BR.StateAbbreviation, BR.Electors, BR.ACSCount, BR.DemPref, BR.VotedPctOfAll])
+                               (F.Record [ElectorsD, ElectorsR, BR.DemPref])
+                              
+mergedElectionDataToResultF =
+  let es = F.rgetField @BR.Electors
+      pop = F.rgetField @BR.ACSCount
+      dShare = F.rgetField @BR.DemPref
+      voteWgt = F.rgetField @BR.VotedPctOfAll
+      popSumF = FL.premap pop FL.sum
+      electorF t = FL.prefilter t $ FL.premap es FL.sum
+      votersF = FL.premap (\r -> realToFrac (pop r) * voteWgt r) FL.sum
+      dVotersF = FL.premap (\r -> realToFrac (pop r) * voteWgt r * dShare r) FL.sum
+  in  FF.sequenceRecFold
+      $ FF.toFoldRecord (electorF ((>0.5) . dShare))
+      V.:& FF.toFoldRecord (electorF ((<=0.5) . dShare))
+      V.:& FF.toFoldRecord ((/) <$> dVotersF <*> votersF)
+      V.:& V.RNil
 

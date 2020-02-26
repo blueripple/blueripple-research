@@ -1,16 +1,16 @@
-packages: ./
+packages: ./ ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 
 --allow-newer: base, primitive, 
-allow-newer: vinyl, hvega, hashable, base               
+allow-newer: hashable, base               
 
 -- ghc-8.8 forks
              
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames
-  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames
+--  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
 
 source-repository-package
   type: git
@@ -42,10 +42,10 @@ source-repository-package
   location: https://github.com/blueripple/data-sets
   tag: 5441fa441fdd1e821931abbe2a1ba77296a2d885
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 2fc28f64cee937e7ef7313afc645bcc07fbb3c67
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 2fc28f64cee937e7ef7313afc645bcc07fbb3c67
 
 source-repository-package
   type: git
@@ -55,7 +55,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/data-science-utils
-  tag: adcb30b5297a9d5ed563a228e730fba7f98b0f95
+  tag: cfe8d5f3397d821896201b545b862c82b84b91eb
 
 source-repository-package
   type: git

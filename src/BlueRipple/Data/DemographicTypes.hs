@@ -59,11 +59,8 @@ instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
-
 instance S.Serialize Sex
-
 type instance FI.VectorFor Sex = Vec.Vector
-
 instance Grouping Sex
 instance K.FiniteSet Sex
 
