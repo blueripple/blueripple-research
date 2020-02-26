@@ -99,6 +99,7 @@ import qualified MRP.DeltaVPV as DeltaVPV
 import qualified MRP.Kentucky as Kentucky
 import qualified MRP.Wisconsin as Wisconsin
 import qualified MRP.TurnoutGaps as TurnoutGaps
+import qualified MRP.ElectoralWeights as ElectoralWeights
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -133,6 +134,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostKentucky] &= CA.name "KY" &= CA.help "knit \"Kentucky\"",
                                         [PostWisconsin] &= CA.name "WI" &= CA.help "knit \"Wisconsin\"",
                                         [PostTurnoutGaps] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
+                                        [PostElectoralWeights] &= CA.name "weights" &= CA.help "knit \"Electoral Weights\"", 
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -224,9 +226,11 @@ main = do
           )
         )
         $ Wisconsin.post 
-      let pubDateTurnoutGaps = Time.fromGregorian 2020 2 5                
       when (PostTurnoutGaps `elem` (posts args))
         $ TurnoutGaps.post
+        (updated args)
+      when (PostElectoralWeights `elem` (posts args))
+        $ ElectoralWeights.post
         (updated args)
 
   case eitherDocs of

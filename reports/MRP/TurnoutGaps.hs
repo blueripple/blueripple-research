@@ -464,7 +464,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
     states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
     statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
     stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
-  stateTurnoutRaw <- BR.stateTurnoutLoader --P.raise $ K.useCached stateTurnoutCA
+  stateTurnoutRaw <- BR.stateTurnoutLoader 
   aseACS <- BR.simpleASEDemographicsLoader 
   asrACS <- BR.simpleASRDemographicsLoader 
   let acsASRByStateF = FMR.concatFold $ FMR.mapReduceFold
@@ -478,16 +478,16 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
-  inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
+  inferredPrefsASER <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
-  inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
+  inferredPrefsASE <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
                        (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
-  inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
+  inferredPrefsASR <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
 
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- statesOnly <$> BR.aseDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
-  demographicsAndTurnoutASR <- statesOnly <$> BR.asrDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASE <- statesOnly <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASR <- statesOnly <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
   let asrTurnoutComparison yPrefs yPop years =
         let isYear y r = (F.rgetField @BR.Year r == y)
@@ -799,14 +799,46 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       $ do
         brAddMarkDown cdText1
         BR.brAddRawHtmlTable "Turnout Diff to Gain" (BHA.class_ "brTable") (houseFlipColonnade mempty) demFlippable
+        _ <-  K.addHvega Nothing Nothing
+          $ vlFlip
+          "Turnout Differentials Required to Flip Close R Districts in Battleground States"
+          True
+          (FV.ViewConfig 800 400 10)
+          $ (fmap F.rcast demFlippable)
         BR.brAddRawHtmlTable "Turnout Diff to Lose" (BHA.class_ "brTable") (houseFlipColonnade mempty) demDefend
+        _ <-  K.addHvega Nothing Nothing
+          $ vlFlip
+          "Turnout Differentials Required to Flip Close D Districts in Battleground States"
+          False
+          (FV.ViewConfig 800 400 10)
+          $ (fmap F.rcast demDefend)
+        return ()  
         
     
 
 cdText1 :: T.Text
 cdText1 = [i|
 |]
-      
+
+
+vlFlip :: (Functor f, Foldable f)
+       => T.Text
+       -> Bool -- true for demFlip, false for demDefend
+       -> FV.ViewConfig
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, BR.DemPref, ToFlip])
+       -> GV.VegaLite
+vlFlip title demFlip vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      makeVS = GV.calculateAs (if demFlip then "50 - 100 * datum.DemPref" else "100 * datum.DemPref - 50") "Vote Share"
+      makeFP = GV.calculateAs "100 * datum.ToFlip" "To Flip"
+      xLabel = if demFlip then "D Lost By (%)" else "D Won By %"
+      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PTitle xLabel]
+      encY = GV.position GV.Y [GV.PName "To Flip", GV.PmType GV.Quantitative, GV.PTitle "% Turnout Differential to Flip"]
+      transform = GV.transform . makeVS . makeFP
+      encoding = GV.encoding . encX . encY
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY) [], transform [], GV.mark GV.Point [GV.MTooltip GV.TTData]]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec], dat]
+  
 vlTurnoutGap :: (Functor f, Foldable f)
              => T.Text -- title
              -> FV.ViewConfig
@@ -835,6 +867,8 @@ vlTurnoutGap title vc rows =
       ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []]      
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec, ruleSpec], dat]
+
+
 
 
 turnoutBoostExplainerMD :: T.Text

@@ -21,6 +21,7 @@ import qualified System.Directory              as SD
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
 import qualified Data.Time.Format              as Time
+import qualified Data.Vinyl                    as V
 
 import           Polysemy.Error                 ( Error )
 
@@ -33,6 +34,7 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import qualified Frames.Serialize              as FS
 import qualified Frames                        as F
+import qualified Frames.InCore                 as FI
 
 knitX
   :: forall r a
@@ -114,3 +116,17 @@ logFrame
   -> K.Sem r ()
 logFrame =
   K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
+
+retrieveOrMakeFrame :: (K.KnitEffects r
+                       , FS.RecSerialize rs
+                       , V.RMap rs
+                       , FI.RecVec rs
+                       ) => T.Text -> K.Sem r (F.FrameRec rs) -> K.Sem r (F.FrameRec rs)
+retrieveOrMakeFrame key action =  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key action
+
+retrieveOrMakeRecList :: (K.KnitEffects r
+                       , FS.RecSerialize rs
+                       , V.RMap rs
+                       , FI.RecVec rs
+                       ) => T.Text -> K.Sem r[F.Record rs] -> K.Sem r [F.Record rs]
+retrieveOrMakeRecList key action =  K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key action

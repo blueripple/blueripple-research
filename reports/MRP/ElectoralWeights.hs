@@ -17,7 +17,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.Wisconsin where
+module MRP.ElectoralWeights where
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad (join)
@@ -74,7 +74,7 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import           BlueRipple.Configuration 
 import           BlueRipple.Utilities.KnitUtils 
-import           BlueRipple.Utilities.TableUtils 
+import qualified BlueRipple.Utilities.TableUtils as BR
 --import           BlueRipple.Data.DataFrames 
 
 import qualified Data.IndexedSet               as IS
@@ -87,10 +87,12 @@ import qualified Numeric.GLM.Report            as GLM
 import qualified Numeric.GLM.Predict            as GLM
 import qualified Numeric.GLM.Confidence            as GLM
 import qualified Numeric.SparseDenseConversions as SD
-
 import qualified Statistics.Types              as ST
 import GHC.Generics (Generic)
 
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Clock               as Time
+import qualified Data.Time.Format              as Time
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -116,9 +118,19 @@ import qualified Visualizations.StatePrefs as BR
 
 text1 :: T.Text
 text1 = [i|
-|]
+When pollsters or academics go from estimating voter preference to electoral outcomes, things get
+complicated.  Voter preference is complicated too!  But the approach is straightforward:
+take survey data or voter-file data or some data that has individual preference and
+use that to infer voter preference for a group of people.  There are many choices
+for how to group the data: by demographic charactersitics?  by location?  both?
 
---type LocationCols = '[BR.StateAbbreviation]
+But let's suppose we accept the preferences, however derived.  How do we go from those
+to a modeled election result?  To do that we need a model of the *electorate*, that is
+how many people of each type (in the country or each state or district) are likely to vote
+in the election.  That question is usually broken down into two parts: knowing the demographics
+of the region
+|]
+  
 type CatColsASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 catKeyASER :: BR.SimpleAge -> BR.Sex -> BR.CollegeGrad -> BR.SimpleRace -> F.Record CatColsASER
 catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
@@ -130,7 +142,7 @@ predMapASER r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
 
-allCatKeysASER = [catKeyASER a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.White, BR.NonWhite]]
+allCatKeysASER = [catKeyASER a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 
 type CatColsASE = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC]
@@ -150,12 +162,12 @@ catKeyASR :: BR.SimpleAge -> BR.Sex -> BR.SimpleRace -> F.Record CatColsASR
 catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
 predMapASR :: F.Record CatColsASR -> M.Map CCESPredictor Double
-predMapASR r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
+predMapASR r = M.fromList [(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
+                          ,(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
                           ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
-                          ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                           ]
 
-allCatKeysASR = [catKeyASR a s r | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], r <- [BR.White, BR.NonWhite]]
+allCatKeysASR = [catKeyASR a s r | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 catPredMap pmF acks = M.fromList $ fmap (\k -> (k, pmF k)) acks
 catPredMapASER = catPredMap predMapASER allCatKeysASER
@@ -170,32 +182,58 @@ foldPrefAndTurnoutData =  FF.sequenceRecFold
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
                           V.:& V.RNil
 
-post :: forall es r.(K.KnitOne r , K.Member GLM.RandomFu r) => K.Sem r ()
-post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
-  let stateAbbr = "WI"
-      stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)
-      stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` [stateAbbr, "National"])
-  stateTurnoutRaw <- BR.stateTurnoutLoader -- P.raise $ K.useCached stateTurnoutCA
+votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[ET.PrefType, BR.DemPref])
+votesToVoteShareF =
+  let
+    party = F.rgetField @ET.Party
+    votes = F.rgetField @ET.Votes
+    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
+    demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
+    demPrefF = demPref <$> demVotesF <*> demRepVotesF
+  in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
+
+
+post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
+post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+  stateTurnoutRaw <- BR.stateTurnoutLoader 
   aseACS <- BR.simpleASEDemographicsLoader 
   asrACS <- BR.simpleASRDemographicsLoader 
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
-  let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
+--  logFrame aseTurnout
   let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
-      predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
-      predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
-  inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
+      predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
+      predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
+  inferredPrefsASER <-  BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
-  inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
+  inferredPrefsASE <-  BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
                        (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
-  inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
+  inferredPrefsASR <-  BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
-  brAddMarkDown text1
-  _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
+
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- stateOnly <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
-  demographicsAndTurnoutASR <- stateOnly <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
-  -- join with the prefs
+  demographicsAndTurnoutASE <- BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASR <- BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
+  K.logLE K.Info "Computing pres-election 2-party vote-share"
+  presPrefByStateFrame <- do
+    let fld = FMR.concatFold $ FMR.mapReduceFold
+              MR.noUnpack
+              (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
+              (FMR.foldAndAddKey votesToVoteShareF)
+    presByStateFrame <- BR.presidentialByStateFrame
+    return $ FL.fold fld presByStateFrame    
+  K.logLE K.Info "Computing house election 2-party vote share"
+  let houseElectionFilter r = (F.rgetField @BR.Stage r == "gen")
+                              && (F.rgetField @BR.Runoff r == False)
+                              && (F.rgetField @BR.Special r == False)
+                              && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
+  houseElectionFrame <- F.filterFrame houseElectionFilter <$> BR.houseElectionsLoader
+  let houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
+                        FMR.noUnpack
+                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, ET.Office])
+                        (FMR.foldAndAddKey votesToVoteShareF)
+      houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
@@ -203,67 +241,48 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
       asrTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
+      -- fold these to state level
+  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)    
+      aseDemoF = FMR.concatFold $ FMR.mapReduceFold
+                 (FMR.unpackFilterRow justPres2016)
+                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.foldAndAddKey foldPrefAndTurnoutData)
+      asrDemoF = FMR.concatFold $ FMR.mapReduceFold
+                 (FMR.unpackFilterRow justPres2016)
+                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.foldAndAddKey foldPrefAndTurnoutData)              
+      asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
+      aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
       labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @BR.DemPref
                                          (realToFrac . F.rgetField @BR.ACSCount)
-                                         (realToFrac . F.rgetField @DemVPV))
+                                         (realToFrac . F.rgetField @BR.DemPref))
                           <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @BR.DemPref
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
-                                         (realToFrac . F.rgetField @DemVPV))
-      psVPVByDistrictF =  BR.postStratifyF
-                          @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                          @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
-                          @[ET.PrefType, DemVPV]
+                                         (realToFrac . F.rgetField @BR.DemPref))
+      psVPVByStateF =  BR.postStratifyF
+                          @[BR.Year, ET.Office, BR.StateAbbreviation]
+                          @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
+                          @[ET.PrefType, BR.DemPref]
                           psCellVPVByBothF
-      vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
-      vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
---      plotEmAll :: Int -> ET.OfficeT -> K.Sem r ()
-      plotEmAll y o r = do
-        let tStart = (T.pack $ show y) <> " " <> (T.pack $ show o)
-            cs = Just $ BR.vpvChoroColorScale (negate r) r
-            vc = FV.ViewConfig 800 800 10
-        _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
-             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                                    && (F.rgetField @ET.Office r == o)
-                                    && (F.rgetField @ET.PrefType r == ET.PSByVAP)
-                             ) vpvPostStratifiedByASE
-        return ()                     
-        _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
-             $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
-                               && (F.rgetField @ET.Office r == o)
-                               && (F.rgetField @ET.PrefType r == ET.PSByVAP)
-                             ) vpvPostStratifiedByASR
-        _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
-          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                                 && (F.rgetField @ET.Office r == ET.President)
-                                 && (F.rgetField @ET.PrefType r == ET.PSByVoted)
-                          ) vpvPostStratifiedByASE
-        _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
-          $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
-                            && (F.rgetField @ET.Office r == ET.President)
-                            && (F.rgetField @ET.PrefType r == ET.PSByVoted)
-                          ) vpvPostStratifiedByASR
-        return ()
-  plotEmAll 2016 ET.President 0.25
-  plotEmAll 2018 ET.House 0.35
-  let aseDemoF = FMR.concatFold $ FMR.mapReduceFold
-              (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-              (FMR.foldAndAddKey foldPrefAndTurnoutData)
-  let asrDemoF = FMR.concatFold $ FMR.mapReduceFold
-              (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-              (FMR.foldAndAddKey foldPrefAndTurnoutData)              
-      asrSums = FL.fold asrDemoF asrTurnoutAndPrefs
-      aseSums = FL.fold aseDemoF aseTurnoutAndPrefs
-  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list aseSums
-  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list asrSums
-  brAddMarkDown brReadMore
+      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
+      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
+  let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
+
+  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+  let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
+  K.newPandoc
+    (K.PandocInfo ((postRoute PostElectoralWeights) <> "main")
+      (brAddDates updated pubDateElectoralWeights curDate
+       $ M.fromList [("pagetitle", "What Are We Talking About When We Talk About Electoral Weights?")
+                    ,("title","What Are We Talking About When We Talk About Electoral Weights?")
+                    ]
+      ))
+      $ do        
+        brAddMarkDown text1
+        brAddMarkDown brReadMore
+     
 

@@ -45,6 +45,7 @@ data Post = PostMethods
           | PostKentucky
           | PostTurnoutGaps
           | PostTurnoutGapsCD
+          | PostElectoralWeights 
           | PostWisconsin deriving (Show, Data, Typeable, Enum, Bounded, Eq, Ord)
 
 postRoute :: Post -> T.Text
@@ -56,6 +57,7 @@ postRoute PostKentucky      = brMRPModelRootPath <> "np2/"
 postRoute PostTurnoutGaps   = brMRPModelRootPath <> "p3/"
 postRoute PostWisconsin     = brMRPModelRootPath <> "np3/"
 postRoute PostTurnoutGapsCD = brMRPModelRootPath <> "np4/"
+postRoute PostElectoralWeights = brMRPModelRootPath <> "explainer/weights/"
 
 postPath :: Post -> T.Text
 postPath x = postRoute x <> "main"

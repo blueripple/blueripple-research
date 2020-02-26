@@ -170,6 +170,7 @@ executable mrp-model
                 , MRP.Kentucky
                 , MRP.Wisconsin
                 , MRP.TurnoutGaps
+                , MRP.ElectoralWeights
                 , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade
