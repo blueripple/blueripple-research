@@ -248,18 +248,20 @@
 <p>But let’s suppose we accept the preferences, however derived. How do we go from those to a modeled election result? To do that we need a model of the <em>electorate</em>, that is how many people of each type (in the country or each state or district) are likely to vote in the election. That question is usually broken down into two parts: knowing the demographics of the country/state/region, that is knowing how many people are in each group and then knowing how many of those people will vote on election day. The number of people in each group is usually straightforwardly derived from census data. But the second part—what fraction of each group will vote, aka the electoral weights— that’s extremely hard to figure out.</p>
 <p>There are a number of standard approaches:</p>
 <ol type="1">
-<li><p>Ask them! Some surveys ask the respondent if they intend to vote and then use that (or some modeled fraction of that) to create a set of weights with as much specificity as the survey allows.</p></li>
-<li><p>Assume the next election will be like the last election:</p></li>
-</ol>
-<ul>
-<li>The census tracks nationwide demographically split turnout for previous elections and we can use those weights, though they lack any geographic specificity.</li>
-<li>Some surveys match respondents with voter-file data and thus turnout. These can then be used to build a set of weights, however specific the survey allows.</li>
-</ul>
-<ol type="1">
+<li>Ask them! Some surveys ask the respondent if they intend to vote and then use that (or some modeled fraction of that) to create a set of weights with as much specificity as the survey allows.</li>
+<li>Assume the next election will be like the last election. The census tracks nationwide demographically split turnout for previous elections and we can use those weights, though they lack any geographic specificity. Also, some surveys match respondents with voter-file data and thus turnout. These can then be used to build a set of weights, however specific the survey allows.</li>
 <li>Model the electorate using some combination of the above data—previous elections, surveys—and whatever other variables, e.g., negative partisanship of a district, to predict how the current electorate might differ from the past.</li>
 </ol>
 <p>Rather than opine on the best model, which is not our expertise, in this piece we want to show how important the choice of electoral weights turns out to be. We want to help you become a more informed reader of polls and academic work which predicts electoral results.</p>
-<p>This piece was partially inspired by a recent <a href="https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data">Vox article</a>, which used a novel survey to look at how each candidate in the democratic primary might fare against Donald Trump.</p>
+<p>This piece was partially inspired by a recent <a href="https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data">Vox article</a>, which used a novel survey to look at how each candidate in the democratic primary might fare against Donald Trump. The paper on which the article is based is interesting and worth a read. But some of the conclusions of the paper and article are based on using electoral weights derived from the 2016 election. It’s very hard to evaluate these conclusions without understanding how sensitive they are to the choice of electoral weights.</p>
+<p>So let’s explore how much difference these weights can make. We’ll begin by picking a few possible sets of weights and comparing the projected popular vote and electoral college results that they predict from the <em>same set of preferences</em>—in this case, preferences derived from our <a href="https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods">MRP model</a> based on the <a href="https://cces.gov.harvard.edu/">CCES</a>. Here are the weights we’ll explore:</p>
+<ul>
+<li>Census2012: nationwide weights from the 2012 election, tabulated by the census.</li>
+<li>Census2016: nationwide weights from the 2016 election, tabulated by the census.</li>
+<li>Census2018: nationwide weights from the 2018 (mid-term) election, tabulated by the census.</li>
+<li>CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.</li>
+<li>CCES2016b: State-level weights derived from turnout data in the CCES survey itself.</li>
+</ul>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 <!--
   <div class="br-readmore">

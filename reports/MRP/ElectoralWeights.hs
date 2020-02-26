@@ -139,13 +139,11 @@ There are a number of standard approaches:
 1. Ask them! Some surveys ask the respondent if they intend to vote and then use that
 (or some modeled fraction of that) to create a set of weights with as much specificity
 as the survey allows.
-
-2. Assume the next election will be like the last election:
-- The census tracks nationwide demographically split turnout for previous
-elections and we can use those weights, though they lack any geographic specificity.
-- Some surveys match respondents with voter-file data and thus turnout.  These can then be used
-to build a set of weights, however specific the survey allows.
-
+2. Assume the next election will be like the last election. The census tracks nationwide
+demographically split turnout for previous elections and we can use those weights,
+though they lack any geographic specificity. Also, some surveys match respondents with
+voter-file data and thus turnout.  These can then be used to build a set of weights,
+however specific the survey allows.
 3. Model the electorate using some combination of the above data---previous elections,
 surveys---and whatever other variables, e.g., negative partisanship of a district,
 to predict how the current electorate might differ from the past.
@@ -157,8 +155,24 @@ which predicts electoral results.
 
 This piece was partially inspired by a recent [Vox article][Vox:BernieYouth], which used
 a novel survey to look at how each candidate in the democratic primary might fare against
-Donald Trump.
+Donald Trump. The paper on which the article is based is interesting and worth a read. But
+some of the conclusions of the paper and article are based on using electoral weights derived
+from the 2016 election.  It's very hard to evaluate these conclusions without understanding
+how sensitive they are to the choice of electoral weights.
 
+So let's explore how much difference these weights can make.  We'll begin by picking a few
+possible sets of weights and comparing the projected popular vote and electoral college results
+that they predict from the *same set of preferences*---in this case, preferences derived from
+our [MRP model][BR:MRP] based on the [CCES][CCES].  Here are the weights we'll explore:
+
+- Census2012: nationwide weights from the 2012 election, tabulated by the census.
+- Census2016: nationwide weights from the 2016 election, tabulated by the census.
+- Census2018: nationwide weights from the 2018 (mid-term) election, tabulated by the census.
+- CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.
+- CCES2016b: State-level weights derived from turnout data in the CCES survey itself.
+
+[BR:MRP]: <https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods>
+[CCES]: <https://cces.gov.harvard.edu/>
 [Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
 |]
   
