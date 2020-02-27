@@ -285,6 +285,7 @@ cachedMaybeFrameLoader
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
+--     , Show (F.Rec (Maybe F.:. F.ElField) qs)
      )
   => DataPath
   -> Maybe F.ParserOptions
@@ -319,6 +320,7 @@ maybeFrameLoader
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
+--     , Show (F.Rec (Maybe F.:. F.ElField) qs)
      )
    => DataPath
    -> Maybe F.ParserOptions
@@ -354,6 +356,7 @@ cachedRecListLoader
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
+--     , Show (F.Rec (Maybe F.:. F.ElField) qs)
      )
   => T.Text -- ^ path to file
   -> Maybe F.ParserOptions

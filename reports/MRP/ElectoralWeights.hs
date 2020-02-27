@@ -178,48 +178,38 @@ our [MRP model][BR:MRP] based on the [CCES][CCES].  Here are the weights we'll e
 [Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
 |]
   
-type CatColsASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
-catKeyASER :: BR.SimpleAge -> BR.Sex -> BR.CollegeGrad -> BR.SimpleRace -> F.Record CatColsASER
-catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
-predMapASER :: F.Record CatColsASER -> M.Map CCESPredictor Double
+predMapASER :: F.Record BR.CatColsASER -> M.Map CCESPredictor Double
 predMapASER r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
                        ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
                        ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
 
-allCatKeysASER = [catKeyASER a s e r | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 
-type CatColsASE = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC]
-catKeyASE :: BR.SimpleAge -> BR.Sex -> BR.CollegeGrad -> F.Record CatColsASE
-catKeyASE a s e = a F.&: s F.&: e F.&: V.RNil
 
-predMapASE :: F.Record CatColsASE -> M.Map CCESPredictor Double
+
+predMapASE :: F.Record BR.CatColsASE -> M.Map CCESPredictor Double
 predMapASE r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)         
                        ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
 
-allCatKeysASE = [catKeyASE a s e | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], e <- [BR.NonGrad, BR.Grad]]
 
-type CatColsASR = '[BR.SimpleAgeC, BR.SexC, BR.SimpleRaceC]
-catKeyASR :: BR.SimpleAge -> BR.Sex -> BR.SimpleRace -> F.Record CatColsASR
-catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
-predMapASR :: F.Record CatColsASR -> M.Map CCESPredictor Double
+
+predMapASR :: F.Record BR.CatColsASR -> M.Map CCESPredictor Double
 predMapASR r = M.fromList [(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                           ,(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
                           ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
                           ]
 
-allCatKeysASR = [catKeyASR a s r | a <- [BR.EqualOrOver, BR.Under], s <- [BR.Female, BR.Male], r <- [BR.NonWhite, BR.White]]
 
 catPredMap pmF acks = M.fromList $ fmap (\k -> (k, pmF k)) acks
-catPredMapASER = catPredMap predMapASER allCatKeysASER
-catPredMapASE = catPredMap predMapASE allCatKeysASE
-catPredMapASR = catPredMap predMapASR allCatKeysASR
+catPredMapASER = catPredMap predMapASER BR.allCatKeysASER
+catPredMapASE = catPredMap predMapASE BR.allCatKeysASE
+catPredMapASR = catPredMap predMapASR BR.allCatKeysASR
 
 foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
@@ -253,11 +243,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
       predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
   inferredPrefsASER <-  BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
   inferredPrefsASE <-  BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
   inferredPrefsASR <-  BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
 
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
@@ -285,29 +275,29 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
-                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
       asrTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
-                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
       -- fold these to state level
       aseDemoF = FMR.concatFold $ FMR.mapReduceFold
                  FMR.noUnpack
-                 (FMR.assignKeysAndData @(CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(BR.CatColsASE V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)
       asrDemoF = FMR.concatFold $ FMR.mapReduceFold
                  FMR.noUnpack
-                 (FMR.assignKeysAndData @(CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+                 (FMR.assignKeysAndData @(BR.CatColsASR V.++ '[BR.StateAbbreviation, BR.Year, ET.Office]) @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
   electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> BR.electoralCollegeFrame
   let yearOfficeFilter y o r =  F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == o
 
-      asrPrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.DemPref]))
+      asrPrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[BR.DemPref]))
                      $ F.filterFrame (yearOfficeFilter y o) asrByState
-      asrDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.ACSCount]))
+      asrDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
                     $ F.filterFrame (yearOfficeFilter y o) asrByState
-      asrCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASR V.++ '[BR.VotedPctOfAll]))
+      asrCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[BR.VotedPctOfAll]))
                         $ F.filterFrame (yearOfficeFilter y o) asrByState
                    
 
@@ -332,11 +322,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       asrEwResults = FL.fold ewResultsF asrWgtd
   logFrame asrWgtd
   logFrame asrEwResults
-  let asePrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.DemPref]))
+  let asePrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++ '[BR.DemPref]))
                      $ F.filterFrame (yearOfficeFilter y o) aseByState
-      aseDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.ACSCount]))
+      aseDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
                     $ F.filterFrame (yearOfficeFilter y o) aseByState
-      aseCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ CatColsASE V.++ '[BR.VotedPctOfAll]))
+      aseCensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++ '[BR.VotedPctOfAll]))
                         $ F.filterFrame (yearOfficeFilter y o) aseByState
       aseWgtdByCensus2012 = mergeASEElectionData
                             (aseDemo 2018 ET.House)
@@ -356,7 +346,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   logFrame aseWgtd
   logFrame aseEwResults
   pumsDemo <- BR.pumsLoader
-  logFrame pumsDemo
+  logFrame $ FL.fold (BR.pumsRollupF $ BR.pumsKeysToASER True) pumsDemo
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
   K.newPandoc
@@ -380,17 +370,17 @@ type instance FI.VectorFor ElectoralWeightT = V.Vector
 -- I'd like this to be CatCols generic but that leads to a nightmare of constraints
 -- maybe a @LeftJoinC@ ?? Tried that.  Still messy.
 mergeASRElectionData :: 
-  F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.ACSCount])
-  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.DemPref])
+  F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++  '[BR.ACSCount])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++  '[BR.DemPref])
   -> ElectoralWeightT
-  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASR V.++  '[BR.VotedPctOfAll])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++  '[BR.VotedPctOfAll])
   -> F.Frame BR.ElectoralCollege
   -> F.FrameRec [ElectoralWeight, BR.StateAbbreviation, BR.Electors, BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]
 mergeASRElectionData demographics prefs ewType ews eCollege =
   -- join and fold
-  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) demographics prefs
-      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASR) demoPref ews
-      catFold :: FL.Fold (F.Record (CatColsASR V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
+  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASR) demographics prefs
+      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASR) demoPref ews
+      catFold :: FL.Fold (F.Record (BR.CatColsASR V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
                            (F.Record [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll])
       catFold =
         let pop = F.rgetField @BR.ACSCount
@@ -413,17 +403,17 @@ mergeASRElectionData demographics prefs ewType ews eCollege =
   in fmap (F.rcast . FT.mutate (const $ FT.recordSingleton @ElectoralWeight ewType)) psWithElectors
 
 mergeASEElectionData :: 
-  F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.ACSCount])
-  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.DemPref])
+  F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++  '[BR.ACSCount])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++  '[BR.DemPref])
   -> ElectoralWeightT
-  -> F.FrameRec ('[BR.StateAbbreviation] V.++ CatColsASE V.++  '[BR.VotedPctOfAll])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++  '[BR.VotedPctOfAll])
   -> F.Frame BR.ElectoralCollege
   -> F.FrameRec [ElectoralWeight, BR.StateAbbreviation, BR.Electors, BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]
 mergeASEElectionData demographics prefs ewType ews eCollege =
   -- join and fold
-  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASE) demographics prefs
-      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ CatColsASE) demoPref ews
-      catFold :: FL.Fold (F.Record (CatColsASE V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
+  let demoPref = F.toFrame $ catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASE) demographics prefs
+      demoPrefWeight = catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASE) demoPref ews
+      catFold :: FL.Fold (F.Record (BR.CatColsASE V.++ [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll]))
                            (F.Record [BR.ACSCount, BR.DemPref, BR.VotedPctOfAll])
       catFold =
         let pop = F.rgetField @BR.ACSCount

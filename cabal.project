@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-utils
+packages: ./ ~/DataScience/Frames-utils ../data-sets
 jobs: 4
 with-compiler: ghc
 
@@ -37,10 +37,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/knit-haskell
   tag: eb747db16ad3616e23d58becdf0c04223ff3bef4
 
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: 5441fa441fdd1e821931abbe2a1ba77296a2d885
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: 5441fa441fdd1e821931abbe2a1ba77296a2d885
 
 --source-repository-package
 --  type: git

@@ -18,7 +18,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -O0              #-}
+{-# OPTIONS_GHC -O0  -freduction-depth=0            #-}
 module BlueRipple.Data.ACS_PUMS where
 
 
@@ -26,6 +26,7 @@ import qualified BlueRipple.Data.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Control.Foldl                 as FL
@@ -37,7 +38,7 @@ import qualified Data.Serialize                as S
 import qualified Data.Serialize.Text           as S
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe)
+import           Data.Maybe                     ( fromMaybe, catMaybes)
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import           Text.Read                      (readMaybe)
@@ -90,14 +91,14 @@ pumsRowsLoader = do
   let aPath = T.pack $ BR.pums1YrCSV 2018 "usa"
       bPath = T.pack $ BR.pums1YrCSV 2018 "usb"
   K.logLE K.Diagnostic $ "Loading 2018 PUMS data from " <> aPath  
-  aFrame <- BR.maybeFrameLoader @PUMS_Raw @PUMS_Raw @PUMS_Typed
+  aFrame <- BR.maybeFrameLoader @PUMS_Raw @(F.RecordColumns BR.PUMS_Full) @PUMS_Typed
             (BR.LocalData aPath)
             Nothing
-            (const True {-FU.filterOnMaybeField @BR.PUMSAGEP (>= 18)-})
+            (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
             fixPUMSRow
             transformPUMSRow
   K.logLE K.Diagnostic $ "Loading 2018 PUMS data from " <> aPath  
-  bFrame <- BR.maybeFrameLoader @PUMS_Raw @PUMS_Raw @PUMS_Typed
+  bFrame <- BR.maybeFrameLoader @PUMS_Raw @(F.RecordColumns BR.PUMS_Full) @PUMS_Typed
             (BR.LocalData bPath)
             Nothing
             (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
@@ -116,10 +117,10 @@ citizensFold =
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 
-pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS)
+pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountF = FMR.concatFold $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.Race5C])
+             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C])
              (FMR.foldAndAddKey citizensFold)
   
 
@@ -127,14 +128,68 @@ pumsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
 pumsLoader =
   let action = do
         K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
-        FL.fold pumsCountF <$> pumsRowsLoader
+        pumsFrame <- FL.fold pumsCountF <$> pumsRowsLoader
+        let defaultCount :: F.Record [Citizens, NonCitizens]
+            defaultCount = 0 F.&: 0 F.&: V.RNil
+--            addDefF :: FL.Fold (F.Record PUMS_Counted) (F.FrameRec PUMS_Counted)
+            addDefF = fmap F.toFrame $ BR.addDefaultRec @[BR.Age4C
+                                                         , BR.SexC
+                                                         , BR.CollegeGradC
+                                                         , InCollege
+                                                         , BR.Race5C]
+                      @[Citizens, NonCitizens] defaultCount                      
+            countedWithDefaults = FL.fold
+                                  (FMR.concatFold
+                                   $ FMR.mapReduceFold
+                                   FMR.noUnpack
+                                   (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS])
+                                   (FMR.makeRecsWithKey id $ FMR.ReduceFold (const addDefF))
+                                  )
+                                  $ pumsFrame
+        stateCrossWalkFrame <- BR.stateAbbrCrosswalkLoader            
+        return $ F.toFrame
+          $ fmap (F.rcast @PUMS)
+          $ catMaybes
+          $ fmap F.recMaybe
+          $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame    
   in BR.retrieveOrMakeFrame "data/pums2018.bin" action
-             
+
+sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
+sumPeopleF = FF.foldAllConstrained @Num FL.sum
+
+type PUMSCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ [Citizens, NonCitizens]
+
+pumsRollupF
+  :: forall ks
+  . (ks F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, Citizens, NonCitizens] V.++ ks)
+    , FI.RecVec (ks V.++ [Citizens, NonCitizens])
+    , Ord (F.Record ks)
+    )
+  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record ks)
+  -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMSCounts ks))
+pumsRollupF mapKeys =
+  let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
+      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks) @[Citizens, NonCitizens]
+      reduce = FMR.foldAndAddKey sumPeopleF
+  in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
+
+
+pumsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record BR.CatColsASER
+pumsKeysToASER addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+     F.&: V.RNil
+
 type PUMS_Raw = '[ BR.PUMSPWGTP
                  , BR.PUMSST
                  , BR.PUMSAGEP
                  , BR.PUMSCIT
                  , BR.PUMSSCHL
+                 , BR.PUMSSCHG
                  , BR.PUMSSEX
                  , BR.PUMSHISP
                  , BR.PUMSRAC1P
@@ -144,6 +199,7 @@ type PUMSWeight = "Weight" F.:-> Int
 type Citizen = "Citizen" F.:-> Bool
 type Citizens = "Citizens" F.:-> Int
 type NonCitizens = "NonCitizens" F.:-> Int
+type InCollege = "InCollege" F.:-> Bool
 
 type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
@@ -151,19 +207,33 @@ type PUMS_Typed = '[ BR.Year
                    , BR.Age4C
                    , Citizen
                    , BR.CollegeGradC
+                   , InCollege
                    , BR.SexC
                    , BR.Race5C
                  ]
 
+type PUMS_Counted = '[BR.Year
+                     , BR.StateFIPS
+                     , BR.Age4C
+                     , BR.SexC
+                     , BR.CollegeGradC
+                     , InCollege
+                     , BR.Race5C
+                     , Citizens
+                     , NonCitizens
+                     ]
+
 type PUMS = '[BR.Year
+             , BR.StateAbbreviation
              , BR.StateFIPS
              , BR.Age4C
              , BR.SexC
              , BR.CollegeGradC
+             , InCollege
              , BR.Race5C
              , Citizens
              , NonCitizens
-             ]
+             ]               
              
 
 -- we have to drop all records with age < 18
@@ -181,6 +251,9 @@ intToCitizen n = if n == 5 then False else True
 intToCollegeGrad :: Int -> BR.CollegeGrad
 intToCollegeGrad n = if n <= 20 then BR.NonGrad else BR.Grad
 
+intToInCollege :: Int -> Bool
+intToInCollege n = n == 15
+
 intToSex :: Int -> BR.Sex
 intToSex n = if n == 1 then BR.Male else BR.Female
 
@@ -193,25 +266,13 @@ intsToRace5 hN rN
   | otherwise = BR.R5_Other
 
 -- to use in maybeRecsToFrame
+-- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"
 fixPUMSRow :: F.Rec (Maybe F.:. F.ElField) PUMS_Raw -> F.Rec (Maybe F.:. F.ElField) PUMS_Raw
-fixPUMSRow = id
-{-(F.rsubset %~ missingHispanicToNo)
-               $ (F.rsubset %~ missingPID3)
-               $ (F.rsubset %~ missingPID7)
-               $ (F.rsubset %~ missingPIDLeaner)
-               $ (F.rsubset %~ missingEducation)
+fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
                $ r where
-  missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
-  missingHispanicToNo = FM.fromMaybeMono 2
-  missingPID3 :: F.Rec (Maybe :. F.ElField) '[CCESPid3] -> F.Rec (Maybe :. F.ElField) '[CCESPid3]
-  missingPID3 = FM.fromMaybeMono 6
-  missingPID7 :: F.Rec (Maybe :. F.ElField) '[CCESPid7] -> F.Rec (Maybe :. F.ElField) '[CCESPid7]
-  missingPID7 = FM.fromMaybeMono 9
-  missingPIDLeaner :: F.Rec (Maybe :. F.ElField) '[CCESPid3Leaner] -> F.Rec (Maybe :. F.ElField) '[CCESPid3Leaner]
-  missingPIDLeaner = FM.fromMaybeMono 5
-  missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
-  missingEducation = FM.fromMaybeMono 5
--}
+  missingInCollegeTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG]
+  missingInCollegeTo0 = FM.fromMaybeMono 0
+
 -- fmap over Frame after load and throwing out bad rows
 transformPUMSRow :: F.Record PUMS_Raw -> F.Record PUMS_Typed
 transformPUMSRow r = F.rcast @PUMS_Typed (mutate r) where
@@ -221,6 +282,7 @@ transformPUMSRow r = F.rcast @PUMS_Typed (mutate r) where
   addAge4 = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.PUMSAGEP
   addSex = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.PUMSSEX
   addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSSCHL
+  addInCollege = FT.recordSingleton @InCollege . intToInCollege . F.rgetField @BR.PUMSSCHG
   hN = F.rgetField @BR.PUMSHISP
   rN = F.rgetField @BR.PUMSRAC1P
   addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
@@ -232,6 +294,7 @@ transformPUMSRow r = F.rcast @PUMS_Typed (mutate r) where
            . FT.mutate addAge4
            . FT.mutate addSex
            . FT.mutate addEducation
+           . FT.mutate addInCollege
            . FT.mutate addRace
 
 {-

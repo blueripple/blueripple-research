@@ -13,6 +13,6 @@ pums1YrCSV y ft = dataDir ++ show y ++ "/1-Year/psam_p" ++ (T.unpack ft) ++ ".cs
 -- the things I would make Categorical are already ints. :(
 pums1YrRowGen = (F.rowGen $ pums1YrCSV 2018 "usa") { F.tablePrefix = "PUMS"
                                                    , F.separator   = ","
-                                                   , F.rowTypeName = "PUMSFull"
+                                                   , F.rowTypeName = "PUMS_Full"
                                                  }
 

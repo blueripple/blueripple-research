@@ -167,11 +167,15 @@ class Eq a => FiniteSet a where
   default elements :: (Enum a, Bounded a) => Set.Set a
   elements = Set.fromAscList [minBound..]
 
+instance FiniteSet Bool where
+  elements = Set.fromAscList [False, True]
+
 instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
   elements = Set.fromAscList $ do
     a <- Set.toAscList elements
     b <- Set.toAscList elements
     return (a, b)
+
 
 -- For composing aggregations, we will also want our coefficients to
 -- have multiplicative monoid structure, that is, to be semirings

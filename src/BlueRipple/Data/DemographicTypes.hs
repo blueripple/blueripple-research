@@ -48,6 +48,25 @@ import qualified Graphics.Vega.VegaLite        as GV
 data DemographicGrouping = ASE | ASR | ASER deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
 
+type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
+catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
+catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+
+allCatKeysASER = [catKeyASER a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [NonWhite, White]]
+
+type CatColsASE = '[SimpleAgeC, SexC, CollegeGradC]
+catKeyASE :: SimpleAge -> Sex -> CollegeGrad -> F.Record CatColsASE
+catKeyASE a s e = a F.&: s F.&: e F.&: V.RNil
+
+allCatKeysASE = [catKeyASE a s e | a <- [EqualOrOver, Under], s <- [Female, Male], e <- [NonGrad, Grad]]
+
+type CatColsASR = '[SimpleAgeC, SexC, SimpleRaceC]
+catKeyASR :: SimpleAge -> Sex -> SimpleRace -> F.Record CatColsASR
+catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
+
+allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
+
+
 type instance FI.VectorFor DemographicGrouping = Vec.Vector
 
 instance Grouping DemographicGrouping
@@ -123,6 +142,12 @@ type Age4C = "Age4" F.:-> Age4
 simpleAgeFrom4 :: SimpleAge -> [Age4]
 simpleAgeFrom4 Under       = [A4_18To24, A4_25To44]
 simpleAgeFrom4 EqualOrOver = [A4_45To64, A4_65AndOver]
+
+age4ToSimple :: Age4 -> SimpleAge
+age4ToSimple A4_18To24 = Under
+age4ToSimple A4_25To44 = Under
+age4ToSimple _ = EqualOrOver
+
 
 data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age5
@@ -248,6 +273,12 @@ type Race5C = "Race5" F.:-> Race5
 instance FV.ToVLDataValue (F.ElField Race5C) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+simpleRaceFromRace5 :: Race5 -> SimpleRace
+simpleRaceFromRace5 R5_Other = NonWhite
+simpleRaceFromRace5 R5_Black = NonWhite
+simpleRaceFromRace5 R5_Latinx = NonWhite
+simpleRaceFromRace5 R5_Asian = NonWhite
+simpleRaceFromRace5 R5_WhiteNonLatinx = White
 
 turnoutRaceLabel :: TurnoutRace -> T.Text
 turnoutRaceLabel Turnout_All              = "All"
