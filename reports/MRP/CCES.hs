@@ -94,13 +94,13 @@ import Data.Kind (Type)
 
 ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
 ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP_Raw @CCES_MRP
-             (T.pack ccesCSV)
-             Nothing
-             (const True)
-             fixCCESRow
-             transformCCESRow
-             Nothing
-             "ccesMRP.bin"
+                 (BR.LocalData $ T.pack ccesCSV)
+                 Nothing
+                 (const True)
+                 fixCCESRow
+                 transformCCESRow
+                 Nothing
+                 "ccesMRP.bin"
                           
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId

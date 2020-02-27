@@ -64,7 +64,8 @@ library
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.Loaders
                  , BlueRipple.Data.ACS_PUMS_Path
-                 , BlueRipple.Data.ACS_PUMS_Frame                 
+                 , BlueRipple.Data.ACS_PUMS_Frame
+                 , BlueRipple.Data.ACS_PUMS                 
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment

@@ -55,7 +55,7 @@ import qualified Frames.Serialize              as FS
 
 
 electoralCollegeFrame :: K.KnitEffects r => K.Sem r (F.Frame BR.ElectoralCollege)
-electoralCollegeFrame = cachedFrameLoader (T.pack BR.electorsCSV) Nothing id Nothing "electoralCollege.bin"
+electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing id Nothing "electoralCollege.bin"
 
 
 parsePEParty :: T.Text -> ET.PartyT
@@ -85,7 +85,7 @@ fixPresidentialElectionRow r = F.rcast @PresidentialElectionCols (mutate r)
 presidentialByStateFrame
   :: K.KnitEffects r => K.Sem r (F.FrameRec PresidentialElectionCols)
 presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns BR.PresidentialByState)
-  (T.pack BR.presidentialByStateCSV)
+  (DataSets $ T.pack BR.presidentialByStateCSV)
   Nothing
   (const True)
   id
@@ -96,7 +96,7 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
 aseDemographicsLoader =
   cachedFrameLoader
-  (T.pack BR.ageSexEducationDemographicsLongCSV)
+  (DataSets $ T.pack BR.ageSexEducationDemographicsLongCSV)
   Nothing
   id
   Nothing
@@ -112,7 +112,7 @@ simpleASEDemographicsLoader =
 asrDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASRDemographics)
 asrDemographicsLoader =
   cachedFrameLoader
-  (T.pack BR.ageSexRaceDemographicsLongCSV)
+  (DataSets $ T.pack BR.ageSexRaceDemographicsLongCSV)
   Nothing
   id
   Nothing
@@ -128,7 +128,7 @@ simpleASRDemographicsLoader =
 aseTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASE)
 aseTurnoutLoader =
   cachedFrameLoader
-  (T.pack BR.detailedASETurnoutCSV)
+  (DataSets $ T.pack BR.detailedASETurnoutCSV)
   Nothing
   id
   Nothing
@@ -144,7 +144,7 @@ simpleASETurnoutLoader =
 asrTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASR)
 asrTurnoutLoader =
   cachedFrameLoader
-  (T.pack BR.detailedASRTurnoutCSV)
+  (DataSets $ T.pack BR.detailedASRTurnoutCSV)
   Nothing
   id
   Nothing
@@ -159,13 +159,13 @@ simpleASRTurnoutLoader =
 
 
 stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (F.Frame BR.States)
-stateAbbrCrosswalkLoader = cachedFrameLoader (T.pack BR.statesCSV) Nothing id Nothing "stateAbbr.bin"
+stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing id Nothing "stateAbbr.bin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
 stateTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.StateTurnout)
 stateTurnoutLoader = cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
-                     (T.pack BR.stateTurnoutCSV)
+                     (DataSets $ T.pack BR.stateTurnoutCSV)
                      Nothing
                      (const True)
                      fixMaybes
@@ -208,7 +208,14 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
 houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
-houseElectionsLoader = cachedFrameLoader (T.pack BR.houseElectionsCSV) Nothing processHouseElectionRow Nothing "houseElections.bin"
+houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing processHouseElectionRow Nothing "houseElections.bin"
+
+data DataPath = DataSets T.Text | LocalData T.Text
+
+getPath :: DataPath -> IO FilePath
+getPath dataPath = case dataPath of
+  DataSets fp -> liftIO $ BR.usePath (T.unpack fp)
+  LocalData fp -> return (T.unpack fp)
 
 cachedFrameLoader
   :: forall qs rs r
@@ -222,29 +229,40 @@ cachedFrameLoader
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
      )
-  => T.Text -- ^ path to file
+  => DataPath
   -> Maybe F.ParserOptions
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (F.FrameRec rs)
 cachedFrameLoader filePath parserOptionsM fixRow cachePathM key = do
-  let csvParserOptions =
-        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-      cacheFrame = K.retrieveOrMakeTransformed
+  let cacheFrame = K.retrieveOrMakeTransformed
         (fmap FS.toS . FL.fold FL.list)
         (F.toFrame . fmap FS.fromS)
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
-      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
   K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  cacheFrame cacheKey
-    $   fmap fixRow
-    <$> do
-          path <- liftIO $ BR.usePath (T.unpack filePath) -- translate data-sets path to local 
-          BR.loadToFrame parserOptions path (const True)
+  cacheFrame cacheKey $ frameLoader filePath parserOptionsM fixRow
 
+frameLoader
+  :: forall qs rs r
+  . (K.KnitEffects r
+    , F.ReadRec qs
+    , FI.RecVec qs
+    , V.RMap qs
+    )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> (F.Record qs -> F.Record rs)
+  -> K.Sem r (F.FrameRec rs)
+frameLoader filePath parserOptionsM fixRow = do
+  let csvParserOptions =
+        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+  path <- liftIO $ getPath filePath
+  K.logLE K.Diagnostic ("Attempting to loading data from " <> (T.pack path) <> " into a frame.")
+  fmap fixRow <$> BR.loadToFrame parserOptions path (const True)
 
 cachedMaybeFrameLoader
   :: forall qs ls rs r
@@ -268,7 +286,7 @@ cachedMaybeFrameLoader
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
      )
-  => T.Text -- ^ path to file
+  => DataPath
   -> Maybe F.ParserOptions
   -> (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (  F.Rec (Maybe F.:. F.ElField) qs
@@ -280,27 +298,46 @@ cachedMaybeFrameLoader
   -> K.Sem r (F.FrameRec rs)
 cachedMaybeFrameLoader filePath parserOptionsM filterMaybes fixMaybes fixRow cachePathM key
   = do
-    let csvParserOptions =
-          F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-        cacheFrame = K.retrieveOrMakeTransformed
+    let cacheFrame = K.retrieveOrMakeTransformed
           (fmap FS.toS . FL.fold FL.list)
           (F.toFrame . fmap FS.fromS)
         cacheKey      = (fromMaybe "data/" cachePathM) <> key
-        parserOptions = (fromMaybe csvParserOptions parserOptionsM)
     K.logLE K.Diagnostic
       $  "loading or retrieving and saving data at key="
       <> cacheKey
-    cacheFrame cacheKey
-      $   fmap fixRow
-      <$> do
-            path      <- liftIO $ BR.usePath (T.unpack filePath) -- translate data-sets path to local 
-            maybeRecs <- BR.loadToMaybeRecs @qs @ls @r parserOptions
-                                                       filterMaybes
-                                                       path
-            BR.maybeRecsToFrame fixMaybes (const True) maybeRecs
+    cacheFrame cacheKey $ maybeFrameLoader @qs @ls @rs filePath parserOptionsM filterMaybes fixMaybes fixRow
 
-
-
+maybeFrameLoader 
+   :: forall qs ls rs r
+   . (K.KnitEffects r
+     , V.RMap ls
+     , F.ReadRec ls
+     , qs F.⊆ ls
+     , FI.RecVec ls
+     , FI.RecVec qs
+     , V.RFoldMap qs
+     , V.RPureConstrained V.KnownField qs
+     , V.RecApplicative qs
+     , V.RApply qs
+     )
+   => DataPath
+   -> Maybe F.ParserOptions
+   -> (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
+   -> (  F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+   -> (F.Record qs -> F.Record rs)
+   -> K.Sem r (F.FrameRec rs)
+maybeFrameLoader filePath parserOptionsM filterMaybes fixMaybes fixRow = do
+ let csvParserOptions =
+       F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+     parserOptions = (fromMaybe csvParserOptions parserOptionsM)  
+ path      <- liftIO $ getPath filePath
+ K.logLE K.Diagnostic
+       ("Attempting to load data from " <> (T.pack path) <> " into a Frame (Maybe .: ElField), filter and fix.")
+ maybeRecs <- BR.loadToMaybeRecs @qs @ls @r parserOptions
+              filterMaybes
+              path
+ fmap fixRow <$> BR.maybeRecsToFrame fixMaybes (const True) maybeRecs         
+  
 cachedRecListLoader
   :: forall qs rs r
    . ( V.RMap rs

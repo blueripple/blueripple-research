@@ -238,6 +238,17 @@ instance K.FiniteSet TurnoutRace
 
 type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
+data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize Race5
+type instance FI.VectorFor Race5 = Vec.Vector
+instance Grouping Race5
+instance K.FiniteSet Race5
+
+type Race5C = "Race5" F.:-> Race5
+instance FV.ToVLDataValue (F.ElField Race5C) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+
 turnoutRaceLabel :: TurnoutRace -> T.Text
 turnoutRaceLabel Turnout_All              = "All"
 turnoutRaceLabel Turnout_WhiteNonHispanic = "WhiteNonHispanic"
