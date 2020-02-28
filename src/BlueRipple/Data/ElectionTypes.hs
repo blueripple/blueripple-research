@@ -66,7 +66,6 @@ type Votes = "Votes" F.:-> Int
 instance FV.ToVLDataValue (F.ElField Votes) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
-
 type TotalVotes = "TotalVotes" F.:-> Int
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
@@ -80,5 +79,25 @@ instance SE.Serialize PrefTypeT
 
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+type ElectoralWeight = "ElectoralWeight" F.:-> Double
+instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq , Ord, Show, Generic)
+type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSourceT
+type instance FI.VectorFor ElectoralWeightSourceT = Vec.Vector
+instance Grouping ElectoralWeightSourceT
+instance SE.Serialize ElectoralWeightSourceT
+
+
+data ElectoralWeightOfT = EW_Eligible -- ^ Voting Eligible Population
+                        | EW_Citizen -- ^ Voting Age Population (citizens only)
+                        | EW_All -- ^ Voting Age Population (all)
+                        deriving (Enum, Bounded, Eq , Ord, Show, Generic)
+type ElectoralWeightOf = "ElectoralWeightOf" F.:-> ElectoralWeightOfT
+type instance FI.VectorFor ElectoralWeightOfT = Vec.Vector
+instance Grouping ElectoralWeightOfT
+instance SE.Serialize ElectoralWeightOfT
 
 

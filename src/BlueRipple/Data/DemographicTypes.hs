@@ -47,6 +47,23 @@ import qualified Graphics.Vega.VegaLite        as GV
 
 data DemographicGrouping = ASE | ASR | ASER deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
+type instance FI.VectorFor DemographicGrouping = Vec.Vector
+instance Grouping DemographicGrouping
+instance K.FiniteSet DemographicGrouping
+
+type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
+
+instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+instance S.Serialize PopCountOfT
+instance Grouping PopCountOfT
+instance K.FiniteSet PopCountOfT
+
+type PopCountOf = "PopCountOf" F.:-> PopCountOfT
+instance FV.ToVLDataValue (F.ElField PopCountOf) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
 catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
@@ -67,15 +84,7 @@ catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
 
 
-type instance FI.VectorFor DemographicGrouping = Vec.Vector
 
-instance Grouping DemographicGrouping
-instance K.FiniteSet DemographicGrouping
-
-type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
-
-instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize Sex

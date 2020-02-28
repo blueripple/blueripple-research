@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-utils ../data-sets
+packages: ./ ../data-sets 
 jobs: 4
 with-compiler: ghc
 
@@ -37,20 +37,25 @@ source-repository-package
   location: https://github.com/adamConnerSax/knit-haskell
   tag: eb747db16ad3616e23d58becdf0c04223ff3bef4
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-map-reduce
+  tag: 43536fe210874b6d776c5369c68b70ccb6a0cd6a
+    
 --source-repository-package
 --  type: git
 --  location: https://github.com/blueripple/data-sets
 --  tag: 5441fa441fdd1e821931abbe2a1ba77296a2d885
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 2fc28f64cee937e7ef7313afc645bcc07fbb3c67
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: 8020304966550ec5b2a4bc525417e5bf8b21248d
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega
-  tag: cfb7d0ff2eaf907c06d33900523976557ca94fed
+  tag: 32b68b055ffcd4cae7ed06ddfea9e89d6b20f8f7
 
 source-repository-package
   type: git

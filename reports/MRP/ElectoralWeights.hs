@@ -346,7 +346,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   logFrame aseWgtd
   logFrame aseEwResults
   pumsDemo <- BR.pumsLoader
-  logFrame $ FL.fold (BR.pumsRollupF $ BR.pumsKeysToASER True) pumsDemo
+  logFrame $ FL.fold (BR.pumsRollupF $ BR.pumsKeysToIdentity) pumsDemo
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
   K.newPandoc

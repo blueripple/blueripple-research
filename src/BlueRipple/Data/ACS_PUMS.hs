@@ -184,6 +184,26 @@ pumsKeysToASER addInCollegeToGrads r =
      F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
+pumsKeysToASE :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record BR.CatColsASE
+pumsKeysToASE addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: V.RNil     
+
+pumsKeysToASR :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record BR.CatColsASR
+pumsKeysToASR r =
+  (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  F.&: (F.rgetField @BR.SexC r)
+  F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+  F.&: V.RNil
+
+pumsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record '[]
+pumsKeysToIdentity = const V.RNil
+
+
 type PUMS_Raw = '[ BR.PUMSPWGTP
                  , BR.PUMSST
                  , BR.PUMSAGEP
