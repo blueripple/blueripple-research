@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+
 {-
 Following Ghitza & Gelman 2013 ("Deep Interactions with MRP: Turnout..."), we use a logistic adjustment to the turnout.
 That is, for each district, we choose a constant offset of the logit of the turnout probability
@@ -19,6 +21,9 @@ module BlueRipple.Model.TurnoutAdjustment where
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
+import qualified BlueRipple.Data.ElectionTypes
+                                               as BR
+                                               
 
 import qualified Knit.Report                   as K
 
@@ -141,10 +146,60 @@ adjTurnoutLong total unAdj = do
 
 type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
 
+
 adjTurnoutFold
   :: forall p t rs f effs
    . ( Foldable f
      , K.KnitEffects effs
+     , F.ElemOf rs p
+     , F.ElemOf rs t
+     , F.ElemOf (WithYS rs) BR.StateAbbreviation
+     , F.ElemOf (WithYS rs) BR.Year
+     , rs F.⊆ (WithYS rs)
+     , V.KnownField p
+     , V.KnownField t
+     , V.Snd p ~ Int
+     , V.Snd t ~ Double
+     , FI.RecVec (WithYS rs)
+     )
+  => f BR.StateTurnout
+  -> FL.FoldM
+       (K.Sem effs)
+       (F.Record (WithYS rs))
+       (F.FrameRec (WithYS rs))
+adjTurnoutFold stateTurnoutFrame =
+  let getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
+      vtbsMap = FL.fold
+        (FL.premap
+         (\r ->
+            ( getKey r
+            , F.rgetField @BR.VotesHighestOffice r
+            )
+         )
+         FL.map
+        )
+        stateTurnoutFrame
+      unpackM = FMR.generalizeUnpack FMR.noUnpack
+      assignM = FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
+      adjustF ks =
+        let
+          vtM = M.lookup ks vtbsMap
+          f x = case vtM of
+            Nothing ->
+              K.knitError
+                ("Failed to find " <> (T.pack $ show ks) <> " in state turnout."
+                )
+            Just vts -> K.liftKnit $ adjTurnoutLong @p @t @rs vts x
+        in
+          FMR.postMapM f $ FL.generalize FL.list
+      reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
+    in
+      FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
+
+{-
+adjTurnout
+  :: forall p t rs effs
+   . (K.KnitEffs effs
      , F.ElemOf (WithYS rs) BR.Year
      , F.ElemOf (WithYS rs) BR.StateAbbreviation
      , rs F.⊆ (WithYS rs)
@@ -156,50 +211,16 @@ adjTurnoutFold
      , V.Snd t ~ Double
      , FI.RecVec (rs V.++ '[BR.VEP, BR.VotedPct])
      )
-  => f BR.StateTurnout
-  -> FL.FoldM
-       (K.Sem effs)
-       (F.Record (WithYS rs))
-       (F.FrameRec (WithYS rs V.++ '[BR.VEP, BR.VotedPct]))
-adjTurnoutFold stateTurnoutFrame
-  = let
-      getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
-      vtbsMap = FL.fold
-        (FL.premap
-          (\r ->
-            ( getKey r
-            , ( F.rgetField @BR.VotesHighestOffice r
-              , F.rgetField @BR.VAP r
-              , F.rgetField @BR.VEP r
-              )
-            )
-          )
-          FL.map
-        )
-        stateTurnoutFrame
-      unpackM = FMR.generalizeUnpack FMR.noUnpack
-      assignM =
-        FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
-      makeVEP stateVAP stateVEP r =
-        let x      = (realToFrac stateVEP / realToFrac stateVAP)
-            vepRec = FT.recordSingleton @BR.VEP
-              $ round (x * (realToFrac $ F.rgetField @p r))
-            vPctRec = FT.recordSingleton @BR.VotedPct $ (F.rgetField @t r / x)
-        in  vepRec `V.rappend` vPctRec
-      adjustF ks =
-        let
-          vtM = M.lookup ks vtbsMap
-          f x = case vtM of
-            Nothing ->
-              K.knitError
-                ("Failed to find " <> (T.pack $ show ks) <> " in state turnout."
-                )
-            Just (vts, stateVAP, stateVEP) -> do
-              adjusted <- K.liftKnit $ adjTurnoutLong @p @t @rs vts x
-              return $ fmap (FT.mutate (makeVEP stateVAP stateVEP)) adjusted
-        in
-          FMR.postMapM f $ FL.generalize FL.list
-      reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
-    in
-      FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
-
+  => F.Frame BR.StateTurnout
+  -> F.FrameRec (WithYS rs)
+  -> K.Sem effs (F.FrameRec ((WithYS rs) V.++ '[BR.VEP, BR.VotedPct]))
+adjTurnout stateTurnout toAdjust =
+  let withTurnout = F.toFrame
+                    $ catMaybes
+                    $ fmap F.recMaybe
+                    $ F.leftJoin @[BR.Year, BR.StateAbbreviation] toAdjust stateTurnout
+      vap = F.rgetField @BR.VAP
+      vep = F.rgetField @BR.VEP
+      vbho = F.rgetField @BR.VotesHighestOffice
+      compute
+-}

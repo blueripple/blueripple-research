@@ -90,7 +90,6 @@ type instance FI.VectorFor ElectoralWeightSourceT = Vec.Vector
 instance Grouping ElectoralWeightSourceT
 instance SE.Serialize ElectoralWeightSourceT
 
-
 data ElectoralWeightOfT = EW_Eligible -- ^ Voting Eligible Population
                         | EW_Citizen -- ^ Voting Age Population (citizens only)
                         | EW_All -- ^ Voting Age Population (all)

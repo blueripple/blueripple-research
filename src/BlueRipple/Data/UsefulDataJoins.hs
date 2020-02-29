@@ -138,9 +138,14 @@ joinDemoAndWeights d w = F.toFrame
 adjustWeightsForStateTotals
   :: forall ks p r
   . (K.KnitEffects r
+    , V.KnownField p
     , V.Snd p ~ Int
     , F.ElemOf (BR.WithYS ks) BR.Year
     , F.ElemOf (BR.WithYS ks) BR.StateAbbreviation
+    , (ks V.++ PEWCols p) F.⊆ (BR.WithYS (ks V.++ PEWCols p))
+    , F.ElemOf (ks V.++ PEWCols p) p
+    , F.ElemOf (ks V.++ PEWCols p) BR.ElectoralWeight
+    , FI.RecVec (ks V.++ PEWCols p)
     )
   => F.Frame BR.StateTurnout
   -> F.FrameRec ((BR.WithYS ks) V.++ (PEWCols p))
@@ -149,7 +154,108 @@ adjustWeightsForStateTotals stateTurnout unadj =
   FL.foldM
     (BR.adjTurnoutFold @p @BR.ElectoralWeight stateTurnout)
     unadj
-  
+
+
+demographicsWithAdjTurnoutByState
+  :: forall catCols p ks js effs
+  . ( K.KnitEffects effs
+    , V.KnownField p
+    , V.Snd p ~ Int
+    , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) p
+    , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) BR.ElectoralWeight
+    , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PEWCols p))
+    , FI.RecVec (ks V.++ catCols V.++ (PEWCols p))
+    , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols V.++ EWCols)))
+    , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ EWCols))
+    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
+    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
+    , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+    , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols)) F.⊆ ((js V.++ catCols) V.++ EWCols)
+    , V.RMap ((ks V.++ catCols) V.++ PCols p)
+    , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols)))
+    , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+    , G.Grouping (F.Record (js V.++ catCols))
+    , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
+    , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+    , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+    )
+  => F.Frame BR.StateTurnout
+  -> F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PCols p))
+  -> F.FrameRec (js V.++ catCols V.++ EWCols)
+  -> K.Sem effs (F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PEWCols p)))
+demographicsWithAdjTurnoutByState stateTurnout demos ews =
+  adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout (joinDemoAndWeights @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p demos ews)
+
+
+rollupAdjustAndJoin
+  :: forall as catCols p ks js effs
+  .(K.KnitEffects effs
+  , V.KnownField p
+  , V.Snd p ~ Int
+  , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) p
+  , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) BR.ElectoralWeight
+  , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PEWCols p))
+  , FI.RecVec (ks V.++ catCols V.++ (PEWCols p))
+  , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols V.++ EWCols)))
+  , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ EWCols))
+  , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
+  , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
+  , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+  , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols)) F.⊆ ((js V.++ catCols) V.++ EWCols)
+  , V.RMap ((ks V.++ catCols) V.++ PCols p)
+  , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols)))
+  , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+  , G.Grouping (F.Record (js V.++ catCols))
+  , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
+  , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+  , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
+  , (as V.++ BR.WithYS ks V.++ catCols V.++ PCols p) ~ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
+  , (as V.++ BR.WithYS ks V.++ catCols V.++ PEWCols p) ~ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++ F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols V.++ PEWCols p)))
+  , (((ks V.++ catCols) V.++ '[BR.PopCountOf]) V.++ '[p]) ~ ((ks V.++ catCols) V.++ PCols p)
+  , Ord (F.Record ((ks V.++ catCols) V.++ '[BR.PopCountOf]))
+  , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) p
+  , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) BR.StateAbbreviation
+  , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) BR.Year
+  , ((ks V.++ catCols) V.++ '[BR.PopCountOf]) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
+  , FI.RecVec (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
+  , V.AllConstrained G.Grouping (F.UnColumn (ks V.++ catCols))
+  , (ks V.++ catCols) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
+  , (ks V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PEWCols p))
+  , (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
+  , (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ PEWCols p)
+  , V.RMap (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
+  , V.RMap (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
+  , V.RecApplicative (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
+  , G.Grouping (F.Record (ks V.++ catCols))
+  , FI.RecVec (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
+  , FI.RecVec (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
+  )
+  => F.Frame BR.StateTurnout
+  -> F.FrameRec (as V.++ (BR.WithYS ks) V.++ catCols V.++ (PCols p))
+  -> F.FrameRec (js V.++ catCols V.++ EWCols)
+  -> K.Sem effs (F.FrameRec (as V.++ (BR.WithYS ks) V.++ catCols V.++ (PEWCols p)))
+rollupAdjustAndJoin stateTurnout demos ews = do
+  let rolledUpDemos = FL.fold (rollupSumF @as @((BR.WithYS ks) V.++ catCols V.++ '[BR.PopCountOf]) @'[p]) demos
+  adjusted <- demographicsWithAdjTurnoutByState @catCols @p @ks @js @effs stateTurnout rolledUpDemos ews
+  return
+      $ F.toFrame
+      $ catMaybes
+      $ fmap F.recMaybe
+      $ F.leftJoin @(BR.WithYS ks V.++ catCols) demos adjusted
+
+{-
+acsDemographicsWithAdjCensusTurnoutByCD
+  :: forall catCols r. (KnitEffects r)
+  => K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
+  -> K.Sem r (F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
+  -> K.Sem r (F.Frame BR.StateTurnout)
+  -> K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]))
+cachedASEDemographicsWithAdjTurnoutByCD' demoA turnoutA stateTurnoutA =
+  BR.retrieveOrMakeFrame "turnout/aseDemoWithStateAdjTurnoutByCD.bin" $ do
+    demo         <- demoA
+    turnout      <- turnoutA
+    stateTurnout <- stateTurnoutA
+-}    
 
 cachedASEDemographicsWithAdjTurnoutByCD
   :: forall r 
@@ -172,7 +278,7 @@ cachedASEDemographicsWithAdjTurnoutByCD
                V.++
                BR.CatColsASE
                V.++
-               '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
+               '[BR.ACSCount, BR.VotedPctOfAll]
            )
        )
 cachedASEDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA =
@@ -224,7 +330,7 @@ cachedASRDemographicsWithAdjTurnoutByCD
                V.++
                BR.CatColsASR
                V.++
-               '[BR.ACSCount, BR.VotedPctOfAll, BR.VEP, BR.VotedPct]
+               '[BR.ACSCount, BR.VotedPctOfAll]
            )
        )
 cachedASRDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA =
