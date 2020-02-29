@@ -186,7 +186,7 @@ demographicsWithAdjTurnoutByState
 demographicsWithAdjTurnoutByState stateTurnout demos ews =
   adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout (joinDemoAndWeights @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p demos ews)
 
-
+-- This is monstrous
 rollupAdjustAndJoin
   :: forall as catCols p ks js effs
   .(K.KnitEffects effs
@@ -255,7 +255,9 @@ cachedASEDemographicsWithAdjTurnoutByCD' demoA turnoutA stateTurnoutA =
     demo         <- demoA
     turnout      <- turnoutA
     stateTurnout <- stateTurnoutA
--}    
+    let turnout' = fmap (addElectoralWeight BR.EW_Census BR.EW_All (F.rgetField 
+    result <- rollupAdjustAndJoin @BR.CongressionalDistrict @catCols @BR.ACSCount @[BR.Year, BR.StateFIPS, BR.StateName] @'[BR.Year] stateTurnout demo turnout' 
+-}
 
 cachedASEDemographicsWithAdjTurnoutByCD
   :: forall r 
