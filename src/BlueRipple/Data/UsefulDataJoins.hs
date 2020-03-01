@@ -243,21 +243,22 @@ rollupAdjustAndJoin stateTurnout demos ews = do
       $ fmap F.recMaybe
       $ F.leftJoin @(BR.WithYS ks V.++ catCols) demos adjusted
 
-{-
+
 acsDemographicsWithAdjCensusTurnoutByCD
-  :: forall catCols r. (KnitEffects r)
+  :: forall catCols r. (K.KnitEffects r)
   => K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
   -> K.Sem r (F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.Sem r (F.Frame BR.StateTurnout)
   -> K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]))
-cachedASEDemographicsWithAdjTurnoutByCD' demoA turnoutA stateTurnoutA =
+acsDemographicsWithAdjCensusTurnoutByCD demoA turnoutA stateTurnoutA =
   BR.retrieveOrMakeFrame "turnout/aseDemoWithStateAdjTurnoutByCD.bin" $ do
-    demo         <- demoA
+    demo         <- fmap F.rcast <$> demoA
     turnout      <- turnoutA
     stateTurnout <- stateTurnoutA
-    let turnout' = fmap (addElectoralWeight BR.EW_Census BR.EW_All (F.rgetField 
-    result <- rollupAdjustAndJoin @BR.CongressionalDistrict @catCols @BR.ACSCount @[BR.Year, BR.StateFIPS, BR.StateName] @'[BR.Year] stateTurnout demo turnout' 
--}
+    let turnout' = fmap (addElectoralWeight BR.EW_Census BR.EW_All (F.rgetField @BR.VotedPctOfAll)) turnout
+    result <- rollupAdjustAndJoin @'[BR.CongressionalDistrict] @catCols @BR.ACSCount @[BR.Year, BR.StateFIPS, BR.StateName] @'[BR.Year] stateTurnout demo turnout'
+    return $ F.toFrame $ fmap (F.rcast . FT.retypeColumn @BR.ElectoralWeight @BR.VotedPctOfAll) result
+
 
 cachedASEDemographicsWithAdjTurnoutByCD
   :: forall r 
