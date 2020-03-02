@@ -17,7 +17,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  -O0 #-}
 
 module BlueRipple.Data.UsefulDataJoins where
 
@@ -214,8 +214,6 @@ rollupAdjustAndJoin
   , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
   , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ EWCols))
   , (as V.++ BR.WithYS ks V.++ catCols V.++ PCols p) ~ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
---  , (as V.++ BR.WithYS ks V.++ catCols V.++ PEWCols p) ~ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++ F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols V.++ EWCols)))
---  , (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) V.++ F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols  
   , (((ks V.++ catCols) V.++ '[BR.PopCountOf]) V.++ '[p]) ~ ((ks V.++ catCols) V.++ PCols p)
   , Ord (F.Record ((ks V.++ catCols) V.++ '[BR.PopCountOf]))
   , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) p
@@ -225,15 +223,11 @@ rollupAdjustAndJoin
   , FI.RecVec (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ EWCols))
   , V.AllConstrained G.Grouping (F.UnColumn (ks V.++ catCols))
   , (ks V.++ catCols) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
---  , (ks V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PEWCols p))
   , (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ EWCols))
---  , (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ PEWCols p)
   , V.RMap (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
   , V.RMap (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ EWCols))
---  , V.RecApplicative (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
   , G.Grouping (F.Record (ks V.++ catCols))
   , FI.RecVec (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
---  , FI.RecVec (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ PEWCols p))
   , (ks V.++ catCols V.++ PCols p V.++ EWCols) ~ (ks V.++ catCols V.++ (PCols p V.++ EWCols))
   , (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p] V.++ EWCols)
     ~ ((as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p]) V.++ F.RDeleteAll (ks V.++ catCols) (ks V.++ catCols V.++ EWCols))
@@ -259,7 +253,9 @@ rollupAdjustAndJoin stateTurnout demos ews = do
       $ F.leftJoin @(BR.WithYS ks V.++ catCols) demos adjustedWithoutDemo
 
 type TurnoutCols = [BR.Population, BR.Citizen, BR.Registered, BR.Voted]
-
+type ACSColsCD = [BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
+type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
+-- THis is also monstrous.  Which is surprising??
 acsDemographicsWithAdjCensusTurnoutByCD
   :: forall catCols r
   . (K.KnitEffects r
@@ -285,26 +281,28 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , F.ElemOf (catCols V.++ PEWCols BR.ACSCount) BR.ACSCount
     , F.ElemOf (catCols V.++ PCols BR.ACSCount) BR.ACSCount
     , F.ElemOf (catCols V.++ PEWCols BR.ACSCount) BR.ElectoralWeight
-    , (catCols V.++ PEWCols BR.ACSCount) F.⊆ ([BR.Year, BR.StateAbbreviation,  BR.StateFIPS, BR.StateName] V.++ catCols V.++ PEWCols BR.ACSCount)
-    , (catCols V.++ '[BR.PopCountOf]) F.⊆ ([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PCols BR.ACSCount)
-    , (catCols V.++ PCols BR.ACSCount) F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PEWCols BR.ACSCount)
-    , (catCols V.++ PCols BR.ACSCount) F.⊆ ([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PEWCols BR.ACSCount)
-    , (catCols V.++ EWCols) F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PEWCols BR.ACSCount)
-    , catCols F.⊆ ([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PCols BR.ACSCount)
+    , (catCols V.++ PEWCols BR.ACSCount) F.⊆ (ACSCols V.++ catCols V.++ PEWCols BR.ACSCount)
+    , (catCols V.++ '[BR.PopCountOf]) F.⊆ (ACSColsCD V.++ catCols V.++ PCols BR.ACSCount)
+    , (catCols V.++ PCols BR.ACSCount) F.⊆ (ACSCols V.++ catCols V.++ PEWCols BR.ACSCount)
+    , (catCols V.++ PCols BR.ACSCount) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount)
+    , (catCols V.++ EWCols) F.⊆ (ACSCols V.++ catCols V.++ PEWCols BR.ACSCount)
+    , catCols F.⊆ (ACSColsCD V.++ catCols V.++ PCols BR.ACSCount)
     , catCols F.⊆ (BR.Year ': (catCols V.++ EWCols))
-    , catCols F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols)
-    , catCols F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ PCols BR.ACSCount)
-    , catCols F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ EWCols)
+    , catCols F.⊆ (ACSCols V.++ catCols)
+    , catCols F.⊆ (ACSCols V.++ catCols V.++ PCols BR.ACSCount)
+    , catCols F.⊆ (ACSCols V.++ catCols V.++ EWCols)
     , (F.RDeleteAll catCols (catCols V.++ EWCols))  F.⊆ (BR.Year ': (catCols V.++ EWCols))
-    , (F.RDeleteAll catCols (catCols V.++ EWCols))  F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ (catCols V.++ EWCols))
---    , (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]) F.⊆ 
+    , (F.RDeleteAll catCols (catCols V.++ EWCols))  F.⊆ (ACSCols V.++ (catCols V.++ EWCols))
+    , (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]) F.⊆ (ACSColsCD V.++ (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) V.++ '[BR.VotedPctOfAll])
+    , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount) 
     )
-  => K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
+  => T.Text
+  -> K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
   -> K.Sem r (F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.Sem r (F.Frame BR.StateTurnout)
   -> K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]))
-acsDemographicsWithAdjCensusTurnoutByCD demoA turnoutA stateTurnoutA =
-  BR.retrieveOrMakeFrame "turnout/aseDemoWithStateAdjTurnoutByCD.bin" $ do
+acsDemographicsWithAdjCensusTurnoutByCD cacheKey demoA turnoutA stateTurnoutA =
+  BR.retrieveOrMakeFrame cacheKey $ do
     demo         <- demoA
     turnout      <- turnoutA
     stateTurnout <- stateTurnoutA
@@ -340,33 +338,8 @@ cachedASEDemographicsWithAdjTurnoutByCD
                '[BR.ACSCount, BR.VotedPctOfAll]
            )
        )
-cachedASEDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA =
-  BR.retrieveOrMakeFrame "turnout/aseDemoWithStateAdjTurnoutByCD.bin" $ do
-    demo         <- demoA
-    turnout      <- turnoutA
-    stateTurnout <- stateTurnoutA
-    let
-      rollupCDF = FL.premap F.rcast $ rollupSumF @'[BR.CongressionalDistrict] @('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASE) @'[BR.ACSCount]
-      demoByState = FL.fold rollupCDF demo
-      votedPctOfAll r = realToFrac (F.rgetField @BR.Voted r)
-                        / realToFrac (F.rgetField @BR.Population r)
-      turnoutWithPct = fmap
-        (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPctOfAll)
-        turnout
-      demoWithUnAdjTurnoutByState =
-        catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ BR.CatColsASE)
-        demoByState
-        turnoutWithPct
-    demoWithAdjTurnoutByState <- FL.foldM
-      (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
-      demoWithUnAdjTurnoutByState
-    return
-      $ F.toFrame
-      $ fmap F.rcast
-      $ catMaybes
-      $ fmap F.recMaybe
-      $ F.leftJoin @('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASE) demo demoWithAdjTurnoutByState
-  
+cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin"
+
 cachedASRDemographicsWithAdjTurnoutByCD
   :: forall r
    . (K.KnitEffects r)
@@ -392,29 +365,4 @@ cachedASRDemographicsWithAdjTurnoutByCD
                '[BR.ACSCount, BR.VotedPctOfAll]
            )
        )
-cachedASRDemographicsWithAdjTurnoutByCD demoA turnoutA stateTurnoutA =
-  BR.retrieveOrMakeFrame  "turnout/asrDemoWithStateAdjTurnoutByCD.bin" $ do
-    demo         <- demoA
-    turnout      <- turnoutA
-    stateTurnout <- stateTurnoutA
-    let
-      rollupCDF = FL.premap F.rcast $ rollupSumF @'[BR.CongressionalDistrict] @('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR) @'[BR.ACSCount]
-      demoByState = FL.fold rollupCDF demo
-      votedPct r = realToFrac (F.rgetField @BR.Voted r)
-                   / realToFrac (F.rgetField @BR.Population r)
-      turnoutWithPct = fmap
-        (FT.mutate $ FT.recordSingleton @BR.VotedPctOfAll . votedPct)
-        turnout
-      demoWithUnAdjTurnoutByState =
-        catMaybes $ fmap F.recMaybe $ F.leftJoin @('[BR.Year] V.++ BR.CatColsASR)
-        demoByState
-        turnoutWithPct
-    demoWithAdjTurnoutByState <- FL.foldM
-      (BR.adjTurnoutFold @BR.ACSCount @BR.VotedPctOfAll stateTurnout)
-      demoWithUnAdjTurnoutByState
-    return
-      $ F.toFrame
-      $ fmap F.rcast
-      $ catMaybes
-      $ fmap F.recMaybe
-      $ F.leftJoin @('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR) demo demoWithAdjTurnoutByState
+cachedASRDemographicsWithAdjTurnoutByCD =  acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin"

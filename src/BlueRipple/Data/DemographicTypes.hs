@@ -60,6 +60,7 @@ data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord
 instance S.Serialize PopCountOfT
 instance Grouping PopCountOfT
 instance K.FiniteSet PopCountOfT
+type instance FI.VectorFor PopCountOfT = Vec.Vector
 
 type PopCountOf = "PopCountOf" F.:-> PopCountOfT
 instance FV.ToVLDataValue (F.ElField PopCountOf) where
