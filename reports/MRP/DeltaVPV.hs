@@ -347,14 +347,18 @@ simpleASEToCatKey BR.OldMaleCollegeGrad = catKey BR.Male BR.Grad BR.EqualOrOver
 simpleASEToCatKey BR.YoungMaleCollegeGrad = catKey BR.Male BR.Grad BR.Under
 
 
-predMap :: F.Record CatCols -> M.Map CCESPredictor Double
+--predMap :: F.Record CatCols -> M.Map (CCESSimplePredictor CatCols) Double
+--predMap r = M.fromList $ fmap (\p -> (p, ccesSimplePredictor r p)) allCCESSimplePredictors
+{-
 predMap r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
 --                       ,(P_Race, if F.rgetField @BR.NonWhite r == True then 0 else 1)
                        ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
                        ,(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1)
                        ]
-allCatKeys = [catKey s e a | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
-catPredMaps = M.fromList $ fmap (\k -> (k,predMap k)) allCatKeys
+
+allCatKeys = allCCESSimplePredictors --[catKey s e a | a <- [BR.EqualOrOver, BR.Under], e <- [BR.NonGrad, BR.Grad], s <- [BR.Female, BR.Male]]
+catPredMaps = M.fromList $ fmap (\k -> (unCCESSimplePredictor k, predMap (unCCESSimplePredictor k))) allCatKeys
+-}
 
 catKeyColHeader :: F.Record CatCols -> T.Text
 catKeyColHeader r =
@@ -366,8 +370,6 @@ catKeyColHeader r =
 type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
 type DistrictGeoId = "DistrictGeoId" F.:-> T.Text
-
-
 
 type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = BR.RecordColsProxy GroupCols 
@@ -394,13 +396,14 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                                      && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic]))
                               ((== ET.Democratic) . F.rgetField @HouseVoteParty)
                               (F.rgetField @CCESWeightCumulative)
-  let preds =  [GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+  let preds =  GLM.Intercept : fmap GLM.Predictor allCCESSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+      narrowCountFold = fmap (fmap (F.rcast @(LocationCols V.++ CatCols V.++ BR.CountCols)))
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader countDemPres2016VotesF preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds catPredMaps)
   predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (countDemHouseVotesF 2016) preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds catPredMaps)
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (countDemHouseVotesF 2018) preds catPredMaps)
+    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds catPredMaps)
 
   let vpv x = 2*x - 1
       lhToRecsM year office (LocationHolder _ lkM predMap) =

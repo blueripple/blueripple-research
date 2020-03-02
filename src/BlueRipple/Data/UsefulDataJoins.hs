@@ -255,7 +255,8 @@ rollupAdjustAndJoin stateTurnout demos ews = do
 type TurnoutCols = [BR.Population, BR.Citizen, BR.Registered, BR.Voted]
 type ACSColsCD = [BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
 type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
--- THis is also monstrous.  Which is surprising??
+
+-- This is also monstrous.  Which is surprising??
 acsDemographicsWithAdjCensusTurnoutByCD
   :: forall catCols r
   . (K.KnitEffects r

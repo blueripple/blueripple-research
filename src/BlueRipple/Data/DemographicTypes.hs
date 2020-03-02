@@ -84,9 +84,6 @@ catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
 allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
 
-
-
-
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize Sex
 type instance FI.VectorFor Sex = Vec.Vector

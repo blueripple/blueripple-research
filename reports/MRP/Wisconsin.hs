@@ -118,6 +118,7 @@ text1 :: T.Text
 text1 = [i|
 |]
 
+{-
 --type LocationCols = '[BR.StateAbbreviation]
 type CatColsASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 catKeyASER :: BR.SimpleAge -> BR.Sex -> BR.CollegeGrad -> BR.SimpleRace -> F.Record CatColsASER
@@ -161,7 +162,8 @@ catPredMap pmF acks = M.fromList $ fmap (\k -> (k, pmF k)) acks
 catPredMapASER = catPredMap predMapASER allCatKeysASER
 catPredMapASE = catPredMap predMapASE allCatKeysASE
 catPredMapASR = catPredMap predMapASR allCatKeysASR
-
+-}
+  
 foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
@@ -181,15 +183,15 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
-  let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
-      predictorsASE = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education]
-      predictorsASR = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Race]
+  let predictorsASER = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
+      predictorsASE =  GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
+      predictorsASR = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMaps) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMaps) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMaps) 
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
@@ -199,10 +201,10 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   K.logLE K.Info "Joining turnout by CD and prefs"
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
-                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
       asrTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
-                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
+                           $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) demographicsAndTurnoutASR inferredPrefsASR
       labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
@@ -255,11 +257,11 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   plotEmAll 2018 ET.House 0.35
   let aseDemoF = FMR.concatFold $ FMR.mapReduceFold
               (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+              (FMR.assignKeysAndData @BR.CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
               (FMR.foldAndAddKey foldPrefAndTurnoutData)
   let asrDemoF = FMR.concatFold $ FMR.mapReduceFold
               (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+              (FMR.assignKeysAndData @BR.CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
               (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrSums = FL.fold asrDemoF asrTurnoutAndPrefs
       aseSums = FL.fold aseDemoF aseTurnoutAndPrefs

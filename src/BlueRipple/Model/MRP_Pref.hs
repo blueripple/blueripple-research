@@ -33,9 +33,6 @@ import           Data.Maybe                     ( isJust
                                                 , catMaybes
                                                 , fromMaybe
                                                 )
---import           Data.Proxy                     ( Proxy(..) )
---import  Data.Ord (Compare)
-
 import qualified Data.Text                     as T
 import qualified Data.Profunctor               as P
 import qualified Data.Serialize                as SE
@@ -251,6 +248,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
               in  1 / sqrt (designEffect mw vw)
             )
             counted -- VS.replicate (VS.length vCounts) 1.0
+            
           fixedEffects = GLM.FixedEffects $ IS.fromList fixedEffectList
           groups       = IS.fromList [RecordColsProxy]
           (observations, fixedEffectsModelMatrix, rcM) = FL.fold
@@ -261,13 +259,18 @@ inferMR cf fixedEffectList getFixedEffect rows =
                           (recordToGroupKey @(GroupCols ls cs))
             )
             counted
-          regressionModelSpec = GLM.RegressionModelSpec
-            fixedEffects
-            fixedEffectsModelMatrix
-            observations
+        K.logLE K.Diagnostic $ "vCounts=" <> (T.pack $ show vCounts)
+        K.logLE K.Diagnostic $ "vWeights=" <> (T.pack $ show vWeights)
+--        K.logLE K.Diagnostic $ "mX=" <> (T.pack $ show fixedEffectsModelMatrix)
+--        K.logLE K.Diagnostic $ "vY=" <> (T.pack $ show observations)
+        let regressionModelSpec = GLM.RegressionModelSpec
+              fixedEffects
+              fixedEffectsModelMatrix
+              observations
         rowClassifier <- case rcM of
           Left  msg -> K.knitError msg
           Right x   -> return x
+--        K.logLE K.Diagnostic $ "rc=" <> (T.pack $ show rowClassifier)          
         let effectsByGroup =
               M.fromList [(RecordColsProxy, IS.fromList [GLM.Intercept])]
         fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
@@ -288,11 +291,12 @@ inferMR cf fixedEffectList getFixedEffect rows =
         randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix
                                               fitSpecByGroup
                                               rowClassifier
+--        K.logLE K.Diagnostic $ "smZ=" <> (T.pack $ show randomEffectsModelMatrix) 
         let randomEffectCalc = GLM.RandomEffectCalculated
               randomEffectsModelMatrix
               (GLM.makeLambda fitSpecByGroup)
             th0         = GLM.setCovarianceVector fitSpecByGroup 1 0
-            mdVerbosity = MDVNone
+            mdVerbosity = MDVSimple
         GLM.checkProblem mixedModel randomEffectCalc
         K.logLE K.Info "Fitting data..."
         ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance

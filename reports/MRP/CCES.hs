@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -33,6 +34,7 @@ import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
 import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.Keyed as Keyed
 
 import           MRP.CCESFrame
 
@@ -44,9 +46,11 @@ import qualified Data.Array                    as A
 import qualified Data.Serialize                as S
 import qualified Data.Serialize.Text           as S
 import qualified Data.List                     as L
+import qualified Data.IntMap                   as IM
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe)
+import           Data.Maybe                     ( fromMaybe, fromJust)
 import           Data.Proxy                     ( Proxy(..) )
+import qualified Data.Set as Set
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import           Text.Read                      (readMaybe)
@@ -93,7 +97,7 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
-ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP_Raw @CCES_MRP
+ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @(F.RecordColumns CCES) @CCES_MRP
                  (BR.LocalData $ T.pack ccesCSV)
                  Nothing
                  (const True)
@@ -492,6 +496,51 @@ ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad th
 ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
 
+    
+-- we newtype this so we can derive instances for all the things
+newtype  CCESSimplePredictor ps = CCESSimplePredictor { unCCESSimplePredictor :: F.Record ps }
+
+instance (Show (F.Record ps)) => Show (CCESSimplePredictor ps) where
+  show (CCESSimplePredictor x) = "CCESSimplePredictor " ++ (show x)
+  
+instance (Eq (F.Record ps)) => Eq (CCESSimplePredictor ps) where
+  (CCESSimplePredictor x) == (CCESSimplePredictor y) = x == y
+  
+instance (Ord (F.Record ps)) => Ord (CCESSimplePredictor ps) where
+  compare (CCESSimplePredictor x) (CCESSimplePredictor y) = compare x y
+
+instance (Ord (F.Record ps), Keyed.FiniteSet (F.Record ps)) => Enum (CCESSimplePredictor ps) where
+  toEnum n =
+    let im = IM.fromList $ zip [0..] $ fmap CCESSimplePredictor $ Set.toAscList Keyed.elements
+    in fromJust $ IM.lookup n im
+  fromEnum a =
+    let m = M.fromList $ zip (fmap CCESSimplePredictor $ Set.toAscList Keyed.elements) [0..]
+    in fromJust $ M.lookup a m
+
+instance (Keyed.FiniteSet (F.Record ps)) => Bounded (CCESSimplePredictor ps) where
+  minBound = head $ fmap CCESSimplePredictor $ Set.toList $ Keyed.elements
+  maxBound = last $ fmap CCESSimplePredictor $ Set.toList $ Keyed.elements
+
+
+allCCESSimplePredictors :: Keyed.FiniteSet (F.Record ps) => [CCESSimplePredictor ps]
+allCCESSimplePredictors = fmap CCESSimplePredictor $ Set.toList Keyed.elements 
+
+type CCESSimpleEffect ps = GLM.WithIntercept (CCESSimplePredictor ps)
+
+ccesSimplePredictor :: forall ps rs. (ps F.⊆ rs
+                                     , Eq (F.Record ps)
+                                     )
+                    => F.Record rs -> CCESSimplePredictor ps -> Double
+ccesSimplePredictor r p = if (F.rcast @ps r == unCCESSimplePredictor p) then 1 else 0
+
+predMap :: forall cs. (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
+  => F.Record cs -> M.Map (CCESSimplePredictor cs) Double
+predMap r =  M.fromList $ fmap (\p -> (p, ccesSimplePredictor r p)) allCCESSimplePredictors
+
+catPredMaps :: forall cs.  (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
+  => M.Map (F.Record cs) (M.Map (CCESSimplePredictor cs) Double)
+catPredMaps = M.fromList $ fmap (\k -> (unCCESSimplePredictor k,predMap (unCCESSimplePredictor k))) allCCESSimplePredictors  
+
 data  LocationHolder c f a =  LocationHolder { locName :: T.Text
                                              , locKey :: Maybe (F.Rec f LocationCols)
                                              , catData :: M.Map (F.Rec f c) a
@@ -527,30 +576,42 @@ locKeyPretty r =
   let stateAbbr = F.rgetField @StateAbbreviation r
   in stateAbbr
 
-type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
+--type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 predictionsByLocation ::
-  forall cc r. (cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
-               , Show (F.Record cc)
-               , V.RMap cc
-               , V.ReifyConstraint Show V.ElField cc
-               , V.RecordToList cc
-               , Ord (F.Record cc)
+  forall ps r. ( V.RMap ps
+               , V.ReifyConstraint Show V.ElField ps
+               , V.RecordToList ps
+               , Ord (F.Record ps)
+               , Ord (CCESSimplePredictor ps)               
+               , FI.RecVec (ps V.++ BR.CountCols)
+               , F.ElemOf (ps V.++ BR.CountCols) BR.Count
+               , F.ElemOf (ps V.++ BR.CountCols) BR.MeanWeight
+               , F.ElemOf (ps V.++ BR.CountCols) BR.UnweightedSuccesses
+               , F.ElemOf (ps V.++ BR.CountCols) BR.VarWeight
+               , F.ElemOf (ps V.++ BR.CountCols) BR.WeightedSuccesses
+               , Keyed.FiniteSet (F.Record ps)
+               , Show (F.Record (LocationCols V.++ ps V.++ BR.CountCols))
+               , Show (F.Record ps)
+               , Enum (CCESSimplePredictor ps)
+               , Bounded (CCESSimplePredictor ps)
+               , (ps V.++ BR.CountCols) F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
+               , ps F.⊆ (ps V.++ BR.CountCols)
+               , ps F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
                , K.KnitEffects r
-             )
+               )
   => K.Sem r (F.FrameRec CCES_MRP)
-  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ASER V.++ BR.CountCols))  
-  -> [GLM.WithIntercept CCESPredictor]
-  -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
-  -> K.Sem r [LocationHolder cc V.ElField Double]
-predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ do
+  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))  
+  -> [CCESSimpleEffect ps]
+  -> M.Map (F.Record ps) (M.Map (CCESSimplePredictor ps) Double)
+  -> K.Sem r [LocationHolder ps V.ElField Double]
+predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
+  K.logLE K.Diagnostic "Starting (getting CCES data)"
   ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-  (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @cc @[BR.SimpleAgeC
-                                                             ,BR.SexC
-                                                             ,BR.CollegeGradC
-                                                             ,BR.SimpleRaceC]
+  K.logLE K.Diagnostic ("Inferring")
+  (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @ps @ps
                                                              countFold
                                                              predictors                                                     
-                                                             ccesPredictor
+                                                             ccesSimplePredictor
                                                              ccesFrame
   
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
@@ -562,7 +623,7 @@ predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapErr
               let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
                   emptyAsNationalGKM = case groupKeyM of
                                          Nothing -> Nothing
-                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ cc))
+                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ ps))
               in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
         cpreds <- M.traverseWithKey predictFrom cpms
         return $ LocationHolder n lkM cpreds

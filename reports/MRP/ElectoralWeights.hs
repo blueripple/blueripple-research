@@ -178,8 +178,8 @@ our [MRP model][BR:MRP] based on the [CCES][CCES].  Here are the weights we'll e
 [Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
 |]
   
-
-predMapASER :: F.Record BR.CatColsASER -> M.Map CCESPredictor Double
+{-
+predMapASER :: F.Record BR.CatColsASER -> M.Map (CCESSimplePredictor BR.CatColsASER) Double
 predMapASER r = M.fromList [(P_Sex, if F.rgetField @BR.SexC r == BR.Female then 0 else 1)
                        ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
                        ,(P_Education, if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1)
@@ -205,12 +205,15 @@ predMapASR r = M.fromList [(P_Age, if F.rgetField @BR.SimpleAgeC r == BR.EqualOr
                           ,(P_Race, if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1)
                           ]
 
+-}
 
+{-  
 catPredMap pmF acks = M.fromList $ fmap (\k -> (k, pmF k)) acks
 catPredMapASER = catPredMap predMapASER BR.allCatKeysASER
 catPredMapASE = catPredMap predMapASE BR.allCatKeysASE
 catPredMapASR = catPredMap predMapASR BR.allCatKeysASR
-
+-}
+  
 foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
@@ -239,15 +242,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   asrACS <- BR.simpleASRDemographicsLoader 
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
-  let predictorsASER = [GLM.Intercept, GLM.Predictor P_Sex , GLM.Predictor P_Age, GLM.Predictor P_Education, GLM.Predictor P_Race]
-      predictorsASE = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Education]
-      predictorsASR = [GLM.Intercept, GLM.Predictor P_Age , GLM.Predictor P_Sex, GLM.Predictor P_Race]
+  let predictorsASER = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
+      predictorsASE =  GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
+      predictorsASR = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
   inferredPrefsASER <-  BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMapASER) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMaps) 
   inferredPrefsASE <-  BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMapASE) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMaps) 
   inferredPrefsASR <-  BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMapASR) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMaps) 
 
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
