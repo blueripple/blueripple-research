@@ -15,8 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
-
+{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  -fconstraint-solver-iterations=0 #-}
 module MRP.TurnoutGaps where
 
 import qualified Control.Foldl                 as FL
@@ -47,6 +46,7 @@ import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
+import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
@@ -480,7 +480,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
       predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
       predictorsASR =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
-      predictorsA =  fmap GLM.Predictor (allCCESSimplePredictors @'[BR.SimpleAgeC])  
   inferredPrefsASER <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
   inferredPrefsASE <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
@@ -818,6 +817,102 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         return ()  
         
     
+turnoutComparison
+  :: forall pop wgt pref loc catCols r
+  . (K.KnitEffects r
+    , V.KnownField pop
+    , V.Snd pop ~ Int
+    , V.KnownField wgt
+    , V.Snd wgt ~ Double
+    , V.KnownField pref
+    , V.Snd pref ~ Double
+    , (catCols V.++ [pop, wgt]) ~ ((catCols V.++ '[pop]) V.++ '[wgt])
+    , ((loc V.++ catCols) V.++ '[wgt]) F.⊆ (BR.Year ': ((loc V.++ catCols) V.++ [pop, wgt]))
+    , FI.RecVec ((loc V.++ catCols) V.++ [pop, wgt])
+    , (((loc V.++ catCols) V.++ '[pop]) V.++ '[wgt]) ~ ((loc V.++ catCols) V.++ '[pop,wgt])
+    , ((loc V.++ catCols) V.++ '[pop]) F.⊆ (BR.Year ': (loc V.++ catCols) V.++ [pop, wgt])
+    , (catCols V.++ '[pref]) F.⊆ ((BR.Year ': (ET.Office ': (BR.StateAbbreviation ':  (catCols V.++ '[pref])))))
+    , FI.RecVec (catCols V.++ '[pref])
+    , Ord (F.Record catCols)
+    , F.ElemOf (loc V.++ catCols) BR.StateAbbreviation
+    , F.ElemOf (loc V.++ catCols V.++ [pop, wgt]) BR.StateAbbreviation
+    , F.ElemOf (loc V.++ catCols V.++ [pop, wgt]) pop
+    , F.ElemOf (loc V.++ catCols V.++ [pop, wgt]) wgt
+    , catCols F.⊆ ((loc V.++ catCols) V.++ '[pop, wgt])
+    , FI.RecVec ((catCols V.++ '[pop]) V.++ '[wgt])
+    , F.ElemOf (catCols V.++ [pop, wgt, pref]) pref
+    , F.ElemOf (catCols V.++ [pop, wgt, pref]) pop
+    , F.ElemOf (catCols V.++ [pop, wgt, pref]) wgt
+    , (catCols V.++ [pop, wgt, pref]) F.⊆ ([BR.Year, BR.StateAbbreviation] V.++ catCols V.++ [pop,wgt,pref])
+    , Show (F.Record (loc V.++ catCols))
+    , F.ElemOf ((loc V.++ catCols) V.++ '[wgt]) wgt
+    , Ord (F.Record (loc V.++ catCols))
+    , (loc V.++ catCols) F.⊆ ((loc V.++ catCols) V.++ '[wgt])
+    , (loc V.++ catCols) F.⊆ ((loc V.++ catCols) V.++ '[pop])
+    , (catCols V.++ [pop, wgt, pref]) F.⊆ (BR.StateAbbreviation ': ((catCols V.++ [pop, wgt, pref])))
+    , V.RMap catCols
+    , V.ReifyConstraint Show F.ElField catCols
+    , V.RecordToList catCols
+    )
+  => Int
+  -> Int
+  -> [Int]
+  -> F.FrameRec ('[BR.Year] V.++ loc V.++ catCols V.++ '[pop, wgt])
+  -> F.FrameRec ([BR.Year, ET.Office, BR.StateAbbreviation] V.++ catCols V.++ '[pref])
+  -> K.Sem r (F.FrameRec [BR.Year, BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
+turnoutComparison yPrefs yPop years popWgtFrame prefFrame = do
+  let isYear y r = (F.rgetField @BR.Year r == y)
+      isYearPres :: Int -> F.Record ([BR.Year, ET.Office, BR.StateAbbreviation] V.++ catCols V.++ '[pref]) -> Bool
+      isYearPres y r = (F.rgetField @BR.Year r == y) && (F.rgetField @ET.Office r == ET.President)
+  
+      turnoutByCD y = fmap (F.rcast @(loc V.++ catCols V.++ '[wgt]))
+                      $ F.filterFrame (isYear y) popWgtFrame
+      popByCD y = fmap (F.rcast @(loc V.++ catCols V.++ '[pop]))
+                  $ F.filterFrame (isYear y)  popWgtFrame
+      prefsByState y =  fmap (F.rcast @('[BR.StateAbbreviation] V.++ catCols V.++ '[pref]))
+                        $ F.filterFrame (isYearPres y) prefFrame
+      turnoutAndPopToStateF :: FL.Fold (F.Record (loc V.++ catCols V.++ [pop, wgt]))
+                               (F.FrameRec ('[BR.StateAbbreviation] V.++ catCols V.++ [pop, wgt]))
+      turnoutAndPopToStateF = FMR.concatFold $ FMR.mapReduceFold
+                              FMR.noUnpack
+                              (FMR.assignKeysAndData @('[BR.StateAbbreviation] V.++ catCols) @[pop,wgt])
+                              (FMR.foldAndAddKey
+                                (FF.sequenceRecFold
+                                  $ FF.toFoldRecord @pop (FL.premap (F.rgetField @pop) FL.sum)
+                                  V.:& FF.toFoldRecord @wgt (BR.weightedSumRecF @pop @wgt)
+                                  V.:& V.RNil)
+                              )
+      turnoutF = FF.sequenceRecFold 
+                 $ FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @pref) $ BR.weightedSumRecF @pop @wgt)
+                 V.:& FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @pref) $ FL.premap (F.rgetField @pop) FL.sum)
+                 V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @pref) $ BR.weightedSumRecF @pop @wgt)
+                 V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @pref) $ FL.premap (F.rgetField @pop) FL.sum)
+                 V.:& V.RNil
+                 
+      comparisonF :: FL.Fold (F.Record ('[BR.Year, BR.StateAbbreviation] V.++ catCols V.++ [pop, wgt, pref]))
+                     (F.FrameRec [BR.Year, BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
+      comparisonF = FMR.concatFold $ FMR.mapReduceFold
+                    FMR.noUnpack
+                    (FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation])
+                    (FMR.foldAndAddKey turnoutF)
+      knitAppend t = either (\kr -> K.knitError $ "Missing key in " <> t <> ": " <> (T.pack $ show kr)) return 
+      compared y = do        
+        popAndWgtByCD <- knitAppend "turnout" $ FJ.appendFromKeyed @(loc V.++ catCols) @'[wgt] (turnoutByCD y) (popByCD yPop)
+        let turnoutAndPopByState = FL.fold turnoutAndPopToStateF popAndWgtByCD
+{-                               (catMaybes
+                                 $ fmap F.recMaybe
+                                 $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ catCols) (popByCD yPop) (turnoutByCD y)) -}
+        allJoined <- fmap ((FT.recordSingleton @BR.Year y `V.rappend`))
+                     <$> (knitAppend "turnoutAndPop" $ FJ.appendFromKeyed @('[BR.StateAbbreviation] V.++ catCols) @[pop, wgt] turnoutAndPopByState (prefsByState yPrefs))
+        return $ FL.fold (FL.premap F.rcast comparisonF) allJoined
+{-                       $ catMaybes
+                       $ fmap F.recMaybe
+                       $ F.leftJoin @('[BR.StateAbbreviation] V.++ catCols) (prefsByState yPrefs) (turnoutAndPopByState y) -}
+     
+  
+  mconcat <$> traverse compared years
+  
+
 
 cdText1 :: T.Text
 cdText1 = [i|

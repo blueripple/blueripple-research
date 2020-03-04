@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 
@@ -47,10 +47,10 @@ source-repository-package
   location: https://github.com/blueripple/data-sets
   tag: c02f339dfddcdbc6a9745705f0249202bce0ea2a
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 8020304966550ec5b2a4bc525417e5bf8b21248d
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 8020304966550ec5b2a4bc525417e5bf8b21248d
 
 source-repository-package
   type: git
