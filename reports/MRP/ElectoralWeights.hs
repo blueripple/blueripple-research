@@ -243,9 +243,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   asrACS <- BR.simpleASRDemographicsLoader 
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
-  let predictorsASER = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
-      predictorsASE =  GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
-      predictorsASR = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
+  let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
+      predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
+      predictorsASR = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
   inferredPrefsASER <-  BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMaps) 
   inferredPrefsASE <-  BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
