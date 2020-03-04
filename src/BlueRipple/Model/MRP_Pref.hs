@@ -259,8 +259,8 @@ inferMR cf fixedEffectList getFixedEffect rows =
                           (recordToGroupKey @(GroupCols ls cs))
             )
             counted
-        K.logLE K.Diagnostic $ "vCounts=" <> (T.pack $ show vCounts)
-        K.logLE K.Diagnostic $ "vWeights=" <> (T.pack $ show vWeights)
+--        K.logLE K.Diagnostic $ "vCounts=" <> (T.pack $ show vCounts)
+--        K.logLE K.Diagnostic $ "vWeights=" <> (T.pack $ show vWeights)
 --        K.logLE K.Diagnostic $ "mX=" <> (T.pack $ show fixedEffectsModelMatrix)
 --        K.logLE K.Diagnostic $ "vY=" <> (T.pack $ show observations)
         let regressionModelSpec = GLM.RegressionModelSpec
@@ -296,7 +296,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
               randomEffectsModelMatrix
               (GLM.makeLambda fitSpecByGroup)
             th0         = GLM.setCovarianceVector fitSpecByGroup 1 0
-            mdVerbosity = MDVSimple
+            mdVerbosity = MDVNone
         GLM.checkProblem mixedModel randomEffectCalc
         K.logLE K.Info "Fitting data..."
         ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance
@@ -312,9 +312,9 @@ inferMR cf fixedEffectList getFixedEffect rows =
         let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU
         K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
         epg <- GLM.effectParametersByGroup @g @b rowClassifier effectsByGroup vb
-        K.logLE K.Diagnostic
-          $  "EffectParametersByGroup: "
-          <> (T.pack $ show epg)
+--        K.logLE K.Diagnostic
+--          $  "EffectParametersByGroup: "
+--          <> (T.pack $ show epg)
         gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th
         K.logLE K.Diagnostic
           $  "EffectCovariancesByGroup: "

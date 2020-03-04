@@ -1,24 +1,25 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE PolyKinds            #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE QuasiQuotes          #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -O0  -freduction-depth=0            #-}
+{-# OPTIONS_GHC -O0               #-}
 module BlueRipple.Data.ACS_PUMS where
 
 
@@ -86,24 +87,42 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 
-pumsRowsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS_Typed)
-pumsRowsLoader = do
-  let aPath = T.pack $ BR.pums1YrCSV 2018 "usa"
-      bPath = T.pack $ BR.pums1YrCSV 2018 "usb"
+type FullRowC fullRow = (V.RMap fullRow
+                        , F.ReadRec fullRow
+                        , FI.RecVec fullRow
+                        , F.ElemOf fullRow BR.PUMSAGEP
+                        , F.ElemOf fullRow BR.PUMSCIT
+                        , F.ElemOf fullRow BR.PUMSHISP
+                        , F.ElemOf fullRow BR.PUMSPWGTP
+                        , F.ElemOf fullRow BR.PUMSRAC1P
+                        , F.ElemOf fullRow BR.PUMSSCHG
+                        , F.ElemOf fullRow BR.PUMSSCHL
+                        , F.ElemOf fullRow BR.PUMSSEX
+                        , F.ElemOf fullRow BR.PUMSST
+                        )
+
+pumsRowsLoader
+  :: forall (fullRow :: [(Symbol, Type)]) r
+  . (K.KnitEffects r
+    , FullRowC fullRow
+    ) => Int -> K.Sem r (F.FrameRec PUMS_Typed)
+pumsRowsLoader y = do
+  let aPath = T.pack $ BR.pums1YrCSV y "usa"
+      bPath = T.pack $ BR.pums1YrCSV y "usb"
   K.logLE K.Diagnostic $ "Loading 2018 PUMS data from " <> aPath  
-  aFrame <- BR.maybeFrameLoader @PUMS_Raw @(F.RecordColumns BR.PUMS_Full) @PUMS_Typed
+  aFrame <- BR.maybeFrameLoader @PUMS_Raw @fullRow @PUMS_Typed
             (BR.LocalData aPath)
             Nothing
             (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
             fixPUMSRow
-            transformPUMSRow
+            (transformPUMSRow y)
   K.logLE K.Diagnostic $ "Loading 2018 PUMS data from " <> aPath  
-  bFrame <- BR.maybeFrameLoader @PUMS_Raw @(F.RecordColumns BR.PUMS_Full) @PUMS_Typed
+  bFrame <- BR.maybeFrameLoader @PUMS_Raw @fullRow @PUMS_Typed
             (BR.LocalData bPath)
             Nothing
             (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
             fixPUMSRow
-            transformPUMSRow
+            (transformPUMSRow y)
   return (aFrame <> bFrame)
 
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
@@ -124,11 +143,16 @@ pumsCountF = FMR.concatFold $ FMR.mapReduceFold
              (FMR.foldAndAddKey citizensFold)
   
 
-pumsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
-pumsLoader =
+pumsLoader
+  :: forall (fullRow :: [(Symbol, Type)]) r
+  . (K.KnitEffects r
+    , FullRowC fullRow
+    )
+  => Int -> K.Sem r (F.FrameRec PUMS)
+pumsLoader y =
   let action = do
         K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
-        pumsFrame <- FL.fold pumsCountF <$> pumsRowsLoader
+        pumsFrame <- FL.fold pumsCountF <$> (pumsRowsLoader @fullRow) y
         let defaultCount :: F.Record [Citizens, NonCitizens]
             defaultCount = 0 F.&: 0 F.&: V.RNil
 --            addDefF :: FL.Fold (F.Record PUMS_Counted) (F.FrameRec PUMS_Counted)
@@ -152,7 +176,22 @@ pumsLoader =
           $ catMaybes
           $ fmap F.recMaybe
           $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame    
-  in BR.retrieveOrMakeFrame "data/pums2018.bin" action
+  in BR.retrieveOrMakeFrame ("data/pums" <> (T.pack $ show y) <> ".bin") action
+
+pumsLoader2018 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader2018 = pumsLoader @(F.RecordColumns BR.PUMS_2018) 2018
+
+pumsLoader2016 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader2016 = pumsLoader @(F.RecordColumns BR.PUMS_2016) 2016
+
+pumsLoader2014 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader2014 = pumsLoader @(F.RecordColumns BR.PUMS_2014) 2014
+
+pumsLoader2012 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader2012 = pumsLoader @(F.RecordColumns BR.PUMS_2012) 2012
+
+pumsLoader2010 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader2010 = pumsLoader @(F.RecordColumns BR.PUMS_2010) 2010
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
@@ -294,8 +333,8 @@ fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
   missingInCollegeTo0 = FM.fromMaybeMono 0
 
 -- fmap over Frame after load and throwing out bad rows
-transformPUMSRow :: F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow r = F.rcast @PUMS_Typed (mutate r) where
+transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
+transformPUMSRow y r = F.rcast @PUMS_Typed (mutate r) where
 --  addState = FT.recordSingleton @BR.StateFIPS . F.rgetField @PUMSST
   addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCIT
   addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPWGTP
@@ -306,7 +345,7 @@ transformPUMSRow r = F.rcast @PUMS_Typed (mutate r) where
   hN = F.rgetField @BR.PUMSHISP
   rN = F.rgetField @BR.PUMSRAC1P
   addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
-  addYear = const $ FT.recordSingleton @BR.Year 2018
+  addYear = const $ FT.recordSingleton @BR.Year y
   mutate = FT.retypeColumn @BR.PUMSST @BR.StateFIPS
            . FT.mutate addYear
            . FT.mutate addCitizen

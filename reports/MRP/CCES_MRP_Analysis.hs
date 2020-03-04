@@ -132,8 +132,18 @@ import qualified BlueRipple.Data.Keyed         as BR
 
 import qualified Visualizations.StatePrefs     as BR
 
+countDemHouseVotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    )
+  => Int
+  -> FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
 countDemHouseVotesF y =
-  BR.weightedCountFold @ByCCESPredictors @CCES_MRP
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
     @'[HouseVoteParty, CCESWeightCumulative]
     (\r ->
       (F.rgetField @BR.Year r == y)
@@ -142,8 +152,18 @@ countDemHouseVotesF y =
     ((== ET.Democratic) . F.rgetField @HouseVoteParty)
     (F.rgetField @CCESWeightCumulative)
 
+
+countDemPres2008VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
 countDemPres2008VotesF =
-  BR.weightedCountFold @ByCCESPredictors @CCES_MRP
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
     @'[Pres2008VoteParty, CCESWeightCumulative]
     (\r ->
       (F.rgetField @BR.Year r == 2008)
@@ -154,8 +174,17 @@ countDemPres2008VotesF =
     ((== ET.Democratic) . F.rgetField @Pres2008VoteParty)
     (F.rgetField @CCESWeightCumulative)
 
+countDemPres2012VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
 countDemPres2012VotesF =
-  BR.weightedCountFold @ByCCESPredictors @CCES_MRP
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
     @'[Pres2012VoteParty, CCESWeightCumulative]
     (\r ->
       (F.rgetField @BR.Year r == 2012)
@@ -166,8 +195,17 @@ countDemPres2012VotesF =
     ((== ET.Democratic) . F.rgetField @Pres2012VoteParty)
     (F.rgetField @CCESWeightCumulative)
 
+countDemPres2016VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
 countDemPres2016VotesF =
-  BR.weightedCountFold @ByCCESPredictors @CCES_MRP
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
     @'[Pres2016VoteParty, CCESWeightCumulative]
     (\r ->
       (F.rgetField @BR.Year r == 2016)
@@ -209,6 +247,7 @@ mrpPrefs
      , V.RMap cc
      , V.ReifyConstraint Show V.ElField cc
      , V.RecordToList cc
+     , cc F.⊆ CCES_MRP
      , Ord (F.Record cc)
      )
   => Maybe T.Text
@@ -240,55 +279,68 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
         in  g lkM
       lhsToFrame y o = F.toFrame . concat . fmap (lhToRecs y o)
   K.logLE K.Info "Doing ASER MR..."
-  let cacheIt cn fa = case cacheTmpDirM of
-        Nothing -> fa
-        Just tmpDir -> K.retrieveOrMakeTransformed
+  let cacheIt cn fa = 
+        case cacheTmpDirM of
+          Nothing -> fa
+          Just tmpDir -> K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
                          fa
-      narrowFold = fmap (fmap F.rcast)
-  predsByLocationPres2008 <- cacheIt
-    "pres2008"
-    (   lhsToFrame 2008 ET.President
-    <$> (predictionsByLocation ccesDataAction
-                               (narrowFold countDemPres2008VotesF)
-                               predictor
-                               catPredMap
-        )
-    )
-  predsByLocationPres2012 <- cacheIt
-    "pres2012"
-    (   lhsToFrame 2012 ET.President
-    <$> (predictionsByLocation ccesDataAction
-                               (narrowFold countDemPres2012VotesF)
-                               predictor
-                               catPredMap
-        )
-    )
-  predsByLocationPres2016 <- cacheIt
-    "pres2016"
-    (   lhsToFrame 2016 ET.President
-    <$> (predictionsByLocation ccesDataAction
-                               (narrowFold countDemPres2016VotesF)
-                               predictor
-                               catPredMap
-        )
-    )
-  predsByLocationHouse <- traverse
-    (\y -> cacheIt
-      ("house" <> T.pack (show y))
-      (   lhsToFrame y ET.House
-      <$> (predictionsByLocation ccesDataAction
-                                 (narrowFold $ countDemHouseVotesF y)
-                                 predictor
-                                 catPredMap
-          )
-      )
-    )
-    [2008, 2010, 2012, 2014, 2016, 2018]
-  return
+  let p2008 = cacheIt
+              "pres2008"
+              (   lhsToFrame 2008 ET.President
+                <$> (predictionsByLocation ccesDataAction
+                      (countDemPres2008VotesF @cc)
+                      predictor
+                      catPredMap
+                    )
+              )
+      p2012 = cacheIt
+              "pres2012"
+              (   lhsToFrame 2012 ET.President
+                <$> (predictionsByLocation ccesDataAction
+                      (countDemPres2012VotesF @cc)
+                      predictor
+                      catPredMap
+                    )
+              )
+      p2016 = cacheIt
+              "pres2016"
+              (   lhsToFrame 2016 ET.President
+                <$> (predictionsByLocation ccesDataAction
+                      (countDemPres2016VotesF @cc)
+                      predictor
+                      catPredMap
+                    )
+              )
+      pHouse = fmap
+               (\y -> cacheIt
+                 ("house" <> T.pack (show y))
+                 (   lhsToFrame y ET.House
+                   <$> (predictionsByLocation ccesDataAction
+                         (countDemHouseVotesF @cc y)
+                         predictor
+                         catPredMap
+                       )
+                 )
+                )
+                [2008, 2010, 2012, 2014, 2016, 2018]
+      allActions = [p2008, p2012, p2016] ++ pHouse
+{-      
+  allResults <- sequence allActions
+  return $ mconcat allResults
+-}
+      
+  allResultsM <- sequence <$> K.sequenceConcurrently allActions
+  case allResultsM of
+    Nothing -> K.knitError "Error in MR run (mrpPrefs)."
+    Just allResults -> return $ mconcat allResults
+
+{-
+return
     $  predsByLocationPres2008
     <> predsByLocationPres2012
     <> predsByLocationPres2016
     <> mconcat predsByLocationHouse
+-}

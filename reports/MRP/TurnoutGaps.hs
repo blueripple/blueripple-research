@@ -477,11 +477,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   asrTurnout <- BR.simpleASRTurnoutLoader 
 --  logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
-  let predictorsASER = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
-      predictorsASE =  GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
-      predictorsASR = GLM.Intercept : fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
---  inferredPrefsASER <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
---                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
+  let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
+      predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
+      predictorsASR =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
+      predictorsA =  fmap GLM.Predictor (allCCESSimplePredictors @'[BR.SimpleAgeC])  
+  inferredPrefsASER <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
   inferredPrefsASE <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE (catPredMaps @BR.CatColsASE)) 
   inferredPrefsASR <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
