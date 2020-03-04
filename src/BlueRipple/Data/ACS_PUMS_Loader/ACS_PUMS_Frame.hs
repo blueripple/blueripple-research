@@ -16,13 +16,14 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module BlueRipple.Data.ACS_PUMS_Frame
-  ( module BlueRipple.Data.ACS_PUMS_Path
-  , module BlueRipple.Data.ACS_PUMS_Frame
+module BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame
+  ( module BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
+  , module BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame
   )
 where
 
-import           BlueRipple.Data.ACS_PUMS_Path
+import           BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
+
 import qualified Knit.Report                   as K
 
 import qualified Control.Foldl                 as FL

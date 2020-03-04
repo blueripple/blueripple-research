@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module BlueRipple.Data.ACS_PUMS_Path where
+module BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path where
 
 import qualified Frames.TH                     as F
 import qualified Data.Text as T

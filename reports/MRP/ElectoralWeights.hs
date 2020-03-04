@@ -98,6 +98,7 @@ import qualified Data.Time.Format              as Time
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ACS_PUMS as BR
+import qualified BlueRipple.Data.ACS_PUMS_Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR

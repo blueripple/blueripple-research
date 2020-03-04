@@ -23,7 +23,7 @@
 module BlueRipple.Data.ACS_PUMS where
 
 
-import qualified BlueRipple.Data.ACS_PUMS_Frame as BR
+import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -178,6 +178,7 @@ pumsLoader y =
           $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame    
   in BR.retrieveOrMakeFrame ("data/pums" <> (T.pack $ show y) <> ".bin") action
 
+{-
 pumsLoader2018 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
 pumsLoader2018 = pumsLoader @(F.RecordColumns BR.PUMS_2018) 2018
 
@@ -192,6 +193,7 @@ pumsLoader2012 = pumsLoader @(F.RecordColumns BR.PUMS_2012) 2012
 
 pumsLoader2010 :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
 pumsLoader2010 = pumsLoader @(F.RecordColumns BR.PUMS_2010) 2010
+-}
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum

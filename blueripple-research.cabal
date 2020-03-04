@@ -63,9 +63,15 @@ library
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.Loaders
-                 , BlueRipple.Data.ACS_PUMS_Path
-                 , BlueRipple.Data.ACS_PUMS_Frame
-                 , BlueRipple.Data.ACS_PUMS                 
+                 , BlueRipple.Data.ACS_PUMS
+                 , BlueRipple.Data.ACS_PUMS_Loaders
+                 , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
+                 , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2010
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2012
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2014
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2016
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2018
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
