@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  -fconstraint-solver-iterations=0 #-}
+{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 module MRP.TurnoutGaps where
 
 import qualified Control.Foldl                 as FL
@@ -96,6 +96,8 @@ import qualified Data.Time.Format              as Time
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.ACS_PUMS_Loaders as PUMS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.HouseElectionTotals as BR
@@ -160,21 +162,20 @@ states.  Just shrinking the gaps slightly is enough in many of the battleground 
 
 We've split the electorate in to 8 groups: age (45 or over/under 45), sex (F/M),
 and race (non-white, white non-Hispanic).
-We compute turnout as a percentage of the *voting-age-population* (VAP) rather than 
+We compute turnout as a percentage of the *voting-age-citizens* (VAC) rather than 
 *voting-eligible-population* (VEP) because we don't have a source for
 VEP split by demographic groups.
-Using VAP lowers all of our turnout rates, especially in
-AZ, FL and TX where there are large numbers of immigrants who are voting age but not citizens and
-thus not eligible to vote. As a demographic group, those voters tend to
-vote for Democrats so using VAP also has the effect of
-showing a higher turnout gap than actually exists among eligible voters. 
+Using VAC lowers all of our turnout rates--there are ineligible citizens so it makes
+the denominator larger. Also, we are using *national* turnout rates because it's difficult to
+get state-level turnout data broken down demographically.  This means that individual states
+may have had very different stories than what this table indicates.  Here, we just want
+to give a general picture of how the demographics and broad turnout trends impact each
+battleground state.
 
-We should not read this table as meaning that, for example, in AZ in 2016, 24% fewer Democrats
+We should not read this table as meaning that, for example, in AZ in 2016, 15% fewer Democrats
 showed up at the polls. Instead, the table says that in 2016,
 turnout among people most likely (by age, sex, and race) to vote for Democrats
-was 24% lower than it was among the folks most likely to vote Republican.
-
-
+was 15% lower than it was among the folks most likely to vote Republican.
 
 [BR:BlueWave]: <${brGithubUrl (PrefModel.postPath PrefModel.PostAcrossTime)}>
 [FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
@@ -267,12 +268,14 @@ required to flip each battleground state. The math is straightforward but messy 
 details [here][BR:BoostNotes].
 
 In the table below we summarize the results.  With just a glance, it's apparent that efforts
-to improve Dem turnout would be particularly valuable in FL, MI, PA, and WI.  Those are states
-where less than a 6% increase in Dem turnout could flip the state.  In MI, boosting turnout
-among *all* voters just 3.5% would also likely flip the state.  It's remarkable that in most
-of these states, boosting turnout among all voters could flip them.  This is a result of the
-fact that in Republican leaning voters are usually less Republican leaning than Democratic
-leaning voters are Democratic leaning.
+to improve Dem turnout would be particularly valuable in FL, MI, and PA.  Those are states
+where less than a 6% increase in Dem turnout could flip the state.  WI is close to that group,
+requiring a bit more than a 6% boost in D turnout to flip.  It's remarkable that in a few
+of these states, most notably MI, boosting turnout among *all* voters could flip them.
+Those states were close and in them Republican leaning voters are significantly less Republican
+leaning than Democratic leaning voters are Democratic leaning. NB: There are some "N/A"s in the
+column indicating what % we would need to boost *all* turnout to flip the state.  In these cases
+that number is too high to be remotely realistic, verging on 100% turnout.
 
 In our [previous post][BR:TurnoutHowHigh] we examined some history and scholarship about
 turnout, concluding that 5% boosts in turnout were plausible, given high levels of
@@ -282,12 +285,12 @@ work, or donate to groups doing that work, these are the best places to start.
 
 One last point: these
 states are very different sizes, so the number of "extra" voters needed to increase
-Dem turnout by, e.g.,  1% can vary greatly.  But the larger states are also larger electoral
-prizes---they have more electoral votes.  That is, it's much more work to boost turnout 4.4%
-among Dems in FL than to boost it 5.5% in WI, but FL is worth almost 3 times as many electoral votes.
+Dem turnout by, e.g., 1% can vary greatly.  But the larger states are also larger electoral
+prizes---they have more electoral votes.  That is, it's much more work to boost turnout 5.4%
+among Dems in FL than to boost it 6.1% in WI, but FL is worth almost 3 times as many electoral votes.
 So the difference in work may be worth it.  It's a little more complicated than that
 because each state has a different proportion and intensity of Dem leaners.
-The bottom line: in terms of bang-for-buck, the best bets for GOTV work are MI, WI, PA and then FL.
+The bottom line: in terms of bang-for-buck, the best bets for GOTV work are MI, PA, WI and then FL.
 
 
 [BR:Home]: <https://blueripplepolitics.org>
@@ -302,8 +305,8 @@ text3 = [i|
 
 ## Key Takeaways
 * Demographic turnout gaps are large, which means there's room for GOTV work to generate Democratic votes.
-* Of the battlegrounds, broad-based GOTV efforts in MI are likely to flip the state blue,
-and increasing turnout within Dem-leaning groups will likely close the gap in WI and PA and maybe FL.
+* Of the battlegrounds, GOTV efforts in MI are likely to flip the state blue,
+and increasing turnout within Dem-leaning groups could help close the gap in PA, FL and maybe WI.
 * GA and TX could turn into battleground states if we significantly boost turnout among Dem-leaning groups.
 
 ## Take Action
@@ -326,7 +329,7 @@ money or volunteer in the states where they are active.
 vote is crucial in many of the states which are flippable in the 2020 election and plays a crucial
 role in many a close house district.  
 
-## Update {#Update}
+## Update 1 (2/22/2020) {#Update}
 G. Elliot Morris (@gelliotmorris) and others [point out][GEMTweet] that we should not interpret these results as
 indicating a path to victory in these states.  We agree!  We should've been more clear:  we don't think
 only Dems will attempt to raise turnout. Nor do we think that GOTV efforts can successfully target only
@@ -349,11 +352,37 @@ shifts in turnout in these states over the past few presidential elections?
 - How much of a difference does GOTV work make in that distribution?
 
 A very partial answer to the first question is contained in the table at the beginning of this post.
-It shows the approximate Dem leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
-The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA is over 3%.
+It shows the approximate D leaning vs. R leaning turnout in each battleground state in 2012 and 2016.
+The shifts in the D/R gap between 2012 and 2016 vary but several are over 2% and GA, NC and TX
+are almost 5%.
 So 3% net swings in favor of Dems are not impossible, election to election.
 That is not to say that we know how to *produce* those shifts, but that such shifts are not implausible.
 We'll try to look a bit further back to get a better sense of those numbers over more elections.
+
+## Update 2 (3/5/2019) {#Update2}
+In the past couple of weeks, in preparation for deep dives into down-ballot elections,
+we've been steadily working on our modeling pipeline.  We have a few improvements in the
+works but a couple came on line this week so we're updating this post with newer numbers.
+
+- We've switched from using the census ACS summary data to analyzing the micro-data
+directly.  The ACS summaries include more data, about 2.5% of the population, but
+have less information.  In particular, they did not include citizenship information
+and that is clearly important for figuring out questions of turnout.  Census ACS
+micro-data includes fewer people (about 1% of the population) and is
+less geographically specific, but for state-level work it is more than enough
+and we are thinking about how to adapt it for congressional-district-level
+work as well.  The upshot here is that we can now look at turnout as a fraction
+of voting-age-citizens rather than voting age population and that shifts the turnout
+numbers and gaps significantly.  It does not change the conclusions much, but
+the table which opens this piece has much more accurate numbers now, though the
+gaps it depicts are still large.
+
+- We've made the MRP model more robust by using more discrete demographic groups
+in the "fixed effects" portion of the model.  This is mostly in preparation for
+looking at the electorate with some finer-grained groupings, but the work also
+refined our voter preference estimates--without changing much--for the Age,
+Sex and Race groupings we used here.
+
 
 [GEMTweet]: <https://twitter.com/gelliottmorris/status/1230877174493786114>
 [VL]: <https://votolatino.org/>
@@ -411,12 +440,12 @@ catPredMapASE = catPredMap predMapASE allCatKeysASE
 catPredMapASR = catPredMap predMapASR allCatKeysASR
 -}
   
-foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
-                          $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @DemVPV)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
+                          $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @DemVPV)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @BR.DemPref)
                           V.:& V.RNil
 
 type BoostA = "boostA" F.:-> Double
@@ -425,14 +454,14 @@ type BoostPop = "boostPop" F.:-> Int
 type ToFlip = "ToFlip" F.:-> Double
 
 foldPrefAndTurnoutDataBoost :: (Double -> Bool)
-                            -> FL.Fold (F.Record [BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
-                            (F.Record [BR.ACSCount, BR.VotedPctOfAll, BoostA, BoostB, BoostPop])
+                            -> FL.Fold (F.Record [PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+                            (F.Record [PUMS.Citizens, ET.ElectoralWeight, BoostA, BoostB, BoostPop])
 foldPrefAndTurnoutDataBoost prefTest =
   let t r = prefTest $ F.rgetField @BR.DemPref r
-      dVotesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.DemPref r * F.rgetField @BR.VotedPctOfAll r) FL.sum
-      votesF = FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r) FL.sum 
-      popF = FL.prefilter t $ FL.premap (F.rgetField @BR.ACSCount) FL.sum
-      aNF = FL.prefilter t $ FL.premap (\r -> realToFrac (F.rgetField @BR.ACSCount r) * realToFrac (F.rgetField @BR.DemPref r)) FL.sum
+      dVotesF = FL.premap (\r -> realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @BR.DemPref r * F.rgetField @ET.ElectoralWeight r) FL.sum
+      votesF = FL.premap (\r -> realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @ET.ElectoralWeight r) FL.sum 
+      popF = FL.prefilter t $ FL.premap (F.rgetField @PUMS.Citizens) FL.sum
+      aNF = FL.prefilter t $ FL.premap (\r -> realToFrac (F.rgetField @PUMS.Citizens r) * realToFrac (F.rgetField @BR.DemPref r)) FL.sum
       aDF = dVotesF
       aF = (/) <$> aNF <*> aDF
       bNF = popF
@@ -441,8 +470,8 @@ foldPrefAndTurnoutDataBoost prefTest =
       prefF = (/) <$> dVotesF <*> votesF
 --      toFlipF = (\p a b -> let d = (0.5 - p)/p in d/(a - (1.0 + d)*b)) <$> prefF <*> aF <*> bF
     in FF.sequenceRecFold 
-       $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
-       V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
+       $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+       V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
        V.:& FF.toFoldRecord aF
        V.:& FF.toFoldRecord bF
        V.:& FF.toFoldRecord bNF
@@ -459,20 +488,33 @@ votesToVoteShareF =
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
-
+turnoutF :: (F.ElemOf rs PUMS.Citizens
+            , F.ElemOf rs ET.ElectoralWeight
+            , F.ElemOf rs BR.DemPref
+            )
+         => FL.Fold (F.Record rs) (F.Record ['("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
+turnoutF = FF.sequenceRecFold 
+           $ FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
+           V.:& FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+           V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
+           V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+           V.:& V.RNil
+  
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   let --states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
     states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
     statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
     stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
-  stateTurnoutRaw <- BR.stateTurnoutLoader 
+  stateTurnoutRaw <- BR.stateTurnoutLoader
+
   aseACS <- BR.simpleASEDemographicsLoader 
   asrACS <- BR.simpleASRDemographicsLoader 
   let acsASRByStateF = FMR.concatFold $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR) @'[BR.ACSCount])
-                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)  
+                       (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR) @'[PUMS.Citizens])
+                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader 
 --  logFrame aseTurnout
@@ -480,65 +522,59 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
       predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
       predictorsASR =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
-  inferredPrefsASER <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
+  inferredPrefsASER <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
-  inferredPrefsASE <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
+  inferredPrefsASE <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE (catPredMaps @BR.CatColsASE)) 
-  inferredPrefsASR <-  stateAndNation <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
+  inferredPrefsASR <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (catPredMaps @BR.CatColsASR)) 
-
+  -- demographics
+  pumsDemographics <- PUMS.pumsLoadAll
+  let pumsASR = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen) $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASR) pumsDemographics
+      pumsASE = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen) $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASE True) pumsDemographics
+      addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
+                         => F.Record rs
+                         -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
+      addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+      ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
+      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
+  asrDemoAndAdjEW <- BR.demographicsWithAdjTurnoutByState
+                  @BR.CatColsASR
+                  @PUMS.Citizens
+                  @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+                  @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASR) (fmap F.rcast ewASR)
+  aseDemoAndAdjEW <- BR.demographicsWithAdjTurnoutByState
+                  @BR.CatColsASE
+                  @PUMS.Citizens
+                  @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+                  @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASE) (fmap F.rcast ewASE)                  
   -- get adjusted turnouts (national rates, adj by state) for each CD
   demographicsAndTurnoutASE <- statesOnly <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
   demographicsAndTurnoutASR <- statesOnly <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
+  
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
+  let isYear y r =  (F.rgetField @BR.Year r == y)
+      isYearPres y r = isYear y r && (F.rgetField @ET.Office r == ET.President)
   let asrTurnoutComparison yPrefs yPop years =
-        let isYear y r = (F.rgetField @BR.Year r == y)
-            isYearPres y r = isYear y r && (F.rgetField @ET.Office r == ET.President)
-
-            turnoutByCD y = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ '[BR.VotedPctOfAll]))
-                               $ F.filterFrame (isYear y)  demographicsAndTurnoutASR
-            popByCD y = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
-                           $ F.filterFrame (isYear y)  demographicsAndTurnoutASR
-            prefsByState y =  fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[BR.DemPref]))
-                              $ F.filterFrame (isYearPres y) inferredPrefsASR
-            turnoutAndPopToStateF :: FL.Fold (F.Record ([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
-                                             (F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
-            turnoutAndPopToStateF = FMR.concatFold $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.splitOnKeys @('[BR.StateAbbreviation] V.++ BR.CatColsASR))
-                                    (FMR.foldAndAddKey
-                                      (FF.sequenceRecFold
-                                      $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
-                                      V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                                      V.:& V.RNil)
-                                    )
-            turnoutAndPopByState y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll]))
-                                     $ FL.fold turnoutAndPopToStateF
-                                     (catMaybes
-                                       $ fmap F.recMaybe
-                                       $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR) (popByCD yPop) (turnoutByCD y))
-            allJoined y =  fmap ((FT.recordSingleton @BR.Year y `V.rappend`) . F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
-                           $ catMaybes
-                           $ fmap F.recMaybe
-                           $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASR) (prefsByState yPrefs) (turnoutAndPopByState y) 
-            turnoutF = FF.sequenceRecFold 
-                          $ FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                          V.:& FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @BR.ACSCount) FL.sum)
-                          V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                          V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @BR.ACSCount) FL.sum)
-                          V.:& V.RNil
-            comparisonF :: FL.Fold (F.Record ('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [BR.ACSCount, BR.VotedPctOfAll, BR.DemPref]))
+        -- get right years, then drop the column from pop and prefs since we are using ew year with 2018 demo and 2016 prefs           
+        let ewByCD y = F.filterFrame (isYear y) asrDemoAndAdjEW
+            popByCD y = fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYear y) asrDemoAndAdjEW
+            prefsByState y =  fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYearPres y) inferredPrefsASR
+            -- prefs first here, because the rest are not filtered by State so we'd be missing keys
+            allJoinedM y =  BR.leftJoinM3 @('[BR.StateAbbreviation] V.++ BR.CatColsASR) (prefsByState yPrefs) (ewByCD y) (popByCD yPop) 
+            comparisonF :: FL.Fold (F.Record ('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [PUMS.Citizens, ET.ElectoralWeight, BR.DemPref]))
                            (F.FrameRec [BR.Year, BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
             comparisonF = FMR.concatFold $ FMR.mapReduceFold
                           FMR.noUnpack
                           (FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation])
                           (FMR.foldAndAddKey turnoutF)
-            allRows = mconcat $ fmap ( FL.fold (FL.premap F.rcast comparisonF) .  allJoined) years
-        in allRows
+            allRowsM = mconcat <$> traverse ( fmap (FL.fold (FL.premap F.rcast comparisonF)) .  allJoinedM) years
+        in allRowsM
 
   
   let turnoutTableYears = [2012, 2016]
-      turnoutGaps = asrTurnoutComparison 2016 2018 turnoutTableYears
+  turnoutGaps <- K.knitMaybe "key missing in asrTurnoutComparison" $ asrTurnoutComparison 2016 2018 turnoutTableYears
+  logFrame turnoutGaps
 --  logFrame turnoutGaps
   let turnoutGapsForTable = FL.fold (FMR.mapReduceFold
                             FMR.noUnpack
@@ -588,6 +624,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
 --  logFrame houseVoteShareFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
+  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)  
+  aseAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASE and aseDemoAndAdjEW"
+                   $ BR.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) (F.filterFrame justPres2016 $ inferredPrefsASE) aseDemoAndAdjEW
+  asrAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASR and asrDemoAndAdjEW" $
+                   BR.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) (F.filterFrame justPres2016 $ inferredPrefsASR) asrDemoAndAdjEW
+{-                   
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
                            $ F.leftJoin @([BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) demographicsAndTurnoutASE inferredPrefsASE
@@ -607,23 +649,24 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                  (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrByState = FL.fold asrDemoF asrTurnoutAndPrefs
       aseByState = FL.fold aseDemoF aseTurnoutAndPrefs
-      labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
+-}
+  let labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
                                          $ BR.postStratifyCell @BR.DemPref
-                                         (realToFrac . F.rgetField @BR.ACSCount)
+                                         (realToFrac . F.rgetField @PUMS.Citizens)
                                          (realToFrac . F.rgetField @BR.DemPref))
                           <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
                                          $ BR.postStratifyCell @BR.DemPref
-                                         (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
+                                         (\r -> realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @ET.ElectoralWeight r)
                                          (realToFrac . F.rgetField @BR.DemPref))
       psVPVByStateF =  BR.postStratifyF
                           @[BR.Year, ET.Office, BR.StateAbbreviation]
-                          @[BR.DemPref, BR.ACSCount, BR.VotedPctOfAll]
+                          @[BR.DemPref, PUMS.Citizens, ET.ElectoralWeight]
                           @[ET.PrefType, BR.DemPref]
                           psCellVPVByBothF
-      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseByState
-      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrByState
+      vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseAllByState
+      vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrAllByState
   let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
       -- assemble set with updated demographics
       toFlip r =
@@ -635,10 +678,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 
       toFlipASRByState x =
         let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.President
-            asrPrefTurnout2016 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [BR.VotedPctOfAll, DemVPV, BR.DemPref]))
-                                 $ F.filterFrame (filter 2016) asrByState
-            asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
-                          $ FL.fold acsASRByStateF $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) asrACS
+            asrPrefTurnout2016 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [ET.ElectoralWeight, DemVPV, BR.DemPref]))
+                                 $ F.filterFrame (filter 2016) asrAllByState
+            asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[PUMS.Citizens]))
+                          $ FL.fold acsASRByStateF $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) pumsASR
             asrUpdatedDemo = catMaybes
                              $ fmap F.recMaybe
                              $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASR) asrPrefTurnout2016 asrDemo2018
@@ -658,7 +701,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         in fmap (FT.mutate toFlip) asrUpdated
       toFlipAll = F.toFrame $ fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
                                     . FT.retypeColumn @BoostPop @'("BoostPopAll",Int)
-                                    . F.rcast @[BR.StateAbbreviation, BR.ACSCount, BR.VotedPctOfAll, BR.DemPref, BoostPop, ToFlip]) $  toFlipASRByState 0.0
+                                    . F.rcast @[BR.StateAbbreviation, PUMS.Citizens, ET.ElectoralWeight, BR.DemPref, BoostPop, ToFlip]) $  toFlipASRByState 0.0
       toFlipDems = F.toFrame $ fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
                                       . FT.retypeColumn @BoostPop @'("BoostPopDems",Int)
                                       . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASRByState 0.5
@@ -673,14 +716,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --  logFrame toFlipWithEV
   let boostColonnade cas =
         let toFlipDM r = let x = F.rgetField @'("ToFlipDems",Double) r in if x > 0 then Just x else Nothing
-            toFlipAllM r = let x = F.rgetField @'("ToFlipAll",Double) r in if x > 0 then Just x else Nothing
+            toFlipAllM r = let x = F.rgetField @'("ToFlipAll",Double) r in if x > 0 && x < 1 then Just x else Nothing
             evs = F.rgetField @BR.Electors
-            pop  = F.rgetField @BR.ACSCount 
+            pop  = F.rgetField @PUMS.Citizens 
             bPop = F.rgetField @'("BoostPopDems",Int)
             votersPerEvM r = fmap (\x -> (round (x * realToFrac (bPop r) / realToFrac (evs r))):: Int) (toFlipDM r)
         in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
            <> C.headed "Electoral Votes" (BR.toCell cas "Electoral Votes" "EVs" (BR.numberToStyledHtml "%d". evs))
-           <> C.headed "Population (000s)" (BR.toCell cas "Population" "Pop" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (pop r)/1000)) :: Int)))
+           <> C.headed "Voting Age Citizens (000s)" (BR.toCell cas "Voting Age Citizens" "Cit" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (pop r)/1000)) :: Int)))
            <> C.headed "Dem Leaners (000s)" (BR.toCell cas "Leaners" "Leaners" (BR.numberToStyledHtml "%d". (\r -> (round (realToFrac (bPop r)/1000)) :: Int)))
            <> C.headed "Boosting All Requires (%)" (BR.toCell cas "BoostAll" "% Of All" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipAllM))
            <> C.headed "Boosting Dems Requires (%)" (BR.toCell cas "BoostDem" "% Of Dems" (BR.maybeNumberToStyledHtml "%2.2f" . fmap (*100) . toFlipDM))
@@ -736,10 +779,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     ]
       ))
       $ brAddMarkDown turnoutBoostExplainerMD
-        
+{-        
   let toFlipASRHouse t =
         let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.House
-            asrPrefTurnout2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ [BR.VotedPctOfAll, DemVPV, BR.DemPref]))
+            asrPrefTurnout2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ [ET.ElectoralWeight, DemVPV, BR.DemPref]))
                                  $ F.filterFrame (filter 2018) $ F.toFrame $ asrTurnoutAndPrefs
             asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
                           $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) asrACS
@@ -790,6 +833,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                       $ fmap F.recMaybe
                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
 -}
+
   let pubDateTurnoutGapsCD =  Time.fromGregorian 2020 3 1  
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGapsCD) <> "main" )
@@ -815,8 +859,220 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
           (FV.ViewConfig 800 400 10)
           $ (fmap F.rcast demDefend)
         return ()  
+-}
+
+
+cdText1 :: T.Text
+cdText1 = [i|
+|]
+
+
+vlFlip :: (Functor f, Foldable f)
+       => T.Text
+       -> Bool -- true for demFlip, false for demDefend
+       -> FV.ViewConfig
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, BR.DemPref, ToFlip])
+       -> GV.VegaLite
+vlFlip title demFlip vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      makeVS = GV.calculateAs (if demFlip then "50 - 100 * datum.DemPref" else "100 * datum.DemPref - 50") "Vote Share"
+      makeFP = GV.calculateAs "100 * datum.ToFlip" "To Flip"
+      xLabel = if demFlip then "D Lost By (%)" else "D Won By %"
+      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PTitle xLabel]
+      encY = GV.position GV.Y [GV.PName "To Flip", GV.PmType GV.Quantitative, GV.PTitle "% Turnout Differential to Flip"]
+      transform = GV.transform . makeVS . makeFP
+      encoding = GV.encoding . encX . encY
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY) [], transform [], GV.mark GV.Point [GV.MTooltip GV.TTData]]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec], dat]
+  
+vlTurnoutGap :: (Functor f, Foldable f)
+             => T.Text -- title
+             -> FV.ViewConfig
+             -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, BR.DemPref])
+             -> GV.VegaLite
+vlTurnoutGap title vc rows =
+  let mapPrefs p = case p of
+        ET.PSByVAP -> "Voted in Equal Proportion"
+        ET.VoteShare -> "Actual 2016 Vote"
+        _ -> "N/A"
+      dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @ET.PrefType @'("Vote Share Type",T.Text) mapPrefs rows)
+--      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
+      makeYVal = GV.calculateAs "datum.state_abbreviation" "State"
+      makeRuleVal = GV.calculateAs "50" "Evenly Split"
+      makeVS = GV.calculateAs "100 * datum.DemPref" "Vote Share"
+      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [45, 55]], GV.PTitle "2 Party Vote Share (%)"]
+      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [45, 55]], GV.PNoTitle]
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal]
+      encColor = GV.color [GV.MName "Vote Share Type", GV.MmType GV.Nominal, GV.MNoTitle]
+      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
+      encoding = GV.encoding . encDetail . encX . encY
+      transform = GV.transform . makeYVal . makeVS
+      config = FV.viewConfigAsHvega vc
+      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
+      dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
+      ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []]      
+  in
+    FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec, ruleSpec], dat]
+
+
+
+
+turnoutBoostExplainerMD :: T.Text
+turnoutBoostExplainerMD = [here|
+Let's label our groups by $g$, with turnout $T_g$, population $N_g$ and
+Dem preference $P_g$. If the votes cast for dems are $V_D$ out of the total votes $V$,
+then post-stratified preference is
+
+$\begin{equation}
+P = \frac{V_D}{V}=\frac{\sum_g T_g N_g P_g}{\sum_g T_g N_g}
+\end{equation}$
+
+splitting into dem leaners (denoted by $g\in D$) and others ($g \in R$):
+
+$\begin{equation}
+P = \frac{\sum_{g\in D} T_g N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} T_g N_g + \sum_{g \in R} T_g N_g}
+\end{equation}$
+
+Suppose we boost turnout in Dem leaning groups by x (so for a 1% boost, x would be 0.01):
+
+$\begin{equation}
+P(x) = \frac{\sum_{g\in D} (T_g + x) N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} (T_g + x) N_g + \sum_{g \in R} T_g N_g}
+=\frac{x\sum_{g \in D}N_g P_g + V_D}{x\sum_{g \in D} N_g + V}
+=\frac{V_D}{V}\frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V} = P \frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V}
+\end{equation}$
+
+Usually, we're curious about what $x$ we need for a certain $P(x)$.  For example, $P(x)=0.5$ is the level required to "flip" a state.  So let's
+call the $P(x)$ we're hoping for $P_h$ and write $P_h =P\times(1 + \delta)$ or $\delta = \frac{P_h - P}{P}$.
+Also, just to simplify things, we'll define $a = \sum_{g \in D}N_g P_g/V_D$ and $b =  \sum_{g \in D} N_g/V$.  So we have
+
+$\begin{equation}
+P\times(1 + \delta) = P \frac {1 + ax}{1 + bx}
+\end{equation}$
+
+which we can solve for $x$:
+
+$\begin{equation}
+x = \frac{\delta}{a - (1+\delta)b}
+\end{equation}$
+
+We can understand this formula a bit. We need a boost that is proportional to $\delta$, the gap we need to make up.
+Making up ground is easier when Dem preference is high in the groups we are boosting ($a - b$, more or less).
+
+Let's look at a simple example. Imagine 800 voters in group A with 50% voter turnout and leaning 75/25 toward Dems
+and 1000 voters in group B with 60% voter turnout and leaning 65/35 toward Republicans.
+A Democrat would get 280 votes from the Dem leaners and 210 votes from
+the R leaners, for a total of 490.
+The Republican would get 120 votes from the Dem leaners and 390 from the R leaners, for a total of 510. So
+$P_0=\frac{V_D}{V} = \frac{490}{1000} = 0.49$
+
+How much do we need to boost turnout in group A to flip the state, that is to get P_h = 0.5?
+Plugging the numbers above into the equation for $P(x)$ ($\delta = 0.02$; $a = 560/510 = 1.1$; $b = 800/1000 = 0.8$),
+we get $x = 0.11 = 11\%$. That is, we'd need to boost turnout in group A by 11%, from 50% to 61%.
+|]
+
+
+{-    
+turnoutComparison
+  :: forall pop wgt pref loc catCols r
+  . (K.KnitEffects r
+    , V.KnownField pop
+    , V.Snd pop ~ Int
+    , V.KnownField wgt
+    , V.Snd wgt ~ Double
+    , V.KnownField pref
+    , V.Snd pref ~ Double
+    , ((catCols V.++ '[BR.StateAbbreviation]) V.++ [pop, wgt, pref]) ~ ((catCols V.++ '[BR.StateAbbreviation] V.++ '[pop, wgt]) V.++ '[pref])
+    , ((catCols V.++ loc) V.++ [pop, wgt]) ~ ((catCols V.++ loc V.++ '[pop]) V.++ '[wgt])
+    , F.ElemOf (catCols V.++ '[BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref]) BR.Year
+    , F.ElemOf (catCols V.++ '[BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref]) ET.Office
+    , (catCols V.++ loc V.++ '[wgt]) F.⊆ (catCols V.++ loc V.++ [BR.Year, pop, wgt])
+    , FI.RecVec (catCols V.++ loc V.++ [BR.Year, pop, wgt])
+    , F.ElemOf (catCols V.++ loc V.++ '[BR.Year, pop, wgt]) BR.Year
+    , (catCols V.++ loc V.++ '[pop]) F.⊆ (catCols V.++ loc V.++ [BR.Year, pop, wgt])
+    , (catCols V.++ '[BR.StateAbbreviation] V.++ '[pref]) F.⊆ (catCols V.++ '[BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref])
+    , FI.RecVec (catCols V.++ [BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref])
+    , Ord (F.Record ((catCols V.++ '[BR.StateAbbreviation])))
+    , F.ElemOf (catCols V.++ loc V.++ [pop, wgt]) pop
+    , F.ElemOf (catCols V.++ loc V.++ [pop, wgt]) wgt
+    , (catCols V.++ '[BR.StateAbbreviation]) F.⊆  (catCols V.++ loc V.++ [pop, wgt])
+    , FI.RecVec (catCols V.++ '[BR.StateAbbreviation] V.++ [pop, wgt])
+    , F.ElemOf [wgt, pref] pref
+    , F.ElemOf ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pop, wgt] V.++ '[pref]) pop
+    , F.ElemOf ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pop, wgt] V.++ '[pref]) wgt
+    , F.ElemOf ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pop, wgt] V.++ '[pref]) pref
+    , F.ElemOf ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pop, wgt] V.++ '[pref]) BR.StateAbbreviation
+    , V.RMap (catCols V.++ loc)
+    , V.ReifyConstraint Show F.ElField (catCols V.++ loc)
+    , V.RecordToList (catCols V.++ loc)
+    , Ord (F.Record (catCols V.++ loc))
+    , F.ElemOf ((catCols V.++ loc) V.++ '[wgt]) wgt
+    , FI.RecVec ((((catCols V.++ loc) V.++ '[pop]) V.++ '[wgt]))
+    , (catCols V.++ loc) F.⊆ (catCols V.++ loc V.++ '[wgt])
+    , (catCols V.++ loc) F.⊆ (catCols V.++ loc V.++ '[pop])
+    , V.RMap (catCols V.++ '[BR.StateAbbreviation])
+    , V.ReifyConstraint Show F.ElField (catCols V.++ '[BR.StateAbbreviation])
+    , V.RecordToList (catCols V.++ '[BR.StateAbbreviation])
+    , F.ElemOf (catCols V.++ '[BR.StateAbbreviation] V.++ '[pref]) pref
+    , FI.RecVec ((catCols V.++ '[BR.StateAbbreviation] V.++ [pop, wgt]) V.++ '[pref])
+    , (catCols V.++ '[BR.StateAbbreviation]) F.⊆ ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pref])
+    , (catCols V.++ '[BR.StateAbbreviation]) F.⊆ ((catCols V.++ '[BR.StateAbbreviation]) V.++ '[pop, wgt])
+    )
+  => Int
+  -> Int
+  -> [Int]
+  -> F.FrameRec (catCols V.++ loc V.++ '[BR.Year, pop, wgt])
+  -> F.FrameRec (catCols V.++ [BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref])
+  -> K.Sem r (F.FrameRec [BR.StateAbbreviation, BR.Year, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
+turnoutComparison yPrefs yPop years popWgtFrame prefFrame = do
+  let isYear y r = (F.rgetField @BR.Year r == y)
+      isYearPres :: Int -> F.Record (catCols V.++ [BR.StateAbbreviation, BR.Year, ET.Office] V.++ '[pref]) -> Bool
+      isYearPres y r = (F.rgetField @BR.Year r == y) && (F.rgetField @ET.Office r == ET.President)
+      turnoutByCD y = fmap (F.rcast @(catCols V.++ loc V.++ '[wgt])) $ F.filterFrame (isYear y) popWgtFrame                      
+      popByCD y = fmap (F.rcast @(catCols V.++ loc V.++ '[pop])) $ F.filterFrame (isYear y)  popWgtFrame
+      
+      prefsByState y =  fmap (F.rcast @(catCols V.++ '[BR.StateAbbreviation] V.++ '[pref]))
+                        $ F.filterFrame (isYearPres y) prefFrame
+                        
+      turnoutAndPopToStateF :: FL.Fold (F.Record (catCols V.++ loc V.++ [pop, wgt]))
+                               (F.FrameRec (catCols V.++ '[BR.StateAbbreviation] V.++ [pop, wgt]))
+      turnoutAndPopToStateF = FMR.concatFold $ FMR.mapReduceFold
+                              FMR.noUnpack
+                              (FMR.assignKeysAndData @(catCols V.++ '[BR.StateAbbreviation]) @[pop,wgt])
+                              (FMR.foldAndAddKey
+                                (FF.sequenceRecFold
+                                  $ FF.toFoldRecord @pop (FL.premap (F.rgetField @pop) FL.sum)
+                                  V.:& FF.toFoldRecord @wgt (BR.weightedSumRecF @pop @wgt)
+                                  V.:& V.RNil)
+                              )
+      turnoutF = FF.sequenceRecFold 
+                 $ FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @pref) $ BR.weightedSumRecF @pop @wgt)
+                 V.:& FF.toFoldRecord (FL.prefilter ((< 0.5) . F.rgetField @pref) $ FL.premap (F.rgetField @pop) FL.sum)
+                 V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @pref) $ BR.weightedSumRecF @pop @wgt)
+                 V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @pref) $ FL.premap (F.rgetField @pop) FL.sum)
+                 V.:& V.RNil
+                 
+      comparisonF :: FL.Fold (F.Record (catCols V.++ '[BR.StateAbbreviation] V.++ [pop, wgt, pref]))
+                     (F.FrameRec [BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
+      comparisonF = FMR.concatFold $ FMR.mapReduceFold
+                    FMR.noUnpack
+                    (FMR.assignKeysAndData @'[BR.StateAbbreviation] @[pop, wgt, pref]) 
+                    (FMR.foldAndAddKey turnoutF)
+      knitAppend t = either (\kr -> K.knitError $ "Missing key in " <> t <> ": " <> (T.pack $ show kr)) return 
+      compared y = do        
+        popAndWgtByCD <- knitAppend "turnout" $ FJ.appendFromKeyed @(catCols V.++ loc) @'[wgt] (turnoutByCD y) (popByCD yPop)
+        let turnoutAndPopByState = FL.fold turnoutAndPopToStateF popAndWgtByCD
+{-                               (catMaybes
+                                 $ fmap F.recMaybe
+                                 $ F.leftJoin @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ catCols) (popByCD yPop) (turnoutByCD y)) -}
+        allJoined <- knitAppend "turnoutAndPop" $ FJ.appendFromKeyed @(catCols V.++ '[BR.StateAbbreviation]) @'[pref] (prefsByState yPrefs) turnoutAndPopByState
+        return $ fmap (F.rcast . FT.mutate (const $ FT.recordSingleton @BR.Year y)) $ FL.fold comparisonF allJoined
+{-                       $ catMaybes
+                       $ fmap F.recMaybe
+                       $ F.leftJoin @('[BR.StateAbbreviation] V.++ catCols) (prefsByState yPrefs) (turnoutAndPopByState y) -}  
+  mconcat <$> traverse compared years
+-}
         
-    
+{-    
 turnoutComparison
   :: forall pop wgt pref loc catCols r
   . (K.KnitEffects r
@@ -907,118 +1163,9 @@ turnoutComparison yPrefs yPop years popWgtFrame prefFrame = do
         return $ FL.fold (FL.premap F.rcast comparisonF) allJoined
 {-                       $ catMaybes
                        $ fmap F.recMaybe
-                       $ F.leftJoin @('[BR.StateAbbreviation] V.++ catCols) (prefsByState yPrefs) (turnoutAndPopByState y) -}
-     
-  
+                       $ F.leftJoin @('[BR.StateAbbreviation] V.++ catCols) (prefsByState yPrefs) (turnoutAndPopByState y) -}  
   mconcat <$> traverse compared years
-  
+-}  
+ 
 
-
-cdText1 :: T.Text
-cdText1 = [i|
-|]
-
-
-vlFlip :: (Functor f, Foldable f)
-       => T.Text
-       -> Bool -- true for demFlip, false for demDefend
-       -> FV.ViewConfig
-       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, BR.DemPref, ToFlip])
-       -> GV.VegaLite
-vlFlip title demFlip vc rows =
-  let dat = FV.recordsToVLData id FV.defaultParse rows
-      makeVS = GV.calculateAs (if demFlip then "50 - 100 * datum.DemPref" else "100 * datum.DemPref - 50") "Vote Share"
-      makeFP = GV.calculateAs "100 * datum.ToFlip" "To Flip"
-      xLabel = if demFlip then "D Lost By (%)" else "D Won By %"
-      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PTitle xLabel]
-      encY = GV.position GV.Y [GV.PName "To Flip", GV.PmType GV.Quantitative, GV.PTitle "% Turnout Differential to Flip"]
-      transform = GV.transform . makeVS . makeFP
-      encoding = GV.encoding . encX . encY
-      dotSpec = GV.asSpec [(GV.encoding . encX . encY) [], transform [], GV.mark GV.Point [GV.MTooltip GV.TTData]]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec], dat]
-  
-vlTurnoutGap :: (Functor f, Foldable f)
-             => T.Text -- title
-             -> FV.ViewConfig
-             -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, BR.DemPref])
-             -> GV.VegaLite
-vlTurnoutGap title vc rows =
-  let mapPrefs p = case p of
-        ET.PSByVAP -> "Voted in Equal Proportion"
-        ET.VoteShare -> "Actual 2016 Vote"
-        _ -> "N/A"
-      dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @ET.PrefType @'("Vote Share Type",T.Text) mapPrefs rows)
---      makeYVal = GV.calculateAs "datum.state_abbreviation + '-' + datum.year + '/' + datum.ET.Office + ' (' + datum.DemographicGrouping + ')'" "State/Race"
-      makeYVal = GV.calculateAs "datum.state_abbreviation" "State"
-      makeRuleVal = GV.calculateAs "50" "Evenly Split"
-      makeVS = GV.calculateAs "100 * datum.DemPref" "Vote Share"
-      encX = GV.position GV.X [GV.PName "Vote Share", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [40, 60]], GV.PTitle "2 Party Vote Share (%)"]
-      encRuleX = GV.position GV.X [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [40, 60]], GV.PNoTitle]
-      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal]
-      encColor = GV.color [GV.MName "Vote Share Type", GV.MmType GV.Nominal, GV.MNoTitle]
-      encDetail = GV.detail [GV.DName "State", GV.DmType GV.Nominal]
-      encoding = GV.encoding . encDetail . encX . encY
-      transform = GV.transform . makeYVal . makeVS
-      config = FV.viewConfigAsHvega vc
-      lineSpec = GV.asSpec [(GV.encoding . encDetail . encX . encY) [], transform [], GV.mark GV.Line []]
-      dotSpec = GV.asSpec [(GV.encoding . encX . encY . encColor) [], transform [], GV.mark GV.Point []]
-      ruleSpec = GV.asSpec [(GV.encoding . encRuleX) [], (GV.transform . makeRuleVal) [], GV.mark GV.Rule []]      
-  in
-    FV.configuredVegaLite vc [FV.title title, GV.layer [lineSpec, dotSpec, ruleSpec], dat]
-
-
-
-
-turnoutBoostExplainerMD :: T.Text
-turnoutBoostExplainerMD = [here|
-Let's label our groups by $g$, with turnout $T_g$, population $N_g$ and
-Dem preference $P_g$. If the votes cast for dems are $V_D$ out of the total votes $V$,
-then post-stratified preference is
-
-$\begin{equation}
-P = \frac{V_D}{V}=\frac{\sum_g T_g N_g P_g}{\sum_g T_g N_g}
-\end{equation}$
-
-splitting into dem leaners (denoted by $g\in D$) and others ($g \in R$):
-
-$\begin{equation}
-P = \frac{\sum_{g\in D} T_g N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} T_g N_g + \sum_{g \in R} T_g N_g}
-\end{equation}$
-
-Suppose we boost turnout in Dem leaning groups by x (so for a 1% boost, x would be 0.01):
-
-$\begin{equation}
-P(x) = \frac{\sum_{g\in D} (T_g + x) N_g P_g + \sum_{g \in R} T_g N_g P_g}{\sum_{g \in D} (T_g + x) N_g + \sum_{g \in R} T_g N_g}
-=\frac{x\sum_{g \in D}N_g P_g + V_D}{x\sum_{g \in D} N_g + V}
-=\frac{V_D}{V}\frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V} = P \frac{1 + x\sum_{g \in D}N_g P_g/V_D}{1 + x\sum_{g \in D} N_g/V}
-\end{equation}$
-
-Usually, we're curious about what $x$ we need for a certain $P(x)$.  For example, $P(x)=0.5$ is the level required to "flip" a state.  So let's
-call the $P(x)$ we're hoping for $P_h$ and write $P_h =P\times(1 + \delta)$ or $\delta = \frac{P_h - P}{P}$.
-Also, just to simplify things, we'll define $a = \sum_{g \in D}N_g P_g/V_D$ and $b =  \sum_{g \in D} N_g/V$.  So we have
-
-$\begin{equation}
-P\times(1 + \delta) = P \frac {1 + ax}{1 + bx}
-\end{equation}$
-
-which we can solve for $x$:
-
-$\begin{equation}
-x = \frac{\delta}{a - (1+\delta)b}
-\end{equation}$
-
-We can understand this formula a bit. We need a boost that is proportional to $\delta$, the gap we need to make up.
-Making up ground is easier when Dem preference is high in the groups we are boosting ($a - b$, more or less).
-
-Let's look at a simple example. Imagine 800 voters in group A with 50% voter turnout and leaning 75/25 toward Dems
-and 1000 voters in group B with 60% voter turnout and leaning 65/35 toward Republicans.
-A Democrat would get 280 votes from the Dem leaners and 210 votes from
-the R leaners, for a total of 490.
-The Republican would get 120 votes from the Dem leaners and 390 from the R leaners, for a total of 510. So
-$P_0=\frac{V_D}{V} = \frac{490}{1000} = 0.49$
-
-How much do we need to boost turnout in group A to flip the state, that is to get P_h = 0.5?
-Plugging the numbers above into the equation for $P(x)$ ($\delta = 0.02$; $a = 560/510 = 1.1$; $b = 800/1000 = 0.8$),
-we get $x = 0.11 = 11\%$. That is, we'd need to boost turnout in group A by 11%, from 50% to 61%.
-|]
 

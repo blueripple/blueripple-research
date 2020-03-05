@@ -190,6 +190,58 @@ demographicsWithAdjTurnoutByState stateTurnout demos ews = do
       joined = joinDemoAndWeights @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p demos ews
   adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout joined
 
+leftJoinM
+  :: forall ks as bs.
+  (
+    FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+  , ks F.⊆ as
+  , ks F.⊆ bs
+  , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
+  , (F.RDeleteAll ks bs) F.⊆ bs
+  , V.RMap as
+  , V.RMap (as V.++ (F.RDeleteAll ks bs))
+  , V.RecApplicative (F.RDeleteAll ks bs)
+  , G.Grouping (F.Record ks)
+  , FI.RecVec as
+  , FI.RecVec (F.RDeleteAll ks bs)
+  )
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs)))
+leftJoinM fa fb = fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fa fb
+  
+
+leftJoinM3
+  :: forall ks as bs cs.
+  (
+    FI.RecVec (as V.++ (F.RDeleteAll ks bs))
+  , ks F.⊆ as
+  , ks F.⊆ bs
+  , as F.⊆ (as V.++ (F.RDeleteAll ks bs))
+  , (F.RDeleteAll ks bs) F.⊆ bs
+  , V.RMap as
+  , V.RMap (as V.++ (F.RDeleteAll ks bs))
+  , V.RecApplicative (F.RDeleteAll ks bs)
+  , G.Grouping (F.Record ks)
+  , FI.RecVec as
+  , FI.RecVec (F.RDeleteAll ks bs)
+  , FI.RecVec ((as V.++ F.RDeleteAll ks bs) V.++ F.RDeleteAll ks cs)
+  , ks F.⊆ (as V.++ (F.RDeleteAll ks bs))
+  , ks F.⊆ cs
+  , (as V.++ F.RDeleteAll ks bs) F.⊆ (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
+  , (F.RDeleteAll ks cs) F.⊆ cs
+  , V.RMap (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs))
+  , V.RecApplicative (F.RDeleteAll ks cs)
+  , FI.RecVec (F.RDeleteAll ks cs)
+  )
+  => F.FrameRec as
+  -> F.FrameRec bs
+  -> F.FrameRec cs
+  -> Maybe (F.FrameRec (as V.++ (F.RDeleteAll ks bs) V.++ (F.RDeleteAll ks cs)))
+leftJoinM3 fa fb fc = do
+  fab <-  leftJoinM @ks fa fb
+  fmap F.toFrame $ sequence $ fmap F.recMaybe $ F.leftJoin @ks fab fc
+  
 -- This is monstrous
 rollupAdjustAndJoin
   :: forall as catCols p ks js effs
