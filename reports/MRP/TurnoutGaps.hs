@@ -561,7 +561,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
             popByCD y = fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYear y) asrDemoAndAdjEW
             prefsByState y =  fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYearPres y) inferredPrefsASR
             -- prefs first here, because the rest are not filtered by State so we'd be missing keys
-            allJoinedM y =  BR.leftJoinM3 @('[BR.StateAbbreviation] V.++ BR.CatColsASR) (prefsByState yPrefs) (ewByCD y) (popByCD yPop) 
+            allJoinedM y =  FJ.leftJoinM3 @('[BR.StateAbbreviation] V.++ BR.CatColsASR) (prefsByState yPrefs) (ewByCD y) (popByCD yPop) 
             comparisonF :: FL.Fold (F.Record ('[BR.Year, BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [PUMS.Citizens, ET.ElectoralWeight, BR.DemPref]))
                            (F.FrameRec [BR.Year, BR.StateAbbreviation, '("RTurnout", Double), '("RPop",Int),'("DTurnout", Double), '("DPop", Int)])
             comparisonF = FMR.concatFold $ FMR.mapReduceFold
@@ -626,9 +626,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   K.logLE K.Info "Joining turnout by CD and prefs"
   let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)  
   aseAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASE and aseDemoAndAdjEW"
-                   $ BR.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) (F.filterFrame justPres2016 $ inferredPrefsASE) aseDemoAndAdjEW
+                   $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) (F.filterFrame justPres2016 $ inferredPrefsASE) aseDemoAndAdjEW
   asrAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASR and asrDemoAndAdjEW" $
-                   BR.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) (F.filterFrame justPres2016 $ inferredPrefsASR) asrDemoAndAdjEW
+                   FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) (F.filterFrame justPres2016 $ inferredPrefsASR) asrDemoAndAdjEW
 {-                   
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
