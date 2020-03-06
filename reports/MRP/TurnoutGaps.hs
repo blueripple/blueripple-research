@@ -624,11 +624,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
 --  logFrame houseVoteShareFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
-  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)  
+--  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)  
   aseAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASE and aseDemoAndAdjEW"
-                   $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) (F.filterFrame justPres2016 $ inferredPrefsASE) aseDemoAndAdjEW
+                   $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) inferredPrefsASE aseDemoAndAdjEW
   asrAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASR and asrDemoAndAdjEW" $
-                   FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) (F.filterFrame justPres2016 $ inferredPrefsASR) asrDemoAndAdjEW
+                   FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) inferredPrefsASR asrDemoAndAdjEW
 {-                   
   let aseTurnoutAndPrefs = catMaybes
                            $ fmap F.recMaybe
@@ -676,16 +676,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
             d = (0.5 - p)/p
         in FT.recordSingleton @ToFlip $ d/(a - (1.0 + d) * b)
 
-      toFlipASRByState x =
-        let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.President
-            asrPrefTurnout2016 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ [ET.ElectoralWeight, DemVPV, BR.DemPref]))
-                                 $ F.filterFrame (filter 2016) asrAllByState
-            asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASR V.++ '[PUMS.Citizens]))
-                          $ FL.fold acsASRByStateF $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) pumsASR
-            asrUpdatedDemo = catMaybes
-                             $ fmap F.recMaybe
-                             $ F.leftJoin @('[BR.StateAbbreviation] V.++ BR.CatColsASR) asrPrefTurnout2016 asrDemo2018
-            asrWithBoosts = FL.fold
+      toFlipASRByState x = do 
+        let asrPrefTurnout2016 = fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYearPres 2016) asrAllByState
+            asrDemo2018 = fmap (FT.dropColumn @BR.Year) $ FL.fold acsASRByStateF $ statesOnly $ F.filterFrame (isYear 2018) pumsASR
+        asrUpdatedDemo <- FJ.leftJoinM @('[BR.StateAbbreviation] V.++ BR.CatColsASR) asrPrefTurnout2016 asrDemo2018
+        let asrWithBoosts = FL.fold
                             (FMR.concatFold $ FMR.mapReduceFold
                               MR.noUnpack
                               (FMR.assignKeysAndData @'[BR.StateAbbreviation])
@@ -693,26 +688,24 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                             )
                             asrUpdatedDemo
                             
-            presPref2016 = fmap (F.rcast @[BR.StateAbbreviation, BR.DemPref]) $ F.filterFrame (filter 2016) presPrefByStateFrame
-            asrUpdated =  catMaybes
-                                $ fmap F.recMaybe
-                                $ F.leftJoin @'[BR.StateAbbreviation] asrWithBoosts
-                                $ presPref2016
-        in fmap (FT.mutate toFlip) asrUpdated
-      toFlipAll = F.toFrame $ fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
+            presPref2016 = fmap (F.rcast @[BR.StateAbbreviation, BR.DemPref]) $ F.filterFrame (isYearPres 2016) presPrefByStateFrame
+        asrUpdated <- FJ.leftJoinM @'[BR.StateAbbreviation] asrWithBoosts presPref2016
+        return $ fmap (FT.mutate toFlip) asrUpdated
+           
+  toFlipAll <- K.knitMaybe "join key missing in toFlipASRByState"
+               $ F.toFrame . fmap (FT.retypeColumn @ToFlip @'("ToFlipAll",Double)
                                     . FT.retypeColumn @BoostPop @'("BoostPopAll",Int)
-                                    . F.rcast @[BR.StateAbbreviation, PUMS.Citizens, ET.ElectoralWeight, BR.DemPref, BoostPop, ToFlip]) $  toFlipASRByState 0.0
-      toFlipDems = F.toFrame $ fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
+                                    . F.rcast @[BR.StateAbbreviation, PUMS.Citizens, ET.ElectoralWeight, BR.DemPref, BoostPop, ToFlip]) <$>  toFlipASRByState 0.0
+  toFlipDems <- K.knitMaybe "join key missing in toFlipASRByState"
+                $ F.toFrame . fmap  (FT.retypeColumn @ToFlip @'("ToFlipDems",Double)
                                       . FT.retypeColumn @BoostPop @'("BoostPopDems",Int)
-                                      . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) $  toFlipASRByState 0.5
-      toFlipJoined =   F.toFrame
-                       $ catMaybes
-                       $ fmap F.recMaybe
-                       $ F.leftJoin @'[BR.StateAbbreviation] toFlipAll toFlipDems
+                                      . F.rcast @[BR.StateAbbreviation, BoostPop, ToFlip]) <$>  toFlipASRByState 0.5
+  toFlipJoined <- K.knitMaybe "join key missing in toFlipDems that is present in toFlipAll"
+                  $ FJ.leftJoinM  @'[BR.StateAbbreviation] toFlipAll toFlipDems
+                  
   evFrame <- fmap (F.rcast @[BR.StateAbbreviation, BR.Electors]) . F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) <$> BR.electoralCollegeFrame
-  let toFlipWithEV =  catMaybes
-                      $ fmap F.recMaybe
-                      $ F.leftJoin @'[BR.StateAbbreviation] toFlipJoined evFrame
+  toFlipWithEV <-  K.knitMaybe "join key present in toFlipJoined but missing from evFrame"
+                   $ FJ.leftJoinM @'[BR.StateAbbreviation] toFlipJoined evFrame
 --  logFrame toFlipWithEV
   let boostColonnade cas =
         let toFlipDM r = let x = F.rgetField @'("ToFlipDems",Double) r in if x > 0 then Just x else Nothing
