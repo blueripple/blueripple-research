@@ -504,7 +504,8 @@ post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   let --states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
     states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
-    statesOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` states)
+    statesOnly r = F.rgetField @BR.StateAbbreviation r `L.elem` states
+    statesAfterOnly y r = statesOnly r && F.rgetField @BR.Year r > y
     stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
   stateTurnoutRaw <- BR.stateTurnoutLoader
 
@@ -522,11 +523,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
       predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
       predictorsASR =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
-  inferredPrefsASER <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
+  inferredPrefsASER <-  F.filterFrame (statesAfterOnly 2008) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
-  inferredPrefsASE <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
+  inferredPrefsASE <-  F.filterFrame (statesAfterOnly 2008) <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE (catPredMaps @BR.CatColsASE)) 
-  inferredPrefsASR <-  statesOnly <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
+  inferredPrefsASR <-  F.filterFrame (statesAfterOnly 2008) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (catPredMaps @BR.CatColsASR)) 
   -- demographics
   pumsDemographics <- PUMS.pumsLoadAll
@@ -549,8 +550,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                   @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
                   @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASE) (fmap F.rcast ewASE)                  
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- statesOnly <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
-  demographicsAndTurnoutASR <- statesOnly <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASE <- F.filterFrame (statesAfterOnly 2008)
+                               <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
+  demographicsAndTurnoutASR <- F.filterFrame (statesAfterOnly 2008)
+                               <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
   
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
   let isYear y r =  (F.rgetField @BR.Year r == y)
@@ -575,7 +578,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let turnoutTableYears = [2012, 2016]
   turnoutGaps <- K.knitMaybe "key missing in asrTurnoutComparison" $ asrTurnoutComparison 2016 2018 turnoutTableYears
   logFrame turnoutGaps
---  logFrame turnoutGaps
   let turnoutGapsForTable = FL.fold (FMR.mapReduceFold
                             FMR.noUnpack
                             (FMR.splitOnKeys @'[BR.StateAbbreviation])
@@ -624,7 +626,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
 --  logFrame houseVoteShareFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
---  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)  
+--  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)
+  logFrame inferredPrefsASE
+  logFrame aseDemoAndAdjEW
   aseAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASE and aseDemoAndAdjEW"
                    $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) inferredPrefsASE aseDemoAndAdjEW
   asrAllByState <- K.knitMaybe "Missing key when joining inferredPrefsASR and asrDemoAndAdjEW" $
@@ -678,7 +682,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 
       toFlipASRByState x = do 
         let asrPrefTurnout2016 = fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYearPres 2016) asrAllByState
-            asrDemo2018 = fmap (FT.dropColumn @BR.Year) $ FL.fold acsASRByStateF $ statesOnly $ F.filterFrame (isYear 2018) pumsASR
+            asrDemo2018 = fmap (FT.dropColumn @BR.Year) $ FL.fold acsASRByStateF $ F.filterFrame statesOnly $ F.filterFrame (isYear 2018) pumsASR
         asrUpdatedDemo <- FJ.leftJoinM @('[BR.StateAbbreviation] V.++ BR.CatColsASR) asrPrefTurnout2016 asrDemo2018
         let asrWithBoosts = FL.fold
                             (FMR.concatFold $ FMR.mapReduceFold
@@ -752,8 +756,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         brAddMarkDown text1a
         BR.brAddRawHtmlTable "Turnout Comparison" (BHA.class_ "brTable")  (turnoutCompColonnade turnoutTableYears mempty) turnoutGapsForTable        
         brAddMarkDown text1b
-        let presVoteShareFrame = statesOnly $ F.filterFrame ((== 2016) . F.rgetField @BR.Year) presPrefByStateFrame
-            asrPostStratifiedFrame = F.filterFrame ((== ET.PSByVAP) . F.rgetField @ET.PrefType) vpvPostStratifiedByASR
+        let presVoteShareFrame = F.filterFrame (\r -> F.rgetField @BR.Year r == 2016 &&  statesOnly r) presPrefByStateFrame
+            
+            asrPostStratifiedFrame = F.filterFrame (\r -> F.rgetField @ET.PrefType r == ET.PSByVAP && isYearPres 2016 r) vpvPostStratifiedByASR
         _ <-  K.addHvega Nothing Nothing
           $ vlTurnoutGap
           "Democratic Vote Share in the Battleground States"
@@ -763,7 +768,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         BR.brAddRawHtmlTable "Turnout Boosts to Flip Battlegrounds" (BHA.class_ "brTable") (boostColonnade mempty) toFlipWithEV
         brAddMarkDown text3
         brAddMarkDown brReadMore
-     
+{-     
   K.newPandoc
     (K.PandocInfo ((postRoute PostTurnoutGaps) <> "turnoutBoostExplainer")
       (brAddDates updated pubDateTurnoutGaps curDate
@@ -772,11 +777,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     ]
       ))
       $ brAddMarkDown turnoutBoostExplainerMD
-{-        
-  let toFlipASRHouse t =
-        let filter y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.House
-            asrPrefTurnout2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ [ET.ElectoralWeight, DemVPV, BR.DemPref]))
-                                 $ F.filterFrame (filter 2018) $ F.toFrame $ asrTurnoutAndPrefs
+
+  let isYearHouse y r = F.rgetField @BR.Year r == y && F.rgetField @ET.Office r == ET.House
+      toFlipASRHouse t =
+        let asrPrefTurnout2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ [ET.ElectoralWeight, DemVPV, BR.DemPref]))
+                                 $ F.filterFrame (isYearHouse 2018) $ F.toFrame $ asrTurnoutAndPrefs
             asrDemo2018 = fmap (F.rcast @('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
                           $ statesOnly $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) asrACS
             asrUpdatedDemo = catMaybes
