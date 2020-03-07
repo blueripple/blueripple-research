@@ -1,4 +1,4 @@
-packages: ./ 
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 
@@ -31,6 +31,11 @@ source-repository-package
   subdir: rvar
     
 --- ghc-8.8 forks ends
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: da1d242ff39a3616cab642429273fc182abdcde4
              
 source-repository-package
   type: git
@@ -42,11 +47,6 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-map-reduce
   tag: 43536fe210874b6d776c5369c68b70ccb6a0cd6a
     
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: c02f339dfddcdbc6a9745705f0249202bce0ea2a
-
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils

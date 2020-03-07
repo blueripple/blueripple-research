@@ -94,26 +94,33 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
   Nothing
   "presByState.bin"
 
-type CVAPByCDAndRace = [BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
-type CVAPBYCDAndRace' = [BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
+type CVAPByCDAndRace = [BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, DT.Race5C, BR.VAP, ET.CVAP]
+type CVAPByCDAndRace' = [BR.StateFIPS, BR.CongressionalDistrict, DT.Race5C, BR.VAP, ET.CVAP]
 
-processCVAPByCDRow :: CVAPByCDAndRace_Raw -> Either T.Text (F.Record CVAPByCDAndRace')
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft f (Left x) = Left (f x)
+mapLeft _ (Right y) = Right y
+
+processCVAPByCDRow :: BR.CVAPByCDAndRace_Raw -> Either T.Text (Maybe (F.Record CVAPByCDAndRace'))
 processCVAPByCDRow r = do
-  let cat = F.rgetField @BR.Lntitle r 
-      geoid = F.rgetField @BR.Geoid r
-  stateFIPS <- T.decimal $ T.drop 7 . T.take 2 $ geoid r
-  cd <- T.decimal $ T.drop 9 $ geoid r
-  r5 <- case cat of
-          "White Alone" -> BR.R5_WhiteNonLatinx
-          "Black or African American Alone" -> BR.R5_Black
-          "Hispanic or Latino" -> BR.R5_Latinx
-          "Asian Alone" -> BR.R5_Asian
-          "
-  let mutate = FT.retypeColumn @BR.CvapEst @BR.CVAP
-               . FT.retypeColumn @BR.AduEst @BR.VAP
-               . FT.recordSingleton @BR.StateFIPS stateFIPS
-               . FT.recordSingleton @BR.CongressionalDistrict cd              
-  return $ F.rcast $ mutate r
+  let cat = F.rgetField @BR.Lntitle 
+      geoid = F.rgetField @BR.Geoid
+  stateFIPS <- mapLeft T.pack $ fmap fst $ T.decimal $ T.drop 7 . T.take 2 $ geoid r
+  cd <- mapLeft T.pack $ fmap fst $ T.decimal $ T.drop 9 $ geoid r
+  let r5M = case cat r of
+          "White Alone" -> Just DT.R5_WhiteNonLatinx
+          "Black or African American Alone" -> Just DT.R5_Black
+          "Hispanic or Latino" -> Just DT.R5_Latinx
+          "Asian Alone" -> Just DT.R5_Asian
+          "Total" -> Nothing
+          "Not Hispanic Or Latino" -> Nothing
+          _ -> Just DT.R5_Other
+  let mutate r5 = FT.retypeColumn @BR.CvapEst @ET.CVAP
+                  . FT.retypeColumn @BR.AduEst @BR.VAP
+                  . FT.mutate (const $ FT.recordSingleton @BR.StateFIPS stateFIPS)
+                  . FT.mutate (const $ FT.recordSingleton @BR.CongressionalDistrict cd)
+                  . FT.mutate (const $ FT.recordSingleton @DT.Race5C r5)                                       
+  return $ F.rcast <$> ((fmap mutate r5M) <*> pure r)
 
 --cvapByCDLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.CVAPByCDAndRace)
 --cvapByCDLoader = do

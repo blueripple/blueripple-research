@@ -100,3 +100,6 @@ instance Grouping ElectoralWeightOfT
 instance SE.Serialize ElectoralWeightOfT
 
 
+type CVAP = "CVAP" F.:-> Int
+instance FV.ToVLDataValue (F.ElField CVAP) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
