@@ -93,6 +93,22 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
   Nothing
   "presByState.bin"
 
+type CVAPByCDAndRace = [BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
+type CVAPBYCDAndRace' = [BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
+
+processCVAPByCDRow :: CVAPByCDAndRace_Raw -> Maybe (F.Record CVAPByCDAndRace')
+processCVAPByCDRow abbrByFIPS r = F.rcast $ mutate r where
+  cat = F.rgetField @BR.Lntitle 
+  geoid = F.rgetField @BR.Geoid
+  mutate = FT.retypeColumn @BR.CvapEst @BR.CVAP
+           . FT.retypeColumn @BR.AduEst @BR.VAP
+           .
+    
+
+--cvapByCDLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.CVAPByCDAndRace)
+--cvapByCDLoader = do
+  
+
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
 aseDemographicsLoader =
   cachedFrameLoader
