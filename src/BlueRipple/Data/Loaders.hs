@@ -38,6 +38,7 @@ import           GHC.Generics                   ( Generic
                                                 , Rep
                                                 )
 import qualified Data.Text                     as T
+import qualified Data.Text.Read                as T
 
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -96,14 +97,23 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
 type CVAPByCDAndRace = [BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
 type CVAPBYCDAndRace' = [BR.StateFIPS, BR.CongressionalDistrict, BR.Race5, BR.VAP, BR.CVAP]
 
-processCVAPByCDRow :: CVAPByCDAndRace_Raw -> Maybe (F.Record CVAPByCDAndRace')
-processCVAPByCDRow abbrByFIPS r = F.rcast $ mutate r where
-  cat = F.rgetField @BR.Lntitle 
-  geoid = F.rgetField @BR.Geoid
-  mutate = FT.retypeColumn @BR.CvapEst @BR.CVAP
-           . FT.retypeColumn @BR.AduEst @BR.VAP
-           .
-    
+processCVAPByCDRow :: CVAPByCDAndRace_Raw -> Either T.Text (F.Record CVAPByCDAndRace')
+processCVAPByCDRow r = do
+  let cat = F.rgetField @BR.Lntitle r 
+      geoid = F.rgetField @BR.Geoid r
+  stateFIPS <- T.decimal $ T.drop 7 . T.take 2 $ geoid r
+  cd <- T.decimal $ T.drop 9 $ geoid r
+  r5 <- case cat of
+          "White Alone" -> BR.R5_WhiteNonLatinx
+          "Black or African American Alone" -> BR.R5_Black
+          "Hispanic or Latino" -> BR.R5_Latinx
+          "Asian Alone" -> BR.R5_Asian
+          "
+  let mutate = FT.retypeColumn @BR.CvapEst @BR.CVAP
+               . FT.retypeColumn @BR.AduEst @BR.VAP
+               . FT.recordSingleton @BR.StateFIPS stateFIPS
+               . FT.recordSingleton @BR.CongressionalDistrict cd              
+  return $ F.rcast $ mutate r
 
 --cvapByCDLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.CVAPByCDAndRace)
 --cvapByCDLoader = do
