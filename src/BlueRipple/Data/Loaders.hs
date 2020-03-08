@@ -51,7 +51,7 @@ import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
 import qualified Frames.Serialize              as FS
-
+import qualified Frames.SimpleJoins            as FJ
 
 
 
@@ -122,8 +122,17 @@ processCVAPByCDRow r = do
                   . FT.mutate (const $ FT.recordSingleton @DT.Race5C r5)                                       
   return $ F.rcast <$> ((fmap mutate r5M) <*> pure r)
 
---cvapByCDLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.CVAPByCDAndRace)
---cvapByCDLoader = do
+cvapByCDLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CVAPByCDAndRace)
+cvapByCDLoader = do
+  let csvParserOptions =
+        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+  path <- liftIO $ getPath (DataSets $ T.pack BR.cvapByCDAndRace2014_2018CSV)
+  K.logLE K.Diagnostic ("Attempting to loading data from " <> (T.pack path))
+  rawFrame <- BR.loadToFrame csvParserOptions path (const True)
+  processed <- K.knitEither $ fmap catMaybes $ sequence $ fmap processCVAPByCDRow $ FL.fold FL.list rawFrame
+  stateAbbrCrosswalk <- stateAbbrCrosswalkLoader
+  withAbbrs <- K.knitMaybe "Missing state in state crosswalk" $ FJ.leftJoinM @'[BR.StateFIPS] (F.toFrame processed) stateAbbrCrosswalk
+  return $ F.toFrame $ fmap F.rcast withAbbrs
   
 
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
