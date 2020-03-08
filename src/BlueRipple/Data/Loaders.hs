@@ -20,6 +20,7 @@ import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report                   as K
 import qualified Knit.Report.Cache             as K
@@ -29,6 +30,7 @@ import           Control.Lens                   ((%~))
 
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
+import qualified Data.Map as M
 import           Data.Maybe                     ( catMaybes
                                                 , fromMaybe
                                                 )
@@ -93,6 +95,61 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
   fixPresidentialElectionRow
   Nothing
   "presByState.bin"
+
+
+stateCountyCDLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.StateCountyCD)
+stateCountyCDLoader = cachedFrameLoader (DataSets $ T.pack BR.stateCounty116CDCSV) Nothing id Nothing "stateCountyCD.bin"
+
+stateCountyTractPUMALoader :: K.KnitEffects r => K.Sem r (F.Frame BR.StateCountyTractPUMA)
+stateCountyTractPUMALoader = cachedFrameLoader (DataSets $ T.pack BR.stateCountyTractPUMACSV) Nothing id Nothing "stateCountyTractPUMA.bin"
+
+type PopByCounty = [BR.StateFIPS, BR.CountyFIPS, BR.Year, DT.PopCountOf, DT.PopCount]
+
+processPopByCountyRow :: BR.PopulationsByCounty_Raw -> [F.Record PopByCounty]
+processPopByCountyRow r =
+  let stateFIPS = FT.mutate (FT.recordSingleton @BR.StateFIPS . F.rgetField @BR.STATE)
+      countyFIPS = FT.mutate (FT.recordSingleton @BR.CountyFIPS . F.rgetField @BR.COUNTY)
+      pcOf = FT.mutate (const $ FT.recordSingleton @DT.PopCountOf DT.PC_All)
+      same = stateFIPS . countyFIPS . pcOf
+      addYear x = FT.mutate (const $ FT.recordSingleton @BR.Year x)
+      addPop2010 =  FT.mutate (FT.recordSingleton @DT.PopCount . F.rgetField @BR.POPESTIMATE2010)
+      addPop2012 =  FT.mutate (FT.recordSingleton @DT.PopCount . F.rgetField @BR.POPESTIMATE2012)
+      addPop2014 =  FT.mutate (FT.recordSingleton @DT.PopCount . F.rgetField @BR.POPESTIMATE2014)
+      addPop2016 =  FT.mutate (FT.recordSingleton @DT.PopCount . F.rgetField @BR.POPESTIMATE2016)
+      addPop2018 =  FT.mutate (FT.recordSingleton @DT.PopCount . F.rgetField @BR.POPESTIMATE2018)
+      r2010 = F.rcast @PopByCounty . same . addYear 2010 . addPop2010 $ r
+      r2012 = F.rcast @PopByCounty . same . addYear 2012 . addPop2012 $ r
+      r2014 = F.rcast @PopByCounty . same . addYear 2014 . addPop2014 $ r
+      r2016 = F.rcast @PopByCounty . same . addYear 2016 . addPop2016 $ r
+      r2018 = F.rcast @PopByCounty . same . addYear 2018 . addPop2018 $ r
+  in [r2010, r2012, r2014, r2016, r2018]
+
+popByCountyLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PopByCounty)
+popByCountyLoader = do
+  let action = do
+        rawFrame <- F.filterFrame (\r -> F.rgetField @BR.COUNTY r > 0)
+                    <$> frameLoader (DataSets $ T.pack BR.popsByCountyCSV) Nothing id
+        return $ F.toFrame $ concat $ fmap processPopByCountyRow $ FL.fold FL.list rawFrame
+  BR.retrieveOrMakeFrame "data/popByCounty.bin" action
+
+
+type CountyCrosswalkWithPop = [BR.StateFIPS, BR.CountyFIPS, BR.Year, DT.PopCountOf, DT.PopCount, BR.CongressionalDistrict, BR.PUMA5CE]
+
+countyCrosswalkWithPopLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CountyCrosswalkWithPop)
+countyCrosswalkWithPopLoader = do
+  let action = do
+        let key r = (F.rgetField @BR.StateFIPS r, F.rgetField @BR.CountyFIPS r)
+            keyVal f r = (key r, f r)
+        popByCounty <- popByCountyLoader
+        stateCountyCD_map <-  FL.fold (FL.premap (keyVal (F.rgetField @BR.CongressionalDistrict)) FL.map) <$> stateCountyCDLoader
+        stateCountyTractPUMA_map <- FL.fold (FL.premap (keyVal (F.rgetField @BR.PUMA5CE)) FL.map) <$> stateCountyTractPUMALoader
+        let add r = do
+              let cd = fromMaybe 0 $ M.lookup (key r) stateCountyCD_map
+              puma <- M.lookup (key r) stateCountyTractPUMA_map
+              return $ FT.mutate (const $ FT.recordSingleton @BR.CongressionalDistrict cd)
+                $ FT.mutate (const $ FT.recordSingleton @BR.PUMA5CE puma) r
+        K.knitMaybe "Missing State/County pair in PUMA crosswalk" $ fmap (F.toFrame . fmap F.rcast) $ traverse add $ FL.fold FL.list popByCounty
+  BR.retrieveOrMakeFrame "data/countyCrosswalkWithPop.bin" action
 
 type CVAPByCDAndRace = [BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, DT.Race5C, BR.VAP, ET.CVAP]
 type CVAPByCDAndRace' = [BR.StateFIPS, BR.CongressionalDistrict, DT.Race5C, BR.VAP, ET.CVAP]

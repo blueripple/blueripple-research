@@ -29,6 +29,7 @@ module BlueRipple.Data.PrefModel
 where
 
 import           BlueRipple.Data.DataFrames
+import           BlueRipple.Data.DemographicTypes (PopCount)
 
 import qualified Control.Foldl                 as FL
 import qualified Control.Monad.Except          as X
@@ -65,7 +66,7 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 
-F.declareColumn "PopCount" ''Int
+--F.declareColumn "PopCount" ''Int
 type DemographicCategory b = "DemographicCategory" F.:-> b  -- general holder
 type LocationKey = '[StateAbbreviation, CongressionalDistrict]
 

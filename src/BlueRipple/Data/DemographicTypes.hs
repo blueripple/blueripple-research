@@ -66,6 +66,8 @@ type PopCountOf = "PopCountOf" F.:-> PopCountOfT
 instance FV.ToVLDataValue (F.ElField PopCountOf) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+type PopCount = "PopCount" F.:-> Int
+
 type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
 catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
 catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
