@@ -260,10 +260,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   demographicsAndTurnoutASR <- BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
 --  K.logLE K.Info "demAndTurnoutASR"
 --  logFrame  demographicsAndTurnoutASR
---  BR.stateCountyTractPUMALoader >>= logFrame
-  K.logLE K.Info "county crosswalk:"
---  BR.popByCountyRawLoader >>= logFrame
-  BR.countyCrosswalkWithPopLoader >>= logFrame . F.filterFrame ((== 37) . F.rgetField @BR.StateFIPS)
+
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
@@ -331,8 +328,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                    (FMR.assignKeysAndData @'[WeightSource])
                    (FMR.foldAndAddKey mergedElectionDataToResultF)
       asrEwResults = FL.fold ewResultsF asrWgtd
-  logFrame asrWgtd
-  logFrame asrEwResults
+--  logFrame asrWgtd
+--  logFrame asrEwResults
   let asePrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++ '[BR.DemPref]))
                      $ F.filterFrame (yearOfficeFilter y o) aseByState
       aseDemo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
@@ -354,16 +351,18 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       aseWgtd = aseWgtdByCensus2012 <> aseWgtdByCensus2016
       
       aseEwResults = FL.fold ewResultsF aseWgtd
-  logFrame aseWgtd
-  logFrame aseEwResults
---  _ <- traverse BR.pumsLoader [2018, 2016, 2014, 2012, 2010]
+--  logFrame aseWgtd
+--  logFrame aseEwResults
+--  _ <- traverse BR.pumsLoader [2018, 2016, 2014, 2012, 2010]  
   pums2018 <- BR.pumsLoader2018
-  pums2016 <- BR.pumsLoader2016
-  pums2014 <- BR.pumsLoader2014
-  pums2012 <- BR.pumsLoader2012
-  pums2010 <- BR.pumsLoader2010
+--  pums2016 <- BR.pumsLoader2016
+--  pums2014 <- BR.pumsLoader2014
+--  pums2012 <- BR.pumsLoader2012
+--  pums2010 <- BR.pumsLoader2010
 
-  logFrame $ FL.fold (BR.pumsRollupF $ BR.pumsKeysToIdentity) pums2018
+--  BR.puma2012ToCD116Loader >>= logFrame
+--  logFrame pums2018
+  BR.pumsCDRollup BR.pumsKeysToIdentity pums2018 >>= logFrame
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
   K.newPandoc

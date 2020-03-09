@@ -531,8 +531,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                        (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (catPredMaps @BR.CatColsASR)) 
   -- demographics
   pumsDemographics <- PUMS.pumsLoadAll
-  let pumsASR = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen) $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASR) pumsDemographics
-      pumsASE = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen) $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASE True) pumsDemographics
+  let pumsASR = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+                $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR) pumsDemographics
+      pumsASE = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+                $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASE True) pumsDemographics
       addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
