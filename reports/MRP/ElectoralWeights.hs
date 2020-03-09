@@ -260,10 +260,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   demographicsAndTurnoutASR <- BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
 --  K.logLE K.Info "demAndTurnoutASR"
 --  logFrame  demographicsAndTurnoutASR
-  BR.stateCountyCDLoader >>= logFrame
-  BR.popByCountyLoader >>= logFrame
-  countyCrosswalkWithPop <- BR.countyCrosswalkWithPopLoader
-  logFrame countyCrosswalkWithPop
+--  BR.stateCountyTractPUMALoader >>= logFrame
+  K.logLE K.Info "county crosswalk:"
+--  BR.popByCountyRawLoader >>= logFrame
+  BR.countyCrosswalkWithPopLoader >>= logFrame . F.filterFrame ((== 37) . F.rgetField @BR.StateFIPS)
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
