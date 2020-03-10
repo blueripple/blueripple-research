@@ -21,4 +21,4 @@ import qualified Knit.Report as K
 import qualified Frames as F
 
 pumsLoadAll :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
-pumsLoadAll = mconcat <$> sequence [pumsLoader2010, pumsLoader2012, pumsLoader2014, pumsLoader2016, pumsLoader2018]
+pumsLoadAll = mconcat <$> sequence [pumsLoader2012, pumsLoader2014, pumsLoader2016, pumsLoader2018]

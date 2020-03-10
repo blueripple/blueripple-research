@@ -80,6 +80,11 @@ instance SE.Serialize PrefTypeT
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+type EWCols = [ElectoralWeightSource, ElectoralWeightOf, ElectoralWeight]
+
+ewRec :: ElectoralWeightSourceT -> ElectoralWeightOfT -> Double -> F.Record EWCols
+ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
+
 type ElectoralWeight = "ElectoralWeight" F.:-> Double
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)

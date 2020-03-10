@@ -206,11 +206,8 @@ sumWeightedPeopleF =
   let wgt = F.rgetField @BR.PUMAWgt
       c = F.rgetField @Citizens
       nc = F.rgetField @NonCitizens
-      sumWgtF = FL.premap wgt FL.sum
       wgtCitF = FL.premap (\r -> wgt r * realToFrac (c r)) FL.sum
       wgtNCitF = FL.premap (\r -> wgt r * realToFrac (nc r)) FL.sum
-      citF = (/) <$> wgtCitF <*> sumWgtF
-      nonCitF = (/) <$> wgtNCitF <*> sumWgtF
   in (\wc wnc -> (round wc) F.&: (round wnc) F.&: V.RNil) <$> wgtCitF <*> wgtNCitF
 
 

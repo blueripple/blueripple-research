@@ -344,3 +344,114 @@ return
     <> predsByLocationPres2016
     <> mconcat predsByLocationHouse
 -}
+
+
+
+countVotersF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    )
+  => Int
+  -> FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countVotersF year =
+  let isYear y r = F.rgetField @BR.Year r == y
+      inVoterFile r = isYear year r &&  (F.rgetField @Turnout r `elem` [T_Voted, T_NoRecord])
+      voted r = isYear year r && (F.rgetField @Turnout r == T_Voted)
+      wgt = F.rgetField @CCESWeightCumulative 
+  in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] inVoterFile voted wgt
+
+
+
+mrpTurnout
+  :: forall cc r
+   . ( K.KnitEffects r
+     , K.Member GLM.RandomFu r
+     , ( (((cc V.++ '[BR.Year]) V.++ '[ET.ElectoralWeightSource]) V.++ '[ET.ElectoralWeightOf])
+           V.++
+           '[ET.ElectoralWeight]
+       )
+         ~
+         (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
+     , FS.RecSerialize (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
+     , FI.RecVec (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
+     , V.RMap (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
+     , cc F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
+     , cc F.⊆ (cc V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
+     , FI.RecVec (cc V.++ BR.CountCols)
+     , F.ElemOf (cc V.++ BR.CountCols) BR.Count
+     , F.ElemOf (cc V.++ BR.CountCols) BR.MeanWeight
+     , F.ElemOf (cc V.++ BR.CountCols) BR.UnweightedSuccesses
+     , F.ElemOf (cc V.++ BR.CountCols) BR.VarWeight
+     , F.ElemOf (cc V.++ BR.CountCols) BR.WeightedSuccesses
+     , BR.FiniteSet (F.Record cc)
+     , Show (F.Record (cc V.++ BR.CountCols))
+     , V.RMap (cc V.++ BR.CountCols)
+     , V.ReifyConstraint Show F.ElField (cc V.++ BR.CountCols)
+     , V.RecordToList (cc V.++ BR.CountCols) 
+     , V.RMap cc
+     , V.ReifyConstraint Show V.ElField cc
+     , V.RecordToList cc
+     , cc F.⊆ CCES_MRP
+     , Ord (F.Record cc)
+     )
+  => Maybe T.Text
+  -> K.Sem r (F.FrameRec CCES_MRP)
+  -> [CCESSimpleEffect cc]
+  -> M.Map (F.Record cc) (M.Map (CCESSimplePredictor cc) Double)
+  -> K.Sem
+       r
+       ( F.FrameRec
+           ( '[BR.StateAbbreviation]
+               V.++
+               cc
+               V.++
+               '[BR.Year,  ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
+           )
+       )
+mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
+  let lhToRecs year (LocationHolder lp lkM predMap) =
+        let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
+            recToAdd w = year F.&: (ET.ewRec ET.EW_CCES ET.EW_Citizen w)
+            addCols w r = r `V.rappend` (recToAdd w)
+            g x =
+              let lk = fromMaybe (lp F.&: V.RNil) x
+              in  fmap (\(ck, p) -> addCols p (lk `V.rappend` ck))
+                  $ M.toList predMap
+        in  g lkM
+      lhsToFrame y = F.toFrame . concat . fmap (lhToRecs y)
+  K.logLE K.Info "(Turnout) Doing MR..."
+  let cacheIt cn fa = 
+        case cacheTmpDirM of
+          Nothing -> fa
+          Just tmpDir -> K.retrieveOrMakeTransformed
+                         (fmap FS.toS . FL.fold FL.list)
+                         (F.toFrame . fmap FS.fromS)
+                         ("mrp/tmp/" <> tmpDir <> "/" <> cn)
+                         fa
+      wYearActions = fmap
+                     (\y -> cacheIt
+                       ("turnout" <> T.pack (show y))
+                       (   lhsToFrame y 
+                         <$> (predictionsByLocation ccesDataAction
+                              (countVotersF @cc y)
+                              predictor
+                              catPredMap
+                             )
+                       )
+                     )
+                     [2008, 2010, 2012, 2014, 2016, 2018]
+{-      
+  allResults <- sequence allActions
+  return $ mconcat allResults
+-}
+      
+  allResultsM <- sequence <$> K.sequenceConcurrently wYearActions
+  case allResultsM of
+    Nothing -> K.knitError "Error in MR run (mrpPrefs)."
+    Just allResults -> return $ mconcat allResults
