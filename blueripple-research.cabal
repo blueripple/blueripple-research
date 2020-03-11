@@ -67,6 +67,7 @@ library
                  , BlueRipple.Data.ACS_PUMS_Loaders
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame
+                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2008
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2010
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2012
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2014
@@ -187,6 +188,7 @@ executable mrp-model
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , colonnade
+               , discrimination
                , hashable >= 1.2 && < 1.3.0
                , lens >= 4.16 && < 5
                , log-domain < 0.13

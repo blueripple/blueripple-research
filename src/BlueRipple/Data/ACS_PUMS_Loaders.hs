@@ -11,6 +11,7 @@ module BlueRipple.Data.ACS_PUMS_Loaders
   )
 where
 
+import BlueRipple.Data.ACS_PUMS_Loader.Pums2008
 import BlueRipple.Data.ACS_PUMS_Loader.Pums2010
 import BlueRipple.Data.ACS_PUMS_Loader.Pums2012
 import BlueRipple.Data.ACS_PUMS_Loader.Pums2014
@@ -21,4 +22,4 @@ import qualified Knit.Report as K
 import qualified Frames as F
 
 pumsLoadAll :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
-pumsLoadAll = mconcat <$> sequence [pumsLoader2012, pumsLoader2014, pumsLoader2016, pumsLoader2018]
+pumsLoadAll = mconcat <$> sequence [pumsLoader2008, pumsLoader2010, pumsLoader2012, pumsLoader2014, pumsLoader2016, pumsLoader2018]

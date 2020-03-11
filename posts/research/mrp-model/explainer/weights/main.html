@@ -262,6 +262,251 @@
 <li>CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.</li>
 <li>CCES2016b: State-level weights derived from turnout data in the CCES survey itself.</li>
 </ul>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 800,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 800,
+            "continuousWidth": 800,
+            "discreteHeight": 800,
+            "discreteWidth": 800
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "DemPref": 0.5194016451344792,
+                "ElectorsR": 262,
+                "year": 2008,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "CCES (ASE) 2008",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 276
+            },
+            {
+                "DemPref": 0.5192877354332899,
+                "ElectorsR": 262,
+                "year": 2012,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "Census (ASE) 2012",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 276
+            },
+            {
+                "DemPref": 0.5087140287718395,
+                "ElectorsR": 302,
+                "year": 2012,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "CCES (ASE) 2012",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 236
+            },
+            {
+                "DemPref": 0.5203223775682932,
+                "ElectorsR": 262,
+                "year": 2016,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "Census (ASE) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 276
+            },
+            {
+                "DemPref": 0.495402111630643,
+                "ElectorsR": 350,
+                "year": 2016,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "CCES (ASE) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 188
+            },
+            {
+                "DemPref": 0.5150435085372727,
+                "ElectorsR": 281,
+                "year": 2008,
+                "DemographicGrouping": "ASR",
+                "WeightSource": "CCES (ASR) 2008",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 257
+            },
+            {
+                "DemPref": 0.5311052565025548,
+                "ElectorsR": 161,
+                "year": 2012,
+                "DemographicGrouping": "ASR",
+                "WeightSource": "Census (ASR) 2012",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 377
+            },
+            {
+                "DemPref": 0.5003614107586227,
+                "ElectorsR": 329,
+                "year": 2012,
+                "DemographicGrouping": "ASR",
+                "WeightSource": "CCES (ASR) 2012",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 209
+            },
+            {
+                "DemPref": 0.527797366996117,
+                "ElectorsR": 188,
+                "year": 2016,
+                "DemographicGrouping": "ASR",
+                "WeightSource": "Census (ASR) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 350
+            },
+            {
+                "DemPref": 0.49251533226897926,
+                "ElectorsR": 345,
+                "year": 2016,
+                "DemographicGrouping": "ASR",
+                "WeightSource": "CCES (ASR) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 193
+            },
+            {
+                "DemPref": 0.5281851147478523,
+                "ElectorsR": 208,
+                "year": 2008,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2008",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 330
+            },
+            {
+                "DemPref": 0.5112839627777336,
+                "ElectorsR": 316,
+                "year": 2012,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2012",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 222
+            },
+            {
+                "DemPref": 0.4966590225790044,
+                "ElectorsR": 352,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 186
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 800,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Popular vote share and Electoral Votes for 2016 preferences, 2018 demographics and various electoral weights",
+    "layer": [
+        {
+            "transform": [
+                {
+                    "as": "Vote Share (%)",
+                    "calculate": "100 * datum.DemPref"
+                },
+                {
+                    "as": "Weight Source",
+                    "calculate": "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping"
+                }
+            ],
+            "mark": {
+                "size": 100,
+                "tooltip": {
+                    "content": "data"
+                },
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "year",
+                    "type": "nominal"
+                },
+                "shape": {
+                    "field": "Weight Source"
+                },
+                "x": {
+                    "field": "Vote Share (%)",
+                    "scale": {
+                        "domain": [
+                            49,
+                            53.5
+                        ]
+                    },
+                    "title": "D Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "ElectorsD",
+                    "scale": {
+                        "domain": [
+                            140,
+                            400
+                        ]
+                    },
+                    "title": "# D Electoral Votes",
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "50%",
+                    "calculate": "50"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "x": {
+                    "field": "50%",
+                    "scale": {
+                        "domain": [
+                            49,
+                            53.5
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "Evenly Split",
+                    "calculate": "269"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "y": {
+                    "field": "Evenly Split",
+                    "scale": {
+                        "domain": [
+                            140,
+                            400
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        }
+    ],
+    "padding": 10
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 <!--
   <div class="br-readmore">

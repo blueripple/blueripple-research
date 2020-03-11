@@ -100,6 +100,9 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
 puma2012ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2012ToCD116)
 puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116CSV) Nothing id Nothing "puma2012ToCD116.bin"
 
+puma2000ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2000ToCD116)
+puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing id Nothing "puma2000ToCD116.bin"
+
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
 aseDemographicsLoader =
   cachedFrameLoader

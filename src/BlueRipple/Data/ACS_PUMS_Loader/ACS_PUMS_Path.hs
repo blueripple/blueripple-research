@@ -35,4 +35,8 @@ pums1YrRowGen2010 = (F.rowGen $ pums1YrCSV 2010 "usa") { F.tablePrefix = "PUMS"
                                                        , F.separator   = ","
                                                        , F.rowTypeName = "PUMS_2010"
                                                        }
+pums1YrRowGen2008 = (F.rowGen $ pums1YrCSV 2008 "usa") { F.tablePrefix = "PUMS"
+                                                       , F.separator   = ","
+                                                       , F.rowTypeName = "PUMS_2008"
+                                                       }
 

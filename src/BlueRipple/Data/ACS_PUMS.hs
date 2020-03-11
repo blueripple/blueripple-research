@@ -224,9 +224,12 @@ pumsCDRollup
  ->  F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup mapKeys pumsFrame = do
-  pumaToCD <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> BR.puma2012ToCD116Loader
-  let pumsWithCDAndWeightM = F.leftJoin @[BR.StateFIPS, BR.PUMA] pumsFrame pumaToCD
-      summary = M.filter (\(n,m) -> n /= m) $ FL.fold (FU.goodDataByKey @[BR.StateFIPS, BR.PUMA]) pumsWithCDAndWeightM
+  pumaToCD2012 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> BR.puma2012ToCD116Loader
+  pumaToCD2000 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> BR.puma2000ToCD116Loader
+  let addYears ys f = F.toFrame $ concat $ fmap (\r -> fmap (\y -> FT.addColumn @BR.Year y r) ys) $ FL.fold FL.list f
+      pumaToCD = addYears [2012, 2014, 2016, 2018] pumaToCD2012 <> addYears [2008, 2010] pumaToCD2000      
+      pumsWithCDAndWeightM = F.leftJoin @[BR.Year, BR.StateFIPS, BR.PUMA] pumsFrame pumaToCD
+      summary = M.filter (\(n,m) -> n /= m) $ FL.fold (FU.goodDataByKey @[BR.Year, BR.StateFIPS, BR.PUMA]) pumsWithCDAndWeightM
       pumsWithCDAndWeight = catMaybes $ fmap F.recMaybe pumsWithCDAndWeightM
   K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)

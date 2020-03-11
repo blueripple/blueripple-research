@@ -51,5 +51,6 @@ F.tableTypes' (pums1YrRowGen2016)
 F.tableTypes' (pums1YrRowGen2014)
 F.tableTypes' (pums1YrRowGen2012)
 F.tableTypes' (pums1YrRowGen2010)
+F.tableTypes' (pums1YrRowGen2008)
 
 

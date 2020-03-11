@@ -94,6 +94,9 @@ type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSource
 type instance FI.VectorFor ElectoralWeightSourceT = Vec.Vector
 instance Grouping ElectoralWeightSourceT
 instance SE.Serialize ElectoralWeightSourceT
+instance FV.ToVLDataValue (F.ElField ElectoralWeightSource) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 
 data ElectoralWeightOfT = EW_Eligible -- ^ Voting Eligible Population
                         | EW_Citizen -- ^ Voting Age Population (citizens only)
