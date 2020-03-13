@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -9,7 +8,6 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
-{-# LANGUAGE TupleSections     #-}
 module BlueRipple.Data.DemographicTypes where
 
 import qualified BlueRipple.Data.DataFrames    as BR
@@ -31,6 +29,8 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
 import qualified Data.Vector                   as Vec
+import           Data.Vinyl.TypeLevel           (type (++))
+import           Data.Vinyl.Lens                (type (⊆))
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.XRec               as V
@@ -358,7 +358,7 @@ allASE_TurnoutKeys = allTextKeys @BR.Group $ fmap
 typedASEDemographics
   :: (F.ElemOf rs BR.ACSKey)
   => F.Record rs
-  -> Either T.Text (F.Record (rs V.++ '[Age4C, SexC, EducationC]))
+  -> Either T.Text (F.Record (rs ++ '[Age4C, SexC, EducationC]))
 typedASEDemographics r = do
   let key     = F.rgetField @BR.ACSKey r
       textMap = T.pack $ show acsASELabelMap
@@ -412,7 +412,7 @@ simplifyACS_ASEFold
        (Either T.Text)
        BR.ASEDemographics
        ( F.FrameRec
-           (ACSKeys V.++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
+           (ACSKeys ++ '[SimpleAgeC, SexC, CollegeGradC, BR.ACSCount])
        )
 simplifyACS_ASEFold =
   let
@@ -438,14 +438,14 @@ simplifyACS_ASRFold
   :: FL.FoldM
        (Either T.Text)
        BR.ASEDemographics
-       (F.FrameRec (ACSKeys V.++ '[SimpleAgeC, SexC, SimpleRaceC, BR.ACSCount]))
+       (F.FrameRec (ACSKeys ++ '[SimpleAgeC, SexC, SimpleRaceC, BR.ACSCount]))
 simplifyACS_ASRFold
   = let
       aggAge5    = K.toAggListRec $ K.liftAggList simpleAgeFrom5
       aggACSRace = K.toAggListRec $ K.AggList $ \sr -> case sr of
         NonWhite -> K.IndexedList [(1, ACS_All), (-1, ACS_WhiteNonHispanic)]
         White    -> K.aggList [ACS_WhiteNonHispanic]
-      aggSex = K.toAggListRec $ K.liftAggList (pure . id)
+      aggSex = K.toAggListRec $ K.liftAggList pure
       aggASR =
         aggAge5 `K.aggListProductRec` aggSex `K.aggListProductRec` aggACSRace
       agg = aggASR >>> aggACS_ASRKey -- when all is said and done, aggregations compose nicely
@@ -471,10 +471,10 @@ turnoutMonoidOps = K.monoidOpsFromFold $ FF.foldAllConstrained @Num FL.sum
 turnoutGroupOps
   :: K.GroupOps (F.Record '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
 turnoutGroupOps =
-  let pop r = F.rgetField @BR.Population r
-      cit r = F.rgetField @BR.Population r
-      reg r = F.rgetField @BR.Registered r
-      voted r = F.rgetField @BR.Voted r
+  let pop  = F.rgetField @BR.Population 
+      cit  = F.rgetField @BR.Population 
+      reg  = F.rgetField @BR.Registered 
+      voted  = F.rgetField @BR.Voted 
       invert r =
         negate (pop r)
           F.&: negate (cit r)
@@ -581,7 +581,7 @@ turnoutASELabelMap =
 typedASETurnout
   :: (F.ElemOf rs BR.Group)
   => F.Record rs
-  -> Either T.Text (F.Record (rs V.++ '[Age5C, SexC, EducationC]))
+  -> Either T.Text (F.Record (rs ++ '[Age5C, SexC, EducationC]))
 typedASETurnout r = do
   let key     = F.rgetField @BR.Group r
       textMap = T.pack $ show turnoutASELabelMap

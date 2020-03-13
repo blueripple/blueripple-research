@@ -11,7 +11,7 @@ import qualified Control.Foldl                 as FL
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.Transform              as FT
-import           Data.Maybe                     ( maybe )
+--import           Data.Maybe                     ( maybe )
 import qualified Data.Text                     as T
 import qualified Data.List                     as L
 import qualified Data.Vinyl                    as V
@@ -23,8 +23,7 @@ import qualified Graphics.Vega.VegaLite.Configuration
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Graphics.Vega.VegaLite        as GV
-import           MRP.DeltaVPV                   ( DemVPV
-                                                , DemPref
+import           MRP.DeltaVPV                   ( DemPref
                                                 )
 
 import qualified BlueRipple.Data.DemographicTypes
@@ -32,7 +31,7 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames    as BR
                                          hiding ( Office )
-import qualified MRP.CCES                      as BR
+--import qualified MRP.CCES                      as BR
 
 -- Voter Pref vs time.  House vs. Prez, State vs. National.  Facet by type of voter.
 vlPrefVsTime

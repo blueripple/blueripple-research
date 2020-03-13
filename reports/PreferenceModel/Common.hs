@@ -9,21 +9,21 @@ module PreferenceModel.Common where
 import qualified Data.Text                     as T
 import           Data.Data                      ( Data )
 import           Data.Typeable                  ( Typeable )
-import qualified Knit.Report                   as K
-import qualified Knit.Report.Input.MarkDown.PandocMarkDown
-                                               as K
-import qualified Text.Pandoc.Options           as PA
+--import qualified Knit.Report                   as K
+--import qualified Knit.Report.Input.MarkDown.PandocMarkDown
+--                                               as K
+--import qualified Text.Pandoc.Options           as PA
 
-import qualified Text.Blaze.Colonnade          as BC
-import qualified Text.Blaze.Html5              as BH
-import qualified Text.Blaze.Html.Renderer.Text as B
-import qualified Text.Blaze.Html5.Attributes   as BHA
+--import qualified Text.Blaze.Colonnade          as BC
+--import qualified Text.Blaze.Html5              as BH
+--import qualified Text.Blaze.Html.Renderer.Text as B
+--import qualified Text.Blaze.Html5.Attributes   as BHA
 
-import qualified Data.Text.Lazy                as TL
+--import qualified Data.Text.Lazy                as TL
 
 import           BlueRipple.Configuration       ( brResearchRootUrl
                                                 , brResearchRootPath
-                                                , brExplainerRootUrl
+--                                                , brExplainerRootUrl
                                                 , brExplainerRootPath
                                                 )
 

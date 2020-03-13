@@ -244,24 +244,39 @@
 <header>
 <h1 class="title">What Are We Talking About When We Talk About Electoral Weights?</h1>
 </header>
-<p>When pollsters or academics go from estimating voter preference to electoral outcomes, things get complicated. Voter preference is complicated too! But the approach is straightforward: take survey data or voter-file data or some data that has individual preference and use that to infer voter preference for a group of people. There are many choices for how to group the data: by demographic charactersitics? by location? both?</p>
-<p>But let’s suppose we accept the preferences, however derived. How do we go from those to a modeled election result? To do that we need a model of the <em>electorate</em>, that is how many people of each type (in the country or each state or district) are likely to vote in the election. That question is usually broken down into two parts: knowing the demographics of the country/state/region, that is knowing how many people are in each group and then knowing how many of those people will vote on election day. The number of people in each group is usually straightforwardly derived from census data. But the second part—what fraction of each group will vote, aka the electoral weights— that’s extremely hard to figure out.</p>
-<p>There are a number of standard approaches:</p>
+<p>Predicting election outcomes via polling or survey data is hard: people may not answer accurately or honestly, the people you ask may not be representative of the electorate, and the composition of the electorate in each state is a moving target.</p>
+<ul>
+<li>Getting accurate answers, is a key part of a pollsters job. Some surveys, e.g., the <a href="https://cces.gov.harvard.edu/">CCES survey</a>, one we use a lot, tackle this issue by verifying some data externally, for example via state voter-files.</li>
+<li>Surveys and polls assign <em>weights</em> to responses, numbers that allow users of the data to reconstruct a representative sample of the population from the survey. For example, if the country has roughly the same number of adults above and below 45 but the survey has fewer responses from older people, those responses will be assigned higher weights. Weighting is complex, not least because there are many demographic variables to be considered.</li>
+<li>But we truly <em>do not know</em> who will vote on election day. You could have extremely accurate estimates of how each kind of person (older or younger, male or female, Black, White, Latinx, Asian, Texan or Californian, etc.) <em>would</em> vote and not really know <em>how many</em> of them <em>will</em> vote. This gets even harder to predict in smaller regions, like states, congressional districts or state legislative districts.</li>
+</ul>
+<p>We have very accurate information about who lives in each of these places. The census tracks this and updates the data annually. So what we need to know is the probability that a voter of a certain demographic type, in a certain place, will cast a vote. There are lots of reasons why people do and don’t vote: see <a href="https://blueripplepolitics.org/blog/voter-ids">our piece</a> on voter ID or Fair Vote’s <a href="https://www.fairvote.org/voter_turnout#voter_turnout_101">rundown</a> on voter turnout, for example. For the purposes of <em>this post</em> we’re going to ignore the reasons and focus on the modeling problem. For another point of view, <a href="https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html">here</a> is an explanation from the New York Times’ Upshot about their election modeling.</p>
+<p>When pollsters and academics talk about this problem, they use the term “weighting” or “weights.” The weighting of a survey to match the electorate is just like what we talked about above, when polls are weighted to match the population, except here the weights are chosen to match some estimate of what the electorate will look like. But we will often talk instead about probabilities, the chance that a given voter will vote. These probabilities, multiplied by the number of people in a given group, a number we know quite accurately, provide the “electoral weight”. for example, if 60% of Texan Females over 45 will vote (a probability), and you know how many Texan Females over 45 there are (about 1.2 million) you can figure out how to weight your survey responses so that the weighted tally contains about 738,000 female Texan voters over 45.</p>
+<p>So how do we figure out the probability that someone will vote? There are a number of standard approaches:</p>
 <ol type="1">
-<li>Ask them! Some surveys ask the respondent if they intend to vote and then use that (or some modeled fraction of that) to create a set of weights with as much specificity as the survey allows.</li>
-<li>Assume the next election will be like the last election. The census tracks nationwide demographically split turnout for previous elections and we can use those weights, though they lack any geographic specificity. Also, some surveys match respondents with voter-file data and thus turnout. These can then be used to build a set of weights, however specific the survey allows.</li>
+<li>Ask them! Some surveys ask the respondent if they intend to vote, or, more often, a <a href="https://www.pewresearch.org/methods/2016/01/07/measuring-the-likelihood-to-vote/">bunch of questions</a> used to assess their likelihood of voting, and then use that (or some modeled fraction of that) to create a set of weights with as much specificity as the survey allows. This is almost always what pollsters do.</li>
+<li>Assume the next election will be like the last election. The census tracks nationwide demographically split turnout for previous elections and we can use those weights, though they lack any geographic specificity. Also, some surveys match respondents with voter-file data and thus turnout. These can then be used to build a set of weights.</li>
 <li>Model the electorate using some combination of the above data—previous elections, surveys—and whatever other variables, e.g., negative partisanship of a district, to predict how the current electorate might differ from the past.</li>
 </ol>
-<p>Rather than opine on the best model, which is not our expertise, in this piece we want to show how important the choice of electoral weights turns out to be. We want to help you become a more informed reader of polls and academic work which predicts electoral results.</p>
-<p>This piece was partially inspired by a recent <a href="https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data">Vox article</a>, which used a novel survey to look at how each candidate in the democratic primary might fare against Donald Trump. The paper on which the article is based is interesting and worth a read. But some of the conclusions of the paper and article are based on using electoral weights derived from the 2016 election. It’s very hard to evaluate these conclusions without understanding how sensitive they are to the choice of electoral weights.</p>
-<p>So let’s explore how much difference these weights can make. We’ll begin by picking a few possible sets of weights and comparing the projected popular vote and electoral college results that they predict from the <em>same set of preferences</em>—in this case, preferences derived from our <a href="https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods">MRP model</a> based on the <a href="https://cces.gov.harvard.edu/">CCES</a>. Here are the weights we’ll explore:</p>
+<p>Rather than opine on the best model, which is not our expertise, we want to demonstrate how much a prediction can depend on the model of electoral weights. We want you to become a more informed (and skeptical!) reader of polls and academic work predicting electoral results.</p>
+<p>This piece was partially inspired by a recent <a href="https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data">Vox article</a>, which used a novel survey to look at how each candidate in the Democratic primary might fare against Donald Trump. The <a href="https://osf.io/25wm9/">paper</a> on which the article is based is interesting and worth a read. Some of the conclusions of the paper and article are based on electoral weights derived from the 2016 election (using the CCES survey). It’s very hard to evaluate these conclusions without understanding how sensitive they are to the choice of electoral weights.</p>
+<p>So let’s explore how much difference these weights can make! We’ll fix our voter preferences to an estimate from the 2016 presidential election (using a variation of the <a href="https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods">MR model</a> we’ve used in the last couple of posts), and use 2016 <a href="https://www.census.gov/programs-surveys/acs/technical-documentation/pums.html">demographics</a> from the census. The only thing we’ll be varying here are the electoral weights, that is, the likelihood that a given type of voter, in a given place, will vote</p>
+<p>We’ll begin by picking a few possible sets of weights and comparing the projected popular vote and electoral college results that they predict from the <em>same set of preferences</em>—in this case, preferences derived from our <a href="https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods">MRP model</a> based on the <a href="https://cces.gov.harvard.edu/">CCES</a>. Below we list the weights that we’ll explore. One note: each set of weights has been adjusted on a per state basis so that the weights and demographics (in the same election year) correctly give the total number of votes cast in the state that year–if you’re interested in the details, we followed a simplified version of the techniques described in <a href="http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf">this paper</a>.</p>
 <ul>
-<li>Census2012: Nationwide weights from the 2012 election, tabulated by the census.</li>
-<li>Census2016: Nationwide weights from the 2016 election, tabulated by the census.</li>
-<li>Census2018: Nationwide weights from the 2018 (mid-term) election, tabulated by the census.</li>
-<li>CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.</li>
-<li>CCES2016b: State-level weights derived from turnout data in the CCES survey itself.</li>
+<li>National-level probabilities from census data for the 2012 and 2016 general elections:
+<ul>
+<li>broken down by Age, Sex, and Race.</li>
+<li>broken down by Age, Sex, and Education.</li>
+</ul></li>
+<li>State-level probabilities inferred from the CCES survey for the 2008, 2012 and 2016 general elections:
+<ul>
+<li>broken down by Age, Sex and Race.</li>
+<li>broken down by Age, Sex, and Education.</li>
+<li>broken down by Age, Sex, Education and Race.</li>
+</ul></li>
 </ul>
+<p>It might seem impossible to draw much of a conclusion comparing so many things. But all we want to show that predicting the election outcome, either the popular vote or the electoral college totals, depends <em>a lot</em> on the weighting scheme you choose. We’re not recommending any of these weights in particular, but each might be a reasonable model of the 2020 electorate since each is derived from a validated source and a recent election.</p>
+<p>The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights. The results vary quite a bit, from a popular vote share below 49% and 190 electoral votes to a popular vote share of almost 53% and almost 370 electoral votes! That’s a swing of over 3% in the popular vote (~5 million votes) and the difference between losing and winning the election.</p>
 <figure id="figure_1">
 <script type="text/javascript">var vlSpec=
 {
@@ -282,16 +297,16 @@
     "data": {
         "values": [
             {
-                "DemPref": 0.5194016451344792,
-                "ElectorsR": 262,
+                "DemPref": 0.5186244645045429,
+                "ElectorsR": 291,
                 "year": 2008,
                 "DemographicGrouping": "ASE",
                 "WeightSource": "CCES (ASE) 2008",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 276
+                "ElectorsD": 247
             },
             {
-                "DemPref": 0.5192877354332899,
+                "DemPref": 0.5185987627637958,
                 "ElectorsR": 262,
                 "year": 2012,
                 "DemographicGrouping": "ASE",
@@ -300,16 +315,16 @@
                 "ElectorsD": 276
             },
             {
-                "DemPref": 0.5087140287718395,
-                "ElectorsR": 302,
+                "DemPref": 0.5080125866870835,
+                "ElectorsR": 319,
                 "year": 2012,
                 "DemographicGrouping": "ASE",
                 "WeightSource": "CCES (ASE) 2012",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 236
+                "ElectorsD": 219
             },
             {
-                "DemPref": 0.5203223775682932,
+                "DemPref": 0.5196576499180038,
                 "ElectorsR": 262,
                 "year": 2016,
                 "DemographicGrouping": "ASE",
@@ -318,16 +333,16 @@
                 "ElectorsD": 276
             },
             {
-                "DemPref": 0.495402111630643,
-                "ElectorsR": 350,
+                "DemPref": 0.49460405757156967,
+                "ElectorsR": 353,
                 "year": 2016,
                 "DemographicGrouping": "ASE",
                 "WeightSource": "CCES (ASE) 2016",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 188
+                "ElectorsD": 185
             },
             {
-                "DemPref": 0.5150435085372727,
+                "DemPref": 0.5122130187303895,
                 "ElectorsR": 281,
                 "year": 2008,
                 "DemographicGrouping": "ASR",
@@ -336,52 +351,52 @@
                 "ElectorsD": 257
             },
             {
-                "DemPref": 0.5311052565025548,
-                "ElectorsR": 161,
+                "DemPref": 0.5280675027336491,
+                "ElectorsR": 172,
                 "year": 2012,
                 "DemographicGrouping": "ASR",
                 "WeightSource": "Census (ASR) 2012",
                 "ElectoralWeightSource": "EW_Census",
-                "ElectorsD": 377
+                "ElectorsD": 366
             },
             {
-                "DemPref": 0.5003614107586227,
-                "ElectorsR": 329,
+                "DemPref": 0.4978245369351075,
+                "ElectorsR": 332,
                 "year": 2012,
                 "DemographicGrouping": "ASR",
                 "WeightSource": "CCES (ASR) 2012",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 209
+                "ElectorsD": 206
             },
             {
-                "DemPref": 0.527797366996117,
-                "ElectorsR": 188,
+                "DemPref": 0.5248994365019434,
+                "ElectorsR": 242,
                 "year": 2016,
                 "DemographicGrouping": "ASR",
                 "WeightSource": "Census (ASR) 2016",
                 "ElectoralWeightSource": "EW_Census",
-                "ElectorsD": 350
+                "ElectorsD": 296
             },
             {
-                "DemPref": 0.49251533226897926,
-                "ElectorsR": 345,
+                "DemPref": 0.49008150862186656,
+                "ElectorsR": 354,
                 "year": 2016,
                 "DemographicGrouping": "ASR",
                 "WeightSource": "CCES (ASR) 2016",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 193
+                "ElectorsD": 184
             },
             {
-                "DemPref": 0.5281851147478523,
-                "ElectorsR": 208,
+                "DemPref": 0.524709910290556,
+                "ElectorsR": 226,
                 "year": 2008,
                 "DemographicGrouping": "ASER",
                 "WeightSource": "CCES (ASER) 2008",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 330
+                "ElectorsD": 312
             },
             {
-                "DemPref": 0.5112839627777336,
+                "DemPref": 0.5081650056273329,
                 "ElectorsR": 316,
                 "year": 2012,
                 "DemographicGrouping": "ASER",
@@ -390,7 +405,7 @@
                 "ElectorsD": 222
             },
             {
-                "DemPref": 0.4966590225790044,
+                "DemPref": 0.4931302113453388,
                 "ElectorsR": 352,
                 "year": 2016,
                 "DemographicGrouping": "ASER",
@@ -405,7 +420,7 @@
     },
     "width": 800,
     "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
-    "title": "Popular vote share and Electoral Votes for 2016 preferences, 2018 demographics and various electoral weights",
+    "title": "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights",
     "layer": [
         {
             "transform": [
@@ -438,8 +453,8 @@
                     "field": "Vote Share (%)",
                     "scale": {
                         "domain": [
-                            49,
-                            53.5
+                            48,
+                            53
                         ]
                     },
                     "title": "D Vote Share (%)",
@@ -449,8 +464,8 @@
                     "field": "ElectorsD",
                     "scale": {
                         "domain": [
-                            140,
-                            400
+                            170,
+                            370
                         ]
                     },
                     "title": "# D Electoral Votes",
@@ -471,8 +486,8 @@
                     "field": "50%",
                     "scale": {
                         "domain": [
-                            49,
-                            53.5
+                            48,
+                            53
                         ]
                     },
                     "title": null,
@@ -493,8 +508,8 @@
                     "field": "Evenly Split",
                     "scale": {
                         "domain": [
-                            140,
-                            400
+                            170,
+                            370
                         ]
                     },
                     "title": null,
@@ -506,6 +521,195 @@
     "padding": 10
 };
 vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
+<p>There are a number of interesting things to see here:</p>
+<ul>
+<li>A frustrating truth: The chart has lines at 50% popular vote and 269 electoral votes, an electoral-college tie. All the points in the bottom right section are outcomes where a Democratic candidate wins the popular vote but loses the election. There are no corresponding points in the upper-left: outcomes where a Democrat loses the popular vote but wins the election. Another way of seeing this is noting that, using these numbers, a Democrat might need 51.5% of the popular vote to win the electoral college. There are, of course, scenarios where a Democrat could lose the popular vote but win the election, but they are not likely with our current demographics and voter preferences.</li>
+<li>If you look only at year (indicated by color in the chart), for a given weighting source and breakdown, you can see that 2008 was a good year for Dem turnout, followed by 2012, and then 2016. That tracks the election results: In 2008, Obama won 365 electoral votes (EVs) with almost 53% of the popular vote. In 2012, he won 332 EVs and 51% of the popular vote, and in 2016 Clinton lost, garnering 227 EVs and 51% of the 2-party vote share. This suggests that differences in turnout can explain a lot of the difference in outcome in those three elections.</li>
+<li>The weightings that are most “optimistic” for Democrats are ones that ignore education in their breakdown of the electorate. This issue was <a href="https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election">much discussed after the 2016 election</a>. Over the last couple of decades, educational attainment, essentially whether someone is or is not a college graduate, has become much more predictive of their voter preference. This information is lost when we don’t account for education in the model. In particular, white voters without college-degrees shifted Republican in their voting preferences over that time, while white voters with a college degree have been shifting toward Democrats. But there are different numbers of those voters in different places. Models which accounted for age, sex and race but not education tended to inflate the likelihood of Dem victories in recent years. Unlike the trend from 2008 to 2016, this is a <em>modeling</em> issue, one which masks a change in voter preference, not a change in turnout.</li>
+</ul>
+<p>At this point you may be thinking “okay, so turnout models make a big difference but why would someone use 2008 turnout or 2012 turnout to look at 2020?” That’s a good question. But it’s not clear that 2016 makes much sense either. To see why, let’s redo our chart but this time using 2016 and 2018 general election turnout.</p>
+<figure id="figure_2">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 800,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 800,
+            "continuousWidth": 800,
+            "discreteHeight": 800,
+            "discreteWidth": 800
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "DemPref": 0.5196576499180038,
+                "ElectorsR": 262,
+                "year": 2016,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "Census (ASE) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 276
+            },
+            {
+                "DemPref": 0.49460405757156967,
+                "ElectorsR": 353,
+                "year": 2016,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "CCES (ASE) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 185
+            },
+            {
+                "DemPref": 0.517397233197511,
+                "ElectorsR": 266,
+                "year": 2018,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "Census (ASE) 2018",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 272
+            },
+            {
+                "DemPref": 0.49451384089514355,
+                "ElectorsR": 345,
+                "year": 2018,
+                "DemographicGrouping": "ASE",
+                "WeightSource": "CCES (ASE) 2018",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 193
+            },
+            {
+                "DemPref": 0.4931302113453388,
+                "ElectorsR": 352,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 186
+            },
+            {
+                "DemPref": 0.4888492003896323,
+                "ElectorsR": 352,
+                "year": 2018,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2018",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 186
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 800,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Popular vote share and Electoral Votes: 2016 weightings vs. 2018 weightings",
+    "layer": [
+        {
+            "transform": [
+                {
+                    "as": "Vote Share (%)",
+                    "calculate": "100 * datum.DemPref"
+                },
+                {
+                    "as": "Weight Source",
+                    "calculate": "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping"
+                }
+            ],
+            "mark": {
+                "size": 100,
+                "tooltip": {
+                    "content": "data"
+                },
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "year",
+                    "type": "nominal"
+                },
+                "shape": {
+                    "field": "Weight Source"
+                },
+                "x": {
+                    "field": "Vote Share (%)",
+                    "scale": {
+                        "domain": [
+                            48,
+                            53
+                        ]
+                    },
+                    "title": "D Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "ElectorsD",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": "# D Electoral Votes",
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "50%",
+                    "calculate": "50"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "x": {
+                    "field": "50%",
+                    "scale": {
+                        "domain": [
+                            48,
+                            53
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "Evenly Split",
+                    "calculate": "269"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "y": {
+                    "field": "Evenly Split",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        }
+    ],
+    "padding": 10
+};
+vegaEmbed('#figure_2',vlSpec);</script>
 </figure>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 <!--

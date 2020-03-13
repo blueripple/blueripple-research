@@ -20,21 +20,21 @@
 module MRP.ElectoralWeights where
 
 import qualified Control.Foldl                 as FL
-import           Control.Monad (join)
-import qualified Data.Array                    as A
-import           Data.Function (on)
-import qualified Data.List as L
-import qualified Data.Set as S
+--import           Control.Monad (join)
+--import qualified Data.Array                    as A
+--import           Data.Function (on)
+--import qualified Data.List as L
+--import qualified Data.Set as S
 import qualified Data.Map                      as M
-import           Data.Maybe (isJust, catMaybes, fromMaybe)
-import           Data.Proxy (Proxy(..))
+--import           Data.Maybe (isJust, catMaybes, fromMaybe)
+--import           Data.Proxy (Proxy(..))
 --import  Data.Ord (Compare)
 
-import qualified Data.Discrimination.Grouping  as G
+--import qualified Data.Discrimination.Grouping  as G
 import qualified Data.Text                     as T
-import qualified Data.Serialize                as SE
-import qualified Data.Vector as V
-import qualified Data.Vector.Storable               as VS
+--import qualified Data.Serialize                as SE
+--import qualified Data.Vector as V
+--import qualified Data.Vector.Storable               as VS
 
 
 import           Graphics.Vega.VegaLite.Configuration as FV
@@ -50,52 +50,52 @@ import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.Enumerations           as FE
-import qualified Frames.Utils                  as FU
-import qualified Frames.Serialize              as FS
-import qualified Frames.Constraints            as FC
+--import qualified Frames.Enumerations           as FE
+--import qualified Frames.Utils                  as FU
+--import qualified Frames.Serialize              as FS
+--import qualified Frames.Constraints            as FC
 import qualified Frames.SimpleJoins            as FJ
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
-import qualified Frames.Visualization.VegaLite.ParameterPlots
-                                               as FV                                               
+--import qualified Frames.Visualization.VegaLite.ParameterPlots
+--                                               as FV                                               
 
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
-import qualified Polysemy.Error                as P (mapError, Error)
+import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                      as P (raise)
-import           Text.Pandoc.Error             as PE
-import qualified Text.Blaze.Colonnade          as BC
+--import           Text.Pandoc.Error             as PE
+--import qualified Text.Blaze.Colonnade          as BC
 
-import           Data.String.Here               ( here, i )
+import           Data.String.Here               ( i )
 
-import qualified Colonnade                     as C
-import qualified Text.Blaze.Colonnade          as BC
-import qualified Text.Blaze.Html               as BH
-import qualified Text.Blaze.Html5.Attributes   as BHA
+--import qualified Colonnade                     as C
+--import qualified Text.Blaze.Colonnade          as BC
+--import qualified Text.Blaze.Html               as BH
+--import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import           BlueRipple.Configuration 
 import           BlueRipple.Utilities.KnitUtils 
-import qualified BlueRipple.Utilities.TableUtils as BR
+--import qualified BlueRipple.Utilities.TableUtils as BR
 --import           BlueRipple.Data.DataFrames 
 
-import qualified Data.IndexedSet               as IS
+--import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
-import qualified Numeric.GLM.ModelTypes      as GLM
-import qualified Numeric.GLM.FunctionFamily    as GLM
-import qualified Numeric.GLM.MixedModel        as GLM
+--import qualified Numeric.GLM.ModelTypes      as GLM
+--import qualified Numeric.GLM.FunctionFamily    as GLM
+--import qualified Numeric.GLM.MixedModel        as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
-import qualified Numeric.GLM.Report            as GLM
-import qualified Numeric.GLM.Predict            as GLM
-import qualified Numeric.GLM.Confidence            as GLM
-import qualified Numeric.SparseDenseConversions as SD
-import qualified Statistics.Types              as ST
-import GHC.Generics (Generic)
+--import qualified Numeric.GLM.Report            as GLM
+--import qualified Numeric.GLM.Predict            as GLM
+--import qualified Numeric.GLM.Confidence            as GLM
+--import qualified Numeric.SparseDenseConversions as SD
+--import qualified Statistics.Types              as ST
+--import GHC.Generics (Generic)
 
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
-import qualified Data.Time.Format              as Time
+--import qualified Data.Time.Format              as Time
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -103,12 +103,12 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loaders as PUMS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Data.HouseElectionTotals as BR
-import qualified BlueRipple.Data.PrefModel as BR
-import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
-import qualified BlueRipple.Model.TurnoutAdjustment as BR
+--import qualified BlueRipple.Data.HouseElectionTotals as BR
+--import qualified BlueRipple.Data.PrefModel as BR
+--import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
+--import qualified BlueRipple.Model.TurnoutAdjustment as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
-import qualified BlueRipple.Model.PostStratify as BR
+--import qualified BlueRipple.Model.PostStratify as BR
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -116,69 +116,168 @@ import MRP.Common
 import MRP.CCES
 import MRP.DeltaVPV (DemVPV)
 
-import qualified PreferenceModel.Common as PrefModel
-import qualified BlueRipple.Data.Keyed as BR
+--import qualified PreferenceModel.Common as PrefModel
+--import qualified BlueRipple.Data.Keyed as BR
 
-import qualified Visualizations.StatePrefs as BR
+--import qualified Visualizations.StatePrefs as BR
 
 text1 :: T.Text
 text1 = [i|
-When pollsters or academics go from estimating voter preference to electoral outcomes, things get
-complicated.  Voter preference is complicated too!  But the approach is straightforward:
-take survey data or voter-file data or some data that has individual preference and
-use that to infer voter preference for a group of people.  There are many choices
-for how to group the data: by demographic charactersitics?  by location?  both?
+Predicting election outcomes via polling or survey data is hard: people may not answer
+accurately or honestly, the people you ask may not be representative of the electorate, and
+the composition of the electorate in each state is a moving target.
 
-But let's suppose we accept the preferences, however derived.  How do we go from those
-to a modeled election result?  To do that we need a model of the *electorate*, that is
-how many people of each type (in the country or each state or district) are likely to vote
-in the election.  That question is usually broken down into two parts:
-knowing the demographics of the country/state/region, that is knowing how many people
-are in each group and then knowing how many of those people will vote on election day.
-The number of people in each group is usually straightforwardly derived from census data.
-But the second part---what fraction of each group will vote, aka the electoral weights---
-that's extremely hard to figure out.
+- Getting accurate answers, is a key part of a pollsters job.  Some surveys, e.g., the [CCES
+survey][CCES], one we use a lot,
+tackle this issue by verifying some data externally, for example via state voter-files.
+- Surveys and polls assign *weights* to responses, numbers that allow users of the data to
+reconstruct a representative sample of the population from the survey.  For example, if
+the country has roughly the same number of adults above and below 45 but the survey has
+fewer responses from older people, those responses will be assigned higher weights.  Weighting
+is complex, not least because there are many demographic variables to be considered.
+- But we truly *do not know* who will vote on election day.  You could
+have extremely accurate estimates of how each kind of person (older or younger,
+male or female, Black, White, Latinx, Asian, Texan or Californian, etc.) *would* vote
+and not really know *how many* of them *will* vote.  This gets even harder to predict in
+smaller regions, like states, congressional districts or state legislative districts.
 
+We have very accurate information about who lives in each of these places.  The census
+tracks this and updates the data annually.  So what we need to know is the
+probability that a voter of a certain demographic type, in a certain place, will cast a
+vote. There are lots of reasons why people do and don't
+vote: see [our piece][BR:ID] on voter ID or Fair Vote's [rundown][FV:Turnout] on
+voter turnout, for example.  For the purposes of *this post* we're going to ignore
+the reasons and focus on the modeling problem.  For another point of view,
+[here][UpshotModel] is an explanation from the New York Times' Upshot about their
+election modeling.
+
+When pollsters and academics talk about this problem, they use the term "weighting" or
+"weights." The weighting of a survey to match the electorate is just like what we
+talked about above, when polls are weighted to match the population, except here the
+weights are chosen to match some estimate of what the electorate will look like.
+But we will often talk instead about probabilities, the chance that a given voter will vote.
+These probabilities, multiplied by the number of people in a given group,
+a number we know quite accurately, provide the "electoral weight".
+for example, if 60% of Texan Females over 45 will vote (a probability),
+and you know how many Texan Females over 45 there are (about 1.2 million)
+you can figure out how to weight your survey responses so that the weighted tally
+contains about 738,000 female Texan voters over 45.
+
+So how do we figure out the probability that someone will vote?
 There are a number of standard approaches:
 
-1. Ask them! Some surveys ask the respondent if they intend to vote and then use that
+1. Ask them! Some surveys ask the respondent if they intend to vote, or, more often,
+a [bunch of questions][Pew:LikelyVoter] used to assess their likelihood of voting, and then use that
 (or some modeled fraction of that) to create a set of weights with as much specificity
-as the survey allows.
+as the survey allows. This is almost always what pollsters do.
 2. Assume the next election will be like the last election. The census tracks nationwide
 demographically split turnout for previous elections and we can use those weights,
 though they lack any geographic specificity. Also, some surveys match respondents with
-voter-file data and thus turnout.  These can then be used to build a set of weights,
-however specific the survey allows.
+voter-file data and thus turnout.  These can then be used to build a set of weights.
 3. Model the electorate using some combination of the above data---previous elections,
 surveys---and whatever other variables, e.g., negative partisanship of a district,
 to predict how the current electorate might differ from the past.
 
 Rather than opine on the best model, which is not our expertise,
-in this piece we want to show how important the choice of electoral weights turns out to be.
-We want to help you become a more informed reader of polls and academic work
-which predicts electoral results.
+we want to demonstrate how much a prediction can depend on the model
+of electoral weights. We want you to become a more informed (and skeptical!)
+reader of polls and academic work predicting electoral results.
 
 This piece was partially inspired by a recent [Vox article][Vox:BernieYouth], which used
-a novel survey to look at how each candidate in the democratic primary might fare against
-Donald Trump. The paper on which the article is based is interesting and worth a read. But
-some of the conclusions of the paper and article are based on using electoral weights derived
-from the 2016 election.  It's very hard to evaluate these conclusions without understanding
+a novel survey to look at how each candidate in the Democratic primary might fare against
+Donald Trump. The [paper][Paper:BernieYouth] on which the article is based
+is interesting and worth a read.  Some of the conclusions of the paper and article are
+based on electoral weights derived
+from the 2016 election (using the CCES survey).
+It's very hard to evaluate these conclusions without understanding
 how sensitive they are to the choice of electoral weights.
 
-So let's explore how much difference these weights can make.  We'll begin by picking a few
+So let's explore how much difference these weights can make!  We'll fix our voter preferences to
+an estimate from the 2016 presidential election (using a variation of the [MR model][BR:MRP]
+we've used in the last couple of posts), and use 2016 
+[demographics][Census:PUMS] from the census.  The only thing we'll be varying here
+are the electoral weights, that is, the likelihood that a given type of voter,
+in a given place, will vote
+
+We'll begin by picking a few
 possible sets of weights and comparing the projected popular vote and electoral college results
 that they predict from the *same set of preferences*---in this case, preferences derived from
-our [MRP model][BR:MRP] based on the [CCES][CCES].  Here are the weights we'll explore:
+our [MRP model][BR:MRP] based on the [CCES][CCES].  Below we list the weights that we'll explore.
+One note: each set of weights has been adjusted on a per state basis so that the weights
+and demographics (in the same election year) correctly give the total number of votes cast in
+the state that year--if you're interested in the details, we followed a simplified version
+of the techniques described in [this paper][DeepInteractions].
 
-- Census2012: Nationwide weights from the 2012 election, tabulated by the census.
-- Census2016: Nationwide weights from the 2016 election, tabulated by the census.
-- Census2018: Nationwide weights from the 2018 (mid-term) election, tabulated by the census.
-- CCES2016a: Nationwide weights derived from turnout data in the CCES survey itself.
-- CCES2016b: State-level weights derived from turnout data in the CCES survey itself.
+* National-level probabilities from census data for the 2012 and 2016 general elections:
+  - broken down by Age, Sex, and Race.
+  - broken down by Age, Sex, and Education.
 
+* State-level probabilities inferred from the CCES survey for the 2008, 2012 and 2016 general elections:
+  - broken down by Age, Sex and Race. 
+  - broken down by Age, Sex, and Education.
+  - broken down by Age, Sex, Education and Race.
+
+It might seem impossible to draw much of a conclusion comparing so many things.
+But all we want to show that predicting the election outcome, either the popular vote or the electoral college totals,
+depends *a lot* on the weighting scheme you choose.  We're not recommending any of these weights in particular,
+but each might be a reasonable model of the 2020 electorate since each is derived from a validated source and a
+recent election.
+
+The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate
+using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights.  The results vary quite a bit,
+from a popular vote share below 49% and 190 electoral votes to a popular vote share of almost 53% and almost
+370 electoral votes! That's a swing of over 3% in the popular vote (~5 million votes)
+and the difference between losing and winning the election.
+
+[UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
+[DeepInteractions]: <http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf>
+[PEW:LikelyVoter]: <https://www.pewresearch.org/methods/2016/01/07/measuring-the-likelihood-to-vote/>
+[Census:PUMS]: <https://www.census.gov/programs-surveys/acs/technical-documentation/pums.html>
+[FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+[BR:ID]: <https://blueripplepolitics.org/blog/voter-ids>
 [BR:MRP]: <https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods>
 [CCES]: <https://cces.gov.harvard.edu/>
 [Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
+[Paper:BernieYouth]: <https://osf.io/25wm9/>
+[Rumsfeld]: <https://en.wikipedia.org/wiki/There_are_known_knowns>
+|]
+
+
+text2 :: T.Text
+text2 = [i|
+There are a number of interesting things to see here:
+
+- A frustrating truth: The chart has lines at 50% popular vote and 269 electoral votes,
+an electoral-college tie.
+All the points in the bottom right section are outcomes where a Democratic candidate wins
+the popular vote but loses the election. There are no corresponding points in the
+upper-left: outcomes where a Democrat loses the popular vote but wins the election.  Another way of seeing this is
+noting that, using these numbers, a Democrat might need 51.5% of the popular vote to win the electoral college.
+There are, of course, scenarios where a Democrat could lose the popular vote but win the election,
+but they are not likely with our current demographics and voter preferences.
+- If you look only at year (indicated by color in the chart), for a given weighting source and breakdown,
+you can see that 2008 was a good year for Dem turnout, followed by 2012, and then 2016.
+That tracks the election results: In 2008, Obama won 365 electoral votes (EVs) with almost 53% of the popular vote.
+In 2012, he won 332 EVs and 51% of the popular vote, and in 2016
+Clinton lost, garnering 227 EVs and 51% of the 2-party vote share. This suggests that differences in turnout can explain a lot
+of the difference in outcome in those three elections. 
+- The weightings that are most "optimistic" for Democrats are ones that ignore education in their breakdown of the electorate.
+This issue was [much discussed after the 2016 election][Vox:EducationWeighting].
+Over the last couple of decades, educational attainment, essentially whether someone
+is or is not a college graduate, has become much more predictive of their voter preference.
+This information is lost when we don't account for education in the model.
+In particular, white voters without college-degrees shifted Republican in their voting preferences over that time,
+while white voters with a college degree have been shifting toward Democrats.  But there are different numbers
+of those voters in different places.
+Models which accounted for age, sex and race but not education
+tended to inflate the likelihood of Dem victories in recent years.  Unlike the trend from 2008 to 2016, this is a *modeling*
+issue, one which masks a change in voter preference, not a change in turnout.
+
+At this point you may be thinking "okay, so turnout models make a big difference but why would someone use 2008 turnout or 2012 turnout
+to look at 2020?"  That's a good question.  But it's not clear that 2016 makes much sense either.  To see why, let's redo our chart but
+this time using 2016 and 2018 general election turnout.
+
+[Vox:EducationWeighting]: <https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election>
 |]
   
 foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
@@ -339,26 +438,26 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 
       asrWgtdByCensus2012 = prepRows 2012 ET.EW_Census BR.ASR
                             <$> mergeASRElectionData
-                            (asrDemo 2018 ET.House)
+                            (asrDemo 2016 ET.President)
                             (asrPrefs 2016 ET.President)
                             "Census (ASR) 2012"
                             (asrCensusEW 2012 ET.President)
                             electoralVotesByStateFrame                         
       asrWgtdByCensus2016 = prepRows 2016 ET.EW_Census BR.ASR
                             <$> mergeASRElectionData
-                            (asrDemo 2018 ET.House)
+                            (asrDemo 2016 ET.President)
                             (asrPrefs 2016 ET.President)
                             "Census (ASR) 2016"
                             (asrCensusEW 2016 ET.President)
                             electoralVotesByStateFrame
-      asrWgtdByCCES y = prepRows y ET.EW_CCES BR.ASR
-                        <$> mergeASRElectionData
-                        (asrDemo 2018 ET.House)
-                        (asrPrefs 2016 ET.President)
-                        ("CCES (ASR) " <> (T.pack $ show y))
-                        (asrCCESEW y)
+      asrWgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASR
+                                           <$> mergeASRElectionData
+                                           (asrDemo yDemo oDemo)
+                                           (asrPrefs 2016 ET.President)
+                                           ("CCES (ASR) " <> (T.pack $ show yTurnout))
+                                           (asrCCESEW yTurnout)
                         electoralVotesByStateFrame
-      asrCCES = mconcat <$> traverse asrWgtdByCCES [2008, 2012, 2016]
+      asrCCES = mconcat <$> traverse (asrWgtdByCCES 2016 ET.President) [2008, 2012, 2016]
   asrWgtd <-  BR.retrieveOrMakeFrame "mrp/weights/asrWgtd.bin" (mconcat <$> sequence [ asrWgtdByCensus2012, asrWgtdByCensus2016, asrCCES])
 
   let ewResultsF = FMR.concatFold $ FMR.mapReduceFold
@@ -378,29 +477,39 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     $ F.filterFrame (yearFilter y) aseDemoAndAdjCCESEW
       aseWgtdByCensus2012 = prepRows 2012 ET.EW_Census BR.ASE
                             <$> mergeASEElectionData
-                            (aseDemo 2018 ET.House)
+                            (aseDemo 2016 ET.President)
                             (asePrefs 2016 ET.President)
                             "Census (ASE) 2012"
                             (aseCensusEW 2012 ET.President)
                             electoralVotesByStateFrame
       aseWgtdByCensus2016 = prepRows 2016 ET.EW_Census BR.ASE
                             <$> mergeASEElectionData
-                            (aseDemo 2018 ET.House)
+                            (aseDemo 2016 ET.President)
                             (asePrefs 2016 ET.President)
                             "Census (ASE) 2016"
                             (aseCensusEW 2016 ET.President)
                             electoralVotesByStateFrame
-      aseWgtdByCCES y = prepRows y ET.EW_CCES BR.ASE
-                        <$> mergeASEElectionData
-                        (aseDemo 2018 ET.House)
-                        (asePrefs 2016 ET.President)
-                        ("CCES (ASE) " <> (T.pack $ show y))
-                        (aseCCESEW y)
-                        electoralVotesByStateFrame
+      aseWgtdByCensus2018 = prepRows 2018 ET.EW_Census BR.ASE
+                            <$> mergeASEElectionData
+                            (aseDemo 2018 ET.House)
+                            (asePrefs 2016 ET.President)
+                            "Census (ASE) 2018"
+                            (aseCensusEW 2018 ET.House)
+                            electoralVotesByStateFrame                            
+      aseWgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASE
+                                           <$> mergeASEElectionData
+                                           (aseDemo yDemo oDemo)
+                                           (asePrefs 2016 ET.President)
+                                           ("CCES (ASE) " <> (T.pack $ show yTurnout))
+                                           (aseCCESEW yTurnout)
+                                           electoralVotesByStateFrame
                         
-      aseCCES = mconcat <$> traverse aseWgtdByCCES [2008, 2012, 2016]                   
-  aseWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aseWgtd.bin" (mconcat <$> sequence [ aseWgtdByCensus2012, aseWgtdByCensus2016, aseCCES])  
+      aseCCES = mconcat <$> traverse (aseWgtdByCCES 2016 ET.President) [2008, 2012, 2016]
+      aseCCES2 = mconcat <$> sequence [aseWgtdByCCES 2016 ET.President 2016, aseWgtdByCCES 2018 ET.House 2018]                   
+  aseWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aseWgtd.bin" (mconcat <$> sequence [ aseWgtdByCensus2012, aseWgtdByCensus2016, aseCCES])
+  aseWgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aseWgtd2.bin" (mconcat <$> sequence [ aseWgtdByCensus2016, aseWgtdByCensus2018, aseCCES2])
   let aseEwResults = FL.fold ewResultsF aseWgtd
+      aseEwResults2 = FL.fold ewResultsF aseWgtd2
   logFrame aseEwResults
   
   let aserPrefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER V.++ '[BR.DemPref]))
@@ -409,15 +518,18 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                     $ F.filterFrame (yearFilter y) pumsASERByState
       aserCCESEW y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
                      $ F.filterFrame (yearFilter y) aserDemoAndAdjCCESEW
-      aserWgtdByCCES y = prepRows y ET.EW_CCES BR.ASER
-                         <$> mergeASERElectionData
-                         (aserDemo 2018 ET.House)
-                         (aserPrefs 2016 ET.President)
-                         ("CCES (ASER) " <> (T.pack $ show y))
-                         (aserCCESEW y)
-                         electoralVotesByStateFrame
-  aserWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd.bin" (mconcat <$> traverse aserWgtdByCCES [2008, 2012, 2016])
+      aserWgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASER
+                                            <$> mergeASERElectionData
+                                            (aserDemo yDemo oDemo)
+                                            (aserPrefs 2016 ET.President)
+                                            ("CCES (ASER) " <> (T.pack $ show yTurnout))
+                                            (aserCCESEW yTurnout)
+                                            electoralVotesByStateFrame
+  aserWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd.bin" (mconcat <$> traverse (aserWgtdByCCES 2016 ET.President) [2008, 2012, 2016])
+  aserWgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd2.bin" (mconcat <$> sequence [aserWgtdByCCES 2016 ET.President 2016
+                                                                                        , aserWgtdByCCES 2018 ET.House 2018])
   let aserEwResults = FL.fold ewResultsF aserWgtd
+      aserEwResults2 = FL.fold ewResultsF aserWgtd2
   logFrame aserEwResults
 
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -433,9 +545,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
         brAddMarkDown text1
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
-              "Popular vote share and Electoral Votes for 2016 preferences, 2018 demographics and various electoral weights"
+              "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights"
               (FV.ViewConfig 800 800 10)
               (aseEwResults <> asrEwResults <> aserEwResults)
+        brAddMarkDown text2
+        _ <-  K.addHvega Nothing Nothing
+              $ vlWeights
+              "Popular vote share and Electoral Votes: 2016 weightings vs. 2018 weightings"
+              (FV.ViewConfig 800 800 10)
+              (aseEwResults2 <> aserEwResults2)
         brAddMarkDown brReadMore
 
 
@@ -449,17 +567,17 @@ vlWeights title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
       makeVS =  GV.calculateAs "100 * datum.DemPref" "Vote Share (%)"
       makeVSRuleVal = GV.calculateAs "50" "50%"
-      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [49, 53.5]], GV.PNoTitle]
+      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [48, 53]], GV.PNoTitle]
       makeEVRuleVal = GV.calculateAs "269" "Evenly Split"
-      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [140, 400]], GV.PNoTitle]
+      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [170, 370]], GV.PNoTitle]
       makeSourceType = GV.calculateAs "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping" "Weight Source"
       encX = GV.position GV.X [GV.PName "Vote Share (%)"
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [49, 53.5]]
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [48, 53]]
                               , GV.PTitle "D Vote Share (%)"]
       encY = GV.position GV.Y [FV.pName @ElectorsD
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [140, 400]]
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [170, 370]]
                               , GV.PTitle "# D Electoral Votes"
                               ]
       encColor = GV.color [FV.mName @BR.Year, GV.MmType GV.Nominal]

@@ -13,68 +13,20 @@
 --{-# LANGUAGE AllowAmbiguousTypes       #-}
 
 import qualified Control.Foldl                 as FL
-import           Control.Lens                   ((%~))
-import qualified Control.Monad.State           as ST
 import Control.Monad (when)
-import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
-import qualified Data.Time.Format              as Time
-
-import qualified Data.Array as A
-import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import           Data.Maybe (fromMaybe, isJust)
-import qualified Data.Vector                   as VB
-import qualified Data.Vector.Storable          as VS
+
 import qualified Data.Text                     as T
 import           Data.Data                      ( Data )
 import           Data.Typeable                  ( Typeable )
 
-import qualified Text.Printf                   as PF
-
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.Melt                   as F
-
-import qualified Pipes                         as P
-import qualified Pipes.Prelude                 as P
-
-import qualified Numeric.LinearAlgebra         as LA
-
-import qualified Frames                        as F
-import qualified Frames.InCore                 as F
-import qualified Data.Vinyl                    as V
-
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
-import qualified Frames.Visualization.VegaLite.StackedArea
-                                               as FV
-import qualified Frames.Visualization.VegaLite.LineVsTime
-                                               as FV
-import qualified Frames.Visualization.VegaLite.ParameterPlots
-                                               as FV
-import qualified Frames.Visualization.VegaLite.Correlation
-                                               as FV
-
-import qualified Frames.Transform              as FT
-import qualified Frames.Folds                  as FF
-import qualified Frames.MapReduce              as MR
-import qualified Frames.Enumerations           as FE
-import qualified Frames.Utils                  as FU
-import qualified Frames.Serialize              as FS
-import qualified Frames.MaybeUtils             as FM
 
 import qualified Knit.Report                   as K
-import qualified Knit.Report.Cache             as K
-import qualified Polysemy                      as P
-import           Polysemy.Error                 ( Error, mapError, throw )
-import           Polysemy.Async                 (Async, asyncToIO, asyncToIOFinal) -- can't use final with this version of Knit-Haskell
-import           Polysemy.RandomFu              (RandomFu, runRandomIO)
-import           Text.Pandoc.Error             as PE
+import           Polysemy.RandomFu              (runRandomIO)
 
 import           Data.String.Here               ( here )
 
@@ -84,14 +36,9 @@ import System.Console.CmdArgs.Implicit ((&=))
 
 import           BlueRipple.Data.DataFrames as BR
 import           BlueRipple.Data.Loaders as BR
-import           BlueRipple.Data.PrefModel as BR
 
 import           BlueRipple.Utilities.KnitUtils
 
-import qualified BlueRipple.Model.TurnoutAdjustment
-                                               as TA
-                                               
-import           MRP.CCES
 import           MRP.Common
 import qualified MRP.WWC as WWC
 import qualified MRP.Pools as Pools

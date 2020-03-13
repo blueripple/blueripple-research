@@ -1,23 +1,16 @@
 {-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE QuasiQuotes          #-}
-{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE Rank2Types           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TupleSections        #-}
-{-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -O0 -freduction-depth=0 #-}
 module BlueRipple.Data.ACS_PUMS where
@@ -44,9 +37,11 @@ import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import           Text.Read                      (readMaybe)
 import qualified Data.Vinyl                    as V
+import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.Functor            as V
 import qualified Frames                        as F
+import           Data.Vinyl.Lens               (type (⊆))
 import           Frames                         ( (:.)(..) )
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
@@ -183,20 +178,20 @@ pumsLoader y =
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
 
-type PUMACounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [Citizens, NonCitizens]
+type PUMACounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] ++ ks ++ [Citizens, NonCitizens]
 
 
 pumsRollupF
   :: forall ks
-  . (ks F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] V.++ ks)
-    , FI.RecVec (ks V.++ [Citizens, NonCitizens])
+  . (ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] ++ ks)
+    , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
   => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
 pumsRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks) @[Citizens, NonCitizens]
+      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] ++ ks) @[Citizens, NonCitizens]
       reduce = FMR.foldAndAddKey sumPeopleF
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
@@ -211,13 +206,13 @@ sumWeightedPeopleF =
   in (\wc wnc -> (round wc) F.&: (round wnc) F.&: V.RNil) <$> wgtCitF <*> wgtNCitF
 
 
-type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ [Citizens, NonCitizens]
+type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ [Citizens, NonCitizens]
 
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
-   ,ks F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens, BR.CongressionalDistrict, BR.PUMAWgt] V.++ ks)
-   , FI.RecVec (ks V.++ [Citizens, NonCitizens])
+   ,ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens, BR.CongressionalDistrict, BR.PUMAWgt] ++ ks)
+   , FI.RecVec (ks ++ [Citizens, NonCitizens])
    , Ord (F.Record ks)
    )
  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record ks)
@@ -233,24 +228,24 @@ pumsCDRollup mapKeys pumsFrame = do
       pumsWithCDAndWeight = catMaybes $ fmap F.recMaybe pumsWithCDAndWeightM
   K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[BR.PUMAWgt,Citizens, NonCitizens]
+      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks) @[BR.PUMAWgt,Citizens, NonCitizens]
       reduce = FMR.foldAndAddKey sumWeightedPeopleF
   return $ FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) pumsWithCDAndWeight
 
 
-type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ [Citizens, NonCitizens]
+type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ [Citizens, NonCitizens]
 
 pumsStateRollupF
   :: forall ks
-  . (ks F.⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] V.++ ks)
-    , FI.RecVec (ks V.++ [Citizens, NonCitizens])
+  . (ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] ++ ks)
+    , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
   => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, InCollege, BR.Race5C] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (StateCounts ks))
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks) @[Citizens, NonCitizens]
+      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks) @[Citizens, NonCitizens]
       reduce = FMR.foldAndAddKey sumPeopleF
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
@@ -454,7 +449,7 @@ locKeyPretty r =
 
 type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 predictionsByLocation ::
-  forall cc r. (cc F.⊆ (LocationCols V.++ ASER V.++ BR.CountCols)
+  forall cc r. (cc ⊆ (LocationCols ++ ASER ++ BR.CountCols)
                , Show (F.Record cc)
                , V.RMap cc
                , V.ReifyConstraint Show V.ElField cc
@@ -463,7 +458,7 @@ predictionsByLocation ::
                , K.KnitEffects r
              )
   => K.Sem r (F.FrameRec CCES_MRP)
-  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ASER V.++ BR.CountCols))  
+  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols ++ ASER ++ BR.CountCols))  
   -> [GLM.WithIntercept CCESPredictor]
   -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
   -> K.Sem r [LocationHolder cc V.ElField Double]
@@ -487,7 +482,7 @@ predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapErr
               let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
                   emptyAsNationalGKM = case groupKeyM of
                                          Nothing -> Nothing
-                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ cc))
+                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols ++ cc))
               in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
         cpreds <- M.traverseWithKey predictFrom cpms
         return $ LocationHolder n lkM cpreds
