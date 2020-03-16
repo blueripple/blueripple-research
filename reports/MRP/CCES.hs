@@ -30,8 +30,6 @@ module MRP.CCES
 import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
---import qualified BlueRipple.Data.PrefModel.SimpleAgeSexEducation as BR
---import qualified BlueRipple.Data.PrefModel.SimpleAgeSexRace as BR
 import qualified BlueRipple.Model.MRP_Pref as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as Keyed
@@ -40,61 +38,39 @@ import           MRP.CCESFrame
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
---import qualified Control.Monad.Except          as X
---import qualified Control.Monad.State           as ST
---import qualified Data.Array                    as A
 import qualified Data.Serialize                as S
---import qualified Data.Serialize.Text           as S
---import qualified Data.List                     as L
 import qualified Data.IntMap                   as IM
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromJust)
---import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Set as Set
 import qualified Data.Text                     as T
-import           Data.Text                      ( Text )
---import           Text.Read                      (readMaybe)
---import           Data.Ix                        ( Ix )
+
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
---import qualified Data.Vinyl.Functor            as V
+
 import qualified Frames                        as F
 import           Frames                         ( (:.)(..) )
---import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
---import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
---import qualified Text.Read                     as TR
 
---import qualified Frames.Folds                  as FF
---import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
---import qualified Frames.MapReduce              as MR
---import qualified Frames.Enumerations           as FE
+
 import qualified Frames.Serialize              as FS
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
---import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
---import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.Predict            as GLM
---import qualified Numeric.LinearAlgebra         as LA
 
---import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
---import qualified Data.Vector.Boxed             as VB
 import           GHC.Generics                   ( Generic, Rep )
 
 import qualified Knit.Report as K
-import qualified Polysemy.Error                as P (mapError{-, Error-})
+import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                as P (raise)
 
-
---import GHC.TypeLits (Symbol)
---import Data.Kind (Type)
 
 ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
 ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @(F.RecordColumns CCES) @CCES_MRP

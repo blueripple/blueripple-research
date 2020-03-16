@@ -80,9 +80,6 @@ import MRP.CCES
 import MRP.DeltaVPV (DemVPV)
 
 import qualified PreferenceModel.Common as PrefModel
---import qualified BlueRipple.Data.Keyed as BR
-
---import qualified Visualizations.StatePrefs as BR
 
 text1a :: T.Text
 text1a = [i|
