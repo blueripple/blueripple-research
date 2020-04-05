@@ -112,6 +112,8 @@ type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
 instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+type IsCitizen = "IsCitizen" F.:-> Bool
+
 data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 
 

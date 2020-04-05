@@ -132,7 +132,7 @@ instance Grouping VoteWhyNot
 instance SE.Serialize VoteWhyNot
 
 data RegWhyNot = RWN_MissedDeadline
-               | RWN_DidntKNowHow
+               | RWN_DidntKnowHow
                | RWN_Residency
                | RWN_PhysicallyUnable
                | RWN_Language
@@ -167,25 +167,25 @@ type instance FI.VectorFor VoteWhen = Vec.Vector
 instance Grouping VoteWhen
 instance SE.Serialize VoteWhen
 
-data Voted = V_Not
-           | V_Voted
-           | V_Other
-           deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data VotedYN = VYN_DidNotVote
+             | VYN_Voted
+             | VYN_Other
+             deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type VotedC = "Voted" F.:-> Voted
-type instance FI.VectorFor Voted = Vec.Vector
-instance Grouping Voted
-instance SE.Serialize Voted
+type VotedYNC = "Voted" F.:-> VotedYN
+type instance FI.VectorFor VotedYN = Vec.Vector
+instance Grouping VotedYN
+instance SE.Serialize VotedYN
 
-type Registered = R_Not
-                | R_Registered
-                | R_Other
-                deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data RegisteredYN = RYN_NotRegistered
+                  | RYN_Registered
+                  | RYN_Other
+                  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
            
-type RegisteredC = "Voted" F.:-> Registered
-type instance FI.VectorFor Registered = Vec.Vector
-instance Grouping Registered
-instance SE.Serialize Registered
+type RegisteredYNC = "RegisteredYN" F.:-> RegisteredYN
+type instance FI.VectorFor RegisteredYN = Vec.Vector
+instance Grouping RegisteredYN
+instance SE.Serialize RegisteredYN
 
 
 

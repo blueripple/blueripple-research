@@ -21,6 +21,7 @@ module BlueRipple.Data.CPSVoterPUMS
 
 import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
+import qualified BlueRipple.Data.ElectionTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
@@ -86,55 +87,42 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
-cpsVoterPUMSLoader = BR.cachedMaybeFrameLoader @CPSVoterPUMS_Raw @(F.RecordColumns @CPSVoterPUMS_All) @CPSVoterPUMS
+cpsVoterPUMSLoader = BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS
                        (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
                        Nothing
-                       (const True)
-                       fixCPSVoterPUMSRow
                        transformCPSVoterPUMSRow
                        Nothing
                        "cpsVoterPUMS.bin"
 
-
-type CPSVoterPUMS_Raw = '[ CPSYEAR
-                         , CPSSTATEFIP
-                         , CPSCOUNTY
-                         , CPSAGE
-                         , CPSSEX
-                         , CPSRACE
-                         , CPSEDUC
-                         , CPSSCHLCOLL
-                         , CPSVOWHYNOT
-                         , CPSVOTEHOW
-                         , CPSVOTEWHEN
-                         , CPSVOTED
-                         , CPSVOREG
-                         , CPSVOSUPPWT
-                         ]
-
 type CPSVoterPUMSWeight = "CPSVoterPUMSWeight" F.:-> Double
 
-type CPSVoterPUMS = '[ Year
-                     , StateFIPS
-                     , CountyFIPS
+type CPSVoterPUMS = '[ BR.Year
+                     , BR.StateFIPS
+                     , BR.CountyFIPS
                      , BR.Age4C
                      , BR.SexC
                      , BR.Race5C
+                     , BR.IsCitizen
                      , BR.CollegeGradC
                      , BR.InCollege
                      , BR.VoteWhyNotC
+                     , BR.RegWhyNotC
                      , BR.VoteHowC
                      , BR.VoteWhenC
-                     , BR.VotedC
-                     , BR.Registered
+                     , BR.VotedYNC
+                     , BR.RegisteredYNC
                      , CPSVoterPUMSWeight
                      ]
+
+
+--cpsVoterPUMSElectoralWeights
+
 
 
 cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @InCollege r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
@@ -144,7 +132,7 @@ cpsKeysToASER addInCollegeToGrads r =
 cpsKeysToASE :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
 cpsKeysToASE addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @InCollege r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
@@ -186,6 +174,9 @@ intsToRace5 hN rN
   | rN == 651 = BR.R5_Asian
   | otherwise = BR.R5_Other
 
+intToIsCitizen :: Int -> Bool
+intToIsCitizen n = (n <= 4)
+
 intToVoteWhyNot :: Int -> BR.VoteWhyNot
 intToVoteWhyNot n
   | n == 1 = BR.VWN_PhysicallyUnable
@@ -196,9 +187,9 @@ intToVoteWhyNot n
   | n == 6 = BR.VWN_Transport
   | n == 7 = BR.VWN_DislikeChoices
   | n == 8 = BR.VWN_RegIssue
-  | n == 9 = BR.VWN.Weather
+  | n == 9 = BR.VWN_Weather
   | n == 10 = BR.VWN_BadPollingPlace
-  | otherwide = BR.VWN_Other
+  | otherwise = BR.VWN_Other
 
 intToRegWhyNot :: Int -> BR.RegWhyNot
 intToRegWhyNot n
@@ -224,144 +215,57 @@ intToVoteWhen n
   | n == 2 = BR.VW_BeforeElectionDay
   | otherwise = BR.VW_Other
 
-intToVoted :: Int -> BR.Voted
-intToVoted n
-  | n == 1 = BR.V_DidNotVote
-  | n == 2 = BR.V_Voted
-  | otherwise = BR.V_Other
+intToVotedYN :: Int -> BR.VotedYN
+intToVotedYN n
+  | n == 1 = BR.VYN_DidNotVote
+  | n == 2 = BR.VYN_Voted
+  | otherwise = BR.VYN_Other
 
-intToRegistered :: Int -> BR.Registered
-intToRegistered n
-  | n == 1 = BR.R_NotRegistered
-  | n == 2 = BR.R_Registered
-  | otherwise = BR.R_Other
+intToRegisteredYN :: Int -> BR.RegisteredYN
+intToRegisteredYN n
+  | n == 1 = BR.RYN_NotRegistered
+  | n == 2 = BR.RYN_Registered
+  | otherwise = BR.RYN_Other
 
-
-transformCPSVoterPUMSRow :: F.Record CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS
-transformCPSVoterPUMSRow = undefined
+transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS
+transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS (mutate r) where
+  addAge = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.CPSAGE
+  addSex =  FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.CPSSEX
+  hN = F.rgetField @BR.CPSHISPAN
+  rN = F.rgetField @BR.CPSRACE
+  addRace r = FT.recordSingleton @BR.Race5C $ intsToRace5 (hN r) (rN r)
+  addIsCitizen = FT.recordSingleton @BR.IsCitizen . intToIsCitizen . F.rgetField @BR.CPSCITIZEN
+  addCollegeGrad = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.CPSEDUC
+  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.CPSSCHLCOLL
+  addVoteWhyNot = FT.recordSingleton @BR.VoteWhyNotC . intToVoteWhyNot . F.rgetField @BR.CPSVOWHYNOT
+  addRegWhyNot = FT.recordSingleton @BR.RegWhyNotC . intToRegWhyNot . F.rgetField @BR.CPSVOYNOTREG
+  addVoteHow = FT.recordSingleton @BR.VoteHowC . intToVoteHow . F.rgetField @BR.CPSVOTEHOW
+  addVoteWhen = FT.recordSingleton @BR.VoteWhenC . intToVoteWhen . F.rgetField @BR.CPSVOTEWHEN
+  addVotedYN = FT.recordSingleton @BR.VotedYNC . intToVotedYN . F.rgetField @BR.CPSVOTED
+  addRegisteredYN = FT.recordSingleton @BR.RegisteredYNC . intToRegisteredYN . F.rgetField @BR.CPSVOREG
+  mutate = FT.retypeColumn @BR.CPSYEAR @BR.Year
+           . FT.retypeColumn @BR.CPSSTATEFIP @BR.StateFIPS
+           . FT.retypeColumn @BR.CPSCOUNTY @BR.CountyFIPS
+           . FT.mutate addAge
+           . FT.mutate addSex
+           . FT.mutate addRace
+           . FT.mutate addIsCitizen
+           . FT.mutate addCollegeGrad
+           . FT.mutate addInCollege
+           . FT.mutate addVoteWhyNot
+           . FT.mutate addRegWhyNot
+           . FT.mutate addVoteHow
+           . FT.mutate addVoteWhen
+           . FT.mutate addVotedYN
+           . FT.mutate addRegisteredYN
+           . FT.retypeColumn @BR.CPSVOSUPPWT @CPSVoterPUMSWeight
 
 -- to use in maybeRecsToFrame
 -- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"
+{-
 fixPUMSRow :: F.Rec (Maybe F.:. F.ElField) PUMS_Raw -> F.Rec (Maybe F.:. F.ElField) PUMS_Raw
 fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
                $ r where
   missingInCollegeTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG]
   missingInCollegeTo0 = FM.fromMaybeMono 0
-
--- fmap over Frame after load and throwing out bad rows
-transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow y r = F.rcast @PUMS_Typed (mutate r) where
---  addState = FT.recordSingleton @BR.StateFIPS . F.rgetField @PUMSST
-  addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCIT
-  addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPWGTP
-  addAge4 = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.PUMSAGEP
-  addSex = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.PUMSSEX
-  addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSSCHL
-  addInCollege = FT.recordSingleton @InCollege . intToInCollege . F.rgetField @BR.PUMSSCHG
-  hN = F.rgetField @BR.PUMSHISP
-  rN = F.rgetField @BR.PUMSRAC1P
-  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
-  addYear = const $ FT.recordSingleton @BR.Year y
-  mutate = FT.retypeColumn @BR.PUMSST @BR.StateFIPS
-           . FT.retypeColumn @BR.PUMSPUMA @BR.PUMA
-           . FT.mutate addYear
-           . FT.mutate addCitizen
-           . FT.mutate addWeight
-           . FT.mutate addAge4
-           . FT.mutate addSex
-           . FT.mutate addEducation
-           . FT.mutate addInCollege
-           . FT.mutate addRace
-
-{-
-type ByCCESPredictors = '[StateAbbreviation, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
-data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
-type CCESEffect = GLM.WithIntercept CCESPredictor
-
-ccesPredictor :: forall r. (F.ElemOf r BR.SexC
-                           , F.ElemOf r BR.SimpleRaceC
-                           , F.ElemOf r BR.CollegeGradC
-                           , F.ElemOf r BR.SimpleAgeC) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Sex       = if F.rgetField @BR.SexC r == BR.Female then 0 else 1
-ccesPredictor r P_Race      = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1 -- non-white is baseline
-ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
-ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
-ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
-
-data  LocationHolder c f a =  LocationHolder { locName :: T.Text
-                                             , locKey :: Maybe (F.Rec f LocationCols)
-                                             , catData :: M.Map (F.Rec f c) a
-                                             } deriving (Generic)
-
-deriving instance (V.RMap c
-                  , V.ReifyConstraint Show F.ElField c
-                  , V.RecordToList c
-                  , Show a) => Show (LocationHolder c F.ElField a)
-                  
-instance (S.Serialize a
-         , Ord (F.Rec FS.SElField c)
-         , S.GSerializePut
-           (Rep (F.Rec FS.SElField c))
-         , S.GSerializeGet (Rep (F.Rec FS.SElField c))
-         , (Generic (F.Rec FS.SElField c))
-         ) => S.Serialize (LocationHolder c FS.SElField a)
-
-lhToS :: (Ord (F.Rec FS.SElField c)
-         , V.RMap c
-         )
-      => LocationHolder c F.ElField a -> LocationHolder c FS.SElField a
-lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
-
-lhFromS :: (Ord (F.Rec F.ElField c)
-           , V.RMap c
-         ) => LocationHolder c FS.SElField a -> LocationHolder c F.ElField a
-lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
-
-type LocationCols = '[StateAbbreviation]
-locKeyPretty :: F.Record LocationCols -> T.Text
-locKeyPretty r =
-  let stateAbbr = F.rgetField @StateAbbreviation r
-  in stateAbbr
-
-type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
-predictionsByLocation ::
-  forall cc r. (cc ⊆ (LocationCols ++ ASER ++ BR.CountCols)
-               , Show (F.Record cc)
-               , V.RMap cc
-               , V.ReifyConstraint Show V.ElField cc
-               , V.RecordToList cc
-               , Ord (F.Record cc)
-               , K.KnitEffects r
-             )
-  => K.Sem r (F.FrameRec CCES_MRP)
-  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols ++ ASER ++ BR.CountCols))  
-  -> [GLM.WithIntercept CCESPredictor]
-  -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
-  -> K.Sem r [LocationHolder cc V.ElField Double]
-predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ do
-  ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-  (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @cc @[BR.SimpleAgeC
-                                                             ,BR.SexC
-                                                             ,BR.CollegeGradC
-                                                             ,BR.SimpleRaceC]
-                                                             countFold
-                                                             predictors                                                     
-                                                             ccesPredictor
-                                                             ccesFrame
-  
-  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
-      allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
-      predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
-      predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
-        let predictFrom catKey predMap =
-              let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
-                  emptyAsNationalGKM = case groupKeyM of
-                                         Nothing -> Nothing
-                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols ++ cc))
-              in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
-        cpreds <- M.traverseWithKey predictFrom cpms
-        return $ LocationHolder n lkM cpreds
-  traverse predict toPredict
-
 -}
