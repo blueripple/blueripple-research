@@ -73,6 +73,9 @@ library
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2014
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2016
                  , BlueRipple.Data.ACS_PUMS_Loader.Pums2018
+                 , BlueRipple.Data.CPSVoterPUMS
+                 , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Path
+                 , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment

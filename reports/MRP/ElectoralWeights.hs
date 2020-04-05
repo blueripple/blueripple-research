@@ -75,6 +75,17 @@ import MRP.DeltaVPV (DemVPV)
 
 text1 :: T.Text
 text1 = [i|
+Our original plan for this post was to delve into the modeling issues surrounding electoral
+weighting in polling and predicitive modeling of election outcomes.  But the country
+is a very different place then when we started this work.  As important as the upcoming
+elections may be, the corona-virus pandemic is urgent and exhausting.
+
+But there is still an election coming and we still want to be a source of thoughtful ideas
+for participation for fellow progressives and Democrats.  So we are going to continue this
+work, and try to understand along with you, how our landscape has changed.
+
+--
+
 Predicting election outcomes via polling or survey data is hard: people may not answer
 accurately or honestly, the people you ask may not be representative of the electorate, and
 the composition of the electorate in each state is a moving target.
@@ -224,10 +235,6 @@ of those voters in different places.
 Models which accounted for age, sex and race but not education
 tended to inflate the likelihood of Dem victories in recent years.  Unlike the trend from 2008 to 2016, this is a *modeling*
 issue, one which masks a change in voter preference, not a change in turnout.
-
-At this point you may be thinking "okay, so turnout models make a big difference but why would someone use 2008 turnout or 2012 turnout
-to look at 2020?"  That's a good question.  But it's not clear that 2016 makes much sense either.  To see why, let's redo our chart but
-this time using 2016 and 2018 general election turnout.
 
 [Vox:EducationWeighting]: <https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election>
 |]

@@ -114,6 +114,7 @@ instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
 
 data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 
+
 instance S.Serialize CollegeGrad
 
 type instance FI.VectorFor CollegeGrad = Vec.Vector
@@ -125,6 +126,8 @@ type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
 
 instance FV.ToVLDataValue (F.ElField CollegeGradC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+type InCollege = "InCollege" F.:-> Bool
 
 data SimpleAge = Under | EqualOrOver deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 

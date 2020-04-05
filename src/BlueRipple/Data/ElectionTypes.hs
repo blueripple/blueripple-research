@@ -111,3 +111,81 @@ instance SE.Serialize ElectoralWeightOfT
 type CVAP = "CVAP" F.:-> Int
 instance FV.ToVLDataValue (F.ElField CVAP) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+
+data VoteWhyNot = VWN_PhysicallyUnable
+                | VWN_Away
+                | VWN_Forgot
+                | VWN_NotInterested
+                | VWN_Busy
+                | VWN_Transport
+                | VWN_DislikeChoices
+                | VWN_RegIssue
+                | VWN_Weather
+                | VWN_BadPollingPlace
+                | VWN_Other
+                deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+
+type VoteWhyNotC = "VoteWhyNot" F.:-> VoteWhyNot
+type instance FI.VectorFor VoteWhyNot = Vec.Vector
+instance Grouping VoteWhyNot
+instance SE.Serialize VoteWhyNot
+
+data RegWhyNot = RWN_MissedDeadline
+               | RWN_DidntKNowHow
+               | RWN_Residency
+               | RWN_PhysicallyUnable
+               | RWN_Language
+               | RWN_NotInterested
+               | RWN_MyVoteIrrelevant
+               | RWN_Other
+                deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+
+type RegWhyNotC = "RegWhyNot" F.:-> RegWhyNot
+type instance FI.VectorFor RegWhyNot = Vec.Vector
+instance Grouping RegWhyNot
+instance SE.Serialize RegWhyNot
+
+data VoteHow = VH_InPerson
+             | VH_ByMail
+             | VH_Other
+             deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+
+
+type VoteHowC = "VoteHow" F.:-> VoteHow
+type instance FI.VectorFor VoteHow = Vec.Vector
+instance Grouping VoteHow
+instance SE.Serialize VoteHow
+
+data VoteWhen = VW_ElectionDay
+              | VW_BeforeElectionDay
+              | VW_Other              
+              deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+
+type VoteWhenC = "VoteWhen" F.:-> VoteWhen
+type instance FI.VectorFor VoteWhen = Vec.Vector
+instance Grouping VoteWhen
+instance SE.Serialize VoteWhen
+
+data Voted = V_Not
+           | V_Voted
+           | V_Other
+           deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+
+type VotedC = "Voted" F.:-> Voted
+type instance FI.VectorFor Voted = Vec.Vector
+instance Grouping Voted
+instance SE.Serialize Voted
+
+type Registered = R_Not
+                | R_Registered
+                | R_Other
+                deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+           
+type RegisteredC = "Voted" F.:-> Registered
+type instance FI.VectorFor Registered = Vec.Vector
+instance Grouping Registered
+instance SE.Serialize Registered
+
+
+
