@@ -115,9 +115,51 @@ type CPSVoterPUMS = '[ BR.Year
                      ]
 
 
---cpsVoterPUMSElectoralWeights
+cpsVoterPUMSRollup
+  :: forall cs ls ks ds.
+  ( cs F.⊆ CPSVoterPUMS
+  , (ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
+  , cs F.⊆ (ls V.++ ks V.++ cs)
+  , FI.RecVec (ls V.++ ks V.++ ds)
+  , Ord (F.Record (ls V.++ ks))
+  )
+  => (F.Record CPSVoterPUMS -> F.Record ls)
+  -> (F.Record CPSVoterPUMS -> F.Record ks)
+  -> FL.Fold (F.Record cs) (F.Record ds)
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ls V.++ ks V.++ ds))
+cpsVoterPUMSRollup getLoc getCat foldData =
+  FMR.concatFold
+  $ FMR.mapReduceFold
+  (FMR.Unpack $ \r -> [getLoc r `V.rappend` getCat r `V.rappend` (F.rcast @cs r)])
+  (FMR.assignKeysAndData @(ls V.++ ks) @cs)
+  (FMR.foldAndAddKey foldData)
 
 
+cpsVoterPUMSElectoralWeights
+  :: forall ls ks.
+  ((ls V.++ ks) F.⊆ (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
+  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
+  , FI.RecVec (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  , FI.RecVec (ls V.++ ks V.++ BR.EWCols)
+  , Ord (F.Record (ls V.++ ks))
+  )
+  => (F.Record CPSVoterPUMS -> F.Record ls)
+  -> (F.Record CPSVoterPUMS -> F.Record ks)
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ls V.++ ks V.++ BR.EWCols))
+cpsVoterPUMSElectoralWeights getLoc getKey =
+  let votedF :: FL.Fold (F.Record '[BR.VotedYNC, CPSVoterPUMSWeight]) (F.Record BR.EWCols)
+      votedF =
+        let voted = (== BR.VYN_Voted) . F.rgetField @BR.VotedYNC
+            wgt = F.rgetField @CPSVoterPUMSWeight
+            wgtdAllF = FL.premap wgt FL.sum
+            wgtdVotersF = FL.prefilter voted $ FL.premap wgt FL.sum
+            wF = (/) <$> wgtdVotersF <*> wgtdAllF
+        in fmap (\w -> BR.EW_Census F.&: BR.EW_Citizen F.&: w F.&: V.RNil) wF        
+      ewFold :: FL.Fold (F.Record [BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) (F.Record BR.EWCols)
+      ewFold = FL.prefilter ((== True) . F.rgetField @BR.IsCitizen) $ FL.premap F.rcast votedF
+  in cpsVoterPUMSRollup getLoc getKey ewFold               
 
 cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
