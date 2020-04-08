@@ -61,6 +61,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loaders as PUMS
+import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 
@@ -266,7 +267,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   stateTurnoutRaw <- BR.stateTurnoutLoader  
   aseTurnout <- BR.simpleASETurnoutLoader 
   asrTurnout <- BR.simpleASRTurnoutLoader
+  cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
+  let cpsASETurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
+      cpsASRTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASR . F.rcast)) cpsVoterPUMS
+      cpsASERTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
 
+  logFrame cpsASERTurnoutByState
   -- preferences
   let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
       predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)

@@ -15,7 +15,16 @@
 {-# OPTIONS_GHC -O0 -freduction-depth=0 #-}
 module BlueRipple.Data.CPSVoterPUMS
   (
-    cpsVoterPUMSLoader 
+    cpsVoterPUMSLoader
+  , CPSVoterPUMS
+  , cpsVoterPUMSRollup
+  , cpsVoterPUMSRollupWeightedCounts
+  , cpsVoterPUMSElectoralWeights
+  , cpsVoterPUMSElectoralWeightsByState
+  , cpsKeysToASE
+  , cpsKeysToASR
+  , cpsKeysToASER
+  
   ) where
 
 
@@ -87,17 +96,22 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
-cpsVoterPUMSLoader = BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS
-                       (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
-                       Nothing
-                       transformCPSVoterPUMSRow
-                       Nothing
-                       "cpsVoterPUMS.bin"
+cpsVoterPUMSLoader = do  
+  withoutAbbr <- BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
+                 (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
+                 Nothing
+                 transformCPSVoterPUMSRow
+                 Nothing
+                 "cpsVoterPUMS.bin"
+  stateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
+  fmap (fmap F.rcast) $ (K.knitMaybe "missing state abbreviation in state abbreviation crosswalk"
+                         $ FJ.leftJoinM @'[BR.StateFIPS] withoutAbbr stateAbbrCrosswalk)
 
 type CPSVoterPUMSWeight = "CPSVoterPUMSWeight" F.:-> Double
 
 type CPSVoterPUMS = '[ BR.Year
                      , BR.StateFIPS
+                     , BR.StateAbbreviation
                      , BR.CountyFIPS
                      , BR.Age4C
                      , BR.SexC
@@ -114,6 +128,7 @@ type CPSVoterPUMS = '[ BR.Year
                      , CPSVoterPUMSWeight
                      ]
 
+type CPSVoterPUMS' = V.RDelete BR.StateAbbreviation CPSVoterPUMS
 
 cpsVoterPUMSRollup
   :: forall cs ls ks ds.
@@ -183,6 +198,21 @@ cpsVoterPUMSElectoralWeights getLoc getKey =
      ((== True) . F.rgetField @BR.IsCitizen)
      ((== BR.VYN_Voted) . F.rgetField @BR.VotedYNC)
      toRec
+
+
+cpsVoterPUMSElectoralWeightsByState
+  :: forall ks.
+  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
+  , FI.RecVec (ks ++ BR.EWCols)
+  , Ord (F.Record ks)
+  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  )
+  => (F.Record CPSVoterPUMS -> F.Record ks)
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ BR.EWCols))
+cpsVoterPUMSElectoralWeightsByState = cpsVoterPUMSElectoralWeights (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+
 
 cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
@@ -292,8 +322,8 @@ intToRegisteredYN n
   | n == 2 = BR.RYN_Registered
   | otherwise = BR.RYN_Other
 
-transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS
-transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS (mutate r) where
+transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
+transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
   addAge = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.CPSAGE
   addSex =  FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.CPSSEX
   hN = F.rgetField @BR.CPSHISPAN

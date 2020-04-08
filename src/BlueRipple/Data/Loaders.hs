@@ -271,7 +271,7 @@ frameLoader filePath parserOptionsM fixRow = do
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
   path <- liftIO $ getPath filePath
-  K.logLE K.Diagnostic ("Attempting to loading data from " <> (T.pack path) <> " into a frame.")
+  K.logLE K.Diagnostic ("Attempting to load data from " <> (T.pack path) <> " into a frame.")
   fmap fixRow <$> BR.loadToFrame parserOptions path (const True)
 
 cachedMaybeFrameLoader
