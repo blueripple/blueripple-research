@@ -59,7 +59,7 @@ import qualified Frames.SimpleJoins            as FJ
 
 
 electoralCollegeFrame :: K.KnitEffects r => K.Sem r (F.Frame BR.ElectoralCollege)
-electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing id Nothing "electoralCollege.bin"
+electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing Nothing id Nothing "electoralCollege.bin"
 
 
 parsePEParty :: T.Text -> ET.PartyT
@@ -98,15 +98,16 @@ presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @(F.RecordColumns 
   "presByState.bin"
 
 puma2012ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2012ToCD116)
-puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116CSV) Nothing id Nothing "puma2012ToCD116.bin"
+puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116CSV) Nothing Nothing id Nothing "puma2012ToCD116.bin"
 
 puma2000ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2000ToCD116)
-puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing id Nothing "puma2000ToCD116.bin"
+puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing Nothing id Nothing "puma2000ToCD116.bin"
 
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
 aseDemographicsLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.ageSexEducationDemographicsLongCSV)
+  Nothing
   Nothing
   id
   Nothing
@@ -124,6 +125,7 @@ asrDemographicsLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.ageSexRaceDemographicsLongCSV)
   Nothing
+  Nothing
   id
   Nothing
   "asrDemographics.bin"
@@ -139,6 +141,7 @@ aseTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASE)
 aseTurnoutLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.detailedASETurnoutCSV)
+  Nothing
   Nothing
   id
   Nothing
@@ -156,6 +159,7 @@ asrTurnoutLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.detailedASRTurnoutCSV)
   Nothing
+  Nothing
   id
   Nothing
   "asrTurnout.bin"
@@ -169,7 +173,7 @@ simpleASRTurnoutLoader =
 
 
 stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (F.Frame BR.States)
-stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing id Nothing "stateAbbr.bin"
+stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.bin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
@@ -218,7 +222,7 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
 houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
-houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing processHouseElectionRow Nothing "houseElections.bin"
+houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.bin"
 
 data DataPath = DataSets T.Text | LocalData T.Text
 
@@ -241,11 +245,12 @@ cachedFrameLoader
      )
   => DataPath
   -> Maybe F.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (F.FrameRec rs)
-cachedFrameLoader filePath parserOptionsM fixRow cachePathM key = do
+cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = do
   let cacheFrame = K.retrieveOrMakeTransformed
         (fmap FS.toS . FL.fold FL.list)
         (F.toFrame . fmap FS.fromS)
@@ -253,7 +258,7 @@ cachedFrameLoader filePath parserOptionsM fixRow cachePathM key = do
   K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  cacheFrame cacheKey $ frameLoader filePath parserOptionsM fixRow
+  cacheFrame cacheKey $ frameLoader filePath parserOptionsM filterM fixRow
 
 frameLoader
   :: forall qs rs r
@@ -264,15 +269,17 @@ frameLoader
     )
   => DataPath
   -> Maybe F.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
-frameLoader filePath parserOptionsM fixRow = do
+frameLoader filePath parserOptionsM filterM fixRow = do
   let csvParserOptions =
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      filter = fromMaybe (const True) filterM
   path <- liftIO $ getPath filePath
   K.logLE K.Diagnostic ("Attempting to load data from " <> (T.pack path) <> " into a frame.")
-  fmap fixRow <$> BR.loadToFrame parserOptions path (const True)
+  fmap fixRow <$> BR.loadToFrame parserOptions path filter
 
 cachedMaybeFrameLoader
   :: forall qs ls rs r

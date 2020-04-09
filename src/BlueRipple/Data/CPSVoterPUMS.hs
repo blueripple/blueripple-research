@@ -96,10 +96,12 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
-cpsVoterPUMSLoader = do  
+cpsVoterPUMSLoader = do
+  let filter r = (F.rgetField @BR.CPSAGE r >= 18) 
   withoutAbbr <- BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                  (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
                  Nothing
+                 (Just filter)
                  transformCPSVoterPUMSRow
                  Nothing
                  "cpsVoterPUMS.bin"

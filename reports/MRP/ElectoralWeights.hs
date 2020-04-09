@@ -314,7 +314,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                @BR.CatColsASR
                                @PUMS.Citizens
                                @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                               @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASRByState) (fmap F.rcast ewASR)
+                               @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASRByState) (fmap F.rcast cpsASRTurnoutByState)
       aseDemoAndAdjEW_action = BR.demographicsWithAdjTurnoutByState
                                @BR.CatColsASE
                                @PUMS.Citizens
