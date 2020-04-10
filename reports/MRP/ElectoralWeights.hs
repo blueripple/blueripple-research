@@ -545,13 +545,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       aserCCESEW y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
                      $ F.filterFrame (yearFilter y) aserDemoAndAdjCCESEW
 
-{-      aserWgtdByCensus2008 = prepRows 2008 ET.EW_Census BR.ASER
+      aserWgtdByCensus2008 = prepRows 2008 ET.EW_Census BR.ASER
                              <$> mergeASERElectionData
                              (aserDemo 2016 ET.President)
                              (aserPrefs 2016 ET.President)
                              "Census (ASER) 2008"
                              (aserCensusEW 2008 ET.President)
-                             electoralVotesByStateFrame -}
+                             electoralVotesByStateFrame 
       aserWgtdByCensus2012 = prepRows 2012 ET.EW_Census BR.ASER
                             <$> mergeASERElectionData
                             (aserDemo 2016 ET.President)
@@ -584,7 +584,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       aserCCES = mconcat <$> traverse (aserWgtdByCCES 2016 ET.President) [2008, 2012, 2016]
       aserCCES2 = mconcat <$> sequence [aserWgtdByCCES 2016 ET.President 2016, aserWgtdByCCES 2018 ET.House 2018]
 --  logFrame aserWgtdByCensus2012
-  aserWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd.bin" (mconcat <$> sequence [{-aserWgtdByCensus2008,-} aserWgtdByCensus2012, aserWgtdByCensus2016, aserCCES])  
+  aserWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd.bin" (mconcat <$> sequence [aserWgtdByCensus2008, aserWgtdByCensus2012, aserWgtdByCensus2016, aserCCES])  
   aserWgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd2.bin" (mconcat <$> sequence [aserWgtdByCensus2016, aserWgtdByCensus2018, aserCCES2])      
   let aserEwResults = FL.fold ewResultsF aserWgtd
       aserEwResults2 = FL.fold ewResultsF aserWgtd2
