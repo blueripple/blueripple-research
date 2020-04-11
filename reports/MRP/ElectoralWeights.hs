@@ -350,14 +350,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                 @BR.CatColsASER
                                 @PUMS.Citizens
                                 @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast cpsASERTurnoutByState)                               
+                                @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast cpsASERTurnoutByState)
+  logFrame $ F.filterFrame ((== "WV") . F.rgetField @BR.StateAbbreviation) cpsASERTurnoutByState                                
   asrDemoAndAdjEW <- BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjEW.bin" asrDemoAndAdjEW_action
   aseDemoAndAdjEW <- BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjEW.bin" aseDemoAndAdjEW_action
   aserDemoAndAdjEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjEW.bin" aserDemoAndAdjEW_action
-  K.logLE K.Diagnostic $ "pumsASEByState has " <> (T.pack . show $ FL.fold FL.length pumsASEByState) <> " rows."
+{-  K.logLE K.Diagnostic $ "pumsASEByState has " <> (T.pack . show $ FL.fold FL.length pumsASEByState) <> " rows."
   K.logLE K.Diagnostic $ "cpsASETurnoutByState has " <> (T.pack . show $ FL.fold FL.length cpsASETurnoutByState) <> " rows."
-  K.logLE K.Diagnostic $ "aseDemoAndAdjEW has " <> (T.pack . show $ FL.fold FL.length aseDemoAndAdjEW) <> " rows."
-  logFrame $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2008) && (F.rgetField @BR.StateAbbreviation r == "MA")) aserDemoAndAdjEW
+  K.logLE K.Diagnostic $ "aseDemoAndAdjEW has " <> (T.pack . show $ FL.fold FL.length aseDemoAndAdjEW) <> " rows." -}
   K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."
   let aserDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
                                     @BR.CatColsASER
@@ -582,8 +582,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                             (aserCCESEW yTurnout)
                                             electoralVotesByStateFrame
       aserCCES = mconcat <$> traverse (aserWgtdByCCES 2016 ET.President) [2008, 2012, 2016]
-      aserCCES2 = mconcat <$> sequence [aserWgtdByCCES 2016 ET.President 2016, aserWgtdByCCES 2018 ET.House 2018]
---  logFrame aserWgtdByCensus2012
+      aserCCES2 = mconcat <$> sequence [aserWgtdByCCES 2016 ET.President 2016, aserWgtdByCCES 2018 ET.House 2018]      
+  x <- aserWgtdByCensus2008
+  logFrame x
   aserWgtd <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd.bin" (mconcat <$> sequence [aserWgtdByCensus2008, aserWgtdByCensus2012, aserWgtdByCensus2016, aserCCES])  
   aserWgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aserWgtd2.bin" (mconcat <$> sequence [aserWgtdByCensus2016, aserWgtdByCensus2018, aserCCES2])      
   let aserEwResults = FL.fold ewResultsF aserWgtd
@@ -632,7 +633,7 @@ vlWeights title vc rows =
       makeSourceType = GV.calculateAs "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping" "Weight Source"
       encX = GV.position GV.X [GV.PName "Vote Share (%)"
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [48, 53]]
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [48.5, 53.5]]
                               , GV.PTitle "D Vote Share (%)"]
       encY = GV.position GV.Y [FV.pName @ElectorsD
                               , GV.PmType GV.Quantitative

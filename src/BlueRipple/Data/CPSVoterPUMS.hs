@@ -212,7 +212,8 @@ cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf countToRec def
         let wgt = F.rgetField @CPSVoterPUMSWeight
             wgtdAllF = FL.premap wgt FL.sum
             wgtdCountF = FL.prefilter countIf $ FL.premap wgt FL.sum
-            wF = (/) <$> wgtdCountF <*> wgtdAllF
+            safeDiv n d = if (d > 0) then n/d else 0 
+            wF = safeDiv <$> wgtdCountF <*> wgtdAllF
         in fmap countToRec wF        
       ewFold :: FL.Fold (F.Record cs) (F.Record ds)
       ewFold = FL.prefilter filterData countF
