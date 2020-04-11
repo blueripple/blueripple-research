@@ -290,34 +290,55 @@ post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   K.logLE K.Info "Loading re-keyed demographic and turnout data."
   -- state totals and national demographic splits
-  stateTurnoutRaw <- BR.stateTurnoutLoader  
---  aseTurnout <- BR.simpleASETurnoutLoader 
---  asrTurnout <- BR.simpleASRTurnoutLoader
+  stateTurnoutRaw <- BR.stateTurnoutLoader
+
+  aseTurnout <- BR.simpleASETurnoutLoader 
+  asrTurnout <- BR.simpleASRTurnoutLoader
+  let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
+                         => F.Record rs
+                         -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
+      addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+
+      ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
+      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
   let cpsASETurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
       cpsASRTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASR . F.rcast)) cpsVoterPUMS
       cpsASERTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
-
---  logFrame cpsASERTurnoutByState
+      cpsASETurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
+      cpsASRTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASR . F.rcast)) cpsVoterPUMS
+      cpsASERTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS      
+  K.logLE K.Diagnostic "ASR"
+  K.logLE K.Diagnostic "From National Tables"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASR
+  K.logLE K.Diagnostic "From Microdata"  
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASRTurnout
+  K.logLE K.Diagnostic "ASE"
+  K.logLE K.Diagnostic "From National Tables"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASE
+  K.logLE K.Diagnostic "From Microdata"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASETurnout
+  K.logLE K.Diagnostic "ASER (Microdata only)"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASERTurnout  
   -- preferences
-  let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
-      predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
-      predictorsASR = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
+  let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
+      predictorsASE =  fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
+      predictorsASR = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
   inferredPrefsASER <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER catPredMaps) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps) 
   inferredPrefsASE <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE catPredMaps) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE BR.catPredMaps) 
   inferredPrefsASR <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR catPredMaps) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR BR.catPredMaps) 
 
   -- inferred turnout
   inferredTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASER_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASER (Just "T_ASER") ccesDataLoader predictorsASER catPredMaps)
+                         (P.raise $ BR.mrpTurnout @BR.CatColsASER (Just "T_ASER") ccesDataLoader predictorsASER BR.catPredMaps)
   inferredTurnoutASR <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASR_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASR (Just "T_ASR") ccesDataLoader predictorsASR catPredMaps)
+                         (P.raise $ BR.mrpTurnout @BR.CatColsASR (Just "T_ASR") ccesDataLoader predictorsASR BR.catPredMaps)
   inferredTurnoutASE <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASE_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASE (Just "T_ASE") ccesDataLoader predictorsASE catPredMaps)
+                         (P.raise $ BR.mrpTurnout @BR.CatColsASE (Just "T_ASE") ccesDataLoader predictorsASE BR.catPredMaps)
   
 --  logFrame inferredTurnoutASE
   -- demographics
@@ -333,8 +354,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
       addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
---      ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
---      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
+
   K.logLE K.Info "Adjusting national census turnout via PUMS demographics and total recorded turnout"      
   let asrDemoAndAdjEW_action = BR.demographicsWithAdjTurnoutByState
                                @BR.CatColsASR

@@ -318,8 +318,8 @@ glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
 {-
-type LocationCols = '[BR.StateAbbreviation]
-locKeyPretty :: F.Record LocationCols -> T.Text
+type BR.LocationCols = '[BR.StateAbbreviation]
+locKeyPretty :: F.Record BR.LocationCols -> T.Text
 locKeyPretty r =
   let stateAbbr = F.rgetField @BR.StateAbbreviation r
   in stateAbbr
@@ -371,7 +371,7 @@ type DemPref    = "DemPref"    F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
 type DistrictGeoId = "DistrictGeoId" F.:-> T.Text
 
-type GroupCols = LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
+type GroupCols = BR.LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
 type MRGroup = BR.RecordColsProxy GroupCols 
 
   
@@ -396,17 +396,17 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                                      && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic]))
                               ((== ET.Democratic) . F.rgetField @HouseVoteParty)
                               (F.rgetField @CCESWeightCumulative)
-  let preds =  GLM.Intercept : fmap GLM.Predictor allCCESSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
-      narrowCountFold = fmap (fmap (F.rcast @(LocationCols V.++ CatCols V.++ BR.CountCols)))
-  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds catPredMaps)
-  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds catPredMaps)
-  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap lhToS) (fmap lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds catPredMaps)
+  let preds =  GLM.Intercept : fmap GLM.Predictor BR.allSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+      narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
+  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
+    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
+  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
+    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds BR.catPredMaps)
+  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
+    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds BR.catPredMaps)
 
   let vpv x = 2*x - 1
-      lhToRecsM year office (LocationHolder _ lkM predMap) =
+      lhToRecsM year office (BR.LocationHolder _ lkM predMap) =
         let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
                         FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
                         FT.mutate (const $ FT.recordSingleton @ET.Office office).
@@ -417,7 +417,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
           (MR.UnpackM $ lhToRecsM year office)
           (MR.generalizeAssign $ MR.Assign (\x -> ((),x)))
           (MR.generalizeReduce $ MR.ReduceFold (const FL.list))
-      pblToFrame (year, office, pbl) = FL.foldM (pblToFrameFM year office) $ L.filter ((/= "National") . locName) pbl
+      pblToFrame (year, office, pbl) = FL.foldM (pblToFrameFM year office) $ L.filter ((/= "National") . BR.locName) pbl
       
   longFrame <- K.knitMaybe "Failed to make long-frame"
                $ fmap (F.toFrame . concat)
@@ -579,20 +579,20 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
   brAddMarkDown brReadMore
 
 
-educationGap :: BR.Sex -> BR.SimpleAge -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
-educationGap s a (LocationHolder _ _ cd) = do  
+educationGap :: BR.Sex -> BR.SimpleAge -> BR.LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
+educationGap s a (BR.LocationHolder _ _ cd) = do  
   datGrad <- M.lookup (catKey s BR.Grad a) cd
   datNonGrad <- M.lookup (catKey s BR.NonGrad a) cd
   return (datNonGrad, datGrad)
 
-ageGap :: BR.Sex -> BR.CollegeGrad -> LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
-ageGap s e (LocationHolder _ _ cd) = do  
+ageGap :: BR.Sex -> BR.CollegeGrad -> BR.LocationHolder CatCols F.ElField Double -> Maybe (Double, Double)
+ageGap s e (BR.LocationHolder _ _ cd) = do  
   datYoung <- M.lookup (catKey s e BR.Under) cd
   datOld <- M.lookup (catKey s e BR.EqualOrOver) cd
   return (datOld, datYoung)
                 
 --emphasizeStates s = CellStyle (\tr _ -> if inStates s tr then highlightCellBlue else "")
-emphasizeNational = CellStyle (\x _ -> if  locName x == "National" then highlightCellPurple else "")
+emphasizeNational = CellStyle (\x _ -> if BR.locName x == "National" then highlightCellPurple else "")
 
 significantGivenCI :: (Double, Double) -> (Double, Double) -> Double
 significantGivenCI (loA, hiA) (loB, hiB) =
@@ -604,15 +604,15 @@ significantGivenCI (loA, hiA) (loB, hiB) =
                     
 colPrefByLocation
   :: [F.Record CatCols]
-  -> CellStyle (LocationHolder CatCols F.ElField Double) T.Text
-  -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
+  -> CellStyle (BR.LocationHolder CatCols F.ElField Double) T.Text
+  -> C.Colonnade C.Headed (BR.LocationHolder CatCols F.ElField Double) BC.Cell
 colPrefByLocation cats cas =
   let h = catKeyColHeader
       hc c = BC.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
-      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (LocationHolder CatCols F.ElField Double) BC.Cell
+      rowFromCatKey :: F.Record CatCols -> C.Colonnade C.Headed (BR.LocationHolder CatCols F.ElField Double) BC.Cell
       rowFromCatKey r =
-        C.headed (hc $ h r) (toCell cas (h r) (h r) (maybeNumberToStyledHtml "%2.1f" . fmap (*100) . M.lookup r . catData))
-  in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . locName))
+        C.headed (hc $ h r) (toCell cas (h r) (h r) (maybeNumberToStyledHtml "%2.1f" . fmap (*100) . M.lookup r . BR.catData))
+  in C.headed "Location" (toCell cas "Location" "Location" (textToStyledHtml . BR.locName))
      <> mconcat (fmap rowFromCatKey cats)
 
 

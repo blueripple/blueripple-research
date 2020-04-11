@@ -149,10 +149,10 @@ mrpPrefs
      , FS.RecSerialize (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
      , FI.RecVec (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
      , V.RMap (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
-     , cc F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
+     , cc F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
      , cc F.⊆ (cc V.++ BR.CountCols)
-     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
-     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
      , FI.RecVec (cc V.++ BR.CountCols)
      , F.ElemOf (cc V.++ BR.CountCols) BR.Count
      , F.ElemOf (cc V.++ BR.CountCols) BR.MeanWeight
@@ -172,8 +172,8 @@ mrpPrefs
      )
   => Maybe T.Text
   -> K.Sem r (F.FrameRec CCES_MRP)
-  -> [CCESSimpleEffect cc]
-  -> M.Map (F.Record cc) (M.Map (CCESSimplePredictor cc) Double)
+  -> [BR.SimpleEffect cc]
+  -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
   -> K.Sem
        r
        ( F.FrameRec
@@ -186,7 +186,7 @@ mrpPrefs
        )
 mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
   let vpv x = 2 * x - 1
-      lhToRecs year office (LocationHolder lp lkM predMap) =
+      lhToRecs year office (BR.LocationHolder lp lkM predMap) =
         let addCols p =
               FT.mutate (const $ FT.recordSingleton @BR.DemPref p)
                 . FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p))
@@ -210,7 +210,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
   let p2008 = cacheIt
               "pres2008"
               (   lhsToFrame 2008 ET.President
-                <$> (predictionsByLocation ccesDataAction
+                <$> (BR.predictionsByLocation ccesDataAction
                       (countDemPres2008VotesF @cc)
                       predictor
                       catPredMap
@@ -219,7 +219,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2012 = cacheIt
               "pres2012"
               (   lhsToFrame 2012 ET.President
-                <$> (predictionsByLocation ccesDataAction
+                <$> (BR.predictionsByLocation ccesDataAction
                       (countDemPres2012VotesF @cc)
                       predictor
                       catPredMap
@@ -228,7 +228,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2016 = cacheIt
               "pres2016"
               (   lhsToFrame 2016 ET.President
-                <$> (predictionsByLocation ccesDataAction
+                <$> (BR.predictionsByLocation ccesDataAction
                       (countDemPres2016VotesF @cc)
                       predictor
                       catPredMap
@@ -238,7 +238,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
                (\y -> cacheIt
                  ("house" <> T.pack (show y))
                  (   lhsToFrame y ET.House
-                   <$> (predictionsByLocation ccesDataAction
+                   <$> (BR.predictionsByLocation ccesDataAction
                          (countDemHouseVotesF @cc y)
                          predictor
                          catPredMap
@@ -299,10 +299,10 @@ mrpTurnout
      , FS.RecSerialize (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
      , FI.RecVec (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
      , V.RMap (cc V.++ '[BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
-     , cc F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
+     , cc F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
      , cc F.⊆ (cc V.++ BR.CountCols)
-     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ cc V.++ BR.CountCols)
-     , (cc V.++ BR.CountCols) F.⊆ (LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
+     , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
      , FI.RecVec (cc V.++ BR.CountCols)
      , F.ElemOf (cc V.++ BR.CountCols) BR.Count
      , F.ElemOf (cc V.++ BR.CountCols) BR.MeanWeight
@@ -322,8 +322,8 @@ mrpTurnout
      )
   => Maybe T.Text
   -> K.Sem r (F.FrameRec CCES_MRP)
-  -> [CCESSimpleEffect cc]
-  -> M.Map (F.Record cc) (M.Map (CCESSimplePredictor cc) Double)
+  -> [BR.SimpleEffect cc]
+  -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
   -> K.Sem
        r
        ( F.FrameRec
@@ -335,7 +335,7 @@ mrpTurnout
            )
        )
 mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
-  let lhToRecs year (LocationHolder lp lkM predMap) =
+  let lhToRecs year (BR.LocationHolder lp lkM predMap) =
         let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
             recToAdd w = year F.&: (ET.ewRec ET.EW_CCES ET.EW_Citizen w)
             addCols w r = r `V.rappend` (recToAdd w)
@@ -358,7 +358,7 @@ mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
                      (\y -> cacheIt
                        ("turnout" <> T.pack (show y))
                        (   lhsToFrame y 
-                         <$> (predictionsByLocation ccesDataAction
+                         <$> (BR.predictionsByLocation ccesDataAction
                               (countVotersF @cc y)
                               predictor
                               catPredMap

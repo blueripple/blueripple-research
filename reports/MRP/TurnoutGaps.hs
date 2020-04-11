@@ -430,15 +430,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   asrTurnout <- BR.simpleASRTurnoutLoader 
 --  logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
-  let predictorsASER = fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASER)
-      predictorsASE =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASE)
-      predictorsASR =  fmap GLM.Predictor (allCCESSimplePredictors @BR.CatColsASR)
+  let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
+      predictorsASE =  fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
+      predictorsASR =  fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
   inferredPrefsASER <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (catPredMaps @BR.CatColsASER)) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER (BR.catPredMaps @BR.CatColsASER)) 
   inferredPrefsASE <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE (catPredMaps @BR.CatColsASE)) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE (BR.catPredMaps @BR.CatColsASE)) 
   inferredPrefsASR <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (catPredMaps @BR.CatColsASR)) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (BR.catPredMaps @BR.CatColsASR)) 
   -- demographics
   pumsDemographics <- PUMS.pumsLoadAll
   let pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)

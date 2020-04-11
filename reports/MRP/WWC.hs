@@ -123,7 +123,7 @@ mid-west: Indiana, Michigan, Ohio, Pennsylvania and Wisconsin.
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
 glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
---type LocationCols = '[StateAbbreviation]
+--type BR.LocationCols = '[StateAbbreviation]
 type CatCols = '[]
 --type CCESGroup = Proxy (BR.GroupCols Location
   
@@ -151,7 +151,7 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
   let --makeTableRows :: K.Sem r [WWCTableRow]
       makeWWCTableRows = do
         ccesFrameAll <- ccesDataLoader -- F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
+        (mm2016p, rc2016p, ebg2016p, bu2016p, vb2016p, bs2016p) <- BR.inferMR @BR.LocationCols @CatCols @[BR.SimpleAgeC
                                                                                                       ,BR.SexC
                                                                                                       ,BR.CollegeGradC
                                                                                                       ,BR.SimpleRaceC
@@ -161,7 +161,7 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
                                                                    ccesPredictor
                                                                    (fmap F.rcast ccesFrameAll)
         
-        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
+        (mm2016, rc2016, ebg2016, bu2016, vb2016, bs2016) <- BR.inferMR @BR.LocationCols @CatCols @[BR.SimpleAgeC
                                                                                                 ,BR.SexC
                                                                                                 ,BR.CollegeGradC
                                                                                                 ,BR.SimpleRaceC
@@ -171,7 +171,7 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
                                                              ccesPredictor
                                                              ccesFrameAll
                                                              
-        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- BR.inferMR @LocationCols @CatCols @[BR.SimpleAgeC
+        (mm2018, rc2018, ebg2018, bu2018, vb2018, bs2018) <- BR.inferMR @BR.LocationCols @CatCols @[BR.SimpleAgeC
                                                                                                 ,BR.SexC
                                                                                                 ,BR.CollegeGradC
                                                                                                 ,BR.SimpleRaceC

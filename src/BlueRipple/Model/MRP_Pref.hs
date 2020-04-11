@@ -8,18 +8,21 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE UndecidableInstances        #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module BlueRipple.Model.MRP_Pref where
 
 import qualified BlueRipple.Data.Keyed         as K
+import qualified BlueRipple.Data.DataFrames    as BR
 
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
@@ -28,14 +31,17 @@ import qualified Data.Array                    as A
 import           Data.Function                  ( on )
 import qualified Data.List                     as L
 import qualified Data.Set                      as S
+import qualified Data.IntMap                   as IM
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
                                                 , catMaybes
                                                 , fromMaybe
+                                                , fromJust
                                                 )
 import qualified Data.Text                     as T
 import qualified Data.Profunctor               as P
 import qualified Data.Serialize                as SE
+import           Data.Serialize.Text ()
 import qualified Data.Vector                   as V
 import qualified Data.Vector.Storable          as VS
 
@@ -55,7 +61,7 @@ import qualified Frames.Enumerations           as FE
 import qualified Frames.Utils                  as FU
 import qualified Frames.Serialize              as FS
 
-import qualified Knit.Report                   as K
+import qualified Knit.Report                   as K hiding (elements)
 import qualified Polysemy.Error                as P
                                                 ( mapError )
 import qualified Polysemy                      as P
@@ -78,7 +84,7 @@ import qualified Numeric.SparseDenseConversions
                                                as SD
 
 import qualified Statistics.Types              as ST
-import           GHC.Generics                   ( Generic )
+import           GHC.Generics                   ( Generic, Rep )
 
 -- map reduce folds for counting
 type Count = "Count" F.:-> Int
@@ -169,6 +175,144 @@ glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
 
 type GroupCols gs cs = gs V.++ cs
 type CountedCols gs cs = (GroupCols gs cs) V.++ CountCols
+
+
+
+---
+newtype  SimplePredictor ps = SimplePredictor { unSimplePredictor :: F.Record ps }
+
+instance (Show (F.Record ps)) => Show (SimplePredictor ps) where
+  show (SimplePredictor x) = "SimplePredictor " ++ (show x)
+  
+instance (Eq (F.Record ps)) => Eq (SimplePredictor ps) where
+  (SimplePredictor x) == (SimplePredictor y) = x == y
+  
+instance (Ord (F.Record ps)) => Ord (SimplePredictor ps) where
+  compare (SimplePredictor x) (SimplePredictor y) = compare x y
+
+instance (Ord (F.Record ps), K.FiniteSet (F.Record ps)) => Enum (SimplePredictor ps) where
+  toEnum n =
+    let im = IM.fromList $ zip [0..] $ fmap SimplePredictor $ S.toAscList K.elements
+    in fromJust $ IM.lookup n im
+  fromEnum a =
+    let m = M.fromList $ zip (fmap SimplePredictor $ S.toAscList K.elements) [0..]
+    in fromJust $ M.lookup a m
+
+instance (K.FiniteSet (F.Record ps)) => Bounded (SimplePredictor ps) where
+  minBound = head $ fmap SimplePredictor $ S.toList $ K.elements
+  maxBound = last $ fmap SimplePredictor $ S.toList $ K.elements
+
+
+allSimplePredictors :: K.FiniteSet (F.Record ps) => [SimplePredictor ps]
+allSimplePredictors = fmap SimplePredictor $ S.toList K.elements 
+
+type SimpleEffect ps = GLM.WithIntercept (SimplePredictor ps)
+
+simplePredictor :: forall ps rs. (ps F.⊆ rs
+                                     , Eq (F.Record ps)
+                                     )
+                    => F.Record rs -> SimplePredictor ps -> Double
+simplePredictor r p = if (F.rcast @ps r == unSimplePredictor p) then 1 else 0
+
+predMap :: forall cs. (K.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
+  => F.Record cs -> M.Map (SimplePredictor cs) Double
+predMap r =  M.fromList $ fmap (\p -> (p, simplePredictor r p)) allSimplePredictors
+
+catPredMaps :: forall cs.  (K.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
+  => M.Map (F.Record cs) (M.Map (SimplePredictor cs) Double)
+catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors  
+
+data  LocationHolder c f a =  LocationHolder { locName :: T.Text
+                                             , locKey :: Maybe (F.Rec f LocationCols)
+                                             , catData :: M.Map (F.Rec f c) a
+                                             } deriving (Generic)
+
+deriving instance (V.RMap c
+                  , V.ReifyConstraint Show F.ElField c
+                  , V.RecordToList c
+                  , Show a) => Show (LocationHolder c F.ElField a)
+                  
+instance (SE.Serialize a
+         , Ord (F.Rec FS.SElField c)
+         , SE.GSerializePut
+           (Rep (F.Rec FS.SElField c))
+         , SE.GSerializeGet (Rep (F.Rec FS.SElField c))
+         , (Generic (F.Rec FS.SElField c))
+         ) => SE.Serialize (LocationHolder c FS.SElField a)
+
+lhToS :: (Ord (F.Rec FS.SElField c)
+         , V.RMap c
+         )
+      => LocationHolder c F.ElField a -> LocationHolder c FS.SElField a
+lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
+
+lhFromS :: (Ord (F.Rec F.ElField c)
+           , V.RMap c
+         ) => LocationHolder c FS.SElField a -> LocationHolder c F.ElField a
+lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
+
+type LocationCols = '[BR.StateAbbreviation]
+locKeyPretty :: F.Record LocationCols -> T.Text
+locKeyPretty r =
+  let stateAbbr = F.rgetField @BR.StateAbbreviation r
+  in stateAbbr
+
+--type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
+predictionsByLocation ::
+  forall ps r rs. ( V.RMap ps
+                  , V.ReifyConstraint Show V.ElField ps
+                  , V.RecordToList ps
+                  , Ord (F.Record ps)
+                  , Ord (SimplePredictor ps)               
+                  , FI.RecVec (ps V.++ CountCols)
+                  , F.ElemOf (ps V.++ CountCols) Count
+                  , F.ElemOf (ps V.++ CountCols) MeanWeight
+                  , F.ElemOf (ps V.++ CountCols) UnweightedSuccesses
+                  , F.ElemOf (ps V.++ CountCols) VarWeight
+                  , F.ElemOf (ps V.++ CountCols) WeightedSuccesses
+                  , K.FiniteSet (F.Record ps)
+                  , Show (F.Record (LocationCols V.++ ps V.++ CountCols))
+                  , Show (F.Record ps)
+                  , Enum (SimplePredictor ps)
+                  , Bounded (SimplePredictor ps)
+                  , (ps V.++ CountCols) F.⊆ (LocationCols V.++ ps V.++ CountCols)
+                  , ps F.⊆ (ps V.++ CountCols)
+                  , ps F.⊆ (LocationCols V.++ ps V.++ CountCols)
+                  , F.ElemOf rs BR.StateAbbreviation
+                  , K.KnitEffects r
+               )
+  => K.Sem r (F.FrameRec rs)
+  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ CountCols))  
+  -> [SimpleEffect ps]
+  -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
+  -> K.Sem r [LocationHolder ps V.ElField Double]
+predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
+  K.logLE K.Diagnostic "Starting (getting CCES data)"
+  ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+  K.logLE K.Diagnostic ("Inferring")
+  (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps
+                               countFold
+                               predictors                                                     
+                               simplePredictor
+                               ccesFrame
+  
+  let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrame
+      allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
+      predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
+      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+      predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
+        let predictFrom catKey predMap =
+              let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
+                  emptyAsNationalGKM = case groupKeyM of
+                                         Nothing -> Nothing
+                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
+              in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+        cpreds <- M.traverseWithKey predictFrom cpms
+        return $ LocationHolder n lkM cpreds
+  traverse predict toPredict
+
+---
+
 
 -- TODO: Add bootstraps back in, make optional
 -- Maybe set up way to serialize all this at this level??

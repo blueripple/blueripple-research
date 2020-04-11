@@ -44,7 +44,7 @@ import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromJust)
 import qualified Data.Set as Set
 import qualified Data.Text                     as T
-
+  
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
@@ -472,50 +472,50 @@ ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad th
 ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
 
-    
+{-    
 -- we newtype this so we can derive instances for all the things
-newtype  CCESSimplePredictor ps = CCESSimplePredictor { unCCESSimplePredictor :: F.Record ps }
+newtype  SimplePredictor ps = CCESSimplePredictor { unSimplePredictor :: F.Record ps }
 
-instance (Show (F.Record ps)) => Show (CCESSimplePredictor ps) where
-  show (CCESSimplePredictor x) = "CCESSimplePredictor " ++ (show x)
+instance (Show (F.Record ps)) => Show (SimplePredictor ps) where
+  show (SimplePredictor x) = "SimplePredictor " ++ (show x)
   
-instance (Eq (F.Record ps)) => Eq (CCESSimplePredictor ps) where
-  (CCESSimplePredictor x) == (CCESSimplePredictor y) = x == y
+instance (Eq (F.Record ps)) => Eq (SimplePredictor ps) where
+  (SimplePredictor x) == (SimplePredictor y) = x == y
   
-instance (Ord (F.Record ps)) => Ord (CCESSimplePredictor ps) where
-  compare (CCESSimplePredictor x) (CCESSimplePredictor y) = compare x y
+instance (Ord (F.Record ps)) => Ord (SimplePredictor ps) where
+  compare (SimplePredictor x) (SimplePredictor y) = compare x y
 
-instance (Ord (F.Record ps), Keyed.FiniteSet (F.Record ps)) => Enum (CCESSimplePredictor ps) where
+instance (Ord (F.Record ps), Keyed.FiniteSet (F.Record ps)) => Enum (SimplePredictor ps) where
   toEnum n =
-    let im = IM.fromList $ zip [0..] $ fmap CCESSimplePredictor $ Set.toAscList Keyed.elements
+    let im = IM.fromList $ zip [0..] $ fmap SimplePredictor $ Set.toAscList Keyed.elements
     in fromJust $ IM.lookup n im
   fromEnum a =
-    let m = M.fromList $ zip (fmap CCESSimplePredictor $ Set.toAscList Keyed.elements) [0..]
+    let m = M.fromList $ zip (fmap SimplePredictor $ Set.toAscList Keyed.elements) [0..]
     in fromJust $ M.lookup a m
 
-instance (Keyed.FiniteSet (F.Record ps)) => Bounded (CCESSimplePredictor ps) where
-  minBound = head $ fmap CCESSimplePredictor $ Set.toList $ Keyed.elements
-  maxBound = last $ fmap CCESSimplePredictor $ Set.toList $ Keyed.elements
+instance (Keyed.FiniteSet (F.Record ps)) => Bounded (SimplePredictor ps) where
+  minBound = head $ fmap SimplePredictor $ Set.toList $ Keyed.elements
+  maxBound = last $ fmap SimplePredictor $ Set.toList $ Keyed.elements
 
 
-allCCESSimplePredictors :: Keyed.FiniteSet (F.Record ps) => [CCESSimplePredictor ps]
-allCCESSimplePredictors = fmap CCESSimplePredictor $ Set.toList Keyed.elements 
+allSimplePredictors :: Keyed.FiniteSet (F.Record ps) => [SimplePredictor ps]
+allSimplePredictors = fmap SimplePredictor $ Set.toList Keyed.elements 
 
-type CCESSimpleEffect ps = GLM.WithIntercept (CCESSimplePredictor ps)
+type SimpleEffect ps = GLM.WithIntercept (SimplePredictor ps)
 
-ccesSimplePredictor :: forall ps rs. (ps F.⊆ rs
+simplePredictor :: forall ps rs. (ps F.⊆ rs
                                      , Eq (F.Record ps)
                                      )
-                    => F.Record rs -> CCESSimplePredictor ps -> Double
-ccesSimplePredictor r p = if (F.rcast @ps r == unCCESSimplePredictor p) then 1 else 0
+                    => F.Record rs -> SimplePredictor ps -> Double
+simplePredictor r p = if (F.rcast @ps r == unCCESSimplePredictor p) then 1 else 0
 
 predMap :: forall cs. (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
-  => F.Record cs -> M.Map (CCESSimplePredictor cs) Double
-predMap r =  M.fromList $ fmap (\p -> (p, ccesSimplePredictor r p)) allCCESSimplePredictors
+  => F.Record cs -> M.Map (SimplePredictor cs) Double
+predMap r =  M.fromList $ fmap (\p -> (p, simplePredictor r p)) allSimplePredictors
 
 catPredMaps :: forall cs.  (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
-  => M.Map (F.Record cs) (M.Map (CCESSimplePredictor cs) Double)
-catPredMaps = M.fromList $ fmap (\k -> (unCCESSimplePredictor k,predMap (unCCESSimplePredictor k))) allCCESSimplePredictors  
+  => M.Map (F.Record cs) (M.Map (SimplePredictor cs) Double)
+catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors  
 
 data  LocationHolder c f a =  LocationHolder { locName :: T.Text
                                              , locKey :: Maybe (F.Rec f LocationCols)
@@ -554,41 +554,41 @@ locKeyPretty r =
 
 --type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
 predictionsByLocation ::
-  forall ps r. ( V.RMap ps
-               , V.ReifyConstraint Show V.ElField ps
-               , V.RecordToList ps
-               , Ord (F.Record ps)
-               , Ord (CCESSimplePredictor ps)               
-               , FI.RecVec (ps V.++ BR.CountCols)
-               , F.ElemOf (ps V.++ BR.CountCols) BR.Count
-               , F.ElemOf (ps V.++ BR.CountCols) BR.MeanWeight
-               , F.ElemOf (ps V.++ BR.CountCols) BR.UnweightedSuccesses
-               , F.ElemOf (ps V.++ BR.CountCols) BR.VarWeight
-               , F.ElemOf (ps V.++ BR.CountCols) BR.WeightedSuccesses
-               , Keyed.FiniteSet (F.Record ps)
-               , Show (F.Record (LocationCols V.++ ps V.++ BR.CountCols))
-               , Show (F.Record ps)
-               , Enum (CCESSimplePredictor ps)
-               , Bounded (CCESSimplePredictor ps)
-               , (ps V.++ BR.CountCols) F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
-               , ps F.⊆ (ps V.++ BR.CountCols)
-               , ps F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
-               , K.KnitEffects r
+  forall ps r rs. ( V.RMap ps
+                  , V.ReifyConstraint Show V.ElField ps
+                  , V.RecordToList ps
+                  , Ord (F.Record ps)
+                  , Ord (SimplePredictor ps)               
+                  , FI.RecVec (ps V.++ BR.CountCols)
+                  , F.ElemOf (ps V.++ BR.CountCols) BR.Count
+                  , F.ElemOf (ps V.++ BR.CountCols) BR.MeanWeight
+                  , F.ElemOf (ps V.++ BR.CountCols) BR.UnweightedSuccesses
+                  , F.ElemOf (ps V.++ BR.CountCols) BR.VarWeight
+                  , F.ElemOf (ps V.++ BR.CountCols) BR.WeightedSuccesses
+                  , Keyed.FiniteSet (F.Record ps)
+                  , Show (F.Record (LocationCols V.++ ps V.++ BR.CountCols))
+                  , Show (F.Record ps)
+                  , Enum (SimplePredictor ps)
+                  , Bounded (SimplePredictor ps)
+                  , (ps V.++ BR.CountCols) F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
+                  , ps F.⊆ (ps V.++ BR.CountCols)
+                  , ps F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
+                  , K.KnitEffects r
                )
-  => K.Sem r (F.FrameRec CCES_MRP)
-  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))  
-  -> [CCESSimpleEffect ps]
-  -> M.Map (F.Record ps) (M.Map (CCESSimplePredictor ps) Double)
+  => K.Sem r (F.FrameRec rs)
+  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))  
+  -> [SimpleEffect ps]
+  -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
 predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
   K.logLE K.Diagnostic "Starting (getting CCES data)"
   ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
   K.logLE K.Diagnostic ("Inferring")
   (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @ps @ps
-                                                             countFold
-                                                             predictors                                                     
-                                                             ccesSimplePredictor
-                                                             ccesFrame
+                               countFold
+                               predictors                                                     
+                               simplePredictor
+                               ccesFrame
   
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
       allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
@@ -604,3 +604,4 @@ predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapErr
         cpreds <- M.traverseWithKey predictFrom cpms
         return $ LocationHolder n lkM cpreds
   traverse predict toPredict
+-}

@@ -21,6 +21,7 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsVoterPUMSRollupWeightedCounts
   , cpsVoterPUMSElectoralWeights
   , cpsVoterPUMSElectoralWeightsByState
+  , cpsVoterPUMSNationalElectoralWeights
   , cpsKeysToASE
   , cpsKeysToASR
   , cpsKeysToASER
@@ -97,7 +98,7 @@ import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
 cpsVoterPUMSLoader = do
-  let filter r = (F.rgetField @BR.CPSAGE r >= 18) 
+  let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
   withoutAbbr <- BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                  (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
                  Nothing
@@ -213,7 +214,7 @@ cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf countToRec def
             wgtdAllF = FL.premap wgt FL.sum
             wgtdCountF = FL.prefilter countIf $ FL.premap wgt FL.sum
             safeDiv n d = if (d > 0) then n/d else 0 
-            wF = safeDiv <$> wgtdCountF <*> wgtdAllF
+            wF = safeDiv <$> wgtdCountF <*> wgtdAllF -- this is acceptable here since (d == 0) iff (n == 0)
         in fmap countToRec wF        
       ewFold :: FL.Fold (F.Record cs) (F.Record ds)
       ewFold = FL.prefilter filterData countF
@@ -269,7 +270,30 @@ cpsVoterPUMSElectoralWeightsByState
   -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ BR.EWCols))
 cpsVoterPUMSElectoralWeightsByState = cpsVoterPUMSElectoralWeights (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
 
+cpsVoterPUMSNationalElectoralWeights
+  :: forall ks.
+  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
+  , FI.RecVec (ks ++ BR.EWCols)
+  , Ord (F.Record ks)
+  , ks F.⊆ ('[BR.Year] V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  , BR.FiniteSet (F.Record ks)
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeight
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightOf
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightSource
+  , (ks V.++ BR.EWCols) F.⊆ ('[BR.Year] V.++ ks V.++ BR.EWCols)
+  , ks F.⊆ (ks V.++ BR.EWCols)
+  )
+  => (F.Record CPSVoterPUMS -> F.Record ks)
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year] V.++ ks V.++ BR.EWCols))
+cpsVoterPUMSNationalElectoralWeights = cpsVoterPUMSElectoralWeights (F.rcast @'[BR.Year]) 
 
+
+-- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
+-- NB: This needs to be done consistently with the demographics.
+-- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning
+-- "in college" people to either Grad or NonGrad buckets in terms of voting pref.
 cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
@@ -319,14 +343,14 @@ intToSex n = if n == 1 then BR.Male else BR.Female
 
 intsToRace5 :: Int -> Int -> BR.Race5
 intsToRace5 hN rN 
-  | hN >= 100 = BR.R5_Latinx
+  | (hN >= 100) && (hN <= 901) = BR.R5_Latinx
   | rN == 100 = BR.R5_WhiteNonLatinx
   | rN == 200 = BR.R5_Black
   | rN == 651 = BR.R5_Asian
   | otherwise = BR.R5_Other
 
 intToIsCitizen :: Int -> Bool
-intToIsCitizen n = (n <= 4)
+intToIsCitizen n = not (n == 5)
 
 intToVoteWhyNot :: Int -> BR.VoteWhyNot
 intToVoteWhyNot n
