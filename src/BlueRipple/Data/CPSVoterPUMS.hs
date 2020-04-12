@@ -36,6 +36,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Model.MRP as MRP
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
@@ -290,6 +291,27 @@ cpsVoterPUMSNationalElectoralWeights
 cpsVoterPUMSNationalElectoralWeights = cpsVoterPUMSElectoralWeights (F.rcast @'[BR.Year]) 
 
 
+-- rollup for MRP
+cpsCountVotersByStateF
+  :: forall ks
+  . (Ord (F.Record ks)
+    , FI.RecVec (ks V.++ MRP.CountCols)
+    , ks F.⊆ CPSVoterPUMS
+    )
+  => Int -- year
+  -> FMR.Fold
+  (F.Record CPSVoterPUMS)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols))
+cpsCountVotersByStateF year =
+  let isYear y r = F.rgetField @BR.Year r == y
+      voted r = F.rgetField @BR.VotedYNC r == BR.VYN_Voted
+      wgt r = F.rgetField @CPSVoterPUMSWeight r
+  in MRP.weightedCountFold
+     @('[BR.StateAbbreviation] V.++ ks)
+     @CPSVoterPUMS @'[BR.VotedYNC, BR.Year, CPSVoterPUMSWeight]
+     (isYear year)
+     voted
+     wgt
 -- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
 -- NB: This needs to be done consistently with the demographics.
 -- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning

@@ -50,7 +50,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.PostStratify as BR
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR

@@ -45,7 +45,7 @@ import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP_Pref     as BR
+import qualified BlueRipple.Model.MRP     as BR
 import           MRP.CCES
 import           MRP.DeltaVPV                   ( DemVPV )
 
@@ -284,7 +284,7 @@ countVotersF year =
       wgt = F.rgetField @CCESWeightCumulative 
   in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] inVoterFile voted wgt
 
-
+{-
 
 mrpTurnout
   :: forall cc r
@@ -375,3 +375,4 @@ mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
+-}

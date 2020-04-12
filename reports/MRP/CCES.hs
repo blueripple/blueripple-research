@@ -30,7 +30,7 @@ module MRP.CCES
 import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as Keyed
 

@@ -19,7 +19,7 @@
 {-# LANGUAGE UndecidableInstances        #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module BlueRipple.Model.MRP_Pref where
+module BlueRipple.Model.MRP where
 
 import qualified BlueRipple.Data.Keyed         as K
 import qualified BlueRipple.Data.DataFrames    as BR

@@ -57,7 +57,7 @@ import qualified Numeric.GLM.Bootstrap            as GLM
 import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.MRP as BR
 import MRP.Common
 import MRP.CCES
 

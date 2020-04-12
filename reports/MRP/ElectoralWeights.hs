@@ -65,7 +65,8 @@ import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 
-import qualified BlueRipple.Model.MRP_Pref as BR
+import qualified BlueRipple.Model.MRP as BR
+import qualified BlueRipple.Model.Turnout_MRP as BR
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
@@ -333,12 +334,78 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                        (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR BR.catPredMaps) 
 
   -- inferred turnout
-  inferredTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASER_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASER (Just "T_ASER") ccesDataLoader predictorsASER BR.catPredMaps)
-  inferredTurnoutASR <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASR_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASR (Just "T_ASR") ccesDataLoader predictorsASR BR.catPredMaps)
-  inferredTurnoutASE <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/simpleASE_MR.bin"
-                         (P.raise $ BR.mrpTurnout @BR.CatColsASE (Just "T_ASE") ccesDataLoader predictorsASE BR.catPredMaps)
+  inferredCCESTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesSimpleASER_MR.bin"
+                             (do
+                                 ccesData <- ccesDataLoader
+                                 P.raise
+                                   $ BR.mrpTurnout @BR.CatColsASER
+                                   (Just "T_ASER")
+                                   ET.EW_CCES
+                                   ET.EW_Citizen
+                                   ccesData
+                                   (BR.countVotersF @BR.CatColsASER)
+                                   predictorsASER
+                                   BR.catPredMaps)
+  inferredCCESTurnoutASR <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesSimpleASR_MR.bin"
+                             (do
+                                 ccesData <- ccesDataLoader
+                                 P.raise
+                                   $ BR.mrpTurnout @BR.CatColsASR
+                                   (Just "T_ASR")
+                                   ET.EW_CCES
+                                   ET.EW_Citizen
+                                   ccesData
+                                   (BR.countVotersF @BR.CatColsASR)
+                                   predictorsASR
+                                   BR.catPredMaps)
+  inferredCCESTurnoutASE <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesSimpleASE_MR.bin"
+                             (do
+                                 ccesData <- ccesDataLoader
+                                 P.raise
+                                   $ BR.mrpTurnout @BR.CatColsASE
+                                   (Just "T_ASE")
+                                   ET.EW_CCES
+                                   ET.EW_Citizen
+                                   ccesData
+                                   (BR.countVotersF @BR.CatColsASE)
+                                   predictorsASE
+                                   BR.catPredMaps)
+
+  inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
+                               (do
+                                   P.raise
+                                     $ BR.mrpTurnout @BR.CatColsASER
+                                     (Just "T_CensusASER")
+                                     ET.EW_Census
+                                     ET.EW_Citizen
+                                     cpsVoterPUMS
+                                     (BR.cpsCountVotersF @BR.CatColsASER)
+                                     predictorsASER
+                                     BR.catPredMaps)
+
+  inferredCensusTurnoutASE <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASE_MR.bin"
+                              (do
+                                  P.raise
+                                    $ BR.mrpTurnout @BR.CatColsASE
+                                    (Just "T_CensusASE")
+                                    ET.EW_Census
+                                    ET.EW_Citizen
+                                    cpsVoterPUMS
+                                    (BR.cpsCountVotersF @BR.CatColsASE)
+                                    predictorsASE
+                                    BR.catPredMaps)
+
+  inferredCensusTurnoutASR <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASR_MR.bin"
+                              (do
+                                  P.raise
+                                    $ BR.mrpTurnout @BR.CatColsASR
+                                    (Just "T_CensusASR")
+                                    ET.EW_Census
+                                    ET.EW_Citizen
+                                    cpsVoterPUMS
+                                    (BR.cpsCountVotersF @BR.CatColsASR)
+                                    predictorsASR
+                                    BR.catPredMaps)                                                            
   
 --  logFrame inferredTurnoutASE
   -- demographics
