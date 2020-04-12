@@ -287,7 +287,7 @@ predictionsByLocation ::
   -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
 predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
-  K.logLE K.Diagnostic "Starting (getting CCES data)"
+  K.logLE K.Diagnostic "Starting (getting data )"
   ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
   K.logLE K.Diagnostic ("Inferring")
   (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps

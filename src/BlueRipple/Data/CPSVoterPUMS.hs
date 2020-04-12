@@ -22,6 +22,7 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsVoterPUMSElectoralWeights
   , cpsVoterPUMSElectoralWeightsByState
   , cpsVoterPUMSNationalElectoralWeights
+  , cpsCountVotersByStateF
   , cpsKeysToASE
   , cpsKeysToASR
   , cpsKeysToASER
@@ -296,22 +297,35 @@ cpsCountVotersByStateF
   :: forall ks
   . (Ord (F.Record ks)
     , FI.RecVec (ks V.++ MRP.CountCols)
-    , ks F.⊆ CPSVoterPUMS
+    , BR.FiniteSet (F.Record ks)
+    , (ks V.++ MRP.CountCols) F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols)
+    , ks F.⊆ (ks V.++ MRP.CountCols)
+    , ks F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight])
+    , F.ElemOf (ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+    , F.ElemOf (ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
+    , F.ElemOf (ks V.++ MRP.CountCols) MRP.Count
+    , F.ElemOf (ks V.++ MRP.CountCols) MRP.MeanWeight
+    , F.ElemOf (ks V.++ MRP.CountCols) MRP.UnweightedSuccesses
+    , F.ElemOf (ks V.++ MRP.CountCols) MRP.WeightedSuccesses
+    , F.ElemOf (ks V.++ MRP.CountCols) MRP.VarWeight
     )
-  => Int -- year
+  => (F.Record CPSVoterPUMS -> F.Record ks)
+  -> Int -- year
   -> FMR.Fold
   (F.Record CPSVoterPUMS)
   (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols))
-cpsCountVotersByStateF year =
+cpsCountVotersByStateF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
       voted r = F.rgetField @BR.VotedYNC r == BR.VYN_Voted
       wgt r = F.rgetField @CPSVoterPUMSWeight r
-  in MRP.weightedCountFold
-     @('[BR.StateAbbreviation] V.++ ks)
-     @CPSVoterPUMS @'[BR.VotedYNC, BR.Year, CPSVoterPUMSWeight]
-     (isYear year)
-     voted
-     wgt
+      makeCountsF = MRP.weightedBinomialFold voted wgt
+  in fmap (fmap F.rcast)
+     $ FL.prefilter (isYear year)
+     $ cpsVoterPUMSRollup @[BR.VotedYNC, CPSVoterPUMSWeight]
+     (F.rcast @'[BR.StateAbbreviation])
+     getCatKey
+     makeCountsF
+
 -- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
 -- NB: This needs to be done consistently with the demographics.
 -- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning
