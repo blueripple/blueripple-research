@@ -244,11 +244,14 @@ cpsVoterPUMSElectoralWeights
 cpsVoterPUMSElectoralWeights getLoc getKey =
   let toRec :: Double -> F.Record BR.EWCols
       toRec w =  BR.EW_Census F.&: BR.EW_Citizen F.&: w F.&: V.RNil
+      citizen r = F.rgetField @BR.IsCitizen r == True
+      possibleVoter r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
+      voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
   in cpsVoterPUMSRollupWeightedCounts @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]
      getLoc
      getKey
-     ((== True) . F.rgetField @BR.IsCitizen)
-     ((== BR.VYN_Voted) . F.rgetField @BR.VotedYNC)
+     (\r -> citizen r &&  possibleVoter r)
+     voted
      toRec
      (toRec 0) -- this is a reasonable default to use for inference but not great to use this data directly
 
@@ -316,11 +319,13 @@ cpsCountVotersByStateF
   (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols))
 cpsCountVotersByStateF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
-      voted r = F.rgetField @BR.VotedYNC r == BR.VYN_Voted
+      possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
+      citizen r = F.rgetField @BR.IsCitizen r == True
+      voted r = cpsVoted $ F.rgetField @BR.VotedYNC r 
       wgt r = F.rgetField @CPSVoterPUMSWeight r
       makeCountsF = MRP.weightedBinomialFold voted wgt
   in fmap (fmap F.rcast)
-     $ FL.prefilter (isYear year)
+     $ FL.prefilter (\r -> isYear year r && possible r && citizen r)
      $ cpsVoterPUMSRollup @[BR.VotedYNC, CPSVoterPUMSWeight]
      (F.rcast @'[BR.StateAbbreviation])
      getCatKey
@@ -430,7 +435,22 @@ intToVotedYN :: Int -> BR.VotedYN
 intToVotedYN n
   | n == 1 = BR.VYN_DidNotVote
   | n == 2 = BR.VYN_Voted
-  | otherwise = BR.VYN_Other
+  | n == 96 = BR.VYN_Refused
+  | n == 97 = BR.VYN_DontKnow
+  | n == 98 = BR.VYN_NoResponse
+  | otherwise = BR.VYN_NotInUniverse
+
+cpsPossibleVoter :: BR.VotedYN -> Bool
+cpsPossibleVoter BR.VYN_DidNotVote = True
+cpsPossibleVoter BR.VYN_Voted = True
+cpsPossibleVoter BR.VYN_Refused = True
+cpsPossibleVoter BR.VYN_DontKnow = False
+cpsPossibleVoter BR.VYN_NoResponse = False
+cpsPossibleVoter BR.VYN_NotInUniverse = False
+
+cpsVoted :: BR.VotedYN -> Bool
+cpsVoted BR.VYN_Voted = True
+cpsVoted _ = False
 
 intToRegisteredYN :: Int -> BR.RegisteredYN
 intToRegisteredYN n

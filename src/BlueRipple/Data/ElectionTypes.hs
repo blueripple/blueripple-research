@@ -169,7 +169,10 @@ instance SE.Serialize VoteWhen
 
 data VotedYN = VYN_DidNotVote
              | VYN_Voted
-             | VYN_Other
+             | VYN_Refused
+             | VYN_DontKnow
+             | VYN_NoResponse
+             | VYN_NotInUniverse
              deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
 type VotedYNC = "Voted" F.:-> VotedYN

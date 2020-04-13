@@ -317,6 +317,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       predictorsASR = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
+  K.logLE K.Diagnostic "ASR"
+  K.logLE K.Diagnostic "From National Tables"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASR
+  K.logLE K.Diagnostic "From Microdata"  
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASRTurnout
+  K.logLE K.Diagnostic "ASE"
+  K.logLE K.Diagnostic "From National Tables"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASE
+  K.logLE K.Diagnostic "From Microdata"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASETurnout
+  K.logLE K.Diagnostic "ASER (Microdata only)"
+  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASERTurnout  
+
+
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    P.raise
@@ -355,18 +369,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 
 
 
-  K.logLE K.Diagnostic "ASR"
-  K.logLE K.Diagnostic "From National Tables"
-  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASR
-  K.logLE K.Diagnostic "From Microdata"  
-  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASRTurnout
-  K.logLE K.Diagnostic "ASE"
-  K.logLE K.Diagnostic "From National Tables"
-  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ewASE
-  K.logLE K.Diagnostic "From Microdata"
-  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASETurnout
-  K.logLE K.Diagnostic "ASER (Microdata only)"
-  logFrame $ F.filterFrame ((==2016) . F.rgetField @BR.Year) cpsASERTurnout  
   -- preferences
   
       
@@ -447,34 +449,38 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                 @PUMS.Citizens
                                 @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
                                 @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCensusTurnoutASER)
-  logFrame $ F.filterFrame ((== "WV") . F.rgetField @BR.StateAbbreviation) cpsASERTurnoutByState                                
+  let filterForAdjTurnout r = F.rgetField @BR.StateAbbreviation r == "WI" && F.rgetField @BR.Year r == 2016
+ 
   asrDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjCensusEW.bin" asrDemoAndAdjCensusEW_action
   aseDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjCensusEW.bin" aseDemoAndAdjCensusEW_action
   aserDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" aserDemoAndAdjCensusEW_action
 {-  K.logLE K.Diagnostic $ "pumsASEByState has " <> (T.pack . show $ FL.fold FL.length pumsASEByState) <> " rows."
   K.logLE K.Diagnostic $ "cpsASETurnoutByState has " <> (T.pack . show $ FL.fold FL.length cpsASETurnoutByState) <> " rows."
   K.logLE K.Diagnostic $ "aseDemoAndAdjEW has " <> (T.pack . show $ FL.fold FL.length aseDemoAndAdjEW) <> " rows." -}
-  K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."
+  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
+  K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."  
   let aserDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
                                     @BR.CatColsASER
                                     @PUMS.Citizens
                                     @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                    @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCCESTurnoutASER)
+                                    @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCCESTurnoutASER)
       asrDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
                                    @BR.CatColsASR
                                    @PUMS.Citizens
                                    @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                   @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASRByState) (fmap F.rcast inferredCCESTurnoutASR)
+                                   @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASRByState) (fmap F.rcast inferredCCESTurnoutASR)
       aseDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
                                    @BR.CatColsASE
                                    @PUMS.Citizens
                                    @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                   @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASEByState) (fmap F.rcast inferredCCESTurnoutASE)
+                                   @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASEByState) (fmap F.rcast inferredCCESTurnoutASE)
   
   aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
   asrDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjCCESEW.bin" asrDemoAndAdjCCESEW_action
   aseDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjCCESEW.bin" aseDemoAndAdjCCESEW_action
-
+  K.logLE K.Diagnostic "comparison of Census then CCES for 2016 in WI after adjustment."
+  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
+  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCCESEW
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
@@ -729,7 +735,7 @@ vlWeights title vc rows =
       makeSourceType = GV.calculateAs "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping" "Weight Source"
       encX = GV.position GV.X [GV.PName "Vote Share (%)"
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [48.5, 53.5]]
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [48.5, 54]]
                               , GV.PTitle "D Vote Share (%)"]
       encY = GV.position GV.Y [FV.pName @ElectorsD
                               , GV.PmType GV.Quantitative
