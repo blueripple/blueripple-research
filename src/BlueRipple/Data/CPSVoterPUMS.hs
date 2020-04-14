@@ -17,6 +17,7 @@ module BlueRipple.Data.CPSVoterPUMS
   (
     cpsVoterPUMSLoader
   , CPSVoterPUMS
+  , CPSVoterPUMSWeight
   , cpsVoterPUMSRollup
   , cpsVoterPUMSRollupWeightedCounts
   , cpsVoterPUMSElectoralWeights
@@ -102,7 +103,7 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
-cpsVoterPUMSLoader = do
+cpsVoterPUMSLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" $ do
   let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
   withoutAbbr <- BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                  (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
