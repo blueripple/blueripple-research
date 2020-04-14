@@ -26,6 +26,9 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsKeysToASE
   , cpsKeysToASR
   , cpsKeysToASER
+  , cpsKeysToIdentity
+  , cpsPossibleVoter
+  , cpsVoted
   
   ) where
 

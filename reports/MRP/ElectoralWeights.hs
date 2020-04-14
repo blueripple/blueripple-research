@@ -262,14 +262,16 @@ votesToVoteShareF =
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
 
+type ByMailPct = "ByMailPct" F.:-> Double
+type EarlyPct = "EarlyPct" F.:-> Double
+
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   K.logLE K.Info "Loading re-keyed demographic and turnout data."
+
   -- state totals and national demographic splits
   stateTurnoutRaw <- BR.stateTurnoutLoader
 
---  aseTurnout <- BR.simpleASETurnoutLoader 
---  asrTurnout <- BR.simpleASRTurnoutLoader
   let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
@@ -278,6 +280,19 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --      ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
 --      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
+  -- vote by mail and early voting by state
+  let alternateVoteF :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.Record [BR.Year, BR.StateAbbreviation, ByMailPct, EarlyPct])
+      alternateVoteF =
+        let possible r = CPS.cpsPossibleVoter (F.rgetField @ET.VotedYNC r) && F.rgetField @BR.IsCitizen r
+            vbm r = F.rgetField @ET.VoteHowC r == ET.VH_ByMail
+            early r = F.rgetField @ET.VoteWhenC r == ET.VW_BeforeElectionDay
+            nonCat = F.rcast @[BR.Year, BR.StateAbbreviation]
+            catKey = CPS.cpsKeysToIdentity . F.rcast
+            vbmF = CPS.cpsVoterPUMSRollupWeightedCounts nonCat catKey possible vbm (FT.recordSingleton @ByMailPct) (0 F.&: V.RNil)
+            earlyF = CPS.cpsVoterPUMSRollupWeightedCounts nonCat catKey possible early (FT.recordSingleton @EarlyPct) (0 F.&: V.RNil)
+        in V.rappend <$> vbmF <*> earlyF
+      countAlternateCPS = FL.fold alternateVoteF cpsVoterPUMS
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS      
   let cpsASERTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
       cpsASERTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
 
