@@ -272,7 +272,7 @@ type EarlyPct = "EarlyPct" F.:-> Double
 
 alternateVoteF :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.FrameRec [BR.Year, BR.StateAbbreviation, ByMailPct, EarlyPct])
 alternateVoteF =
-  let possible r = CPS.cpsPossibleVoter (F.rgetField @ET.VotedYNC r) && F.rgetField @BR.IsCitizen r
+  let possible r = let vyn = F.rgetField @ET.VotedYNC r in CPS.cpsPossibleVoter vyn && CPS.cpsVoted vyn && F.rgetField @BR.IsCitizen r
       nonCat = F.rcast @[BR.Year, BR.StateAbbreviation]
       catKey = CPS.cpsKeysToIdentity . F.rcast
       innerF :: FL.Fold (F.Record '[ ET.VoteHowC
@@ -305,9 +305,18 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --      ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
 --      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
+  countyToCD <- BR.county2010ToCD116Loader
+  logFrame countyToCD 
+  cpsVoterWithCDs <- K.knitEither . either (Left . T.pack . show) Right
+                    $ FJ.leftJoinE
+                    @[BR.StateFIPS, BR.CountyFIPS]
+                    (F.filterFrame ((> 0) . F.rgetField @BR.CountyFIPS) cpsVoterPUMS)
+                    (fmap (F.rcast @[BR.CountyFIPS, BR.StateFIPS, BR.CongressionalDistrict, BR.CountyWeight]) countyToCD)
+
   -- vote by mail and early voting by state
   let countAlternateCPS = FL.fold alternateVoteF cpsVoterPUMS
-  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS      
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS
+  let gaFilter r = F.rgetField @BR.StateAbbreviation r == "GA" && (F.rgetField @BR.Year r `elem` [2016,2018])
   let cpsASERTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
       cpsASERTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
       cpsASERCounted2008 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER True . F.rcast) 2008) cpsVoterPUMS  
@@ -323,8 +332,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                      ET.EW_Citizen
                                      cpsVoterPUMS
                                      (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER True . F.rcast)
-                                     predictorsASER
-                                     BR.catPredMaps)
+                                     predictorsASER                                     BR.catPredMaps)
+                               
+  logFrame $ F.filterFrame gaFilter cpsVoterWithCDs
+  K.logLE K.Info $ "GA Census Turnout (Raw)"  
+  logFrame $ F.filterFrame gaFilter cpsASERTurnoutByState
+  K.logLE K.Info $ "GA Census Turnout (inferred)"
+  logFrame $ F.filterFrame gaFilter inferredCensusTurnoutASER
+
 
   -- preferences
   inferredPrefsASER <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
@@ -343,6 +358,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                    (BR.countVotersF @BR.CatColsASER)
                                    predictorsASER
                                    BR.catPredMaps)
+  K.logLE K.Info $ "GA CCES Turnout (inferred)"
+  logFrame $ F.filterFrame gaFilter inferredCCESTurnoutASER
+                             
   --  logFrame inferredTurnoutASE
   -- demographics
   pumsASERByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASERByState.bin"
@@ -351,11 +369,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                          return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True) pumsDemographics
                      )
-
+  K.logLE K.Info $ "GA Demographics (PUMS)"
+  logFrame $ F.filterFrame gaFilter pumsASERByState
   let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
       addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+
 
   K.logLE K.Info "Adjusting national census turnout via PUMS demographics and total recorded turnout"      
   let aserDemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState

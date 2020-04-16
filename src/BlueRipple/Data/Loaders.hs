@@ -103,6 +103,10 @@ puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116C
 puma2000ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2000ToCD116)
 puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing Nothing id Nothing "puma2000ToCD116.bin"
 
+county2010ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.CountyToCD116)
+county2010ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.bin"
+
+
 aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
 aseDemographicsLoader =
   cachedFrameLoader
