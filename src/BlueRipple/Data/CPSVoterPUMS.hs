@@ -73,6 +73,7 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
+import           Frames.Transform              ((|++|))
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Utils                  as FU
 import qualified Frames.MapReduce              as MR
@@ -462,6 +463,30 @@ intToRegisteredYN n
   | n == 2 = BR.RYN_Registered
   | otherwise = BR.RYN_Other
 
+
+
+transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
+transformCPSVoterPUMSRow = FT.transformRL rl  where  
+  rl = (FT.replaceMulti @[BR.CPSHISPAN, BR.CPSRACE] @BR.Race5C intsToRace5)
+       |++| (FT.replaceName @BR.CPSVOSUPPWT @CPSVoterPUMSWeight)
+       |++| (FT.replaceName @BR.CPSCOUNTY @BR.CountyFIPS)
+       |++| (FT.replaceName @BR.CPSSTATEFIP @BR.StateFIPS)
+       |++| (FT.replaceName @BR.CPSYEAR @BR.Year)
+       |++| (FT.replaceSingle @BR.CPSVOREG @BR.RegisteredYNC intToRegisteredYN)
+       |++| (FT.replaceSingle @BR.CPSVOTED @BR.VotedYNC intToVotedYN)
+       |++| (FT.replaceSingle @BR.CPSVOTEWHEN @BR.VoteWhenC intToVoteWhen)
+       |++| (FT.replaceSingle @BR.CPSVOTEHOW @BR.VoteHowC intToVoteHow)
+       |++| (FT.replaceSingle @BR.CPSVOYNOTREG @BR.RegWhyNotC intToRegWhyNot)  
+       |++| (FT.replaceSingle @BR.CPSVOWHYNOT @BR.VoteWhyNotC intToVoteWhyNot)
+       |++| (FT.replaceSingle @BR.CPSSCHLCOLL @BR.InCollege intToInCollege)
+       |++| (FT.replaceSingle @BR.CPSEDUC @BR.CollegeGradC intToCollegeGrad)
+       |++| (FT.replaceSingle @BR.CPSCITIZEN @BR.IsCitizen intToIsCitizen)
+       |++| (FT.replaceSingle @BR.CPSSEX @BR.SexC intToSex)
+       |++| (FT.replaceSingle @BR.CPSAGE @BR.Age4C intToAge4)
+       |++| FT.RLNil
+
+
+{-
 transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
 transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
   addAge = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.CPSAGE
@@ -494,6 +519,7 @@ transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
            . FT.mutate addVotedYN
            . FT.mutate addRegisteredYN
            . FT.retypeColumn @BR.CPSVOSUPPWT @CPSVoterPUMSWeight
+-}
 
 -- to use in maybeRecsToFrame
 -- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"

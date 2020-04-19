@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 
@@ -50,7 +50,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 9adff1f6215df941b3dc844e18f12211e3d86a1f
+  tag: 72e676b84c4567909106db153bcf0578310dc2b7
 
 source-repository-package
   type: git

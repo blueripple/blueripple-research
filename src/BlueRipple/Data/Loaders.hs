@@ -26,7 +26,9 @@ import qualified Knit.Report                   as K
 import qualified Knit.Report.Cache             as K
 import qualified Polysemy                      as P
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
+import qualified Control.Lens                  as Lens      
 import           Control.Lens                   ((%~))
+
 
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
@@ -53,6 +55,7 @@ import qualified Frames.TH                     as F
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
+import           Frames.Transform               ((|++|))
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 
@@ -72,19 +75,15 @@ type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.Sta
 
 fixPresidentialElectionRow
   :: F.Record PEFromCols -> F.Record PresidentialElectionCols
-fixPresidentialElectionRow r = F.rcast @PresidentialElectionCols (mutate r)
- where
-  mutate =
-    FT.retypeColumn @BR.StatePo @BR.StateAbbreviation
-      . FT.retypeColumn @BR.StateFips @BR.StateFIPS
-      . FT.retypeColumn @BR.Candidatevotes @ET.Votes
-      . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
-      . FT.mutate (const $ FT.recordSingleton @ET.Office ET.President)
-      . FT.mutate
-          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
+fixPresidentialElectionRow = FT.transformRL rl where
+  rl = (FT.replaceName @BR.StatePo @BR.StateAbbreviation)
+       |++| (FT.replaceName @BR.StateFips @BR.StateFIPS)
+       |++| (FT.replaceName @BR.Candidatevotes @ET.Votes)
+       |++| (FT.replaceName @BR.Totalvotes @ET.TotalVotes)
+       |++| (FT.addCol @ET.Office ET.President)
+       |++| (FT.replaceSingle @BR.Party @ET.Party parsePEParty)
+       |++| FT.RLNil
 
---fixPEMaybes :: F.Rec (Maybe F.:. F.ElField) PresidentialElectionCols -> F.Rec (Maybe F.:. F.ElField) PresidentialElectionCols
---fixPEMaybes r = 
 
 presidentialByStateFrame
   :: K.KnitEffects r => K.Sem r (F.FrameRec PresidentialElectionCols)
@@ -224,6 +223,9 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
     . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
     . FT.mutate
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
+
+
+
 
 houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
 houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.bin"
