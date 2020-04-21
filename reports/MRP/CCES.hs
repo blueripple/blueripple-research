@@ -403,46 +403,29 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
   missingEducation = FM.fromMaybeMono 5
   
 -- fmap over Frame after load and throwing out bad rows
+
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
-transformCCESRow r = F.rcast @CCES_MRP (mutate r) where
-  addGender = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @CCESGender
-  addEducation = FT.recordSingleton @Education . intToEducationT . F.rgetField @CCESEduc
-  addCollegeGrad = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @CCESEduc
-  rInt q = F.rgetField @CCESRace q
-  hInt q = F.rgetField @CCESHispanic q
-  race q = if (hInt q == 1) then Hispanic else intToRaceT (rInt q)
-  addRace = FT.recordSingleton @Race . race 
-  addSimpleRace = FT.recordSingleton @BR.SimpleRaceC . raceToSimpleRace . race 
-  addAge = FT.recordSingleton @Age . intToAgeT . F.rgetField @CCESAge
-  addSimpleAge = FT.recordSingleton @BR.SimpleAgeC . intToSimpleAge . F.rgetField @CCESAge
-  addRegistration = FT.recordSingleton @Registration . parseRegistration  . F.rgetField @CCESVvRegstatus
-  addTurnout = FT.recordSingleton @Turnout . parseTurnout . F.rgetField @CCESVvTurnoutGvm
-  addHouseVoteParty = FT.recordSingleton @HouseVoteParty . parseHouseVoteParty . F.rgetField @CCESVotedRepParty
-  addPres2008VoteParty = FT.recordSingleton @Pres2008VoteParty . parsePres2008VoteParty . F.rgetField @CCESVotedPres08
-  addPres2012VoteParty = FT.recordSingleton @Pres2012VoteParty . parsePres2012VoteParty . F.rgetField @CCESVotedPres12
-  addPres2016VoteParty = FT.recordSingleton @Pres2016VoteParty . parsePres2016VoteParty . F.rgetField @CCESVotedPres16
-  addPID3 = FT.recordSingleton @PartisanId3 . parsePartisanIdentity3 . F.rgetField @CCESPid3
-  addPID7 = FT.recordSingleton @PartisanId7 . parsePartisanIdentity7 . F.rgetField @CCESPid7
-  addPIDLeaner = FT.recordSingleton @PartisanIdLeaner . parsePartisanIdentityLeaner . F.rgetField @CCESPid3Leaner
-  mutate = FT.retypeColumn @CCESYear @Year
-           . FT.retypeColumn @CCESSt @StateAbbreviation
-           . FT.retypeColumn @CCESDistUp @CongressionalDistrict -- could be CCES_Dist or CCES_DistUp
-           . FT.mutate addGender
-           . FT.mutate addEducation
-           . FT.mutate addCollegeGrad
-           . FT.mutate addRace
-           . FT.mutate addSimpleRace
-           . FT.mutate addAge
-           . FT.mutate addSimpleAge
-           . FT.mutate addRegistration
-           . FT.mutate addTurnout
-           . FT.mutate addHouseVoteParty
-           . FT.mutate addPres2008VoteParty
-           . FT.mutate addPres2012VoteParty
-           . FT.mutate addPres2016VoteParty           
-           . FT.mutate addPID3
-           . FT.mutate addPID7
-           . FT.mutate addPIDLeaner
+transformCCESRow = F.rcast . addCols where
+  intsToRace h r = if (h == 1) then Hispanic else intToRaceT r
+  addCols = (FT.addName  @CCESYear @Year)
+            . (FT.addName @CCESSt @StateAbbreviation)
+            . (FT.addName @CCESDistUp @CongressionalDistrict)
+            . (FT.addOneFromOne @CCESGender @BR.SexC intToSex)
+            . (FT.addOneFromOne @CCESEduc @Education intToEducationT)
+            . (FT.addOneFromOne @CCESEduc @BR.CollegeGradC intToCollegeGrad)
+            . (FT.addOneFrom @[CCESHispanic, CCESRace] @Race intsToRace)
+            . (FT.addOneFrom @[CCESHispanic, CCESRace] @BR.SimpleRaceC (\h r -> raceToSimpleRace $ intsToRace h r))
+            . (FT.addOneFromOne @CCESAge @Age intToAgeT)
+            . (FT.addOneFromOne @CCESAge @BR.SimpleAgeC intToSimpleAge)
+            . (FT.addOneFromOne @CCESVvRegstatus @Registration parseRegistration)
+            . (FT.addOneFromOne @CCESVvTurnoutGvm @Turnout parseTurnout)
+            . (FT.addOneFromOne @CCESVotedRepParty @HouseVoteParty parseHouseVoteParty)
+            . (FT.addOneFromOne @CCESVotedPres08 @Pres2008VoteParty parsePres2008VoteParty)
+            . (FT.addOneFromOne @CCESVotedPres12 @Pres2012VoteParty parsePres2012VoteParty)
+            . (FT.addOneFromOne @CCESVotedPres16 @Pres2016VoteParty parsePres2016VoteParty)
+            . (FT.addOneFromOne @CCESPid3 @PartisanId3 parsePartisanIdentity3)
+            . (FT.addOneFromOne @CCESPid7 @PartisanId7 parsePartisanIdentity7)
+            . (FT.addOneFromOne @CCESPid3Leaner @PartisanIdLeaner parsePartisanIdentityLeaner)
 
 
 

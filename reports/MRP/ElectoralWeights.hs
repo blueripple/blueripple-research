@@ -306,7 +306,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
   countyToCD <- BR.county2010ToCD116Loader
-  logFrame countyToCD 
+--  logFrame countyToCD 
   cpsVoterWithCDs <- K.knitEither . either (Left . T.pack . show) Right
                     $ FJ.leftJoinE
                     @[BR.StateFIPS, BR.CountyFIPS]

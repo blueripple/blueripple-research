@@ -138,17 +138,37 @@ weightedBinomialFold testRow weightRow =
 
 weightedCountFold
   :: forall k r d
-   . (Ord (F.Record k), FI.RecVec (k V.++ CountCols), k F.⊆ r, d F.⊆ r)
+   . (Ord (F.Record k), FI.RecVec (k V.++ CountCols), k F.⊆ r,  k F.⊆ (k V.++ r), d F.⊆ (k V.++ r))
   => (F.Record r -> Bool) -- ^ count this row?
   -> (F.Record d -> Bool) -- ^ success ?
   -> (F.Record d -> Double) -- ^ weight
   -> FL.Fold (F.Record r) (F.FrameRec (k V.++ CountCols))
-weightedCountFold filterData testData weightData =
-  FMR.concatFold $ FMR.mapReduceFold
+weightedCountFold {- filterData testData weightData-} = weightedCountFoldGeneral (F.rcast @k)
+{-  FMR.concatFold $ FMR.mapReduceFold
     (MR.filterUnpack filterData)
     (FMR.assignKeysAndData @k)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
+-}
 
+weightedCountFoldGeneral
+  :: forall k r d
+   . (Ord (F.Record k)
+     , FI.RecVec (k V.++ CountCols)
+     , k F.⊆ (k V.++ r)
+     , d F.⊆ (k V.++ r)
+     )
+  => (F.Record r -> F.Record k)
+  -> (F.Record r -> Bool) -- ^ count this row?
+  -> (F.Record d -> Bool) -- ^ success ?
+  -> (F.Record d -> Double) -- ^ weight
+  -> FL.Fold (F.Record r) (F.FrameRec (k V.++ CountCols))
+weightedCountFoldGeneral getKey filterData testData weightData =
+  FL.prefilter filterData $ FMR.concatFold $ FMR.mapReduceFold
+    (MR.Unpack $ \r ->  [getKey r `V.rappend` r])
+    (FMR.assignKeysAndData @k @d)
+    (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
+
+  
 
 getFraction r =
   let n = F.rgetField @Count r

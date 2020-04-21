@@ -53,7 +53,6 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
-import           Frames.Transform               ((|++|))
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Utils                  as FU
 import qualified Frames.MapReduce              as MR
@@ -375,21 +374,17 @@ fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
 
 
 transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow y = FT.transformRL rl where
-  rl = (FT.replaceMulti @'[BR.PUMSHISP, BR.PUMSRAC1P]  @BR.Race5C intsToRace5)
-       |++| (FT.replaceName  @BR.PUMSST @BR.StateFIPS)
-       |++| (FT.replaceName @BR.PUMSPUMA @BR.PUMA)
-       |++| (FT.addCol @BR.Year y)
-       |++| (FT.replaceSingle @BR.PUMSCIT @Citizen intToCitizen)
-       |++| (FT.replaceName @BR.PUMSPWGTP @PUMSWeight)
-       |++| (FT.replaceSingle @BR.PUMSAGEP @BR.Age4C intToAge4)
-       |++| (FT.replaceSingle @BR.PUMSSEX @BR.SexC intToSex)
-       |++| (FT.replaceSingle @BR.PUMSSCHL @BR.CollegeGradC intToCollegeGrad)
-       |++| (FT.replaceSingle @BR.PUMSSCHG @BR.InCollege intToInCollege)
-       |++| FT.RLNil
-
-
-
+transformPUMSRow y = F.rcast . addCols where
+  addCols = (FT.addOneFrom @'[BR.PUMSHISP, BR.PUMSRAC1P]  @BR.Race5C intsToRace5)
+            . (FT.addName  @BR.PUMSST @BR.StateFIPS)
+            . (FT.addName @BR.PUMSPUMA @BR.PUMA)
+            . (FT.addOneFromValue @BR.Year y)
+            . (FT.addOneFromOne @BR.PUMSCIT @Citizen intToCitizen)
+            . (FT.addName @BR.PUMSPWGTP @PUMSWeight)
+            . (FT.addOneFromOne @BR.PUMSAGEP @BR.Age4C intToAge4)
+            . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
+            . (FT.addOneFromOne @BR.PUMSSCHL @BR.CollegeGradC intToCollegeGrad)
+            . (FT.addOneFromOne @BR.PUMSSCHG @BR.InCollege intToInCollege)
 
 {-
 -- fmap over Frame after load and throwing out bad rows

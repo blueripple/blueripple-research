@@ -47,6 +47,7 @@ import qualified Data.Text.Read                as T
 
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+import qualified Data.Vinyl.Curry              as V
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
@@ -55,7 +56,6 @@ import qualified Frames.TH                     as F
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
-import           Frames.Transform               ((|++|))
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 
@@ -75,14 +75,14 @@ type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.Sta
 
 fixPresidentialElectionRow
   :: F.Record PEFromCols -> F.Record PresidentialElectionCols
-fixPresidentialElectionRow = FT.transformRL rl where
-  rl = (FT.replaceName @BR.StatePo @BR.StateAbbreviation)
-       |++| (FT.replaceName @BR.StateFips @BR.StateFIPS)
-       |++| (FT.replaceName @BR.Candidatevotes @ET.Votes)
-       |++| (FT.replaceName @BR.Totalvotes @ET.TotalVotes)
-       |++| (FT.addCol @ET.Office ET.President)
-       |++| (FT.replaceSingle @BR.Party @ET.Party parsePEParty)
-       |++| FT.RLNil
+fixPresidentialElectionRow = F.rcast . addCols where
+  addCols = (FT.addName @BR.StatePo @BR.StateAbbreviation)
+            . (FT.addName @BR.StateFips @BR.StateFIPS)
+            . (FT.addName @BR.Candidatevotes @ET.Votes)
+            . (FT.addName @BR.Totalvotes @ET.TotalVotes)
+            . (FT.addOneFromValue @ET.Office ET.President)
+            . (FT.addOneFromOne @BR.Party @ET.Party parsePEParty)
+
 
 
 presidentialByStateFrame
