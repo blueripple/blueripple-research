@@ -57,6 +57,9 @@ countDemHouseVotesF
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
     , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) HouseVoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => Int
   -> FMR.Fold
@@ -77,7 +80,10 @@ countDemPres2008VotesF
   :: forall cs
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
     , cs F.⊆ CCES_MRP
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2008VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => FMR.Fold
   (F.Record CCES_MRP)
@@ -99,6 +105,9 @@ countDemPres2012VotesF
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
     , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2012VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => FMR.Fold
   (F.Record CCES_MRP)
@@ -120,6 +129,9 @@ countDemPres2016VotesF
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
     , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2016VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => FMR.Fold
   (F.Record CCES_MRP)
@@ -153,12 +165,18 @@ mrpPrefs
      , cc F.⊆ (cc V.++ BR.CountCols)
      , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
      , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]  V.++ BR.CountCols)
+     , cc F.⊆ ('[BR.StateAbbreviation] V.++ cc V.++ CCES_MRP)
      , FI.RecVec (cc V.++ BR.CountCols)
      , F.ElemOf (cc V.++ BR.CountCols) BR.Count
      , F.ElemOf (cc V.++ BR.CountCols) BR.MeanWeight
      , F.ElemOf (cc V.++ BR.CountCols) BR.UnweightedSuccesses
      , F.ElemOf (cc V.++ BR.CountCols) BR.VarWeight
      , F.ElemOf (cc V.++ BR.CountCols) BR.WeightedSuccesses
+     , F.ElemOf (cc V.++ CCES_MRP) HouseVoteParty
+     , F.ElemOf (cc V.++ CCES_MRP) Pres2008VoteParty
+     , F.ElemOf (cc V.++ CCES_MRP) Pres2012VoteParty
+     , F.ElemOf (cc V.++ CCES_MRP) Pres2016VoteParty
+     , F.ElemOf (cc V.++ CCES_MRP) CCESWeightCumulative
      , BR.FiniteSet (F.Record cc)
      , Show (F.Record (cc V.++ BR.CountCols))
      , V.RMap (cc V.++ BR.CountCols)
@@ -272,6 +290,10 @@ countVotersF
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
     , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Turnout
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    , F.ElemOf (cs V.++ CCES_MRP) BR.Year
     )
   => Int
   -> FMR.Fold

@@ -138,7 +138,12 @@ weightedBinomialFold testRow weightRow =
 
 weightedCountFold
   :: forall k r d
-   . (Ord (F.Record k), FI.RecVec (k V.++ CountCols), k F.⊆ r,  k F.⊆ (k V.++ r), d F.⊆ (k V.++ r))
+   . (Ord (F.Record k)
+     , FI.RecVec (k V.++ CountCols)
+     , k F.⊆ r
+     , k F.⊆ (k V.++ r)
+     , d F.⊆ (k V.++ r)
+     )
   => (F.Record r -> Bool) -- ^ count this row?
   -> (F.Record d -> Bool) -- ^ success ?
   -> (F.Record d -> Double) -- ^ weight
@@ -158,7 +163,7 @@ weightedCountFoldGeneral
      , d F.⊆ (k V.++ r)
      )
   => (F.Record r -> F.Record k)
-  -> (F.Record r -> Bool) -- ^ count this row?
+  -> (F.Record r -> Bool) -- ^ include this row?
   -> (F.Record d -> Bool) -- ^ success ?
   -> (F.Record d -> Double) -- ^ weight
   -> FL.Fold (F.Record r) (F.FrameRec (k V.++ CountCols))

@@ -288,7 +288,7 @@ alternateVoteF =
             wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r
             wgtdCountF f = FL.prefilter (\r -> f r && possible r) $ FL.premap wgt FL.sum
         in (\bm e wgt -> bm/wgt F.&: e/wgt F.&: V.RNil) <$> wgtdCountF vbm <*> wgtdCountF early <*> wgtdCountF (const True)            
-  in CPS.cpsVoterPUMSRollup nonCat catKey innerF
+  in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
@@ -306,13 +306,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --      ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
   countyToCD <- BR.county2010ToCD116Loader
---  logFrame countyToCD 
-  cpsVoterWithCDs <- K.knitEither . either (Left . T.pack . show) Right
-                    $ FJ.leftJoinE
-                    @[BR.StateFIPS, BR.CountyFIPS]
-                    (F.filterFrame ((> 0) . F.rgetField @BR.CountyFIPS) cpsVoterPUMS)
-                    (fmap (F.rcast @[BR.CountyFIPS, BR.StateFIPS, BR.CongressionalDistrict, BR.CountyWeight]) countyToCD)
-
+--  logFrame countyToCD  
+  cpsVoterPUMSWithCDs <- CPS.cpsVoterPUMSWithCDLoader
+  let cpsASEREWByCD = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByCD (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMSWithCDs
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateAbbreviation r == "GA") cpsASEREWByCD
   -- vote by mail and early voting by state
   let countAlternateCPS = FL.fold alternateVoteF cpsVoterPUMS
   logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS
@@ -334,7 +331,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                      (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER True . F.rcast)
                                      predictorsASER                                     BR.catPredMaps)
                                
-  logFrame $ F.filterFrame gaFilter cpsVoterWithCDs
+--  logFrame $ F.filterFrame gaFilter cpsVoterWithCDs
   K.logLE K.Info $ "GA Census Turnout (Raw)"  
   logFrame $ F.filterFrame gaFilter cpsASERTurnoutByState
   K.logLE K.Info $ "GA Census Turnout (inferred)"

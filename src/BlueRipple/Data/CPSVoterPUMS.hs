@@ -16,11 +16,13 @@
 module BlueRipple.Data.CPSVoterPUMS
   (
     cpsVoterPUMSLoader
+  , cpsVoterPUMSWithCDLoader
   , CPSVoterPUMS
   , CPSVoterPUMSWeight
   , cpsVoterPUMSRollup
   , cpsVoterPUMSRollupWeightedCounts
   , cpsVoterPUMSElectoralWeights
+  , cpsVoterPUMSElectoralWeightsByCD
   , cpsVoterPUMSElectoralWeightsByState
   , cpsVoterPUMSNationalElectoralWeights
   , cpsCountVotersByStateF
@@ -118,7 +120,7 @@ cpsVoterPUMSLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" $ d
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
 cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-cpsVoterPUMSWithCDLoader = do
+cpsVoterPUMSWithCDLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" do
   cpsVoterPUMS <- cpsVoterPUMSLoader
   countyToCD <- BR.county2010ToCD116Loader
   K.knitEither . either (Left . T.pack . show) Right
@@ -153,16 +155,16 @@ type CPSVoterPUMS' = V.RDelete BR.StateAbbreviation CPSVoterPUMS
 
 
 cpsVoterPUMSRollup
-  :: forall cs ks ds.
-  ( cs F.⊆ CPSVoterPUMS
+  :: forall cs rs ks ds.
+  ( cs F.⊆ rs
   , ks F.⊆ (ks V.++ cs)
   , cs F.⊆ (ks V.++ cs)
   , FI.RecVec (ks V.++ ds)
   , Ord (F.Record ks)
   )
-  => (F.Record CPSVoterPUMS -> F.Record ks)
+  => (F.Record rs -> F.Record ks)
   -> FL.Fold (F.Record cs) (F.Record ds)
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ks V.++ ds))
+  -> FL.Fold (F.Record rs) (F.FrameRec (ks V.++ ds))
 cpsVoterPUMSRollup getKeys foldData =
   FMR.concatFold
   $ FMR.mapReduceFold
@@ -171,8 +173,8 @@ cpsVoterPUMSRollup getKeys foldData =
   (FMR.foldAndAddKey foldData)
 
 cpsVoterPUMSRollupWithDefault
-  ::  forall cs ls ks ds.
-  ( cs F.⊆ CPSVoterPUMS
+  ::  forall cs rs ls ks ds.
+  ( cs F.⊆ rs
   , (ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ (ls V.++ ks V.++ cs)
   , FI.RecVec (ls V.++ ks V.++ ds)
@@ -185,11 +187,11 @@ cpsVoterPUMSRollupWithDefault
   , ks F.⊆ (ks V.++ ds)
   , ds F.⊆ (ks V.++ ds)
   )
-  => (F.Record CPSVoterPUMS -> F.Record ls)
-  -> (F.Record CPSVoterPUMS -> F.Record ks)
+  => (F.Record rs -> F.Record ls)
+  -> (F.Record rs -> F.Record ks)
   -> FL.Fold (F.Record cs) (F.Record ds)
   -> F.Record ds -- default value if there are no records for a given value of F.Record ks
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ls V.++ ks V.++ ds))
+  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ ds))
 cpsVoterPUMSRollupWithDefault getLoc getKey foldData defD =
   let addDefaultF = FMR.concatFold
                     $ FMR.mapReduceFold
@@ -203,9 +205,8 @@ cpsVoterPUMSRollupWithDefault getLoc getKey foldData defD =
   in fmap (FL.fold addDefaultF) $ cpsVoterPUMSRollup (\r -> getLoc r `V.rappend` getKey r) foldData
 
 cpsVoterPUMSRollupWeightedCounts
-  :: forall cs ls ks ds.
-  ( cs F.⊆ CPSVoterPUMS
-  , F.ElemOf cs CPSVoterPUMSWeight
+  :: forall cs rs ls ks ds.
+  ( cs F.⊆ rs
   , (ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ (ls V.++ ks V.++ cs)
   , FI.RecVec (ls V.++ ks V.++ ds)
@@ -218,18 +219,18 @@ cpsVoterPUMSRollupWeightedCounts
   , ks F.⊆ (ks V.++ ds)
   , ds F.⊆ (ks V.++ ds)
   )
-  => (F.Record CPSVoterPUMS -> F.Record ls)
-  -> (F.Record CPSVoterPUMS -> F.Record ks)
+  => (F.Record rs -> F.Record ls)
+  -> (F.Record rs -> F.Record ks)
   -> (F.Record cs -> Bool) -- which to include
-  -> (F.Record cs -> Bool) -- which to count 
+  -> (F.Record cs -> Bool) -- which to count
+  -> (F.Record cs -> Double) -- get weight
   -> (Double -> F.Record ds) -- turn the weighted counts into a record
   -> F.Record ds -- default
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ls V.++ ks V.++ ds))
-cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf countToRec defD =
+  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ ds))
+cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf wgt countToRec defD =
   let countF :: FL.Fold (F.Record cs) (F.Record ds)
       countF =
-        let wgt = F.rgetField @CPSVoterPUMSWeight
-            wgtdAllF = FL.premap wgt FL.sum
+        let wgtdAllF = FL.premap wgt FL.sum
             wgtdCountF = FL.prefilter countIf $ FL.premap wgt FL.sum
             safeDiv n d = if (d > 0) then n/d else 0 
             wF = safeDiv <$> wgtdCountF <*> wgtdAllF -- this is acceptable here since (d == 0) iff (n == 0)
@@ -239,11 +240,12 @@ cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf countToRec def
   in cpsVoterPUMSRollupWithDefault getLoc getKey ewFold defD
 
 cpsVoterPUMSElectoralWeights
-  :: forall ls ks.
-  ((ls V.++ ks) F.⊆ (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
-  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
-  , F.ElemOf (ls V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
+  :: forall cs rs ls ks.
+  ((ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
+  , cs F.⊆ (ls V.++ ks V.++ cs)
+  , cs F.⊆ rs
+  , F.ElemOf cs BR.IsCitizen
+  , F.ElemOf cs BR.VotedYNC
   , FI.RecVec (ls V.++ ks V.++ BR.EWCols)
   , (ls V.++ (ks V.++ BR.EWCols)) ~ ((ls V.++ ks) V.++ BR.EWCols)  
   , Ord (F.Record (ls V.++ ks))
@@ -254,20 +256,22 @@ cpsVoterPUMSElectoralWeights
   , ks F.⊆ (ks V.++ BR.EWCols)
   , BR.EWCols F.⊆ (ks V.++ BR.EWCols)
   )
-  => (F.Record CPSVoterPUMS -> F.Record ls)
-  -> (F.Record CPSVoterPUMS -> F.Record ks)
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec (ls V.++ ks V.++ BR.EWCols))
-cpsVoterPUMSElectoralWeights getLoc getKey =
+  => (F.Record rs -> F.Record ls)
+  -> (F.Record rs -> F.Record ks)
+  -> (F.Record cs -> Double)
+  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ BR.EWCols))
+cpsVoterPUMSElectoralWeights getLoc getKey getWgt =
   let toRec :: Double -> F.Record BR.EWCols
       toRec w =  BR.EW_Census F.&: BR.EW_Citizen F.&: w F.&: V.RNil
       citizen r = F.rgetField @BR.IsCitizen r == True
       possibleVoter r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
-  in cpsVoterPUMSRollupWeightedCounts @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]
+  in cpsVoterPUMSRollupWeightedCounts @cs
      getLoc
      getKey
      (\r -> citizen r &&  possibleVoter r)
      voted
+     getWgt
      toRec
      (toRec 0) -- this is a reasonable default to use for inference but not great to use this data directly
 
@@ -289,7 +293,9 @@ cpsVoterPUMSElectoralWeightsByState
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
   -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ BR.EWCols))
-cpsVoterPUMSElectoralWeightsByState = cpsVoterPUMSElectoralWeights (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+cpsVoterPUMSElectoralWeightsByState getCatKey =
+  cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]
+  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
 
 cpsVoterPUMSNationalElectoralWeights
   :: forall ks.
@@ -308,25 +314,45 @@ cpsVoterPUMSNationalElectoralWeights
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
   -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year] V.++ ks V.++ BR.EWCols))
-cpsVoterPUMSNationalElectoralWeights = cpsVoterPUMSElectoralWeights (F.rcast @'[BR.Year]) 
+cpsVoterPUMSNationalElectoralWeights getCatKey =
+  cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight] (F.rcast @'[BR.Year]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
+
+cpsVoterPUMSElectoralWeightsByCD
+  :: forall ks.
+  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.CountyWeight
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.IsCitizen
+  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.VotedYNC
+  , FI.RecVec (ks ++ BR.EWCols)
+  , Ord (F.Record ks)
+  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+             V.++ ks
+             V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
+  , BR.FiniteSet (F.Record ks)
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeight
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightOf
+  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightSource
+  , (ks V.++ BR.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ BR.EWCols)
+  , ks F.⊆ (ks V.++ BR.EWCols)
+  )
+  => (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
+  -> FL.Fold (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
+  (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ BR.EWCols))
+cpsVoterPUMSElectoralWeightsByCD getCatKey =
+  let wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
+  in cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
+     (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]) getCatKey wgt
+
 
 -- rollup for MRP
 cpsCountVotersByStateF
-  :: forall ks
-  . (Ord (F.Record ks)
-    , FI.RecVec (ks V.++ MRP.CountCols)
-    , BR.FiniteSet (F.Record ks)
-    , (ks V.++ MRP.CountCols) F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols)
-    , ks F.⊆ (ks V.++ MRP.CountCols)
-    , ks F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight])
-    , F.ElemOf (ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-    , F.ElemOf (ks V.++ [BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
-    , F.ElemOf (ks V.++ MRP.CountCols) MRP.Count
-    , F.ElemOf (ks V.++ MRP.CountCols) MRP.MeanWeight
-    , F.ElemOf (ks V.++ MRP.CountCols) MRP.UnweightedSuccesses
-    , F.ElemOf (ks V.++ MRP.CountCols) MRP.WeightedSuccesses
-    , F.ElemOf (ks V.++ MRP.CountCols) MRP.VarWeight
-    )
+  :: forall ks.
+  (Ord (F.Record ks)
+  , FI.RecVec (ks V.++ MRP.CountCols)
+  , F.ElemOf (ks V.++ CPSVoterPUMS) CPSVoterPUMSWeight
+  , F.ElemOf (ks V.++ CPSVoterPUMS) BR.VotedYNC
+  , ks F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ CPSVoterPUMS)
+  )
   => (F.Record CPSVoterPUMS -> F.Record ks)
   -> Int -- year
   -> FMR.Fold
@@ -336,43 +362,16 @@ cpsCountVotersByStateF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
       citizen r = F.rgetField @BR.IsCitizen r == True
-      voted r = cpsVoted $ F.rgetField @BR.VotedYNC r 
-      wgt r = F.rgetField @CPSVoterPUMSWeight r
-      makeCountsF = MRP.weightedBinomialFold voted wgt
-  in fmap (fmap F.rcast)
-     $ FL.prefilter (\r -> isYear year r && possible r && citizen r)
-     $ cpsVoterPUMSRollup @[BR.VotedYNC, CPSVoterPUMSWeight]
-     (\r -> F.rcast @'[BR.StateAbbreviation] r `V.rappend` getCatKey r)
-     makeCountsF
-
-cpsCountVotersByStateF'
-  :: forall ks.
-  (Ord (F.Record ks)
-  , FI.RecVec (ks V.++ MRP.CountCols)
-  , F.ElemOf (ks V.++ CPSVoterPUMS) CPSVoterPUMSWeight
-  , F.ElemOf (ks V.++ CPSVoterPUMS) BR.VotedYNC
-  , ks F.⊆ ([BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ CPSVoterPUMS)
-  )
-  => (F.Record CPSVoterPUMS -> F.Record ks)
-  -> Int -- year
-  -> FMR.Fold
-  (F.Record CPSVoterPUMS)
-  (F.FrameRec ('[BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ MRP.CountCols))
-cpsCountVotersByStateF' getCatKey year =
-  let isYear y r = F.rgetField @BR.Year r == y
-      possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
-      citizen r = F.rgetField @BR.IsCitizen r == True
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
   in MRP.weightedCountFoldGeneral
-     @([BR.StateAbbreviation, BR.StateFIPS] V.++ ks)
+     @('[BR.StateAbbreviation] V.++ ks)
      @_
      @[BR.VotedYNC, CPSVoterPUMSWeight]
-     (\r -> F.rcast @[BR.StateAbbreviation, BR.StateFIPS] r `V.rappend` getCatKey r)
+     (\r -> F.rcast @'[BR.StateAbbreviation] r `V.rappend` getCatKey r)
      includeRow
      voted
      (F.rgetField @CPSVoterPUMSWeight)
-
 
 cpsCountVotersByCDF
   :: forall ks.
@@ -380,13 +379,14 @@ cpsCountVotersByCDF
   , FI.RecVec (ks V.++ MRP.CountCols)
   , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) CPSVoterPUMSWeight
   , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.VotedYNC
-  , ks F.⊆ ([BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
+  , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.CountyWeight
+  , ks F.⊆ ([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
   )
   => (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
   -> Int -- year
   -> FMR.Fold
   (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-  (F.FrameRec ('[BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ MRP.CountCols))
+  (F.FrameRec ('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks V.++ MRP.CountCols))
 cpsCountVotersByCDF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r 
@@ -395,15 +395,13 @@ cpsCountVotersByCDF getCatKey year =
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
       wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r 
   in MRP.weightedCountFoldGeneral
-     @([BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks)
-     @_
-     @[BR.VotedYNC, CPSVoterPUMSWeight]
-     (\r -> F.rcast @[BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] r `V.rappend` getCatKey r)
+     @([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks)
+     @_ 
+     @[BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
+     (\r -> F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `V.rappend` getCatKey r)
      includeRow
      voted
-     (F.rgetField @CPSVoterPUMSWeight)
-
-
+     wgt
      
 -- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
 -- NB: This needs to be done consistently with the demographics.
