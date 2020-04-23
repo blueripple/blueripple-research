@@ -285,7 +285,7 @@ return
 
 
 
-countVotersF
+countVotersOfValidatedF
   :: forall cs
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
@@ -299,12 +299,34 @@ countVotersF
   -> FMR.Fold
   (F.Record CCES_MRP)
   (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
-countVotersF year =
+countVotersOfValidatedF year =
   let isYear y r = F.rgetField @BR.Year r == y
       inVoterFile r = isYear year r &&  (F.rgetField @Turnout r `elem` [T_Voted, T_NoRecord])
       voted r = isYear year r && (F.rgetField @Turnout r == T_Voted)
       wgt = F.rgetField @CCESWeightCumulative 
   in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] inVoterFile voted wgt
+
+
+countVotersOfAllF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Turnout
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    , F.ElemOf (cs V.++ CCES_MRP) BR.Year
+    )
+  => Int
+  -> FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countVotersOfAllF year =
+  let isYear y r = F.rgetField @BR.Year r == y
+--      inVoterFile r = isYear year r &&  (F.rgetField @Turnout r `elem` [T_Voted, T_NoRecord])
+      voted r = isYear year r && (F.rgetField @Turnout r == T_Voted)
+      wgt = F.rgetField @CCESWeightCumulative 
+  in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] (isYear year) voted wgt
 
 {-
 

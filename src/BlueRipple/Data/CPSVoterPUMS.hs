@@ -120,7 +120,7 @@ cpsVoterPUMSLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" $ d
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
 cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-cpsVoterPUMSWithCDLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" do
+cpsVoterPUMSWithCDLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" $ do
   cpsVoterPUMS <- cpsVoterPUMSLoader
   countyToCD <- BR.county2010ToCD116Loader
   K.knitEither . either (Left . T.pack . show) Right
