@@ -224,17 +224,14 @@ and is thus much more Democratic-candidate-friendly than the CCES data.
 modelingNotes :: T.Text
 modelingNotes = [i|
 ## Model Notes
-As we continue to work on this data we try to refine and improve our modeling.
+As we continue to work with this data we refine and improve our modeling.
 In this post we have shifted from using the census summary of the CPS voter supplement
 to using the CPS microdata itself, as harmonized via the [IPUMS][IPUMS-CPS] web portal.
 This has several advantages.  Firstly, the micro-data
 allows us to get turnout numbers at the *state* level.
-Actually, the data is given at the county level,
-but since counties don't map neatly onto congressional
-districts or state legislative districts, this is less useful.
 Also useful is that the microdata has more demographic information.  For example,
 the summary tables allow us to explore the variables of age, sex and race *or*
-ag, sex, and education but not age, sex, education, and race.  This is important since
+age, sex, and education but not age, sex, education, *and* race.  This is important since
 the combination of education and race is necessary to explore the voting and turnout
 patterns of the so-called "White Working Class," a crucial voting block in the past few
 elections.
@@ -301,7 +298,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
       addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
-
+  cces <- ccesDataLoader
   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
   let countAlternateCPS = FL.fold alternateVoteF cpsVoterPUMS
   logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS
@@ -357,7 +354,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                      (do
                          pumsDemographics <- PUMS.pumsLoadAll
                          return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                           $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True) pumsDemographics
+                           $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
                      )
   K.logLE K.Info $ "GA Demographics (PUMS)"
   logFrame $ F.filterFrame gaFilter pumsASERByState
@@ -391,9 +388,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                     @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCCESTurnoutOfAllASER)
   
   aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
-  K.logLE K.Diagnostic "comparison of Census then CCES for 2016 in WI after adjustment."
---  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
---  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCCESEW
+{-  K.logLE K.Diagnostic "comparison of Census then CCES for 2016 in WI after adjustment."
+  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
+  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCCESEW -}
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold

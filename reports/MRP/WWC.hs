@@ -104,7 +104,8 @@ post :: (K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
 --     -> K.Cached es [F.Record CCES.CCES_MRP]
      -> K.Sem r ()
-post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ do
+post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "Intro" $ return () {- $ do
+  
   K.logLE K.Info $ "Working on Intro post..."                                                                                
   let isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
       countWWCDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES.CCES_MRP @'[CCES.Pres2016VoteParty,CCES.CCESWeightCumulative]
@@ -179,7 +180,8 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
     (colWWC_Change $ emphasizeStates mwBG <> emphasizeNational) forWWCTable
 
   brAddMarkDown brReadMore
-
+-}
+  
 data WWCTableRow = WWCTableRow { stateAbbr :: T.Text
                                , pref2016Pres :: (Double, (Double, Double))
                                , pref2016House :: (Double, (Double, Double))

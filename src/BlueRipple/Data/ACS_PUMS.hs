@@ -96,6 +96,8 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSSCHL
                         , F.ElemOf fullRow BR.PUMSSEX
                         , F.ElemOf fullRow BR.PUMSST
+                        , F.ElemOf fullRow BR.PUMSLANP
+                        , F.ElemOf fullRow BR.PUMSENG                        
                         )
 
 pumsRowsLoader
@@ -136,7 +138,7 @@ citizensFold =
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountF = FMR.concatFold $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C])
+             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
              (FMR.foldAndAddKey citizensFold)
   
 
@@ -157,7 +159,9 @@ pumsLoader y =
                                                          , BR.SexC
                                                          , BR.CollegeGradC
                                                          , BR.InCollege
-                                                         , BR.Race5C]
+                                                         , BR.Race5C
+                                                         , BR.LanguageC
+                                                         , BR.SpeaksEnglishC]
                       @[Citizens, NonCitizens] defaultCount                      
             countedWithDefaults = FL.fold
                                   (FMR.concatFold
@@ -187,7 +191,7 @@ pumsRollupF
     , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record ks)
+  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
 pumsRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
@@ -215,7 +219,7 @@ pumsCDRollup
    , FI.RecVec (ks ++ [Citizens, NonCitizens])
    , Ord (F.Record ks)
    )
- => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record ks)
+ => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
  ->  F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup mapKeys pumsFrame = do
@@ -241,7 +245,7 @@ pumsStateRollupF
     , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record ks)
+  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (StateCounts ks))
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
@@ -289,6 +293,8 @@ type PUMS_Raw = '[ BR.PUMSPWGTP
                  , BR.PUMSSEX
                  , BR.PUMSHISP
                  , BR.PUMSRAC1P
+                 , BR.PUMSLANP
+                 , BR.PUMSENG
                  ]
 
 type PUMSWeight = "Weight" F.:-> Int
@@ -307,6 +313,8 @@ type PUMS_Typed = '[ BR.Year
                    , BR.InCollege
                    , BR.SexC
                    , BR.Race5C
+                   , BR.LanguageC
+                   , BR.SpeaksEnglishC
                  ]
 
 type PUMS_Counted = '[BR.Year
@@ -317,6 +325,8 @@ type PUMS_Counted = '[BR.Year
                      , BR.CollegeGradC
                      , BR.InCollege
                      , BR.Race5C
+                     , BR.LanguageC
+                     , BR.SpeaksEnglishC
                      , Citizens
                      , NonCitizens
                      ]
@@ -330,11 +340,12 @@ type PUMS = '[BR.Year
              , BR.CollegeGradC
              , BR.InCollege
              , BR.Race5C
+             , BR.LanguageC
+             , BR.SpeaksEnglishC
              , Citizens
              , NonCitizens
              ]               
              
-
 -- we have to drop all records with age < 18
 intToAge4 :: Int -> BR.Age4
 intToAge4 n
@@ -364,6 +375,31 @@ intsToRace5 hN rN
   | rN == 6 = BR.R5_Asian
   | otherwise = BR.R5_Other
 
+
+intToLanguage :: Int -> BR.Language
+intToLanguage n 
+  | n < 600 = BR.English
+  | n == 607 = BR.German
+  | n == 625 = BR.Spanish
+  | n == 708 = BR.Chinese -- Chinese
+  | n == 712 = BR.Chinese -- Mandarin
+  | n == 742 = BR.Tagalog
+  | n == 728 = BR.Vietnamese
+  | n == 620 = BR.French
+  | n == 777 = BR.Arabic
+  | n == 724 = BR.Korean
+  | n == 639 = BR.Russian
+  | n == 623 = BR.FrenchCreole
+  | otherwise = BR.LangOther
+  
+
+intToSpeaksEnglish :: Int -> BR.SpeaksEnglish
+intToSpeaksEnglish n
+  | n < 3 = BR.SE_Yes
+  | n == 4 = BR.SE_Some
+  | otherwise = BR.SE_No
+  
+
 -- to use in maybeRecsToFrame
 -- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"
 fixPUMSRow :: F.Rec (Maybe F.:. F.ElField) PUMS_Raw -> F.Rec (Maybe F.:. F.ElField) PUMS_Raw
@@ -385,6 +421,8 @@ transformPUMSRow y = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
             . (FT.addOneFromOne @BR.PUMSSCHL @BR.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @BR.PUMSSCHG @BR.InCollege intToInCollege)
+            . (FT.addOneFromOne @BR.PUMSLANP @BR.LanguageC intToLanguage)
+            . (FT.addOneFromOne @BR.PUMSENG @BR.SpeaksEnglishC intToSpeaksEnglish)
 
 {-
 -- fmap over Frame after load and throwing out bad rows

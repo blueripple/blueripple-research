@@ -86,6 +86,13 @@ catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
 allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
 
+type CatColsASER5 = '[SimpleAgeC, SexC, CollegeGradC, Race5C]
+catKeyASER5 :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> F.Record CatColsASER5
+catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+
+allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
+
+
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize Sex
 type instance FI.VectorFor Sex = Vec.Vector
@@ -302,6 +309,41 @@ turnoutRaceLabel Turnout_Asian            = "Asian"
 turnoutRaceLabel Turnout_Hispanic         = "Hispanic"
 
 
+data Language = English
+              | German
+              | Spanish
+              | Chinese
+              | Tagalog
+              | Vietnamese
+              | French
+              | Arabic
+              | Korean
+              | Russian
+              | FrenchCreole
+              | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+
+instance S.Serialize Language
+type instance FI.VectorFor Language = Vec.Vector
+instance Grouping Language
+instance K.FiniteSet Language
+
+type LanguageC = "Language" F.:-> Language
+instance FV.ToVLDataValue (F.ElField LanguageC) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+
+data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+instance S.Serialize SpeaksEnglish
+type instance FI.VectorFor SpeaksEnglish = Vec.Vector
+instance Grouping SpeaksEnglish
+instance K.FiniteSet SpeaksEnglish
+
+type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
+instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+
+
 asrTurnoutLabel' :: (Age5, Sex, TurnoutRace) -> T.Text
 asrTurnoutLabel' (a, s, r) = turnoutRaceLabel r <> sexLabel s <> age5Label a
 
@@ -326,7 +368,6 @@ allTextKeys
   => [T.Text]
   -> Set.Set (F.Record '[t])
 allTextKeys = Set.fromList . fmap (\x -> x F.&: V.RNil)
-
 
 allASE_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   aseACSLabel

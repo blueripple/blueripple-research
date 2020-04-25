@@ -442,9 +442,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   -- demographics
   pumsDemographics <- PUMS.pumsLoadAll
   let pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR) pumsDemographics
+                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR . F.rcast) pumsDemographics
       pumsASEByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASE True) pumsDemographics
+                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASE True . F.rcast) pumsDemographics
       addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
@@ -664,7 +664,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   K.logLE K.Diagnostic "Rolling up 2018 PUMAs to CDs..." 
   pumsASRByCD2018 <- BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRByCD2018.bin"
                      (fmap (FT.addColumn @BR.PopCountOf BR.PC_Citizen)
-                       <$> (PUMS.pumsCDRollup PUMS.pumsKeysToASR $ F.filterFrame (isYear 2018) pumsDemographics))
+                       <$> (PUMS.pumsCDRollup (PUMS.pumsKeysToASR . F.rcast) $ F.filterFrame (isYear 2018) pumsDemographics))
   pumsASRAdjTurnoutByCD2018 <- BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRAdjTurnoutByCD2018.bin"
                                (BR.rollupAdjustAndJoin
                                  @'[BR.CongressionalDistrict]
