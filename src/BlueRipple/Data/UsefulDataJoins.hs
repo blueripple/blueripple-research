@@ -17,7 +17,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  -O0 #-}
+{-# OPTIONS_GHC  -O0 #-}
 
 module BlueRipple.Data.UsefulDataJoins where
 

@@ -122,6 +122,7 @@ pumsRowsLoader y = do
             (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
             fixPUMSRow
             (transformPUMSRow y)
+  K.logLE K.Diagnostic $ "Rows loaded." 
   return (aFrame <> bFrame)
 
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
@@ -263,6 +264,9 @@ pumsKeysToASER addInCollegeToGrads r =
      F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
+pumsKeysToLanguage :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record BR.CatColsLanguage
+pumsKeysToLanguage = F.rcast
+
 pumsKeysToASE :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
 pumsKeysToASE addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
@@ -375,28 +379,27 @@ intsToRace5 hN rN
   | rN == 6 = BR.R5_Asian
   | otherwise = BR.R5_Other
 
-
+-- NB these codes are only right for (unharmonized) ACS PUMS data from 2018.
 intToLanguage :: Int -> BR.Language
 intToLanguage n 
-  | n < 600 = BR.English
-  | n == 607 = BR.German
-  | n == 625 = BR.Spanish
-  | n == 708 = BR.Chinese -- Chinese
-  | n == 712 = BR.Chinese -- Mandarin
-  | n == 742 = BR.Tagalog
-  | n == 728 = BR.Vietnamese
-  | n == 620 = BR.French
-  | n == 777 = BR.Arabic
-  | n == 724 = BR.Korean
-  | n == 639 = BR.Russian
-  | n == 623 = BR.FrenchCreole
-  | otherwise = BR.LangOther
+  | n == 0                 = BR.English
+  | n >= 1110 && n <= 1120 = BR.German
+  | n >= 1200 && n <= 1205 = BR.Spanish
+  | n >= 1970 && n <= 2000 = BR.Chinese -- Chinese
+  | n == 2920              = BR.Tagalog
+  | n == 1960              = BR.Vietnamese
+  | n >= 1170 && n <= 1174 = BR.French
+  | n >= 4500 && n <= 4540 = BR.Arabic
+  | n == 2575              = BR.Korean
+  | n == 1250              = BR.Russian
+  | n == 1175              = BR.CajunFrench
+  | otherwise              = BR.LangOther
   
 
 intToSpeaksEnglish :: Int -> BR.SpeaksEnglish
 intToSpeaksEnglish n
   | n < 3 = BR.SE_Yes
-  | n == 4 = BR.SE_Some
+  | n == 3 = BR.SE_Some
   | otherwise = BR.SE_No
   
 
@@ -404,9 +407,15 @@ intToSpeaksEnglish n
 -- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"
 fixPUMSRow :: F.Rec (Maybe F.:. F.ElField) PUMS_Raw -> F.Rec (Maybe F.:. F.ElField) PUMS_Raw
 fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
+               . (F.rsubset %~ missingLanguageTo0)
+               . (F.rsubset %~ missingSpeaksEnglishTo0)
                $ r where
   missingInCollegeTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSSCHG]
   missingInCollegeTo0 = FM.fromMaybeMono 0
+  missingLanguageTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSLANP] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSLANP]
+  missingLanguageTo0 = FM.fromMaybeMono 0
+  missingSpeaksEnglishTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSENG] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSENG]
+  missingSpeaksEnglishTo0 = FM.fromMaybeMono 0
 
 
 transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed

@@ -17,7 +17,6 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances        #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module BlueRipple.Model.MRP where
 

@@ -47,6 +47,7 @@ import qualified MRP.Kentucky as Kentucky
 import qualified MRP.Wisconsin as Wisconsin
 import qualified MRP.TurnoutGaps as TurnoutGaps
 import qualified MRP.ElectoralWeights as ElectoralWeights
+import qualified MRP.Language as Language
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -81,7 +82,8 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostKentucky] &= CA.name "KY" &= CA.help "knit \"Kentucky\"",
                                         [PostWisconsin] &= CA.name "WI" &= CA.help "knit \"Wisconsin\"",
                                         [PostTurnoutGaps] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
-                                        [PostElectoralWeights] &= CA.name "weights" &= CA.help "knit \"Electoral Weights\"", 
+                                        [PostElectoralWeights] &= CA.name "weights" &= CA.help "knit \"Electoral Weights\"",
+                                        [PostLanguage] &= CA.name "language" &= CA.help "knit \"Language\"", 
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -179,6 +181,10 @@ main = do
       when (PostElectoralWeights `elem` (posts args))
         $ ElectoralWeights.post
         (updated args)
+      when (PostLanguage `elem` (posts args))
+        $ Language.post
+        (updated args)
+
 
   case eitherDocs of
     Right namedDocs ->

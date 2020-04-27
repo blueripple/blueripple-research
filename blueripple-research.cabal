@@ -38,7 +38,7 @@ common deps
                , map-reduce-folds >= 0.1.0.1
                , pipes
                , polysemy >= 0.2.1.0 && < 1.4
-               , polysemy-plugin >= 0.2.0.0 && < 0.4
+               , polysemy-plugin
                , primitive >= 0.7.0.0
                , profunctors
                , random-fu >= 0.2.7.3
@@ -51,7 +51,8 @@ common deps
                      
 library
   import: deps
-  ghc-options: -O -fplugin=Polysemy.Plugin
+--  ghc-options: -O -fplugin=Polysemy.Plugin
+    
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.Keyed
                  , BlueRipple.Data.DemographicTypes
@@ -141,7 +142,7 @@ executable mission
 
 executable preference-model
   import: deps
-  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0 -threaded -rtsopts
+  ghc-options: -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
   main-is:       PreferenceModel/preference_model.hs
   other-modules: PreferenceModel.Common
@@ -168,8 +169,8 @@ executable preference-model
 
 executable mrp-model
   import: deps
-  ghc-options: -Wall -O0 -threaded -rtsopts
---  ghc-options: -Wall -O0 -threaded -fexternal-interpreter -rtsopts -prof -fprof-auto
+--  ghc-options: -Wall -O0 -threaded -rtsopts
+  ghc-options: -Wall -O0 -threaded 
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath
@@ -185,6 +186,7 @@ executable mrp-model
                 , MRP.Wisconsin
                 , MRP.TurnoutGaps
                 , MRP.ElectoralWeights
+                , MRP.Language
                 , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade

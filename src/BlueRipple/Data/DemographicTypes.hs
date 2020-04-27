@@ -92,6 +92,8 @@ catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
 allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
 
+type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
+
 
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize Sex
@@ -319,7 +321,7 @@ data Language = English
               | Arabic
               | Korean
               | Russian
-              | FrenchCreole
+              | CajunFrench
               | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize Language

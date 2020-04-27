@@ -1,7 +1,6 @@
-packages: ./ 
+packages: ./ ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
-
 --allow-newer: base, primitive, 
 allow-newer: hashable, base               
 
@@ -35,12 +34,12 @@ allow-newer: hashable, base
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 64fddb1ba1e4b1943bbad8b2318ff647f9b89b98
+  tag: a37c766f669d7de52ad7b379f4db1ba108fb9ca6
              
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: 19b64fd260ba83e9be4ff1b7e83dd74cd43db44e
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: 19b64fd260ba83e9be4ff1b7e83dd74cd43db44e
 
 source-repository-package
   type: git

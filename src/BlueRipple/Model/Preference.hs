@@ -10,7 +10,6 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module BlueRipple.Model.Preference where
 
