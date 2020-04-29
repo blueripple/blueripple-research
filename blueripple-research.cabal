@@ -65,15 +65,8 @@ library
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.Loaders
                  , BlueRipple.Data.ACS_PUMS
-                 , BlueRipple.Data.ACS_PUMS_Loaders
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2008
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2010
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2012
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2014
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2016
-                 , BlueRipple.Data.ACS_PUMS_Loader.Pums2018
                  , BlueRipple.Data.CPSVoterPUMS
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Path
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame
@@ -169,8 +162,8 @@ executable preference-model
 
 executable mrp-model
   import: deps
---  ghc-options: -Wall -O0 -threaded -rtsopts
-  ghc-options: -Wall -O0 -threaded 
+  ghc-options: -Wall -O0 -threaded
+--  ghc-options: -Wall -O0 -threaded 
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath

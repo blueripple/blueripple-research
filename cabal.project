@@ -1,8 +1,8 @@
-packages: ./ ~/DataScience/knit-haskell
+packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
-allow-newer: hashable, base               
+allow-newer: hashable, base, streamly
 
 -- ghc-8.8 forks
              
@@ -46,10 +46,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-map-reduce
   tag: 43536fe210874b6d776c5369c68b70ccb6a0cd6a
     
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: caf91b75a50be964469dc7cb904c5c90837cc42c
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: caf91b75a50be964469dc7cb904c5c90837cc42c
   
 source-repository-package
   type: git

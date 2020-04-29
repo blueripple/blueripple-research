@@ -54,7 +54,7 @@ import qualified Frames.MapReduce              as FMR
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
-import qualified Frames.Utils                  as FU
+import qualified Frames.Misc                   as Frames.Misc
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Serialize              as FS
@@ -82,7 +82,7 @@ import qualified Polysemy                as P (raise)
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-
+{-
 type FullRowC fullRow = (V.RMap fullRow
                         , F.ReadRec fullRow
                         , FI.RecVec fullRow
@@ -99,32 +99,19 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSLANP
                         , F.ElemOf fullRow BR.PUMSENG                        
                         )
+-}
+pumsRowsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS_Typed)
+pumsRowsLoader = BR.frameLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
+{-
 
-pumsRowsLoader
-  :: forall (fullRow :: [(Symbol, Type)]) r
-  . (K.KnitEffects r
-    , FullRowC fullRow
-    ) => Int -> K.Sem r (F.FrameRec PUMS_Typed)
-pumsRowsLoader y = do
-  let aPath = T.pack $ BR.pums1YrCSV y "usa"
-      bPath = T.pack $ BR.pums1YrCSV y "usb"
-  K.logLE K.Diagnostic $ "Loading" <> (T.pack $ show y) <> " PUMS data from " <> aPath  
-  aFrame <- BR.maybeFrameLoader @PUMS_Raw @fullRow @PUMS_Typed
-            (BR.LocalData aPath)
-            Nothing
-            (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
-            fixPUMSRow
-            (transformPUMSRow y)
-  K.logLE K.Diagnostic $ "Loading" <> (T.pack $ show y) <> " PUMS data from " <> aPath  
-  bFrame <- BR.maybeFrameLoader @PUMS_Raw @fullRow @PUMS_Typed
-            (BR.LocalData bPath)
-            Nothing
-            (FU.filterOnMaybeField @BR.PUMSAGEP (>= 18))
-            fixPUMSRow
-            (transformPUMSRow y)
-  K.logLE K.Diagnostic $ "Rows loaded." 
-  return (aFrame <> bFrame)
-
+  BR.maybeFrameLoader @(F.RecordColumns BR.PUMS_Raw) @(F.RecordColumns BR.PUMS_Raw) @PUMS_Typed
+                 (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+                 Nothing
+                 (Frames.Misc.filterOnMaybeField @BR.PUMSAGE (>= 18))
+                 id
+                 transformPUMSRow
+-}
+  
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
 citizensFold =
   let citizen = F.rgetField @Citizen
@@ -144,15 +131,11 @@ pumsCountF = FMR.concatFold $ FMR.mapReduceFold
   
 
 pumsLoader
-  :: forall (fullRow :: [(Symbol, Type)]) r
-  . (K.KnitEffects r
-    , FullRowC fullRow
-    )
-  => Int -> K.Sem r (F.FrameRec PUMS)
-pumsLoader y =
+  ::  K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+pumsLoader =
   let action = do
         K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
-        pumsFrame <- FL.fold pumsCountF <$> (pumsRowsLoader @fullRow) y
+        pumsFrame <- FL.fold pumsCountF <$> pumsRowsLoader
         let defaultCount :: F.Record [Citizens, NonCitizens]
             defaultCount = 0 F.&: 0 F.&: V.RNil
 --            addDefF :: FL.Fold (F.Record PUMS_Counted) (F.FrameRec PUMS_Counted)
@@ -178,7 +161,7 @@ pumsLoader y =
           $ catMaybes
           $ fmap F.recMaybe
           $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame    
-  in BR.retrieveOrMakeFrame ("data/pums" <> (T.pack $ show y) <> ".bin") action
+  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
@@ -229,7 +212,7 @@ pumsCDRollup mapKeys pumsFrame = do
   let addYears ys f = F.toFrame $ concat $ fmap (\r -> fmap (\y -> FT.addColumn @BR.Year y r) ys) $ FL.fold FL.list f
       pumaToCD = addYears [2012, 2014, 2016, 2018] pumaToCD2012 <> addYears [2008, 2010] pumaToCD2000      
       pumsWithCDAndWeightM = F.leftJoin @[BR.Year, BR.StateFIPS, BR.PUMA] pumsFrame pumaToCD
-      summary = M.filter (\(n,m) -> n /= m) $ FL.fold (FU.goodDataByKey @[BR.Year, BR.StateFIPS, BR.PUMA]) pumsWithCDAndWeightM
+      summary = M.filter (\(n,m) -> n /= m) $ FL.fold (Frames.Misc.goodDataByKey @[BR.Year, BR.StateFIPS, BR.PUMA]) pumsWithCDAndWeightM
       pumsWithCDAndWeight = catMaybes $ fmap F.recMaybe pumsWithCDAndWeightM
   K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
@@ -286,7 +269,7 @@ pumsKeysToASR r =
 pumsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record '[]
 pumsKeysToIdentity = const V.RNil
 
-
+{-
 type PUMS_Raw = '[ BR.PUMSPWGTP
                  , BR.PUMSPUMA
                  , BR.PUMSST
@@ -300,7 +283,7 @@ type PUMS_Raw = '[ BR.PUMSPWGTP
                  , BR.PUMSLANP
                  , BR.PUMSENG
                  ]
-
+-}
 type PUMSWeight = "Weight" F.:-> Int
 type Citizen = "Citizen" F.:-> Bool
 type Citizens = "Citizens" F.:-> Int
@@ -351,6 +334,7 @@ type PUMS = '[BR.Year
              ]               
              
 -- we have to drop all records with age < 18
+-- PUMSAGE
 intToAge4 :: Int -> BR.Age4
 intToAge4 n
   | n < 18 = error "PUMS record with age < 18"
@@ -359,50 +343,73 @@ intToAge4 n
   | n < 65 = BR.A4_45To64
   | otherwise = BR.A4_65AndOver
 
+-- PUMSCITIZEN
 intToCitizen :: Int -> Bool
-intToCitizen n = if n == 5 then False else True
+intToCitizen n = if n >= 3 then False else True
 
+-- PUMSEDUCD (rather than EDUC)
 intToCollegeGrad :: Int -> BR.CollegeGrad
-intToCollegeGrad n = if n <= 20 then BR.NonGrad else BR.Grad
+intToCollegeGrad n = if n <= 101 then BR.NonGrad else BR.Grad
 
+-- GRADEATT
 intToInCollege :: Int -> Bool
-intToInCollege n = n == 15
+intToInCollege n = n == 6
 
+-- PUMSSEX
 intToSex :: Int -> BR.Sex
 intToSex n = if n == 1 then BR.Male else BR.Female
 
+-- PUMSHISPANIC PUMSRACE
 intsToRace5 :: Int -> Int -> BR.Race5
 intsToRace5 hN rN 
-  | hN > 1 = BR.R5_Latinx
+  | (hN > 1) && (hN < 9) = BR.R5_Latinx
   | rN == 1 = BR.R5_WhiteNonLatinx
   | rN == 2 = BR.R5_Black
-  | rN == 6 = BR.R5_Asian
+  | rN `elem` [4, 5, 6] = BR.R5_Asian
   | otherwise = BR.R5_Other
 
 -- NB these codes are only right for (unharmonized) ACS PUMS data from 2018.
-intToLanguage :: Int -> BR.Language
-intToLanguage n 
-  | n == 0                 = BR.English
-  | n >= 1110 && n <= 1120 = BR.German
-  | n >= 1200 && n <= 1205 = BR.Spanish
-  | n >= 1970 && n <= 2000 = BR.Chinese -- Chinese
-  | n == 2920              = BR.Tagalog
-  | n == 1960              = BR.Vietnamese
-  | n >= 1170 && n <= 1174 = BR.French
-  | n >= 4500 && n <= 4540 = BR.Arabic
-  | n == 2575              = BR.Korean
-  | n == 1250              = BR.Russian
-  | n == 1175              = BR.CajunFrench
-  | otherwise              = BR.LangOther
+-- PUMSLANGUAGE PUMSLANGUAGED
+intsToLanguage :: Int -> Int -> BR.Language
+intsToLanguage l ld 
+  | l == 0 && l == 1 = BR.English
+  | l == 2           = BR.German
+  | l == 12          = BR.Spanish
+  | l == 43          = BR.Chinese
+  | l == 54          = BR.Tagalog
+  | l == 50          = BR.Vietnamese
+  | l == 11          = BR.French
+  | l == 57          = BR.Arabic
+  | l == 49          = BR.Korean
+  | l == 18          = BR.Russian
+  | ld == 1140       = BR.FrenchCreole
+  | otherwise        = BR.LangOther
   
-
+-- PUMSSPEAKENG
 intToSpeaksEnglish :: Int -> BR.SpeaksEnglish
 intToSpeaksEnglish n
-  | n < 3 = BR.SE_Yes
-  | n == 3 = BR.SE_Some
-  | otherwise = BR.SE_No
+  | n `elem` [2, 3, 4, 5] = BR.SE_Yes
+  | n == 6                = BR.SE_Some
+  | otherwise             = BR.SE_No
   
 
+transformPUMSRow :: BR.PUMS_Raw -> F.Record PUMS_Typed
+transformPUMSRow = F.rcast . addCols where
+  addCols = (FT.addOneFrom @'[BR.PUMSHISPAN, BR.PUMSRACE]  @BR.Race5C intsToRace5)
+            . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
+            . (FT.addName @BR.PUMSPUMA @BR.PUMA)
+            . (FT.addName @BR.PUMSYEAR @BR.Year)
+            . (FT.addOneFromOne @BR.PUMSCITIZEN @Citizen intToCitizen)
+            . (FT.addName @BR.PUMSPERWT @PUMSWeight)
+            . (FT.addOneFromOne @BR.PUMSAGE @BR.Age4C intToAge4)
+            . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
+            . (FT.addOneFromOne @BR.PUMSEDUCD @BR.CollegeGradC intToCollegeGrad)
+            . (FT.addOneFromOne @BR.PUMSGRADEATT @BR.InCollege intToInCollege)
+            . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
+            . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
+
+
+{-
 -- to use in maybeRecsToFrame
 -- if SCHG indicates not in school we map to 0 so we will interpret as "Not In College"
 fixPUMSRow :: F.Rec (Maybe F.:. F.ElField) PUMS_Raw -> F.Rec (Maybe F.:. F.ElField) PUMS_Raw
@@ -416,22 +423,7 @@ fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
   missingLanguageTo0 = FM.fromMaybeMono 0
   missingSpeaksEnglishTo0 :: F.Rec (Maybe :. F.ElField) '[BR.PUMSENG] -> F.Rec (Maybe :. F.ElField) '[BR.PUMSENG]
   missingSpeaksEnglishTo0 = FM.fromMaybeMono 0
-
-
-transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow y = F.rcast . addCols where
-  addCols = (FT.addOneFrom @'[BR.PUMSHISP, BR.PUMSRAC1P]  @BR.Race5C intsToRace5)
-            . (FT.addName  @BR.PUMSST @BR.StateFIPS)
-            . (FT.addName @BR.PUMSPUMA @BR.PUMA)
-            . (FT.addOneFromValue @BR.Year y)
-            . (FT.addOneFromOne @BR.PUMSCIT @Citizen intToCitizen)
-            . (FT.addName @BR.PUMSPWGTP @PUMSWeight)
-            . (FT.addOneFromOne @BR.PUMSAGEP @BR.Age4C intToAge4)
-            . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
-            . (FT.addOneFromOne @BR.PUMSSCHL @BR.CollegeGradC intToCollegeGrad)
-            . (FT.addOneFromOne @BR.PUMSSCHG @BR.InCollege intToInCollege)
-            . (FT.addOneFromOne @BR.PUMSLANP @BR.LanguageC intToLanguage)
-            . (FT.addOneFromOne @BR.PUMSENG @BR.SpeaksEnglishC intToSpeaksEnglish)
+-}
 
 {-
 -- fmap over Frame after load and throwing out bad rows

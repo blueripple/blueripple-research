@@ -60,7 +60,6 @@ import qualified Data.Time.Clock               as Time
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.ACS_PUMS_Loaders as PUMS
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -352,7 +351,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   -- demographics
   pumsASERByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASERByState.bin"
                      (do
-                         pumsDemographics <- PUMS.pumsLoadAll
+                         pumsDemographics <- PUMS.pumsLoader
                          return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
                      )

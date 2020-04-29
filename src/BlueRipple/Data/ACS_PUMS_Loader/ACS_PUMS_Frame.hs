@@ -46,11 +46,6 @@ import qualified Pipes.Prelude                 as P
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 
-F.tableTypes' (pums1YrRowGen2018)
-F.tableTypes' (pums1YrRowGen2016)
-F.tableTypes' (pums1YrRowGen2014)
-F.tableTypes' (pums1YrRowGen2012)
-F.tableTypes' (pums1YrRowGen2010)
-F.tableTypes' (pums1YrRowGen2008)
+F.tableTypes' pumsACS1YrRowGen
 
 

@@ -67,7 +67,6 @@ import qualified Data.Time.Clock               as Time
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.ACS_PUMS_Loaders as PUMS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP as BR
@@ -440,7 +439,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   inferredPrefsASR <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
                        (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR (BR.catPredMaps @BR.CatColsASR)) 
   -- demographics
-  pumsDemographics <- PUMS.pumsLoadAll
+  pumsDemographics <- PUMS.pumsLoader
   let pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
                        $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR . F.rcast) pumsDemographics
       pumsASEByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)

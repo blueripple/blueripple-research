@@ -321,7 +321,7 @@ data Language = English
               | Arabic
               | Korean
               | Russian
-              | CajunFrench
+              | FrenchCreole
               | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize Language

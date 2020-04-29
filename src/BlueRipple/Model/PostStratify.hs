@@ -46,7 +46,7 @@ import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
-import qualified Frames.Utils                  as FU
+--import qualified Frames.Misc                  as FU
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
