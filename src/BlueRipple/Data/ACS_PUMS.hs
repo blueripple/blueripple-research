@@ -78,6 +78,9 @@ import qualified Knit.Report as K
 import qualified Polysemy.Error                as P (mapError, Error)
 import qualified Polysemy                as P (raise)
 
+import qualified Streamly as Streamly
+import qualified Streamly.Prelude as Streamly
+
 
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
@@ -134,8 +137,9 @@ pumsLoader
   ::  K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
 pumsLoader =
   let action = do
-        K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
-        pumsFrame <- FL.fold pumsCountF <$> pumsRowsLoader
+        Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
+        stateCrossWalkFrame <- Streamly.yieldM $ BR.stateAbbrCrosswalkLoader            
+        pumsFrame <- Streamly.yieldM $ FL.fold pumsCountF <$> pumsRowsLoader
         let defaultCount :: F.Record [Citizens, NonCitizens]
             defaultCount = 0 F.&: 0 F.&: V.RNil
 --            addDefF :: FL.Fold (F.Record PUMS_Counted) (F.FrameRec PUMS_Counted)
@@ -145,7 +149,8 @@ pumsLoader =
                                                          , BR.InCollege
                                                          , BR.Race5C
                                                          , BR.LanguageC
-                                                         , BR.SpeaksEnglishC]
+                                                         , BR.SpeaksEnglishC
+                                                         ]
                       @[Citizens, NonCitizens] defaultCount                      
             countedWithDefaults = FL.fold
                                   (FMR.concatFold
@@ -155,13 +160,14 @@ pumsLoader =
                                    (FMR.makeRecsWithKey id $ FMR.ReduceFold (const addDefF))
                                   )
                                   $ pumsFrame
-        stateCrossWalkFrame <- BR.stateAbbrCrosswalkLoader            
-        return $ F.toFrame
-          $ fmap (F.rcast @PUMS)
-          $ catMaybes
-          $ fmap F.recMaybe
-          $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame    
-  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
+        
+        Streamly.map (F.rcast @PUMS)
+          $ Streamly.mapMaybe F.recMaybe
+          $ Streamly.fromFoldable
+          $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame
+  in fmap F.toFrame $ Streamly.toList $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" action
+
+--  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
