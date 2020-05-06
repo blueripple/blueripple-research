@@ -53,6 +53,10 @@ import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 
+import qualified Streamly as Streamly
+import qualified Streamly.Prelude as Streamly
+
+
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
@@ -224,9 +228,6 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
     . FT.mutate
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
-
-
-
 houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
 houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.bin"
 
@@ -256,15 +257,41 @@ cachedFrameLoader
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (F.FrameRec rs)
-cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheFrame = K.retrieveOrMakeTransformed
-        (fmap FS.toS . FL.fold FL.list)
-        (F.toFrame . fmap FS.fromS)
+cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = 
+  fmap F.toFrame $ Streamly.toList $ cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
+
+cachedRecStreamLoader
+  :: forall qs rs r
+   . ( V.RMap rs
+     , V.RMap qs
+     , F.ReadRec qs
+     , FI.RecVec qs
+     , FI.RecVec rs
+     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
+     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
+     , Generic (F.Rec FS.SElField rs)
+     , K.KnitEffects r
+     )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
+  -> T.Text -- ^ cache key
+  -> Streamly.SerialT (K.Sem r) (F.Record rs)
+cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
+  let csvParserOptions =
+        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      filter = fromMaybe (const True) filterM
+      cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
+      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
-  K.logLE K.Diagnostic
+  path <- liftIO $ getPath filePath
+  Streamly.yieldM $ K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  cacheFrame cacheKey $ frameLoader filePath parserOptionsM filterM fixRow
+  cacheRecList cacheKey $ (Streamly.map fixRow $ BR.loadToRecStream @qs csvParserOptions path filter)
 
 frameLoader
   :: forall qs rs r
@@ -331,7 +358,44 @@ cachedMaybeFrameLoader filePath parserOptionsM filterMaybes fixMaybes fixRow cac
       <> cacheKey
     cacheFrame cacheKey $ maybeFrameLoader @qs @ls @rs filePath parserOptionsM filterMaybes fixMaybes fixRow
 
-maybeFrameLoader 
+
+cachedMaybeRecStreamLoader
+  :: forall qs rs r
+   . ( V.RMap rs
+     , V.RMap qs
+     , F.ReadRec qs
+     , FI.RecVec qs
+     , FI.RecVec rs
+     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
+     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
+     , Generic (F.Rec FS.SElField rs)
+     , K.KnitEffects r
+     )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+  -> (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
+  -> T.Text -- ^ cache key
+  -> Streamly.SerialT (K.Sem r) (F.Rec (Maybe F.:. F.ElField rs)
+cachedMaybeRecStreamLoader filePath parserOptionsM filterM fixMaybes fixRow cachePathM key = do
+  let csvParserOptions =
+        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      filter = fromMaybe (const True) filterM
+      cacheMaybeRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
+      cacheMaybeRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
+      cacheKey      = (fromMaybe "data/" cachePathM) <> key
+  path <- liftIO $ getPath filePath
+  Streamly.yieldM $ K.logLE K.Diagnostic
+    $  "loading or retrieving and saving data at key="
+    <> cacheKey
+  cacheRecList cacheKey $ (Streamly.map fixRow $ BR.processMaybeRecStream fixMaybes $ BR.loadToMaybeRecStream @qs csvParserOptions path filter)
+
+
+maybeRecListLoader 
    :: forall qs ls rs r
    . (K.KnitEffects r
      , V.RMap ls
@@ -348,10 +412,10 @@ maybeFrameLoader
    => DataPath
    -> Maybe F.ParserOptions
    -> (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-   -> (  F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+   ->  F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
    -> (F.Record qs -> F.Record rs)
-   -> K.Sem r (F.FrameRec rs)
-maybeFrameLoader filePath parserOptionsM filterMaybes fixMaybes fixRow = do
+   -> K.Sem r [F.Record rs]
+maybeRecListLoader filePath parserOptionsM filterMaybes fixMaybes fixRow = do
  let csvParserOptions =
        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
      parserOptions = (fromMaybe csvParserOptions parserOptionsM)  
@@ -361,7 +425,7 @@ maybeFrameLoader filePath parserOptionsM filterMaybes fixMaybes fixRow = do
  maybeRecs <- BR.loadToMaybeRecs @qs @ls @r parserOptions
               filterMaybes
               path
- fmap fixRow <$> BR.maybeRecsToFrame fixMaybes (const True) maybeRecs         
+ fmap fixRow <$> BR.processMaybeRecs fixMaybes (const True) maybeRecs         
   
 cachedRecListLoader
   :: forall qs rs r
@@ -404,19 +468,17 @@ cachedRecListLoader filePath parserOptionsM fixRow maybeFuncsM cachePathM key =
     cachedRecList cacheKey $ case maybeFuncsM of
       Nothing ->
         fmap fixRow
-          .   FL.fold FL.list
           <$> do
                 path <- liftIO $ BR.usePath (T.unpack filePath) -- translate data-sets path to local 
-                BR.loadToFrame parserOptions path (const True)
+                BR.loadToRecList parserOptions path (const True)
       Just (filterMaybes, fixMaybes) ->
         fmap fixRow
-          .   FL.fold FL.list
           <$> do
                 path      <- liftIO $ BR.usePath (T.unpack filePath) -- translate data-sets path to local
                 maybeRecs <- BR.loadToMaybeRecs @qs @qs parserOptions
                                                         filterMaybes
                                                         path
-                BR.maybeRecsToFrame fixMaybes (const True) maybeRecs
+                BR.processMaybeRecs fixMaybes (const True) maybeRecs
 
 
 {-

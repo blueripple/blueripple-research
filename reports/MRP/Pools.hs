@@ -333,6 +333,8 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
 
   let preds =  GLM.Intercept : fmap GLM.Predictor BR.allSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
       narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
+  ccesFrame <- ccesDataLoader
+  logFrame $ F.filterFrame (\r -> F.rgetField @Year r == 2018 && F.rgetField @StateAbbreviation r == "WY") ccesFrame
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
                       $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
     

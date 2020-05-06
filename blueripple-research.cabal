@@ -26,7 +26,7 @@ common deps
                , Frames >= 0.6.1 && < 0.7
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
-               , Frames-utils
+               , Frames-utils >= 0.3.0.0
                , foldl
                , glm-haskell
                , groups
@@ -45,6 +45,7 @@ common deps
                , random-source
                , semirings >= 0.5 && < 0.6
                , statistics
+               , streamly >= 0.7.2 && < 0.8
                , text
                , vector
                , vinyl >= 0.12
