@@ -367,13 +367,13 @@ cachedMaybeRecStreamLoader
   -> T.Text -- ^ cache key
   -> Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedMaybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key = do
-  let cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
-      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
+  let cacheRecStream :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
+      cacheRecStream = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
   Streamly.yieldM $ K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  cacheRecList cacheKey $ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow
+  cacheRecStream cacheKey $ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow
 
 maybeRecStreamLoader
   :: forall qs rs r
@@ -404,7 +404,7 @@ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRo
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filterMaybes = fromMaybe (const True) filterMaybesM
   path <- liftIO $ getPath filePath
-  Streamly.map transformRow $ BR.processMaybeRecStream fixMaybes (const True) $ BR.loadToMaybeRecStream @qs csvParserOptions path filterMaybes
+  Streamly.map transformRow $ BR.processMaybeRecStream fixMaybes (const True) $ BR.loadToMaybeRecStream @_ @qs csvParserOptions path filterMaybes
 
 cachedMaybeFrameLoader
   :: forall qs rs r

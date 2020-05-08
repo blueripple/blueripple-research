@@ -73,7 +73,8 @@ import qualified Polysemy                as P (raise)
 
 
 ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
-ccesDataLoader = BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP
+ccesDataLoader = K.wrapPrefix "ccesDataLoader"
+                 $ BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP
                  (BR.LocalData $ T.pack ccesCSV)
                  Nothing
                  Nothing
