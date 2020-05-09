@@ -88,7 +88,6 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESWeight
                      , CCESWeightCumulative
                      , CCESSt
-                     , CCESDist
                      , CCESDistUp
                      , CCESGender
                      , CCESAge

@@ -404,7 +404,7 @@ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRo
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filterMaybes = fromMaybe (const True) filterMaybesM
   path <- liftIO $ getPath filePath
-  Streamly.map transformRow $ BR.processMaybeRecStream fixMaybes (const True) $ BR.loadToMaybeRecStream @_ @qs csvParserOptions path filterMaybes
+  Streamly.map transformRow $ BR.processMaybeRecStream fixMaybes (const True) $ BR.loadToMaybeRecStream @qs csvParserOptions path filterMaybes
 
 cachedMaybeFrameLoader
   :: forall qs rs r
