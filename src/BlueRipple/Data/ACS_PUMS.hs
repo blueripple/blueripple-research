@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE PolyKinds            #-}
@@ -18,7 +19,7 @@ module BlueRipple.Data.ACS_PUMS where
 
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
-import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DataFrames as BR hiding (fixMonadCatch)
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -32,7 +33,9 @@ import qualified Data.Serialize                as S
 import qualified Data.Serialize.Text           as S
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
+import qualified Data.Map.Strict                      as MS
 import           Data.Maybe                     ( fromMaybe, catMaybes)
+import qualified Data.Sequence                 as Seq
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
 import           Text.Read                      (readMaybe)
@@ -48,6 +51,10 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
 import qualified Text.Read                     as TR
+
+import qualified Control.MapReduce as MapReduce
+import qualified Control.MapReduce.Engines.Streamly as MapReduce.Streamly
+
 
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
@@ -75,12 +82,14 @@ import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic, Rep )
 
 import qualified Knit.Report as K
+import qualified Knit.Utilities.Streamly as K
 import qualified Polysemy.Error                as P (mapError, Error)
-import qualified Polysemy                as P (raise)
+import qualified Polysemy                as P (raise, embed)
 
 import qualified Streamly as Streamly
 import qualified Streamly.Prelude as Streamly
-
+import qualified Streamly.Internal.Prelude as Streamly
+import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
@@ -103,8 +112,8 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSENG                        
                         )
 -}
-pumsRowsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec PUMS_Typed)
-pumsRowsLoader = BR.frameLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
+pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoader = BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
 {-
 
   BR.maybeFrameLoader @(F.RecordColumns BR.PUMS_Raw) @(F.RecordColumns BR.PUMS_Raw) @PUMS_Typed
@@ -131,40 +140,88 @@ pumsCountF = FMR.concatFold $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
              (FMR.foldAndAddKey citizensFold)
-  
+
+--groupStream :: (Streamly.IsStream t, Ord k, Monad m) => Streamly.Fold.Fold m (k, c) (
+
+strictStreamGrouper :: forall k c m. (Monad m, Ord k) => Streamly.SerialT m (k, c) -> Streamly.SerialT m (k, Seq.Seq c)
+strictStreamGrouper =
+  let strictSeqAppend s !a = s Seq.|> a
+      foldSeq :: Streamly.Fold.Fold m c (Seq.Seq c)
+      foldSeq = Streamly.Fold.mkPure strictSeqAppend Seq.empty id
+      foldStream :: Streamly.Fold.Fold m (k, c) (MS.Map k (Seq.Seq c))
+      foldStream = Streamly.Fold.classify foldSeq
+  in  Streamly.concatM . fmap (Streamly.fromList . MS.toList).  Streamly.fold foldStream
+
+pumsCountSF :: forall t. Streamly.IsStream t => Streamly.Fold.Fold K.StreamlyM (F.Record PUMS_Typed) (t K.StreamlyM (F.Record PUMS_Counted))
+pumsCountSF = MapReduce.Streamly.toStreamlyFold
+              (
+                MapReduce.Streamly.concurrentStreamlyEngine @t @t
+                strictStreamGrouper
+                MapReduce.noUnpack
+                (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
+                (MapReduce.foldAndLabel citizensFold V.rappend)
+              )
+
+
+toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
+toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader
-  ::  K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
+  ::  forall r. K.KnitEffects r => K.Sem r (F.FrameRec PUMS)
 pumsLoader =
-  let action = do
-        Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading and processing PUMS data from disk."
-        stateCrossWalkFrame <- Streamly.yieldM $ BR.stateAbbrCrosswalkLoader            
-        pumsFrame <- Streamly.yieldM $ FL.fold pumsCountF <$> pumsRowsLoader
+  let action :: Streamly.SerialT (K.Sem r) (F.Record PUMS)
+      action = do
+        Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
+        stateCrossWalkFrame <- Streamly.yieldM $ BR.stateAbbrCrosswalkLoader
+        let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateCrossWalkFrame
+        Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+--        let pumsCounted = Streamly.fold pumsCountSF $ pumsRowsLoader
+--        pumsFrame <- Streamly.yieldM $ K.streamlyToKnit $ Streamly.fold pumsCountSF $ Streamly.aheadly $ pumsRowsLoader
+--        Streamly.yieldM $ K.logLE K.Diagnostic $ "Loaded and counted. Joining with stateAbbreviations." --" and adding defaults."
+{-
         let defaultCount :: F.Record [Citizens, NonCitizens]
             defaultCount = 0 F.&: 0 F.&: V.RNil
 --            addDefF :: FL.Fold (F.Record PUMS_Counted) (F.FrameRec PUMS_Counted)
-            addDefF = fmap F.toFrame $ BR.addDefaultRec @[BR.Age4C
-                                                         , BR.SexC
-                                                         , BR.CollegeGradC
-                                                         , BR.InCollege
-                                                         , BR.Race5C
-                                                         , BR.LanguageC
-                                                         , BR.SpeaksEnglishC
-                                                         ]
+            addDefF = fmap F.toFrame $ BR.addDefaultRec
+                      @[BR.Age4C
+                       , BR.SexC
+                       , BR.CollegeGradC
+                       , BR.InCollege
+                       , BR.Race5C
+                       , BR.LanguageC
+                       , BR.SpeaksEnglishC
+                       ]
                       @[Citizens, NonCitizens] defaultCount                      
             countedWithDefaults = FL.fold
                                   (FMR.concatFold
                                    $ FMR.mapReduceFold
-                                   FMR.noUnpack
-                                   (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA])
-                                   (FMR.makeRecsWithKey id $ FMR.ReduceFold (const addDefF))
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA])
+                                    (FMR.makeRecsWithKey id $ FMR.ReduceFold (const addDefF))
                                   )
                                   $ pumsFrame
-        
+-}                                
+        let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
+            addStateAbbreviation r =
+              let fips = F.rgetField @BR.StateFIPS r
+                  abbrM = M.lookup fips abbrFromFIPS
+                  addAbbr r abbr = abbr F.&: r
+              in fmap (addAbbr r) abbrM              
+{-    
         Streamly.map (F.rcast @PUMS)
           $ Streamly.mapMaybe F.recMaybe
           $ Streamly.fromFoldable
           $ F.leftJoin @'[BR.StateFIPS] countedWithDefaults stateCrossWalkFrame
+-}
+        K.streamlyToKnitS
+          $ Streamly.aheadly
+          $ Streamly.map (F.rcast @PUMS)
+          $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
+          $ Streamly.mapMaybe addStateAbbreviation
+          $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations") Streamly.Fold.head)
+          $ Streamly.concatM
+          $ Streamly.fold pumsCountSF
+          $ pumsRowsLoader
   in fmap F.toFrame $ Streamly.toList $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" action
 
 --  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action

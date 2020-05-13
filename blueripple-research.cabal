@@ -23,6 +23,7 @@ common deps
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , containers
+               , exceptions >= 0.10.4 && < 0.11
                , Frames >= 0.6.1 && < 0.7
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
@@ -52,7 +53,7 @@ common deps
                      
 library
   import: deps
---  ghc-options: -O -fplugin=Polysemy.Plugin
+  ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
     
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.Keyed

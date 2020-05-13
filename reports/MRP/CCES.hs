@@ -44,6 +44,7 @@ import qualified Data.Map                      as M
 import           Data.Maybe                     ( fromJust)
 import qualified Data.Set as Set
 import qualified Data.Text                     as T
+import qualified Data.Text.Read as Text.Read
   
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -74,7 +75,7 @@ import qualified Polysemy                as P (raise)
 
 ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
 ccesDataLoader = K.wrapPrefix "ccesDataLoader"
-                 $ BR.cachedMaybeFrameLoader @CCES_MRP_Raw @CCES_MRP
+                 $ BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
                  (BR.LocalData $ T.pack ccesCSV)
                  Nothing
                  Nothing
@@ -408,6 +409,9 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
   missingPIDLeaner = FM.fromMaybeMono 5
   missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
   missingEducation = FM.fromMaybeMono 5
+
+--textToInt :: T.Text -> Int
+--textToInt = either (const 0) fst . Text.Read.decimal  
   
 -- fmap over Frame after load and throwing out bad rows
 

@@ -132,7 +132,7 @@ alternateVoteF =
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
   K.logLE K.Info "Loading re-keyed demographic data."                              
-  pumsLanguageByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASERByState.bin"
+  pumsLanguageByState <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
                          (do
                              pumsDemographics <- PUMS.pumsLoader
                              return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)

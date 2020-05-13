@@ -24,12 +24,15 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report                   as K
 import qualified Knit.Report.Cache             as K
+import qualified Knit.Utilities.Streamly       as K
+
 import qualified Polysemy                      as P
+import qualified Polysemy.Error                      as P
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
 import qualified Control.Lens                  as Lens      
 import           Control.Lens                   ((%~))
-
-
+import qualified Control.Monad.Catch.Pure      as Exceptions
+import           Control.Monad (join)
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
 import qualified Data.Map as M
@@ -55,6 +58,7 @@ import qualified Frames.TH                     as F
 
 import qualified Streamly as Streamly
 import qualified Streamly.Prelude as Streamly
+import qualified Streamly.Internal.Prelude as Streamly
 
 
 import qualified Frames.ParseableTypes         as FP
@@ -64,6 +68,8 @@ import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 
 
+import GHC.TypeLits (Symbol)
+import Data.Kind (Type)
 
 electoralCollegeFrame :: K.KnitEffects r => K.Sem r (F.Frame BR.ElectoralCollege)
 electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing Nothing id Nothing "electoralCollege.bin"
@@ -91,7 +97,7 @@ fixPresidentialElectionRow = F.rcast . addCols where
 
 presidentialByStateFrame
   :: K.KnitEffects r => K.Sem r (F.FrameRec PresidentialElectionCols)
-presidentialByStateFrame = cachedMaybeFrameLoader @PEFromCols @PresidentialElectionCols
+presidentialByStateFrame = cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PresidentialElectionCols
   (DataSets $ T.pack BR.presidentialByStateCSV)
   Nothing
   Nothing
@@ -238,6 +244,9 @@ getPath dataPath = case dataPath of
   DataSets fp -> liftIO $ BR.usePath (T.unpack fp)
   LocalData fp -> return (T.unpack fp)
 
+-- file has qs
+-- Filter qs
+-- transform to rs
 cachedRecStreamLoader
   :: forall qs rs r
    . ( V.RMap rs
@@ -256,19 +265,42 @@ cachedRecStreamLoader
   -> T.Text -- ^ cache key
   -> Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
+  let cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
+      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
+      cacheKey      = (fromMaybe "data/" cachePathM) <> key
+  Streamly.yieldM $ K.logLE K.Diagnostic
+    $  "loading or retrieving and saving data at key="
+    <> cacheKey
+  cacheRecList cacheKey $ fixMonadCatch $ recStreamLoader filePath parserOptionsM filterM fixRow
+
+recStreamLoader
+  :: forall qs rs t m
+   . ( V.RMap rs
+     , V.RMap qs
+     , F.ReadRec qs
+     , Monad m
+     , Monad (t m)
+     , MonadIO m
+     , Exceptions.MonadCatch m
+     , Streamly.IsStream t
+     )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> t m (F.Record rs)
+recStreamLoader filePath parserOptionsM filterM fixRow = do
   let csvParserOptions =
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter = fromMaybe (const True) filterM
-      cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
-      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
-      cacheKey      = (fromMaybe "data/" cachePathM) <> key
-  path <- liftIO $ getPath filePath
-  Streamly.yieldM $ K.logLE K.Diagnostic
-    $  "loading or retrieving and saving data at key="
-    <> cacheKey
-  cacheRecList cacheKey $ (Streamly.map fixRow $ BR.loadToRecStream @qs csvParserOptions path filter)
+  path <- Streamly.yieldM $ liftIO $ getPath filePath
+  Streamly.map fixRow
+    $ BR.loadToRecStream @qs csvParserOptions path filter
 
+-- file has qs
+-- Filter qs
+-- transform to rs
 cachedFrameLoader
   :: forall qs rs r
    . ( V.RMap rs
@@ -291,8 +323,12 @@ cachedFrameLoader
 cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = 
   fmap F.toFrame $ Streamly.toList $ cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
 
+
+-- file has qs
+-- Filter qs
+-- transform to rs
 -- This one uses "FrameLoader" directly since there's an efficient disk to Frame
--- routine available.  
+-- routine available.
 frameLoader
   :: forall qs rs r
   . (K.KnitEffects r
@@ -314,23 +350,33 @@ frameLoader filePath parserOptionsM filterM fixRow = do
   K.logLE K.Diagnostic ("Attempting to load data from " <> (T.pack path) <> " into a frame.")
   fmap fixRow <$> BR.loadToFrame parserOptions path filter
 
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
 maybeFrameLoader
-  :: forall qs rs r
+  :: forall (fs :: [(Symbol, Type)]) qs rs r
    . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
+     , V.RMap fs
+     , F.ReadRec fs
      , FI.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
-     , qs F.⊆ qs
+     , qs F.⊆ fs
      , FI.RecVec rs
      , V.RFoldMap rs
      , S.GSerializePut (Rep (F.Rec FS.SElField rs))
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
+     , Show (F.Record qs)
+     , V.RMap qs
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
   -> Maybe F.ParserOptions
@@ -339,24 +385,34 @@ maybeFrameLoader
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  filePath parserOptionsM filterMaybesM fixMaybes transformRow
-  = fmap F.toFrame $ Streamly.toList $ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow
+  = fmap F.toFrame $ Streamly.toList $ K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow
 
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
 cachedMaybeRecStreamLoader
-  :: forall qs rs r
+  :: forall (fs :: [(Symbol, Type)]) qs rs r
    . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
+     , V.RMap fs
+     , F.ReadRec fs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
-     , qs F.⊆ qs
+     , qs F.⊆ fs
      , FI.RecVec qs
      , V.RFoldMap rs
      , S.GSerializePut (Rep (F.Rec FS.SElField rs))
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
+     , Show (F.Record qs)
+     , V.RMap qs
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
   -> Maybe F.ParserOptions
@@ -373,56 +429,74 @@ cachedMaybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes trans
   Streamly.yieldM $ K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  cacheRecStream cacheKey $ maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow
+  cacheRecStream cacheKey $ K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow
 
+
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
 maybeRecStreamLoader
-  :: forall qs rs r
-   . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
+  :: forall fs qs rs
+   . ( V.RMap fs
+     , F.ReadRec fs
      , FI.RecVec qs
      , V.RFoldMap qs
+     , V.RMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
-     , qs F.⊆ qs
-     , V.RFoldMap rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
+     , qs F.⊆ fs
+--     , K.KnitEffects r
+     , Show (F.Record qs)
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
   -> Maybe F.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
   -> (F.Record qs -> F.Record rs)
-  -> Streamly.SerialT (K.Sem r) (F.Record rs)
+  -> Streamly.SerialT K.StreamlyM (F.Record rs)
 maybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow = do
   let csvParserOptions =
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filterMaybes = fromMaybe (const True) filterMaybesM
   path <- liftIO $ getPath filePath
-  Streamly.map transformRow $ BR.processMaybeRecStream fixMaybes (const True) $ BR.loadToMaybeRecStream @qs csvParserOptions path filterMaybes
+  Streamly.map transformRow
+    $ BR.processMaybeRecStream fixMaybes (const True)
+    $ BR.loadToMaybeRecStream @fs csvParserOptions path filterMaybes
 
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
 cachedMaybeFrameLoader
-  :: forall qs rs r
-   . ( V.RMap rs
+  :: forall fs qs rs r
+   . ( K.KnitEffects r
+     , V.RMap rs
      , V.RFoldMap rs
-     , V.RMap qs
-     , F.ReadRec qs
+     , V.RMap fs
+     , F.ReadRec fs
      , FI.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
-     , qs F.⊆ qs
+     , qs F.⊆ fs
      , FI.RecVec rs
      , S.GSerializePut (Rep (F.Rec FS.SElField rs))
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
+     , Show (F.Record qs)
+     , V.RMap qs
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
   -> Maybe F.ParserOptions
@@ -433,8 +507,16 @@ cachedMaybeFrameLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (F.FrameRec rs)
 cachedMaybeFrameLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
-  = fmap F.toFrame $ Streamly.toList $ cachedMaybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
+  = fmap F.toFrame $ Streamly.toList $ cachedMaybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
+
+
+fixMonadCatch :: (P.MemberWithError (P.Error Exceptions.SomeException) r)
+              => Streamly.SerialT (Exceptions.CatchT (K.Sem r)) a -> Streamly.SerialT (K.Sem r) a
+fixMonadCatch = Streamly.hoist f where
+  f :: forall r a. (P.MemberWithError (P.Error Exceptions.SomeException) r) =>  Exceptions.CatchT (K.Sem r) a -> K.Sem r a
+  f = join . fmap P.fromEither . Exceptions.runCatchT
+{-# INLINEABLE fixMonadCatch #-}
 
 
 {-
