@@ -26,12 +26,13 @@ import qualified Data.Text                     as T
 import           Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Frames as F
+import qualified Frames.Serialize              as FS
 import qualified Frames.Melt as F
 import qualified Frames.InCore as FI
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
-
+import qualified Control.Concurrent            as CC
 import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
@@ -43,6 +44,7 @@ import qualified Frames.Visualization.VegaLite.Data
 
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
+import qualified Knit.Utilities.Streamly as K
 import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                      as P (raise)
 
@@ -73,6 +75,9 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
 import MRP.DeltaVPV (DemVPV)
+
+import qualified Streamly as Streamly
+import qualified Streamly.Prelude as Streamly
 
 text1 :: T.Text
 text1 = [i|
@@ -128,9 +133,46 @@ alternateVoteF =
         in (\bm e wgt -> bm/wgt F.&: e/wgt F.&: V.RNil) <$> wgtdCountF vbm <*> wgtdCountF early <*> wgtdCountF (const True)            
   in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 -}
+
+type X = "X" F.:-> Int
+type Y = "Y" F.:-> Int
+type Z = "Z" F.:-> Int
   
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
+  K.logLE K.Info "Test data" 
+  let testRowsLoader :: forall q. K.KnitEffects q => K.Sem q (F.FrameRec [X,Y,Z])
+      testRowsLoader = fmap F.toFrame $ Streamly.toList $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS "data/test.sbin"
+                       (do
+                           Streamly.yieldM $ K.logLE K.Diagnostic "Waiting to make..."
+                           Streamly.yieldM $ K.liftKnit $ CC.threadDelay 1000000                           
+                           Streamly.yieldM $ K.logLE K.Diagnostic "Making test data"
+                           let makeOne :: Int -> F.Record [X,Y,Z]
+                               makeOne n = n F.&: (n+1) F.&: (n+2) F.&: V.RNil
+                           K.streamlyToKnitS
+                             $ Streamly.map makeOne
+                             $ Streamly.fromList  [1,10,100]                          
+                       )
+  testFrameA <- K.async $ K.wrapPrefix "ASYNC" $ do
+    rows <- testRowsLoader
+    K.logLE K.Diagnostic "Waiting to return from Async"
+    K.liftKnit $ CC.threadDelay 1000000
+    return rows
+  testFrame <- testRowsLoader
+  testFrameM <- K.await testFrameA
+  case testFrameM of
+    Nothing -> K.logLE K.Diagnostic "Error in threaded retrieve"
+    Just trs -> do
+      K.logLE K.Diagnostic "TestRows returned from thread.  Printing async then sync."
+      logFrame trs
+      logFrame testFrame
+{-
+  testData <- BR.retrieveOrMakeFrame "data/test.bin"
+              (do
+                  testRows <- testRowsLoader
+                  return $ fmap (F.rcast @[X,Y]) testRows
+              )
+-}
   K.logLE K.Info "Loading re-keyed demographic data."                              
   pumsLanguageByState <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
                          (do

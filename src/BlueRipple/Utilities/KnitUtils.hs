@@ -122,11 +122,13 @@ retrieveOrMakeFrame :: (K.KnitEffects r
                        , V.RMap rs
                        , FI.RecVec rs
                        ) => T.Text -> K.Sem r (F.FrameRec rs) -> K.Sem r (F.FrameRec rs)
-retrieveOrMakeFrame key action =  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key action
+retrieveOrMakeFrame key action =  K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
+                                  $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key action
 
 retrieveOrMakeRecList :: (K.KnitEffects r
                        , FS.RecSerialize rs
                        , V.RMap rs
                        , FI.RecVec rs
                        ) => T.Text -> K.Sem r[F.Record rs] -> K.Sem r [F.Record rs]
-retrieveOrMakeRecList key action =  K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key action
+retrieveOrMakeRecList key action =   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
+                                     $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key action
