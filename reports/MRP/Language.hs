@@ -140,49 +140,34 @@ type Z = "Z" F.:-> Int
   
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
-  K.logLE K.Info "Test data" 
-  let testRowsLoader :: forall q. K.KnitEffects q => K.Sem q (F.FrameRec [X,Y,Z])
-      testRowsLoader = fmap F.toFrame $ Streamly.toList $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS "data/test.sbin"
-                       (do
-                           Streamly.yieldM $ K.logLE K.Diagnostic "Waiting to make..."
-                           Streamly.yieldM $ K.liftKnit $ CC.threadDelay 1000000                           
-                           Streamly.yieldM $ K.logLE K.Diagnostic "Making test data"
-                           let makeOne :: Int -> F.Record [X,Y,Z]
-                               makeOne n = n F.&: (n+1) F.&: (n+2) F.&: V.RNil
-                           K.streamlyToKnitS
-                             $ Streamly.map makeOne
-                             $ Streamly.fromList  [1,10,100]                          
-                       )
-  testFrameA <- K.async $ K.wrapPrefix "ASYNC" $ do
-    rows <- testRowsLoader
-    K.logLE K.Diagnostic "Waiting to return from Async"
-    K.liftKnit $ CC.threadDelay 1000000
-    return rows
-  testFrame <- testRowsLoader
-  testFrameM <- K.await testFrameA
-  case testFrameM of
-    Nothing -> K.logLE K.Diagnostic "Error in threaded retrieve"
-    Just trs -> do
-      K.logLE K.Diagnostic "TestRows returned from thread.  Printing async then sync."
-      logFrame trs
-      logFrame testFrame
-{-
-  testData <- BR.retrieveOrMakeFrame "data/test.bin"
-              (do
-                  testRows <- testRowsLoader
-                  return $ fmap (F.rcast @[X,Y]) testRows
-              )
--}
-  K.logLE K.Info "Loading re-keyed demographic data."                              
-  pumsLanguageByState <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
-                         (do
-                             pumsDemographics <- PUMS.pumsLoader
-                             return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                               $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToLanguage . F.rcast) pumsDemographics
-                         )
-  K.logLE K.Info $ "GA Languages"
+  K.logLE K.Info "Aggregating ACS PUMS data by state and Language"                              
+  acsLanguageByState <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
+                        (do
+                            pumsDemographics <- PUMS.pumsLoader
+                            return $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToLanguage . F.rcast) pumsDemographics
+                        )
+  K.logLE K.Info $ "Aggregating states to get national picutre"
+  let acsLanguageNational = FL.fold
+                            (FMR.concatFold
+                             $ FMR.mapReduceFold
+                             FMR.noUnpack
+                             (FMR.assignKeysAndData @[BR.Year, BR.LanguageC, BR.SpeaksEnglishC] @[PUMS.Citizens, PUMS.NonCitizens])
+                             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+                            ) acsLanguageByState
+
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) $ acsLanguageNational
+  K.logLE K.Info $ "Aggregated by Some or No English"
+  let acsLanguageGapNational = FL.fold
+                               (FMR.concatFold
+                                $ FMR.mapReduceFold
+                                (FMR.unpackFilterRow (\r -> F.rgetField @BR.SpeaksEnglishC r `elem` [BR.SE_Some, BR.SE_No]))
+                                (FMR.assignKeysAndData @[BR.Year, BR.LanguageC] @[PUMS.Citizens, PUMS.NonCitizens])
+                                (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+                               ) acsLanguageByState  
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) $ acsLanguageGapNational
+  K.logLE K.Info $ "GA, for example."
   let gaFilter r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @BR.Year r == 2018 
-  logFrame $ F.filterFrame gaFilter pumsLanguageByState
+  logFrame $ F.filterFrame gaFilter acsLanguageByState
 
 
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
