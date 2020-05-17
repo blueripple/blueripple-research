@@ -65,6 +65,7 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.Turnout_MRP as BR
@@ -174,6 +175,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ d
                                 (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
                               ) acsLanguageByState  
 
+      addZeroesF = Keyed.addDefaultRec @'[BR.LanguageC] @'[PUMS.Citizens] (0 F.&: V.RNil)
+      acsLGBSWithZeros = FL.fold
+                         (FMR.concatFold
+                          $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.assignKeysAndData @[BR.Year,BR.StateName])
+                          (FMR.makeRecsWithKey id (FMR.ReduceFold $ const addZeroesF))
+                         ) acsLanguageGapByState
   logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) $ acsLanguageGapByState
   K.logLE K.Info $ "GA, for example."
   let gaFilter r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @BR.Year r == 2018 
@@ -189,17 +198,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ d
                     ,("title","Non-English Speakers and Voting")
                     ]
       ))
-      $ do        
-        brAddMarkDown text1
-{-        
-        _ <-  K.addHvega Nothing Nothing
-              $ vlWeights
-              "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights"
-              (FV.ViewConfig 800 800 10)
-              aserEwResults
--}
-        brAddMarkDown text2
-        brAddMarkDown brReadMore
+    $ do
+      let f r = F.rgetField @BR.Year r == 2018 && not (F.rgetField @BR.LanguageC r `elem` [BR.English, BR.Spanish, BR.LangOther])
+      brAddMarkDown text1              
+      _ <-  K.addHvega Nothing Nothing
+            $ vlLanguageChoropleth
+            "Language Needs (ex-Spanish, log scale)"
+            (FV.ViewConfig 800 800 10)
+            (fmap F.rcast $ F.filterFrame f acsLGBSWithZeros)
+          
+      brAddMarkDown text2
+      brAddMarkDown brReadMore
 
 
 
@@ -210,19 +219,24 @@ usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albe
 vlLanguageChoropleth :: Foldable f
                      => T.Text -- ^ Title
                      -> FV.ViewConfig
-                     -> f (F.Record [BR.StateName, BR.StateAbbreviation, BR.LanguageC, BR.Citizens])
+                     -> f (F.Record [BR.StateName, BR.LanguageC, PUMS.Citizens])
                      -> GV.VegaLite
 vlLanguageChoropleth title vc rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-      projection = GV.projection [GV.PrType GV.AlbersUSA]
+      projection = GV.projection [GV.PrType GV.AlbersUsa]
       datVal = FV.recordsToVLData id FV.defaultParse rows
-      facets = GV.facetFlow [FV.fName @BR.StateAbbreviation, GV.FmType GV.Nominal]
+      facets = GV.facetFlow [FV.fName @BR.LanguageC, GV.FmType GV.Nominal]
       lookup = GV.lookupAs "StateName" datGeo "properties.name" "geo"
+      logCitizens = GV.calculateAs "log (datum.Citizens)" "Citizens (log)" 
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [FV.mName @BR.Citizens, GV.FmType Quantitative]
+      colorEnc = GV.color [FV.mName @PUMS.Citizens, GV.MmType GV.Quantitative, GV.MScale [GV.SType GV.ScSymLog]]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
-      enc = GV.encoding . colorEnc . shapeEnc
---      spec = GV.asSpec [
+      tooltipEnc = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal]
+                               ,[FV.tName @PUMS.Citizens, GV.TmType GV.Quantitative]]
+      enc = GV.encoding . colorEnc . shapeEnc . tooltipEnc
+
+      spec = GV.asSpec [enc [], (GV.transform . lookup) [], mark, projection]
+  in FV.configuredVegaLite vc [FV.title title, datVal, facets, GV.specification spec, GV.columns 3]
         
 {-
 vlWeights :: (Functor f, Foldable f)
