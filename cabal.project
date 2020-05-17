@@ -2,7 +2,7 @@ packages: ./
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
-allow-newer: hashable, base, streamly, polysemy
+allow-newer: hvega, hashable, base, streamly, polysemy
 
 -- ghc-8.8 forks
              

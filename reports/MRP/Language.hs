@@ -133,20 +133,20 @@ alternateVoteF =
         in (\bm e wgt -> bm/wgt F.&: e/wgt F.&: V.RNil) <$> wgtdCountF vbm <*> wgtdCountF early <*> wgtdCountF (const True)            
   in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 -}
-
-type X = "X" F.:-> Int
-type Y = "Y" F.:-> Int
-type Z = "Z" F.:-> Int
   
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
-  K.logLE K.Info "Aggregating ACS PUMS data by state and Language"                              
-  acsLanguageByState <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
+  K.logLE K.Info "Aggregating ACS PUMS data by state, household language and English language proficiency."                              
+  acsLanguageByState' <- BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin"
                         (do
                             pumsDemographics <- PUMS.pumsLoader
                             return $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToLanguage . F.rcast) pumsDemographics
                         )
-  K.logLE K.Info $ "Aggregating states to get national picutre"
+  stateCrosswalk <- BR.stateAbbrCrosswalkLoader
+  acsLanguageByState <- K.knitEither
+                        $ either (\r -> Left $ "Missing key=" <> (T.pack $ show r)) Right
+                        $ FJ.leftJoinE @[BR.StateAbbreviation, BR.StateFIPS] acsLanguageByState' stateCrosswalk
+  K.logLE K.Info $ "Aggregating states to get national picture"
   let acsLanguageNational = FL.fold
                             (FMR.concatFold
                              $ FMR.mapReduceFold
@@ -163,8 +163,18 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ d
                                 (FMR.unpackFilterRow (\r -> F.rgetField @BR.SpeaksEnglishC r `elem` [BR.SE_Some, BR.SE_No]))
                                 (FMR.assignKeysAndData @[BR.Year, BR.LanguageC] @[PUMS.Citizens, PUMS.NonCitizens])
                                 (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-                               ) acsLanguageByState  
+                               ) acsLanguageNational  
   logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) $ acsLanguageGapNational
+  K.logLE K.Info "By State, but aggregate Some or No English"
+  let acsLanguageGapByState = FL.fold
+                              (FMR.concatFold
+                                $ FMR.mapReduceFold
+                                (FMR.unpackFilterRow (\r -> F.rgetField @BR.SpeaksEnglishC r `elem` [BR.SE_Some, BR.SE_No]))
+                                (FMR.assignKeysAndData @[BR.Year, BR.LanguageC, BR.StateName] @[PUMS.Citizens, PUMS.NonCitizens])
+                                (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+                              ) acsLanguageByState  
+
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) $ acsLanguageGapByState
   K.logLE K.Info $ "GA, for example."
   let gaFilter r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @BR.Year r == 2018 
   logFrame $ F.filterFrame gaFilter acsLanguageByState
@@ -190,6 +200,30 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ d
 -}
         brAddMarkDown text2
         brAddMarkDown brReadMore
+
+
+
+usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
+usStatesAlbersTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-albers-10m.json"
+
+
+vlLanguageChoropleth :: Foldable f
+                     => T.Text -- ^ Title
+                     -> FV.ViewConfig
+                     -> f (F.Record [BR.StateName, BR.StateAbbreviation, BR.LanguageC, BR.Citizens])
+                     -> GV.VegaLite
+vlLanguageChoropleth title vc rows =
+  let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
+      projection = GV.projection [GV.PrType GV.AlbersUSA]
+      datVal = FV.recordsToVLData id FV.defaultParse rows
+      facets = GV.facetFlow [FV.fName @BR.StateAbbreviation, GV.FmType GV.Nominal]
+      lookup = GV.lookupAs "StateName" datGeo "properties.name" "geo"
+      mark = GV.mark GV.Geoshape []
+      colorEnc = GV.color [FV.mName @BR.Citizens, GV.FmType Quantitative]
+      shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
+      enc = GV.encoding . colorEnc . shapeEnc
+--      spec = GV.asSpec [
+        
 {-
 vlWeights :: (Functor f, Foldable f)
   => T.Text
