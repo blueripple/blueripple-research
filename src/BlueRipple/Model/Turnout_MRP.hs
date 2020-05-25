@@ -39,6 +39,7 @@ import qualified Frames.Serialize              as FS
 import qualified Knit.Report                   as K
 
 import qualified Numeric.GLM.Bootstrap         as GLM
+import qualified Numeric.GLM.MixedModel         as GLM
 
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
@@ -84,7 +85,8 @@ mrpTurnout
      , Ord (F.Record cc)
      , F.ElemOf rs BR.StateAbbreviation
      )
-  => Maybe T.Text
+  => GLM.MinimizeDevianceVerbosity
+  -> Maybe T.Text
   -> ET.ElectoralWeightSourceT
   -> ET.ElectoralWeightOfT
   -> F.FrameRec rs
@@ -101,7 +103,7 @@ mrpTurnout
                '[BR.Year,  ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
            )
        )
-mrpTurnout cacheTmpDirM ewSource ewOf datFrame votersF predictor catPredMap = do
+mrpTurnout verbosity cacheTmpDirM ewSource ewOf datFrame votersF predictor catPredMap = do
   let lhToRecs year (BR.LocationHolder lp lkM predMap) =
         let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
             recToAdd w = year F.&: (ET.ewRec ewSource ewOf w)
@@ -125,7 +127,8 @@ mrpTurnout cacheTmpDirM ewSource ewOf datFrame votersF predictor catPredMap = do
                      (\y -> cacheIt
                        ("turnout" <> T.pack (show y))
                        (   lhsToFrame y 
-                         <$> (BR.predictionsByLocation (return datFrame)
+                         <$> (BR.predictionsByLocation verbosity
+                              (return datFrame)
                               (votersF y)
                               predictor
                               catPredMap
@@ -133,7 +136,13 @@ mrpTurnout cacheTmpDirM ewSource ewOf datFrame votersF predictor catPredMap = do
                        )
                      )
                      [2008, 2010, 2012, 2014, 2016, 2018]      
+
+  allResults <- sequence wYearActions
+  return $ mconcat allResults
+{-
+
   allResultsM <- sequence <$> K.sequenceConcurrently wYearActions
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
+-}

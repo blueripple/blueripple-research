@@ -64,6 +64,7 @@ import           BlueRipple.Utilities.TableUtils
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
+import qualified Numeric.GLM.MixedModel            as GLM
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -371,11 +372,11 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
   let preds =  GLM.Intercept : fmap GLM.Predictor BR.allSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
       narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
   predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds BR.catPredMaps)
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds BR.catPredMaps)
 
   let vpv x = 2*x - 1
       lhToRecsM year office (BR.LocationHolder _ lkM predMap) =

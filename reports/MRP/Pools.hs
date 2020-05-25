@@ -53,6 +53,7 @@ import           BlueRipple.Utilities.TableUtils
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
+import qualified Numeric.GLM.MixedModel as GLM
 
 import BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DemographicTypes as BR
@@ -336,7 +337,7 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
   ccesFrame <- ccesDataLoader
   logFrame $ F.filterFrame (\r -> F.rgetField @Year r == 2018 && F.rgetField @StateAbbreviation r == "WY") ccesFrame
   predsByLocation <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
-                      $ P.raise (BR.predictionsByLocation @CatCols ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
+                      $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
     
 
   K.logLE K.Diagnostic $ T.pack $ show predsByLocation  

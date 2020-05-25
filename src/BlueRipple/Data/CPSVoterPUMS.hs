@@ -29,6 +29,8 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsKeysToASE
   , cpsKeysToASR
   , cpsKeysToASER
+  , cpsKeysToASER4
+  , cpsKeysToASER5
   , cpsKeysToIdentity
   , cpsPossibleVoter
   , cpsVoted
@@ -407,6 +409,26 @@ cpsCountVotersByCDF getCatKey year =
 -- NB: This needs to be done consistently with the demographics.
 -- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning
 -- "in college" people to either Grad or NonGrad buckets in terms of voting pref.
+cpsKeysToASER5 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
+cpsKeysToASER5 addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.Race5C r
+     F.&: V.RNil
+
+cpsKeysToASER4 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
+cpsKeysToASER4 addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
+     F.&: V.RNil     
+
 cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r

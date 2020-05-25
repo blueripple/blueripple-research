@@ -300,6 +300,28 @@ pumsStateRollupF mapKeys =
       reduce = FMR.foldAndAddKey sumPeopleF
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
+pumsKeysToASER5 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
+pumsKeysToASER5 addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.Race5C r
+     F.&: V.RNil
+
+
+pumsKeysToASER4 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
+pumsKeysToASER4 addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
+     F.&: V.RNil
+
+
 pumsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 pumsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r

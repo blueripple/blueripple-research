@@ -305,35 +305,38 @@ predictionsByLocation ::
                   , F.ElemOf rs BR.StateAbbreviation
                   , K.KnitEffects r
                )
-  => K.Sem r (F.FrameRec rs)
+  => GLM.MinimizeDevianceVerbosity
+  -> K.Sem r (F.FrameRec rs)
   -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ CountCols))  
   -> [SimpleEffect ps]
   -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
-predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
-  K.logLE K.Diagnostic "Starting (getting data )"
-  ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-  K.logLE K.Diagnostic ("Inferring")
-  (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps
-                               countFold
-                               predictors                                                     
-                               simplePredictor
-                               ccesFrame
+predictionsByLocation verbosity ccesFrameAction countFold predictors catPredMap =
+  P.mapError glmErrorToPandocError  $ K.wrapPrefix "predictionsByLocation" $ do
+    K.logLE K.Diagnostic "Starting (getting data )"
+    ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
+    K.logLE K.Diagnostic ("Inferring")
+    (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps
+                                 verbosity
+                                 countFold
+                                 predictors                                                     
+                                 simplePredictor
+                                 ccesFrame
   
-  let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrame
-      allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
-      predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
-      predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
-        let predictFrom catKey predMap =
-              let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
-                  emptyAsNationalGKM = case groupKeyM of
-                                         Nothing -> Nothing
-                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
-              in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
-        cpreds <- M.traverseWithKey predictFrom cpms
-        return $ LocationHolder n lkM cpreds
-  traverse predict toPredict
+    let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrame
+        allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
+        predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
+        toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+        predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
+          let predictFrom catKey predMap =
+                let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
+                    emptyAsNationalGKM = case groupKeyM of
+                                           Nothing -> Nothing
+                                           Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
+                in GLM.runLogOnGLMException $ GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+          cpreds <- M.traverseWithKey predictFrom cpms
+          return $ LocationHolder n lkM cpreds
+    traverse predict toPredict
 
 ---
 
@@ -378,7 +381,8 @@ inferMR
      , Ord (F.Record (GroupCols ls cs))
      , g ~ RecordColsProxy (GroupCols ls cs)
      )
-  => FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ CountCols))
+  => GLM.MinimizeDevianceVerbosity
+  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ CountCols))
   -> [GLM.WithIntercept b] -- fixed effects to fit
   -> (F.Record (ls V.++ ks V.++ CountCols) -> b -> Double)  -- how to get a fixed effect value from a record
   -> f (F.Record rs)
@@ -391,8 +395,8 @@ inferMR
        , LA.Vector Double
        , [(GLM.BetaU, LA.Vector Double)]
        )
-inferMR cf fixedEffectList getFixedEffect rows =
-  P.mapError glmErrorToPandocError
+inferMR verbosity cf fixedEffectList getFixedEffect rows =
+  GLM.runLogOnGLMException $ P.mapError glmErrorToPandocError
     $ K.wrapPrefix ("inferMR")
     $ do
         let
@@ -444,7 +448,7 @@ inferMR cf fixedEffectList getFixedEffect rows =
         fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
                                                    effectsByGroup
                                                    rowClassifier
-        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6
+        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6 (Just $ GLM.setCovarianceVector fitSpecByGroup 0.1 0)
             lmmSpec     = GLM.LinearMixedModelSpec
               (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup)
               lmmControls
@@ -464,11 +468,11 @@ inferMR cf fixedEffectList getFixedEffect rows =
               randomEffectsModelMatrix
               (GLM.makeLambda fitSpecByGroup)
             th0         = GLM.setCovarianceVector fitSpecByGroup 1 0
-            mdVerbosity = MDVNone
+        -- mdVerbosity = MDVNone
         GLM.checkProblem mixedModel randomEffectCalc
         K.logLE K.Info "Fitting data..."
         ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance
-          mdVerbosity
+          verbosity
           ML
           mixedModel
           randomEffectCalc
