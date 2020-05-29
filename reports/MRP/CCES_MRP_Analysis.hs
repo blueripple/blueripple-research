@@ -264,16 +264,16 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
                 )
                 [2008, 2010, 2012, 2014, 2016, 2018]
       allActions = [p2008, p2012, p2016] ++ pHouse
-      
+{-      
   allResults <- sequence allActions
   return $ mconcat allResults
-
-{-      
+-}
+      
   allResultsM <- sequence <$> K.sequenceConcurrently allActions
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
--}
+
 
 {-
 return

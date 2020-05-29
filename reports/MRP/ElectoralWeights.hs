@@ -311,13 +311,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)      
       cpsASER4TurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER4 True . F.rcast)) cpsVoterPUMS
       cpsASER4Turnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER4 True . F.rcast)) cpsVoterPUMS
-      cpsASER4Counted2008 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER4 True . F.rcast) 2008) cpsVoterPUMS  
+      cpsASER4Counted2010 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER4 True . F.rcast) 2010) cpsVoterPUMS  
       predictorsASER4 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER4)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
   K.logLE K.Diagnostic $ "predictors (ASER4)=" <> (T.pack $ show predictorsASER4)
 --  logFrame cpsVoterPUMS
---  logFrame cpsASER4Counted2008
+  logFrame cpsASER4Counted2010
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    P.raise

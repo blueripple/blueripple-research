@@ -136,13 +136,13 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf datFrame votersF predictor catPr
                        )
                      )
                      [2008, 2010, 2012, 2014, 2016, 2018]      
-
+{-
   allResults <- sequence wYearActions
   return $ mconcat allResults
-{-
+-}
 
   allResultsM <- sequence <$> K.sequenceConcurrently wYearActions
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
--}
+

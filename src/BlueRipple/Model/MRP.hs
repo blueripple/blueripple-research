@@ -333,7 +333,7 @@ predictionsByLocation verbosity ccesFrameAction countFold predictors catPredMap 
                     emptyAsNationalGKM = case groupKeyM of
                                            Nothing -> Nothing
                                            Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
-                in GLM.runLogOnGLMException $ GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+                in GLM.runLogOnGLMException $ GLM.predictFromBetaB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
           cpreds <- M.traverseWithKey predictFrom cpms
           return $ LocationHolder n lkM cpreds
     traverse predict toPredict
@@ -391,9 +391,9 @@ inferMR
        ( GLM.MixedModel b g
        , GLM.RowClassifier g
        , GLM.EffectsByGroup g b
-       , GLM.BetaU
+       , GLM.BetaVec
        , LA.Vector Double
-       , [(GLM.BetaU, LA.Vector Double)]
+       , [(GLM.BetaVec, LA.Vector Double)]
        )
 inferMR verbosity cf fixedEffectList getFixedEffect rows =
   GLM.runLogOnGLMException $ P.mapError glmErrorToPandocError
@@ -471,17 +471,18 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
         -- mdVerbosity = MDVNone
         GLM.checkProblem mixedModel randomEffectCalc
         K.logLE K.Info "Fitting data..."
-        ((th, pd, sigma2, betaU, vb, cs), vMuSol, cf) <- GLM.minimizeDeviance
+        ((th, pd, sigma2, beta, mzvu, mzvb, cs), vMuSol, cf) <- GLM.minimizeDeviance
           verbosity
           ML
           mixedModel
           randomEffectCalc
           th0
+        vb <- K.knitMaybe "b-vector (random effects coefficients) is zero in MRP.inferMR" $ GLM.useMaybeZeroVec Nothing Just mzvb
         GLM.report mixedModel
                    randomEffectsModelMatrix
-                   (GLM.bu_vBeta betaU)
+                   beta
                    (SD.toSparseVector vb)
-        let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs betaU
+        let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs beta
         K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
         epg <- GLM.effectParametersByGroup @g @b rowClassifier effectsByGroup vb
 --        K.logLE K.Diagnostic
@@ -499,7 +500,8 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
                                                 cf
                                                 randomEffectCalc
                                                 th
-                                                betaU
+                                                beta
+                                                mzvu
         let bootstraps                           = []
         let GLM.FixedEffectStatistics _ mBetaCov = fes
         let f r = do
@@ -510,7 +512,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
                 (Just . recordToGroupKey @(GroupCols ls cs) r)
                 rowClassifier
                 effectsByGroup
-                betaU
+                beta
                 vb
                 (ST.mkCL 0.95)
                 (GLM.NaiveCondVarCI mBetaCov smCondVar)
@@ -523,7 +525,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
         K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
         let GLM.FixedEffectStatistics fep _ = fes
         return
-          (mixedModel, rowClassifier, effectsByGroup, betaU, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
+          (mixedModel, rowClassifier, effectsByGroup, beta, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
 
 lmePrepFrame
   :: forall p g rs
