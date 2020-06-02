@@ -187,7 +187,8 @@ mrpPrefs
      , cc F.⊆ CCES_MRP
      , Ord (F.Record cc)
      )
-  => Maybe T.Text
+  => GLM.MinimizeDevianceVerbosity
+  -> Maybe T.Text
   -> K.Sem r (F.FrameRec CCES_MRP)
   -> [BR.SimpleEffect cc]
   -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
@@ -201,7 +202,7 @@ mrpPrefs
                '[BR.Year, ET.Office, DemVPV, BR.DemPref]
            )
        )
-mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
+mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
   let vpv x = 2 * x - 1
       lhToRecs year office (BR.LocationHolder lp lkM predMap) =
         let addCols p =
@@ -227,7 +228,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
   let p2008 = cacheIt
               "pres2008"
               (   lhsToFrame 2008 ET.President
-                <$> (BR.predictionsByLocation GLM.MDVNone ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesDataAction
                       (countDemPres2008VotesF @cc)
                       predictor
                       catPredMap
@@ -236,7 +237,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2012 = cacheIt
               "pres2012"
               (   lhsToFrame 2012 ET.President
-                <$> (BR.predictionsByLocation GLM.MDVNone ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesDataAction
                       (countDemPres2012VotesF @cc)
                       predictor
                       catPredMap
@@ -245,7 +246,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2016 = cacheIt
               "pres2016"
               (   lhsToFrame 2016 ET.President
-                <$> (BR.predictionsByLocation GLM.MDVNone ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesDataAction
                       (countDemPres2016VotesF @cc)
                       predictor
                       catPredMap
@@ -255,7 +256,7 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
                (\y -> cacheIt
                  ("house" <> T.pack (show y))
                  (   lhsToFrame y ET.House
-                   <$> (BR.predictionsByLocation GLM.MDVNone ccesDataAction
+                   <$> (BR.predictionsByLocation mdv ccesDataAction
                          (countDemHouseVotesF @cc y)
                          predictor
                          catPredMap
@@ -264,16 +265,16 @@ mrpPrefs cacheTmpDirM ccesDataAction predictor catPredMap = do
                 )
                 [2008, 2010, 2012, 2014, 2016, 2018]
       allActions = [p2008, p2012, p2016] ++ pHouse
-{-      
+      
   allResults <- sequence allActions
   return $ mconcat allResults
--}
-      
+
+{-      
   allResultsM <- sequence <$> K.sequenceConcurrently allActions
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
-
+-}
 
 {-
 return

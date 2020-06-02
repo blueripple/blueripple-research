@@ -45,6 +45,7 @@ import           BlueRipple.Utilities.KnitUtils
 
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
+import qualified Numeric.GLM.MixedModel as GLM
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -133,11 +134,11 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
       predictorsASE =  GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
       predictorsASR = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
   inferredPrefsASER <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps) 
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps) 
   inferredPrefsASE <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASE (Just "ASE") ccesDataLoader predictorsASE BR.catPredMaps) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") ccesDataLoader predictorsASE BR.catPredMaps) 
   inferredPrefsASR <-  stateAndNation <$> K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASR (Just "ASR") ccesDataLoader predictorsASR BR.catPredMaps) 
+                       (P.raise $ BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") ccesDataLoader predictorsASR BR.catPredMaps) 
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD

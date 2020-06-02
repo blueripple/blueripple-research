@@ -45,7 +45,7 @@ import qualified Graphics.Vega.VegaLite        as GV
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
 
-data DemographicGrouping = ASE | ASR | ASER | ASER5 deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+data DemographicGrouping = ASE | ASR | ASER | ASER4 | ASER5 deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
 type instance FI.VectorFor DemographicGrouping = Vec.Vector
 instance Grouping DemographicGrouping

@@ -128,7 +128,8 @@ weightedBinomialFold testRow weightRow =
       successesF  = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
       meanWeightF = FL.premap weightRow FL.mean
       varWeightF  = FL.premap weightRow FL.variance
-  in  (\n s ws mw vw -> n F.&: s F.&: (ws / mw) F.&: mw F.&: vw F.&: V.RNil)
+      f s ws mw = if mw < 1e-6 then realToFrac s else ws / mw -- if meanweight is 0 but 
+  in  (\n s ws mw vw -> n F.&: s F.&: (f s ws mw) F.&: mw F.&: vw F.&: V.RNil)
       <$> FL.length
       <*> successesF
       <*> wSuccessesF
@@ -448,7 +449,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
         fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
                                                    effectsByGroup
                                                    rowClassifier
-        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6 (Just $ GLM.setCovarianceVector fitSpecByGroup 0.1 0)
+        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6 Nothing
             lmmSpec     = GLM.LinearMixedModelSpec
               (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup)
               lmmControls

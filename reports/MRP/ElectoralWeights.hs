@@ -72,6 +72,7 @@ import qualified BlueRipple.Model.Turnout_MRP as BR
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
 import MRP.CCES
 import MRP.DeltaVPV (DemVPV)
@@ -309,15 +310,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       cpsASERTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
       cpsASERCounted2008 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER True . F.rcast) 2008) cpsVoterPUMS  
       predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)      
-      cpsASER4TurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER4 True . F.rcast)) cpsVoterPUMS
-      cpsASER4Turnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER4 True . F.rcast)) cpsVoterPUMS
-      cpsASER4Counted2010 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER4 True . F.rcast) 2010) cpsVoterPUMS  
-      predictorsASER4 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER4)
+      cpsASER5TurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER5 True . F.rcast)) cpsVoterPUMS
+      cpsASER5Turnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER5 True . F.rcast)) cpsVoterPUMS
+      cpsASER5Counted2010 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER5 True . F.rcast) 2010) cpsVoterPUMS  
+      predictorsASER5 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER5)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
-  K.logLE K.Diagnostic $ "predictors (ASER4)=" <> (T.pack $ show predictorsASER4)
+  K.logLE K.Diagnostic $ "predictors (ASER5)=" <> (T.pack $ show predictorsASER5)
 --  logFrame cpsVoterPUMS
-  logFrame cpsASER4Counted2010
+  logFrame cpsASER5Counted2010
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    P.raise
@@ -333,35 +334,50 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                )
 
 
-  inferredCensusTurnoutASER4 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusASER4_MR.bin"
+  inferredCensusTurnoutASER5 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusASER5_MR.bin"
                                (do
                                    P.raise
-                                     $ BR.mrpTurnout @BR.CatColsASER4
-                                     GLM.MDVSimple
-                                     (Just "T_CensusASER4")
+                                     $ BR.mrpTurnout @BR.CatColsASER5
+                                     GLM.MDVNone
+                                     (Just "T_CensusASER5")
                                      ET.EW_Census
                                      ET.EW_Citizen
                                      cpsVoterPUMS
-                                     (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER4 True . F.rcast)
-                                     predictorsASER4
+                                     (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER5 True . F.rcast)
+                                     predictorsASER5
                                      BR.catPredMaps
                                )                               
-{-                             
+                             
 --  logFrame $ F.filterFrame gaFilter cpsVoterWithCDs
-  K.logLE K.Info $ "GA Census Turnout (ASER4, Raw)"  
-  logFrame $ F.filterFrame gaFilter cpsASER4TurnoutByState
---  K.logLE K.Info $ "GA Census Turnout (ASER4, inferred)"
---  logFrame $ F.filterFrame gaFilter inferredCensusTurnoutASER4
+  K.logLE K.Info $ "GA Census Turnout (ASER5, Raw)"  
+  logFrame $ F.filterFrame gaFilter cpsASER5TurnoutByState
+  K.logLE K.Info $ "GA Census Turnout (ASER5, inferred)"
+  logFrame $ F.filterFrame gaFilter inferredCensusTurnoutASER5
 
 
   -- preferences
   inferredPrefsASER <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps)
-
---  ccesData <- ccesDataLoader
---  join $ logFrame <$> fmap (FL.fold (BR.countVotersOfAllF @BR.CatColsASER4 2012)) ccesDataLoader
-  inferredPrefsASER4 <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/prefsASER4_MR.bin"
-                         (P.raise $ BR.mrpPrefs @BR.CatColsASER4 (Just "T_prefsASER4") ccesDataLoader predictorsASER4 BR.catPredMaps)                         
+                        (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps)
+  let
+    addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
+                     (FMR.noUnpack)
+                     (FMR.splitOnKeys @'[BR.StateAbbreviation])
+                     ( FMR.makeRecsWithKey id
+                       $ FMR.ReduceFold
+                       $ const
+                       $ Keyed.addDefaultRec @BR.CatColsASER5 BR.zeroCount
+                     )
+  ccesData <- ccesDataLoader
+--  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2008) ccesData
+  K.logLE K.Diagnostic $ "NaN in House2010"
+  let countedAndDefaultedHouse2010 = FL.fold addZeroCountsF $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2010) ccesData
+  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.WeightedSuccesses) $ countedAndDefaultedHouse2010
+  K.logLE K.Diagnostic $ (T.pack $ show $ FL.fold FL.length countedAndDefaultedHouse2010) <> " rows in countedAndDefaultedHouse2010"
+--  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.WeightedSuccesses) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2012) ccesData
+--  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2016) ccesData
+--  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2018) ccesData
+  inferredPrefsASER5 <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/prefsASER5_MR.bin"
+                         (P.raise $ BR.mrpPrefs @BR.CatColsASER5 GLM.MDVSimple (Just "T_prefsASER5") ccesDataLoader predictorsASER5 BR.catPredMaps)                         
 
   -- inferred turnout
   inferredCCESTurnoutOfAllASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllSimpleASER_MR.bin"
@@ -369,6 +385,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                       ccesData <- ccesDataLoader
                                       P.raise
                                         $ BR.mrpTurnout @BR.CatColsASER
+                                        GLM.MDVNone
                                         (Just "T_OfAllASER")
                                         ET.EW_CCES
                                         ET.EW_Citizen
@@ -379,21 +396,22 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                   )
 
 
-  inferredCCESTurnoutOfAllASER4 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllASER4_MR.bin"
+  inferredCCESTurnoutOfAllASER5 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllASER5_MR.bin"
                                   (do
                                       ccesData <- ccesDataLoader
                                       P.raise
-                                        $ BR.mrpTurnout @BR.CatColsASER4
+                                        $ BR.mrpTurnout @BR.CatColsASER5
+                                        GLM.MDVNone
                                         (Just "T_OfAllASER5")
                                         ET.EW_CCES
                                         ET.EW_Citizen
                                         ccesData
-                                        (BR.countVotersOfAllF @BR.CatColsASER4)
-                                        predictorsASER4
+                                        (BR.countVotersOfAllF @BR.CatColsASER5)
+                                        predictorsASER5
                                         BR.catPredMaps
                                   )                                  
   K.logLE K.Info $ "GA CCES Turnout (inferred)"
-  logFrame $ F.filterFrame gaFilter inferredCCESTurnoutOfAllASER4
+  logFrame $ F.filterFrame gaFilter inferredCCESTurnoutOfAllASER5
                              
   --  logFrame inferredTurnoutASE
   -- demographics
@@ -404,14 +422,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
                      )
 
-  pumsASER4ByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASER4ByState.bin"
+  pumsASER5ByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASER5ByState.bin"
                       (do
                           pumsDemographics <- PUMS.pumsLoader
                           return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER4 True . F.rcast) pumsDemographics
+                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
                       )                     
-  K.logLE K.Info $ "GA Demographics (PUMS, ASER4)"
-  logFrame $ F.filterFrame gaFilter pumsASER4ByState
+  K.logLE K.Info $ "GA Demographics (PUMS, ASER5)"
+  logFrame $ F.filterFrame gaFilter pumsASER5ByState
   let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
@@ -427,20 +445,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                       stateTurnoutRaw
                                       (fmap F.rcast pumsASERByState)
                                       (fmap F.rcast inferredCensusTurnoutASER)
-{-
-      aser4DemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
-                                       @BR.CatColsASER4
+
+      aser5DemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
+                                       @BR.CatColsASER5
                                        @PUMS.Citizens
                                        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
                                        @'[BR.Year, BR.StateAbbreviation]
                                        stateTurnoutRaw
                                        (fmap F.rcast pumsASER5ByState)
-                                       (fmap F.rcast inferredCensusTurnoutASER4)
--}
+                                       (fmap F.rcast inferredCensusTurnoutASER5)
+
       filterForAdjTurnout r = F.rgetField @BR.StateAbbreviation r == "WI" && F.rgetField @BR.Year r == 2016
  
   aserDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" aserDemoAndAdjCensusEW_action
---  aser4DemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aser4PumsDemoAndAdjCensusEW.bin" aser4DemoAndAdjCensusEW_action
+  aser5DemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" aser5DemoAndAdjCensusEW_action
 {-  K.logLE K.Diagnostic $ "pumsASEByState has " <> (T.pack . show $ FL.fold FL.length pumsASEByState) <> " rows."
   K.logLE K.Diagnostic $ "cpsASETurnoutByState has " <> (T.pack . show $ FL.fold FL.length cpsASETurnoutByState) <> " rows."
   K.logLE K.Diagnostic $ "aseDemoAndAdjEW has " <> (T.pack . show $ FL.fold FL.length aseDemoAndAdjEW) <> " rows." -}
@@ -451,14 +469,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                     @PUMS.Citizens
                                     @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
                                     @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCCESTurnoutOfAllASER)
-      aser4DemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
-                                     @BR.CatColsASER4
+      aser5DemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
+                                     @BR.CatColsASER5
                                      @PUMS.Citizens
                                      @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                     @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASER4ByState) (fmap F.rcast inferredCCESTurnoutOfAllASER4)                                    
+                                     @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASER5ByState) (fmap F.rcast inferredCCESTurnoutOfAllASER5)                                    
   
   aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
-  aser4DemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aser4PumsDemoAndAdjCCESEW.bin" aser4DemoAndAdjCCESEW_action
+  aser5DemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" aser5DemoAndAdjCCESEW_action
 {-  K.logLE K.Diagnostic "comparison of Census then CCES for 2016 in WI after adjustment."
   logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
   logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCCESEW -}
@@ -485,23 +503,23 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   aserAllByState <- BR.retrieveOrMakeFrame "mrp/weights/aserAllByState.bin"
                     (K.knitMaybe "Missing key when joining inferredPrefsASR and aserDemoAndAdjCensusEW"
                      $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER) inferredPrefsASER aserDemoAndAdjCensusEW)
-{-  aser4AllByState <- BR.retrieveOrMakeFrame "mrp/weights/aser4AllByState.bin"
-                     (K.knitMaybe "Missing key when joining inferredPrefsASER4 and aser4DemoAndAdjCensusEW"
-                      $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER4) inferredPrefsASER4 aser4DemoAndAdjCensusEW)                 -}                    
+  aser5AllByState <- BR.retrieveOrMakeFrame "mrp/weights/aser5AllByState.bin"
+                     (K.knitMaybe "Missing key when joining inferredPrefsASER5 and aser5DemoAndAdjCensusEW"
+                      $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER5) inferredPrefsASER5 aser5DemoAndAdjCensusEW)                                     
   -- fold these to state level
   let aserDemoF = FMR.concatFold $ FMR.mapReduceFold
                   FMR.noUnpack
                   (FMR.assignKeysAndData @(BR.CatColsASER V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
                    @[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
                   (FMR.foldAndAddKey foldPrefAndTurnoutData)
-      aser4DemoF = FMR.concatFold $ FMR.mapReduceFold
+      aser5DemoF = FMR.concatFold $ FMR.mapReduceFold
                    FMR.noUnpack
-                   (FMR.assignKeysAndData @(BR.CatColsASER4 V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
+                   (FMR.assignKeysAndData @(BR.CatColsASER5 V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
                      @[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
                    (FMR.foldAndAddKey foldPrefAndTurnoutData)
                    
       aserByState = FL.fold aserDemoF aserAllByState
---      aser4ByState = FL.fold aser4DemoF aser4AllByState
+      aser5ByState = FL.fold aser5DemoF aser5AllByState
       
   electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> BR.electoralCollegeFrame
   let yearFilter y r =  F.rgetField @BR.Year r == y 
@@ -528,16 +546,16 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       aserCCESEW y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
                      $ F.filterFrame (yearFilter y) aserDemoAndAdjCCESEW
 
-      aser4Prefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER4 V.++ '[BR.DemPref]))
-                      $ F.filterFrame (yearOfficeFilter y o) inferredPrefsASER4
-      aser4Demo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER4 V.++ '[PUMS.Citizens]))
-                    $ F.filterFrame (yearFilter y) pumsASER4ByState
-{-                      
-      aser4CensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER4 V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
-                        $ F.filterFrame (yearFilter y)  aser4DemoAndAdjCensusEW
--}
-      aser4CCESEW y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER4 V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
-                     $ F.filterFrame (yearFilter y) aser4DemoAndAdjCCESEW                     
+      aser5Prefs y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++ '[BR.DemPref]))
+                      $ F.filterFrame (yearOfficeFilter y o) inferredPrefsASER5
+      aser5Demo y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++ '[PUMS.Citizens]))
+                    $ F.filterFrame (yearFilter y) pumsASER5ByState
+                      
+      aser5CensusEW y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
+                        $ F.filterFrame (yearFilter y)  aser5DemoAndAdjCensusEW
+
+      aser5CCESEW y = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++ '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
+                     $ F.filterFrame (yearFilter y) aser5DemoAndAdjCCESEW                     
 
       aserWgtdByCensus2008 = prepRows 2008 ET.EW_Census BR.ASER
                              <$> mergeASERElectionData
@@ -582,7 +600,55 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   let aserEwResults = FL.fold ewResultsF aserWgtd
       aserEwResults2 = FL.fold ewResultsF aserWgtd2
   logFrame aserEwResults
--}
+
+---
+  let aser5WgtdByCensus2008 = prepRows 2008 ET.EW_Census BR.ASER5
+                             <$> mergeASER5ElectionData
+                             (aser5Demo 2016 ET.President)
+                             (aser5Prefs 2016 ET.President)
+                             "Census (ASER5) 2008"
+                             (aser5CensusEW 2008 ET.President)
+                             electoralVotesByStateFrame 
+      aser5WgtdByCensus2012 = prepRows 2012 ET.EW_Census BR.ASER5
+                            <$> mergeASER5ElectionData
+                            (aser5Demo 2016 ET.President)
+                            (aser5Prefs 2016 ET.President)
+                            "Census (ASER5) 2012"
+                            (aser5CensusEW 2012 ET.President)
+                            electoralVotesByStateFrame
+      aser5WgtdByCensus2016 = prepRows 2016 ET.EW_Census BR.ASER5
+                            <$> mergeASER5ElectionData
+                            (aser5Demo 2016 ET.President)
+                            (aser5Prefs 2016 ET.President)
+                            "Census (ASER5) 2016"
+                            (aser5CensusEW 2016 ET.President)
+                            electoralVotesByStateFrame
+      aser5WgtdByCensus2018 = prepRows 2018 ET.EW_Census BR.ASER5
+                            <$> mergeASER5ElectionData
+                            (aser5Demo 2018 ET.House)
+                            (aser5Prefs 2016 ET.President)
+                            "Census (ASER5) 2018"
+                            (aser5CensusEW 2018 ET.House)
+                            electoralVotesByStateFrame                            
+                     
+      aser5WgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASER
+                                            <$> mergeASER5ElectionData
+                                            (aser5Demo yDemo oDemo)
+                                            (aser5Prefs 2016 ET.President)
+                                            ("CCES (ASER5) " <> (T.pack $ show yTurnout))
+                                            (aser5CCESEW yTurnout)
+                                            electoralVotesByStateFrame
+      aser5CCES = mconcat <$> traverse (aser5WgtdByCCES 2016 ET.President) [2008, 2012, 2016]
+      aser5CCES2 = mconcat <$> sequence [aser5WgtdByCCES 2016 ET.President 2016, aserWgtdByCCES 2018 ET.House 2018]      
+  aser5Wgtd <- BR.retrieveOrMakeFrame "mrp/weights/aser5Wgtd.bin" (mconcat <$> sequence [aser5WgtdByCensus2008, aser5WgtdByCensus2012, aser5WgtdByCensus2016, aser5CCES])  
+  aser5Wgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aser5Wgtd2.bin" (mconcat <$> sequence [aser5WgtdByCensus2016, aser5WgtdByCensus2018, aser5CCES2])      
+  let aser5EwResults = FL.fold ewResultsF aser5Wgtd
+      aser5EwResults2 = FL.fold ewResultsF aser5Wgtd2
+  logFrame aser5EwResults
+
+---
+
+
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
   K.newPandoc
@@ -594,20 +660,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       ))
       $ do        
         brAddMarkDown text1
-{-        _ <-  K.addHvega Nothing Nothing
+        _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights"
               (FV.ViewConfig 800 800 10)
-              aserEwResults
+              aser5EwResults
         brAddMarkDown text2
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Popular vote share and Electoral Votes: 2016 weightings vs. 2018 weightings"
               (FV.ViewConfig 800 800 10)
-              aserEwResults2
+              aser5EwResults2
         brAddMarkDown modelingNotes
         brAddMarkDown brReadMore
--}
+
 
 
 vlWeights :: (Functor f, Foldable f)
@@ -745,6 +811,19 @@ mergeASERElectionData demographics prefs wSource ews eCollege = K.wrapPrefix "AS
   K.logLE K.Diagnostic $ "Merging for " <> wSource
   merged <- mergeElectionData @'[BR.StateAbbreviation] @BR.CatColsASER demographics prefs wSource ews
   fmap F.rcast <$> addEVs eCollege merged
+
+mergeASER5ElectionData :: K.KnitEffects r
+  => F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++  '[PUMS.Citizens])
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++  '[BR.DemPref])
+  -> T.Text
+  -> F.FrameRec ('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++  '[ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight])
+  -> F.Frame BR.ElectoralCollege
+  -> K.Sem r (F.FrameRec [WeightSource, BR.StateAbbreviation, BR.Electors, PUMS.Citizens, BR.DemPref, ET.ElectoralWeight])
+mergeASER5ElectionData demographics prefs wSource ews eCollege = K.wrapPrefix "ASER5" $ do
+  K.logLE K.Diagnostic $ "Merging for " <> wSource
+  merged <- mergeElectionData @'[BR.StateAbbreviation] @BR.CatColsASER5 demographics prefs wSource ews
+  fmap F.rcast <$> addEVs eCollege merged
+
 
 type ElectorsD = "ElectorsD" F.:-> Int
 type ElectorsR = "ElectorsR" F.:-> Int
