@@ -290,7 +290,7 @@ alternateVoteF =
   in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 
 post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
-post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
+post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeights" $ do
   K.logLE K.Info "Loading re-keyed demographic and turnout data."
 
   -- state totals and national demographic splits
@@ -369,9 +369,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                      )
   ccesData <- ccesDataLoader
 --  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2008) ccesData
-  K.logLE K.Diagnostic $ "NaN in House2010"
+--  K.logLE K.Diagnostic $ "NaN Count in House2010"
   let countedAndDefaultedHouse2010 = FL.fold addZeroCountsF $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2010) ccesData
-  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.WeightedSuccesses) $ countedAndDefaultedHouse2010
+--  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.Count) $ countedAndDefaultedHouse2010
   K.logLE K.Diagnostic $ (T.pack $ show $ FL.fold FL.length countedAndDefaultedHouse2010) <> " rows in countedAndDefaultedHouse2010"
 --  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.WeightedSuccesses) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2012) ccesData
 --  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2016) ccesData
@@ -501,11 +501,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
   aserAllByState <- BR.retrieveOrMakeFrame "mrp/weights/aserAllByState.bin"
-                    (K.knitMaybe "Missing key when joining inferredPrefsASR and aserDemoAndAdjCensusEW"
-                     $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER) inferredPrefsASER aserDemoAndAdjCensusEW)
+                    $ K.knitEither
+                    ( either (Left . T.pack . show) Right 
+                    $ FJ.leftJoinE @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER) inferredPrefsASER aserDemoAndAdjCensusEW)
   aser5AllByState <- BR.retrieveOrMakeFrame "mrp/weights/aser5AllByState.bin"
-                     (K.knitMaybe "Missing key when joining inferredPrefsASER5 and aser5DemoAndAdjCensusEW"
-                      $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER5) inferredPrefsASER5 aser5DemoAndAdjCensusEW)                                     
+                     $ K.knitEither
+                     ( either (Left . T.pack . show) Right  
+                     $ FJ.leftJoinE @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER5) inferredPrefsASER5 aser5DemoAndAdjCensusEW)
   -- fold these to state level
   let aserDemoF = FMR.concatFold $ FMR.mapReduceFold
                   FMR.noUnpack
