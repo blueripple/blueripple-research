@@ -72,6 +72,7 @@ import qualified BlueRipple.Model.TurnoutAdjustment
 
 import qualified BlueRipple.Utilities.KnitUtils
                                                as BR
+import qualified BlueRipple.Data.Keyed as Keyed                                               
 
 
 
@@ -136,6 +137,57 @@ joinDemoAndWeights d w = F.toFrame
                          $ fmap F.recMaybe
                          $ F.leftJoin @js d w
 
+{-
+--defaultPopRec :: BR.PopCountOfT -> V.Snd p -> F.Record (PCols p)
+--defaultPopRec pco x = pco F.&: x F.&: V.RNil
+
+  
+joinDemoAndWeightsWithDefaults
+  :: forall js ks p
+  . (js F.⊆ ks
+    , Keyed.FiniteSet (F.Record ks)
+    , FI.RecVec (ks V.++ PCols p V.++ BR.EWCols)
+    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+    , js F.⊆  (ks V.++ PCols p)
+    , js F.⊆  (js V.++ BR.EWCols)
+    , (ks V.++ PCols p) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+    , (F.RDeleteAll js (js V.++ BR.EWCols)) F.⊆  (js V.++ BR.EWCols)
+    , V.RMap (ks V.++ PCols p)
+    , V.RMap  ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+    , V.RecApplicative  (F.RDeleteAll js (js V.++ BR.EWCols))
+    , G.Grouping (F.Record js)
+    , FI.RecVec  (ks V.++ PCols p)
+    , FI.RecVec (F.RDeleteAll js (js V.++ BR.EWCols))
+    , FI.RecVec ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+    , V.KnownField p
+    , F.ElemOf (ks V.++ (PCols p)) p
+    , F.ElemOf (ks V.++ (PCols p)) BR.PopCountOf
+    , ks F.⊆ (ks V.++ (PCols p))
+    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ ((js V.++ BR.EWCols) V.++ F.RDeleteAll js (ks V.++ PCols p))
+    , (js V.++ BR.EWCols) F.⊆ ((js V.++ BR.EWCols) V.++ F.RDeleteAll js (ks V.++ PCols p))
+    , (F.RDeleteAll js (ks V.++ PCols p)) F.⊆ (ks V.++ PCols p)
+    , V.RMap (js V.++ BR.EWCols)
+    , V.RMap ((js V.++ BR.EWCols) V.++ F.RDeleteAll js (ks V.++ PCols p))
+    , V.RecApplicative (F.RDeleteAll js (ks V.++ PCols p))
+    , FI.RecVec (js V.++ BR.EWCols)
+    , FI.RecVec (F.RDeleteAll js (ks V.++ PCols p))
+    , FI.RecVec ((js V.++ BR.EWCols) V.++ F.RDeleteAll js (ks V.++ PCols p))
+    )
+  => BR.PopCountOfT
+  -> V.Snd p
+  -> F.FrameRec (ks V.++ (PCols p))
+  -> F.FrameRec (js V.++ BR.EWCols)
+  -> F.FrameRec (ks V.++ PCols p V.++ BR.EWCols)
+joinDemoAndWeightsWithDefaults pco x d w =
+  let demoWithDefaults :: F.FrameRec (ks V.++ (PCols p))
+      demoWithDefaults =  F.toFrame $ FL.fold (Keyed.addDefaultRec @ks @(PCols p) (pco F.&: x F.&: V.RNil)) d
+  in F.toFrame
+     $ fmap F.rcast
+     $ catMaybes
+     $ fmap F.recMaybe
+     $ F.leftJoin @js w demoWithDefaults
+-}
+
 adjustWeightsForStateTotals
   :: forall ks p r
   . (K.KnitEffects r
@@ -190,6 +242,43 @@ demographicsWithAdjTurnoutByState stateTurnout demos ews = do
       joined = joinDemoAndWeights @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p demos ews
   adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout joined
 
+{-
+demographicsWithDefaultsWithAdjTurnoutByState
+  :: forall catCols p ks js effs
+  . ( K.KnitEffects effs
+    , V.KnownField p
+    , V.Snd p ~ Int
+    , F.ElemOf (ks V.++ catCols V.++ PEWCols p) p
+    , F.ElemOf (ks V.++ catCols V.++ PEWCols p) BR.ElectoralWeight
+    , (ks V.++ catCols V.++ PEWCols p) F.⊆ BR.WithYS (ks V.++ catCols V.++ PEWCols p)
+    , FI.RecVec (ks V.++ catCols V.++ PEWCols p)
+    , (ks V.++ catCols V.++ PEWCols p) F.⊆ (BR.WithYS (ks V.++ catCols V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) (js V.++ catCols V.++ BR.EWCols))
+    , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ BR.EWCols))
+    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
+    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
+    , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+    , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) F.⊆ ((js V.++ catCols) V.++ BR.EWCols)
+    , V.RMap ((ks V.++ catCols) V.++ PCols p)
+    , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)))
+    , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+    , G.Grouping (F.Record (js V.++ catCols))
+    , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
+    , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+    , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+    , (ks V.++ catCols V.++ PCols p V.++ BR.EWCols) ~ (ks V.++ catCols V.++ (PCols p V.++ BR.EWCols))
+    )
+  => BR.PopCountOfT
+  -> V.Snd p
+  -> F.Frame BR.StateTurnout
+  -> F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PCols p))
+  -> F.FrameRec (js V.++ catCols V.++ BR.EWCols)
+  -> K.Sem effs (F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PEWCols p)))
+demographicsWithDefaultsWithAdjTurnoutByState pco x stateTurnout demos ews = do
+  let joined :: F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PEWCols p))
+      joined = joinDemoAndWeightsWithDefaults @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p pco x demos ews
+  adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout joined
+
+-}
   
 -- This is monstrous
 rollupAdjustAndJoin

@@ -240,7 +240,7 @@ elections.
 Another nice benefit is that the microdata contains more information about voting.  It includes
 data about whether people voted by mail or voted early and some information about why
 registered non-voters didn't vote.
-For all those reasons, going forward we will be using the mocro-data sourced CPS turnout data instead of
+For all those reasons, going forward we will be using the micro-data sourced CPS turnout data instead of
 the previous nationally-aggregated summaries of that data.
 
 [IPUMS-CPS]: <https://cps.ipums.org/cps/>
@@ -367,15 +367,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                        $ const
                        $ Keyed.addDefaultRec @BR.CatColsASER5 BR.zeroCount
                      )
-  ccesData <- ccesDataLoader
---  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2008) ccesData
---  K.logLE K.Diagnostic $ "NaN Count in House2010"
-  let countedAndDefaultedHouse2010 = FL.fold addZeroCountsF $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2010) ccesData
---  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.Count) $ countedAndDefaultedHouse2010
-  K.logLE K.Diagnostic $ (T.pack $ show $ FL.fold FL.length countedAndDefaultedHouse2010) <> " rows in countedAndDefaultedHouse2010"
---  logFrame $ F.filterFrame (isNaN . F.rgetField @BR.WeightedSuccesses) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2012) ccesData
---  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2016) ccesData
---  logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) $ FL.fold (BR.countDemHouseVotesF @BR.CatColsASER5 2018) ccesData
   inferredPrefsASER5 <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/prefsASER5_MR.bin"
                          (P.raise $ BR.mrpPrefs @BR.CatColsASER5 GLM.MDVSimple (Just "T_prefsASER5") ccesDataLoader predictorsASER5 BR.catPredMaps)                         
 
@@ -425,8 +416,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   pumsASER5ByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASER5ByState.bin"
                       (do
                           pumsDemographics <- PUMS.pumsLoader
-                          return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                            $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
+                          let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                              
+                                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
+                              addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                                                 (F.FrameRec (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                              addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER5 (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
+                              addDefaultsF = FMR.concatFold
+                                             $ FMR.mapReduceFold
+                                             FMR.noUnpack
+                                             (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                                             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
+                          return $ FL.fold addDefaultsF rollup
                       )                     
   K.logLE K.Info $ "GA Demographics (PUMS, ASER5)"
   logFrame $ F.filterFrame gaFilter pumsASER5ByState
@@ -633,7 +633,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                             (aser5CensusEW 2018 ET.House)
                             electoralVotesByStateFrame                            
                      
-      aser5WgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASER
+      aser5WgtdByCCES yDemo oDemo yTurnout = prepRows yTurnout ET.EW_CCES BR.ASER5
                                             <$> mergeASER5ElectionData
                                             (aser5Demo yDemo oDemo)
                                             (aser5Prefs 2016 ET.President)
@@ -666,13 +666,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
               $ vlWeights
               "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights"
               (FV.ViewConfig 800 800 10)
-              aser5EwResults
+              (aserEwResults <> aser5EwResults)
         brAddMarkDown text2
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Popular vote share and Electoral Votes: 2016 weightings vs. 2018 weightings"
               (FV.ViewConfig 800 800 10)
-              aser5EwResults2
+              (aserEwResults2 <> aser5EwResults2)
         brAddMarkDown modelingNotes
         brAddMarkDown brReadMore
 

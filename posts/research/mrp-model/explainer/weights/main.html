@@ -269,6 +269,448 @@
 One note: each set of weights has been adjusted on a per state basis so that the weights and demographics (in the same election year) correctly give the total number of votes cast in the state that year–if you’re interested in the details, we followed a simplified version of the techniques described in <a href="http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf">this paper</a>. We used State-level probabilities inferred from either the CCES survey for the 2008, 2012 and 2016 general elections, or the Census CPS survey (using Microdata), each broken down by age (45 or over/under 45), sex (Female/Male), education (College Grad and in College/otherwise) and race (Non-white/White Non-hispanic).</p>
 <p>We’re not recommending any of these weights in particular, but each might be a reasonable model of the 2020 electorate since each is derived from a validated source and a recent election.</p>
 <p>The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights. The results vary quite a bit, from a popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and over 370 electoral votes! That’s a swing of almost 4% in the popular vote (~6 million votes) and the difference between losing and winning the election.</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 800,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 800,
+            "continuousWidth": 800,
+            "discreteHeight": 800,
+            "discreteWidth": 800
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "DemPref": 0.536672492746356,
+                "ElectorsR": 173,
+                "year": 2008,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "Census (ASER) 2008",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 365
+            },
+            {
+                "DemPref": 0.5341798559114617,
+                "ElectorsR": 178,
+                "year": 2008,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2008",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 360
+            },
+            {
+                "DemPref": 0.5346793073282088,
+                "ElectorsR": 165,
+                "year": 2012,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "Census (ASER) 2012",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 373
+            },
+            {
+                "DemPref": 0.5235757283318269,
+                "ElectorsR": 211,
+                "year": 2012,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2012",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 327
+            },
+            {
+                "DemPref": 0.5300134370126306,
+                "ElectorsR": 195,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "Census (ASER) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 343
+            },
+            {
+                "DemPref": 0.5168501503634724,
+                "ElectorsR": 294,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 244
+            },
+            {
+                "DemPref": 0.5123140996660811,
+                "ElectorsR": 252,
+                "year": 2008,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "Census (ASER5) 2008",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 286
+            },
+            {
+                "DemPref": 0.5042841314436336,
+                "ElectorsR": 277,
+                "year": 2008,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "CCES (ASER5) 2008",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 261
+            },
+            {
+                "DemPref": 0.5119620855536395,
+                "ElectorsR": 248,
+                "year": 2012,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "Census (ASER5) 2012",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 290
+            },
+            {
+                "DemPref": 0.49527263829932966,
+                "ElectorsR": 298,
+                "year": 2012,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "CCES (ASER5) 2012",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 240
+            },
+            {
+                "DemPref": 0.5044266677258492,
+                "ElectorsR": 261,
+                "year": 2016,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "Census (ASER5) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 277
+            },
+            {
+                "DemPref": 0.48653559945254465,
+                "ElectorsR": 343,
+                "year": 2016,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "CCES (ASER5) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 195
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 800,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights",
+    "layer": [
+        {
+            "transform": [
+                {
+                    "as": "Vote Share (%)",
+                    "calculate": "100 * datum.DemPref"
+                },
+                {
+                    "as": "Weight Source",
+                    "calculate": "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping"
+                }
+            ],
+            "mark": {
+                "size": 100,
+                "tooltip": {
+                    "content": "data"
+                },
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "year",
+                    "type": "nominal"
+                },
+                "shape": {
+                    "field": "Weight Source"
+                },
+                "x": {
+                    "field": "Vote Share (%)",
+                    "scale": {
+                        "domain": [
+                            48.5,
+                            54
+                        ]
+                    },
+                    "title": "D Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "ElectorsD",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": "# D Electoral Votes",
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "50%",
+                    "calculate": "50"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "x": {
+                    "field": "50%",
+                    "scale": {
+                        "domain": [
+                            48,
+                            53
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "Evenly Split",
+                    "calculate": "269"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "y": {
+                    "field": "Evenly Split",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        }
+    ],
+    "padding": 10
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
+<p>There is substantially more variation among the models using CCES weights than the model using weights from the census. The CCES models also look more like the actual election outcomes, though that could just be a coincidence. The census-sourced electoral weights predict higher turnout from younger voters and minority voters than does the CCES data, and is thus much more Democratic-candidate-friendly than the CCES data.</p>
+<figure id="figure_2">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 800,
+    "autosize": {
+        "resize": true,
+        "type": "fit",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 800,
+            "continuousWidth": 800,
+            "discreteHeight": 800,
+            "discreteWidth": 800
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "DemPref": 0.5300134370126306,
+                "ElectorsR": 195,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "Census (ASER) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 343
+            },
+            {
+                "DemPref": 0.5168501503634724,
+                "ElectorsR": 294,
+                "year": 2016,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 244
+            },
+            {
+                "DemPref": 0.5314955771129772,
+                "ElectorsR": 186,
+                "year": 2018,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "Census (ASER) 2018",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 352
+            },
+            {
+                "DemPref": 0.5120384367769307,
+                "ElectorsR": 284,
+                "year": 2018,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2018",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 254
+            },
+            {
+                "DemPref": 0.5044266677258492,
+                "ElectorsR": 261,
+                "year": 2016,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "Census (ASER5) 2016",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 277
+            },
+            {
+                "DemPref": 0.48653559945254465,
+                "ElectorsR": 343,
+                "year": 2016,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "CCES (ASER5) 2016",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 195
+            },
+            {
+                "DemPref": 0.5035610520255973,
+                "ElectorsR": 267,
+                "year": 2018,
+                "DemographicGrouping": "ASER5",
+                "WeightSource": "Census (ASER5) 2018",
+                "ElectoralWeightSource": "EW_Census",
+                "ElectorsD": 271
+            },
+            {
+                "DemPref": 0.5120384367769307,
+                "ElectorsR": 284,
+                "year": 2018,
+                "DemographicGrouping": "ASER",
+                "WeightSource": "CCES (ASER) 2018",
+                "ElectoralWeightSource": "EW_CCES",
+                "ElectorsD": 254
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 800,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Popular vote share and Electoral Votes: 2016 weightings vs. 2018 weightings",
+    "layer": [
+        {
+            "transform": [
+                {
+                    "as": "Vote Share (%)",
+                    "calculate": "100 * datum.DemPref"
+                },
+                {
+                    "as": "Weight Source",
+                    "calculate": "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping"
+                }
+            ],
+            "mark": {
+                "size": 100,
+                "tooltip": {
+                    "content": "data"
+                },
+                "type": "point",
+                "filled": true
+            },
+            "encoding": {
+                "color": {
+                    "field": "year",
+                    "type": "nominal"
+                },
+                "shape": {
+                    "field": "Weight Source"
+                },
+                "x": {
+                    "field": "Vote Share (%)",
+                    "scale": {
+                        "domain": [
+                            48.5,
+                            54
+                        ]
+                    },
+                    "title": "D Vote Share (%)",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "ElectorsD",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": "# D Electoral Votes",
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "50%",
+                    "calculate": "50"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "x": {
+                    "field": "50%",
+                    "scale": {
+                        "domain": [
+                            48,
+                            53
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        },
+        {
+            "transform": [
+                {
+                    "as": "Evenly Split",
+                    "calculate": "269"
+                }
+            ],
+            "mark": "rule",
+            "encoding": {
+                "y": {
+                    "field": "Evenly Split",
+                    "scale": {
+                        "domain": [
+                            170,
+                            370
+                        ]
+                    },
+                    "title": null,
+                    "type": "quantitative"
+                }
+            }
+        }
+    ],
+    "padding": 10
+};
+vegaEmbed('#figure_2',vlSpec);</script>
+</figure>
+<section id="model-notes" class="level2">
+<h2>Model Notes</h2>
+<p>As we continue to work with this data we refine and improve our modeling. In this post we have shifted from using the census summary of the CPS voter supplement to using the CPS microdata itself, as harmonized via the <a href="https://cps.ipums.org/cps/">IPUMS</a> web portal. This has several advantages. Firstly, the micro-data allows us to get turnout numbers at the <em>state</em> level. Also useful is that the microdata has more demographic information. For example, the summary tables allow us to explore the variables of age, sex and race <em>or</em> age, sex, and education but not age, sex, education, <em>and</em> race. This is important since the combination of education and race is necessary to explore the voting and turnout patterns of the so-called “White Working Class,” a crucial voting block in the past few elections. Another nice benefit is that the microdata contains more information about voting. It includes data about whether people voted by mail or voted early and some information about why registered non-voters didn’t vote. For all those reasons, going forward we will be using the mocro-data sourced CPS turnout data instead of the previous nationally-aggregated summaries of that data.</p>
+<p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
+</section>
 <!--
   <div class="br-readmore">
   Want To read more from Blue Ripple? Visit our
