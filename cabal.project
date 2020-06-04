@@ -69,7 +69,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/glm-haskell
-  tag: ad1a70021fe5ed1c10ffff56efd40b0ae008f70c
+  tag: 9b8ad156c9230017bedef91702fe2f92f26d898f
 
 --source-repository-package
 --  type: git

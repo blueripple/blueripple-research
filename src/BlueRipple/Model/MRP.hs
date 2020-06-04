@@ -334,7 +334,7 @@ predictionsByLocation verbosity ccesFrameAction countFold predictors catPredMap 
                     emptyAsNationalGKM = case groupKeyM of
                                            Nothing -> Nothing
                                            Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
-                in GLM.runLogOnGLMException $ GLM.predictFromBetaB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+                in (fmap snd . GLM.runLogOnGLMException Nothing) $ GLM.predictFromBetaB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
           cpreds <- M.traverseWithKey predictFrom cpms
           return $ LocationHolder n lkM cpreds
     traverse predict toPredict
@@ -398,7 +398,7 @@ inferMR
        )
 inferMR verbosity cf fixedEffectList getFixedEffect rows =
   P.mapError glmErrorToPandocError
-  $ GLM.runLogOnGLMException
+  $ (fmap snd . GLM.runLogOnGLMException Nothing)
   $ K.wrapPrefix ("inferMR")
   $ do
     let
