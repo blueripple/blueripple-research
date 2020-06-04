@@ -79,20 +79,26 @@ import MRP.DeltaVPV (DemVPV)
 
 text1 :: T.Text
 text1 = [i|
+## A Note About These Times
 Our original plan for this post was to delve into the modeling issues surrounding electoral
 weighting in polling and predicitive modeling of election outcomes.  But the country
 is a very different place then when we started this work.  As important as the upcoming
-elections may be, the corona-virus pandemic is urgent and exhausting.
+elections may be, the corona-virus pandemic is urgent and exhausting, and as we write
+this, the country is suffused with righteous #BlackLivesMatter protests
+and petty and indignant over-reaction from armed agents of the state,
+and officials, local and federal.  Never has the work of electing the right leaders felt
+so simultaneously crucial and beside the point.
 
 But there is still an election coming and we still want to be a source of thoughtful ideas
 for participation for fellow progressives and Democrats.  So we are going to continue this
 work, and try to understand along with you, how our landscape has changed.
 
 --
-
+## Polling and Prediction 101
 Predicting election outcomes via polling or survey data is hard, primarily because the people you survey
-may not be representative of the electorate, and the composition of the electorate in each state is a moving target.
-People don't always remember whether they voted or who they voted for and,
+may not be representative of the electorate, and the composition of
+the electorate in each state is a moving target. People don't always remember whether
+they voted or who they voted for and,
 for a variety of reasons, they may not be honest about their voting history.
 
 - Getting accurate answers, is a key part of a pollsters job.  Some surveys, e.g., the [CCES
@@ -109,12 +115,14 @@ male or female, Black, White, Latinx, Asian, Texan or Californian, etc.) *would*
 and not really know *how many of them will* vote.  This gets even harder to predict in
 smaller regions, like states, congressional districts or state legislative districts.
 
-The recent elections in Wisconsin are a reminder of all this.  The last minute surge in
-mail-in ballots, the closure of polling places and resulting long lines at polling
-places all likely shifted the composition of the electorate.
+This is all the more difficult when, due to Covid-19, the ways we are able to vote and
+the risks of voting have changed dramatically in a short time and change din different
+ways in each state. The recent elections in Wisconsin are a good example of all this.
+The last minute surge in mail-in ballots, the closure of polling places and
+resulting long lines at open polling places likely shifted the composition of the electorate.
 
-We have very accurate information about who lives in each of these places.  The census
-tracks this and updates the data annually.  So what we need to know is the
+We have fairly accurate information about who lives in each of these places.  The census
+tracks this and updates the data annually.  What we need to know is the
 probability that a voter of a certain demographic type, in a certain place, will cast a
 vote. There are lots of reasons why people do and don't
 vote: see [our piece][BR:ID] on voter ID or Fair Vote's [rundown][FV:Turnout] on
@@ -139,15 +147,21 @@ So how do we figure out the probability that someone will vote?
 There are a number of standard approaches:
 
 1. Ask them! Some surveys ask the respondent if they intend to vote, or, more often,
-a [bunch of questions][Pew:LikelyVoter] used to assess their likelihood of voting, and then use that
-(or some modeled fraction of that) to create a set of weights with as much specificity
-as the survey allows. This is almost always what pollsters do.
+a [bunch of questions][Pew:LikelyVoter] is used to assess their likelihood of voting.
+Those answers are used to create a set of weights with as much specificity
+as the survey allows. 
 2. Assume the next election will be like the last election. The census tracks nationwide
-demographically split turnout for previous elections and we can use those weights,
-though they lack any geographic specificity. Also, some surveys match respondents with
-voter-file data and thus turnout.  These can then be used to build a set of weights.
+demographically split turnout for previous elections and we can use those weights.  Because
+of the size of the [CPS voter survey][Census:CPSVoter], this is often a trusted source.  But
+it lacks any verification and there is [significant evidence that people over-report their
+voting][ElectProject:CPSOverReport].
+2b. Alternatively, some surveys match respondents with
+voter-file data and from there compute turnout probabilities. Acessing, standardizing and
+processing voter file data is a big and expensive job.  There is no public data-set using
+all the voter file info, though some market-research companies make subsets of this data
+available to academics and non-profits at reduced rates.
 3. Model the electorate using some combination of the above data---previous elections,
-surveys---and whatever other variables, e.g., negative partisanship of a district,
+[surveys---and whatever other variables, e.g., negative partisanship of a district,
 to predict how the current electorate might differ from the past.
 
 Rather than opine on the best model, which is not our expertise,
@@ -155,7 +169,7 @@ we want to demonstrate how much a prediction can depend on the model
 of electoral weights. We want you to become a more informed (and skeptical!)
 reader of polls and academic work predicting electoral results.
 
-This piece was partially inspired by a recent [Vox article][Vox:BernieYouth], which used
+This piece was partially inspired by a no-longer-recent [Vox article][Vox:BernieYouth], which used
 a novel survey to look at how each candidate in the Democratic primary might fare against
 Donald Trump. The [paper][Paper:BernieYouth] on which the article is based
 is interesting and worth a read.  Some of the conclusions of the paper and article are
@@ -164,7 +178,8 @@ from the 2016 election (using the CCES survey).
 It's very hard to evaluate these conclusions without understanding
 how sensitive they are to the choice of electoral weights.
 
-So let's explore how much difference these weights can make!  We'll fix our voter preferences to
+So let's explore how much difference these weights can make.
+We'll fix our voter preferences to
 an estimate from the 2016 presidential election (using a variation of the [MR model][BR:MRP]
 we've used in the last couple of posts), and use 2016 
 [demographics][Census:PUMS] from the census.  The only thing we'll be varying here
@@ -196,6 +211,8 @@ from a popular vote share below 49.5% and 190 electoral votes to a popular vote 
 370 electoral votes! That's a swing of almost 4% in the popular vote (~6 million votes)
 and the difference between losing and winning the election.
 
+[ElectProject:CPSOverReport]: <http://www.electproject.org/home/voter-turnout/cps-methodology>
+[Census:CPSVoter]: <https://www.census.gov/topics/public-sector/voting.html>
 [UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
 [DeepInteractions]: <http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf>
 [PEW:LikelyVoter]: <https://www.pewresearch.org/methods/2016/01/07/measuring-the-likelihood-to-vote/>

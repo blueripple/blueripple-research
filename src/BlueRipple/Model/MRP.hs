@@ -397,136 +397,137 @@ inferMR
        , [(GLM.BetaVec, LA.Vector Double)]
        )
 inferMR verbosity cf fixedEffectList getFixedEffect rows =
-  GLM.runLogOnGLMException $ P.mapError glmErrorToPandocError
-    $ K.wrapPrefix ("inferMR")
-    $ do
-        let
-          addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
-            (FMR.noUnpack)
-            (FMR.splitOnKeys @ls)
-            ( FMR.makeRecsWithKey id
-            $ FMR.ReduceFold
-            $ const
-            $ K.addDefaultRec @ks zeroCount
-            )
-          counted = FL.fold FL.list $ FL.fold addZeroCountsF $ FL.fold cf rows
---        K.logLE K.Diagnostic $ T.intercalate "\n" $ fmap (T.pack . show) counted
-        let
-          vCounts = VS.fromList $ fmap (F.rgetField @Count) counted
-          designEffect mw vw = if (mw > 1e-12) then 1 + (vw / (mw * mw)) else 1
-          vWeights = VS.fromList $ fmap
-            (\r ->
-              let mw = F.rgetField @MeanWeight r
-                  vw = F.rgetField @VarWeight r
-              in  1 / sqrt (designEffect mw vw)
-            )
-            counted -- VS.replicate (VS.length vCounts) 1.0
+  P.mapError glmErrorToPandocError
+  $ GLM.runLogOnGLMException
+  $ K.wrapPrefix ("inferMR")
+  $ do
+    let
+      addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
+                       (FMR.noUnpack)
+                       (FMR.splitOnKeys @ls)
+                       ( FMR.makeRecsWithKey id
+                         $ FMR.ReduceFold
+                         $ const
+                         $ K.addDefaultRec @ks zeroCount
+                       )
+      counted = FL.fold FL.list $ FL.fold addZeroCountsF $ FL.fold cf rows
+--    K.logLE K.Diagnostic $ T.intercalate "\n" $ fmap (T.pack . show) counted
+    let
+      vCounts = VS.fromList $ fmap (F.rgetField @Count) counted
+      designEffect mw vw = if (mw > 1e-12) then 1 + (vw / (mw * mw)) else 1
+      vWeights = VS.fromList $ fmap
+        (\r ->
+            let mw = F.rgetField @MeanWeight r
+                vw = F.rgetField @VarWeight r
+            in  1 / sqrt (designEffect mw vw)
+        )
+        counted -- VS.replicate (VS.length vCounts) 1.0
             
-          fixedEffects = GLM.FixedEffects $ IS.fromList fixedEffectList
-          groups       = IS.fromList [RecordColsProxy]
-          (observations, fixedEffectsModelMatrix, rcM) = FL.fold
-            (lmePrepFrame getFractionWeighted
-                          fixedEffects
-                          groups
-                          getFixedEffect
-                          (recordToGroupKey @(GroupCols ls cs))
-            )
-            counted
+      fixedEffects = GLM.FixedEffects $ IS.fromList fixedEffectList
+      groups       = IS.fromList [RecordColsProxy]
+      (observations, fixedEffectsModelMatrix, rcM) = FL.fold
+        (lmePrepFrame getFractionWeighted
+         fixedEffects
+         groups
+         getFixedEffect
+         (recordToGroupKey @(GroupCols ls cs))
+        )
+        counted
 --        K.logLE K.Diagnostic $ "vCounts=" <> (T.pack $ show vCounts)
 --        K.logLE K.Diagnostic $ "vWeights=" <> (T.pack $ show vWeights)
 --        K.logLE K.Diagnostic $ "mX=" <> (T.pack $ show fixedEffectsModelMatrix)
 --        K.logLE K.Diagnostic $ "vY=" <> (T.pack $ show observations)
-        let regressionModelSpec = GLM.RegressionModelSpec
-              fixedEffects
-              fixedEffectsModelMatrix
-              observations
-        rowClassifier <- case rcM of
-          Left  msg -> K.knitError msg
-          Right x   -> return x
+    let regressionModelSpec = GLM.RegressionModelSpec
+          fixedEffects
+          fixedEffectsModelMatrix
+          observations
+    rowClassifier <- case rcM of
+      Left  msg -> K.knitError msg
+      Right x   -> return x
 --        K.logLE K.Diagnostic $ "rc=" <> (T.pack $ show rowClassifier)          
-        let effectsByGroup =
-              M.fromList [(RecordColsProxy, IS.fromList [GLM.Intercept])]
-        fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
-                                                   effectsByGroup
-                                                   rowClassifier
-        let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6 Nothing
-            lmmSpec     = GLM.LinearMixedModelSpec
-              (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup)
-              lmmControls
-            cc = GLM.PIRLSConvergenceCriterion GLM.PCT_Deviance 1e-6 20
-            glmmControls = GLM.GLMMControls GLM.UseCanonical 10 cc
-            glmmSpec = GLM.GeneralizedLinearMixedModelSpec
-              lmmSpec
-              vWeights
-              (GLM.Binomial vCounts)
-              glmmControls
-            mixedModel = GLM.GeneralizedLinearMixedModel glmmSpec
-        randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix
-                                              fitSpecByGroup
-                                              rowClassifier
+    let effectsByGroup =
+          M.fromList [(RecordColsProxy, IS.fromList [GLM.Intercept])]
+    fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
+                      effectsByGroup
+                      rowClassifier
+    let lmmControls = GLM.LMMControls GLM.LMM_BOBYQA 1e-6 Nothing
+        lmmSpec     = GLM.LinearMixedModelSpec
+                      (GLM.MixedModelSpec regressionModelSpec fitSpecByGroup)
+                      lmmControls
+        cc = GLM.PIRLSConvergenceCriterion GLM.PCT_Deviance 1e-6 20
+        glmmControls = GLM.GLMMControls GLM.UseCanonical 10 cc
+        glmmSpec = GLM.GeneralizedLinearMixedModelSpec
+                   lmmSpec
+                   vWeights
+                   (GLM.Binomial vCounts)
+                   glmmControls
+        mixedModel = GLM.GeneralizedLinearMixedModel glmmSpec
+    randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix
+                                fitSpecByGroup
+                                rowClassifier
 --        K.logLE K.Diagnostic $ "smZ=" <> (T.pack $ show randomEffectsModelMatrix) 
-        let randomEffectCalc = GLM.RandomEffectCalculated
-              randomEffectsModelMatrix
-              (GLM.makeLambda fitSpecByGroup)
-            th0         = GLM.setCovarianceVector fitSpecByGroup 1 0
+    let randomEffectCalc = GLM.RandomEffectCalculated
+          randomEffectsModelMatrix
+          (GLM.makeLambda fitSpecByGroup)
+        th0         = GLM.setCovarianceVector fitSpecByGroup 1 0
         -- mdVerbosity = MDVNone
-        GLM.checkProblem mixedModel randomEffectCalc
-        K.logLE K.Info "Fitting data..."
-        ((th, pd, sigma2, beta, mzvu, mzvb, cs), vMuSol, cf) <- GLM.minimizeDeviance
-          verbosity
-          ML
-          mixedModel
-          randomEffectCalc
-          th0
-        vb <- K.knitMaybe "b-vector (random effects coefficients) is zero in MRP.inferMR" $ GLM.useMaybeZeroVec Nothing Just mzvb
-        GLM.report mixedModel
-                   randomEffectsModelMatrix
-                   beta
-                   (SD.toSparseVector vb)
-        let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs beta
-        K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
-        epg <- GLM.effectParametersByGroup @g @b rowClassifier effectsByGroup vb
+    GLM.checkProblem mixedModel randomEffectCalc
+    K.logLE K.Info "Fitting data..."
+    ((th, pd, sigma2, beta, mzvu, mzvb, cs), vMuSol, cf) <- GLM.minimizeDeviance
+                                                            verbosity
+                                                            ML
+                                                            mixedModel
+                                                            randomEffectCalc
+                                                            th0
+    vb <- K.knitMaybe "b-vector (random effects coefficients) is zero in MRP.inferMR" $ GLM.useMaybeZeroVec Nothing Just mzvb
+    GLM.report mixedModel
+      randomEffectsModelMatrix
+      beta
+      (SD.toSparseVector vb)
+    let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs beta
+    K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
+    epg <- GLM.effectParametersByGroup @g @b rowClassifier effectsByGroup vb
 --        K.logLE K.Diagnostic
 --          $  "EffectParametersByGroup: "
 --          <> (T.pack $ show epg)
-        gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th
-        K.logLE K.Diagnostic
-          $  "EffectCovariancesByGroup: "
-          <> (T.pack $ show gec)
-        rebl <- GLM.randomEffectsByLabel epg rowClassifier
-        K.logLE K.Diagnostic
-          $  "Random Effects:\n"
-          <> GLM.printRandomEffectsByLabel rebl
-        smCondVar <- GLM.conditionalCovariances mixedModel
-                                                cf
-                                                randomEffectCalc
-                                                th
-                                                beta
-                                                mzvu
-        let bootstraps                           = []
-        let GLM.FixedEffectStatistics _ mBetaCov = fes
-        let f r = do
-              let obs = getFractionWeighted r
-              predictCVCI <- GLM.predictWithCI
-                mixedModel
-                (Just . getFixedEffect r)
-                (Just . recordToGroupKey @(GroupCols ls cs) r)
-                rowClassifier
-                effectsByGroup
-                beta
-                vb
-                (ST.mkCL 0.95)
-                (GLM.NaiveCondVarCI mBetaCov smCondVar)
-              return (r, obs, predictCVCI)
-        fitted <- traverse f (FL.fold FL.list counted)
-        K.logLE K.Diagnostic
-          $  "Fitted:\n"
-          <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
-        fixedEffectTable <- GLM.printFixedEffects fes
-        K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
-        let GLM.FixedEffectStatistics fep _ = fes
-        return
-          (mixedModel, rowClassifier, effectsByGroup, beta, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
+    gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th
+    K.logLE K.Diagnostic
+      $  "EffectCovariancesByGroup: "
+      <> (T.pack $ show gec)
+    rebl <- GLM.randomEffectsByLabel epg rowClassifier
+    K.logLE K.Diagnostic
+      $  "Random Effects:\n"
+      <> GLM.printRandomEffectsByLabel rebl
+    smCondVar <- GLM.conditionalCovariances mixedModel
+                 cf
+                 randomEffectCalc
+                 th
+                 beta
+                 mzvu
+    let bootstraps                           = []
+    let GLM.FixedEffectStatistics _ mBetaCov = fes
+    let f r = do
+                let obs = getFractionWeighted r
+                predictCVCI <- GLM.predictWithCI
+                  mixedModel
+                  (Just . getFixedEffect r)
+                  (Just . recordToGroupKey @(GroupCols ls cs) r)
+                  rowClassifier
+                  effectsByGroup
+                  beta
+                  vb
+                  (ST.mkCL 0.95)
+                  (GLM.NaiveCondVarCI mBetaCov smCondVar)
+                return (r, obs, predictCVCI)
+    fitted <- traverse f (FL.fold FL.list counted)
+    K.logLE K.Diagnostic
+      $  "Fitted:\n"
+      <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
+    fixedEffectTable <- GLM.printFixedEffects fes
+    K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
+    let GLM.FixedEffectStatistics fep _ = fes
+    return
+      (mixedModel, rowClassifier, effectsByGroup, beta, vb, bootstraps) -- fes, epg, rowClassifier, bootstraps)
 
 lmePrepFrame
   :: forall p g rs
