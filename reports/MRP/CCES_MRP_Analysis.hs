@@ -47,7 +47,7 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP     as BR
 import           MRP.CCES
-import           MRP.DeltaVPV                   ( DemVPV )
+
 
 import qualified BlueRipple.Data.Keyed         as BR
 
@@ -152,15 +152,15 @@ mrpPrefs
   :: forall cc r
    . ( K.KnitEffects r
      , K.Member GLM.RandomFu r
-     , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[DemVPV])
+     , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[ET.DemVPV])
            V.++
            '[BR.DemPref]
        )
          ~
-         (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
-     , FS.RecSerialize (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
-     , FI.RecVec (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
-     , V.RMap (cc V.++ '[BR.Year, ET.Office, DemVPV, BR.DemPref])
+         (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+     , FS.RecSerialize (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+     , FI.RecVec (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+     , V.RMap (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
      , cc F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
      , cc F.⊆ (cc V.++ BR.CountCols)
      , (cc V.++ BR.CountCols) F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
@@ -199,7 +199,7 @@ mrpPrefs
                V.++
                cc
                V.++
-               '[BR.Year, ET.Office, DemVPV, BR.DemPref]
+               '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
            )
        )
 mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
@@ -207,7 +207,7 @@ mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
       lhToRecs year office (BR.LocationHolder lp lkM predMap) =
         let addCols p =
               FT.mutate (const $ FT.recordSingleton @BR.DemPref p)
-                . FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p))
+                . FT.mutate (const $ FT.recordSingleton @ET.DemVPV (vpv p))
                 . FT.mutate (const $ FT.recordSingleton @ET.Office office)
                 . FT.mutate (const $ FT.recordSingleton @BR.Year year)
             g lkM =

@@ -190,5 +190,8 @@ type instance FI.VectorFor RegisteredYN = Vec.Vector
 instance Grouping RegisteredYN
 instance SE.Serialize RegisteredYN
 
+type DemPref    = "DemPref"    F.:-> Double
+
+type DemVPV     = "DemVPV"     F.:-> Double
 
 

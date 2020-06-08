@@ -77,7 +77,7 @@ import qualified MRP.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
-import MRP.DeltaVPV (DemVPV)
+
 
 import qualified PreferenceModel.Common as PrefModel
 
@@ -358,11 +358,11 @@ Sex and Race groupings we used here.
 |]
 
   
-foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @DemVPV)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.DemVPV)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @BR.DemPref)
                           V.:& V.RNil
 
@@ -372,7 +372,7 @@ type BoostPop = "boostPop" F.:-> Int
 type ToFlip = "ToFlip" F.:-> Double
 
 foldPrefAndTurnoutDataBoost :: (Double -> Bool)
-                            -> FL.Fold (F.Record [PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+                            -> FL.Fold (F.Record [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
                             (F.Record [PUMS.Citizens, ET.ElectoralWeight, BoostA, BoostB, BoostPop])
 foldPrefAndTurnoutDataBoost prefTest =
   let t r = prefTest $ F.rgetField @BR.DemPref r

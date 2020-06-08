@@ -57,7 +57,7 @@ import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
 
 import MRP.CCES
-import MRP.DeltaVPV (DemVPV)
+
 
 import qualified Visualizations.StatePrefs as BR
 
@@ -111,11 +111,11 @@ catPredMapASE = catPredMap predMapASE allCatKeysASE
 catPredMapASR = catPredMap predMapASR allCatKeysASR
 -}
   
-foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[BR.ACSCount, BR.VotedPctOfAll, ET.DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @BR.ACSCount) FL.sum)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.VotedPctOfAll)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @DemVPV)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @ET.DemVPV)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
                           V.:& V.RNil
 
@@ -155,17 +155,17 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
       labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @ET.DemVPV
                                          (realToFrac . F.rgetField @BR.ACSCount)
-                                         (realToFrac . F.rgetField @DemVPV))
+                                         (realToFrac . F.rgetField @ET.DemVPV))
                           <*> fmap pure (fmap (labelPSBy ET.PSByVoted)
-                                         $ BR.postStratifyCell @DemVPV
+                                         $ BR.postStratifyCell @ET.DemVPV
                                          (\r -> realToFrac (F.rgetField @BR.ACSCount r) * F.rgetField @BR.VotedPctOfAll r)
-                                         (realToFrac . F.rgetField @DemVPV))
+                                         (realToFrac . F.rgetField @ET.DemVPV))
       psVPVByDistrictF =  BR.postStratifyF
                           @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                          @[DemVPV, BR.ACSCount, BR.VotedPctOfAll]
-                          @[ET.PrefType, DemVPV]
+                          @[ET.DemVPV, BR.ACSCount, BR.VotedPctOfAll]
+                          @[ET.PrefType, ET.DemVPV]
                           psCellVPVByBothF
       vpvPostStratifiedByASE = FL.fold psVPVByDistrictF aseTurnoutAndPrefs
       vpvPostStratifiedByASR = FL.fold psVPVByDistrictF asrTurnoutAndPrefs
@@ -175,26 +175,26 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
             cs = Just $ BR.vpvChoroColorScale (negate r) r
             vc = FV.ViewConfig 800 800 10
         _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
+             $ BR.vlByCD @ET.DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Education)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
                                     && (F.rgetField @ET.Office r == o)
                                     && (F.rgetField @ET.PrefType r == ET.PSByVAP)
                              ) vpvPostStratifiedByASE
         return ()                     
         _ <- K.addHvega Nothing Nothing
-             $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
+             $ BR.vlByCD @ET.DemVPV (tStart <> " District VPV (Voting Age Pop, Post-Stratified by Age, Sex, Race)") cs vc
              $ F.filterFrame (\r -> (F.rgetField @BR.Year r == y)
                                && (F.rgetField @ET.Office r == o)
                                && (F.rgetField @ET.PrefType r == ET.PSByVAP)
                              ) vpvPostStratifiedByASR
         _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
+          $ BR.vlByCD @ET.DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Education)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
                                  && (F.rgetField @ET.Office r == ET.President)
                                  && (F.rgetField @ET.PrefType r == ET.PSByVoted)
                           ) vpvPostStratifiedByASE
         _ <- K.addHvega Nothing Nothing
-          $ BR.vlByCD @DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
+          $ BR.vlByCD @ET.DemVPV (tStart <> " District VPV (Voted, Post-Stratified by Age, Sex, Race)") cs vc
           $ F.filterFrame (\r -> (F.rgetField @BR.Year r == 2016)
                             && (F.rgetField @ET.Office r == ET.President)
                             && (F.rgetField @ET.PrefType r == ET.PSByVoted)
@@ -204,11 +204,11 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   plotEmAll 2018 ET.House 0.35
   let aseDemoF = FMR.concatFold $ FMR.mapReduceFold
               (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @BR.CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+              (FMR.assignKeysAndData @BR.CatColsASE @[BR.ACSCount, BR.VotedPctOfAll, ET.DemVPV, BR.DemPref])
               (FMR.foldAndAddKey foldPrefAndTurnoutData)
   let asrDemoF = FMR.concatFold $ FMR.mapReduceFold
               (FMR.unpackFilterRow ((== 2018) . F.rgetField @BR.Year))
-              (FMR.assignKeysAndData @BR.CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, DemVPV, BR.DemPref])
+              (FMR.assignKeysAndData @BR.CatColsASR @[BR.ACSCount, BR.VotedPctOfAll, ET.DemVPV, BR.DemPref])
               (FMR.foldAndAddKey foldPrefAndTurnoutData)              
       asrSums = FL.fold asrDemoF asrTurnoutAndPrefs
       aseSums = FL.fold aseDemoF aseTurnoutAndPrefs

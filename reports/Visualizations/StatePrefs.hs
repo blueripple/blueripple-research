@@ -23,8 +23,6 @@ import qualified Graphics.Vega.VegaLite.Configuration
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Graphics.Vega.VegaLite        as GV
-import           MRP.DeltaVPV                   ( DemPref
-                                                )
 
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
@@ -41,7 +39,7 @@ vlPrefVsTime
   -> FV.ViewConfig
   -> f
        ( F.Record
-           '[BR.StateAbbreviation, ET.Office, BR.Year, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC, DemPref]
+           '[BR.StateAbbreviation, ET.Office, BR.Year, BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC, ET.DemPref]
        )
   -> GV.VegaLite
 vlPrefVsTime title stateAbbr vc@(FV.ViewConfig w h _) rows
@@ -52,7 +50,7 @@ vlPrefVsTime title stateAbbr vc@(FV.ViewConfig w h _) rows
       fRows = L.filter rowFilter $ FL.fold FL.list rows
       dat = FV.recordsToVLData id FV.defaultParse fRows
       encX = GV.position GV.X [FV.pName @BR.Year, GV.PmType GV.Ordinal]
-      encY = GV.position GV.Y [FV.pName @BR.DemPref, GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @ET.DemPref, GV.PmType GV.Quantitative]
       addRegionOffice = GV.calculateAs
         "datum.state_abbreviation + '-' + datum.Office"
         "Region-Office"

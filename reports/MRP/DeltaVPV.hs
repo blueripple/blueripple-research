@@ -77,11 +77,15 @@ import qualified BlueRipple.Model.TurnoutAdjustment as BR
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.PostStratify as BR
 
+
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
-
+import qualified MRP.CCES_MRP_Analysis as BR
 import qualified PreferenceModel.Common as PrefModel
+import qualified Frames.Melt as F
+import qualified BlueRipple.Data.ACS_PUMS as BR
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 
 brText1 :: T.Text
 brText1 = [i|
@@ -340,8 +344,7 @@ catKeyColHeader r =
       e = T.pack $ show $ F.rgetField @BR.CollegeGradC r
   in a <> "-" <> e <> "-" <> g
 
-type DemPref    = "DemPref"    F.:-> Double
-type DemVPV     = "DemVPV"     F.:-> Double
+
 type DistrictGeoId = "DistrictGeoId" F.:-> T.Text
 
 type GroupCols = BR.LocationCols V.++ CatCols --StateAbbreviation, Gender] -- this is always location ++ Categories
@@ -357,12 +360,13 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
   K.logLE K.Info $ "Working on DeltaVPV post..."
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
-      countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
+{-      countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
                                (\r -> (F.rgetField @Turnout r == T_Voted)
                                       && (F.rgetField @BR.Year r == 2016)
                                       && (F.rgetField @Pres2016VoteParty r `elem` [ET.Republican, ET.Democratic]))
                                ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
                                (F.rgetField @CCESWeightCumulative)
+-}
       countDemHouseVotesF y = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
                               (\r -> (F.rgetField @Turnout r == T_Voted)
                                      && (F.rgetField @BR.Year r == y)
@@ -370,18 +374,19 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                               ((== ET.Democratic) . F.rgetField @HouseVoteParty)
                               (F.rgetField @CCESWeightCumulative)
   let preds =  GLM.Intercept : fmap GLM.Predictor BR.allSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
+      predictorsASE = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)     
       narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader ({- narrowCountFold -} BR.countDemPres2016VotesF @BR.CatColsASE) predictorsASE  BR.catPredMaps)
   predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2016) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader (BR.countDemHouseVotesF @BR.CatColsASE 2016) predictorsASE BR.catPredMaps)
   predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesDataLoader (narrowCountFold $ countDemHouseVotesF 2018) preds BR.catPredMaps)
+    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader (BR.countDemHouseVotesF @BR.CatColsASE 2018) predictorsASE BR.catPredMaps)
 
   let vpv x = 2*x - 1
       lhToRecsM year office (BR.LocationHolder _ lkM predMap) =
-        let addCols p = FT.mutate (const $ FT.recordSingleton @DemPref p) .
-                        FT.mutate (const $ FT.recordSingleton @DemVPV (vpv p)) .
+        let addCols p = FT.mutate (const $ FT.recordSingleton @ET.DemPref p) .
+                        FT.mutate (const $ FT.recordSingleton @ET.DemVPV (vpv p)) .
                         FT.mutate (const $ FT.recordSingleton @ET.Office office).
                         FT.mutate (const $ FT.recordSingleton @BR.Year year)                        
             g lk = fmap (\(ck,p) -> addCols p (lk `V.rappend` ck )) $ M.toList predMap
@@ -391,36 +396,71 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
           (MR.generalizeAssign $ MR.Assign (\x -> ((),x)))
           (MR.generalizeReduce $ MR.ReduceFold (const FL.list))
       pblToFrame (year, office, pbl) = FL.foldM (pblToFrameFM year office) $ L.filter ((/= "National") . BR.locName) pbl
-      
+
   longFrame <- K.knitMaybe "Failed to make long-frame"
                $ fmap (F.toFrame . concat)
                $ traverse pblToFrame [(2016, ET.President, predsByLocation2016p)
                                      ,(2016, ET.House, predsByLocation2016h)
                                      ,(2018, ET.House, predsByLocation2018h)
                                      ]
-  demographicsFrameRaw <- BR.aseDemographicsLoader --F.toFrame <$> P.raise (K.useCached aseDemoCA)
-  turnoutFrameRaw <- BR.aseTurnoutLoader --F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
+--  demographicsFrameRaw <- BR.aseDemographicsLoader --F.toFrame <$> P.raise (K.useCached aseDemoCA)
+  pumsASEByState <- {- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ -} do
+    pumsACSFrame <- BR.pumsLoader
+    let yFilter r = let yr = F.rgetField @BR.Year r in (y == 2016) || (y == 2018)        
+        processF = FL.prefilter yFilter $ BR.pumsStateRollupF (BR.pumsKeysToASE True . F.rcast)
+    return
+      $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+      $ FL.fold processF pumsACSFrame
+    
+  cpsTurnoutASEByState <- {- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ -} do
+    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
+    let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
+                           => F.Record rs
+                           -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
+        addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+    return
+      $ fmap (FT.mutate addElectoralWeight)
+      $ FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
 
+  let aseDemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
+                                     @BR.CatColsASE
+                                     @PUMS.Citizens
+                                     @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+                                     @'[BR.Year, BR.StateAbbreviation]
+                                     stateTurnoutRaw
+                                     (fmap F.rcast pumsASEByState)
+                                     (fmap F.rcast cpsTurnoutASEByState)
+
+
+
+    
+  logFrame demographicsFrameRaw
+  turnoutFrameRaw <- BR.aseTurnoutLoader --F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
+  K.logLE K.Info "Loaded turnoutFrameRaw and demographicFrameRaw."      
 
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
   -- Arrange and join demo/turnout/result
       BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
       years = [2016,2018]      
       expandCategories = FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE))
+      demographicsFrameAdapt :: _
       demographicsFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pDD y demographicsFrameRaw)
       turnoutFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pTD y turnoutFrameRaw)
-  demoByCDFrame <- mconcat <$> traverse demographicsFrameAdapt years
+  K.logLE K.Info "Creating demoByCDFrame frame."      
+{-  demoByCDFrame <- mconcat <$> traverse demographicsFrameAdapt years
   let demoByStateFrame =
         let unpack = MR.noUnpack
             assign = FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @'[BR.PopCount]
             reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
-        in FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) demoByCDFrame        
+        in FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) demoByCDFrame
+-}
+  K.logLE K.Info "Loading/Creating turnoutFrame frame."
   turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years
   let demoWithUnadjTurnoutByState =
         catMaybes
         $ fmap F.recMaybe
-        $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateFrame turnoutFrame
-      demoWithAdjTurnoutByCD = do
+        $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateASE turnoutFrame
+      demoWithAdjTurnoutByState = do
         stateTurnoutFrame <- BR.stateTurnoutLoader --F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
         demoWithAdjTurnoutByState <- FL.foldM (BR.adjTurnoutFold @BR.PopCount @BR.VotedPctOfAll stateTurnoutFrame) demoWithUnadjTurnoutByState
         return
@@ -429,6 +469,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
           $ catMaybes
           $ fmap F.recMaybe
           $ (F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByCDFrame demoWithAdjTurnoutByState
+  K.logLE K.Info "Loading/Creating demoWithAdjTurnoutByCD frame."
   demoWithAdjTurnoutByCDFrame  <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/deltaVPV/popWithAdjTurnoutByCD.bin" demoWithAdjTurnoutByCD
 --  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list popWithAdjTurnout
   let withDemoAndAdjTurnoutFrame =
@@ -437,19 +478,19 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
         $ (F.leftJoin @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
       labelCell x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelCell ET.PSByVAP) $ BR.postStratifyCell @DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @DemVPV))
-                          <*> fmap pure (fmap (labelCell ET.PSByVoted) $ BR.postStratifyCell @DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @DemVPV))
+                          <$> fmap pure (fmap (labelCell ET.PSByVAP) $ BR.postStratifyCell @ET.DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @ET.DemVPV))
+                          <*> fmap pure (fmap (labelCell ET.PSByVoted) $ BR.postStratifyCell @ET.DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @ET.DemVPV))
       psVPVByStateF = BR.postStratifyF
                       @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateName]
-                      @[DemVPV,BR.PopCount,BR.VotedPctOfAll]
-                      @[ET.PrefType,DemVPV]
+                      @[ET.DemVPV,BR.PopCount,BR.VotedPctOfAll]
+                      @[ET.PrefType,ET.DemVPV]
                       psCellVPVByBothF 
         
       psVPVByBoth = FL.fold psVPVByStateF withDemoAndAdjTurnoutFrame
       psVPVByDistrictF = BR.postStratifyF
                          @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                         @[DemVPV, BR.PopCount, BR.VotedPctOfAll]
-                         @[ET.PrefType,DemVPV]
+                         @[ET.DemVPV, BR.PopCount, BR.VotedPctOfAll]
+                         @[ET.PrefType,ET.DemVPV]
                          psCellVPVByBothF
 --      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
       toDistrictGeoId r =
@@ -480,6 +521,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
     ("President2016","House2016")
     BR.Grad
     (fmap F.rcast longFrameWithState) --presMinusHouse2016
+  brAddMarkDown ""
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
     "Change in Non-College-Graduate VPV: President 2016 - House 2016"
     (FV.ViewConfig 300 300 10)
@@ -593,15 +635,15 @@ vlPostStratScatter :: Foldable f
                    => T.Text
                    -> FV.ViewConfig
                    -> (T.Text, T.Text)
-                   -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, DemVPV])
+                   -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, ET.PrefType, ET.DemVPV])
                    -> GV.VegaLite
 vlPostStratScatter title vc (race1, race2) rows =
-  let pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[DemVPV]
+  let pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[ET.DemVPV]
         (\keyLabel dataLabel -> dataLabel <> "-" <> keyLabel)
         (\r -> (T.pack $ show $ F.rgetField @ET.Office r)
                <> " "
                <> (T.pack $ show $ F.rgetField @BR.Year r))
-        (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
+        (\r -> [("Dem VPV",GV.Number $ F.rgetField @ET.DemVPV r)])        
       dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation,ET.PrefType]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
@@ -621,15 +663,15 @@ vlStateScatterVsElection :: Foldable f
                          => T.Text                         
                          -> FV.ViewConfig
                          -> (T.Text, T.Text)
-                         -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, DemVPV])
+                         -> f (F.Record [BR.StateAbbreviation, ET.Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, ET.DemVPV])
                          -> GV.VegaLite
 vlStateScatterVsElection title vc@(FV.ViewConfig w h _) (race1, race2) rows = 
-  let pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[DemVPV]
+  let pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[ET.DemVPV]
         (\keyLabel dataLabel -> dataLabel <> "-" <> keyLabel)
         (\r -> (T.pack $ show $ F.rgetField @ET.Office r)
                <> " "
                <> (T.pack $ show $ F.rgetField @BR.Year r))
-        (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
+        (\r -> [("Dem VPV",GV.Number $ F.rgetField @ET.DemVPV r)])        
       dat = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
             pivotFold rows
       vpvCol x = "Dem VPV" <> "-" <> x
@@ -666,15 +708,15 @@ vldVPVByState :: Foldable f
                  -> FV.ViewConfig
                  -> (T.Text, T.Text)
                  -> BR.CollegeGrad
-                 -> f (F.Record [BR.StateName, ET.Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, DemVPV])
+                 -> f (F.Record [BR.StateName, ET.Office, BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, ET.DemVPV])
                  -> GV.VegaLite
 vldVPVByState title vc (race1, race2) edFilter rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-      pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[DemVPV]
+      pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[ET.DemVPV]
                   (\keyLabel dataLabel -> keyLabel)
                   (\r -> (T.pack $ show $ F.rgetField @ET.Office r)
                     <> (T.pack $ show $ F.rgetField @BR.Year r))
-                  (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
+                  (\r -> [("Dem VPV",GV.Number $ F.rgetField @ET.DemVPV r)])        
       datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
                pivotFold rows
       dataSets = GV.datasets [("stateDat",datVal)]
@@ -702,7 +744,7 @@ vldVPVByState title vc (race1, race2) edFilter rows =
 vlVPVChoropleth :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
-                -> f (F.Record [BR.StateName, BR.StateFIPS, BR.Year, ET.Office, BR.SexC, BR.SimpleAgeC, BR.CollegeGradC, DemVPV])
+                -> f (F.Record [BR.StateName, BR.StateFIPS, BR.Year, ET.Office, BR.SexC, BR.SimpleAgeC, BR.CollegeGradC, ET.DemVPV])
                 -> GV.VegaLite
 vlVPVChoropleth title vc rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
@@ -713,13 +755,13 @@ vlVPVChoropleth title vc rows =
       projection = GV.projection [GV.PrType GV.AlbersUsa]
       transform2 = GV.transform . GV.lookupAs "StateName" datGeo "properties.name" "geo" . filter
       mark = GV.mark GV.Geoshape []
-      colorEnc = GV.color [FV.mName @DemVPV
+      colorEnc = GV.color [FV.mName @ET.DemVPV
                           , GV.MmType GV.Quantitative
                           , choroColorScale
                           ]
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
       tooltip = GV.tooltips [[FV.tName @BR.StateName, GV.TmType GV.Nominal]
-                            ,[FV.tName @DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
+                            ,[FV.tName @ET.DemVPV, GV.TmType GV.Quantitative, GV.TFormat ".0%"]]      
       enc = GV.encoding .  colorEnc . shapeEnc . encFacetRow . encFacetCol . tooltip 
   in FV.configuredVegaLite vc [FV.title title,  datVal, transform2 [], enc [], mark, projection]
 
@@ -727,15 +769,15 @@ vldVPVByStatePS :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
                 -> (T.Text, T.Text)
-                -> f (F.Record [BR.StateName, BR.Year, ET.Office, DemVPV])
+                -> f (F.Record [BR.StateName, BR.Year, ET.Office, ET.DemVPV])
                 -> GV.VegaLite
 vldVPVByStatePS title vc (race1, race2) rows =
   let datGeo = GV.dataFromUrl usStatesTopoJSONUrl [GV.TopojsonFeature "states"]
-      pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[DemVPV]
+      pivotFold = FV.simplePivotFold @[ET.Office, BR.Year] @'[ET.DemVPV]
                   (\keyLabel dataLabel -> keyLabel)
                   (\r -> (T.pack $ show $ F.rgetField @ET.Office r)
                          <> (T.pack $ show $ F.rgetField @BR.Year r))
-                  (\r -> [("Dem VPV",GV.Number $ F.rgetField @DemVPV r)])        
+                  (\r -> [("Dem VPV",GV.Number $ F.rgetField @ET.DemVPV r)])        
       datVal = GV.dataFromRows [] $ FV.pivotedRecordsToVLDataRows @'[BR.StateName]
                pivotFold rows
       projection = GV.projection [GV.PrType GV.AlbersUsa]
@@ -758,7 +800,7 @@ vldVPVByStatePS title vc (race1, race2) rows =
 vlVPVByDistrict :: Foldable f
                 => T.Text
                 -> FV.ViewConfig
-                -> f (F.Record [DistrictGeoId, DemVPV])
+                -> f (F.Record [DistrictGeoId, ET.DemVPV])
                 -> GV.VegaLite
 vlVPVByDistrict title vc rows =
   let datGeo = GV.dataFromUrl usDistrictsTopoJSONUrl [GV.TopojsonFeature "cd116"]
@@ -767,7 +809,7 @@ vlVPVByDistrict title vc rows =
       lookup = GV.lookupAs "DistrictGeoId" datGeo "properties.GEOID" "geo"
       mark = GV.mark GV.Geoshape []
       shapeEnc = GV.shape [GV.MName "geo", GV.MmType GV.GeoFeature]
-      colorEnc = GV.color [FV.mName @DemVPV, GV.MmType GV.Quantitative, choroColorScale]
+      colorEnc = GV.color [FV.mName @ET.DemVPV, GV.MmType GV.Quantitative, choroColorScale]
       enc = GV.encoding . shapeEnc . colorEnc
   in FV.configuredVegaLite vc [FV.title title, datVal, (GV.transform . lookup) [], enc [], mark, projection]
 

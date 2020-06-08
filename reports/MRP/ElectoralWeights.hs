@@ -75,73 +75,60 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
 import MRP.CCES
-import MRP.DeltaVPV (DemVPV)
+
 
 text1 :: T.Text
 text1 = [i|
-## A Note About These Times
-Our original plan for this post was to delve into the modeling issues surrounding electoral
-weighting in polling and predicitive modeling of election outcomes.  But the country
-is a very different place then when we started this work.  As important as the upcoming
-elections may be, the corona-virus pandemic is urgent and exhausting, and as we write
-this, the country is suffused with righteous #BlackLivesMatter protests
-and petty and indignant over-reaction from armed agents of the state,
-and officials, local and federal.  Never has the work of electing the right leaders felt
-so simultaneously crucial and beside the point.
+Why are political polls so confusing?  Why do the same set of polls often lead to very different predictions?
+There are a number of things that make polls confusing and difficult to interpret.  Among them, choosing
+how to survey people (land-line phones?  Cell-phones?  Facebook survey?),
+selecting which questions to ask and how to phrase them, and then interpreting the data to reach some
+conclusion, e.g., to predict the outcome of an upcoming election. All these complexities are worth
+talking about but here we're going to focus on the last question: how do we go from polling-data to
+election prediction?
 
-But there is still an election coming and we still want to be a source of thoughtful ideas
-for participation for fellow progressives and Democrats.  So we are going to continue this
-work, and try to understand along with you, how our landscape has changed.
+1. **Polling and Prediction 101**
+2. **Estimating Electorate Composition**
+3. **Example: The 2016 Presidential Election**
+4. **Conclusion**
 
---
 ## Polling and Prediction 101
-Predicting election outcomes via polling or survey data is hard, primarily because the people you survey
-may not be representative of the electorate, and the composition of
-the electorate in each state is a moving target. People don't always remember whether
-they voted or who they voted for and,
-for a variety of reasons, they may not be honest about their voting history.
+Predicting election outcomes via polling or survey data is hard since the people you survey
+may not be representative of the electorate and the composition of
+the electorate in each state changes election-to-election.  
 
-- Getting accurate answers, is a key part of a pollsters job.  Some surveys, e.g., the [CCES
-survey][CCES], one we use a lot,
-tackle this issue by verifying some data externally, for example via state voter-files.
-- Surveys and polls assign *weights* to responses, numbers that allow users of the data to
+When you conduct a poll or survey, you cannot control who responds.  So your sample will be
+different in myriad ways from the population as a whole,  and also different from the subset
+of the population who will vote.
+
+Surveys and polls assign *weights* to responses, numbers that allow users of the data to
 reconstruct a representative sample of the population from the survey.  For example, if
 the country has roughly the same number of adults above and below 45 but the survey has
 fewer responses from older people, those responses will be assigned higher weights.  Weighting
 is complex, not least because there are many demographic variables to be considered.
-- But we truly *do not know* who will vote on election day.  You could
-have extremely accurate estimates of how each kind of person (older or younger,
-male or female, Black, White, Latinx, Asian, Texan or Californian, etc.) *would* vote
-and not really know *how many of them will* vote.  This gets even harder to predict in
-smaller regions, like states, congressional districts or state legislative districts.
-
-This is all the more difficult when, due to Covid-19, the ways we are able to vote and
-the risks of voting have changed dramatically in a short time and change din different
-ways in each state. The recent elections in Wisconsin are a good example of all this.
-The last minute surge in mail-in ballots, the closure of polling places and
-resulting long lines at open polling places likely shifted the composition of the electorate.
 
 We have fairly accurate information about who lives in each of these places.  The census
-tracks this and updates the data annually.  What we need to know is the
-probability that a voter of a certain demographic type, in a certain place, will cast a
-vote. There are lots of reasons why people do and don't
+tracks this and updates the data annually.  But what we need to know is the
+probability that a voter of a certain demographic type, in a certain place, *will cast a
+vote*. There are lots of reasons why people do and don't
 vote: see [our piece][BR:ID] on voter ID or Fair Vote's [rundown][FV:Turnout] on
-voter turnout, for example.  For the purposes of *this post* we're going to ignore
+voter turnout, for example.  For the purposes of this post we're going to ignore
 the reasons and focus on the modeling problem.  For another point of view,
 [here][UpshotModel] is an explanation from the New York Times' Upshot about their
 election modeling.
 
-When pollsters and academics talk about this problem, they use the term "weighting" or
-"weights." The weighting of a survey to match the electorate is just like what we
+When pollsters and academics talk about this problem, they use the term "weighting."
+The weighting of a survey to match the electorate is just like what we
 talked about above, when polls are weighted to match the population, except here the
-weights are chosen to match some estimate of what the electorate will look like.
-But we will often talk instead about probabilities, the chance that a given voter will vote.
+weights are chosen to match some estimate of who will vote.
+
+We will often talk instead about probabilities, the chance that a given voter will vote.
 These probabilities, multiplied by the number of people in a given group,
-a number we know quite accurately, provide the "electoral weight".
-for example, if 60% of Texan Females over 45 will vote (a probability),
+provide the "electoral weight".
+for example, if Female Texans over 45 have a 60% chance of voting,
 and you know how many Texan Females over 45 there are (about 1.2 million)
 you can figure out how to weight your survey responses so that the weighted tally
-contains about 738,000 female Texan voters over 45.
+contains about 738,000 female Texan voters over 45. 
 
 So how do we figure out the probability that someone will vote?
 There are a number of standard approaches:
@@ -184,26 +171,26 @@ an estimate from the 2016 presidential election (using a variation of the [MR mo
 we've used in the last couple of posts), and use 2016 
 [demographics][Census:PUMS] from the census.  The only thing we'll be varying here
 are the electoral weights, that is, the likelihood that a given type of voter,
-in a given place, will vote
+in a given place, will vote.  We'll use two data sources (the [CCES][CCES] and the
+[Census CPS Voter survey][Census:CPSVoter]) and two different models of each data-set.
+Both models group voters by sex (M/F), age (Under 45/45 and Over),
+and education (No 4-year college/In college or college graduate).  The two models differ
+in how they handle race.  The simpler model, "ASER", uses
+the two-category classification we've been using in earlier posts (Non-White/White-Non-Latinx).
+"ASER5" uses a five-category classification for race (Black/Latinx/Asian/White/Other).
+Using MRP, we infer preferences and turnout for each group (16 groups for ASER, 40 for ASER5)
+in each state and the District of Columbia. 
+From these, we'll estimate the two-party-vote share in each state and the national vote share
+and electoral college outcome.
 
-We'll begin by picking a few
-possible sets of weights and comparing the projected popular vote and electoral college results
-that they predict from the *same set of preferences*---in this case, preferences derived from
-our [MRP model][BR:MRP] based on the [CCES][CCES].  
 One note: each set of weights has been adjusted on a per state basis so that the weights
-and demographics (in the same election year) correctly give the total number of votes cast in
+and demographics correctly give the total number of votes cast in
 the state that year--if you're interested in the details, we followed a simplified version
-of the techniques described in [this paper][DeepInteractions]. We used
-State-level probabilities inferred from either the CCES survey for the 2008,
-2012 and 2016 general elections, or the Census CPS survey (using Microdata),
-each broken down by age (45 or over/under 45),
-sex (Female/Male),
-education (College Grad and in College/otherwise)
-and race (Non-white/White Non-hispanic). 
+of the techniques described in [this paper][DeepInteractions].
 
 We're not recommending any of these weights in particular,
-but each might be a reasonable model of the 2020 electorate since each is derived from a validated source and a
-recent election.
+but each comes from reliable and oft-used data-sources and
+fairly common modeling assumptions about which categories are relevant.
 
 The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate
 using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights.  The results vary quite a bit,
@@ -211,6 +198,7 @@ from a popular vote share below 49.5% and 190 electoral votes to a popular vote 
 370 electoral votes! That's a swing of almost 4% in the popular vote (~6 million votes)
 and the difference between losing and winning the election.
 
+[AAPOR:LikelyVoters]: <https://www.aapor.org/Education-Resources/Election-Polling-Resources/Likely-Voters.aspx>
 [ElectProject:CPSOverReport]: <http://www.electproject.org/home/voter-turnout/cps-methodology>
 [Census:CPSVoter]: <https://www.census.gov/topics/public-sector/voting.html>
 [UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
@@ -263,11 +251,11 @@ the previous nationally-aggregated summaries of that data.
 [IPUMS-CPS]: <https://cps.ipums.org/cps/>
 |]
   
-foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @DemVPV)
+                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.DemVPV)
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @BR.DemPref)
                           V.:& V.RNil
 
@@ -529,12 +517,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   let aserDemoF = FMR.concatFold $ FMR.mapReduceFold
                   FMR.noUnpack
                   (FMR.assignKeysAndData @(BR.CatColsASER V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
-                   @[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+                   @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
                   (FMR.foldAndAddKey foldPrefAndTurnoutData)
       aser5DemoF = FMR.concatFold $ FMR.mapReduceFold
                    FMR.noUnpack
                    (FMR.assignKeysAndData @(BR.CatColsASER5 V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
-                     @[PUMS.Citizens, ET.ElectoralWeight, DemVPV, BR.DemPref])
+                     @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
                    (FMR.foldAndAddKey foldPrefAndTurnoutData)
                    
       aserByState = FL.fold aserDemoF aserAllByState
@@ -682,8 +670,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Popular vote share and Electoral Votes for 2016 preferences and demographics and various electoral weights"
-              (FV.ViewConfig 800 800 10)
-              (aserEwResults <> aser5EwResults)
+              (FV.ViewConfig 600 600 10)
+              (F.filterFrame ((==2016) . F.rgetField @BR.Year) $ aserEwResults <> aser5EwResults)
         brAddMarkDown text2
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
@@ -704,17 +692,19 @@ vlWeights title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
       makeVS =  GV.calculateAs "100 * datum.DemPref" "Vote Share (%)"
       makeVSRuleVal = GV.calculateAs "50" "50%"
-      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [48, 53]], GV.PNoTitle]
+      voteShareDomain = GV.SDomain $ GV.DNumbers [48.5, 53.5]
+      evDomain = GV.SDomain $ GV.DNumbers [180, 350]
+      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [voteShareDomain], GV.PNoTitle]
       makeEVRuleVal = GV.calculateAs "269" "Evenly Split"
-      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [170, 370]], GV.PNoTitle]
+      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [evDomain], GV.PNoTitle]
       makeSourceType = GV.calculateAs "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping" "Weight Source"
       encX = GV.position GV.X [GV.PName "Vote Share (%)"
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [48.5, 54]]
+                              , GV.PScale [voteShareDomain]
                               , GV.PTitle "D Vote Share (%)"]
       encY = GV.position GV.Y [FV.pName @ElectorsD
                               , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SDomain $ GV.DNumbers [170, 370]]
+                              , GV.PScale [evDomain]
                               , GV.PTitle "# D Electoral Votes"
                               ]
       encColor = GV.color [FV.mName @BR.Year, GV.MmType GV.Nominal]

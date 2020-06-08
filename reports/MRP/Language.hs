@@ -75,7 +75,6 @@ import qualified MRP.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
 import MRP.CCES
-import MRP.DeltaVPV (DemVPV)
 
 import qualified Streamly as Streamly
 import qualified Streamly.Prelude as Streamly
