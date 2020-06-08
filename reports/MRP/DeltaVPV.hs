@@ -84,8 +84,10 @@ import MRP.CCES
 import qualified MRP.CCES_MRP_Analysis as BR
 import qualified PreferenceModel.Common as PrefModel
 import qualified Frames.Melt as F
-import qualified BlueRipple.Data.ACS_PUMS as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.CPSVoterPUMS as CPS
+import qualified BlueRipple.Data.UsefulDataJoins as BR
+import qualified Frames.SimpleJoins as FJ
 
 brText1 :: T.Text
 brText1 = [i|
@@ -110,6 +112,9 @@ so we can see the geographic variation clearly.
 4. **Key Takeaways**
 5. **Take Action**
 
+NB: As part of routine data maintenance,
+we've updated this post using newer and better data sources.  The numbers are quite similar
+and all the text remains the same.
 
 ##MRP and VPV
 To recap:  we have data from the [CCES][CCES] survey which gives us information about
@@ -360,21 +365,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
   K.logLE K.Info $ "Working on DeltaVPV post..."
   let stateNameByAbbreviation = M.fromList $ fmap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
-{-      countDemPres2016VotesF = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[Pres2016VoteParty,CCESWeightCumulative]
-                               (\r -> (F.rgetField @Turnout r == T_Voted)
-                                      && (F.rgetField @BR.Year r == 2016)
-                                      && (F.rgetField @Pres2016VoteParty r `elem` [ET.Republican, ET.Democratic]))
-                               ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
-                               (F.rgetField @CCESWeightCumulative)
--}
-      countDemHouseVotesF y = BR.weightedCountFold @ByCCESPredictors @CCES_MRP @'[HouseVoteParty,CCESWeightCumulative]
-                              (\r -> (F.rgetField @Turnout r == T_Voted)
-                                     && (F.rgetField @BR.Year r == y)
-                                     && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic]))
-                              ((== ET.Democratic) . F.rgetField @HouseVoteParty)
-                              (F.rgetField @CCESWeightCumulative)
-  let preds =  GLM.Intercept : fmap GLM.Predictor BR.allSimplePredictors --[GLM.Intercept, GLM.Predictor P_Sex, GLM.Predictor P_Age, GLM.Predictor P_Education]
-      predictorsASE = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)     
+  let predictorsASE = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)     
       narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
   predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
     $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader ({- narrowCountFold -} BR.countDemPres2016VotesF @BR.CatColsASE) predictorsASE  BR.catPredMaps)
@@ -403,25 +394,19 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                                      ,(2016, ET.House, predsByLocation2016h)
                                      ,(2018, ET.House, predsByLocation2018h)
                                      ]
---  demographicsFrameRaw <- BR.aseDemographicsLoader --F.toFrame <$> P.raise (K.useCached aseDemoCA)
-  pumsASEByState <- {- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ -} do
-    pumsACSFrame <- BR.pumsLoader
-    let yFilter r = let yr = F.rgetField @BR.Year r in (y == 2016) || (y == 2018)        
-        processF = FL.prefilter yFilter $ BR.pumsStateRollupF (BR.pumsKeysToASE True . F.rcast)
+  pumsASEByState <- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ do
+    pumsACSFrame <- PUMS.pumsLoader
+    let yFilter r = let yr = F.rgetField @BR.Year r in (yr == 2016) || (yr == 2018)        
+        processF = FL.prefilter yFilter $ PUMS.pumsStateRollupF (PUMS.pumsKeysToASE True . F.rcast)
     return
       $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
       $ FL.fold processF pumsACSFrame
     
-  cpsTurnoutASEByState <- {- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ -} do
+  cpsTurnoutASEByState <- BR.retrieveOrMakeFrame "mrp/dvpv/cpsTurnoutASEByState.sbin" $ do
     cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
-    let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
-                           => F.Record rs
-                           -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
-        addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
     return
-      $ fmap (FT.mutate addElectoralWeight)
       $ FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
-
+  stateTurnoutRaw <- BR.stateTurnoutLoader
   let aseDemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
                                      @BR.CatColsASE
                                      @PUMS.Citizens
@@ -431,81 +416,26 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                                      (fmap F.rcast pumsASEByState)
                                      (fmap F.rcast cpsTurnoutASEByState)
 
-
-
-    
-  logFrame demographicsFrameRaw
-  turnoutFrameRaw <- BR.aseTurnoutLoader --F.toFrame <$> P.raise (K.useCached aseTurnoutCA)
-  K.logLE K.Info "Loaded turnoutFrameRaw and demographicFrameRaw."      
+  aseDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "mrp/dvpv/aseDemoAndAdjCensusEW.sbin" aseDemoAndAdjCensusEW_action 
 
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
-  -- Arrange and join demo/turnout/result
-      BR.DemographicStructure pDD pTD _ _ =  BR.simpleAgeSexEducation
-      years = [2016,2018]      
-      expandCategories = FT.mutate (simpleASEToCatKey . F.rgetField @(BR.DemographicCategory BR.SimpleASE))
-      demographicsFrameAdapt :: _
-      demographicsFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pDD y demographicsFrameRaw)
-      turnoutFrameAdapt y = fmap (FT.mutate (const $ FT.recordSingleton @BR.Year y) . expandCategories) <$> (BR.knitX $ pTD y turnoutFrameRaw)
-  K.logLE K.Info "Creating demoByCDFrame frame."      
-{-  demoByCDFrame <- mconcat <$> traverse demographicsFrameAdapt years
-  let demoByStateFrame =
-        let unpack = MR.noUnpack
-            assign = FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC] @'[BR.PopCount]
-            reduce = FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum
-        in FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) demoByCDFrame
--}
-  K.logLE K.Info "Loading/Creating turnoutFrame frame."
-  turnoutFrame <- mconcat <$> traverse turnoutFrameAdapt years
-  let demoWithUnadjTurnoutByState =
-        catMaybes
-        $ fmap F.recMaybe
-        $ (F.leftJoin @[BR.Year, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByStateASE turnoutFrame
-      demoWithAdjTurnoutByState = do
-        stateTurnoutFrame <- BR.stateTurnoutLoader --F.toFrame <$> P.raise (K.useCached stateTurnoutCA)
-        demoWithAdjTurnoutByState <- FL.foldM (BR.adjTurnoutFold @BR.PopCount @BR.VotedPctOfAll stateTurnoutFrame) demoWithUnadjTurnoutByState
-        return
-          $ F.toFrame
-          $ fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.PopCount, BR.VotedPctOfAll])
-          $ catMaybes
-          $ fmap F.recMaybe
-          $ (F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]) demoByCDFrame demoWithAdjTurnoutByState
-  K.logLE K.Info "Loading/Creating demoWithAdjTurnoutByCD frame."
-  demoWithAdjTurnoutByCDFrame  <- K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "mrp/deltaVPV/popWithAdjTurnoutByCD.bin" demoWithAdjTurnoutByCD
---  K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list popWithAdjTurnout
-  let withDemoAndAdjTurnoutFrame =
-        catMaybes
-        $ fmap F.recMaybe
-        $ (F.leftJoin @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]) demoWithAdjTurnoutByCDFrame (F.toFrame longFrameWithState)
-      labelCell x = V.rappend (FT.recordSingleton @ET.PrefType x)
+
+  withDemoAndAdjTurnoutFrame <- K.knitEither
+                                $ either (Left . T.pack . show) Right
+                                $ FJ.leftJoinE @[BR.StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC, BR.Year]
+                                aseDemoAndAdjCensusEW
+                                (F.toFrame longFrameWithState)
+  let labelCell x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
-                          <$> fmap pure (fmap (labelCell ET.PSByVAP) $ BR.postStratifyCell @ET.DemVPV (realToFrac . F.rgetField @BR.PopCount) (realToFrac . F.rgetField @ET.DemVPV))
-                          <*> fmap pure (fmap (labelCell ET.PSByVoted) $ BR.postStratifyCell @ET.DemVPV (\r -> realToFrac (F.rgetField @BR.PopCount r) * F.rgetField @BR.VotedPctOfAll r) (realToFrac . F.rgetField @ET.DemVPV))
+                          <$> fmap pure (fmap (labelCell ET.PSByVAP) $ BR.postStratifyCell @ET.DemVPV (realToFrac . F.rgetField @PUMS.Citizens) (realToFrac . F.rgetField @ET.DemVPV))
+                          <*> fmap pure (fmap (labelCell ET.PSByVoted) $ BR.postStratifyCell @ET.DemVPV (\r -> realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @ET.ElectoralWeight r) (realToFrac . F.rgetField @ET.DemVPV))
       psVPVByStateF = BR.postStratifyF
                       @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateName]
-                      @[ET.DemVPV,BR.PopCount,BR.VotedPctOfAll]
-                      @[ET.PrefType,ET.DemVPV]
+                      @[ET.DemVPV, PUMS.Citizens, ET.ElectoralWeight]
+                      @[ET.PrefType, ET.DemVPV]
                       psCellVPVByBothF 
         
       psVPVByBoth = FL.fold psVPVByStateF withDemoAndAdjTurnoutFrame
-      psVPVByDistrictF = BR.postStratifyF
-                         @[BR.Year, ET.Office, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                         @[ET.DemVPV, BR.PopCount, BR.VotedPctOfAll]
-                         @[ET.PrefType,ET.DemVPV]
-                         psCellVPVByBothF
---      toDistrictGeoId :: F.Record '[BR.StateFIPS, BR.CongressionalDistrict] -> F.Record '[DistrictGeoId]
-      toDistrictGeoId r =
-        let sf = F.rgetField @BR.StateFIPS r
-            cd = F.rgetField @BR.CongressionalDistrict r
-            dgidInt = 100*sf + cd
-            dgidText = (if dgidInt < 1000 then "0" else "" ) <> (T.pack $ show dgidInt)
-        in FT.recordSingleton @DistrictGeoId dgidText
-      psVPVByDistrict = fmap (FT.mutate toDistrictGeoId) $ FL.fold psVPVByDistrictF withDemoAndAdjTurnoutFrame
-      psVPVByDistrictPres2016ByVoted = F.filterFrame (\r -> (F.rgetField @BR.Year r == 2018)
-                                                            && (F.rgetField @ET.Office r == ET.House)
-                                                            && (F.rgetField @ET.PrefType r == ET.PSByVoted)
-                                                            {-&& (F.rgetField @BR.StateAbbreviation r == "TX")-}) psVPVByDistrict
-  -- K.logLE K.Info $ T.intercalate "\n" $ fmap (T.pack . show) $ FL.fold FL.list psVPVByDistrictPres2016ByVoted 
-
   brAddMarkDown brText1
 --  _ <- K.addHvega Nothing Nothing $ vlVPVByDistrict "Test" (FV.ViewConfig 800 800 10) (fmap F.rcast psVPVByDistrictPres2016ByVoted)
 {-  _ <- K.addHvega Nothing Nothing $ vlStateScatterVsElection
@@ -521,7 +451,8 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
     ("President2016","House2016")
     BR.Grad
     (fmap F.rcast longFrameWithState) --presMinusHouse2016
-  brAddMarkDown ""
+  brLineBreak
+--  K.addStrictTextHtml "<br>"
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
     "Change in Non-College-Graduate VPV: President 2016 - House 2016"
     (FV.ViewConfig 300 300 10)
@@ -553,6 +484,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
     ("House2018","House2016")
     BR.Grad
     (fmap F.rcast longFrameWithState) -- house2018MinusHouse2016
+  brLineBreak
   _ <- K.addHvega Nothing Nothing $ vldVPVByState
     "Change in Non-College-Grad VPV: House 2018 - House 2016"
     (FV.ViewConfig 300 300 10)

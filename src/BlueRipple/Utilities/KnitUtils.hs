@@ -94,8 +94,12 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
           { PA.readerStandalone = True
           , PA.readerExtensions = PA.enableExtension PA.Ext_smart
                                   . PA.enableExtension PA.Ext_raw_html
+                                  . PA.enableExtension PA.Ext_escaped_line_breaks
                                   $ exts
           }
+
+brLineBreak :: K.KnitOne r => K.Sem r ()
+brLineBreak = brAddMarkDown "\\\n"
 
 brAddDates
   :: Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
