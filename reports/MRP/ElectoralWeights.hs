@@ -75,6 +75,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
 import MRP.CCES
+import qualified MRP.CCES as CCES
 
 
 text1 :: T.Text
@@ -124,12 +125,38 @@ Figuring out how to weight opinion data to predict voting is, arguably, the
 most difficult part of determining out which elections/states are likely to be close and
 thus where to prioritize work and the allocation of resources.
 
-It is also deeply contentious, though those controversies are sometimes silly.  As an
-example, CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
+It is also deeply contentious, As an extreme example,
+CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
 over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and then
 [demanded CNN retract the poll][CNN:Demand] which CNN promptly
-[refused][CNN:RefuseRetract] to do
+[refused][CNN:RefuseRetract] to do so.  The substantive objection made by Trump's
+campaign was that CNN should have weighted their poll so that the fraction
+of Republicans, Democrats and Independents was the same as in 2016.  It's not hard to
+see why this is a bad idea.  As public opinion shifts, so does people's partisan
+identification.  Just to confirm this, below we plot partisan identity as reported
+in the CCES survey from 2006-2018 for both Presidential and House elections just
+to see how much it shifts election to election.
 
+[CNN:RefuseRetract]: <https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html>
+[CNN:Demand]: <https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html>
+[CNN:20200608_Poll]: <https://www.cnn.com/2020/06/08/politics/cnn-poll-trump-biden-chaotic-week/index.html>
+[AAPOR:LikelyVoters]: <https://www.aapor.org/Education-Resources/Election-Polling-Resources/Likely-Voters.aspx>
+[ElectProject:CPSOverReport]: <http://www.electproject.org/home/voter-turnout/cps-methodology>
+[Census:CPSVoter]: <https://www.census.gov/topics/public-sector/voting.html>
+[UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
+[DeepInteractions]: <http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf>
+[PEW:LikelyVoter]: <https://www.pewresearch.org/methods/2016/01/07/measuring-the-likelihood-to-vote/>
+[Census:PUMS]: <https://www.census.gov/programs-surveys/acs/technical-documentation/pums.html>
+[FV:Turnout]: <https://www.fairvote.org/voter_turnout#voter_turnout_101>
+[BR:ID]: <https://blueripplepolitics.org/blog/voter-ids>
+[BR:MRP]: <https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods>
+[CCES]: <https://cces.gov.harvard.edu/>
+[Vox:BernieYouth]: <https://www.vox.com/policy-and-politics/2020/2/25/21152538/bernie-sanders-electability-president-moderates-data>
+[Paper:BernieYouth]: <https://osf.io/25wm9/>
+[Rumsfeld]: <https://en.wikipedia.org/wiki/There_are_known_knowns>
+|]
+  
+text2 :: T.Text = [i|
 When pollsters and academics talk about this problem, they use the term "weighting."
 The weighting of a survey to match the electorate is just like what we
 talked about above, when polls are weighted to match the population, except here the
@@ -244,8 +271,8 @@ and the difference between losing and winning the election.
 |]
 
 
-text2 :: T.Text
-text2 = [i|
+text3 :: T.Text
+text3 = [i|
 There is substantially more variation among the models using CCES weights
 than the model using weights from the census.
 The CCES models also look more like the actual election outcomes,
@@ -330,35 +357,83 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   -- state totals and national demographic splits
   stateTurnoutRaw <- BR.stateTurnoutLoader
 
-  let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
+{-  let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
       addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
-{-
-  cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
-  let countAlternateCPS = FL.fold alternateVoteF cpsVoterPUMS
-  logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) countAlternateCPS  
-  let 
- 
-  let cpsASERTurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
-      cpsASERTurnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER True . F.rcast)) cpsVoterPUMS
-      cpsASERCounted2008 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER True . F.rcast) 2008) cpsVoterPUMS  
-
-      cpsASER5TurnoutByState = FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASER5 True . F.rcast)) cpsVoterPUMS
-      cpsASER5Turnout = FL.fold (CPS.cpsVoterPUMSNationalElectoralWeights (CPS.cpsKeysToASER5 True . F.rcast)) cpsVoterPUMS
-      cpsASER5Counted2010 = FL.fold (CPS.cpsCountVotersByStateF (CPS.cpsKeysToASER5 True . F.rcast) 2010) cpsVoterPUMS  
-
-
-
-  K.logLE K.Diagnostic $ "predictors (ASER5)=" <> (T.pack $ show predictorsASER5)
-
---  logFrame cpsVoterPUMS
-  logFrame cpsASER5Counted2010
 -}
+
   let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASER5 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER5)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
-  
+
+
+  partisanId <- BR.retrieveOrMakeFrame "mrp/weights/parstisanID" $ do
+    ccesData <- ccesDataLoader
+    let voted r = F.rgetField @CCES.Turnout r == CCES.T_Voted
+        withPartyId r = F.rgetField @CCES.PartisanId3 r `elem` [CCES.PI3_Democrat, CCES.PI3_Republican, CCES.PI3_Independent]
+        votedWithId r = voted r && withPartyId r 
+        partisanIdF = FMR.concatFold
+                          $ FMR.mapReduceFold
+                          (FMR.unpackFilterRow votedWithId)
+                          (FMR.assignKeysAndData @(BR.Year ': (CCES.PartisanId3 ': BR.CatColsASER5)) @'[CCES.CCESWeightCumulative])
+                          (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        partisanId = FL.fold partisanIdF ccesData
+        totalByYearF = FMR.concatFold
+                       $ FMR.mapReduceFold
+                       FMR.noUnpack
+                       (FMR.assignKeysAndData @(BR.Year ': BR.CatColsASER5) @'[CCES.CCESWeightCumulative])
+                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        totalWeight = fmap (FT.retypeColumn @CCES.CCESWeightCumulative @'("TotalWeight", Double))
+                      $ FL.fold totalByYearF partisanId
+    partisanIdFraction <- do
+      withWeights <- K.knitEither
+                     $ either (Left . T.pack . show) Right
+                     $ FJ.leftJoinE @(BR.Year ': BR.CatColsASER5) partisanId totalWeight
+      let w = F.rgetField @CCES.CCESWeightCumulative
+          t = F.rgetField @'("TotalWeight", Double)
+          getFraction :: F.Record '[CCES.CCESWeightCumulative, '("TotalWeight", Double)] -> F.Record '[ '("Fraction", Double)]
+          getFraction r = (w r/ t r) F.&: V.RNil
+      return $ fmap (FT.transform getFraction) withWeights
+    logFrame partisanIdFraction
+
+    pumsData <- PUMS.pumsLoader
+    let pumsToCountsF = FMR.concatFold
+                        $ FMR.mapReduceFold
+                        (FMR.Unpack (pure @[] . FT.transform (PUMS.pumsKeysToASER True)))
+                        (FMR.assignKeysAndData @(BR.Year ': BR.CatColsASER5) @'[PUMS.Citizens])
+                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        pumsCounts = FL.fold pumsToCountsF pumsData
+    partisanCitizens <- do
+      withCitizens <- K.knitEither
+                      $ either (Left . T.pack . show) Right
+                      $ FJ.leftJoinE @(BR.Year ': BR.CatColsASER5) partisanIdFraction pumsCounts
+      let getPartisans :: F.Record '[PUMS.Citizens, '("Fraction", Double)] -> F.Record '[ '("Partisans", Double)]
+          getPartisans r = (realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @'("Fraction", Double) r) F.&: V.RNil
+      return $ fmap (FT.mutate $  getPartisans . F.rcast) withCitizens
+    logFrame partisanCitizens
+    let combineDemographicsF = FMR.concatFold
+                               $ FMR.mapReduceFold
+                               FMR.noUnpack
+                               (FMR.assignKeysAndData @[BR.Year, CCES.PartisanId3] @'[ '("Partisans", Double)])
+                               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        partisansByYear = FL.fold combineDemographicsF partisanCitizens
+        totalPartisansByYearF = FMR.concatFold
+                                $ FMR.mapReduceFold
+                                FMR.noUnpack
+                                (FMR.assignKeysAndData @'[BR.Year] @'[ '("Partisans", Double)])
+                                (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        totalPartisansByYear = fmap (FT.retypeColumn @'("Partisans", Double) @'("TotalPartisans", Double))
+                               $ FL.fold totalPartisansByYearF partisansByYear
+    withTotalPartisans <- K.knitEither
+                          $ either (Left . T.pack . show) Right
+                          $ FJ.leftJoinE @'[BR.Year] partisansByYear totalPartisansByYear
+    let getPartisanFraction :: F.Record ['("Partisans", Double), '("TotalPartisans", Double)] -> F.Record '[ '("PartisanFraction", Double)]
+        getPartisanFraction r = (F.rgetField @'("Partisans", Double) r / F.rgetField @'("TotalPartisans", Double) r) F.&: V.RNil
+        withPartisanFraction = fmap (FT.mutate $ getPartisanFraction . F.rcast) withTotalPartisans
+    logFrame withPartisanFraction
+    return withPartisanFraction
+    
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
@@ -389,15 +464,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                                      predictorsASER5
                                      BR.catPredMaps
                                )                               
-{-
-  let     gaFilter r = F.rgetField @BR.StateAbbreviation r == "GA" && (F.rgetField @BR.Year r `elem` [2016,2018])
---  logFrame $ F.filterFrame gaFilter cpsVoterWithCDs
-  K.logLE K.Info $ "GA Census Turnout (ASER5, Raw)"  
-  logFrame $ F.filterFrame gaFilter cpsASER5TurnoutByState
-  K.logLE K.Info $ "GA Census Turnout (ASER5, inferred)"
-  logFrame $ F.filterFrame gaFilter inferredCensusTurnoutASER5
--}
-
   -- preferences
   inferredPrefsASER <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
                         (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps)
@@ -500,10 +566,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
  
   aserDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" aserDemoAndAdjCensusEW_action
   aser5DemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" aser5DemoAndAdjCensusEW_action
-{-  K.logLE K.Diagnostic $ "pumsASEByState has " <> (T.pack . show $ FL.fold FL.length pumsASEByState) <> " rows."
-  K.logLE K.Diagnostic $ "cpsASETurnoutByState has " <> (T.pack . show $ FL.fold FL.length cpsASETurnoutByState) <> " rows."
-  K.logLE K.Diagnostic $ "aseDemoAndAdjEW has " <> (T.pack . show $ FL.fold FL.length aseDemoAndAdjEW) <> " rows." -}
---  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
   K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."  
   let aserDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
                                     @BR.CatColsASER
@@ -518,9 +580,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   
   aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
   aser5DemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" aser5DemoAndAdjCCESEW_action
-{-  K.logLE K.Diagnostic "comparison of Census then CCES for 2016 in WI after adjustment."
-  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCensusEW
-  logFrame $ F.filterFrame filterForAdjTurnout aserDemoAndAdjCCESEW -}
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
@@ -702,12 +761,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
       ))
       $ do        
         brAddMarkDown text1
+        brAddMarkDown text2
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "2016 Vote share and EVs for various electoral weights"
               (FV.ViewConfig 400 400 5)
               (F.filterFrame ((==2016) . F.rgetField @BR.Year) $ aserEwResults <> aser5EwResults)
-        brAddMarkDown text2
+        brAddMarkDown text3
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Vote share and EVs: 2016 weightings vs. 2018 weightings"
