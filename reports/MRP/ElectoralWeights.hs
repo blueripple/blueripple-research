@@ -400,7 +400,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
     pumsData <- PUMS.pumsLoader
     let pumsToCountsF = FMR.concatFold
                         $ FMR.mapReduceFold
-                        (FMR.Unpack (pure @[] . FT.transform (PUMS.pumsKeysToASER True)))
+                        (FMR.Unpack (pure @[] . FT.transform (PUMS.pumsKeysToASER5 True)))
                         (FMR.assignKeysAndData @(BR.Year ': BR.CatColsASER5) @'[PUMS.Citizens])
                         (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         pumsCounts = FL.fold pumsToCountsF pumsData
