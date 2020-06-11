@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ~/DataScience/Frames-hvega ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
@@ -36,10 +36,10 @@ source-repository-package
   location: https://github.com/blueripple/data-sets
   tag: 9741cf5c2b6c43355d665f2c116642cf621f50e4
              
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: e174d1eff6990cd4b95939829b1f5b997bda0d02
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: e174d1eff6990cd4b95939829b1f5b997bda0d02
 
 source-repository-package
   type: git
@@ -51,10 +51,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-utils
   tag: 7c2e91491d75aaafe20bb24eff60f5a6539e38fb
   
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-hvega
-  tag: 32b68b055ffcd4cae7ed06ddfea9e89d6b20f8f7
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-hvega
+--  tag: 32b68b055ffcd4cae7ed06ddfea9e89d6b20f8f7
 
 source-repository-package
   type: git

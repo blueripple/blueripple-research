@@ -32,7 +32,7 @@ common deps
                , glm-haskell
                , groups
                , here
-               , hvega >= 0.7.0 && < 0.9
+               , hvega >= 0.7.0 && < 0.10
                , hmatrix
                , knit-haskell >= 0.8.0.0 && < 0.9
                , lucid
