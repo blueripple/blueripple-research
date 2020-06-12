@@ -89,7 +89,7 @@ talking about but here we're going to focus on the last question: how do we go f
 election prediction?
 
 1. **Polling and Prediction 101**
-2. **Estimating Electorate Composition**
+2. **CNN vs. Trump**
 3. **Example: The 2016 Presidential Election**
 4. **Conclusion**
 
@@ -125,6 +125,7 @@ Figuring out how to weight opinion data to predict voting is, arguably, the
 most difficult part of determining out which elections/states are likely to be close and
 thus where to prioritize work and the allocation of resources.
 
+## CNN vs. Trump
 Weighting polls is also deeply contentious. As an extreme example,
 CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
 over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and then
@@ -132,11 +133,17 @@ over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and t
 [refused][CNN:RefuseRetract] to do.  The substantive objection made by Trump's
 campaign was that CNN should have weighted their poll so that the fraction
 of Republicans, Democrats and Independents was the same as in 2016.  It's not hard to
-see why this is a bad idea.  As public opinion shifts, so does people's partisan
-identification.  Just to confirm this, below we look at partisan identity as reported
-in the CCES survey from 2006-2018 to see how much it shifts election to election. As
-should be clear from the chart, reported partisan identity of voters
-is not stable election to election and makes little sense as a source of weights.
+see why this is a bad idea.  Firstly, as people's views on candidates change,
+so may their reported party.  So weighting to fix partisan identity will tend to obscure
+exactly the thing you are trying to measure.  If partisan identity were a stable feature of
+the electorate, it might still make sense to weight this way, just to control for a bad polling
+sample.  But partisan identification is not particularly stable!
+In the chart below we plot partisan identity as reported
+in the CCES survey from 2006-2018 to see how much it shifts election to election.
+From the chart we see that voters are very roughly equally distributed between
+Democrats, Independents and Republicans, they shift around among those groups
+a significant amount.
+
 
 [CNN:RefuseRetract]: <https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html>
 [CNN:Demand]: <https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html>
@@ -159,98 +166,49 @@ is not stable election to election and makes little sense as a source of weights
   
 text2 :: T.Text = [i|
 
+##Example: The 2016 Presidential Election
+So, does the last election provide any useful guidance for weighting?
+Using partisan identity is particularly bad since it is so heavily correlated
+the thing a poll is trying to measure.  But perhaps if we just weight
+demographically, that is assume that the turnout in any given demogrpahic group
+in any state will be similar to 2016.  This doesn't have the correlation
+issue of partisan identity but turnout by demographic group is just as
+unstable.  So this is not a great starting point either.  But let's pretend it
+is, so we can focus on two other issues:  data sources on turnout vary
+dramatically and how one breaks down the demographics can change the results as well.
+To illustrate both these points, we built a few simple electorate models from
+2016 data, either from the census CPS voter survey or the CCES data (as above).
+For each data-set, we used multi-level regression to infer
+turnout probabilities in each state for 2 demographic groupings:
 
-When pollsters and academics talk about this problem, they use the term "weighting."
-The weighting of a survey to match the electorate is just like what we
-talked about above, when polls are weighted to match the population, except here the
-weights are chosen or inferred to match some estimate of who will vote.
+- ASER: we infer turnout for 16 groups per state,
+by categorizing everyone by
+age (45 andOver/Under 45/45), sex (Female/Male),
+education (Non-College-Grad/College Grad or In College),
+and race (Non-White/White-Non-Latinx).
 
-We will often talk instead about probabilities, the chance that a given voter will vote.
-These probabilities, multiplied by the number of people in a given group,
-provide the "electoral weight".
-for example, if Female Texans over 45 have a 60% chance of voting,
-and you know how many Texan Females over 45 there are (about 1.2 million)
-you can figure out how to weight your survey responses so that the weighted tally
-contains about 738,000 female Texan voters over 45. 
+- ASER5:  we infer turnout for 40 groups per state,
+by categorizing everyone by
+age (45 andOver/Under 45/45), sex (Female/Male),
+education (Non-College-Grad/College Grad or In College),
+and race (Black/Latinx/Asian/Other/White-Non-Latinx).
 
-So how do we figure out the probability that someone will vote?
-There are a number of standard approaches:
+We further adjust these inferred turnout numbers such that, when
+multiplied by the number of people in the state, we reproduce
+the actual number of ballots cast on election day.
+If you're interested in the details, we followed a simplified version
+of the techniques described in [this paper][DeepInteractions]
 
-1. Ask them! Some surveys ask the respondent if they intend to vote, or, more often,
-a [set of questions][Pew:LikelyVoter] is used to assess their likelihood of voting.
-Those answers are used to create a set of weights with as much specificity
-as the survey allows. 
-2. Assume the next election will be like the last election. The census tracks nationwide
-demographically split turnout for previous elections and we can use those weights.  Because
-of the size of the [CPS voter survey][Census:CPSVoter], this is often a trusted source.  But
-it lacks any verification and there is [significant evidence that people over-report their
-voting][ElectProject:CPSOverReport].
-2b. Alternatively, some surveys match respondents with
-voter-file data and from there compute turnout probabilities. Acessing, standardizing and
-processing voter file data is a big and expensive job.  There is no public data-set using
-all the voter file info, though some market-research companies make subsets of this data
-available to academics and non-profits at reduced rates.
-3. Model the electorate using some combination of the above data---previous elections,
-[surveys---and whatever other variables, e.g., negative partisanship of a district,
-to predict how the current electorate might differ from the past.
+To illustrate how different these electorate weights are,
+we apply them to the 2016 election itself, using the
+census demographics in each state and voter preferences inferred
+from the CCES data using the same multi-level regression methods.
+From that we compute the two-party vote share in each state and get 
+4 different 2016 outcomes in terms of national popular vote and electoral
+college. 
 
-Once you know the demographics of a place,
-what probability each group has to vote for either candidate
-(in a 2-party race) and the probability that eligible voters in each
-group will cast a ballot on election day, you can predict outcomes.  The simplest way
-is to simply multiply the number of people in each group, by the probability that they will vote
-and then by the probability that, given that they will vote, they will vote for each candidate.
-We add up all those numbers and get estimated votes for each candidate.
-This "post-stratification" yields an estimate of the two-party vote.
-
-We can stop here if all we care about is how close the election is likely to be.
-Election modelers typically go further by estimating the uncertainty of those
-predictions, often by simulation.  In one of these simulations, each person
-in a district or state is simulated by two tosses of unfair coins, one to decide
-if they vote, and for those that do, the other to decide for whom they voted.  This
-simulation is then run a few thousand times and the various results plotted to
-visualize uncertainty. So when a site like 538.com says that a candidate has a
-60% chance of winning the election, they are saying that the candidate wins in
-60% of the simulations.  Some election simulations are more complex than this
-because they attempt to account for correlations among the regions, basically
-to acknowledge that if the polling is wrong, it's probably wrong the same way
-in every place.
-
-Rather than opine on the best model, which is not our expertise,
-we want to demonstrate that a prediction can depend a lot on the model
-of electoral weights. We want you to become a more informed (and skeptical!)
-reader of polls and academic work predicting electoral results.
-
-So let's explore how much difference these weights can make.
-We'll fix our voter preferences to
-an estimate from the 2016 presidential election (using a variation of the [MR model][BR:MRP]
-we've used in the last couple of posts), and use 2016 
-[demographics][Census:PUMS] from the census.  The only thing we'll be varying here
-are the electoral weights, that is, the likelihood that a given type of voter,
-in a given place, will vote.  We'll use two data sources (the [CCES][CCES] and the
-[Census CPS Voter survey][Census:CPSVoter]) and two different models of each data-set.
-Both models group voters by sex (M/F), age (Under 45/45 and Over),
-and education (No 4-year college/In college or college graduate).  The two models differ
-in how they handle race.  The simpler model, "ASER", uses
-the two-category classification we've been using in earlier posts (Non-White/White-Non-Latinx).
-"ASER5" uses a five-category classification for race (Black/Latinx/Asian/White/Other).
-Using MRP, we infer preferences and turnout for each group (16 groups for ASER, 40 for ASER5)
-in each state and the District of Columbia. 
-From these, we'll estimate the two-party-vote share in each state and the national vote share
-and electoral college outcome.
-
-One note: each set of weights has been adjusted on a per state basis so that the weights
-and demographics correctly give the total number of votes cast in
-the state that year--if you're interested in the details, we followed a simplified version
-of the techniques described in [this paper][DeepInteractions].
-
-We're not recommending any of these weights in particular,
-but each comes from reliable and oft-used data-sources and
-fairly common modeling assumptions about which categories are relevant.
-
-The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate
-using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights.  The results vary quite a bit,
-from a popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and over
+The results are charted below and vary quite a bit,
+from a Dem popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and
 340 electoral votes! That's a swing of almost 4% in the popular vote (~6 million votes)
 and the difference between losing and winning the election.
 
@@ -276,13 +234,25 @@ and the difference between losing and winning the election.
 
 text3 :: T.Text
 text3 = [i|
-There is substantially more variation among the models using CCES weights
-than the model using weights from the census.
-The CCES models also look more like the actual election outcomes,
+The CCES models look more like the actual election outcomes,
 though that could just be a coincidence.
 The census-sourced electoral weights predict higher turnout from younger voters
 and minority voters than does the CCES data,
 and is thus much more Democratic-candidate-friendly than the CCES data. 
+
+Our point is that none of these is exactly right,
+they vary quite a bit from each other,
+and this is using data from an election to model the same election!
+Using that data to model the next one would be foolhardy.
+
+What pollsters actually do, is ask respondents a variety of questions to gauge
+how likely they are to vote.  They combine this with demographic weighting (like
+the examples above) to estimate the makeup of the electorate. This is complicated
+and hard to get right and is part of what makes some polls more reliable than
+others. Previous elections may be used as sanity checks or as the
+baseline for non-poll-based models. 
+
+##Conclusion
 
 [Vox:EducationWeighting]: <https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election>
 |]
@@ -360,18 +330,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   -- state totals and national demographic splits
   stateTurnoutRaw <- BR.stateTurnoutLoader
 
-{-  let addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
-                         => F.Record rs
-                         -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
-      addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
--}
-
   let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASER5 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER5)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
 
-  partisanId <- BR.retrieveOrMakeFrame "mrp/weights/parstisanID" $ do
+  partisanId <- BR.retrieveOrMakeFrame "mrp/weights/partisanId.bin" $ do
     ccesData <- ccesDataLoader
     let voted r = F.rgetField @CCES.Turnout r == CCES.T_Voted
         withPartyId r = F.rgetField @CCES.PartisanId3 r `elem` [CCES.PI3_Democrat, CCES.PI3_Republican, CCES.PI3_Independent]
@@ -379,65 +343,28 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         partisanIdF = FMR.concatFold
                           $ FMR.mapReduceFold
                           (FMR.unpackFilterRow votedWithId)
-                          (FMR.assignKeysAndData @(BR.Year ': (CCES.PartisanId3 ': BR.CatColsASER5)) @'[CCES.CCESWeightCumulative])
+                          (FMR.assignKeysAndData @[BR.Year, CCES.PartisanId3] @'[CCES.CCESWeightCumulative])
                           (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         partisanId = FL.fold partisanIdF ccesData
         totalByYearF = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @(BR.Year ': BR.CatColsASER5) @'[CCES.CCESWeightCumulative])
+                       (FMR.assignKeysAndData @'[BR.Year] @'[CCES.CCESWeightCumulative])
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         totalWeight = fmap (FT.retypeColumn @CCES.CCESWeightCumulative @'("TotalWeight", Double))
                       $ FL.fold totalByYearF partisanId
     partisanIdFraction <- do
       withWeights <- K.knitEither
                      $ either (Left . T.pack . show) Right
-                     $ FJ.leftJoinE @(BR.Year ': BR.CatColsASER5) partisanId totalWeight
+                     $ FJ.leftJoinE @'[BR.Year] partisanId totalWeight
       let w = F.rgetField @CCES.CCESWeightCumulative
           t = F.rgetField @'("TotalWeight", Double)
           getFraction :: F.Record '[CCES.CCESWeightCumulative, '("TotalWeight", Double)] -> F.Record '[ '("Fraction", Double)]
           getFraction r = (w r/ t r) F.&: V.RNil
       return $ fmap (FT.transform getFraction) withWeights
-    logFrame partisanIdFraction
-
-    pumsData <- PUMS.pumsLoader
-    let pumsToCountsF = FMR.concatFold
-                        $ FMR.mapReduceFold
-                        (FMR.Unpack (pure @[] . FT.transform (PUMS.pumsKeysToASER5 True)))
-                        (FMR.assignKeysAndData @(BR.Year ': BR.CatColsASER5) @'[PUMS.Citizens])
-                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-        pumsCounts = FL.fold pumsToCountsF pumsData
-    partisanCitizens <- do
-      withCitizens <- K.knitEither
-                      $ either (Left . T.pack . show) Right
-                      $ FJ.leftJoinE @(BR.Year ': BR.CatColsASER5) partisanIdFraction pumsCounts
-      let getPartisans :: F.Record '[PUMS.Citizens, '("Fraction", Double)] -> F.Record '[ '("Partisans", Double)]
-          getPartisans r = (realToFrac (F.rgetField @PUMS.Citizens r) * F.rgetField @'("Fraction", Double) r) F.&: V.RNil
-      return $ fmap (FT.mutate $  getPartisans . F.rcast) withCitizens
-    logFrame partisanCitizens
-    let combineDemographicsF = FMR.concatFold
-                               $ FMR.mapReduceFold
-                               FMR.noUnpack
-                               (FMR.assignKeysAndData @[BR.Year, CCES.PartisanId3] @'[ '("Partisans", Double)])
-                               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-        partisansByYear = FL.fold combineDemographicsF partisanCitizens
-        totalPartisansByYearF = FMR.concatFold
-                                $ FMR.mapReduceFold
-                                FMR.noUnpack
-                                (FMR.assignKeysAndData @'[BR.Year] @'[ '("Partisans", Double)])
-                                (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-        totalPartisansByYear = fmap (FT.retypeColumn @'("Partisans", Double) @'("TotalPartisans", Double))
-                               $ FL.fold totalPartisansByYearF partisansByYear
-    withTotalPartisans <- K.knitEither
-                          $ either (Left . T.pack . show) Right
-                          $ FJ.leftJoinE @'[BR.Year] partisansByYear totalPartisansByYear
-    let getPartisanFraction :: F.Record ['("Partisans", Double), '("TotalPartisans", Double)] -> F.Record '[ '("PartisanFraction", Double)]
-        getPartisanFraction r = (F.rgetField @'("Partisans", Double) r / F.rgetField @'("TotalPartisans", Double) r) F.&: V.RNil
-        withPartisanFraction = fmap (FT.mutate $ getPartisanFraction . F.rcast) withTotalPartisans
-    logFrame withPartisanFraction
-    return withPartisanFraction
-
+    return partisanIdFraction
   logFrame partisanId
+  
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
@@ -777,11 +704,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
               (FV.ViewConfig 400 400 5)
               (F.filterFrame ((==2016) . F.rgetField @BR.Year) $ aserEwResults <> aser5EwResults)
         brAddMarkDown text3
+{-        
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
               "Vote share and EVs: 2016 weightings vs. 2018 weightings"
               (FV.ViewConfig 400 400 5)
               (aserEwResults2 <> aser5EwResults2)
+-}
         brAddMarkDown modelingNotes
         brAddMarkDown brReadMore
 
@@ -799,11 +728,11 @@ instance FV.ToVLDataValue (F.ElField PID) where
 vlPartisanIdOverTime :: (Functor f, Foldable f)
   => T.Text
   -> FV.ViewConfig
-  -> f (F.Record [BR.Year, CCES.PartisanId3, '("PartisanFraction", Double)])
+  -> f (F.Record [BR.Year, CCES.PartisanId3, '("Fraction", Double)])
   -> GV.VegaLite
 vlPartisanIdOverTime title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @CCES.PartisanId3 @PID  mapPID rows)
-      fractionAsPct = GV.calculateAs "100 * datum.PartisanFraction" "% of Voters" 
+      fractionAsPct = GV.calculateAs "100 * datum.Fraction" "% of Voters" 
       encX = GV.position GV.X [FV.pName @PID, GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
       encY = GV.position GV.Y [GV.PName "% of Voters"
                               , GV.PmType GV.Quantitative
