@@ -125,17 +125,18 @@ Figuring out how to weight opinion data to predict voting is, arguably, the
 most difficult part of determining out which elections/states are likely to be close and
 thus where to prioritize work and the allocation of resources.
 
-It is also deeply contentious, As an extreme example,
+Weighting polls is also deeply contentious. As an extreme example,
 CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
 over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and then
 [demanded CNN retract the poll][CNN:Demand] which CNN promptly
-[refused][CNN:RefuseRetract] to do so.  The substantive objection made by Trump's
+[refused][CNN:RefuseRetract] to do.  The substantive objection made by Trump's
 campaign was that CNN should have weighted their poll so that the fraction
 of Republicans, Democrats and Independents was the same as in 2016.  It's not hard to
 see why this is a bad idea.  As public opinion shifts, so does people's partisan
-identification.  Just to confirm this, below we plot partisan identity as reported
-in the CCES survey from 2006-2018 for both Presidential and House elections just
-to see how much it shifts election to election.
+identification.  Just to confirm this, below we look at partisan identity as reported
+in the CCES survey from 2006-2018 to see how much it shifts election to election. As
+should be clear from the chart, reported partisan identity of voters
+is not stable election to election and makes little sense as a source of weights.
 
 [CNN:RefuseRetract]: <https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html>
 [CNN:Demand]: <https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html>
@@ -157,6 +158,8 @@ to see how much it shifts election to election.
 |]
   
 text2 :: T.Text = [i|
+
+
 When pollsters and academics talk about this problem, they use the term "weighting."
 The weighting of a survey to match the electorate is just like what we
 talked about above, when polls are weighted to match the population, except here the
@@ -433,7 +436,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         withPartisanFraction = fmap (FT.mutate $ getPartisanFraction . F.rcast) withTotalPartisans
     logFrame withPartisanFraction
     return withPartisanFraction
-    
+
+  logFrame partisanId
   inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
                                (do
                                    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
@@ -761,6 +765,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
       ))
       $ do        
         brAddMarkDown text1
+        _ <- K.addHvega Nothing Nothing
+          $ vlPartisanIdOverTime
+          "Partisan Identification Over Time"
+          (FV.ViewConfig 80 200 5)
+          (fmap F.rcast partisanId)
         brAddMarkDown text2
         _ <-  K.addHvega Nothing Nothing
               $ vlWeights
@@ -775,6 +784,37 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
               (aserEwResults2 <> aser5EwResults2)
         brAddMarkDown modelingNotes
         brAddMarkDown brReadMore
+
+
+data PartisanId = Democrat | Independent | Republican deriving (Show)
+mapPID :: CCES.PartisanIdentity3 -> PartisanId
+mapPID CCES.PI3_Democrat = Democrat
+mapPID CCES.PI3_Republican = Republican
+mapPID _ = Independent
+type PID = "Partisan Identity" F.:-> PartisanId
+
+instance FV.ToVLDataValue (F.ElField PID) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
+vlPartisanIdOverTime :: (Functor f, Foldable f)
+  => T.Text
+  -> FV.ViewConfig
+  -> f (F.Record [BR.Year, CCES.PartisanId3, '("PartisanFraction", Double)])
+  -> GV.VegaLite
+vlPartisanIdOverTime title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse (FV.addMappedColumn @CCES.PartisanId3 @PID  mapPID rows)
+      fractionAsPct = GV.calculateAs "100 * datum.PartisanFraction" "% of Voters" 
+      encX = GV.position GV.X [FV.pName @PID, GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
+      encY = GV.position GV.Y [GV.PName "% of Voters"
+                              , GV.PmType GV.Quantitative
+                              , GV.PScale [GV.SDomain $ GV.DNumbers [0, 50]]
+                              ]
+      encColor = GV.color [FV.mName @PID, GV.MmType GV.Nominal]
+      encColumn = GV.column [FV.fName @BR.Year, GV.FmType GV.Ordinal]
+      encoding = (GV.encoding . encColumn . encX . encY . encColor) []
+      mark = GV.mark GV.Bar []
+      transform = (GV.transform . fractionAsPct) []
+  in FV.configuredVegaLite vc [FV.title title, encoding, mark, transform, dat]
 
 
 

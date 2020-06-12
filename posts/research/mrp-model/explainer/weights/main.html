@@ -258,7 +258,198 @@
 <p>So now we have an estimate of how a person in a particular place is likely to vote given various demographic information about them. And, from the census and other sources, we know the demographics of each county/district/state. But if we want to predict an election outcome, or decide where we need to focus resources because an election is likely to be close, we need to know who is going to cast a ballot in the election.</p>
 <p>There are lots of reasons why people do and don’t vote: see <a href="https://blueripplepolitics.org/blog/voter-ids">our piece</a> on voter ID or Fair Vote’s <a href="https://www.fairvote.org/voter_turnout#voter_turnout_101">rundown</a> on voter turnout, for example. For the purposes of this post we’re going to ignore the reasons and focus on the modeling problem. For another point of view, <a href="https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html">here</a> is an explanation from the New York Times’ Upshot about their election modeling.</p>
 <p>Figuring out how to weight opinion data to predict voting is, arguably, the most difficult part of determining out which elections/states are likely to be close and thus where to prioritize work and the allocation of resources.</p>
-<p>It is also deeply contentious, As an extreme example, CNN recently published a <a href="https://www.cnn.com/2020/06/08/politics/cnn-poll-trump-biden-chaotic-week/index.html">poll</a> showing Biden up 14 points over Trump. The Trump campaign hired a pollster to “analyze” the CNN poll and then <a href="https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html">demanded CNN retract the poll</a> which CNN promptly <a href="https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html">refused</a> to do so. The substantive objection made by Trump’s campaign was that CNN should have weighted their poll so that the fraction of Republicans, Democrats and Independents was the same as in 2016. It’s not hard to see why this is a bad idea. As public opinion shifts, so does people’s partisan identification. Just to confirm this, below we plot partisan identity as reported in the CCES survey from 2006-2018 for both Presidential and House elections just to see how much it shifts election to election.</p>
+<p>Weighting polls is also deeply contentious. As an extreme example, CNN recently published a <a href="https://www.cnn.com/2020/06/08/politics/cnn-poll-trump-biden-chaotic-week/index.html">poll</a> showing Biden up 14 points over Trump. The Trump campaign hired a pollster to “analyze” the CNN poll and then <a href="https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html">demanded CNN retract the poll</a> which CNN promptly <a href="https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html">refused</a> to do. The substantive objection made by Trump’s campaign was that CNN should have weighted their poll so that the fraction of Republicans, Democrats and Independents was the same as in 2016. It’s not hard to see why this is a bad idea. As public opinion shifts, so does people’s partisan identification. Just to confirm this, below we look at partisan identity as reported in the CCES survey from 2006-2018 to see how much it shifts election to election. As should be clear from the chart, reported partisan identity of voters is not stable election to election and makes little sense as a source of weights.</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "transform": [
+        {
+            "as": "% of Voters",
+            "calculate": "100 * datum.PartisanFraction"
+        }
+    ],
+    "height": 200,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 200,
+            "continuousWidth": 80,
+            "discreteHeight": 200,
+            "discreteWidth": 80
+        }
+    },
+    "mark": "bar",
+    "data": {
+        "values": [
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2006,
+                "PartisanFraction": 0.36439043797585097
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2006,
+                "PartisanFraction": 0.35658378326087603
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2006,
+                "PartisanFraction": 0.279025778763273
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2008,
+                "PartisanFraction": 0.42253683516567103
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2008,
+                "PartisanFraction": 0.34829345559082203
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2008,
+                "PartisanFraction": 0.22916970924350694
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2010,
+                "PartisanFraction": 0.37879170550346075
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2010,
+                "PartisanFraction": 0.3445385790555411
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2010,
+                "PartisanFraction": 0.2766697154409981
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2012,
+                "PartisanFraction": 0.35293382603041396
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2012,
+                "PartisanFraction": 0.31850735692761956
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2012,
+                "PartisanFraction": 0.32855881704196666
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2014,
+                "PartisanFraction": 0.36792646234684095
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2014,
+                "PartisanFraction": 0.32903765994152573
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2014,
+                "PartisanFraction": 0.3030358777116334
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2016,
+                "PartisanFraction": 0.38709979107259934
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2016,
+                "PartisanFraction": 0.3162731788526574
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2016,
+                "PartisanFraction": 0.29662703007474334
+            },
+            {
+                "PartisanId3": "PI3_Democrat",
+                "Partisan Identity": "Democrat",
+                "year": 2018,
+                "PartisanFraction": 0.395733592740324
+            },
+            {
+                "PartisanId3": "PI3_Republican",
+                "Partisan Identity": "Republican",
+                "year": 2018,
+                "PartisanFraction": 0.3499196614402669
+            },
+            {
+                "PartisanId3": "PI3_Independent",
+                "Partisan Identity": "Independent",
+                "year": 2018,
+                "PartisanFraction": 0.2543467458194091
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 80,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Partisan Identification Over Time",
+    "encoding": {
+        "color": {
+            "field": "Partisan Identity",
+            "type": "nominal"
+        },
+        "x": {
+            "field": "Partisan Identity",
+            "type": "nominal",
+            "axis": {
+                "title": null
+            }
+        },
+        "column": {
+            "field": "year",
+            "type": "ordinal"
+        },
+        "y": {
+            "field": "% of Voters",
+            "scale": {
+                "domain": [
+                    0,
+                    50
+                ]
+            },
+            "type": "quantitative"
+        }
+    },
+    "padding": 5
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
 <p>When pollsters and academics talk about this problem, they use the term “weighting.” The weighting of a survey to match the electorate is just like what we talked about above, when polls are weighted to match the population, except here the weights are chosen or inferred to match some estimate of who will vote.</p>
 <p>We will often talk instead about probabilities, the chance that a given voter will vote. These probabilities, multiplied by the number of people in a given group, provide the “electoral weight”. for example, if Female Texans over 45 have a 60% chance of voting, and you know how many Texan Females over 45 there are (about 1.2 million) you can figure out how to weight your survey responses so that the weighted tally contains about 738,000 female Texan voters over 45.</p>
 <p>So how do we figure out the probability that someone will vote? There are a number of standard approaches:</p>
@@ -274,7 +465,7 @@
 <p>One note: each set of weights has been adjusted on a per state basis so that the weights and demographics correctly give the total number of votes cast in the state that year–if you’re interested in the details, we followed a simplified version of the techniques described in <a href="http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf">this paper</a>.</p>
 <p>We’re not recommending any of these weights in particular, but each comes from reliable and oft-used data-sources and fairly common modeling assumptions about which categories are relevant.</p>
 <p>The chart below shows the Democratic share of the 2-party popular vote and the number of electors won by the Democratic candidate using (modeled) 2016 preferences, 2016 demographics and each set of electoral weights. The results vary quite a bit, from a popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and over 340 electoral votes! That’s a swing of almost 4% in the popular vote (~6 million votes) and the difference between losing and winning the election.</p>
-<figure id="figure_1">
+<figure id="figure_2">
 <script type="text/javascript">var vlSpec=
 {
     "height": 400,
@@ -437,10 +628,10 @@
     ],
     "padding": 5
 };
-vegaEmbed('#figure_1',vlSpec);</script>
+vegaEmbed('#figure_2',vlSpec);</script>
 </figure>
 <p>There is substantially more variation among the models using CCES weights than the model using weights from the census. The CCES models also look more like the actual election outcomes, though that could just be a coincidence. The census-sourced electoral weights predict higher turnout from younger voters and minority voters than does the CCES data, and is thus much more Democratic-candidate-friendly than the CCES data.</p>
-<figure id="figure_2">
+<figure id="figure_3">
 <script type="text/javascript">var vlSpec=
 {
     "height": 400,
@@ -639,7 +830,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
     ],
     "padding": 5
 };
-vegaEmbed('#figure_2',vlSpec);</script>
+vegaEmbed('#figure_3',vlSpec);</script>
 </figure>
 </section>
 <section id="model-notes" class="level2">
