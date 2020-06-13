@@ -14,7 +14,7 @@
 <meta charset="utf-8">
 <meta name="generator" content="pandoc">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>What Are We Talking About When We Talk About Electoral Weights?</title>
+<title>Polling Explainer: CNN vs. Trump</title>
 
 <!-- Yahoo! CDN combo URL for selected Pure.css modules -->
 <link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
@@ -240,28 +240,29 @@
 
 <!-- page content begins here -->
 
-<div class="published">February 21, 2020 </div>
+<div class="published">February 21, 2020 (updated: June 13, 2020)</div>
 <header>
-<h1 class="title">What Are We Talking About When We Talk About Electoral Weights?</h1>
+<h1 class="title">Polling Explainer: CNN vs. Trump</h1>
 </header>
-<p>Why are political polls so confusing? Why do the same set of polls often lead to very different predictions? There are a number of things that make polls confusing and difficult to interpret. Among them, choosing how to survey people (land-line phones? Cell-phones? Facebook survey?), selecting which questions to ask and how to phrase them, and then interpreting the data to reach some conclusion, e.g., to predict the outcome of an upcoming election. All these complexities are worth talking about but here we’re going to focus on the last question: how do we go from polling-data to election prediction?</p>
+<p>Why are political polls so confusing? Why do the same set of polls often lead to very different predictions? Why did the Trump campaign ask CNN to retract a poll and why did CNN refuse?</p>
+<p>There are a number of things that make polls confusing and difficult to interpret. Among them, choosing how to survey people (land-line phones? Cell-phones? Facebook survey?), selecting which questions to ask and how to phrase them, and then interpreting the data to reach some conclusion, e.g., to predict the outcome of an upcoming election. All these complexities are worth talking about but here we’re going to focus on the last question: how do we go from polling-data to prediction?</p>
 <ol type="1">
 <li><strong>Polling and Prediction 101</strong></li>
 <li><strong>CNN vs. Trump</strong></li>
 <li><strong>Example: The 2016 Presidential Election</strong></li>
-<li><strong>Conclusion</strong></li>
+<li><strong>Model Notes</strong></li>
 </ol>
 <section id="polling-and-prediction-101" class="level2">
 <h2>Polling and Prediction 101</h2>
 <p>Predicting election outcomes via polling or survey data is hard: the people you survey may not be representative of the electorate, and the composition of the electorate in each state changes election-to-election. When you conduct a poll or survey, you cannot control who responds. So your sample will be different in myriad ways from the population as a whole, and also different from the subset of the population who will vote.</p>
-<p>Reconstructing the opinion of the population from a poll is done via weighting, assigning a weight to each response that allow users of the data to reconstruct a representative sample of the population from the survey. For example, if a state has roughly the same number of adults above and below 45 but the survey has fewer responses from people over 45, those responses will be assigned higher weights. Weighting is complex, not least because there are many demographic variables to be considered.</p>
+<p>Reconstructing the opinion of the population from a poll is done via weighting, assigning a number to each response that allow users of the data to reconstruct a representative sample of the population from the survey. For example, if a state has roughly the same number of adults above and below 45 but the survey has fewer responses from people over 45, those responses will be assigned higher weights. Weighting is complex, not least because there are many demographic variables to be considered.</p>
 <p>So now we have an estimate of how a person in a particular place is likely to vote given various demographic information about them. And, from the census and other sources, we know the demographics of each county/district/state. But if we want to predict an election outcome, or decide where we need to focus resources because an election is likely to be close, we need to know who is going to cast a ballot in the election.</p>
-<p>There are lots of reasons why people do and don’t vote: see <a href="https://blueripplepolitics.org/blog/voter-ids">our piece</a> on voter ID or Fair Vote’s <a href="https://www.fairvote.org/voter_turnout#voter_turnout_101">rundown</a> on voter turnout, for example. For the purposes of this post we’re going to ignore the reasons and focus on the modeling problem. For another point of view, <a href="https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html">here</a> is an explanation from the New York Times’ Upshot about their election modeling.</p>
-<p>Figuring out how to weight opinion data to predict voting is, arguably, the most difficult part of determining out which elections/states are likely to be close and thus where to prioritize work and the allocation of resources.</p>
+<p>There are a lot of reasons people do and don’t vote: see <a href="https://blueripplepolitics.org/blog/voter-ids">our piece</a> on voter ID or Fair Vote’s <a href="https://www.fairvote.org/voter_turnout#voter_turnout_101">rundown</a> on voter turnout, for example. For the purposes of this post we’re going to ignore the reasons, and focus on the data problem of uncertain turnout.</p>
+<p>Figuring out how to weight opinion data to predict voting is among the most difficult parts of determining out which elections/states are likely to be close and thus where to prioritize work and the allocation of resources.</p>
 </section>
 <section id="cnn-vs.-trump" class="level2">
 <h2>CNN vs. Trump</h2>
-<p>Weighting polls is also deeply contentious. As an extreme example, CNN recently published a <a href="https://www.cnn.com/2020/06/08/politics/cnn-poll-trump-biden-chaotic-week/index.html">poll</a> showing Biden up 14 points over Trump. The Trump campaign hired a pollster to “analyze” the CNN poll and then <a href="https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html">demanded CNN retract the poll</a> which CNN promptly <a href="https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html">refused</a> to do. The substantive objection made by Trump’s campaign was that CNN should have weighted their poll so that the fraction of Republicans, Democrats and Independents was the same as in 2016. It’s not hard to see why this is a bad idea. Firstly, as people’s views on candidates change, so may their reported party. So weighting to fix partisan identity will tend to obscure exactly the thing you are trying to measure. If partisan identity were a stable feature of the electorate, it might still make sense to weight this way, just to control for a bad polling sample. But partisan identification is not particularly stable! In the chart below we plot partisan identity as reported in the CCES survey from 2006-2018 to see how much it shifts election to election. From the chart we see that voters are very roughly equally distributed between Democrats, Independents and Republicans, they shift around among those groups a significant amount.</p>
+<p>Weighting polls is also deeply contentious. As an extreme example, CNN recently published a <a href="https://www.cnn.com/2020/06/08/politics/cnn-poll-trump-biden-chaotic-week/index.html">poll</a> showing Biden up 14 points over Trump. The Trump campaign hired a pollster to “analyze” the CNN poll and then <a href="https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html">demanded CNN retract the poll</a> which CNN promptly <a href="https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html">refused</a> to do. The substantive objection made by Trump’s campaign was that CNN should have <em>weighted their poll differently</em>, such that the fraction of Republicans, Democrats and Independents was the same as among voters in 2016. It’s not hard to see why this is a bad idea. Firstly, as people’s views on candidates change, so may their reported party. So weighting to fix partisan identity will tend to obscure exactly the thing you are trying to measure. If partisan identity were a stable feature of the electorate, it might still make sense to weight this way, just to control for a bad polling sample. But partisan identification is not particularly stable! In the chart below we plot partisan identity as reported in the CCES survey from 2006-2018 to see how much it shifts election to election. From the chart we see that though voters are roughly equally distributed between Democrats, Independents and Republicans, they shift around among those groups a significant amount.</p>
 <figure id="figure_1">
 <script type="text/javascript">var vlSpec=
 {
@@ -456,14 +457,14 @@ vegaEmbed('#figure_1',vlSpec);</script>
 </section>
 <section id="example-the-2016-presidential-election" class="level2">
 <h2>Example: The 2016 Presidential Election</h2>
-<p>So, does the last election provide any useful guidance for weighting? Using partisan identity is particularly bad since it is so heavily correlated the thing a poll is trying to measure. But perhaps if we just weight demographically, that is assume that the turnout in any given demogrpahic group in any state will be similar to 2016. This doesn’t have the correlation issue of partisan identity but turnout by demographic group is just as unstable. So this is not a great starting point either. But let’s pretend it is, so we can focus on two other issues: data sources on turnout vary dramatically and how one breaks down the demographics can change the results as well. To illustrate both these points, we built a few simple electorate models from 2016 data, either from the census CPS voter survey or the CCES data (as above). For each data-set, we used multi-level regression to infer turnout probabilities in each state for 2 demographic groupings:</p>
+<p>So, does the last election provide any useful guidance for weighting? Using partisan identity is particularly bad since it is so heavily correlated the thing a poll is trying to measure. But perhaps if we just weight demographically, that is assume that the turnout in any given demographic group in any state will be similar to 2016, this might provide reasonable weights? This doesn’t have the correlation issue of partisan identity but turnout by demographic group is also variable election-to-election. And there are two other issues: data sources on turnout vary dramatically and how one breaks down the demographics can change the results as well. To illustrate both these points, we built a few simple electorate models from 2016 data, either from the census <a href="https://www.census.gov/topics/public-sector/voting.html">CPS voter survey</a> or the <a href="https://cces.gov.harvard.edu/">CCES survey data</a>. For each data-set, we used <a href="https://blueripple.github.io/research/mrp-model/p1/main.html#data-and-methods">multi-level regression</a> to infer turnout probabilities in each state for 2 demographic groupings:</p>
 <ul>
-<li><p>ASER: we infer turnout for 16 groups per state, by categorizing everyone by age (45 andOver/Under 45/45), sex (Female/Male), education (Non-College-Grad/College Grad or In College), and race (Non-White/White-Non-Latinx).</p></li>
-<li><p>ASER5: we infer turnout for 40 groups per state, by categorizing everyone by age (45 andOver/Under 45/45), sex (Female/Male), education (Non-College-Grad/College Grad or In College), and race (Black/Latinx/Asian/Other/White-Non-Latinx).</p></li>
+<li><p><strong>ASER</strong>: we infer turnout for 16 groups per state, categorizing everyone by age (45 and Over/Under 45), sex (Female/Male), education (Non-College-Grad/College Grad or In College), and race (Non-White/White-Non-Latinx).</p></li>
+<li><p><strong>ASER5</strong>: we infer turnout for 40 groups per state, categorizing everyone by age (45 and Over/Under 45), sex (Female/Male), education (Non-College-Grad/College Grad or In College), and race (Black/Latinx/Asian/Other/White-Non-Latinx).</p></li>
 </ul>
 <p>We further adjust these inferred turnout numbers such that, when multiplied by the number of people in the state, we reproduce the actual number of ballots cast on election day. If you’re interested in the details, we followed a simplified version of the techniques described in <a href="http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf">this paper</a></p>
-<p>To illustrate how different these electorate weights are, we apply them to the 2016 election itself, using the census demographics in each state and voter preferences inferred from the CCES data using the same multi-level regression methods. From that we compute the two-party vote share in each state and get 4 different 2016 outcomes in terms of national popular vote and electoral college.</p>
-<p>The results are charted below and vary quite a bit, from a Dem popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and 340 electoral votes! That’s a swing of almost 4% in the popular vote (~6 million votes) and the difference between losing and winning the election.</p>
+<p>To illustrate how different these electorate weights are, we apply them to the 2016 election itself, using the census demographics in each state and voter preferences inferred from the CCES data using the same multi-level regression methods. From that we compute the two-party vote share in each state and get 4 different 2016 outcomes in terms of national popular vote and electoral votes. This is not intended as something that would have been an actual forecast. For that, we would want to simulate many elections with the given set of probabilities. But these correspond to the average outcome with each of these electorate compositions and so give a picture of how different they are.</p>
+<p>The results are charted below and vary, from a Dem popular vote share below 48.5% and 180 electoral votes to a popular vote share of about 50.5% and almost 280 electoral votes! That’s a swing of almost 3% in the popular vote (~4 million votes) and the difference between losing and winning the election.</p>
 <figure id="figure_2">
 <script type="text/javascript">var vlSpec=
 {
@@ -484,22 +485,22 @@ vegaEmbed('#figure_1',vlSpec);</script>
     "data": {
         "values": [
             {
-                "DemPref": 0.5300134370126306,
-                "ElectorsR": 195,
+                "DemPref": 0.49779725389654755,
+                "ElectorsR": 335,
                 "year": 2016,
                 "DemographicGrouping": "ASER",
                 "WeightSource": "2016 Census",
                 "ElectoralWeightSource": "EW_Census",
-                "ElectorsD": 343
+                "ElectorsD": 203
             },
             {
-                "DemPref": 0.5168501503634724,
-                "ElectorsR": 294,
+                "DemPref": 0.48501461862802414,
+                "ElectorsR": 355,
                 "year": 2016,
                 "DemographicGrouping": "ASER",
                 "WeightSource": "2016 CCES",
                 "ElectoralWeightSource": "EW_CCES",
-                "ElectorsD": 244
+                "ElectorsD": 183
             },
             {
                 "DemPref": 0.5044266677258492,
@@ -561,7 +562,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
                     "scale": {
                         "domain": [
                             48.5,
-                            53.5
+                            51.5
                         ]
                     },
                     "title": "D Vote Share (%)",
@@ -572,7 +573,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
                     "scale": {
                         "domain": [
                             180,
-                            350
+                            300
                         ]
                     },
                     "title": "# D Electoral Votes",
@@ -594,7 +595,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
                     "scale": {
                         "domain": [
                             48.5,
-                            53.5
+                            51.5
                         ]
                     },
                     "title": null,
@@ -616,7 +617,7 @@ vegaEmbed('#figure_1',vlSpec);</script>
                     "scale": {
                         "domain": [
                             180,
-                            350
+                            300
                         ]
                     },
                     "title": null,
@@ -629,16 +630,15 @@ vegaEmbed('#figure_1',vlSpec);</script>
 };
 vegaEmbed('#figure_2',vlSpec);</script>
 </figure>
-<p>The CCES models look more like the actual election outcomes, though that could just be a coincidence. The census-sourced electoral weights predict higher turnout from younger voters and minority voters than does the CCES data, and is thus much more Democratic-candidate-friendly than the CCES data.</p>
-<p>Our point is that none of these is exactly right, they vary quite a bit from each other, and this is using data from an election to model the same election! Using that data to model the next one would be foolhardy.</p>
-<p>What pollsters actually do, is ask respondents a variety of questions to gauge how likely they are to vote. They combine this with demographic weighting (like the examples above) to estimate the makeup of the electorate. This is complicated and hard to get right and is part of what makes some polls more reliable than others. Previous elections may be used as sanity checks or as the baseline for non-poll-based models.</p>
-</section>
-<section id="conclusion" class="level2">
-<h2>Conclusion</h2>
+<p>The Census based models look more like the actual election outcomes, though that could just be a coincidence. The census-sourced electoral weights indicate higher turnout from younger and minority voters than does the CCES data, and is thus more Democratic-candidate-friendly than the CCES data.</p>
+<p>For a given data-set, there are significant differences in ASER and ASER5. Popular vote difference comes from correlation between turnout and preference among the more specific race categories. For instance, Black voters are more likely to vote for Democratic candidates <em>and</em> turnout to vote at higher rates than Latinx voters. So separating those groups out results in a model with higher Dem vote-share. The difference in electoral college outcome is even larger–electoral votes jump by more than you might expect from just the shift in popular vote–suggesting that the specific places that people of various racial backgrounds live is advantageous to a Democratic Presidential candidate.</p>
+<p>None of these models is particularly close to the actual election we had, and this is using data from an election to model the same election. Blindly using that data to model the 2020 election would be foolhardy.</p>
+<p>What pollsters actually do, is ask respondents a variety of questions to gauge how likely they are to vote. They combine this with demographic weighting (like the examples above) to estimate the makeup of the electorate. This is complicated and hard to get right, and is part of what makes some pollsters more reliable than others. Previous elections may be used as sanity checks or as the baseline for non-poll-based models.</p>
+<p>Election modelers then use these polls as well as fundamentals—economic trends, incumbency, etc.—to predict the probabilities of various outcomes. For a particularly thorough explanation of one such model, see the <a href="https://projects.economist.com/us-2020-forecast/president/how-this-works">Economist’s summary</a> of their work for 2020.</p>
 </section>
 <section id="model-notes" class="level2">
 <h2>Model Notes</h2>
-<p>As we continue to work with this data we refine and improve our modeling. In this post we have shifted from using the census summary of the CPS voter supplement to using the CPS microdata itself, as harmonized via the <a href="https://cps.ipums.org/cps/">IPUMS</a> web portal. This has several advantages. Firstly, the micro-data allows us to get turnout numbers at the <em>state</em> level. Also useful is that the microdata has more demographic information. For example, the summary tables allow us to explore the variables of age, sex and race <em>or</em> age, sex, and education but not age, sex, education, <em>and</em> race. This is important since the combination of education and race is necessary to explore the voting and turnout patterns of the so-called “White Working Class,” a crucial voting block in the past few elections. Another nice benefit is that the microdata contains more information about voting. It includes data about whether people voted by mail or voted early and some information about why registered non-voters didn’t vote. For all those reasons, going forward we will be using the micro-data sourced CPS turnout data instead of the previous nationally-aggregated summaries of that data.</p>
+<p>As we continue to work with this data we refine and improve our modeling. In this post we have shifted from using the census summary of the CPS voter supplement to using the CPS micro-data itself, as harmonized via the <a href="https://cps.ipums.org/cps/">IPUMS</a> web portal. This has several advantages. Firstly, the micro-data allows us to get turnout numbers at the <em>state</em> level. Also useful is that the micro-data has more demographic information. For example, the summary tables allow us to explore the variables of age, sex and race <em>or</em> age, sex, and education but not age, sex, education, <em>and</em> race. This is important since the combination of education and race is necessary to explore the voting and turnout patterns of the so-called “White Working Class,” a crucial voting block in the past few elections. Another nice benefit is that the micro-data contains more information about voting. It includes data about whether people voted by mail or voted early and some information about why registered non-voters didn’t vote. For all those reasons, going forward we will be using the micro-data sourced CPS turnout data instead of the previous nationally-aggregated summaries of that data.</p>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 </section>
 <!--

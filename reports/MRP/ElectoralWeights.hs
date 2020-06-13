@@ -21,6 +21,7 @@ module MRP.ElectoralWeights where
 
 import qualified Control.Foldl                 as FL
 import Control.Monad (join)
+import qualified Data.List as L
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 
@@ -81,17 +82,19 @@ import qualified MRP.CCES as CCES
 text1 :: T.Text
 text1 = [i|
 Why are political polls so confusing?  Why do the same set of polls often lead to very different predictions?
+Why did the Trump campaign ask CNN to retract a poll and why did CNN refuse?
+
 There are a number of things that make polls confusing and difficult to interpret.  Among them, choosing
 how to survey people (land-line phones?  Cell-phones?  Facebook survey?),
 selecting which questions to ask and how to phrase them, and then interpreting the data to reach some
 conclusion, e.g., to predict the outcome of an upcoming election. All these complexities are worth
 talking about but here we're going to focus on the last question: how do we go from polling-data to
-election prediction?
+prediction?
 
 1. **Polling and Prediction 101**
 2. **CNN vs. Trump**
 3. **Example: The 2016 Presidential Election**
-4. **Conclusion**
+4. **Model Notes**
 
 ## Polling and Prediction 101
 Predicting election outcomes via polling or survey data is hard: the people you survey
@@ -102,7 +105,7 @@ different in myriad ways from the population as a whole,  and also different fro
 of the population who will vote.
 
 Reconstructing the opinion of the population from a poll is done via weighting,
-assigning a weight to each response that allow users of the data to
+assigning a number to each response that allow users of the data to
 reconstruct a representative sample of the population from the survey.  For example, if
 a state has roughly the same number of adults above and below 45 but the survey has
 fewer responses from people over 45, those responses will be assigned higher weights.  Weighting
@@ -114,15 +117,13 @@ know the demographics of each county/district/state.  But if we want to predict 
 outcome, or decide where we need to focus resources because an election is likely to be close,
 we need to know who is going to cast a ballot in the election.  
 
-There are lots of reasons why people do and don't
+There are a lot of reasons people do and don't
 vote: see [our piece][BR:ID] on voter ID or Fair Vote's [rundown][FV:Turnout] on
 voter turnout, for example.  For the purposes of this post we're going to ignore
-the reasons and focus on the modeling problem.  For another point of view,
-[here][UpshotModel] is an explanation from the New York Times' Upshot about their
-election modeling.
+the reasons, and focus on the data problem of uncertain turnout.
 
-Figuring out how to weight opinion data to predict voting is, arguably, the
-most difficult part of determining out which elections/states are likely to be close and
+Figuring out how to weight opinion data to predict voting is among the
+most difficult parts of determining out which elections/states are likely to be close and
 thus where to prioritize work and the allocation of resources.
 
 ## CNN vs. Trump
@@ -131,8 +132,8 @@ CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
 over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and then
 [demanded CNN retract the poll][CNN:Demand] which CNN promptly
 [refused][CNN:RefuseRetract] to do.  The substantive objection made by Trump's
-campaign was that CNN should have weighted their poll so that the fraction
-of Republicans, Democrats and Independents was the same as in 2016.  It's not hard to
+campaign was that CNN should have *weighted their poll differently*, such that the fraction
+of Republicans, Democrats and Independents was the same as among voters in 2016.  It's not hard to
 see why this is a bad idea.  Firstly, as people's views on candidates change,
 so may their reported party.  So weighting to fix partisan identity will tend to obscure
 exactly the thing you are trying to measure.  If partisan identity were a stable feature of
@@ -140,7 +141,7 @@ the electorate, it might still make sense to weight this way, just to control fo
 sample.  But partisan identification is not particularly stable!
 In the chart below we plot partisan identity as reported
 in the CCES survey from 2006-2018 to see how much it shifts election to election.
-From the chart we see that voters are very roughly equally distributed between
+From the chart we see that though voters are roughly equally distributed between
 Democrats, Independents and Republicans, they shift around among those groups
 a significant amount.
 
@@ -170,26 +171,28 @@ text2 :: T.Text = [i|
 So, does the last election provide any useful guidance for weighting?
 Using partisan identity is particularly bad since it is so heavily correlated
 the thing a poll is trying to measure.  But perhaps if we just weight
-demographically, that is assume that the turnout in any given demogrpahic group
-in any state will be similar to 2016.  This doesn't have the correlation
-issue of partisan identity but turnout by demographic group is just as
-unstable.  So this is not a great starting point either.  But let's pretend it
-is, so we can focus on two other issues:  data sources on turnout vary
+demographically, that is assume that the turnout in any given demographic group
+in any state will be similar to 2016, this might provide reasonable weights?
+This doesn't have the correlation
+issue of partisan identity but turnout by demographic group is also
+variable election-to-election.  And there are two other issues:
+data sources on turnout vary
 dramatically and how one breaks down the demographics can change the results as well.
 To illustrate both these points, we built a few simple electorate models from
-2016 data, either from the census CPS voter survey or the CCES data (as above).
-For each data-set, we used multi-level regression to infer
+2016 data, either from the census [CPS voter survey][Census:CPSVoter]
+or the [CCES survey data][CCES].
+For each data-set, we used [multi-level regression][BR:MRP] to infer
 turnout probabilities in each state for 2 demographic groupings:
 
-- ASER: we infer turnout for 16 groups per state,
-by categorizing everyone by
-age (45 andOver/Under 45/45), sex (Female/Male),
+- **ASER**: we infer turnout for 16 groups per state,
+categorizing everyone by
+age (45 and Over/Under 45), sex (Female/Male),
 education (Non-College-Grad/College Grad or In College),
 and race (Non-White/White-Non-Latinx).
 
-- ASER5:  we infer turnout for 40 groups per state,
-by categorizing everyone by
-age (45 andOver/Under 45/45), sex (Female/Male),
+- **ASER5**:  we infer turnout for 40 groups per state,
+categorizing everyone by
+age (45 and Over/Under 45), sex (Female/Male),
 education (Non-College-Grad/College Grad or In College),
 and race (Black/Latinx/Asian/Other/White-Non-Latinx).
 
@@ -205,12 +208,16 @@ census demographics in each state and voter preferences inferred
 from the CCES data using the same multi-level regression methods.
 From that we compute the two-party vote share in each state and get 
 4 different 2016 outcomes in terms of national popular vote and electoral
-college. 
+votes.  This is not intended as something that would have been an actual
+forecast.  For that, we would want to simulate many elections with the
+given set of probabilities.  But these correspond to the average outcome
+with each of these electorate compositions and so give a picture of
+how different they are.
 
-The results are charted below and vary quite a bit,
-from a Dem popular vote share below 49.5% and 190 electoral votes to a popular vote share over 53% and
-340 electoral votes! That's a swing of almost 4% in the popular vote (~6 million votes)
-and the difference between losing and winning the election.
+The results are charted below and vary,
+from a Dem popular vote share below 48.5% and 180 electoral votes to a popular vote share of about 50.5% and
+almost 280 electoral votes! That's a swing of almost 3% in the popular vote (~4 million votes)
+and the difference between losing and winning the election.  
 
 [CNN:RefuseRetract]: <https://www.cnn.com/2020/06/10/politics/cnn-letter-to-trump-over-poll/index.html>
 [CNN:Demand]: <https://www.cnn.com/2020/06/10/politics/trump-campaign-cnn-poll/index.html>
@@ -218,7 +225,7 @@ and the difference between losing and winning the election.
 [AAPOR:LikelyVoters]: <https://www.aapor.org/Education-Resources/Election-Polling-Resources/Likely-Voters.aspx>
 [ElectProject:CPSOverReport]: <http://www.electproject.org/home/voter-turnout/cps-methodology>
 [Census:CPSVoter]: <https://www.census.gov/topics/public-sector/voting.html>
-[UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
+
 [DeepInteractions]: <http://www.stat.columbia.edu/~gelman/research/unpublished/deep-inter.pdf>
 [PEW:LikelyVoter]: <https://www.pewresearch.org/methods/2016/01/07/measuring-the-likelihood-to-vote/>
 [Census:PUMS]: <https://www.census.gov/programs-surveys/acs/technical-documentation/pums.html>
@@ -234,26 +241,43 @@ and the difference between losing and winning the election.
 
 text3 :: T.Text
 text3 = [i|
-The CCES models look more like the actual election outcomes,
+The Census based models look more like the actual election outcomes,
 though that could just be a coincidence.
-The census-sourced electoral weights predict higher turnout from younger voters
+The census-sourced electoral weights indicate higher turnout from younger
 and minority voters than does the CCES data,
-and is thus much more Democratic-candidate-friendly than the CCES data. 
+and is thus more Democratic-candidate-friendly than the CCES data.
 
-Our point is that none of these is exactly right,
-they vary quite a bit from each other,
-and this is using data from an election to model the same election!
-Using that data to model the next one would be foolhardy.
+For a given data-set, there are significant differences in ASER and
+ASER5.  Popular vote difference comes from correlation between
+turnout and preference among the more specific race categories.
+For instance, Black voters are more likely to vote for Democratic
+candidates *and* turnout to vote at higher rates than Latinx voters.
+So separating those groups out results in a model with higher
+Dem vote-share.  The difference in electoral college outcome is even
+larger--electoral votes jump by more than you might expect from just the
+shift in popular vote--suggesting that the specific places that
+people of various racial backgrounds live is advantageous to a
+Democratic Presidential candidate.
+
+None of these models is particularly close to the actual election we had,
+and this is using data from an election to model the same election.
+Blindly using that data to model the 2020 election would be foolhardy.
 
 What pollsters actually do, is ask respondents a variety of questions to gauge
 how likely they are to vote.  They combine this with demographic weighting (like
 the examples above) to estimate the makeup of the electorate. This is complicated
-and hard to get right and is part of what makes some polls more reliable than
+and hard to get right, and is part of what makes some pollsters more reliable than
 others. Previous elections may be used as sanity checks or as the
-baseline for non-poll-based models. 
+baseline for non-poll-based models.
 
-##Conclusion
+Election modelers then use these polls as well as fundamentals---economic trends,
+incumbency, etc.---to predict the probabilities of various outcomes. For a particularly
+thorough explanation of one such model,
+see the [Economist's summary][Economist:ElectionModel] of their work for 2020.
 
+
+[Economist:ElectionModel]: <https://projects.economist.com/us-2020-forecast/president/how-this-works>
+[UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
 [Vox:EducationWeighting]: <https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election>
 |]
 
@@ -262,16 +286,16 @@ modelingNotes = [i|
 ## Model Notes
 As we continue to work with this data we refine and improve our modeling.
 In this post we have shifted from using the census summary of the CPS voter supplement
-to using the CPS microdata itself, as harmonized via the [IPUMS][IPUMS-CPS] web portal.
+to using the CPS micro-data itself, as harmonized via the [IPUMS][IPUMS-CPS] web portal.
 This has several advantages.  Firstly, the micro-data
 allows us to get turnout numbers at the *state* level.
-Also useful is that the microdata has more demographic information.  For example,
+Also useful is that the micro-data has more demographic information.  For example,
 the summary tables allow us to explore the variables of age, sex and race *or*
 age, sex, and education but not age, sex, education, *and* race.  This is important since
 the combination of education and race is necessary to explore the voting and turnout
 patterns of the so-called "White Working Class," a crucial voting block in the past few
 elections.
-Another nice benefit is that the microdata contains more information about voting.  It includes
+Another nice benefit is that the micro-data contains more information about voting.  It includes
 data about whether people voted by mail or voted early and some information about why
 registered non-voters didn't vote.
 For all those reasons, going forward we will be using the micro-data sourced CPS turnout data instead of
@@ -380,7 +404,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                                      BR.catPredMaps
                                )
 
-
+  K.logLE K.Diagnostic $ "length(inferredCensusTurnoutASER)=" <> (T.pack $ show $ FL.fold FL.length inferredCensusTurnoutASER)
   inferredCensusTurnoutASER5 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusASER5_MR.bin"
                                (do
                                    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
@@ -441,20 +465,30 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                                         predictorsASER5
                                         BR.catPredMaps
                                   )
+
 {-                                  
   K.logLE K.Info $ "GA CCES Turnout (inferred)"
   logFrame $ F.filterFrame gaFilter inferredCCESTurnoutOfAllASER5
 -}                           
   --  logFrame inferredTurnoutASE
   -- demographics
-  pumsASERByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASERByState.bin"
+  pumsASERByState <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/weights/pumsASERByState.bin"
                      (do
                          pumsDemographics <- PUMS.pumsLoader
-                         return $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-                           $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
+                         let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                         
+                                      $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
+                             addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                                                (F.FrameRec (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                             addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
+                             addDefaultsF = FMR.concatFold
+                                            $ FMR.mapReduceFold
+                                            FMR.noUnpack
+                                            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                                            (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
+                         return $ FL.fold addDefaultsF rollup
                      )
-
-  pumsASER5ByState <- BR.retrieveOrMakeFrame "mrp/weight/pumsASER5ByState.bin"
+  K.logLE K.Diagnostic $ "length(pumsASERByState)=" <> (T.pack $ show $ FL.fold FL.length pumsASERByState)
+  pumsASER5ByState <- BR.retrieveOrMakeFrame "mrp/weights/pumsASER5ByState.bin"
                       (do
                           pumsDemographics <- PUMS.pumsLoader
                           let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                              
@@ -510,6 +544,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                                      @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASER5ByState) (fmap F.rcast inferredCCESTurnoutOfAllASER5)                                    
   
   aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
+  K.logLE K.Diagnostic $ "length(aserDemoAndAdjCCESEW)=" <> (T.pack $ show $ FL.fold FL.length aserDemoAndAdjCCESEW)
   aser5DemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" aser5DemoAndAdjCCESEW_action
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
@@ -531,29 +566,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                         (FMR.foldAndAddKey votesToVoteShareF)
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
-  aserAllByState <- BR.retrieveOrMakeFrame "mrp/weights/aserAllByState.bin"
-                    $ K.knitEither
-                    ( either (Left . T.pack . show) Right 
-                    $ FJ.leftJoinE @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER) inferredPrefsASER aserDemoAndAdjCensusEW)
-  aser5AllByState <- BR.retrieveOrMakeFrame "mrp/weights/aser5AllByState.bin"
-                     $ K.knitEither
-                     ( either (Left . T.pack . show) Right  
-                     $ FJ.leftJoinE @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASER5) inferredPrefsASER5 aser5DemoAndAdjCensusEW)
-  -- fold these to state level
-  let aserDemoF = FMR.concatFold $ FMR.mapReduceFold
-                  FMR.noUnpack
-                  (FMR.assignKeysAndData @(BR.CatColsASER V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
-                   @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
-                  (FMR.foldAndAddKey foldPrefAndTurnoutData)
-      aser5DemoF = FMR.concatFold $ FMR.mapReduceFold
-                   FMR.noUnpack
-                   (FMR.assignKeysAndData @(BR.CatColsASER5 V.++ '[BR.StateAbbreviation, BR.Year, ET.Office, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
-                     @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
-                   (FMR.foldAndAddKey foldPrefAndTurnoutData)
-                   
-      aserByState = FL.fold aserDemoF aserAllByState
-      aser5ByState = FL.fold aser5DemoF aser5AllByState
-      
+--  logFrame aserDemoAndAdjCensusEW
+--  logFrame inferredPrefsASER
+  K.logLE K.Diagnostic $ T.pack $ show $ FL.fold FL.length aserDemoAndAdjCensusEW
+  K.logLE K.Diagnostic $ T.pack $ show $ FL.fold FL.length inferredPrefsASER
   electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> BR.electoralCollegeFrame
   let yearFilter y r =  F.rgetField @BR.Year r == y 
       yearOfficeFilter y o r =  yearFilter y r && F.rgetField @ET.Office r == o
@@ -677,6 +693,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   aser5Wgtd2 <- BR.retrieveOrMakeFrame "mrp/weights/aser5Wgtd2.bin" (mconcat <$> sequence [aser5WgtdByCensus2016, aser5WgtdByCensus2018, aser5CCES2])      
   let aser5EwResults = FL.fold ewResultsF aser5Wgtd 
       aser5EwResults2 = FL.fold ewResultsF aser5Wgtd2
+      cces2016 r = F.rgetField @BR.Year r == 2016 && F.rgetField @ET.ElectoralWeightSource r == ET.EW_CCES
+      prefsFilter st r = F.rgetField @BR.Year r == 2016 && F.rgetField @BR.StateAbbreviation r == st && F.rgetField @ET.Office r == ET.President
+      turnoutFilter st r = F.rgetField @BR.Year r == 2016 && F.rgetField @BR.StateAbbreviation r == st
+{-      
+  logFrame $ F.toFrame $ L.sortOn (F.rgetField @BR.StateAbbreviation) $ FL.fold FL.list $ F.filterFrame cces2016 (aser5Wgtd <> aserWgtd)
+  
+  logFrame $ F.filterFrame (prefsFilter "AK") inferredPrefsASER
+  logFrame $ F.filterFrame (prefsFilter "AK") inferredPrefsASER5
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") $ aserDemo 2016 ET.President
+  logFrame $ F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") $ aser5Demo 2016 ET.President
+-}
+--  logFrame $ F.filterFrame (turnoutFilter "AK") inferredCCESTurnoutOfAllASER
+--  logFrame $ F.filterFrame (turnoutFilter "AK") inferredCCESTurnoutOfAllASER5
+  
   logFrame aser5EwResults
 
 ---
@@ -686,8 +716,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   K.newPandoc
     (K.PandocInfo ((postRoute PostElectoralWeights) <> "main")
       (brAddDates updated pubDateElectoralWeights curDate
-       $ M.fromList [("pagetitle", "What Are We Talking About When We Talk About Electoral Weights?")
-                    ,("title","What Are We Talking About When We Talk About Electoral Weights?")
+       $ M.fromList [("pagetitle", "Polling Explainer: CNN vs. Trump")
+                    ,("title","Polling Explainer: CNN vs. Trump")
                     ]
       ))
       $ do        
@@ -756,8 +786,8 @@ vlWeights title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
       makeVS =  GV.calculateAs "100 * datum.DemPref" "Vote Share (%)"
       makeVSRuleVal = GV.calculateAs "50" "50%"
-      voteShareDomain = GV.SDomain $ GV.DNumbers [48.5, 53.5]
-      evDomain = GV.SDomain $ GV.DNumbers [180, 350]
+      voteShareDomain = GV.SDomain $ GV.DNumbers [48.5, 51.5]
+      evDomain = GV.SDomain $ GV.DNumbers [180, 300]
       encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [voteShareDomain], GV.PNoTitle]
       makeEVRuleVal = GV.calculateAs "269" "Evenly Split"
       encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [evDomain], GV.PNoTitle]
@@ -787,6 +817,10 @@ type WeightSource = "WeightSource" F.:-> T.Text
 mergeElectionData ::
   forall ks cs xs ys zs r
   . (K.KnitEffects r
+    , V.RMap (ks V.++ cs)
+    , V.ReifyConstraint Show V.ElField (ks V.++ cs)
+    , V.RecordToList (ks V.++ cs)
+    , FI.RecVec (ks V.++ cs)
     , F.ElemOf ((xs V.++ F.RDeleteAll (ks V.++ cs) ys) V.++ F.RDeleteAll (ks V.++ cs) zs) PUMS.Citizens
     , F.ElemOf ((xs V.++ F.RDeleteAll (ks V.++ cs) ys) V.++ F.RDeleteAll (ks V.++ cs) zs) BR.DemPref
     , F.ElemOf ((xs V.++ F.RDeleteAll (ks V.++ cs) ys) V.++ F.RDeleteAll (ks V.++ cs) zs) ET.ElectoralWeight
@@ -822,18 +856,17 @@ mergeElectionData demographics prefs wSource wgts = K.wrapPrefix "mergeElectionD
                FMR.noUnpack
                (FMR.assignKeysAndData @ks @[PUMS.Citizens, BR.DemPref, ET.ElectoralWeight])
                (FMR.foldAndAddKey catFold)
-      demoPrefWeightM = FJ.leftJoinM3 @(ks V.++ cs) demographics prefs wgts
-  case demoPrefWeightM of
-    Nothing -> do
-      K.logLE K.Diagnostic "Missing key in mergeElectionData"
-      K.logLE K.Diagnostic $ "demographics (" <> (T.pack . show $ FL.fold FL.length demographics) <> " rows)"
-      logFrame demographics
-      K.logLE K.Diagnostic $ "prefs (" <> (T.pack . show $ FL.fold FL.length prefs) <> " rows)"
-      logFrame prefs
-      K.logLE K.Diagnostic $ "wgts (" <> (T.pack . show $ FL.fold FL.length wgts) <> " rows)"
-      logFrame wgts
-      K.knitError "Missing key in mergeElectionData"
-    Just demoPrefWeight -> do
+      demoPrefWeightE = FJ.leftJoinE3 @(ks V.++ cs) demographics prefs wgts
+  case demoPrefWeightE of
+    Left (FJ.FirstJoin mKeys) -> do
+      K.logLE K.Error "key(s) present in demographics but not prefs: "
+      logFrame $ F.toFrame mKeys
+      K.knitError "Error in mergeElectionData"
+    Left (FJ.SecondJoin mKeys) -> do
+      K.logLE K.Error "key(s) present in demographics and prefs but not wgts:"
+      logFrame $ F.toFrame mKeys
+      K.knitError "Error in mergeElectionData"
+    Right demoPrefWeight -> do 
       let postStratified :: F.FrameRec (ks V.++ [PUMS.Citizens, BR.DemPref, ET.ElectoralWeight])
           postStratified = FL.fold psFold demoPrefWeight
       return $ fmap (F.rcast . FT.addColumn @WeightSource wSource) postStratified
