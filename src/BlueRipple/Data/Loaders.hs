@@ -71,7 +71,7 @@ import qualified Frames.SimpleJoins            as FJ
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-electoralCollegeFrame :: K.KnitEffects r => K.Sem r (F.Frame BR.ElectoralCollege)
+electoralCollegeFrame :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.ElectoralCollege)))
 electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing Nothing id Nothing "electoralCollege.bin"
 
 
@@ -96,7 +96,7 @@ fixPresidentialElectionRow = F.rcast . addCols where
 
 
 presidentialByStateFrame
-  :: K.KnitEffects r => K.Sem r (F.FrameRec PresidentialElectionCols)
+  :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec PresidentialElectionCols)))
 presidentialByStateFrame = cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PresidentialElectionCols
   (DataSets $ T.pack BR.presidentialByStateCSV)
   Nothing
@@ -106,17 +106,17 @@ presidentialByStateFrame = cachedMaybeFrameLoader @(F.RecordColumns BR.President
   Nothing
   "presByState.sbin"
 
-puma2012ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2012ToCD116)
+puma2012ToCD116Loader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.PUMA2012ToCD116)))
 puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116CSV) Nothing Nothing id Nothing "puma2012ToCD116.sbin"
 
-puma2000ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.PUMA2000ToCD116)
+puma2000ToCD116Loader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.PUMA2000ToCD116)))
 puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing Nothing id Nothing "puma2000ToCD116.sbin"
 
-county2010ToCD116Loader :: K.KnitEffects r => K.Sem r (F.Frame BR.CountyToCD116)
+county2010ToCD116Loader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.CountyToCD116)))
 county2010ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
 
 
-aseDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASEDemographics)
+aseDemographicsLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.ASEDemographics)))
 aseDemographicsLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.ageSexEducationDemographicsLongCSV)
@@ -126,14 +126,16 @@ aseDemographicsLoader =
   Nothing
   "aseDemographics.sbin"
 
-simpleASEDemographicsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.ACSCount]))
-simpleASEDemographicsLoader =
+simpleASEDemographicsLoader :: K.KnitEffects r
+                            => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.ACSCount]))))
+simpleASEDemographicsLoader = do
+  K.WithCacheTime aseACSRawCT aseACSRawA <- aseDemographicsLoader  -- get cache time and action to decode data if required
   let make = do
-         aseACSRaw <- aseDemographicsLoader
-         K.knitEither $ FL.foldM DT.simplifyACS_ASEFold aseACSRaw
-  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASE.bin" make
+        aseACSRaw <- aseACSRawA
+        K.knitEither $ FL.foldM DT.simplifyACS_ASEFold aseACSRaw
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASE.bin" (Just aseACSRawCT) make
   
-asrDemographicsLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.ASRDemographics)
+asrDemographicsLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.ASRDemographics)))
 asrDemographicsLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.ageSexRaceDemographicsLongCSV)
@@ -143,14 +145,16 @@ asrDemographicsLoader =
   Nothing
   "asrDemographics.sbin"
 
-simpleASRDemographicsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount]))
-simpleASRDemographicsLoader =
+simpleASRDemographicsLoader :: K.KnitEffects r
+  => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount]))))
+simpleASRDemographicsLoader = do
+  K.WithCacheTime asrACSRawCT asrACSRawA <- asrDemographicsLoader  -- get cache time and action to decode data if required
   let make = do
-         asrACSRaw <- asrDemographicsLoader
+         asrACSRaw <- asrACSRawA
          K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrACSRaw
-  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" make
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" (Just asrACSRawCT) make
 
-aseTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASE)
+aseTurnoutLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.TurnoutASE)))
 aseTurnoutLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.detailedASETurnoutCSV)
@@ -160,14 +164,16 @@ aseTurnoutLoader =
   Nothing
   "aseTurnout.sbin"
 
-simpleASETurnoutLoader :: K.KnitEffects r => K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])
-simpleASETurnoutLoader =
+simpleASETurnoutLoader :: K.KnitEffects r
+                       => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])))
+simpleASETurnoutLoader = do
+  K.WithCacheTime aseRawCT aseTurnoutRawA <- aseTurnoutLoader  -- get cache time and action to decode data if required
   let make = do
-         aseTurnoutRaw <- aseTurnoutLoader
+         aseTurnoutRaw <- aseTurnoutRawA
          K.knitEither $ FL.foldM DT.simplifyTurnoutASEFold aseTurnoutRaw
-  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASE.bin" make
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASE.bin" (Just aseRawCT) make
 
-asrTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.TurnoutASR)
+asrTurnoutLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.TurnoutASR)))
 asrTurnoutLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.detailedASRTurnoutCSV)
@@ -177,20 +183,22 @@ asrTurnoutLoader =
   Nothing
   "asrTurnout.sbin"
 
-simpleASRTurnoutLoader :: K.KnitEffects r => K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])
-simpleASRTurnoutLoader =
+simpleASRTurnoutLoader :: K.KnitEffects r
+  => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted])))
+simpleASRTurnoutLoader = do
+  K.WithCacheTime rawCT asrTurnoutRawA <- asrTurnoutLoader
   let make = do
-         asrTurnoutRaw <- asrTurnoutLoader
+         asrTurnoutRaw <- asrTurnoutRawA
          K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
-  in  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" make
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" (Just rawCT) make
 
 
-stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (F.Frame BR.States)
+stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.States)))
 stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
-stateTurnoutLoader :: K.KnitEffects r => K.Sem r (F.Frame BR.StateTurnout)
+stateTurnoutLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.StateTurnout)))
 stateTurnoutLoader = cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
                      (DataSets $ T.pack BR.stateTurnoutCSV)
                      Nothing
@@ -234,7 +242,7 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
     . FT.mutate
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
-houseElectionsLoader :: K.KnitEffects r => K.Sem r (F.FrameRec HouseElectionCols)
+houseElectionsLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec HouseElectionCols)))
 houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.sbin"
 
 data DataPath = DataSets T.Text | LocalData T.Text
@@ -263,14 +271,12 @@ cachedRecStreamLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> Streamly.SerialT (K.Sem r) (F.Record rs)
+  -> K.Sem r (K.StreamWithCacheTime r (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
-      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
+  let cacheRecList :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+      cacheRecList k = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k Nothing -- TODO: change this to file mod time ??
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
-  Streamly.yieldM $ K.logLE K.Diagnostic
-    $  "loading or retrieving and saving data at key="
-    <> cacheKey
+  K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   cacheRecList cacheKey $ fixMonadCatch $ recStreamLoader filePath parserOptionsM filterM fixRow
 
 recStreamLoader
@@ -319,9 +325,9 @@ cachedFrameLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> K.Sem r (F.FrameRec rs)
+  -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec rs)))
 cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = 
-  fmap F.toFrame $ Streamly.toList $ cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
+  fmap (fmap F.toFrame . Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
 
 
 -- file has qs
@@ -421,12 +427,12 @@ cachedMaybeRecStreamLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> Streamly.SerialT (K.Sem r) (F.Record rs)
+  -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
 cachedMaybeRecStreamLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key = do
-  let cacheRecStream :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> Streamly.SerialT (P.Sem r) (F.Record rs)
-      cacheRecStream = K.retrieveOrMakeTransformedStream FS.toS FS.fromS
+  let cacheRecStream :: T.Text -> Streamly.SerialT (P.Sem r) (F.Record rs) -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+      cacheRecStream k = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k Nothing
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
-  Streamly.yieldM $ K.logLE K.Diagnostic
+  K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
   cacheRecStream cacheKey $ K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow
@@ -505,9 +511,9 @@ cachedMaybeFrameLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> K.Sem r (F.FrameRec rs)
+  -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec rs)))
 cachedMaybeFrameLoader filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
-  = fmap F.toFrame $ Streamly.toList $ cachedMaybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
+  = fmap (fmap F.toFrame . Streamly.toList) <$> cachedMaybeRecStreamLoader @fs @qs @rs filePath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
 
 

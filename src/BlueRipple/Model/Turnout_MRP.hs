@@ -110,7 +110,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf newestM datFrame votersF predict
   let cacheIt cn fa = 
         case cacheTmpDirM of
           Nothing -> fa
-          Just tmpDir -> fmap K.ignoreCacheTime 
+          Just tmpDir -> K.getCachedData 
                          $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         
