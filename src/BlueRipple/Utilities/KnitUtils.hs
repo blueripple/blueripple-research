@@ -125,14 +125,24 @@ retrieveOrMakeFrame :: (K.KnitEffects r
                        , FS.RecSerialize rs
                        , V.RMap rs
                        , FI.RecVec rs
-                       ) => T.Text -> K.Sem r (F.FrameRec rs) -> K.Sem r (F.FrameRec rs)
-retrieveOrMakeFrame key action =  K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
-                                  $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key action
+                       )
+                    => T.Text
+                    -> Maybe K.UTCTime
+                    -> K.Sem r (F.FrameRec rs)
+                    -> K.Sem r (K.WithCacheTime (F.FrameRec rs))
+retrieveOrMakeFrame key newestM action =
+  K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
+  $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key newestM action
 
 retrieveOrMakeRecList :: (K.KnitEffects r
                        , FS.RecSerialize rs
                        , V.RMap rs
                        , FI.RecVec rs
-                       ) => T.Text -> K.Sem r[F.Record rs] -> K.Sem r [F.Record rs]
-retrieveOrMakeRecList key action =   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
-                                     $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key action
+                       )
+                      => T.Text
+                      -> Maybe K.UTCTime
+                      -> K.Sem r [F.Record rs]
+                      -> K.Sem r (K.WithCacheTime [F.Record rs])
+retrieveOrMakeRecList key newestM action =
+  K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
+  $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key newestM action

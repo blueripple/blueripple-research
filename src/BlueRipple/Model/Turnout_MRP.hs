@@ -89,21 +89,13 @@ mrpTurnout
   -> Maybe T.Text
   -> ET.ElectoralWeightSourceT
   -> ET.ElectoralWeightOfT
+  -> Maybe K.UTCTime
   -> F.FrameRec rs
   -> (Int -> FL.Fold (F.Record rs) (F.FrameRec ('[BR.StateAbbreviation] V.++ cc V.++ BR.CountCols)))
   -> [BR.SimpleEffect cc]
   -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
-  -> K.Sem
-       r
-       ( F.FrameRec
-           ( '[BR.StateAbbreviation]
-               V.++
-               cc
-               V.++
-               '[BR.Year,  ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
-           )
-       )
-mrpTurnout verbosity cacheTmpDirM ewSource ewOf datFrame votersF predictor catPredMap = do
+  -> K.Sem r (F.FrameRec ('[BR.StateAbbreviation] V.++ cc V.++ '[BR.Year,  ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
+mrpTurnout verbosity cacheTmpDirM ewSource ewOf newestM datFrame votersF predictor catPredMap = do
   let lhToRecs year (BR.LocationHolder lp lkM predMap) =
         let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
             recToAdd w = year F.&: (ET.ewRec ewSource ewOf w)
@@ -118,10 +110,12 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf datFrame votersF predictor catPr
   let cacheIt cn fa = 
         case cacheTmpDirM of
           Nothing -> fa
-          Just tmpDir -> K.retrieveOrMakeTransformed
+          Just tmpDir -> fmap K.ignoreCacheTime 
+                         $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
-                         (F.toFrame . fmap FS.fromS)
+                         (F.toFrame . fmap FS.fromS)                         
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
+                         newestM
                          fa
       wYearActions = fmap
                      (\y -> cacheIt
