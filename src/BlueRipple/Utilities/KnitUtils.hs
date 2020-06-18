@@ -129,7 +129,7 @@ retrieveOrMakeFrame :: (K.KnitEffects r
                     => T.Text
                     -> Maybe K.UTCTime
                     -> K.Sem r (F.FrameRec rs)
-                    -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec rs))) -- inner action does deserializtion. But we may not need to, so we defer
+                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
 retrieveOrMakeFrame key newestM action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key newestM action
@@ -142,7 +142,7 @@ retrieveOrMakeRecList :: (K.KnitEffects r
                       => T.Text
                       -> Maybe K.UTCTime
                       -> K.Sem r [F.Record rs]
-                      -> K.Sem r (K.WithCacheTime (K.Sem r [F.Record rs]))
+                      -> K.Sem r (K.ActionWithCacheTime r [F.Record rs])
 retrieveOrMakeRecList key newestM action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key newestM action

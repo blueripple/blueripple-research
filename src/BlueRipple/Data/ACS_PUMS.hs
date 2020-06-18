@@ -169,10 +169,11 @@ toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 pumsLoader
   ::  forall r. K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec PUMS)))
 pumsLoader = do
+  K.WithCacheTime stateAbbrTime stateCrosswalkFrameA <- BR.stateAbbrCrosswalkLoader
   let action :: Streamly.SerialT (K.Sem r) (F.Record PUMS)
       action = do
         Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
-        stateCrossWalkFrame <- Streamly.yieldM $ BR.stateAbbrCrosswalkLoader
+        stateCrossWalkFrame <- Streamly.yieldM stateCrosswalkFrameA
         let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateCrossWalkFrame
         Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
         let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
@@ -191,7 +192,8 @@ pumsLoader = do
           $ Streamly.fold pumsCountSF
           $ pumsRowsLoader
   modTime <- K.liftKnit $ BR.getModTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
-  fmap (fmap F.toFrame . Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" (Just modTime) action
+  let newestDepTime = max modTime stateAbbrTime
+  fmap (fmap F.toFrame . Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" (Just newestDepTime) action
 
 --  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 
@@ -239,8 +241,8 @@ pumsCDRollup
  ->  F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup mapKeys pumsFrame = do
-  pumaToCD2012 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> BR.puma2012ToCD116Loader
-  pumaToCD2000 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> BR.puma2000ToCD116Loader
+  pumaToCD2012 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> K.getCachedAction BR.puma2012ToCD116Loader
+  pumaToCD2000 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> K.getCachedAction BR.puma2000ToCD116Loader
   let addYears ys f = F.toFrame $ concat $ fmap (\r -> fmap (\y -> FT.addColumn @BR.Year y r) ys) $ FL.fold FL.list f
       pumaToCD = addYears [2012, 2014, 2016, 2018] pumaToCD2012 <> addYears [2008, 2010] pumaToCD2000      
       pumsWithCDAndWeightM = F.leftJoin @[BR.Year, BR.StateFIPS, BR.PUMA] pumsFrame pumaToCD

@@ -106,30 +106,41 @@ import qualified Polysemy                as P (raise)
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CPSVoterPUMS)
-cpsVoterPUMSLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" $ do
-  let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
-  withoutAbbr <- BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
-                 (BR.LocalData $ T.pack BR.cpsVoterPUMSCSV)
-                 Nothing
-                 (Just filter)
-                 transformCPSVoterPUMSRow
-                 Nothing
-                 "cpsVoterPUMS.bin"
-  stateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
-  fmap (fmap F.rcast) $ (K.knitMaybe "missing state abbreviation in state abbreviation crosswalk"
-                         $ FJ.leftJoinM @'[BR.StateFIPS] withoutAbbr stateAbbrCrosswalk)
+cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
+cpsVoterPUMSLoader = do
+  let cpsPUMSDataPath = BR.LocalData $ T.pack BR.cpsVoterPUMSCSV
+  K.WithCacheTime stateAbbrTime stateAbbrFrameA <- BR.stateAbbrCrosswalkLoader
+  cpsModTime <- K.liftKnit $ BR.getModTime cpsPUMSDataPath
+  let newestDepTime = max cpsModTime stateAbbrTime
+  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" (Just cpsModTime) $ do
+    let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
+    withoutAbbr <- K.getCachedAction
+                   $ BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
+                   cpsPUMSDataPath
+                   Nothing
+                   (Just filter)
+                   transformCPSVoterPUMSRow
+                   Nothing
+                   "cpsVoterPUMS.bin"
+    stateAbbrCrosswalk <- stateAbbrFrameA
+    fmap (fmap F.rcast) $ (K.knitMaybe "missing state abbreviation in state abbreviation crosswalk"
+                            $ FJ.leftJoinM @'[BR.StateFIPS] withoutAbbr stateAbbrCrosswalk)
+
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
-cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-cpsVoterPUMSWithCDLoader = BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" $ do
-  cpsVoterPUMS <- cpsVoterPUMSLoader
-  countyToCD <- BR.county2010ToCD116Loader
-  K.knitEither . either (Left . T.pack . show) Right
-    $ FJ.leftJoinE
-    @[BR.StateFIPS, BR.CountyFIPS]
-    (F.filterFrame ((> 0) . F.rgetField @BR.CountyFIPS) cpsVoterPUMS)
-    (fmap (F.rcast @[BR.CountyFIPS, BR.StateFIPS, BR.CongressionalDistrict, BR.CountyWeight]) countyToCD)
+cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
+cpsVoterPUMSWithCDLoader = do
+  K.WithCacheTime pumsTime cpsVoterPumsA <- cpsVoterPUMSLoader
+  K.WithCacheTime countyToCDTime countyToCDA <- BR.county2010ToCD116Loader
+  let newestDepTime = max pumsTime countyToCDTime
+  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" (Just newestDepTime) $ do
+    cpsVoterPUMS <- cpsVoterPumsA
+    countyToCD <- countyToCDA
+    K.knitEither . either (Left . T.pack . show) Right
+      $ FJ.leftJoinE
+      @[BR.StateFIPS, BR.CountyFIPS]
+      (F.filterFrame ((> 0) . F.rgetField @BR.CountyFIPS) cpsVoterPUMS)
+      (fmap (F.rcast @[BR.CountyFIPS, BR.StateFIPS, BR.CongressionalDistrict, BR.CountyWeight]) countyToCD)
                                                        
 
 type CPSVoterPUMSWeight = "CPSVoterPUMSWeight" F.:-> Double

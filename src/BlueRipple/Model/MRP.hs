@@ -307,15 +307,13 @@ predictionsByLocation ::
                   , K.KnitEffects r
                )
   => GLM.MinimizeDevianceVerbosity
-  -> K.Sem r (F.FrameRec rs)
+  -> F.FrameRec rs
   -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ CountCols))  
   -> [SimpleEffect ps]
   -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
-predictionsByLocation verbosity ccesFrameAction countFold predictors catPredMap =
+predictionsByLocation verbosity ccesFrame countFold predictors catPredMap =
   P.mapError glmErrorToPandocError  $ K.wrapPrefix "predictionsByLocation" $ do
-    K.logLE K.Diagnostic "Starting (getting data )"
-    ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
     K.logLE K.Diagnostic ("Inferring")
     (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps
                                  verbosity

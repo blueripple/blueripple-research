@@ -359,69 +359,79 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
 
-  partisanId <- BR.retrieveOrMakeFrame "mrp/weights/partisanId.bin" $ do
-    ccesData <- ccesDataLoader
-    let voted r = F.rgetField @CCES.Turnout r == CCES.T_Voted
-        withPartyId r = F.rgetField @CCES.PartisanId3 r `elem` [CCES.PI3_Democrat, CCES.PI3_Republican, CCES.PI3_Independent]
-        votedWithId r = voted r && withPartyId r 
-        partisanIdF = FMR.concatFold
-                          $ FMR.mapReduceFold
-                          (FMR.unpackFilterRow votedWithId)
-                          (FMR.assignKeysAndData @[BR.Year, CCES.PartisanId3] @'[CCES.CCESWeightCumulative])
-                          (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-        partisanId = FL.fold partisanIdF ccesData
-        totalByYearF = FMR.concatFold
-                       $ FMR.mapReduceFold
-                       FMR.noUnpack
-                       (FMR.assignKeysAndData @'[BR.Year] @'[CCES.CCESWeightCumulative])
-                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-        totalWeight = fmap (FT.retypeColumn @CCES.CCESWeightCumulative @'("TotalWeight", Double))
-                      $ FL.fold totalByYearF partisanId
-    partisanIdFraction <- do
-      withWeights <- K.knitEither
-                     $ either (Left . T.pack . show) Right
-                     $ FJ.leftJoinE @'[BR.Year] partisanId totalWeight
-      let w = F.rgetField @CCES.CCESWeightCumulative
-          t = F.rgetField @'("TotalWeight", Double)
-          getFraction :: F.Record '[CCES.CCESWeightCumulative, '("TotalWeight", Double)] -> F.Record '[ '("Fraction", Double)]
-          getFraction r = (w r/ t r) F.&: V.RNil
-      return $ fmap (FT.transform getFraction) withWeights
-    return partisanIdFraction
+  partisanId <- K.getCachedAction $ do
+    K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
+    BR.retrieveOrMakeFrame "mrp/weights/partisanId.bin" (Just ccesDataTime) $ do
+      ccesData <- ccesDataA
+      let voted r = F.rgetField @CCES.Turnout r == CCES.T_Voted
+          withPartyId r = F.rgetField @CCES.PartisanId3 r `elem` [CCES.PI3_Democrat, CCES.PI3_Republican, CCES.PI3_Independent]
+          votedWithId r = voted r && withPartyId r 
+          partisanIdF = FMR.concatFold
+                        $ FMR.mapReduceFold
+                        (FMR.unpackFilterRow votedWithId)
+                        (FMR.assignKeysAndData @[BR.Year, CCES.PartisanId3] @'[CCES.CCESWeightCumulative])
+                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+          partisanId = FL.fold partisanIdF ccesData
+          totalByYearF = FMR.concatFold
+                         $ FMR.mapReduceFold
+                         FMR.noUnpack
+                         (FMR.assignKeysAndData @'[BR.Year] @'[CCES.CCESWeightCumulative])
+                         (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+          totalWeight = fmap (FT.retypeColumn @CCES.CCESWeightCumulative @'("TotalWeight", Double))
+                        $ FL.fold totalByYearF partisanId
+      partisanIdFraction <- do
+        withWeights <- K.knitEither
+                       $ either (Left . T.pack . show) Right
+                       $ FJ.leftJoinE @'[BR.Year] partisanId totalWeight
+        let w = F.rgetField @CCES.CCESWeightCumulative
+            t = F.rgetField @'("TotalWeight", Double)
+            getFraction :: F.Record '[CCES.CCESWeightCumulative, '("TotalWeight", Double)] -> F.Record '[ '("Fraction", Double)]
+            getFraction r = (w r/ t r) F.&: V.RNil
+        return $ fmap (FT.transform getFraction) withWeights
+      return partisanIdFraction
+
   logFrame partisanId
   
-  inferredCensusTurnoutASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin"
-                               (do
-                                   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
-                                   P.raise
-                                     $ BR.mrpTurnout @BR.CatColsASER
-                                     GLM.MDVNone
-                                     (Just "T_CensusASER")
-                                     ET.EW_Census
-                                     ET.EW_Citizen
-                                     cpsVoterPUMS
-                                     (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER True . F.rcast)
-                                     predictorsASER
-                                     BR.catPredMaps
-                               )
+  inferredCensusTurnoutASER <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime cpsVoterTime cpsVoterPUMSA <- CPS.cpsVoterPUMSLoader
+    BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin" (Just cpsVoterTime) $ do                               
+      cpsVoterPUMS <- cpsVoterPUMSA
+      P.raise
+        $ BR.mrpTurnout @BR.CatColsASER
+        GLM.MDVNone
+        (Just "T_CensusASER")
+        ET.EW_Census
+        ET.EW_Citizen
+        (Just cpsVoterTime)
+        cpsVoterPUMS
+        (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER True . F.rcast)
+        predictorsASER
+        BR.catPredMaps
 
   K.logLE K.Diagnostic $ "length(inferredCensusTurnoutASER)=" <> (T.pack $ show $ FL.fold FL.length inferredCensusTurnoutASER)
-  inferredCensusTurnoutASER5 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/censusASER5_MR.bin"
-                               (do
-                                   cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
-                                   P.raise
-                                     $ BR.mrpTurnout @BR.CatColsASER5
-                                     GLM.MDVNone
-                                     (Just "T_CensusASER5")
-                                     ET.EW_Census
-                                     ET.EW_Citizen
-                                     cpsVoterPUMS
-                                     (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER5 True . F.rcast)
-                                     predictorsASER5
-                                     BR.catPredMaps
-                               )                               
+  inferredCensusTurnoutASER5 <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime cpsVoterTime cpsVoterPUMSA <- CPS.cpsVoterPUMSLoader    
+    BR.retrieveOrMakeFrame "mrp/turnout/censusASER5_MR.bin" (Just cpsVoterTime) $ do
+      cpsVoterPUMS <- cpsVoterPUMSA
+      P.raise
+        $ BR.mrpTurnout @BR.CatColsASER5
+        GLM.MDVNone
+        (Just "T_CensusASER5")
+        ET.EW_Census
+        ET.EW_Citizen
+        (Just cpsVoterTime)
+        cpsVoterPUMS
+        (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER5 True . F.rcast)
+        predictorsASER5
+        BR.catPredMaps
+
   -- preferences
-  inferredPrefsASER <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesDataLoader predictorsASER BR.catPredMaps)
+  inferredPrefsASER <-  fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
+    BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" (Just ccesDataTime) $ do
+      ccesData <- ccesDataA
+      P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") (Just ccesDataTime) ccesData predictorsASER BR.catPredMaps
+
   let
     addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
                      (FMR.noUnpack)
@@ -431,40 +441,46 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                        $ const
                        $ Keyed.addDefaultRec @BR.CatColsASER5 BR.zeroCount
                      )
-  inferredPrefsASER5 <-  F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/prefsASER5_MR.bin"
-                         (P.raise $ BR.mrpPrefs @BR.CatColsASER5 GLM.MDVSimple (Just "T_prefsASER5") ccesDataLoader predictorsASER5 BR.catPredMaps)                         
+                     
+  inferredPrefsASER5 <-  fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
+    BR.retrieveOrMakeFrame "mrp/prefsASER5_MR.bin" (Just ccesDataTime) $ do
+      ccesData <- ccesDataA
+      P.raise $ BR.mrpPrefs @BR.CatColsASER5 GLM.MDVSimple (Just "T_prefsASER5") (Just ccesDataTime) ccesData predictorsASER5 BR.catPredMaps
 
   -- inferred turnout
-  inferredCCESTurnoutOfAllASER <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllSimpleASER_MR.bin"
-                                  (do
-                                      ccesData <- ccesDataLoader
-                                      P.raise
-                                        $ BR.mrpTurnout @BR.CatColsASER
-                                        GLM.MDVNone
-                                        (Just "T_OfAllASER")
-                                        ET.EW_CCES
-                                        ET.EW_Citizen
-                                        ccesData
-                                        (BR.countVotersOfAllF @BR.CatColsASER)
-                                        predictorsASER
-                                        BR.catPredMaps
-                                  )
+  inferredCCESTurnoutOfAllASER <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
+    BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllSimpleASER_MR.bin" (Just ccesDataTime) $ do                                  
+      ccesData <- ccesDataA
+      P.raise
+        $ BR.mrpTurnout @BR.CatColsASER
+        GLM.MDVNone
+        (Just "T_OfAllASER")
+        ET.EW_CCES
+        ET.EW_Citizen
+        (Just ccesDataTime)
+        ccesData
+        (BR.countVotersOfAllF @BR.CatColsASER)
+        predictorsASER
+        BR.catPredMaps
 
 
-  inferredCCESTurnoutOfAllASER5 <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllASER5_MR.bin"
-                                  (do
-                                      ccesData <- ccesDataLoader
-                                      P.raise
-                                        $ BR.mrpTurnout @BR.CatColsASER5
-                                        GLM.MDVNone
-                                        (Just "T_OfAllASER5")
-                                        ET.EW_CCES
-                                        ET.EW_Citizen
-                                        ccesData
-                                        (BR.countVotersOfAllF @BR.CatColsASER5)
-                                        predictorsASER5
-                                        BR.catPredMaps
-                                  )
+  inferredCCESTurnoutOfAllASER5 <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
+    BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllASER5_MR.bin" (Just ccesDataTime) $ do
+      ccesData <- ccesDataA
+      P.raise
+        $ BR.mrpTurnout @BR.CatColsASER5
+        GLM.MDVNone
+        (Just "T_OfAllASER5")
+        ET.EW_CCES
+        ET.EW_Citizen
+        (Just ccesDataTime)
+        ccesData
+        (BR.countVotersOfAllF @BR.CatColsASER5)
+        predictorsASER5
+        BR.catPredMaps
 
 {-                                  
   K.logLE K.Info $ "GA CCES Turnout (inferred)"
@@ -472,37 +488,39 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
 -}                           
   --  logFrame inferredTurnoutASE
   -- demographics
-  pumsASERByState <- F.filterFrame (statesAfter 2007) <$> BR.retrieveOrMakeFrame "mrp/weights/pumsASERByState.bin"
-                     (do
-                         pumsDemographics <- PUMS.pumsLoader
-                         let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                         
-                                      $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
-                             addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
-                                                (F.FrameRec (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
-                             addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
-                             addDefaultsF = FMR.concatFold
-                                            $ FMR.mapReduceFold
-                                            FMR.noUnpack
-                                            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
-                                            (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
-                         return $ FL.fold addDefaultsF rollup
-                     )
+  pumsASERByState <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+    K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
+    BR.retrieveOrMakeFrame "mrp/weights/pumsASERByState.bin" (Just pumsDemographicsTime) $ do
+      pumsDemographics <- pumsDemographicsA
+      let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                         
+                   $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
+          addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                             (F.FrameRec (BR.CatColsASER V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+          addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
+          addDefaultsF = FMR.concatFold
+                         $ FMR.mapReduceFold
+                         FMR.noUnpack
+                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                         (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
+      return $ FL.fold addDefaultsF rollup
+
   K.logLE K.Diagnostic $ "length(pumsASERByState)=" <> (T.pack $ show $ FL.fold FL.length pumsASERByState)
-  pumsASER5ByState <- BR.retrieveOrMakeFrame "mrp/weights/pumsASER5ByState.bin"
-                      (do
-                          pumsDemographics <- PUMS.pumsLoader
-                          let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                              
-                                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
-                              addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
-                                                 (F.FrameRec (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
-                              addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER5 (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
-                              addDefaultsF = FMR.concatFold
-                                             $ FMR.mapReduceFold
-                                             FMR.noUnpack
-                                             (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
-                                             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
-                          return $ FL.fold addDefaultsF rollup
-                      )
+  
+  pumsASER5ByState <- K.getCachedAction $ do
+    K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
+    BR.retrieveOrMakeFrame "mrp/weights/pumsASER5ByState.bin" (Just pumsDemographicsTime) $ do
+      pumsDemographics <- pumsDemographicsA
+      let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                              
+                   $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
+          addDefaultsOneF :: FL.Fold (F.Record (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+                             (F.FrameRec (BR.CatColsASER5 V.++ [PUMS.NonCitizens, BR.PopCountOf, PUMS.Citizens]))
+          addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @BR.CatColsASER5 (0 F.&: BR.PC_Citizen F.&: 0 F.&: V.RNil)
+          addDefaultsF = FMR.concatFold
+                         $ FMR.mapReduceFold
+                         FMR.noUnpack
+                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                         (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
+      return $ FL.fold addDefaultsF rollup
 {-                      
   K.logLE K.Info $ "GA Demographics (PUMS, ASER5)"
   logFrame $ F.filterFrame gaFilter pumsASER5ByState

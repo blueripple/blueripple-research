@@ -73,7 +73,7 @@ import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                as P (raise)
 
 
-ccesDataLoader :: K.KnitEffects r => K.Sem r (F.FrameRec CCES_MRP)
+ccesDataLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
 ccesDataLoader = K.wrapPrefix "ccesDataLoader"
                  $ BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
                  (BR.LocalData $ T.pack ccesCSV)

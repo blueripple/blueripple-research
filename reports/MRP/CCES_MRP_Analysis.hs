@@ -189,7 +189,8 @@ mrpPrefs
      )
   => GLM.MinimizeDevianceVerbosity
   -> Maybe T.Text
-  -> K.Sem r (F.FrameRec CCES_MRP)
+  -> Maybe K.UTCTime 
+  -> F.FrameRec CCES_MRP
   -> [BR.SimpleEffect cc]
   -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
   -> K.Sem
@@ -202,7 +203,7 @@ mrpPrefs
                '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
            )
        )
-mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
+mrpPrefs mdv cacheTmpDirM newestDepM ccesData predictor catPredMap = do
   let vpv x = 2 * x - 1
       lhToRecs year office (BR.LocationHolder lp lkM predMap) =
         let addCols p =
@@ -220,15 +221,17 @@ mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
   let cacheIt cn fa = 
         case cacheTmpDirM of
           Nothing -> fa
-          Just tmpDir -> K.retrieveOrMakeTransformed
+          Just tmpDir -> K.getCachedAction
+                         $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
+                         newestDepM
                          fa
   let p2008 = cacheIt
               "pres2008"
               (   lhsToFrame 2008 ET.President
-                <$> (BR.predictionsByLocation mdv ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesData
                       (countDemPres2008VotesF @cc)
                       predictor
                       catPredMap
@@ -237,7 +240,7 @@ mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2012 = cacheIt
               "pres2012"
               (   lhsToFrame 2012 ET.President
-                <$> (BR.predictionsByLocation mdv ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesData
                       (countDemPres2012VotesF @cc)
                       predictor
                       catPredMap
@@ -246,7 +249,7 @@ mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
       p2016 = cacheIt
               "pres2016"
               (   lhsToFrame 2016 ET.President
-                <$> (BR.predictionsByLocation mdv ccesDataAction
+                <$> (BR.predictionsByLocation mdv ccesData
                       (countDemPres2016VotesF @cc)
                       predictor
                       catPredMap
@@ -256,7 +259,7 @@ mrpPrefs mdv cacheTmpDirM ccesDataAction predictor catPredMap = do
                (\y -> cacheIt
                  ("house" <> T.pack (show y))
                  (   lhsToFrame y ET.House
-                   <$> (BR.predictionsByLocation mdv ccesDataAction
+                   <$> (BR.predictionsByLocation mdv ccesData
                          (countDemHouseVotesF @cc y)
                          predictor
                          catPredMap

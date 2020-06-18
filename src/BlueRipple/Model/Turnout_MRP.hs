@@ -122,7 +122,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf newestM datFrame votersF predict
                        ("turnout" <> T.pack (show y))
                        (   lhsToFrame y 
                          <$> (BR.predictionsByLocation verbosity
-                              (return datFrame)
+                              datFrame
                               (votersF y)
                               predictor
                               catPredMap
