@@ -367,12 +367,24 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
       isWWC r = (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad)
   let predictorsASE = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)     
       narrowCountFold = fmap (fmap (F.rcast @(BR.LocationCols V.++ CatCols V.++ BR.CountCols)))
-  predsByLocation2016p <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation"
-    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader ({- narrowCountFold -} BR.countDemPres2016VotesF @BR.CatColsASE) predictorsASE  BR.catPredMaps)
-  predsByLocation2016h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2016h"
-    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader (BR.countDemHouseVotesF @BR.CatColsASE 2016) predictorsASE BR.catPredMaps)
-  predsByLocation2018h <-  K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/deltaVPV/predsByLocation2018h"
-    $ P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesDataLoader (BR.countDemHouseVotesF @BR.CatColsASE 2018) predictorsASE BR.catPredMaps)
+      
+  predsByLocation2016pC <- do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS) "mrp/pools/predsByLocation" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesData ({- narrowCountFold -} BR.countDemPres2016VotesF @BR.CatColsASE) predictorsASE  BR.catPredMaps)
+      
+  predsByLocation2016hC <- do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS) "mrp/deltaVPV/predsByLocation2016h" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesData (BR.countDemHouseVotesF @BR.CatColsASE 2016) predictorsASE BR.catPredMaps)
+      
+  predsByLocation2018hC <-  do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS) "mrp/deltaVPV/predsByLocation2018h" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise (BR.predictionsByLocation @BR.CatColsASE GLM.MDVNone ccesData (BR.countDemHouseVotesF @BR.CatColsASE 2018) predictorsASE BR.catPredMaps)
 
   let vpv x = 2*x - 1
       lhToRecsM year office (BR.LocationHolder _ lkM predMap) =
@@ -388,36 +400,60 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
           (MR.generalizeReduce $ MR.ReduceFold (const FL.list))
       pblToFrame (year, office, pbl) = FL.foldM (pblToFrameFM year office) $ L.filter ((/= "National") . BR.locName) pbl
 
-  longFrame <- K.knitMaybe "Failed to make long-frame"
-               $ fmap (F.toFrame . concat)
-               $ traverse pblToFrame [(2016, ET.President, predsByLocation2016p)
-                                     ,(2016, ET.House, predsByLocation2016h)
-                                     ,(2018, ET.House, predsByLocation2018h)
-                                     ]
-  pumsASEByState <- BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" $ do
-    pumsACSFrame <- PUMS.pumsLoader
-    let yFilter r = let yr = F.rgetField @BR.Year r in (yr == 2016) || (yr == 2018)        
-        processF = FL.prefilter yFilter $ PUMS.pumsStateRollupF (PUMS.pumsKeysToASE True . F.rcast)
-    return
-      $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
-      $ FL.fold processF pumsACSFrame
+
+  longFrameC <- do
+    let (K.WithCacheTime pbl2016pTime pbl2016pA) = predsByLocation2016pC
+        (K.WithCacheTime pbl2016hTime pbl2016hA) = predsByLocation2016hC
+        (K.WithCacheTime pbl2018hTime pbl2018hA) = predsByLocation2018hC
+        newestDepTime = maximum [pbl2016pTime, pbl2016hTime, pbl2018hTime]
+    BR.retrieveOrMakeFrame "mrp/dvpv/longFrame.sbin" (Just newestDepTime) $ do
+      predsByLocation2016p <- pbl2016pA
+      predsByLocation2016h <- pbl2016hA
+      predsByLocation2018h <- pbl2018hA      
+      K.knitMaybe "Failed to make long-frame"
+        $ fmap (F.toFrame . concat)
+        $ traverse pblToFrame [(2016, ET.President, predsByLocation2016p)
+                              ,(2016, ET.House, predsByLocation2016h)
+                              ,(2018, ET.House, predsByLocation2018h)
+                              ]
+  
+  pumsASEByStateC <- do
+    (K.WithCacheTime pumsACS_Time pumsACS_A) <- PUMS.pumsLoader
+    BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" (Just pumsACS_Time) $ do
+      pumsACSFrame <- pumsACS_A
+      let yFilter r = let yr = F.rgetField @BR.Year r in (yr == 2016) || (yr == 2018)        
+          processF = FL.prefilter yFilter $ PUMS.pumsStateRollupF (PUMS.pumsKeysToASE True . F.rcast)
+      return
+        $ fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+        $ FL.fold processF pumsACSFrame
     
-  cpsTurnoutASEByState <- BR.retrieveOrMakeFrame "mrp/dvpv/cpsTurnoutASEByState.sbin" $ do
-    cpsVoterPUMS <- CPS.cpsVoterPUMSLoader
-    return
-      $ FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
-  stateTurnoutRaw <- BR.stateTurnoutLoader
-  let aseDemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
-                                     @BR.CatColsASE
-                                     @PUMS.Citizens
-                                     @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                     @'[BR.Year, BR.StateAbbreviation]
-                                     stateTurnoutRaw
-                                     (fmap F.rcast pumsASEByState)
-                                     (fmap F.rcast cpsTurnoutASEByState)
+  cpsTurnoutASEByStateC <- do
+    K.WithCacheTime cpsVoterTime cpsVoterA <- CPS.cpsVoterPUMSLoader
+    BR.retrieveOrMakeFrame "mrp/dvpv/cpsTurnoutASEByState.sbin" (Just cpsVoterTime) $ do
+      cpsVoterPUMS <- cpsVoterA
+      return
+        $ FL.fold (CPS.cpsVoterPUMSElectoralWeightsByState (CPS.cpsKeysToASE True . F.rcast)) cpsVoterPUMS
 
-  aseDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "mrp/dvpv/aseDemoAndAdjCensusEW.sbin" aseDemoAndAdjCensusEW_action 
-
+  aseDemoAndAdjCensusEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    let (K.WithCacheTime pumsASE_Time pumsASE_A) = pumsASEByStateC
+        (K.WithCacheTime cpsTurnoutASEByStateTime cpsTurnoutASEByStateA) = cpsTurnoutASEByStateC
+        newestDepTime = maximum [stateTurnoutTime, pumsASE_Time, cpsTurnoutASEByStateTime]
+    BR.retrieveOrMakeFrame "mrp/dvpv/aseDemoAndAdjCensusEW.sbin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA
+      pumsASEByState <- pumsASE_A
+      cpsTurnoutASEByState <- cpsTurnoutASEByStateA
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASE
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation]
+        stateTurnout
+        (fmap F.rcast pumsASEByState)
+        (fmap F.rcast cpsTurnoutASEByState)
+      
+  longFrame <- K.ignoreCacheTime longFrameC
+  aseDemoAndAdjCensusEW <- K.ignoreCacheTime aseDemoAndAdjCensusEW_C 
   let longFrameWithState = catMaybes $ fmap F.recMaybe $ (F.leftJoin @'[BR.StateAbbreviation]) longFrame stateCrossWalkFrame
 
   withDemoAndAdjTurnoutFrame <- K.knitEither
