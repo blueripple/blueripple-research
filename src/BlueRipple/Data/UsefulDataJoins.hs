@@ -412,7 +412,7 @@ acsDemographicsWithAdjCensusTurnoutByCD
   -> F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount])
   -> F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
   -> F.Frame BR.StateTurnout
-  -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]))))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
 acsDemographicsWithAdjCensusTurnoutByCD cacheKey newestM demoF turnoutF stateTurnoutF =
   BR.retrieveOrMakeFrame cacheKey newestM $ do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_All) demoF
@@ -436,7 +436,7 @@ cachedASEDemographicsWithAdjTurnoutByCD
      '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
    )
   -> F.Frame BR.StateTurnout
-  -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll]))))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
 cachedASEDemographicsWithAdjTurnoutByCD newestM = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" newestM
 
 cachedASRDemographicsWithAdjTurnoutByCD
@@ -452,5 +452,5 @@ cachedASRDemographicsWithAdjTurnoutByCD
      '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
    )
   -> F.Frame BR.StateTurnout
-  -> K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll]))))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
 cachedASRDemographicsWithAdjTurnoutByCD newestM = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" newestM

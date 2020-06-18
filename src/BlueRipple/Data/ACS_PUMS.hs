@@ -168,7 +168,7 @@ toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader
   ::  forall r. K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec PUMS)))
-pumsLoader =
+pumsLoader = do
   let action :: Streamly.SerialT (K.Sem r) (F.Record PUMS)
       action = do
         Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
@@ -190,7 +190,8 @@ pumsLoader =
           $ Streamly.concatM
           $ Streamly.fold pumsCountSF
           $ pumsRowsLoader
-  in fmap (fmap F.toFrame . Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" Nothing action
+  modTime <- K.liftKnit $ BR.getModTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+  fmap (fmap F.toFrame . Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" (Just modTime) action
 
 --  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 
