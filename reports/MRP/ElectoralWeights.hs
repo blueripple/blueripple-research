@@ -352,14 +352,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   K.logLE K.Info "Loading re-keyed demographic and turnout data."
 
   -- state totals and national demographic splits
-  stateTurnoutRaw <- BR.stateTurnoutLoader
+--  stateTurnoutRaw <- BR.stateTurnoutLoader
 
   let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASER5 = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER5)
       statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
 
-  partisanId <- K.getCachedAction $ do
+  partisanIdC <- do
     K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
     BR.retrieveOrMakeFrame "mrp/weights/partisanId.bin" (Just ccesDataTime) $ do
       ccesData <- ccesDataA
@@ -390,9 +390,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         return $ fmap (FT.transform getFraction) withWeights
       return partisanIdFraction
 
-  logFrame partisanId
+--  let (K.WithCacheTime _ partisanIdA) = partisanIdC
+--  partisanId <- partisanIdA
+  K.ignoreCacheTime partisanIdC >>= logFrame 
   
-  inferredCensusTurnoutASER <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  inferredCensusTurnoutASER_C <- fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime cpsVoterTime cpsVoterPUMSA <- CPS.cpsVoterPUMSLoader
     BR.retrieveOrMakeFrame "mrp/turnout/censusSimpleASER_MR.bin" (Just cpsVoterTime) $ do                               
       cpsVoterPUMS <- cpsVoterPUMSA
@@ -407,9 +409,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         (CPS.cpsCountVotersByStateF $ CPS.cpsKeysToASER True . F.rcast)
         predictorsASER
         BR.catPredMaps
-
-  K.logLE K.Diagnostic $ "length(inferredCensusTurnoutASER)=" <> (T.pack $ show $ FL.fold FL.length inferredCensusTurnoutASER)
-  inferredCensusTurnoutASER5 <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+                                                          
+  inferredCensusTurnoutASER5_C <- fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime cpsVoterTime cpsVoterPUMSA <- CPS.cpsVoterPUMSLoader    
     BR.retrieveOrMakeFrame "mrp/turnout/censusASER5_MR.bin" (Just cpsVoterTime) $ do
       cpsVoterPUMS <- cpsVoterPUMSA
@@ -426,7 +427,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         BR.catPredMaps
 
   -- preferences
-  inferredPrefsASER <-  fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  inferredPrefsASER_C <-  fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
     BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" (Just ccesDataTime) $ do
       ccesData <- ccesDataA
@@ -442,14 +443,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                        $ Keyed.addDefaultRec @BR.CatColsASER5 BR.zeroCount
                      )
                      
-  inferredPrefsASER5 <-  fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  inferredPrefsASER5_C <-  fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
     BR.retrieveOrMakeFrame "mrp/prefsASER5_MR.bin" (Just ccesDataTime) $ do
       ccesData <- ccesDataA
       P.raise $ BR.mrpPrefs @BR.CatColsASER5 GLM.MDVSimple (Just "T_prefsASER5") (Just ccesDataTime) ccesData predictorsASER5 BR.catPredMaps
 
   -- inferred turnout
-  inferredCCESTurnoutOfAllASER <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  inferredCCESTurnoutOfAllASER_C <- fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
     BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllSimpleASER_MR.bin" (Just ccesDataTime) $ do                                  
       ccesData <- ccesDataA
@@ -466,7 +467,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
         BR.catPredMaps
 
 
-  inferredCCESTurnoutOfAllASER5 <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  inferredCCESTurnoutOfAllASER5_C <- fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime ccesDataTime ccesDataA <- CCES.ccesDataLoader
     BR.retrieveOrMakeFrame "mrp/turnout/ccesOfAllASER5_MR.bin" (Just ccesDataTime) $ do
       ccesData <- ccesDataA
@@ -488,7 +489,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
 -}                           
   --  logFrame inferredTurnoutASE
   -- demographics
-  pumsASERByState <- fmap (F.filterFrame (statesAfter 2007)) . K.getCachedAction $ do
+  pumsASERByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> do
     K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
     BR.retrieveOrMakeFrame "mrp/weights/pumsASERByState.bin" (Just pumsDemographicsTime) $ do
       pumsDemographics <- pumsDemographicsA
@@ -503,10 +504,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                          (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
                          (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
       return $ FL.fold addDefaultsF rollup
-
-  K.logLE K.Diagnostic $ "length(pumsASERByState)=" <> (T.pack $ show $ FL.fold FL.length pumsASERByState)
   
-  pumsASER5ByState <- K.getCachedAction $ do
+  pumsASER5ByStateC <- do
     K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
     BR.retrieveOrMakeFrame "mrp/weights/pumsASER5ByState.bin" (Just pumsDemographicsTime) $ do
       pumsDemographics <- pumsDemographicsA
@@ -526,69 +525,103 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   logFrame $ F.filterFrame gaFilter pumsASER5ByState
 -}
 
-  K.logLE K.Info "Adjusting national census turnout via PUMS demographics and total recorded turnout"      
-  let aserDemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
-                                      @BR.CatColsASER
-                                      @PUMS.Citizens
-                                      @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                      @'[BR.Year, BR.StateAbbreviation]
-                                      stateTurnoutRaw
-                                      (fmap F.rcast pumsASERByState)
-                                      (fmap F.rcast inferredCensusTurnoutASER)
+  K.logLE K.Info "Adjusting national census turnout via PUMS demographics and total recorded turnout"
+  aserDemoAndAdjCensusEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    let (K.WithCacheTime pumsASERByStateTime pumsASERByStateA) = pumsASERByStateC
+        (K.WithCacheTime inferredCensusTurnoutASER_Time inferredCensusTurnoutASER_A) = inferredCensusTurnoutASER_C
+        newestDepTime = maximum [stateTurnoutTime, pumsASERByStateTime, inferredCensusTurnoutASER_Time]
+    BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA
+      pumsASERByState <- fmap F.rcast <$> pumsASERByStateA
+      inferredCensusTurnoutASER <- fmap F.rcast <$> inferredCensusTurnoutASER_A
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASER
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation]
+        stateTurnout
+        pumsASERByState
+        inferredCensusTurnoutASER
 
-      aser5DemoAndAdjCensusEW_action = BR.demographicsWithAdjTurnoutByState
-                                       @BR.CatColsASER5
-                                       @PUMS.Citizens
-                                       @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                       @'[BR.Year, BR.StateAbbreviation]
-                                       stateTurnoutRaw
-                                       (fmap F.rcast pumsASER5ByState)
-                                       (fmap F.rcast inferredCensusTurnoutASER5)
 
-      filterForAdjTurnout r = F.rgetField @BR.StateAbbreviation r == "WI" && F.rgetField @BR.Year r == 2016
+  aser5DemoAndAdjCensusEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    let (K.WithCacheTime pumsASER5ByStateTime pumsASER5ByStateA) = pumsASER5ByStateC
+        (K.WithCacheTime inferredCensusTurnoutASER5_Time inferredCensusTurnoutASER5_A) = inferredCensusTurnoutASER5_C
+        newestDepTime = maximum [stateTurnoutTime, pumsASER5ByStateTime, inferredCensusTurnoutASER5_Time]
+    BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA
+      pumsASER5ByState <- fmap F.rcast <$> pumsASER5ByStateA
+      inferredCensusTurnoutASER5 <- fmap F.rcast <$> inferredCensusTurnoutASER5_A
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASER5
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation]
+        stateTurnout
+        pumsASER5ByState
+        inferredCensusTurnoutASER5
+
+  let filterForAdjTurnout r = F.rgetField @BR.StateAbbreviation r == "WI" && F.rgetField @BR.Year r == 2016
  
-  aserDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" aserDemoAndAdjCensusEW_action
-  aser5DemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" aser5DemoAndAdjCensusEW_action
-  K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."  
-  let aserDemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
-                                    @BR.CatColsASER
-                                    @PUMS.Citizens
-                                    @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                    @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASERByState) (fmap F.rcast inferredCCESTurnoutOfAllASER)
-      aser5DemoAndAdjCCESEW_action = BR.demographicsWithAdjTurnoutByState
-                                     @BR.CatColsASER5
-                                     @PUMS.Citizens
-                                     @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-                                     @'[BR.Year, BR.StateAbbreviation] stateTurnoutRaw (fmap F.rcast pumsASER5ByState) (fmap F.rcast inferredCCESTurnoutOfAllASER5)                                    
+--  aserDemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCensusEW.bin" aserDemoAndAdjCensusEW_action
+--  aser5DemoAndAdjCensusEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" aser5DemoAndAdjCensusEW_action
+
+  K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."
+  aserDemoAndAdjCCESEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    let (K.WithCacheTime pumsASERByStateTime pumsASERByStateA) = pumsASERByStateC
+        (K.WithCacheTime inferredCCESTurnoutOfAllASER_Time inferredCCESTurnoutOfAllASER_A) = inferredCCESTurnoutOfAllASER_C
+        newestDepTime = maximum [stateTurnoutTime, pumsASERByStateTime, inferredCCESTurnoutOfAllASER_Time]
+    BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA 
+      demographics <- fmap F.rcast <$> pumsASERByStateA
+      prefs <- fmap F.rcast <$> inferredCCESTurnoutOfAllASER_A
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASER
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation] stateTurnout demographics prefs
+
+  aser5DemoAndAdjCCESEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    let (K.WithCacheTime pumsASER5ByStateTime pumsASER5ByStateA) = pumsASER5ByStateC
+        (K.WithCacheTime inferredCCESTurnoutOfAllASER5_Time inferredCCESTurnoutOfAllASER5_A) = inferredCCESTurnoutOfAllASER5_C
+        newestDepTime = maximum [stateTurnoutTime, pumsASER5ByStateTime, inferredCCESTurnoutOfAllASER5_Time]
+    BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA 
+      demographics <- fmap F.rcast <$> pumsASER5ByStateA
+      prefs <- fmap F.rcast <$> inferredCCESTurnoutOfAllASER5_A
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASER
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation] stateTurnout demographics prefs                                    
   
-  aserDemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" aserDemoAndAdjCCESEW_action
-  K.logLE K.Diagnostic $ "length(aserDemoAndAdjCCESEW)=" <> (T.pack $ show $ FL.fold FL.length aserDemoAndAdjCCESEW)
-  aser5DemoAndAdjCCESEW <- BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" aser5DemoAndAdjCCESEW_action
   K.logLE K.Info "Computing pres-election 2-party vote-share"
   presPrefByStateFrame <- do
     let fld = FMR.concatFold $ FMR.mapReduceFold
               MR.noUnpack
               (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
               (FMR.foldAndAddKey votesToVoteShareF)
-    presByStateFrame <- BR.presidentialByStateFrame
-    return $ FL.fold fld presByStateFrame    
+    presByStateFrame <- K.getCachedAction <$> BR.presidentialByStateFrame
+    return $ FL.fold fld presByStateFrame
+
+    
   K.logLE K.Info "Computing house election 2-party vote share"
   let houseElectionFilter r = (F.rgetField @BR.Stage r == "gen")
                               && (F.rgetField @BR.Runoff r == False)
                               && (F.rgetField @BR.Special r == False)
                               && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
-  houseElectionFrame <- F.filterFrame houseElectionFilter <$> BR.houseElectionsLoader
+  houseElectionFrame <- F.filterFrame houseElectionFilter <$> K.getCachedAction BR.houseElectionsLoader
   let houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
                         FMR.noUnpack
                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, ET.Office])
                         (FMR.foldAndAddKey votesToVoteShareF)
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
---  logFrame aserDemoAndAdjCensusEW
---  logFrame inferredPrefsASER
-  K.logLE K.Diagnostic $ T.pack $ show $ FL.fold FL.length aserDemoAndAdjCensusEW
-  K.logLE K.Diagnostic $ T.pack $ show $ FL.fold FL.length inferredPrefsASER
-  electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> BR.electoralCollegeFrame
+  electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> K.getCachedAction BR.electoralCollegeFrame
   let yearFilter y r =  F.rgetField @BR.Year r == y 
       yearOfficeFilter y o r =  yearFilter y r && F.rgetField @ET.Office r == o
       prependYearSourceAndGrouping :: Int
