@@ -425,21 +425,35 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
     statesOnly r = F.rgetField @BR.StateAbbreviation r `L.elem` states
     statesAfterOnly y r = statesOnly r && F.rgetField @BR.Year r > y
     stateAndNation = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r `L.elem` "National" : states)
-  stateTurnoutRaw <- BR.stateTurnoutLoader
-  aseTurnout <- BR.simpleASETurnoutLoader 
-  asrTurnout <- BR.simpleASRTurnoutLoader 
+--  stateTurnoutRaw <- BR.stateTurnoutLoader
+--  aseTurnout <- BR.simpleASETurnoutLoader 
+--  asrTurnout <- BR.simpleASRTurnoutLoader 
 --  logFrame aseTurnout
   let showRecs = T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
   let predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASE =  fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
       predictorsASR =  fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
-  inferredPrefsASER <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin"
-                        (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesDataLoader predictorsASER (BR.catPredMaps @BR.CatColsASER)) 
-  inferredPrefsASE <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") ccesDataLoader predictorsASE (BR.catPredMaps @BR.CatColsASE)) 
-  inferredPrefsASR <-  F.filterFrame (statesAfterOnly 2010) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin"
-                       (P.raise $ BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") ccesDataLoader predictorsASR (BR.catPredMaps @BR.CatColsASR)) 
+
+  inferredPrefsASER_C <- do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    fmap (fmap $ F.filterFrame (statesAfterOnly 2010)) <$> BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") ccesData predictorsASER (BR.catPredMaps @BR.CatColsASER)
+      
+  inferredPrefsASE_C <-  do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    fmap (fmap $ F.filterFrame (statesAfterOnly 2010)) <$> BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise $ BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") ccesData predictorsASE (BR.catPredMaps @BR.CatColsASE)
+      
+  inferredPrefsASR_C <- do
+    K.WithCacheTime ccesTime ccesDataA <- ccesDataLoader    
+    fmap (fmap $ F.filterFrame (statesAfterOnly 2010)) <$> BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin" (Just ccesTime) $ do
+      ccesData <- ccesDataA
+      P.raise $ BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") ccesDataLoader predictorsASR (BR.catPredMaps @BR.CatColsASR)
+      
   -- demographics
+{-  
   pumsDemographics <- PUMS.pumsLoader
   let pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
                        $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR . F.rcast) pumsDemographics
@@ -448,10 +462,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       addElectoralWeight :: (F.ElemOf rs BR.Citizen, F.ElemOf rs BR.Voted)
                          => F.Record rs
                          -> F.Record [ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight] 
-      addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+
       ewASR = fmap (FT.mutate addElectoralWeight) asrTurnout
       ewASE = fmap (FT.mutate addElectoralWeight) aseTurnout
   K.logLE K.Info "Adjusting turnout via PUMS demographics and census turnout"      
+
   let asrDemoAndAdjEW_action = BR.demographicsWithAdjTurnoutByState
                         @BR.CatColsASR
                         @PUMS.Citizens
@@ -462,8 +477,43 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                         @PUMS.Citizens
                         @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
                         @'[BR.Year] stateTurnoutRaw (fmap F.rcast pumsASEByState) (fmap F.rcast ewASE)
-  asrDemoAndAdjEW <- BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjEW.bin" asrDemoAndAdjEW_action
-  aseDemoAndAdjEW <- BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjEW.bin" aseDemoAndAdjEW_action
+-}
+  let addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
+  asrDemoAndAdjEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
+    K.WithCacheTime asrTurnoutTime asrTurnoutA <- BR.simpleASRTurnoutLoader
+    let newestDepTime = maximum [stateTurnoutTime, pumsDemographicsTime, asrTurnoutTime]    
+    BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA
+      ewASR <- fmap (FT.mutate addElectoralWeight) <$> asrTurnoutA
+      pumsDemographics <- pumsDemographicsA
+      let pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+                           $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR . F.rcast) pumsDemographics
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASR
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year] stateTurnout (fmap F.rcast pumsASRByState) (fmap F.rcast ewASR)
+
+  aseDemoAndAdjEW_C <- do
+    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
+    K.WithCacheTime pumsDemographicsTime pumsDemographicsA <- PUMS.pumsLoader
+    K.WithCacheTime aseTurnoutTime aseTurnoutA <- BR.simpleASETurnoutLoader
+    let newestDepTime = maximum [stateTurnoutTime, pumsDemographicsTime, aseTurnoutTime]    
+    BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjEW.bin" (Just newestDepTime) $ do
+      stateTurnout <- stateTurnoutA
+      ewASE <- fmap (FT.mutate addElectoralWeight) <$> aseTurnoutA
+      pumsDemographics <- pumsDemographicsA
+      let pumsASEByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+                           $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASE . F.rcast) pumsDemographics
+      BR.demographicsWithAdjTurnoutByState
+        @BR.CatColsASE
+        @PUMS.Citizens
+        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
+        @'[BR.Year] stateTurnout (fmap F.rcast pumsASEByState) (fmap F.rcast ewASE)        
+      
+--  aseDemoASE <- BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjEW.bin" aseDemoAndAdjEW_action
   -- get adjusted turnouts (national rates, adj by state) for each CD
 {-  
   K.logLE K.Info "Adjusting turnout via ACS demographics and census turnout (or retrieving)"
@@ -471,7 +521,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                                <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (return aseACS) (return aseTurnout) (return stateTurnoutRaw)
   demographicsAndTurnoutASR <- F.filterFrame (statesAfterOnly 2008)
                                <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (return asrACS) (return asrTurnout) (return stateTurnoutRaw)
--}  
+-}
+  asrDemoAndAdjEW <- K.ignoreCacheTime asrDemoAndAdjEW_C
+  inferredPrefsASR <- K.ignoreCacheTime  inferredPrefsASR_C
   K.logLE K.Info "Comparing 2012 turnout to 2016 turnout among 2016 Dem leaners..."
   let isYear y r =  (F.rgetField @BR.Year r == y)
       isYearPres y r = isYear y r && (F.rgetField @ET.Office r == ET.President)
@@ -546,13 +598,27 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 --  let justPres2016 r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)
 --  logFrame inferredPrefsASE
 --  logFrame aseDemoAndAdjEW
-  aseAllByState <- BR.retrieveOrMakeFrame "mrp/turnoutGap/aseAllByState.bin"
-                   (K.knitMaybe "Missing key (stateAbbr, year, catColsASE) when joining inferredPrefsASE and aseDemoAndAdjEW"
-                    $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) inferredPrefsASE aseDemoAndAdjEW)
-  asrAllByState <- BR.retrieveOrMakeFrame "mrp/turnoutGap/asrAllByState.bin"
-                   (K.knitMaybe "Missing key when joining inferredPrefsASR and asrDemoAndAdjEW" $
-                    FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) inferredPrefsASR asrDemoAndAdjEW)
+  aseAllByState <- K.getCachedAction $ do
+    let (K.WithCacheTime inferredPrefsASE_Time inferredPrefsASE_A) = inferredPrefsASE_C
+        (K.WithCacheTime aseDemoAndAdjEW_Time aseDemoAndAdjEW_A) = aseDemoAndAdjEW_C
+        newestDepTime = max inferredPrefsASE_Time aseDemoAndAdjEW_Time
+    BR.retrieveOrMakeFrame "mrp/turnoutGap/aseAllByState.bin" (Just newestDepTime) $ do
+      inferredPrefsASE <- inferredPrefsASE_A
+      aseDemoAndAdjEW <- aseDemoAndAdjEW_A
+      K.knitMaybe "Missing key (stateAbbr, year, catColsASE) when joining inferredPrefsASE and aseDemoAndAdjEW"
+        $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASE) inferredPrefsASE aseDemoAndAdjEW
 
+  asrAllByState <- K.getCachedAction $ do
+    let (K.WithCacheTime inferredPrefsASR_Time inferredPrefsASR_A) = inferredPrefsASR_C
+        (K.WithCacheTime asrDemoAndAdjEW_Time asrDemoAndAdjEW_A) = asrDemoAndAdjEW_C
+        newestDepTime = max inferredPrefsASR_Time asrDemoAndAdjEW_Time
+    BR.retrieveOrMakeFrame "mrp/turnoutGap/asrAllByState.bin" (Just newestDepTime) $ do
+      inferredPrefsASR <- inferredPrefsASR_A
+      asrDemoAndAdjEW <- asrDemoAndAdjEW_A
+      K.knitMaybe "Missing key (stateAbbr, year, catColsASR) when joining inferredPrefsASR and asrDemoAndAdjEW"
+        $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) inferredPrefsASR asrDemoAndAdjEW
+
+  pumsDemographics <- K.getCachedAction PUMS.pumsLoader
   let labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
       psCellVPVByBothF =  (<>)
                           <$> fmap pure (fmap (labelPSBy ET.PSByVAP)
@@ -570,7 +636,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                           psCellVPVByBothF
       vpvPostStratifiedByASE = fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASE) $ FL.fold psVPVByStateF aseAllByState
       vpvPostStratifiedByASR =  fmap (`V.rappend` FT.recordSingleton @BR.DemographicGroupingC BR.ASR) $ FL.fold psVPVByStateF asrAllByState
-  let vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
+      vpvPostStratified = vpvPostStratifiedByASE <> vpvPostStratifiedByASR
       -- assemble set with updated demographics
       toFlip r =
         let a = F.rgetField @BoostA r
@@ -578,6 +644,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
             p = F.rgetField @BR.DemPref r
             d = (0.5 - p)/p
         in FT.recordSingleton @ToFlip $ d/(a - (1.0 + d) * b)
+      pumsASRByState = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)
+                       $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASR . F.rcast) pumsDemographics  
       asrPrefTurnout2016 = fmap (FT.dropColumn @BR.Year) $ F.filterFrame (isYearPres 2016) asrAllByState
       asrDemo2018 = fmap (FT.dropColumn @BR.Year) $ F.filterFrame statesOnly $ F.filterFrame (isYear 2018) pumsASRByState
   asrUpdatedDemo <- K.knitMaybe "Key (stateAbbreviation, catCols) in asrPrefTUrnout2016 missing in asrDemo2018"
