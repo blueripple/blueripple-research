@@ -89,13 +89,12 @@ mrpTurnout
   -> Maybe T.Text
   -> ET.ElectoralWeightSourceT
   -> ET.ElectoralWeightOfT
-  -> Maybe K.UTCTime
-  -> F.FrameRec rs
+  -> K.ActionWithCacheTime r (F.FrameRec rs)
   -> (Int -> FL.Fold (F.Record rs) (F.FrameRec ('[BR.StateAbbreviation] V.++ cc V.++ BR.CountCols)))
   -> [BR.SimpleEffect cc]
   -> M.Map (F.Record cc) (M.Map (BR.SimplePredictor cc) Double)
   -> K.Sem r (F.FrameRec ('[BR.StateAbbreviation] V.++ cc V.++ '[BR.Year,  ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]))
-mrpTurnout verbosity cacheTmpDirM ewSource ewOf newestM datFrame votersF predictor catPredMap = do
+mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catPredMap = do
   let lhToRecs year (BR.LocationHolder lp lkM predMap) =
         let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
             recToAdd w = year F.&: (ET.ewRec ewSource ewOf w)
@@ -107,20 +106,20 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf newestM datFrame votersF predict
         in  g lkM
       lhsToFrame y = F.toFrame . concat . fmap (lhToRecs y)
   K.logLE K.Info "(Turnout) Doing MR..."
-  let cacheIt cn fa = 
+  let cacheIt cn fa = -- fa :: F.FrameRec rs -> 
         case cacheTmpDirM of
-          Nothing -> fa
+          Nothing -> K.ignoreCacheTime cachedDat >>= fa 
           Just tmpDir -> K.getCachedAction -- ignores cache time and decodes the cached data 
                          $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
-                         newestM
+                         cachedDat
                          fa
       wYearActions = fmap
                      (\y -> cacheIt
                        ("turnout" <> T.pack (show y))
-                       (   lhsToFrame y 
+                       (\datFrame -> lhsToFrame y 
                          <$> (BR.predictionsByLocation verbosity
                               datFrame
                               (votersF y)

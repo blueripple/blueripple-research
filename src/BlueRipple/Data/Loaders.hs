@@ -129,11 +129,9 @@ aseDemographicsLoader =
 simpleASEDemographicsLoader :: K.KnitEffects r
                             => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.ACSCount])))
 simpleASEDemographicsLoader = do
-  K.WithCacheTime aseACSRawCT aseACSRawA <- aseDemographicsLoader  -- get cache time and action to decode data if required
-  let make = do
-        aseACSRaw <- aseACSRawA
-        K.knitEither $ FL.foldM DT.simplifyACS_ASEFold aseACSRaw
-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASE.bin" (Just aseACSRawCT) make
+  cachedASE_Demographics <- aseDemographicsLoader  -- get cache time and action to decode data if required
+  let make aseACSRaw = K.knitEither $ FL.foldM DT.simplifyACS_ASEFold aseACSRaw
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASE.bin" cachedASE_Demographics make
   
 asrDemographicsLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASRDemographics))
 asrDemographicsLoader =
@@ -148,13 +146,11 @@ asrDemographicsLoader =
 simpleASRDemographicsLoader :: K.KnitEffects r
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount])))
 simpleASRDemographicsLoader = do
-  K.WithCacheTime asrACSRawCT asrACSRawA <- asrDemographicsLoader  -- get cache time and action to decode data if required
-  let make = do
-         asrACSRaw <- asrACSRawA
-         K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrACSRaw
-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" (Just asrACSRawCT) make
+  cachedASR_Demographics <- asrDemographicsLoader  -- get cache time and action to decode data if required
+  let make asrDemographics = K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrDemographics
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/acs_simpleASR.bin" cachedASR_Demographics make
 
-aseTurnoutLoader :: K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.TurnoutASE)))
+aseTurnoutLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASE))
 aseTurnoutLoader =
   cachedFrameLoader
   (DataSets $ T.pack BR.detailedASETurnoutCSV)
@@ -167,11 +163,9 @@ aseTurnoutLoader =
 simpleASETurnoutLoader :: K.KnitEffects r
                        => K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
 simpleASETurnoutLoader = do
-  K.WithCacheTime aseRawCT aseTurnoutRawA <- aseTurnoutLoader  -- get cache time and action to decode data if required
-  let make = do
-         aseTurnoutRaw <- aseTurnoutRawA
-         K.knitEither $ FL.foldM DT.simplifyTurnoutASEFold aseTurnoutRaw
-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASE.bin" (Just aseRawCT) make
+  cachedASE_Turnout <- aseTurnoutLoader  -- get cache time and action to decode data if required
+  let make aseTurnoutRaw = K.knitEither $ FL.foldM DT.simplifyTurnoutASEFold aseTurnoutRaw
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASE.bin" cachedASE_Turnout make
 
 asrTurnoutLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASR))
 asrTurnoutLoader =
@@ -186,14 +180,12 @@ asrTurnoutLoader =
 simpleASRTurnoutLoader :: K.KnitEffects r
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
 simpleASRTurnoutLoader = do
-  K.WithCacheTime rawCT asrTurnoutRawA <- asrTurnoutLoader
-  let make = do
-         asrTurnoutRaw <- asrTurnoutRawA
-         K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
-  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" (Just rawCT) make
+  cachedASR_Turnout <- asrTurnoutLoader
+  let make asrTurnoutRaw = K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
+  K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) "data/turnout_simpleASR.bin" cachedASR_Turnout make
 
 
-stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.Frame BR.States)))
+stateAbbrCrosswalkLoader ::  K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
 stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
@@ -277,7 +269,7 @@ cachedRecStreamLoader
   -> K.Sem r (K.StreamWithCacheTime r (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedRecStreamLoader dataPath parserOptionsM filterM fixRow cachePathM key = do
   let cacheRecList :: T.Text -> Maybe K.UTCTime -> Streamly.SerialT (P.Sem r) (F.Record rs) -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
-      cacheRecList k newestM = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k newestM -- TODO: change this to file mod time ??
+      cacheRecList k newestM action = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k (K.onlyCacheTime newestM) (const action)
       cacheKey      = (fromMaybe "data/" cachePathM) <> key      
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   modTime <- liftIO $ getModTime dataPath 
