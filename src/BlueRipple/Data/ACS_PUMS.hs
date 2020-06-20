@@ -167,33 +167,32 @@ toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
 toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader
-  ::  forall r. K.KnitEffects r => K.Sem r (K.WithCacheTime (K.Sem r (F.FrameRec PUMS)))
+  ::  forall r. K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader = do
-  K.WithCacheTime stateAbbrTime stateCrosswalkFrameA <- BR.stateAbbrCrosswalkLoader
-  let action :: Streamly.SerialT (K.Sem r) (F.Record PUMS)
-      action = do
-        Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
-        stateCrossWalkFrame <- Streamly.yieldM stateCrosswalkFrameA
-        let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateCrossWalkFrame
-        Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
-        let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
-            addStateAbbreviation r =
-              let fips = F.rgetField @BR.StateFIPS r
-                  abbrM = M.lookup fips abbrFromFIPS
-                  addAbbr r abbr = abbr F.&: r
-              in fmap (addAbbr r) abbrM              
-        K.streamlyToKnitS
-          $ Streamly.aheadly
-          $ Streamly.map (F.rcast @PUMS)
-          $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
-          $ Streamly.mapMaybe addStateAbbreviation
-          $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations") Streamly.Fold.head)
-          $ Streamly.concatM
-          $ Streamly.fold pumsCountSF
-          $ pumsRowsLoader
-  modTime <- K.liftKnit $ BR.getModTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
-  let newestDepTime = max modTime stateAbbrTime
-  fmap (fmap F.toFrame . Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" (Just newestDepTime) action
+  cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
+  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
+  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps
+    $ \(stateAbbrCrosswalk, _) -> do
+      Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
+      let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrossWalk
+      Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+      let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
+          addStateAbbreviation r =
+            let fips = F.rgetField @BR.StateFIPS r
+                abbrM = M.lookup fips abbrFromFIPS
+                addAbbr r abbr = abbr F.&: r
+            in fmap (addAbbr r) abbrM              
+      K.streamlyToKnitS
+        $ Streamly.aheadly
+        $ Streamly.map (F.rcast @PUMS)
+        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
+        $ Streamly.mapMaybe addStateAbbreviation
+        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations") Streamly.Fold.head)
+        $ Streamly.concatM
+        $ Streamly.fold pumsCountSF
+        $ pumsRowsLoader
+--  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps action
 
 --  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 

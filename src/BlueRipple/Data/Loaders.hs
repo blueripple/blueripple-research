@@ -244,8 +244,10 @@ getPath dataPath = case dataPath of
   DataSets fp -> liftIO $ BR.usePath (T.unpack fp)
   LocalData fp -> return (T.unpack fp)
 
-getModTime :: DataPath -> IO K.UTCTime
-getModTime dp = getPath dp >>= System.getModificationTime
+dataPathWithCacheTime :: Applicative m => DataPath -> IO (K.WithCacheTime m DataPath)
+dataPathWithCacheTime dp = do
+  modTime <- getPath dp >>= System.getModificationTime
+  return $ K.withCacheTime (Just modTime) (pure dp)
 
 -- file has qs
 -- Filter qs
@@ -268,12 +270,15 @@ cachedRecStreamLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.StreamWithCacheTime r (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedRecStreamLoader dataPath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheRecList :: T.Text -> Maybe K.UTCTime -> Streamly.SerialT (P.Sem r) (F.Record rs) -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
-      cacheRecList k newestM action = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k (K.onlyCacheTime newestM) (const action)
+  let cacheRecList :: T.Text
+                   -> K.ActionWithCacheTime r DataPath
+                   -> (DataPath -> Streamly.SerialT (P.Sem r) (F.Record rs))
+                   -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+      cacheRecList = K.retrieveOrMakeTransformedStream FS.toS FS.fromS 
       cacheKey      = (fromMaybe "data/" cachePathM) <> key      
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
-  modTime <- liftIO $ getModTime dataPath 
-  cacheRecList cacheKey (Just modTime) $ fixMonadCatch $ recStreamLoader dataPath parserOptionsM filterM fixRow
+  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime dataPath 
+  cacheRecList cacheKey cachedDataPath (\dataPath -> fixMonadCatch $ recStreamLoader dataPath parserOptionsM filterM fixRow)
 
 recStreamLoader
   :: forall qs rs t m
@@ -323,7 +328,7 @@ cachedFrameLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
 cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = 
-  fmap (fmap F.toFrame . Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
+  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
 
 
 -- file has qs
@@ -425,15 +430,17 @@ cachedMaybeRecStreamLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
 cachedMaybeRecStreamLoader dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key = do
-  let cacheRecStream :: T.Text -> Maybe K.UTCTime -> Streamly.SerialT (P.Sem r) (F.Record rs) -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
-      cacheRecStream k newestM = K.retrieveOrMakeTransformedStream FS.toS FS.fromS k newestM -- TODO: change this to file mod time??
+  let cacheRecStream :: T.Text
+                     -> K.ActionWithCacheTime r DataPath
+                     -> (DataPath -> Streamly.SerialT (P.Sem r) (F.Record rs))
+                     -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+      cacheRecStream = K.retrieveOrMakeTransformedStream FS.toS FS.fromS 
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
   K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
-  path <- liftIO $ getPath dataPath
-  modTime <- liftIO $ getModTime dataPath
-  cacheRecStream cacheKey (Just modTime) $ K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
+  cachedDataPath <- liftIO $ dataPathWithCacheTime dataPath
+  cacheRecStream cacheKey cachedDataPath $ \dataPath -> K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
 
 -- file has fs
 -- load fs
@@ -510,7 +517,7 @@ cachedMaybeFrameLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
 cachedMaybeFrameLoader dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
-  = fmap (fmap F.toFrame . Streamly.toList) <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
+  = (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
 
 

@@ -109,20 +109,19 @@ import Data.Kind (Type)
 cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
 cpsVoterPUMSLoader = do
   let cpsPUMSDataPath = BR.LocalData $ T.pack BR.cpsVoterPUMSCSV
-  K.WithCacheTime stateAbbrTime stateAbbrFrameA <- BR.stateAbbrCrosswalkLoader
-  cpsModTime <- K.liftKnit $ BR.getModTime cpsPUMSDataPath
-  let newestDepTime = max cpsModTime stateAbbrTime
-  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" (Just cpsModTime) $ do
+  cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
+  cachedCPSDataPath <- K.liftKnit $ BR.dataPathWithCacheTime cpsPUMSDataPath
+  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedCPSDataPath
+  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" cachedDeps $ \(stateAbbrCrosswalk, dataPath) -> do
     let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
     withoutAbbr <- K.getCachedAction
                    $ BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
-                   cpsPUMSDataPath
+                   dataPath
                    Nothing
                    (Just filter)
                    transformCPSVoterPUMSRow
                    Nothing
                    "cpsVoterPUMS.bin"
-    stateAbbrCrosswalk <- stateAbbrFrameA
     fmap (fmap F.rcast) $ (K.knitMaybe "missing state abbreviation in state abbreviation crosswalk"
                             $ FJ.leftJoinM @'[BR.StateFIPS] withoutAbbr stateAbbrCrosswalk)
 
@@ -130,12 +129,10 @@ cpsVoterPUMSLoader = do
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
 cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
 cpsVoterPUMSWithCDLoader = do
-  K.WithCacheTime pumsTime cpsVoterPumsA <- cpsVoterPUMSLoader
-  K.WithCacheTime countyToCDTime countyToCDA <- BR.county2010ToCD116Loader
-  let newestDepTime = max pumsTime countyToCDTime
-  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" (Just newestDepTime) $ do
-    cpsVoterPUMS <- cpsVoterPumsA
-    countyToCD <- countyToCDA
+  cachedCPSVoterPUMS <- cpsVoterPUMSLoader
+  cachedCountyToCD <- BR.county2010ToCD116Loader
+  let cachedDeps = (,) <$> cachedCPSVoterPUMS <*> cachedCountyToCD
+  BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrsAndCDs.bin" cachedDeps $ \(cpsVoterPUMS, countyToCD) -> do
     K.knitEither . either (Left . T.pack . show) Right
       $ FJ.leftJoinE
       @[BR.StateFIPS, BR.CountyFIPS]
