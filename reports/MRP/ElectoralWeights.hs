@@ -88,7 +88,7 @@ There are a number of things that make polls confusing and difficult to interpre
 how to survey people (land-line phones?  Cell-phones?  Facebook survey?),
 selecting which questions to ask and how to phrase them, and then interpreting the data to reach some
 conclusion, e.g., to predict the outcome of an upcoming election. All these complexities are worth
-talking about but here we're going to focus on the last question: how do we go from polling-data to
+talking about, but here we're going to focus on the last question: how do we go from polling-data to
 prediction?
 
 1. **Polling and Prediction 101**
@@ -111,26 +111,26 @@ a state has roughly the same number of adults above and below 45 but the survey 
 fewer responses from people over 45, those responses will be assigned higher weights.  Weighting
 is complex, not least because there are many demographic variables to be considered.
 
-So now we have an estimate of how a person in a particular place is likely to vote given
+With weighting, we have an estimate of how a person in a particular place is likely to vote given
 various demographic information about them.  And, from the census and other sources, we
 know the demographics of each county/district/state.  But if we want to predict an election
 outcome, or decide where we need to focus resources because an election is likely to be close,
 we need to know who is going to cast a ballot in the election.  
 
 There are a lot of reasons people do and don't
-vote: see [our piece][BR:ID] on voter ID or Fair Vote's [rundown][FV:Turnout] on
+vote: see [our piece][BR:ID] on voter ID, or Fair Vote's [rundown][FV:Turnout] on
 voter turnout, for example.  For the purposes of this post we're going to ignore
 the reasons, and focus on the data problem of uncertain turnout.
 
 Figuring out how to weight opinion data to predict voting is among the
-most difficult parts of determining out which elections/states are likely to be close and
+most difficult parts of determining which elections/states are likely to be close and
 thus where to prioritize work and the allocation of resources.
 
 ## CNN vs. Trump
 Weighting polls is also deeply contentious. As an extreme example,
 CNN recently published a [poll][CNN:20200608_Poll] showing Biden up 14 points
 over Trump.  The Trump campaign hired a pollster to "analyze" the CNN poll and then
-[demanded CNN retract the poll][CNN:Demand] which CNN promptly
+[demanded CNN retract the poll][CNN:Demand], which CNN promptly
 [refused][CNN:RefuseRetract] to do.  The substantive objection made by Trump's
 campaign was that CNN should have *weighted their poll differently*, such that the fraction
 of Republicans, Democrats and Independents was the same as among voters in 2016.  It's not hard to
@@ -182,7 +182,8 @@ To illustrate both these points, we built a few simple electorate models from
 2016 data, either from the census [CPS voter survey][Census:CPSVoter]
 or the [CCES survey data][CCES].
 For each data-set, we used [multi-level regression][BR:MRP] to infer
-turnout probabilities in each state for 2 demographic groupings:
+turnout probabilities in each state for 2 demographic groupings, differing only in the
+level of detail we use when considering a person's race:
 
 - **ASER**: we infer turnout for 16 groups per state,
 categorizing everyone by
@@ -197,10 +198,10 @@ education (Non-College-Grad/College Grad or In College),
 and race (Black/Latinx/Asian/Other/White-Non-Latinx).
 
 We further adjust these inferred turnout numbers such that, when
-multiplied by the number of people in the state, we reproduce
+multiplied by the number of people in each group in the state, we reproduce
 the actual number of ballots cast on election day.
 If you're interested in the details, we followed a simplified version
-of the techniques described in [this paper][DeepInteractions]
+of the techniques described in [this paper][DeepInteractions].
 
 To illustrate how different these electorate weights are,
 we apply them to the 2016 election itself, using the
@@ -208,7 +209,7 @@ census demographics in each state and voter preferences inferred
 from the CCES data using the same multi-level regression methods.
 From that we compute the two-party vote share in each state and get 
 4 different 2016 outcomes in terms of national popular vote and electoral
-votes.  This is not intended as something that would have been an actual
+votes.  This is not something that would have been an actual
 forecast.  For that, we would want to simulate many elections with the
 given set of probabilities.  But these correspond to the average outcome
 with each of these electorate compositions and so give a picture of
@@ -247,35 +248,42 @@ The census-sourced electoral weights indicate higher turnout from younger
 and minority voters than does the CCES data,
 and is thus more Democratic-candidate-friendly than the CCES data.
 
-For a given data-set, there are significant differences in ASER and
-ASER5.  Popular vote difference comes from correlation between
+For a given data-set, there are significant differences in the ASER and
+ASER5 models.  Popular vote difference comes from correlation between
 turnout and preference among the more specific race categories.
-For instance, Black voters are more likely to vote for Democratic
-candidates *and* turnout to vote at higher rates than Latinx voters.
-So separating those groups out results in a model with higher
+For instance, in 2016, Black voters were more likely to vote for Democratic
+candidates *and* turned out to vote at higher rates than Latinx voters.
+So separating those groups out, results in a model with higher
 Dem vote-share.  The difference in electoral college outcome is even
 larger--electoral votes jump by more than you might expect from just the
 shift in popular vote--suggesting that the specific places that
-people of various racial backgrounds live is advantageous to a
-Democratic Presidential candidate.
+people of various non-white racial backgrounds live is advantageous to a
+Democratic Presidential candidate. In other words, the extra vote-share
+we see from looking at race in greater detail is disproportionately
+located in some close (battleground) states.
 
 None of these models is particularly close to the actual election we had,
 and this is using data from an election to model the same election.
 Blindly using that data to model the 2020 election would be foolhardy.
 
-What pollsters actually do, is ask respondents a variety of questions to gauge
+What do good pollsters actually do? They ask respondents a variety of questions to gauge
 how likely they are to vote.  They combine this with demographic weighting (like
 the examples above) to estimate the makeup of the electorate. This is complicated
 and hard to get right, and is part of what makes some pollsters more reliable than
 others. Previous elections may be used as sanity checks or as the
 baseline for non-poll-based models.
 
+None of these issues is simple or settled.  For example, a [pollster in Utah
+recently decided to begin using education in their weighting][UTPT:Weighting], something
+they had not been using before, because they realized they had made errors
+in 2016 by ignoring it.
+
 Election modelers then use these polls as well as fundamentals---economic trends,
 incumbency, etc.---to predict the probabilities of various outcomes. For a particularly
 thorough explanation of one such model,
 see the [Economist's summary][Economist:ElectionModel] of their work for 2020.
 
-
+[UTPT:Weighting]: <https://www.utpoliticaltrends.com/thedeeperstate/the-importance-of-weighting>
 [Economist:ElectionModel]: <https://projects.economist.com/us-2020-forecast/president/how-this-works>
 [UpshotModel]: <https://www.nytimes.com/2016/06/10/upshot/how-we-built-our-model.html>
 [Vox:EducationWeighting]: <https://www.vox.com/policy-and-politics/2019/11/14/20961794/education-weight-state-polls-trump-2020-election>
@@ -656,7 +664,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
 ---
   partisanId <- K.ignoreCacheTime partisanIdC
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDateElectoralWeights =  Time.fromGregorian 2020 2 21
+  let pubDateElectoralWeights =  Time.fromGregorian 2020 6 27
   K.newPandoc
     (K.PandocInfo ((postRoute PostElectoralWeights) <> "main")
       (brAddDates updated pubDateElectoralWeights curDate
@@ -733,18 +741,19 @@ vlWeights title vc rows =
       makeVSRuleVal = GV.calculateAs "50" "50%"
       voteShareDomain = GV.SDomain $ GV.DNumbers [48.5, 51.5]
       evDomain = GV.SDomain $ GV.DNumbers [180, 300]
-      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [voteShareDomain], GV.PNoTitle]
+      encVSRuleX = GV.position GV.X [GV.PName "50%", GV.PmType GV.Quantitative, GV.PScale [voteShareDomain]]
       makeEVRuleVal = GV.calculateAs "269" "Evenly Split"
-      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [evDomain], GV.PNoTitle]
+      encEVRuleY = GV.position GV.Y [GV.PName "Evenly Split", GV.PmType GV.Quantitative, GV.PScale [evDomain]]
       makeSourceType = GV.calculateAs "datum.ElectoralWeightSource + '/' + datum.DemographicGrouping" "Weight Source"
       encX = GV.position GV.X [GV.PName "Vote Share (%)"
                               , GV.PmType GV.Quantitative
                               , GV.PScale [voteShareDomain]
-                              , GV.PTitle "D Vote Share (%)"]
+                              , GV.PAxis [GV.AxTitle "D Vote Share (%)"]
+                              ]
       encY = GV.position GV.Y [FV.pName @ElectorsD
                               , GV.PmType GV.Quantitative
                               , GV.PScale [evDomain]
-                              , GV.PTitle "# D Electoral Votes"
+                              , GV.PAxis[GV.AxTitle "# D Electoral Votes"]
                               ]
       encColor = GV.color [FV.mName @WeightSource, GV.MmType GV.Nominal]
       encShape = GV.shape [FV.mName @BR.DemographicGroupingC, GV.MmType GV.Nominal]
