@@ -172,10 +172,10 @@ pumsLoader = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
   cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
-  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps
-    $ \(stateAbbrCrosswalk, _) -> do
+  fmap (fmap F.toFrame . K.streamToAction Streamly.toList)
+    . K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps $ \(stateAbbrCrosswalk, _) -> do
       Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
-      let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrossWalk
+      let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
       Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
       let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
           addStateAbbreviation r =
@@ -192,9 +192,6 @@ pumsLoader = do
         $ Streamly.concatM
         $ Streamly.fold pumsCountSF
         $ pumsRowsLoader
---  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps action
-
---  in BR.retrieveOrMakeFrame ("data/acs1YrPUMS" <> ".bin") action
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum

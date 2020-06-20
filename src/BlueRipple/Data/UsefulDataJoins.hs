@@ -408,13 +408,13 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount) 
     )
   => T.Text
-  -> Maybe K.UTCTime
+  -> Maybe K.UTCTime -- TODO, drop this and make all below be WithCacheTime ??
   -> F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount])
   -> F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
   -> F.Frame BR.StateTurnout
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
 acsDemographicsWithAdjCensusTurnoutByCD cacheKey newestM demoF turnoutF stateTurnoutF =
-  BR.retrieveOrMakeFrame cacheKey newestM $ do
+  BR.retrieveOrMakeFrame cacheKey (K.onlyCacheTime newestM) $ const $ do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_All) demoF
         demo'' = fmap (F.rcast @([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
         vpa r = realToFrac (F.rgetField @BR.Voted r) / realToFrac (F.rgetField @BR.Population r)
