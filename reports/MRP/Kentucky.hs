@@ -117,10 +117,10 @@ text1 = [i|
   
 post :: K.KnitOne r => K.Sem r ()
 post = K.wrapPrefix "Kentucky" $ do
-  aseACS <- BR.simpleASEDemographicsLoader --
-  asrACS <- BR.simpleASRDemographicsLoader 
-  aseTurnout <- BR.simpleASETurnoutLoader -- K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw
-  asrTurnout <- BR.simpleASRTurnoutLoader --K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw
+  aseACS <- K.getCachedAction BR.simpleASEDemographicsLoader --
+  asrACS <- K.getCachedAction BR.simpleASRDemographicsLoader 
+  aseTurnout <- K.getCachedAction BR.simpleASETurnoutLoader -- K.knitEither $ FL.foldM BR.simplifyTurnoutASEFold aseTurnoutRaw
+  asrTurnout <- K.getCachedAction BR.simpleASRTurnoutLoader --K.knitEither $ FL.foldM BR.simplifyTurnoutASRFold asrTurnoutRaw
   let g r = (F.rgetField @BR.StateAbbreviation r == "MA")
                  && (F.rgetField @BR.CongressionalDistrict r == 1)
                  && (F.rgetField @BR.Year r == 2010)

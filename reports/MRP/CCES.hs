@@ -145,23 +145,6 @@ intToSex n = case n of
   2 -> DT.Female
   _ -> undefined
 
-{-
-type Sex = "Sex" F.:-> BR.Sex
-instance FV.ToVLDataValue (F.ElField Sex) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
--}
-{-
-data EducationT = E_NoHS
-                | E_HighSchool
-                | E_SomeCollege
-                | E_TwoYear
-                | E_FourYear
-                | E_PostGrad
-                | E_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor EducationT = V.Vector
-instance S.Serialize EducationT
--}
-
 intToEducation :: Int -> DT.Education
 intToEducation 1 = DT.L9
 intToEducation 2 = DT.L12
@@ -172,13 +155,6 @@ intToEducation 6 = DT.AD
 
 intToCollegeGrad :: Int -> DT.CollegeGrad
 intToCollegeGrad n = if n >= 4 then DT.Grad else DT.NonGrad
-
---type Education = "Education" F.:-> DT.Education
-{-
-type CollegeGrad = "CollegeGrad" F.:-> BR.CollegeGrad
-instance FV.ToVLDataValue (F.ElField CollegeGrad) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
--}
 
 data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
@@ -203,15 +179,6 @@ raceToRace5 Hispanic = DT.R5_Latinx
 raceToRace5 Asian = DT.R5_Asian
 raceToRace5 _ = DT.R5_Other
 
-{-
-type SimpleRace = "SimpleRace" F.:-> BR.SimpleRace
-instance FV.ToVLDataValue (F.ElField SimpleRace) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
--}
-
---data AgeT = A18To24 | A25To44 | A45To64 | A65To74 | A75AndOver deriving (Show, Enum, Bounded, Eq, Ord, Generic)
---type instance FI.VectorFor AgeT = V.Vector
---instance S.Serialize AgeT
 
 intToAgeT :: Real a => a -> DT.Age5
 intToAgeT x 

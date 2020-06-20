@@ -408,13 +408,13 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount) 
     )
   => T.Text
-  -> Maybe K.UTCTime -- TODO, drop this and make all below be WithCacheTime ??
-  -> F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount])
-  -> F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
-  -> F.Frame BR.StateTurnout
+  -> K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
+  -> K.ActionWithCacheTime r (F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
+  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
-acsDemographicsWithAdjCensusTurnoutByCD cacheKey newestM demoF turnoutF stateTurnoutF =
-  BR.retrieveOrMakeFrame cacheKey (K.onlyCacheTime newestM) $ const $ do
+acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cachedStateTurnout = do
+  let cachedDeps = (,,) <$> cachedDemo <*> cachedTurnout <*> cachedStateTurnout
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_All) demoF
         demo'' = fmap (F.rcast @([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
         vpa r = realToFrac (F.rgetField @BR.Voted r) / realToFrac (F.rgetField @BR.Population r)
@@ -426,31 +426,17 @@ acsDemographicsWithAdjCensusTurnoutByCD cacheKey newestM demoF turnoutF stateTur
 cachedASEDemographicsWithAdjTurnoutByCD
   :: forall r 
    . (K.KnitEffects r)
-  => Maybe K.UTCTime
-  -> F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++ '[BR.ACSCount])
-  -> F.FrameRec
-   ( '[BR.Year]
-     V.++
-     BR.CatColsASE
-     V.++
-     '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
-   )
-  -> F.Frame BR.StateTurnout
+  => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
+  -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
+  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASEDemographicsWithAdjTurnoutByCD newestM = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" newestM
+cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
 
 cachedASRDemographicsWithAdjTurnoutByCD
   :: forall r 
    . (K.KnitEffects r)
-  => Maybe K.UTCTime
-  -> F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++ '[BR.ACSCount])
-  -> F.FrameRec
-   ( '[BR.Year]
-     V.++
-     BR.CatColsASR
-     V.++
-     '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]
-   )
-  -> F.Frame BR.StateTurnout
+  => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
+  -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
+  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASRDemographicsWithAdjTurnoutByCD newestM = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" newestM
+cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 

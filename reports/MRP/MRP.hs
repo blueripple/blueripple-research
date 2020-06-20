@@ -116,7 +116,7 @@ main = do
         }      
   eitherDocs <-
     K.knitHtmls knitConfig $ runRandomIO $ do
-      stateCrossWalkFrame <- BR.stateAbbrCrosswalkLoader
+      stateCrossWalkFrame <- K.getCachedAction BR.stateAbbrCrosswalkLoader
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       K.logLE K.Info "Knitting docs..."      
       curDate <- (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime

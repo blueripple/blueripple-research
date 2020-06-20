@@ -91,44 +91,33 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let predictorsASER = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASE =  GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
       predictorsASR = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
-  (K.WithCacheTime ccesTime ccesDataA) <- ccesDataLoader
+  cachedCCES_Data <- ccesDataLoader
   inferredPrefsASER <-  K.getCachedAction $ do
-    ccesData <- ccesDataA
-    BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" (Just ccesTime) $ 
-      stateAndNation <$> (P.raise $ BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") (Just ccesTime) ccesData predictorsASER BR.catPredMaps)
+    BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" cachedCCES_Data $ const $  
+      stateAndNation <$> (BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") cachedCCES_Data predictorsASER BR.catPredMaps)
 
   inferredPrefsASE <-  K.getCachedAction $ do
-    ccesData <- ccesDataA
-    BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin" (Just ccesTime) $
-      stateAndNation <$> (P.raise $ BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") (Just ccesTime) ccesData predictorsASE BR.catPredMaps)      
+    BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin" cachedCCES_Data $ const $
+      stateAndNation <$> (BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") cachedCCES_Data predictorsASE BR.catPredMaps)      
 
   inferredPrefsASR <-  K.getCachedAction $ do
-        ccesData <- ccesDataA
-        BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin" (Just ccesTime) $
-          stateAndNation <$> (P.raise $ BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") (Just ccesTime) ccesData predictorsASR BR.catPredMaps)
+        BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin" cachedCCES_Data $ const $
+          stateAndNation <$> (BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") cachedCCES_Data predictorsASR BR.catPredMaps)
 --  inferredPrefsASER <- K.ignoreCacheTime inferredPrefsASER_C
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- K.getCachedAction $ do
-    K.WithCacheTime aseACS_Time aseACS_A <- BR.simpleASEDemographicsLoader
-    K.WithCacheTime aseTurnoutTime aseTurnoutA <- BR.simpleASETurnoutLoader
-    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
-    aseACS <- aseACS_A
-    aseTurnout <- aseTurnoutA
-    stateTurnout <- stateTurnoutA
-    let newestDepTime = maximum [aseACS_Time, aseTurnoutTime, stateTurnoutTime]
-    fmap (fmap stateOnly) <$> BR.cachedASEDemographicsWithAdjTurnoutByCD (Just newestDepTime) aseACS aseTurnout stateTurnout
+  demographicsAndTurnoutASE <- K.getCachedAction $ do    
+    cachedSimpleASE_Demo <- BR.simpleASEDemographicsLoader
+    cachedSimpleASE_Turnout <- BR.simpleASETurnoutLoader
+    cachedStateTurnout <- BR.stateTurnoutLoader
+    (fmap stateOnly) <$> BR.cachedASEDemographicsWithAdjTurnoutByCD cachedSimpleASE_Demo cachedSimpleASE_Turnout cachedStateTurnout
 
-  demographicsAndTurnoutASR <- K.getCachedAction $ do
-    K.WithCacheTime asrACS_Time asrACS_A <- BR.simpleASRDemographicsLoader
-    K.WithCacheTime asrTurnoutTime asrTurnoutA <- BR.simpleASRTurnoutLoader
-    K.WithCacheTime stateTurnoutTime stateTurnoutA <- BR.stateTurnoutLoader
-    asrACS <- asrACS_A
-    asrTurnout <- asrTurnoutA
-    stateTurnout <- stateTurnoutA
-    let newestDepTime = maximum [asrACS_Time, asrTurnoutTime, stateTurnoutTime]
-    fmap (fmap stateOnly) <$> BR.cachedASRDemographicsWithAdjTurnoutByCD (Just newestDepTime) asrACS asrTurnout stateTurnout
+  demographicsAndTurnoutASR <- K.getCachedAction $ do    
+    cachedSimpleASR_Demo <- BR.simpleASRDemographicsLoader
+    cachedSimpleASR_Turnout <- BR.simpleASRTurnoutLoader
+    cachedStateTurnout <- BR.stateTurnoutLoader
+    (fmap stateOnly) <$> BR.cachedASRDemographicsWithAdjTurnoutByCD cachedSimpleASR_Demo cachedSimpleASR_Turnout cachedStateTurnout
 
   -- join with the prefs
   K.logLE K.Info "Joining turnout by CD and prefs"

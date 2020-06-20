@@ -244,10 +244,15 @@ getPath dataPath = case dataPath of
   DataSets fp -> liftIO $ BR.usePath (T.unpack fp)
   LocalData fp -> return (T.unpack fp)
 
+-- if the file is local, use modTime
+-- if the file is from the data-set library, assume the cached version is good since the modtime
+-- may change any time that library is re-installed.
 dataPathWithCacheTime :: Applicative m => DataPath -> IO (K.WithCacheTime m DataPath)
-dataPathWithCacheTime dp = do
+dataPathWithCacheTime dp@(LocalData _) = do
   modTime <- getPath dp >>= System.getModificationTime
   return $ K.withCacheTime (Just modTime) (pure dp)
+dataPathWithCacheTime dp@(DataSets _) = return $ K.withCacheTime Nothing (pure dp)
+
 
 -- file has qs
 -- Filter qs
