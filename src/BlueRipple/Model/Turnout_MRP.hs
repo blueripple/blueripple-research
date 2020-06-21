@@ -109,7 +109,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
   let cacheIt cn fa = -- fa :: F.FrameRec rs -> 
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedDat >>= fa 
-          Just tmpDir -> K.getCachedAction -- ignores cache time and decodes the cached data 
+          Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data 
                          $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         

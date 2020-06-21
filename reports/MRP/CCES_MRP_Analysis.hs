@@ -220,7 +220,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
   let cacheIt cn fa = 
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedCCES_Data >>= fa
-          Just tmpDir -> K.getCachedAction
+          Just tmpDir -> K.ignoreCacheTimeM
                          $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)

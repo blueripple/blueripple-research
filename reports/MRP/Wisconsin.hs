@@ -92,28 +92,28 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
       predictorsASE =  GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
       predictorsASR = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
   cachedCCES_Data <- ccesDataLoader
-  inferredPrefsASER <-  K.getCachedAction $ do
+  inferredPrefsASER <-  K.ignoreCacheTimeM $ do
     BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" cachedCCES_Data $ const $  
       stateAndNation <$> (BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") cachedCCES_Data predictorsASER BR.catPredMaps)
 
-  inferredPrefsASE <-  K.getCachedAction $ do
+  inferredPrefsASE <-  K.ignoreCacheTimeM $ do
     BR.retrieveOrMakeFrame "mrp/simpleASE_MR.bin" cachedCCES_Data $ const $
       stateAndNation <$> (BR.mrpPrefs @BR.CatColsASE GLM.MDVNone (Just "ASE") cachedCCES_Data predictorsASE BR.catPredMaps)      
 
-  inferredPrefsASR <-  K.getCachedAction $ do
+  inferredPrefsASR <-  K.ignoreCacheTimeM $ do
         BR.retrieveOrMakeFrame "mrp/simpleASR_MR.bin" cachedCCES_Data $ const $
           stateAndNation <$> (BR.mrpPrefs @BR.CatColsASR GLM.MDVNone (Just "ASR") cachedCCES_Data predictorsASR BR.catPredMaps)
 --  inferredPrefsASER <- K.ignoreCacheTime inferredPrefsASER_C
   brAddMarkDown text1
   _ <- K.addHvega Nothing Nothing $ BR.vlPrefVsTime "Dem Preference By Demographic Split" stateAbbr (FV.ViewConfig 800 800 10) $ fmap F.rcast inferredPrefsASER  
   -- get adjusted turnouts (national rates, adj by state) for each CD
-  demographicsAndTurnoutASE <- K.getCachedAction $ do    
+  demographicsAndTurnoutASE <- K.ignoreCacheTimeM $ do    
     cachedSimpleASE_Demo <- BR.simpleASEDemographicsLoader
     cachedSimpleASE_Turnout <- BR.simpleASETurnoutLoader
     cachedStateTurnout <- BR.stateTurnoutLoader
     (fmap stateOnly) <$> BR.cachedASEDemographicsWithAdjTurnoutByCD cachedSimpleASE_Demo cachedSimpleASE_Turnout cachedStateTurnout
 
-  demographicsAndTurnoutASR <- K.getCachedAction $ do    
+  demographicsAndTurnoutASR <- K.ignoreCacheTimeM $ do    
     cachedSimpleASR_Demo <- BR.simpleASRDemographicsLoader
     cachedSimpleASR_Turnout <- BR.simpleASRTurnoutLoader
     cachedStateTurnout <- BR.stateTurnoutLoader

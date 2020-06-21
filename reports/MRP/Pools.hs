@@ -337,7 +337,7 @@ post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "
   cachedCCES_Data <- ccesDataLoader
   ccesFrame <- K.ignoreCacheTime cachedCCES_Data
   logFrame $ F.filterFrame (\r -> F.rgetField @Year r == 2018 && F.rgetField @StateAbbreviation r == "WY") ccesFrame
-  predsByLocation <-  K.getCachedAction $ K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation" cachedCCES_Data $ \ccesData -> 
+  predsByLocation <-  K.ignoreCacheTimeM $ K.retrieveOrMakeTransformed (fmap BR.lhToS) (fmap BR.lhFromS)  "mrp/pools/predsByLocation" cachedCCES_Data $ \ccesData -> 
     P.raise (BR.predictionsByLocation @CatCols GLM.MDVNone ccesData (narrowCountFold countDemPres2016VotesF) preds BR.catPredMaps)
     
 

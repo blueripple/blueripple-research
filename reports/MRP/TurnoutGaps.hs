@@ -577,14 +577,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
               MR.noUnpack
               (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
               (FMR.foldAndAddKey votesToVoteShareF)
-    presByStateFrame <- K.getCachedAction BR.presidentialByStateFrame
+    presByStateFrame <- K.ignoreCacheTimeM BR.presidentialByStateFrame
     return $ FL.fold fld presByStateFrame    
   K.logLE K.Info "Computing house election 2-party vote share"
   let houseElectionFilter r = (F.rgetField @BR.Stage r == "gen")
                               && (F.rgetField @BR.Runoff r == False)
                               && (F.rgetField @BR.Special r == False)
                               && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
-  houseElectionFrame <- F.filterFrame houseElectionFilter <$> K.getCachedAction BR.houseElectionsLoader
+  houseElectionFrame <- F.filterFrame houseElectionFilter <$> K.ignoreCacheTimeM BR.houseElectionsLoader
   let houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
                         FMR.noUnpack
                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, ET.Office])
@@ -607,7 +607,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       K.knitMaybe "Missing key (stateAbbr, year, catColsASR) when joining inferredPrefsASR and asrDemoAndAdjEW"
         $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) inferredPrefsASR asrDemoAndAdjEW
 
-  pumsDemographics <- K.getCachedAction PUMS.pumsLoader
+  pumsDemographics <- K.ignoreCacheTimeM PUMS.pumsLoader
   aseAllByState <- K.ignoreCacheTime aseAllByState_C
   asrAllByState <- K.ignoreCacheTime asrAllByState_C
   let labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
@@ -664,7 +664,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   toFlipJoined <- K.knitMaybe "join key missing in toFlipDems that is present in toFlipAll"
                   $ FJ.leftJoinM  @'[BR.StateAbbreviation] toFlipAll toFlipDems
                   
-  evFrame <- fmap (F.rcast @[BR.StateAbbreviation, BR.Electors]) . F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) <$> K.getCachedAction BR.electoralCollegeFrame
+  evFrame <- fmap (F.rcast @[BR.StateAbbreviation, BR.Electors]) . F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) <$> K.ignoreCacheTimeM BR.electoralCollegeFrame
   toFlipWithEV <-  K.knitMaybe "join key present in toFlipJoined but missing from evFrame"
                    $ FJ.leftJoinM @'[BR.StateAbbreviation] toFlipJoined evFrame
 --  logFrame toFlipWithEV
@@ -727,7 +727,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
                      (fmap (FT.addColumn @BR.PopCountOf BR.PC_Citizen)
                        <$> (PUMS.pumsCDRollup (PUMS.pumsKeysToASR . F.rcast) $ F.filterFrame (isYear 2018) pumsDemographics))
 
-  pumsASRAdjTurnoutByCD2018 <- K.getCachedAction $ do
+  pumsASRAdjTurnoutByCD2018 <- K.ignoreCacheTimeM $ do
     cachedStateTurnout <- BR.stateTurnoutLoader
     let cachedDeps = (,,) <$> pumsASRByCD2018_C <*> cachedStateTurnout <*> asrAllByState_C
     BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRAdjTurnoutByCD2018.bin" cachedDeps $ \(pumsASRByCD2018, stateTurnoutRaw, asrABS) -> 

@@ -114,7 +114,7 @@ cpsVoterPUMSLoader = do
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedCPSDataPath
   BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" cachedDeps $ \(stateAbbrCrosswalk, dataPath) -> do
     let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
-    withoutAbbr <- K.getCachedAction
+    withoutAbbr <- K.ignoreCacheTimeM
                    $ BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                    dataPath
                    Nothing

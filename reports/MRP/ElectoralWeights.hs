@@ -565,7 +565,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
               MR.noUnpack
               (FMR.assignKeysAndData @[BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office])
               (FMR.foldAndAddKey votesToVoteShareF)
-    presByStateFrame <- K.getCachedAction $ BR.presidentialByStateFrame
+    presByStateFrame <- K.ignoreCacheTimeM $ BR.presidentialByStateFrame
     return $ FL.fold fld presByStateFrame
 
     
@@ -574,14 +574,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
                               && (F.rgetField @BR.Runoff r == False)
                               && (F.rgetField @BR.Special r == False)
                               && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
-  houseElectionFrame <- F.filterFrame houseElectionFilter <$> K.getCachedAction BR.houseElectionsLoader
+  houseElectionFrame <- F.filterFrame houseElectionFilter <$> K.ignoreCacheTimeM BR.houseElectionsLoader
   let houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
                         FMR.noUnpack
                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict, ET.Office])
                         (FMR.foldAndAddKey votesToVoteShareF)
       houseVoteShareFrame = FL.fold houseVoteShareF houseElectionFrame
   K.logLE K.Info "Joining turnout by CD and prefs"
-  electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> K.getCachedAction BR.electoralCollegeFrame
+  electoralVotesByStateFrame <- F.filterFrame ((==2020) . F.rgetField @BR.Year) <$> K.ignoreCacheTimeM BR.electoralCollegeFrame
   let yearFilter y r =  F.rgetField @BR.Year r == y 
       yearOfficeFilter y o r =  yearFilter y r && F.rgetField @ET.Office r == o
       prependYearSourceAndGrouping :: Int
@@ -601,7 +601,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
       ewGroupingAsText ET.EW_CCES = "CCES"
       ewGroupingAsText ET.EW_Census = "Census"
       
-  aserWgtd <- K.getCachedAction $ do
+  aserWgtd <- K.ignoreCacheTimeM $ do
     let cachedDeps = (,,,) <$> inferredPrefsASER_C <*> pumsASERByStateC <*> aserDemoAndAdjCensusEW_C <*> aserDemoAndAdjCCESEW_C
 
         aserPrefs pFrame y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER V.++ '[BR.DemPref]))
@@ -629,7 +629,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
   logFrame aserEwResults
 
 
-  aser5Wgtd <- K.getCachedAction $ do
+  aser5Wgtd <- K.ignoreCacheTimeM $ do
     let cachedDeps = (,,,) <$> inferredPrefsASER5_C <*> pumsASER5ByStateC <*> aser5DemoAndAdjCensusEW_C <*> aser5DemoAndAdjCCESEW_C
 
         aser5Prefs pFrame y o = fmap (F.rcast @('[BR.StateAbbreviation] V.++ BR.CatColsASER5 V.++ '[BR.DemPref]))
