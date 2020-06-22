@@ -72,7 +72,7 @@ survey responses.  Maybe that's not weird??
 
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
-data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool } deriving (Show, Data, Typeable)
+data PostArgs = PostArgs { posts :: [Post], updated :: Bool, diagnostics :: Bool, debug :: Int  } deriving (Show, Data, Typeable)
 
 postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostWWC] &= CA.name "wwc" &= CA.help "knit \"WWC\"",
@@ -93,7 +93,11 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                     , diagnostics = CA.def
                       &= CA.name "d"
                       &= CA.help "Show diagnostic info.  Defaults to False."
-                      &= CA.typ "Bool"                    
+                      &= CA.typ "BOOL"
+                    , debug = CA.def
+                      &= CA.name "debug"
+                      &= CA.help "Show debug info at given level (higher is more info).  If present, overrides and sets \"diagnostic\" to True."
+                      &= CA.typ "INT"
                     }
            &= CA.verbosity
            &= CA.help "Produce MRP Model Blue Ripple Politics Posts"
@@ -106,9 +110,11 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
-  let logFilter = case (diagnostics args) of
-        False -> K.nonDiagnostic
-        True -> K.logAll
+  let logFilter = if debug args > 0
+                  then K.logDebug (debug args)
+                  else case (diagnostics args) of                         
+                         False -> K.nonDiagnostic
+                         True -> K.logDiagnostic
       knitConfig = K.defaultKnitConfig
         { K.outerLogPrefix = Just "MRP.Main"
         , K.logIf = logFilter
