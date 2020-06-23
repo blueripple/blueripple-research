@@ -413,12 +413,15 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
 --    K.logLE K.Diagnostic $ T.intercalate "\n" $ fmap (T.pack . show) counted
     let
       vCounts = VS.fromList $ fmap (F.rgetField @Count) counted
-      designEffect mw vw = if (mw > 1e-12) then 1 + (vw / (mw * mw)) else 1
+      designEffect mw vw = 1 + (vw / (mw * mw))
       vWeights = VS.fromList $ fmap
         (\r ->
             let mw = F.rgetField @MeanWeight r
                 vw = F.rgetField @VarWeight r
-            in  1 / sqrt (designEffect mw vw)
+            in  case (mw < 1e-12, vw < 1e-12) of
+              (True, _) -> 0
+              (False, True) -> 1
+              _ -> 1/sqrt (designEffect mw vw)
         )
         counted -- VS.replicate (VS.length vCounts) 1.0
             
