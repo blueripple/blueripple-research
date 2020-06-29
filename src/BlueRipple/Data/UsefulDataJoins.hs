@@ -194,7 +194,7 @@ joinDemoAndWeightsWithDefaults pco x d w =
 
 adjustWeightsForStateTotals
   :: forall ks p r
-  . (K.DefaultEffects r
+  . (K.KnitEffects r
     , V.KnownField p
     , V.Snd p ~ Int
     , F.ElemOf (BR.WithYS ks) BR.Year
@@ -215,7 +215,7 @@ adjustWeightsForStateTotals stateTurnout unadj =
 
 demographicsWithAdjTurnoutByState
   :: forall catCols p ks js effs
-  . ( K.DefaultEffects effs
+  . ( K.KnitEffects effs
     , FJ.CanLeftJoinM (js V.++ catCols) ((BR.WithYS ks) V.++ catCols V.++ (PCols p)) (js V.++ catCols V.++ BR.EWCols)
     , (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) ~ (((ks V.++ catCols) V.++ PCols p) V.++ BR.EWCols)
     , V.RMap (js V.++ catCols)
@@ -257,7 +257,7 @@ demographicsWithAdjTurnoutByState stateTurnout demos ews = do
 {-
 demographicsWithDefaultsWithAdjTurnoutByState
   :: forall catCols p ks js effs
-  . ( K.DefaultEffects effs
+  . ( K.KnitEffects effs
     , V.KnownField p
     , V.Snd p ~ Int
     , F.ElemOf (ks V.++ catCols V.++ PEWCols p) p
@@ -295,7 +295,7 @@ demographicsWithDefaultsWithAdjTurnoutByState pco x stateTurnout demos ews = do
 -- This is monstrous
 rollupAdjustAndJoin
   :: forall as catCols p ks js effs
-  .(K.DefaultEffects effs
+  .(K.KnitEffects effs
    , FJ.CanLeftJoinM (js V.++ catCols) ((BR.WithYS ks) V.++ catCols V.++ (PCols p)) (js V.++ catCols V.++ BR.EWCols)
    , (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) ~ (((ks V.++ catCols) V.++ PCols p) V.++ BR.EWCols)
    , V.RMap (js V.++ catCols)
@@ -365,8 +365,9 @@ type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
 
 -- This is also monstrous.  Which is surprising??
 acsDemographicsWithAdjCensusTurnoutByCD
-  :: forall catCols r
-  . (K.DefaultEffects r
+  :: forall c k ct catCols r
+  . (K.KnitEffectsWithCache c k ct r
+    , K.DefaultCache c k ct
     , V.RMap catCols
     , V.ReifyConstraint Show V.ElField catCols
     , V.RecordToList catCols
@@ -414,7 +415,7 @@ acsDemographicsWithAdjCensusTurnoutByCD
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
 acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cachedStateTurnout = do
   let cachedDeps = (,,) <$> cachedDemo <*> cachedTurnout <*> cachedStateTurnout
-  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
+  BR.retrieveOrMakeFrame @c @k @ct cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_All) demoF
         demo'' = fmap (F.rcast @([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
         vpa r = realToFrac (F.rgetField @BR.Voted r) / realToFrac (F.rgetField @BR.Population r)
@@ -424,19 +425,21 @@ acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cached
 
 
 cachedASEDemographicsWithAdjTurnoutByCD
-  :: forall r 
-   . (K.DefaultEffects r)
+  :: forall c k ct r 
+   . (K.KnitEffectsWithCache c k ct r
+     , K.DefaultCache c k ct)
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
+cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @c @k @ct @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
 
 cachedASRDemographicsWithAdjTurnoutByCD
-  :: forall r 
-   . (K.DefaultEffects r)
+  :: forall c k ct r 
+   . (K.KnitEffectsWithCache c k ct r
+     , K.DefaultCache c k ct)
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 
+cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @c @k @ct @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 

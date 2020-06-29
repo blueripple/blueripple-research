@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
@@ -58,7 +59,7 @@ knitEither
   -> K.Sem r a
 knitEither = either K.knitError return
 
-copyAsset :: K.DefaultKnitOne r => T.Text -> T.Text -> K.Sem r ()
+copyAsset :: K.KnitOne c k ct r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
   sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
   case sourceExists of
@@ -85,7 +86,7 @@ brWriterOptionsF o =
         , PA.writerSectionDivs = True
         }
 
-brAddMarkDown :: K.DefaultKnitOne r => T.Text -> K.Sem r ()
+brAddMarkDown :: K.KnitOne c k ct r => T.Text -> K.Sem r ()
 brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
   brMarkDownReaderOptions =
@@ -98,8 +99,8 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                                   $ exts
           }
 
-brLineBreak :: K.DefaultKnitOne r => K.Sem r ()
-brLineBreak = brAddMarkDown "\\\n"
+brLineBreak :: forall c k ct r. K.KnitOne c k ct r => K.Sem r ()
+brLineBreak = brAddMarkDown @c @k @ct "\\\n"
 
 brAddDates
   :: Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
@@ -115,34 +116,40 @@ brAddDates updated pubDate updateDate tMap =
 
 
 logFrame
-  :: (K.DefaultEffects r, Foldable f, Show (F.Record rs))
+  :: (K.KnitEffects r, Foldable f, Show (F.Record rs))
   => f (F.Record rs)
   -> K.Sem r ()
 logFrame =
   K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
 
-retrieveOrMakeFrame :: (K.DefaultEffects r
-                       , FS.RecSerialize rs
-                       , V.RMap rs
-                       , FI.RecVec rs
-                       )
-                    => T.Text
-                    -> K.ActionWithCacheTime r b
-                    -> (b -> K.Sem r (F.FrameRec rs))
-                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
+retrieveOrMakeFrame
+  :: forall c k ct r b rs.
+     (K.KnitEffectsWithCache c k ct r
+     , K.DefaultCache c k ct
+     , FS.RecSerialize rs
+     , V.RMap rs
+     , FI.RecVec rs
+     )
+  => T.Text
+  -> K.ActionWithCacheTime r b
+  -> (b -> K.Sem r (F.FrameRec rs))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed @K.DefaultSerializer @K.DefaultCacheData (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed @c @k @ct (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
 
-retrieveOrMakeRecList :: (K.DefaultEffects r
-                       , FS.RecSerialize rs
-                       , V.RMap rs
-                       , FI.RecVec rs
-                       )
-                      => T.Text
-                      -> K.ActionWithCacheTime r b
-                      -> (b -> K.Sem r [F.Record rs])
-                      -> K.Sem r (K.ActionWithCacheTime r [F.Record rs])
+retrieveOrMakeRecList
+  :: forall c k ct r rs b.
+     (K.KnitEffectsWithCache c k ct r
+     , K.DefaultCache c k ct
+     , FS.RecSerialize rs
+     , V.RMap rs
+     , FI.RecVec rs
+     )
+  => T.Text
+  -> K.ActionWithCacheTime r b
+  -> (b -> K.Sem r [F.Record rs])
+  -> K.Sem r (K.ActionWithCacheTime r [F.Record rs])
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed @K.DefaultSerializer @K.DefaultCacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed @c @k @ct (fmap FS.toS) (fmap FS.fromS) key cachedDeps action

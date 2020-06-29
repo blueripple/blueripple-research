@@ -150,7 +150,7 @@ type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
 adjTurnoutFold
   :: forall p t rs f effs
    . ( Foldable f
-     , K.DefaultEffects effs
+     , K.KnitEffects effs
      , F.ElemOf rs p
      , F.ElemOf rs t
      , F.ElemOf (WithYS rs) BR.StateAbbreviation

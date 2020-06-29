@@ -1,7 +1,9 @@
+{-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE UndecidableInstances  #-}
 module BlueRipple.Utilities.TableUtils
   ( CellStyle(..)
@@ -76,14 +78,15 @@ textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)
 
 brAddRawHtmlTable
-  :: (K.DefaultKnitOne r, Foldable f)
+  :: forall c k ct r f a.
+     (K.KnitOne c k ct r, Foldable f)
   => T.Text
   -> BH.Attribute
   -> K.Colonnade K.Headed a BC.Cell
   -> f a
   -> K.Sem r ()
 brAddRawHtmlTable title attr colonnade rows =
-  brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
+  brAddMarkDown @c @k @ct $ TL.toStrict $ B.renderHtml $ do
     BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
     BC.encodeCellTable attr colonnade rows
 

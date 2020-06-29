@@ -304,7 +304,7 @@ predictionsByLocation ::
                   , ps F.⊆ (ps V.++ CountCols)
                   , ps F.⊆ (LocationCols V.++ ps V.++ CountCols)
                   , F.ElemOf rs BR.StateAbbreviation
-                  , K.DefaultEffects r
+                  , K.KnitEffects r
                )
   => GLM.MinimizeDevianceVerbosity
   -> F.FrameRec rs
@@ -352,7 +352,7 @@ inferMR
   :: forall ls cs ks b g f rs effs
    . ( Foldable f
      , Functor f
-     , K.DefaultEffects effs
+     , K.KnitEffects effs
      , F.RDeleteAll ls (ls V.++ ks V.++ CountCols) ~ (ks V.++ CountCols)
      , (ls V.++ ks V.++ CountCols) ~ (ls V.++ (ks V.++ CountCols))
      , Ord (F.Record ls)

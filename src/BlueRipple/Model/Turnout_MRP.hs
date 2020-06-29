@@ -53,8 +53,9 @@ import qualified BlueRipple.Data.Keyed         as BR
 
 
 mrpTurnout
-  :: forall cc rs r
-   . ( K.DefaultEffects r
+  :: forall c k ct cc rs r
+   . ( K.KnitEffectsWithCache c k ct r
+     , K.DefaultCache c k ct
      , K.Member GLM.RandomFu r
      , ( (((cc V.++ '[BR.Year]) V.++ '[ET.ElectoralWeightSource]) V.++ '[ET.ElectoralWeightOf])
            V.++
@@ -110,7 +111,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedDat >>= fa 
           Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data 
-                         $ K.retrieveOrMakeTransformed @K.DefaultSerializer @K.DefaultCacheData
+                         $ K.retrieveOrMakeTransformed @c @k @ct
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
