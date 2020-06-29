@@ -92,7 +92,7 @@ import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
             
 modeledResults :: ( MonadIO (K.Sem r)
-                  , K.KnitEffects r
+                  , K.DefaultEffects r
                   , Show tr
                   , Show b
                   , Enum b
@@ -159,7 +159,7 @@ deltaTable
      , Enum b
      , Show b
      , MonadIO (K.Sem r)
-     , K.KnitEffects r
+     , K.DefaultEffects r
      )
   => DemographicStructure dr tr e b
   -> (F.Record LocationKey -> Bool)
@@ -423,7 +423,7 @@ preferenceModel
      , Bounded b
      , A.Ix b
      , FL.Vector (F.VectorFor b) b
-     , K.KnitEffects r
+     , K.DefaultEffects r
      , MonadIO (K.Sem r)
      )
   => DemographicStructure dr tr HouseElections b
@@ -569,7 +569,7 @@ totalVoteDiagnostics :: forall b rs f r
                           , F.ElemOf rs Totalvotes
                           , F.ElemOf rs DVotes
                           , F.ElemOf rs RVotes
-                          , K.KnitEffects r
+                          , K.DefaultEffects r
                         )
   => f (F.Record rs) -- ^ frame with all rows
   -> f (F.Record rs) -- ^ frame with only rows from competitive races

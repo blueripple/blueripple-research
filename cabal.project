@@ -1,45 +1,18 @@
-packages: ./ ~/DataScience/glm-haskell
+packages: ./ ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
 allow-newer: hvega, hashable, base, streamly, polysemy
 
--- ghc-8.8 forks
-             
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames
---  tag: 5a8658444c3a0f33c1a46fe6ea497de5a7d777d4
-
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/random-fu
---  tag: 81e67b5596c173720032f7fa83610c4e4138b839
---  subdir: random-fu
-
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/random-fu
---  tag: 81e67b5596c173720032f7fa83610c4e4138b839
---  subdir: random-source
-
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/random-fu
---  tag: 81e67b5596c173720032f7fa83610c4e4138b839
---  subdir: rvar
-    
---- ghc-8.8 forks ends
-
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 9741cf5c2b6c43355d665f2c116642cf621f50e4
+  tag: b581375cb12ebec496d05b2eac2048764f92f683
              
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: fb17b5d64f158423fc2605e516a658ec4447b22b
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: fb17b5d64f158423fc2605e516a658ec4447b22b
 
 source-repository-package
   type: git
@@ -69,7 +42,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/glm-haskell
-  tag: 3c48fc58f602656cbdd4c017d704d11605e285e6
+  tag: d379eae6255ab374905f2857fc8f25d1fb8ec3cb
 
 --source-repository-package
 --  type: git

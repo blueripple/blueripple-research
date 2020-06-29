@@ -167,13 +167,13 @@ toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
 toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader
-  ::  forall r. K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+  ::  forall r. K.DefaultEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
   cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
   fmap (fmap F.toFrame . K.streamToAction Streamly.toList)
-    . K.retrieveOrMakeTransformedStream FS.toS FS.fromS  "data/acs1YrPUMS.sbin" cachedDeps $ \(stateAbbrCrosswalk, _) -> do
+    . K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS  ("data/acs1YrPUMS.sbin" :: T.Text) cachedDeps $ \(stateAbbrCrosswalk, _) -> do
       Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
       Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
@@ -228,7 +228,7 @@ type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.Congression
 
 pumsCDRollup
  :: forall ks r
- . (K.KnitEffects r
+ . (K.DefaultEffects r
    ,ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens, BR.CongressionalDistrict, BR.PUMAWgt] ++ ks)
    , FI.RecVec (ks ++ [Citizens, NonCitizens])
    , Ord (F.Record ks)

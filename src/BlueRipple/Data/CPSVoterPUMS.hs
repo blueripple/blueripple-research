@@ -106,7 +106,7 @@ import qualified Polysemy                as P (raise)
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-cpsVoterPUMSLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
+cpsVoterPUMSLoader :: K.DefaultEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
 cpsVoterPUMSLoader = do
   let cpsPUMSDataPath = BR.LocalData $ T.pack BR.cpsVoterPUMSCSV
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
@@ -127,7 +127,7 @@ cpsVoterPUMSLoader = do
 
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
-cpsVoterPUMSWithCDLoader :: K.KnitEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
+cpsVoterPUMSWithCDLoader :: K.DefaultEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
 cpsVoterPUMSWithCDLoader = do
   cachedCPSVoterPUMS <- cpsVoterPUMSLoader
   cachedCountyToCD <- BR.county2010ToCD116Loader

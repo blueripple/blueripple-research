@@ -58,7 +58,7 @@ knitEither
   -> K.Sem r a
 knitEither = either K.knitError return
 
-copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
+copyAsset :: K.DefaultKnitOne r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
   sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
   case sourceExists of
@@ -85,7 +85,7 @@ brWriterOptionsF o =
         , PA.writerSectionDivs = True
         }
 
-brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
+brAddMarkDown :: K.DefaultKnitOne r => T.Text -> K.Sem r ()
 brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
   brMarkDownReaderOptions =
@@ -98,7 +98,7 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                                   $ exts
           }
 
-brLineBreak :: K.KnitOne r => K.Sem r ()
+brLineBreak :: K.DefaultKnitOne r => K.Sem r ()
 brLineBreak = brAddMarkDown "\\\n"
 
 brAddDates
@@ -115,13 +115,13 @@ brAddDates updated pubDate updateDate tMap =
 
 
 logFrame
-  :: (K.KnitEffects r, Foldable f, Show (F.Record rs))
+  :: (K.DefaultEffects r, Foldable f, Show (F.Record rs))
   => f (F.Record rs)
   -> K.Sem r ()
 logFrame =
   K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
 
-retrieveOrMakeFrame :: (K.KnitEffects r
+retrieveOrMakeFrame :: (K.DefaultEffects r
                        , FS.RecSerialize rs
                        , V.RMap rs
                        , FI.RecVec rs
@@ -132,9 +132,9 @@ retrieveOrMakeFrame :: (K.KnitEffects r
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed @K.DefaultSerializer @K.DefaultCacheData (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
 
-retrieveOrMakeRecList :: (K.KnitEffects r
+retrieveOrMakeRecList :: (K.DefaultEffects r
                        , FS.RecSerialize rs
                        , V.RMap rs
                        , FI.RecVec rs
@@ -145,4 +145,4 @@ retrieveOrMakeRecList :: (K.KnitEffects r
                       -> K.Sem r (K.ActionWithCacheTime r [F.Record rs])
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed @K.DefaultSerializer @K.DefaultCacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action

@@ -76,7 +76,7 @@ textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)
 
 brAddRawHtmlTable
-  :: (K.KnitOne r, Foldable f)
+  :: (K.DefaultKnitOne r, Foldable f)
   => T.Text
   -> BH.Attribute
   -> K.Colonnade K.Headed a BC.Cell
