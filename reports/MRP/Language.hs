@@ -134,7 +134,7 @@ alternateVoteF =
   in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 -}
   
-post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
+post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
   K.logLE K.Info "Aggregating ACS PUMS data by state, household language and English language proficiency."                              
   acsLanguageByState' <- K.ignoreCacheTimeM $ do

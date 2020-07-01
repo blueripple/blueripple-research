@@ -75,7 +75,7 @@ foldPrefAndTurnoutData =  FF.sequenceRecFold
                           V.:& FF.toFoldRecord (BR.weightedSumRecF @BR.ACSCount @BR.DemPref)
                           V.:& V.RNil
 
-post :: forall es r.(K.KnitOne r , K.Member GLM.RandomFu r) => K.Sem r ()
+post :: forall es r.(K.KnitOne r , K.CacheEffectsD r, K.Member GLM.RandomFu r) => K.Sem r ()
 post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let stateAbbr = "WI"
       stateOnly = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == stateAbbr)

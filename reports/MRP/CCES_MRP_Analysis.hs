@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module MRP.CCES_MRP_Analysis where
 
 import qualified Control.Foldl                 as FL
@@ -151,6 +151,7 @@ countDemPres2016VotesF =
 mrpPrefs
   :: forall cc r
    . ( K.KnitEffects r
+     , K.CacheEffectsD r
      , K.Member GLM.RandomFu r
      , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[ET.DemVPV])
            V.++

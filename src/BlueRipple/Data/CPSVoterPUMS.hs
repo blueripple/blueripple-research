@@ -129,7 +129,7 @@ cpsVoterPUMSLoader = do
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
 cpsVoterPUMSWithCDLoader :: (K.KnitEffects r, K.CacheEffectsD r)
-                         => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
+                          => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
 cpsVoterPUMSWithCDLoader = do
   cachedCPSVoterPUMS <- cpsVoterPUMSLoader
   cachedCountyToCD <- BR.county2010ToCD116Loader

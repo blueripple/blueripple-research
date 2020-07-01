@@ -319,7 +319,7 @@ type GroupCols = BR.LocationCols V.++ CatCols --StateAbbreviation, Gender] -- th
 type MRGroup = BR.RecordColsProxy GroupCols 
 
   
-post :: forall r.(K.KnitOne r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
+post :: forall r.(K.KnitOne r, K.CacheEffectsD r, K.Member GLM.RandomFu r, K.Member GLM.Async r)
      => M.Map T.Text T.Text -- state names from state abbreviations
      -> K.Sem r ()
 post stateNameByAbbreviation = P.mapError glmErrorToPandocError $ K.wrapPrefix "Pools" $ do

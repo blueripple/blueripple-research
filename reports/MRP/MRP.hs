@@ -115,7 +115,7 @@ main = do
                   else case (diagnostics args) of                         
                          False -> K.nonDiagnostic
                          True -> K.logDiagnostic
-      knitConfig = K.defaultKnitConfig
+      knitConfig = (K.defaultKnitConfig Nothing)
         { K.outerLogPrefix = Just "MRP.Main"
         , K.logIf = logFilter
         , K.pandocWriterConfig = pandocWriterConfig

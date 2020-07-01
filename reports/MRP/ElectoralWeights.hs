@@ -355,7 +355,7 @@ alternateVoteF =
         in (\bm e wgt -> bm/wgt F.&: e/wgt F.&: V.RNil) <$> wgtdCountF vbm <*> wgtdCountF early <*> wgtdCountF (const True)            
   in CPS.cpsVoterPUMSRollup (\r -> nonCat r `V.rappend` catKey r) innerF
 
-post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
+post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeights" $ do
   K.logLE K.Info "Loading re-keyed demographic and turnout data."
 

@@ -38,7 +38,7 @@ text1 :: T.Text
 text1 = [i|
 |]
   
-post :: K.KnitOne r => K.Sem r ()
+post :: (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 post = K.wrapPrefix "Kentucky" $ do
   aseACS <- K.ignoreCacheTimeM BR.simpleASEDemographicsLoader --
   asrACS <- K.ignoreCacheTimeM BR.simpleASRDemographicsLoader 

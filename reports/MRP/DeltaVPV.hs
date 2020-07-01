@@ -357,6 +357,7 @@ type MRGroup = BR.RecordColsProxy GroupCols
 
   
 post :: (K.KnitOne r
+        , K.CacheEffectsD r
         , K.Member GLM.RandomFu r
         )
      => F.Frame BR.States  -- state names from state abbreviations

@@ -418,7 +418,7 @@ turnoutF = FF.sequenceRecFold
            V.:& FF.toFoldRecord (FL.prefilter ((>= 0.5) . F.rgetField @BR.DemPref) $ FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
            V.:& V.RNil
   
-post :: forall r.(K.KnitMany r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
+post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenarios" $ do
   let --states = ["AZ", "FL", "GA", "ME", "NC", "OH", "MI", "WI", "PA", "CO", "NH", "NV", "TX", "VA"]
     states = ["AZ", "FL", "GA", "NC", "OH", "MI", "WI", "PA", "TX"]
