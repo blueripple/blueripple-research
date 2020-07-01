@@ -15,6 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module BlueRipple.Model.Turnout_MRP where
 
@@ -53,9 +54,9 @@ import qualified BlueRipple.Data.Keyed         as BR
 
 
 mrpTurnout
-  :: forall c k ct cc rs r
-   . ( K.KnitEffectsWithCache c k ct r
-     , K.DefaultCache c k ct
+  :: forall cc rs r
+   . ( K.KnitEffects r
+     , K.CacheEffectsD r
      , K.Member GLM.RandomFu r
      , ( (((cc V.++ '[BR.Year]) V.++ '[ET.ElectoralWeightSource]) V.++ '[ET.ElectoralWeightOf])
            V.++
@@ -111,7 +112,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedDat >>= fa 
           Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data 
-                         $ K.retrieveOrMakeTransformed @c @k @ct
+                         $ K.retrieveOrMakeTransformed
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)

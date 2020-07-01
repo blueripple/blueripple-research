@@ -7,7 +7,7 @@ allow-newer: hvega, hashable, base, streamly, polysemy
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 195e9c8e55e89f2ac3f896fe5479eec9b3ebdd0a
+  tag: b2a16efe1e27ccd119456245b92beed34476a18b
              
 --source-repository-package
 --  type: git

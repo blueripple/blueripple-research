@@ -79,14 +79,14 @@ textToStyledHtml x = (BH.toHtml x, mempty)
 
 brAddRawHtmlTable
   :: forall c k ct r f a.
-     (K.KnitOne c k ct r, Foldable f)
+     (K.KnitOne r, Foldable f)
   => T.Text
   -> BH.Attribute
   -> K.Colonnade K.Headed a BC.Cell
   -> f a
   -> K.Sem r ()
 brAddRawHtmlTable title attr colonnade rows =
-  brAddMarkDown @c @k @ct $ TL.toStrict $ B.renderHtml $ do
+  brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
     BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
     BC.encodeCellTable attr colonnade rows
 

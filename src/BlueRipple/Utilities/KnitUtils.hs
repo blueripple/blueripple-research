@@ -6,6 +6,8 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+
 module BlueRipple.Utilities.KnitUtils where
 
 import qualified Knit.Report                   as K
@@ -59,7 +61,7 @@ knitEither
   -> K.Sem r a
 knitEither = either K.knitError return
 
-copyAsset :: K.KnitOne c k ct r => T.Text -> T.Text -> K.Sem r ()
+copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
   sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
   case sourceExists of
@@ -86,7 +88,7 @@ brWriterOptionsF o =
         , PA.writerSectionDivs = True
         }
 
-brAddMarkDown :: K.KnitOne c k ct r => T.Text -> K.Sem r ()
+brAddMarkDown :: K.KnitOne r => T.Text -> K.Sem r ()
 brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
  where
   brMarkDownReaderOptions =
@@ -99,8 +101,8 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                                   $ exts
           }
 
-brLineBreak :: forall c k ct r. K.KnitOne c k ct r => K.Sem r ()
-brLineBreak = brAddMarkDown @c @k @ct "\\\n"
+brLineBreak :: K.KnitOne r => K.Sem r ()
+brLineBreak = brAddMarkDown "\\\n"
 
 brAddDates
   :: Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
@@ -123,9 +125,8 @@ logFrame =
   K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
 
 retrieveOrMakeFrame
-  :: forall c k ct r b rs.
-     (K.KnitEffectsWithCache c k ct r
-     , K.DefaultCache c k ct
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
      , FS.RecSerialize rs
      , V.RMap rs
      , FI.RecVec rs
@@ -136,12 +137,11 @@ retrieveOrMakeFrame
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed @c @k @ct (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
 
 retrieveOrMakeRecList
-  :: forall c k ct r rs b.
-     (K.KnitEffectsWithCache c k ct r
-     , K.DefaultCache c k ct
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
      , FS.RecSerialize rs
      , V.RMap rs
      , FI.RecVec rs
@@ -152,4 +152,4 @@ retrieveOrMakeRecList
   -> K.Sem r (K.ActionWithCacheTime r [F.Record rs])
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
-  $ K.retrieveOrMakeTransformed @c @k @ct (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
+  $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action

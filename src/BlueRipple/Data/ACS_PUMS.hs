@@ -167,7 +167,7 @@ toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
 toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader
-  ::  forall r. K.DefaultEffects r => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+  ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
   cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
@@ -228,7 +228,8 @@ type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.Congression
 
 pumsCDRollup
  :: forall ks r
- . (K.DefaultEffects r
+ . (K.KnitEffects r
+   , K.CacheEffectsD r
    ,ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens, BR.CongressionalDistrict, BR.PUMAWgt] ++ ks)
    , FI.RecVec (ks ++ [Citizens, NonCitizens])
    , Ord (F.Record ks)

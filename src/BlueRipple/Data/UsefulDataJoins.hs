@@ -365,9 +365,9 @@ type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
 
 -- This is also monstrous.  Which is surprising??
 acsDemographicsWithAdjCensusTurnoutByCD
-  :: forall c k ct catCols r
-  . (K.KnitEffectsWithCache c k ct r
-    , K.DefaultCache c k ct
+  :: forall catCols r
+  . (K.KnitEffects r
+    , K.CacheEffectsD r
     , V.RMap catCols
     , V.ReifyConstraint Show V.ElField catCols
     , V.RecordToList catCols
@@ -415,7 +415,7 @@ acsDemographicsWithAdjCensusTurnoutByCD
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
 acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cachedStateTurnout = do
   let cachedDeps = (,,) <$> cachedDemo <*> cachedTurnout <*> cachedStateTurnout
-  BR.retrieveOrMakeFrame @c @k @ct cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_All) demoF
         demo'' = fmap (F.rcast @([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
         vpa r = realToFrac (F.rgetField @BR.Voted r) / realToFrac (F.rgetField @BR.Population r)
@@ -425,21 +425,21 @@ acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cached
 
 
 cachedASEDemographicsWithAdjTurnoutByCD
-  :: forall c k ct r 
-   . (K.KnitEffectsWithCache c k ct r
-     , K.DefaultCache c k ct)
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
+     )
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @c @k @ct @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
+cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
 
 cachedASRDemographicsWithAdjTurnoutByCD
-  :: forall c k ct r 
-   . (K.KnitEffectsWithCache c k ct r
-     , K.DefaultCache c k ct)
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
+     )
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @c @k @ct @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 
+cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 
