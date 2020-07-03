@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell
+packages: ./
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
@@ -12,7 +12,7 @@ source-repository-package
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/knit-haskell
---  tag: fb17b5d64f158423fc2605e516a658ec4447b22b
+--  tag: 369420a50863cba13d3afeda412d8ca2797d66bf
 
 source-repository-package
   type: git

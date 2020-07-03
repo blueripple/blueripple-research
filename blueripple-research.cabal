@@ -49,7 +49,7 @@ common deps
                , streamly >= 0.7.2 && < 0.8
                , text
                , vector
-               , vinyl >= 0.12
+               , vinyl >= 0.12 && < 0.12.2
                      
 library
   import: deps
