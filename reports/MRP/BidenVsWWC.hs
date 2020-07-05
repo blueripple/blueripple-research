@@ -42,6 +42,7 @@ import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.SimpleJoins            as FJ
+import qualified Frames.Misc                   as FM
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -95,38 +96,61 @@ text3 = [i|
 
 |]
 
-isWWC r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-notWWC = not . isWWC
-
-data IsWWC_T = WWC | NonWWC deriving (Show, Generic, Eq, Ord)
-
-
+data IsWWC_T = WWC | NonWWC deriving (Show, Generic, Eq, Ord)  
+wwc r = if (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+        then WWC
+        else NonWWC
 
 type IsWWC = "IsWWC" F.:-> IsWWC_T
-type instance FI.VectorFor IsWWC_T = Vec.Vector
-instance Grouping IsWWC_T
-instance Serialize.Serialize IsWWC_T
+type RequiredExcessTurnout = "RequiredExcessTurnout" F.:-> Double
 
-foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
-foldPrefAndTurnoutData =  FF.sequenceRecFold
-                          $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.DemVPV)
-                          V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @BR.DemPref)
-                          V.:& V.RNil
+prefAndTurnoutF :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
+prefAndTurnoutF =  FF.sequenceRecFold
+                   $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+                   V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.ElectoralWeight)
+                   V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @ET.DemVPV)
+                   V.:& FF.toFoldRecord (BR.weightedSumRecF @PUMS.Citizens @BR.DemPref)
+                   V.:& V.RNil
 
 addIsWWC :: (F.ElemOf rs DT.CollegeGradC 
             ,F.ElemOf rs DT.Race5C)
          => F.Record rs -> F.Record (IsWWC ': rs)
-addIsWWC r = (if (isWWC r) then WWC else NonWWC) F.&: r
+addIsWWC r = wwc r F.&: r
 
-wwcFold :: FL.Fold (F.Record (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])))
-                     (F.FrameRec [BR.StateAbbreviation, IsWWC, PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
-wwcFold = FMR.concatFold
-          $ FMR.mapReduceFold
-          (FMR.Unpack $ pure @[] . addIsWWC)
-          (FMR.assignKeysAndData @[BR.StateAbbreviation, IsWWC] @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
-          (FMR.foldAndAddKey foldPrefAndTurnoutData)
+requiredExcessTurnoutF :: FL.FoldM
+  Maybe
+  (F.Record [IsWWC,PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
+  (F.Record '[RequiredExcessTurnout])
+requiredExcessTurnoutF =
+  let requiredExcessTurnout :: M.Map IsWWC_T (F.Record [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
+                            -> Maybe (F.Record '[RequiredExcessTurnout])
+      requiredExcessTurnout m = do
+        wwcRow <- M.lookup WWC m
+        nonWWCRow <- M.lookup NonWWC m
+        let vals r = (F.rgetField @PUMS.Citizens r, F.rgetField @ET.ElectoralWeight r, F.rgetField @ET.DemVPV r)
+            (wwcVAC, wwcEW, wwcDVPV) = vals wwcRow
+            (nonVAC, nonEW, _) = vals nonWWCRow
+            voters = (realToFrac wwcVAC * wwcEW) + (realToFrac nonVAC * nonEW)
+        return $ (voters / (realToFrac wwcVAC * wwcDVPV)) F.&: V.RNil
+      
+  in FM.widenAndCalcF
+     (\r -> (F.rgetField @IsWWC r, F.rcast @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref] r))
+     prefAndTurnoutF
+     requiredExcessTurnout
+
+
+wwcFold :: FL.FoldM
+           Maybe
+           (F.Record (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])))
+           (F.FrameRec [BR.StateAbbreviation, RequiredExcessTurnout])
+wwcFold = FMR.concatFoldM
+          $ FMR.mapReduceFoldM
+          (FMR.generalizeUnpack $ FMR.Unpack $ pure @[] . addIsWWC)
+          (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.StateAbbreviation] @[IsWWC, PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ (fmap (pure @[])requiredExcessTurnoutF))
+
+
+ 
            
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -139,10 +163,19 @@ y = V/(N_WWC * VPV_WWC)
 
 State, VAC, N_WWC, VPV_WWC
 -}
-  
---  electoralWeights_C <- K.retrieve "model/MRP_ASER5/PUMS_Census_ElectoralWeights.bin"
---  prefs_C <- K.retrieve "model/MRP_ASER5/CCES_Preferences.bin"
-  
+  requiredExcessTurnout <- K.ignoreCacheTimeM $ do
+    electoralWeights_C <- K.retrieve "model/MRP_ASER5/PUMS_Census_adjElectoralWeights.bin"
+    prefs_C <- K.retrieve "model/MRP_ASER5/CCES_Preferences.bin"
+    let cachedDeps = (,) <$> electoralWeights_C <*> prefs_C      
+    BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs) -> do
+      let isYear y r = F.rgetField @BR.Year r == 2016
+          isPres r = F.rgetField @ET.Office r == ET.President  
+          ewFrame :: F.FrameRec [BR.Year, PUMS.Citizens, ET.ElectoralWeight, ET.ElectoralWeightOf] = F.filterFrame (isYear 2016) adjStateEW
+          prefsFrame = F.filterFrame (\r -> isYear 2016 r && isPres r) statePrefs
+      ewAndPrefs <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE ewFrame prefsFrame
+      K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold ewAndPrefs)
+
+  logFrame requiredExcessTurnout
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateBidenVsWWC =  Time.fromGregorian 2020 7 9
   K.newPandoc

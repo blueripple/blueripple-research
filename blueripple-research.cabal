@@ -173,6 +173,7 @@ executable mrp-model
                 , MRP.CCESFrame
                 , MRP.CCES_MRP_Analysis
                 , MRP.Common
+                , MRP.CachedModels
                 , PreferenceModel.Common
                 , MRP.WWC
                 , MRP.Pools
