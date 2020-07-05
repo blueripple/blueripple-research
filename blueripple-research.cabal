@@ -24,7 +24,7 @@ common deps
                , cereal-text >= 0.1.0 && < 0.2
                , containers
                , exceptions >= 0.10.4 && < 0.11
-               , Frames >= 0.6.1 && < 0.7
+               , Frames >= 0.6.1 && < 0.8
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
                , Frames-utils >= 0.3.0.0
@@ -49,7 +49,7 @@ common deps
                , streamly >= 0.7.2 && < 0.8
                , text
                , vector
-               , vinyl >= 0.12 && < 0.12.2
+               , vinyl >= 0.12 && < 0.14
                      
 library
   import: deps
