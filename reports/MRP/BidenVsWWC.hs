@@ -74,6 +74,7 @@ import qualified BlueRipple.Model.Turnout_MRP as BR
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
+import qualified MRP.CachedModels as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
@@ -164,16 +165,17 @@ y = V/(N_WWC * VPV_WWC)
 State, VAC, N_WWC, VPV_WWC
 -}
   requiredExcessTurnout <- K.ignoreCacheTimeM $ do
-    electoralWeights_C <- K.retrieve "model/MRP_ASER5/PUMS_Census_adjElectoralWeights.bin"
-    prefs_C <- K.retrieve "model/MRP_ASER5/CCES_Preferences.bin"
+    electoralWeights_C <- BR.adjCensusElectoralWeightsMRP_ASER5
+    prefs_C <- BR.ccesPreferencesASER5_MRP
     let cachedDeps = (,) <$> electoralWeights_C <*> prefs_C      
     BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs) -> do
       let isYear y r = F.rgetField @BR.Year r == 2016
           isPres r = F.rgetField @ET.Office r == ET.President  
-          ewFrame :: F.FrameRec [BR.Year, PUMS.Citizens, ET.ElectoralWeight, ET.ElectoralWeightOf] = F.filterFrame (isYear 2016) adjStateEW
+          ewFrame = F.filterFrame (isYear 2016) adjStateEW
           prefsFrame = F.filterFrame (\r -> isYear 2016 r && isPres r) statePrefs
-      ewAndPrefs <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE ewFrame prefsFrame
-      K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold ewAndPrefs)
+      ewAndPrefs <- K.knitEither $ either (Left . T.pack . show) Right
+                    $ FJ.leftJoinE @(BR.StateAbbreviation ': DT.CatColsASER5) ewFrame prefsFrame
+      K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold (fmap F.rcast ewAndPrefs))
 
   logFrame requiredExcessTurnout
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime

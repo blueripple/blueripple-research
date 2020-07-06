@@ -77,7 +77,8 @@ import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
-  
+
+{-
 foldPrefAndTurnoutData :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
 foldPrefAndTurnoutData =  FF.sequenceRecFold
                           $ FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
@@ -96,16 +97,18 @@ votesToVoteShareF =
     demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
+-}
 
 predictorsASER = fmap GLM.Predictor (BR.allSimplePredictors @DT.CatColsASER)
 predictorsASER5 = fmap GLM.Predictor (BR.allSimplePredictors @DT.CatColsASER5)
+statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviation r /= "National"
 
 
 pumsByStateASER :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
 pumsByStateASER = do  
   cachedPUMS_Demographics <- PUMS.pumsLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER/pumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
+  BR.retrieveOrMakeFrame "model/MRP_ASER/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
@@ -122,7 +125,7 @@ pumsByStateASER5 :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
 pumsByStateASER5 = do  
   cachedPUMS_Demographics <- PUMS.pumsLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER5/pumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
+  BR.retrieveOrMakeFrame "model/MRP_ASER5/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
@@ -186,7 +189,7 @@ ccesElectoralWeightsASER5_MRP :: (K.KnitEffects r, K.CacheEffectsD r, K.Member G
                       => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ (BR.Year ': ET.EWCols)))))
 ccesElectoralWeightsASER5_MRP = do
   cachedCCES_Data <- CCES.ccesDataLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER/CCES_ElectoralWeights.bin" cachedCCES_Data $ const $
+  BR.retrieveOrMakeFrame "model/MRP_ASER5/CCES_ElectoralWeights.bin" cachedCCES_Data $ const $
       BR.mrpTurnout @DT.CatColsASER5
         GLM.MDVNone
         (Just "T_CCES_ASER5")
@@ -200,11 +203,11 @@ ccesElectoralWeightsASER5_MRP = do
 -- adjusted turnout
 type AdjCols cc = [BR.Year, BR.StateAbbreviation, PUMS.NonCitizens, DT.PopCountOf, BR.StateFIPS] V.++ cc V.++ [DT.PopCountOf, PUMS.Citizens] V.++ ET.EWCols
 
-adjCensusElectoralWeights_MRP_ASER :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+adjCensusElectoralWeightsMRP_ASER :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AdjCols DT.CatColsASER)))
-adjCensusElectoralWeights_MRP_ASER = do
+adjCensusElectoralWeightsMRP_ASER = do
     stateTurnout_C <- BR.stateTurnoutLoader
-    pumsByState_C <- pumsByStateASER
+    pumsByState_C <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER
     censusEW_MRP_C <- censusElectoralWeightsASER_MRP    
     let cachedDeps = (,,) <$> stateTurnout_C <*> pumsByState_C <*> censusEW_MRP_C
     BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) -> 
@@ -217,13 +220,13 @@ adjCensusElectoralWeights_MRP_ASER = do
         (fmap F.rcast pumsByState)
         (fmap F.rcast inferredCensusTurnout)
 
-adjCensusElectoralWeights_MRP_ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+adjCensusElectoralWeightsMRP_ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AdjCols DT.CatColsASER5)))
-adjCensusElectoralWeights_MRP_ASER5 = do
-    stateTurnout_C <- BR.stateTurnoutLoader
-    pumsByState_C <- pumsByStateASER5
+adjCensusElectoralWeightsMRP_ASER5 = do
+    stateTurnoutC <- BR.stateTurnoutLoader
+    pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER5
     censusEW_MRP_C <- censusElectoralWeightsASER5_MRP    
-    let cachedDeps = (,,) <$> stateTurnout_C <*> pumsByState_C <*> censusEW_MRP_C
+    let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> censusEW_MRP_C
     BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) -> 
       BR.demographicsWithAdjTurnoutByState
         @DT.CatColsASER5
@@ -232,47 +235,38 @@ adjCensusElectoralWeights_MRP_ASER5 = do
         @'[BR.Year, BR.StateAbbreviation]
         stateTurnout
         (fmap F.rcast pumsByState)
-        (fmap F.rcast inferredCensusTurnout)        
-{-
-  aser5DemoAndAdjCensusEW_C <- do
-    cachedStateTurnout <- BR.stateTurnoutLoader
-    let cachedDeps = (,,) <$> cachedStateTurnout <*> pumsASER5ByStateC <*> inferredCensusTurnoutASER5_C
-    BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCensusEW.bin" cachedDeps $ \(stateTurnout, pumsASER5ByState, inferredCensusTurnoutASER5) -> 
+        (fmap F.rcast inferredCensusTurnout)
+
+adjCCES_ElectoralWeightsMRP_ASER :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+  => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AdjCols DT.CatColsASER)))
+adjCCES_ElectoralWeightsMRP_ASER =   do
+    stateTurnoutC <- BR.stateTurnoutLoader
+    pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER
+    ccesEW_MRP_C <- ccesElectoralWeightsASER_MRP
+    let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> ccesEW_MRP_C
+    BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) -> 
       BR.demographicsWithAdjTurnoutByState
-        @BR.CatColsASER5
+        @DT.CatColsASER
         @PUMS.Citizens
-        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-        @'[BR.Year, BR.StateAbbreviation]
-        stateTurnout
-        (fmap F.rcast pumsASER5ByState)
-        (fmap F.rcast inferredCensusTurnoutASER5)
+        @'[PUMS.NonCitizens, DT.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation] stateTurnout (fmap F.rcast pumsByState) (fmap F.rcast prefs)
 
-  let filterForAdjTurnout r = F.rgetField @BR.StateAbbreviation r == "WI" && F.rgetField @BR.Year r == 2016
 
-  K.logLE K.Info "Adjusting CCES inferred turnout via PUMS demographics and total recorded turnout."
-  aserDemoAndAdjCCESEW_C <- do
-    cachedStateTurnout <- BR.stateTurnoutLoader
-    let cachedDeps = (,,) <$> cachedStateTurnout <*> pumsASERByStateC <*> inferredCCESTurnoutOfAllASER_C
-    BR.retrieveOrMakeFrame "turnout/aserPumsDemoAndAdjCCESEW.bin" cachedDeps $ \(stateTurnout, demographics, prefs) -> 
+adjCCES_ElectoralWeightsMRP_ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+  => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AdjCols DT.CatColsASER5)))
+adjCCES_ElectoralWeightsMRP_ASER5 =   do
+    stateTurnoutC <- BR.stateTurnoutLoader
+    pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER5
+    ccesEW_MRP_C <- ccesElectoralWeightsASER5_MRP
+    let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> ccesEW_MRP_C
+    BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) -> 
       BR.demographicsWithAdjTurnoutByState
-        @BR.CatColsASER
+        @DT.CatColsASER5
         @PUMS.Citizens
-        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-        @'[BR.Year, BR.StateAbbreviation] stateTurnout (fmap F.rcast demographics) (fmap F.rcast prefs)
+        @'[PUMS.NonCitizens, DT.PopCountOf, BR.StateFIPS]
+        @'[BR.Year, BR.StateAbbreviation] stateTurnout (fmap F.rcast pumsByState) (fmap F.rcast prefs)
 
-  aser5DemoAndAdjCCESEW_C <- do
-    cachedStateTurnout <- BR.stateTurnoutLoader
-    let cachedDeps = (,,) <$> cachedStateTurnout <*> pumsASER5ByStateC <*> inferredCCESTurnoutOfAllASER5_C
-    BR.retrieveOrMakeFrame "turnout/aser5PumsDemoAndAdjCCESEW.bin" cachedDeps $ \(stateTurnout, demographics, prefs) -> 
-      BR.demographicsWithAdjTurnoutByState
-        @BR.CatColsASER5
-        @PUMS.Citizens
-        @'[PUMS.NonCitizens, BR.PopCountOf, BR.StateFIPS]
-        @'[BR.Year, BR.StateAbbreviation] stateTurnout (fmap F.rcast demographics) (fmap F.rcast prefs)
-
--}
-
-
+      
 -- preferences
 ccesPreferencesASER_MRP ::  (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER V.++ [BR.Year, ET.Office, ET.DemVPV, ET.DemPref]))))
