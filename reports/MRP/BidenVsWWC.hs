@@ -52,8 +52,12 @@ import qualified Knit.Report                   as K
 
 import           Data.String.Here               ( i )
 
+import qualified Text.Blaze.Html               as BH
+import qualified Text.Blaze.Html5.Attributes   as BHA
+
 import           BlueRipple.Configuration 
 import           BlueRipple.Utilities.KnitUtils 
+import qualified BlueRipple.Utilities.TableUtils as BR
 
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
@@ -84,7 +88,23 @@ import qualified MRP.CCES as CCES
 
 text1 :: T.Text
 text1 = [i|
+In a [previoius post][BR:BattlegroundTurnout],
+we analyzed how changes in turnout might help Democrats win in various battleground states.  In this
+post, we turn that logic around and look at how Trump's chances of closing gaps in recent polls
+via "rallying his base," either driving up White Working Class (WWC) turnout or just the fraction
+of the WWC that supported him in 2016.
 
+1. **Current Polling in the Battleground States**
+2. **Boosting WWC Turnout**
+3. **Boosting Trump Supporter Turnout**
+4. **What Does It All Mean?**
+
+##Current Polling in the Battleground states
+According to the [270toWin][BGPolls] polling average,
+As of, 7/6/2020, Biden leads in the polls in several battleground states:
+
+[BGPolls]: <https://www.270towin.com/2020-polls-biden-trump/>
+[BR:BattlegroundTurnout]: <https://blueripple.github.io/research/mrp-model/p3/main.html>
 |]
   
 text2 :: T.Text = [i|
@@ -132,7 +152,7 @@ requiredExcessTurnoutF =
             (wwcVAC, wwcEW, wwcDVPV) = vals wwcRow
             (nonVAC, nonEW, _) = vals nonWWCRow
             voters = (realToFrac wwcVAC * wwcEW) + (realToFrac nonVAC * nonEW)
-        return $ (voters / (realToFrac wwcVAC * wwcDVPV)) F.&: V.RNil
+        return $ (negate voters / (realToFrac wwcVAC * wwcDVPV)) F.&: V.RNil
       
   in FM.widenAndCalcF
      (\r -> (F.rgetField @IsWWC r, F.rcast @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref] r))
@@ -148,26 +168,27 @@ wwcFold = FMR.concatFoldM
           $ FMR.mapReduceFoldM
           (FMR.generalizeUnpack $ FMR.Unpack $ pure @[] . addIsWWC)
           (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.StateAbbreviation] @[IsWWC, PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
-          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ (fmap (pure @[])requiredExcessTurnoutF))
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ (fmap (pure @[]) requiredExcessTurnoutF))
 
 
- 
+data StatePoll = StatePoll { abbreviation :: T.Text, demMargin :: Double }
+
+statePollCollonade :: BR.CellStyle StatePoll T.Text -> K.Colonnade K.Headed StatePoll K.Cell
+statePollCollonade cas =
+  let h c = K.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
+  in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . abbreviation))
+     <> K.headed "Biden Lead" (BR.toCell cas "D Margin" "D Margin" (BR.numberToStyledHtml "%2.1f" . demMargin))
+
+type DemMargin = "DemMargin" F.:-> Double  
            
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
 
-{-
-Calculate WWC turnout boost (as %of WWC Voting Age Citizens) required to overcome various Biden + x
-gaps.  By state and then we'll add polling leads.
-
-y = V/(N_WWC * VPV_WWC)
-
-State, VAC, N_WWC, VPV_WWC
--}
   requiredExcessTurnout <- K.ignoreCacheTimeM $ do
     electoralWeights_C <- BR.adjCensusElectoralWeightsMRP_ASER5
     prefs_C <- BR.ccesPreferencesASER5_MRP
-    let cachedDeps = (,) <$> electoralWeights_C <*> prefs_C      
+    let cachedDeps = (,) <$> electoralWeights_C <*> prefs_C
+    --K.clear "mrp/BidenVsWWC/requiredExcessTurnout.bin"
     BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs) -> do
       let isYear y r = F.rgetField @BR.Year r == 2016
           isPres r = F.rgetField @ET.Office r == ET.President  
@@ -178,17 +199,35 @@ State, VAC, N_WWC, VPV_WWC
       K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold (fmap F.rcast ewAndPrefs))
 
   logFrame requiredExcessTurnout
+  let bgPolls = [StatePoll "AZ" 5
+                ,StatePoll "FL" 4
+                ,StatePoll "GA" 3
+                ,StatePoll "IA" 0
+                ,StatePoll "MI" 7
+                ,StatePoll "NC" 5
+                ,StatePoll "NM" 14
+                ,StatePoll "NV" 4
+                ,StatePoll "OH" 1
+                ,StatePoll "PA" 8
+                ,StatePoll "TX" 0
+                ,StatePoll "VA" 9
+                ,StatePoll "WI" 7
+                ]
+      pollF :: F.FrameRec '[BR.StateAbbreviation, DemMargin] = F.toFrame $ fmap (\(StatePoll sa dm) -> sa F.&: dm F.&: V.RNil) bgPolls
+  withPollF <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE @'[BR.StateAbbreviation] pollF requiredExcessTurnout
+  logFrame withPollF
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateBidenVsWWC =  Time.fromGregorian 2020 7 9
   K.newPandoc
     (K.PandocInfo ((postRoute PostBidenVsWWC) <> "main")
       (brAddDates updated pubDateBidenVsWWC curDate
-       $ M.fromList [("pagetitle", "WWC Turnout: Trump's Last Stand?")
-                    ,("title","WWC Turnout: Trump's Last Stand?")
+       $ M.fromList [("pagetitle", "White Working Class Turnout: Trump's Last Stand?")
+                    ,("title","White Working Class Turnout: Trump's Last Stand?")
                     ]
       ))
       $ do        
         brAddMarkDown text1
+        BR.brAddRawHtmlTable "Polling in Battleground States (7/6/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) bgPolls
         brAddMarkDown brReadMore
 
 
