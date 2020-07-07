@@ -101,14 +101,22 @@ of the WWC that supported him in 2016.
 
 ##Current Polling in the Battleground states
 According to the [270toWin][BGPolls] polling average,
-As of, 7/6/2020, Biden leads in the polls in several battleground states:
+as of 7/7/2020, Biden leads in the polls in several battleground states:
 
 [BGPolls]: <https://www.270towin.com/2020-polls-biden-trump/>
 [BR:BattlegroundTurnout]: <https://blueripple.github.io/research/mrp-model/p3/main.html>
 |]
   
 text2 :: T.Text = [i|
+One strategy the Trump campaign might employ to close these gaps is amn attempt to boost turnout
+among WWC voters.  This is not the same as "rallying the base" which we assume means trying to
+boost turnout among only your supporters.  Here we are thinking of someting demographically
+targeted rather than politically targeted, for example GOTV/registration drives in WWC neighborhoods.
+We'll also consider more direct "rallying the base" tactics below.
 
+##Boosting WWC Turnout
+The WWC was heavily Trump leaning in 2016 and here we'll assume the Trump lean is the same.  And we'll assume
+that the WWC 
 |]
 
 
@@ -123,7 +131,8 @@ wwc r = if (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @D
         else NonWWC
 
 type IsWWC = "IsWWC" F.:-> IsWWC_T
-type RequiredExcessTurnout = "RequiredExcessTurnout" F.:-> Double
+type ExcessWWCPer = "ExcessWWCPer" F.:-> Double
+type ExcessBasePer = "ExcessBasePer" F.:-> Double
 
 prefAndTurnoutF :: FF.EndoFold (F.Record '[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, BR.DemPref])
 prefAndTurnoutF =  FF.sequenceRecFold
@@ -141,18 +150,20 @@ addIsWWC r = wwc r F.&: r
 requiredExcessTurnoutF :: FL.FoldM
   Maybe
   (F.Record [IsWWC,PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
-  (F.Record '[RequiredExcessTurnout])
+  (F.Record '[ExcessWWCPer, ExcessBasePer])
 requiredExcessTurnoutF =
   let requiredExcessTurnout :: M.Map IsWWC_T (F.Record [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
-                            -> Maybe (F.Record '[RequiredExcessTurnout])
+                            -> Maybe (F.Record '[ExcessWWCPer, ExcessBasePer])
       requiredExcessTurnout m = do
         wwcRow <- M.lookup WWC m
         nonWWCRow <- M.lookup NonWWC m
-        let vals r = (F.rgetField @PUMS.Citizens r, F.rgetField @ET.ElectoralWeight r, F.rgetField @ET.DemVPV r)
-            (wwcVAC, wwcEW, wwcDVPV) = vals wwcRow
-            (nonVAC, nonEW, _) = vals nonWWCRow
+        let vals r = (F.rgetField @PUMS.Citizens r, F.rgetField @ET.ElectoralWeight r, F.rgetField @ET.DemVPV r, F.rgetField @ET.DemPref r)
+            (wwcVAC, wwcEW, wwcDVPV, wwcDPref) = vals wwcRow
+            (nonVAC, nonEW, _, _) = vals nonWWCRow
             voters = (realToFrac wwcVAC * wwcEW) + (realToFrac nonVAC * nonEW)
-        return $ (negate voters / (realToFrac wwcVAC * wwcDVPV)) F.&: V.RNil
+            excessWWCPer = negate voters / (realToFrac wwcVAC * wwcDVPV)
+            excessBasePer =  voters / (realToFrac wwcVAC * (1 - wwcDPref))
+        return $ excessWWCPer F.&: excessBasePer F.&: V.RNil
       
   in FM.widenAndCalcF
      (\r -> (F.rgetField @IsWWC r, F.rcast @[PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref] r))
@@ -163,7 +174,7 @@ requiredExcessTurnoutF =
 wwcFold :: FL.FoldM
            Maybe
            (F.Record (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])))
-           (F.FrameRec [BR.StateAbbreviation, RequiredExcessTurnout])
+           (F.FrameRec [BR.StateAbbreviation, ExcessWWCPer, ExcessBasePer])
 wwcFold = FMR.concatFoldM
           $ FMR.mapReduceFoldM
           (FMR.generalizeUnpack $ FMR.Unpack $ pure @[] . addIsWWC)
@@ -179,7 +190,7 @@ statePollCollonade cas =
   in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . abbreviation))
      <> K.headed "Biden Lead" (BR.toCell cas "D Margin" "D Margin" (BR.numberToStyledHtml "%2.1f" . demMargin))
 
-type DemMargin = "DemMargin" F.:-> Double  
+type PollMargin = "PollMargin" F.:-> Double  
            
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -210,10 +221,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                 ,StatePoll "OH" 1
                 ,StatePoll "PA" 8
                 ,StatePoll "TX" 0
-                ,StatePoll "VA" 9
-                ,StatePoll "WI" 7
+                ,StatePoll "VA" 13
+                ,StatePoll "WI" 10
                 ]
-      pollF :: F.FrameRec '[BR.StateAbbreviation, DemMargin] = F.toFrame $ fmap (\(StatePoll sa dm) -> sa F.&: dm F.&: V.RNil) bgPolls
+      bgPollsD = filter (\(StatePoll _ m) -> m > 0) bgPolls
+      pollF :: F.FrameRec '[BR.StateAbbreviation, PollMargin] = F.toFrame $ fmap (\(StatePoll sa dm) -> sa F.&: dm F.&: V.RNil) bgPollsD
   withPollF <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE @'[BR.StateAbbreviation] pollF requiredExcessTurnout
   logFrame withPollF
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -227,7 +239,38 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
-        BR.brAddRawHtmlTable "Polling in Battleground States (7/6/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) bgPolls
+        --BR.brAddRawHtmlTable "Polling in Battleground States (7/6/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) bgPolls
+        _ <- K.addHvega Nothing Nothing
+             $ vlRallyWWC
+             "Excess WWC/Base Turnout to Make Up Polling Gap"
+             (FV.ViewConfig 200 (600 / (realToFrac $ length bgPolls)) 10)
+             withPollF
         brAddMarkDown brReadMore
 
 
+vlRallyWWC :: Foldable f
+                 => T.Text
+                 -> FV.ViewConfig
+                 -> f (F.Record [BR.StateAbbreviation, PollMargin, ExcessWWCPer, ExcessBasePer])
+                 -> GV.VegaLite
+vlRallyWWC title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      makeWWC = GV.calculateAs "datum.PollMargin * datum.ExcessWWCPer" "Excess WWC %"
+      makeBase = GV.calculateAs "datum.PollMargin * datum.ExcessBasePer" "Excess Base %"
+      renameMargin = GV.calculateAs "datum.PollMargin" "Poll Margin %"
+      renameSA = GV.calculateAs "datum.state_abbreviation" "State"      
+      doFold = GV.foldAs ["Poll Margin %", "Excess WWC %", "Excess Base %"] "Type" "Pct"
+      encY = GV.position GV.Y [GV.PName "Type", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
+                              , GV.PSort [GV.CustomSort $ GV.Strings ["Poll Margin %", "Excess WWC %", "Excess Base %"]]
+                              ]
+      encX = GV.position GV.X [GV.PName "Pct"
+                              , GV.PmType GV.Quantitative
+                              ]
+      encFacet = GV.row [GV.FName "State", GV.FmType GV.Nominal]
+      encColor = GV.color [GV.MName "Type"
+                          , GV.MmType GV.Nominal
+                          , GV.MSort [GV.CustomSort $ GV.Strings ["Poll Margin %", "Excess WWC %", "Excess Base %"]]
+                          ]
+      enc = GV.encoding . encX . encY . encColor . encFacet
+      transform = GV.transform .  makeWWC . makeBase . renameSA . renameMargin . doFold
+  in FV.configuredVegaLite vc [FV.title title, enc [], transform [], GV.mark GV.Bar [], dat]

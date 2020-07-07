@@ -253,9 +253,165 @@
 </ol>
 <section id="current-polling-in-the-battleground-states" class="level2">
 <h2>Current Polling in the Battleground states</h2>
-<p>According to the <a href="https://www.270towin.com/2020-polls-biden-trump/">270toWin</a> polling average, As of, 7/6/2020, Biden leads in the polls in several battleground states:</p>
-<div class="brTableTitle">Polling in Battleground States (7/6/2020)</div>
-<table class="brTable"><thead><tr><th>State</th><th>Biden Lead</th></tr></thead><tbody><tr><td style="; " data-label="State">AZ</td><td style="; color: green" data-label="D Margin">5.0</td></tr><tr><td style="; " data-label="State">FL</td><td style="; color: green" data-label="D Margin">4.0</td></tr><tr><td style="; " data-label="State">GA</td><td style="; color: green" data-label="D Margin">3.0</td></tr><tr><td style="; " data-label="State">IA</td><td style="; color: green" data-label="D Margin">0.0</td></tr><tr><td style="; " data-label="State">MI</td><td style="; color: green" data-label="D Margin">7.0</td></tr><tr><td style="; " data-label="State">NC</td><td style="; color: green" data-label="D Margin">5.0</td></tr><tr><td style="; " data-label="State">NM</td><td style="; color: green" data-label="D Margin">14.0</td></tr><tr><td style="; " data-label="State">NV</td><td style="; color: green" data-label="D Margin">4.0</td></tr><tr><td style="; " data-label="State">OH</td><td style="; color: green" data-label="D Margin">1.0</td></tr><tr><td style="; " data-label="State">PA</td><td style="; color: green" data-label="D Margin">8.0</td></tr><tr><td style="; " data-label="State">TX</td><td style="; color: green" data-label="D Margin">0.0</td></tr><tr><td style="; " data-label="State">VA</td><td style="; color: green" data-label="D Margin">9.0</td></tr><tr><td style="; " data-label="State">WI</td><td style="; color: green" data-label="D Margin">7.0</td></tr></tbody></table>
+<p>According to the <a href="https://www.270towin.com/2020-polls-biden-trump/">270toWin</a> polling average, as of 7/7/2020, Biden leads in the polls in several battleground states:</p>
+<figure id="figure_1">
+<script type="text/javascript">var vlSpec=
+{
+    "transform": [
+        {
+            "as": "Excess WWC %",
+            "calculate": "datum.PollMargin * datum.ExcessWWCPer"
+        },
+        {
+            "as": "Excess Base %",
+            "calculate": "datum.PollMargin * datum.ExcessBasePer"
+        },
+        {
+            "as": "State",
+            "calculate": "datum.state_abbreviation"
+        },
+        {
+            "as": "Poll Margin %",
+            "calculate": "datum.PollMargin"
+        },
+        {
+            "as": [
+                "Type",
+                "Pct"
+            ],
+            "fold": [
+                "Poll Margin %",
+                "Excess WWC %",
+                "Excess Base %"
+            ]
+        }
+    ],
+    "height": 46.15384615384615,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 46.15384615384615,
+            "continuousWidth": 200,
+            "discreteHeight": 46.15384615384615,
+            "discreteWidth": 200
+        }
+    },
+    "mark": "bar",
+    "data": {
+        "values": [
+            {
+                "ExcessBasePer": 1.3435530743511452,
+                "PollMargin": 5,
+                "state_abbreviation": "AZ",
+                "ExcessWWCPer": 3.403632493559907
+            },
+            {
+                "ExcessBasePer": 1.9158111931230146,
+                "PollMargin": 4,
+                "state_abbreviation": "FL",
+                "ExcessWWCPer": 4.889700950474845
+            },
+            {
+                "ExcessBasePer": 1.5279036886083286,
+                "PollMargin": 3,
+                "state_abbreviation": "GA",
+                "ExcessWWCPer": 2.357967527208197
+            },
+            {
+                "ExcessBasePer": 1.6678254063810254,
+                "PollMargin": 7,
+                "state_abbreviation": "MI",
+                "ExcessWWCPer": 6.392954341854679
+            },
+            {
+                "ExcessBasePer": 1.6395142099004476,
+                "PollMargin": 5,
+                "state_abbreviation": "NC",
+                "ExcessWWCPer": 3.317664166902417
+            },
+            {
+                "ExcessBasePer": 1.74556510693964,
+                "PollMargin": 14,
+                "state_abbreviation": "NM",
+                "ExcessWWCPer": 4.955714899239294
+            },
+            {
+                "ExcessBasePer": 1.6164820268157054,
+                "PollMargin": 4,
+                "state_abbreviation": "NV",
+                "ExcessWWCPer": 4.73415973886558
+            },
+            {
+                "ExcessBasePer": 1.419531412871686,
+                "PollMargin": 1,
+                "state_abbreviation": "OH",
+                "ExcessWWCPer": 3.5621377071546236
+            },
+            {
+                "ExcessBasePer": 1.48761951274233,
+                "PollMargin": 8,
+                "state_abbreviation": "PA",
+                "ExcessWWCPer": 3.773936768519186
+            },
+            {
+                "ExcessBasePer": 1.9668428341919117,
+                "PollMargin": 13,
+                "state_abbreviation": "VA",
+                "ExcessWWCPer": 5.076608650837271
+            },
+            {
+                "ExcessBasePer": 1.558042270106725,
+                "PollMargin": 10,
+                "state_abbreviation": "WI",
+                "ExcessWWCPer": 5.007324547479584
+            }
+        ],
+        "format": {
+            "parse": {}
+        }
+    },
+    "width": 200,
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "title": "Excess WWC/Base Turnout to Make Up Polling Gap",
+    "encoding": {
+        "color": {
+            "field": "Type",
+            "sort": [
+                "Poll Margin %",
+                "Excess WWC %",
+                "Excess Base %"
+            ],
+            "type": "nominal"
+        },
+        "row": {
+            "field": "State",
+            "type": "nominal"
+        },
+        "x": {
+            "field": "Pct",
+            "type": "quantitative"
+        },
+        "y": {
+            "field": "Type",
+            "sort": [
+                "Poll Margin %",
+                "Excess WWC %",
+                "Excess Base %"
+            ],
+            "type": "nominal",
+            "axis": {
+                "title": null
+            }
+        }
+    },
+    "padding": 10
+};
+vegaEmbed('#figure_1',vlSpec);</script>
+</figure>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 </section>
 <!--
