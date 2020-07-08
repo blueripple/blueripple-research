@@ -88,35 +88,86 @@ import qualified MRP.CCES as CCES
 
 text1 :: T.Text
 text1 = [i|
-In a [previoius post][BR:BattlegroundTurnout],
+In a [previous post][BR:BattlegroundTurnout],
 we analyzed how changes in turnout might help Democrats win in various battleground states.  In this
 post, we turn that logic around and look at how Trump's chances of closing gaps in recent polls
 via "rallying his base," either driving up White Working Class (WWC) turnout or just the fraction
 of the WWC that supported him in 2016.
 
-1. **Current Polling in the Battleground States**
-2. **Boosting WWC Turnout**
-3. **Boosting Trump Supporter Turnout**
-4. **What Does It All Mean?**
 
-##Current Polling in the Battleground states
+1. **GOP GOTV**
+2. **Sidebar: The Math**
+3. **What Does It All Mean?**
+
+## GOP GOTV
 According to the [270toWin][BGPolls] polling average,
-as of 7/7/2020, Biden leads in the polls in several battleground states:
+as of 7/8/2020, Biden leads in the polls in several battleground states.
+Since we've spoken so much about demographically specific turnout boosts
+, e.g., GOTV work among college-educated or young voters, we thought it would be
+interesting to look at that strategy from the GOP side.  Whose turnout helps
+Trump?  The only group that was strongly pro-trump in 2016 was White, non-Latinx
+voters without a 4-year college-degree (and not in-college), the WWC.
+Polling so far this cycle
+shows their support for Trump is waning, both among
+[female WWC voters][LAT:WWCWomen]
+and
+[younger WWC voters][Brookings:WWCYouth],
+but they are still, on average, Trump voters. The WWC is
+a big fraction of the US population, and is particularly concentrated
+in a few key states.  
+
+One plausible Trump campaign strategy in the battleground states might be to work at boosting turnout
+among all WWC voters.  Another strategy, one that seems closer to what is actually happening
+right now, is that the campaign attempts to boost turnout only among its base within the WWC.
+But are there enough of those voters in the battleground states for this strategy to work given the
+current polling? 
+
+The short answer is "no," at least not in most battleground states.
+
+We'll look at the results shortly, but first a quick aside about how we analyzed the problem.
+We assume that WWC voters in the battleground states remain like their 2016 selves,
+both in their likelihood
+to vote and in their preference for Trump.  These are very conservative (in the modeling
+sense) assumptions.  All the polling suggests that the WWC has shifted toward the Democrats.  So we
+firmly believe that the amount the GOP would need to boost
+WWC turnout to make up for their current polling deficit,
+is probably higher than what we calculate below.
+
+For each state, we used our MRP model to estimate both the likelihood of voting and the preference
+for Trump among all voters, grouped by state and membership in the WWC. For each state, we then used
+the 2016 WWC preference for Trump, the total voting age population, and WWC voting age population
+to figure out what extra percentage of the WWC would have to vote in order to negate Biden's current
+lead in that state. 
+We also considered a turnout boost solely among the fraction of WWC people in
+Trump's "base," which we took to be the fraction of the WWC which voted for Trump in 2016.
+We assumed all extra turnout in that group will vote 100% for Trump.
+See the note below the chart for the math.
+
+The results, for all battleground states where Biden has a lead, are charted below.  As a rule,
+turnout swings of 5% in any group or state are rare.  So we read this chart as indicating that,
+with the exception of GA and OH, GOTV among the WWC or base is not going to be sufficient to
+close these gaps. And it would be woefully insufficient elsewhere, in VA of course,
+but also MI, WI, PA and NM.
+
+
 
 [BGPolls]: <https://www.270towin.com/2020-polls-biden-trump/>
 [BR:BattlegroundTurnout]: <https://blueripple.github.io/research/mrp-model/p3/main.html>
+[LAT:WWCWomen]: <https://www.latimes.com/politics/story/2020-06-26/behind-trumps-sharp-slump-white-women-who-stuck-with-him-before-are-abandoning-him-now>
+[Brookings:WWCYouth]: <https://www.brookings.edu/blog/fixgov/2020/07/06/president-trump-is-losing-support-among-young-white-working-class-voters/>
+
 |]
   
 text2 :: T.Text = [i|
-One strategy the Trump campaign might employ to close these gaps is amn attempt to boost turnout
-among WWC voters.  This is not the same as "rallying the base" which we assume means trying to
-boost turnout among only your supporters.  Here we are thinking of someting demographically
-targeted rather than politically targeted, for example GOTV/registration drives in WWC neighborhoods.
-We'll also consider more direct "rallying the base" tactics below.
-
-##Boosting WWC Turnout
-The WWC was heavily Trump leaning in 2016 and here we'll assume the Trump lean is the same.  And we'll assume
-that the WWC 
+## Sidebar: The Math
+For those of you interested in how the calculation works in more detail, here you go.
+Let's call the number of people of voting age $N$, using $N_{wwc}$ for the number of
+WWC voting-age people and $N_x$ for the non-WWC number. Similarly, we'll use
+$V$, $V_{wwc}$ and $V_x$ for the numberof voters and $W_{wwc}$ and $W_x$
+to work in percentages: $V_wwc = W_wwc N_wwc$ and $V_x = W_x N_x$. We'll $P_{wwc}$
+for WWC voter preference for Trump. So the Dem lead, in votes, is
+$P_{wwc} W_{wwc} N_{wwc} + P_x W_x N_x$.  We are given a polling lead, $M$
+in percentage terms, so $P_{wwc} W_{wwc} N_{wwc} + P_x W_x N_x = M N = M (W_{wwc} N_{wwc} + W_x N_x)$ 
 |]
 
 
@@ -222,7 +273,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                 ,StatePoll "PA" 8
                 ,StatePoll "TX" 0
                 ,StatePoll "VA" 13
-                ,StatePoll "WI" 10
+                ,StatePoll "WI" 7
                 ]
       bgPollsD = filter (\(StatePoll _ m) -> m > 0) bgPolls
       pollF :: F.FrameRec '[BR.StateAbbreviation, PollMargin] = F.toFrame $ fmap (\(StatePoll sa dm) -> sa F.&: dm F.&: V.RNil) bgPollsD
@@ -245,6 +296,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
              "Excess WWC/Base Turnout to Make Up Polling Gap"
              (FV.ViewConfig 200 (600 / (realToFrac $ length bgPolls)) 10)
              withPollF
+        brAddMarkDown text2
         brAddMarkDown brReadMore
 
 

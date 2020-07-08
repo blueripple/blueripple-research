@@ -220,6 +220,7 @@
 
 </style>
 
+<script src="" type="text/javascript"></script>
 </head>
 <body>
   <div class="br-header">
@@ -244,16 +245,20 @@
 <header>
 <h1 class="title">White Working Class Turnout: Trump's Last Stand?</h1>
 </header>
-<p>In a <a href="https://blueripple.github.io/research/mrp-model/p3/main.html">previoius post</a>, we analyzed how changes in turnout might help Democrats win in various battleground states. In this post, we turn that logic around and look at how Trump’s chances of closing gaps in recent polls via “rallying his base,” either driving up White Working Class (WWC) turnout or just the fraction of the WWC that supported him in 2016.</p>
+<p>In a <a href="https://blueripple.github.io/research/mrp-model/p3/main.html">previous post</a>, we analyzed how changes in turnout might help Democrats win in various battleground states. In this post, we turn that logic around and look at how Trump’s chances of closing gaps in recent polls via “rallying his base,” either driving up White Working Class (WWC) turnout or just the fraction of the WWC that supported him in 2016.</p>
 <ol type="1">
-<li><strong>Current Polling in the Battleground States</strong></li>
-<li><strong>Boosting WWC Turnout</strong></li>
-<li><strong>Boosting Trump Supporter Turnout</strong></li>
+<li><strong>GOP GOTV</strong></li>
+<li><strong>Sidebar: The Math</strong></li>
 <li><strong>What Does It All Mean?</strong></li>
 </ol>
-<section id="current-polling-in-the-battleground-states" class="level2">
-<h2>Current Polling in the Battleground states</h2>
-<p>According to the <a href="https://www.270towin.com/2020-polls-biden-trump/">270toWin</a> polling average, as of 7/7/2020, Biden leads in the polls in several battleground states:</p>
+<section id="gop-gotv" class="level2">
+<h2>GOP GOTV</h2>
+<p>According to the <a href="https://www.270towin.com/2020-polls-biden-trump/">270toWin</a> polling average, as of 7/8/2020, Biden leads in the polls in several battleground states. Since we’ve spoken so much about demographically specific turnout boosts , e.g., GOTV work among college-educated or young voters, we thought it would be interesting to look at that strategy from the GOP side. Whose turnout helps Trump? The only group that was strongly pro-trump in 2016 was White, non-Latinx voters without a 4-year college-degree (and not in-college), the WWC. Polling so far this cycle shows their support for Trump is waning, both among <a href="https://www.latimes.com/politics/story/2020-06-26/behind-trumps-sharp-slump-white-women-who-stuck-with-him-before-are-abandoning-him-now">female WWC voters</a> and <a href="https://www.brookings.edu/blog/fixgov/2020/07/06/president-trump-is-losing-support-among-young-white-working-class-voters/">younger WWC voters</a>, but they are still, on average, Trump voters. The WWC is a big fraction of the US population, and is particularly concentrated in a few key states.</p>
+<p>One plausible Trump campaign strategy in the battleground states might be to work at boosting turnout among all WWC voters. Another strategy, one that seems closer to what is actually happening right now, is that the campaign attempts to boost turnout only among its base within the WWC. But are there enough of those voters in the battleground states for this strategy to work given the current polling?</p>
+<p>The short answer is “no,” at least not in most battleground states.</p>
+<p>We’ll look at the results shortly, but first a quick aside about how we analyzed the problem. We assume that WWC voters in the battleground states remain like their 2016 selves, both in their likelihood to vote and in their preference for Trump. These are very conservative (in the modeling sense) assumptions. All the polling suggests that the WWC has shifted toward the Democrats. So we firmly believe that the amount the GOP would need to boost WWC turnout to make up for their current polling deficit, is probably higher than what we calculate below.</p>
+<p>For each state, we used our MRP model to estimate both the likelihood of voting and the preference for Trump among all voters, grouped by state and membership in the WWC. For each state, we then used the 2016 WWC preference for Trump, the total voting age population, and WWC voting age population to figure out what extra percentage of the WWC would have to vote in order to negate Biden’s current lead in that state. We also considered a turnout boost solely among the fraction of WWC people in Trump’s “base,” which we took to be the fraction of the WWC which voted for Trump in 2016. We assumed all extra turnout in that group will vote 100% for Trump. See the note below the chart for the math.</p>
+<p>The results, for all battleground states where Biden has a lead, are charted below. As a rule, turnout swings of 5% in any group or state are rare. So we read this chart as indicating that, with the exception of GA and OH, GOTV among the WWC or base is not going to be sufficient to close these gaps. And it would be woefully insufficient elsewhere, in VA of course, but also MI, WI, PA and NM.</p>
 <figure id="figure_1">
 <script type="text/javascript">var vlSpec=
 {
@@ -365,7 +370,7 @@
             },
             {
                 "ExcessBasePer": 1.558042270106725,
-                "PollMargin": 10,
+                "PollMargin": 7,
                 "state_abbreviation": "WI",
                 "ExcessWWCPer": 5.007324547479584
             }
@@ -412,6 +417,10 @@
 };
 vegaEmbed('#figure_1',vlSpec);</script>
 </figure>
+</section>
+<section id="sidebar-the-math" class="level2">
+<h2>Sidebar: The Math</h2>
+<p>For those of you interested in how the calculation works in more detail, here you go. Let’s call the number of people of voting age <span class="math inline">\(N\)</span>, using <span class="math inline">\(N_{wwc}\)</span> for the number of WWC voting-age people and <span class="math inline">\(N_x\)</span> for the non-WWC number. Similarly, we’ll use <span class="math inline">\(V\)</span>, <span class="math inline">\(V_{wwc}\)</span> and <span class="math inline">\(V_x\)</span> for the numberof voters and <span class="math inline">\(W_{wwc}\)</span> and <span class="math inline">\(W_x\)</span> to work in percentages: <span class="math inline">\(V_wwc = W_wwc N_wwc\)</span> and <span class="math inline">\(V_x = W_x N_x\)</span>. We’ll <span class="math inline">\(P_{wwc}\)</span> for WWC voter preference for Trump. So the Dem lead, in votes, is <span class="math inline">\(P_{wwc} W_{wwc} N_{wwc} + P_x W_x N_x\)</span>. We are given a polling lead, <span class="math inline">\(M\)</span> in percentage terms, so <span class="math inline">\(P_{wwc} W_{wwc} N_{wwc} + P_x W_x N_x = M N = M (W_{wwc} N_{wwc} + W_x N_x)\)</span></p>
 <p><em>Want to read more from Blue Ripple? Visit our <a href="https://www.blueripplepolitics.org">website</a>, sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>, and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a> and <a href="https://www.facebook.com/blueripplepolitics">FaceBook</a>. Folks interested in our data and modeling efforts should also check out our <a href="https://github.com/blueripple">Github</a> page.</em></p>
 </section>
 <!--
