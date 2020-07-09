@@ -162,29 +162,37 @@ text2 :: T.Text = [here|
 ## Sidebar: The Math
 For those of you interested in how the calculation works in more detail, here you go.
 Let's call the number of people of voting age $N$, using $N_w$ for the number of
-WWC voting-age people and $N_x$ for the non-WWC number. Similarly, we'll use
-$V$, $V_w$ and $V_x$ for the number of voters and $W_w$ and $W_x$
-to work in percentages: $V_w = W_w N_w$ and $V_x = W_x N_x$. We'll $P_w$
-for WWC voter preference for Trump. So the Dem vote, $V_D$, can be expressed as
+WWC voting-age people and $N_x$ for the non-WWC number, so $N=N_w+N_x$.
+Similarly, we'll use
+$V=V_w+V_x$ for the number of voters and $W_w$ and $W_x$
+to work in percentages: $V_w = W_w N_w$ and $V_x = W_x N_x$. $P_w$ denotes the likelihood
+that a member of the WWC votes for Trump (Technical note: $P_w$ is, more precisly, the
+probability that they voted R *given* that they voted D or R. It's possible the non-voting
+or third-party voting members of the WWC have different preferences).
+
+So the number of votes for the Democrat, $V_D$, can be expressed as
 $V_D =  P_w W_w N_w + P_x W_x N_x$ and the Republican vote as
 $V_R = (1-P_w) W_w N_w + (1-P_x) W_x N_x$ and thus
-$V_D - V_R = (2P_w-1) W_w N_w + (2P_x-1) W_x N_x$.  We are given a polling lead, $M$
-in percentage terms, so $(2P_w-1) W_w N_w + (2P_x-1) W_x N_x = M N = M (W_w N_w + W_x N_x)$
+$V_D - V_R = (2P_w-1) W_w N_w + (2P_x-1) W_x N_x$.  You may recognize $2P-1$ as a
+quantity we called "Votes Per Voter" or "VPV" in an [earlier piece][BR:DeltaVPV].
+We are given a polling lead, $M$ in percentage terms, so
+
+$MN = (2P_w-1) W_w N_w + (2P_x-1) W_x N_x$
+
 Now imagine a boost, $y_w$, in WWC turnout, which equalizes the votes. So
 
 $\begin{equation}
-0 = (2P_w-1) (W_w + y_w) N_w + (2P_x-1) W_x N_x
-\end{equation}$
-so
-$\begin{equation}
+0 = (2P_w-1) (W_w + y_w) N_w + (2P_x-1) W_x N_x\\
 0 = (2P_w-1) W_w N_w + (2P_x-1) W_x N_x + y_w (2P_w-1) N_w
 \end{equation}$
 
-and, substituting, $0 = M N + y_w (2P_w-1) N_w$. So $y_w = -\frac{M N}{(2P_w-1) N_w}$. This is the boost
+and, substituting $MN$ for the first part, $0 = M N + y_w (2P_w-1) N_w$. So $y_w = -\frac{M N}{(2P_w-1) N_w}$. This is the boost
 required of the entire WWC. If, instead, we are just boosting turnout among members of the WWC
 who will vote for Trump 100% of the time, we replace $2P_w-1$ by $1$ (always vote for Trump)
 and $N_w$ by $(1-P_w)N_w$ ($1-P_w$ is the fraction of the WWC that votes for Trump 100% of the time) , yielding
 $y_b = \frac{M N}{(1-P_w)Nw}$ ("b" for "base" in the subscript).
+
+[BR:DeltaVPV]: <https://blueripple.github.io/research/mrp-model/p1/main.html>
 |]
 
 
