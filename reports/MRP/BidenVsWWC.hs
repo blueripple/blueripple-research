@@ -89,76 +89,92 @@ import qualified MRP.CCES as CCES
 text1 :: T.Text
 text1 = [i|
 In a [previous post][BR:BattlegroundTurnout],
-we analyzed how changes in turnout might help Democrats win in various battleground states.  In this
-post, we turn that logic around and look at how Trump's chances of closing gaps in recent polls
-via "rallying his base," either driving up White Working Class (WWC) turnout or just the fraction
-of the WWC that supported him in 2016.
+we analyzed how changes in turnout might help Democrats win in various battleground states.
+Meabwhile, Trump's campaign is doing the same math. AS Trump has fallen in polls of battleground
+states, it's becoming increasingly clear that his re-elections strategy is to "rally the base."
+But can that strategy actually work?
 
+Short answer: no.  Trump might win up to two battleground states by boosting turnout among his
+most diehard supporters, but he'd still lose the rest, as well as the election overall.
 
-1. **GOP GOTV**
-2. **Sidebar: The Math**
-3. **What Does It All Mean?**
+1. **Two Possible GOP GOTV Strategies**
+2. **Results Of Our Analysis**
+3. **Sidebar: The Math**
+4. **What Does It All Mean?**
 
-## GOP GOTV
+## Two Possible GOP GOTV Strategies
 According to the [270toWin][BGPolls] polling average,
 as of 7/8/2020, Biden leads in the polls in several battleground states.
 Since we've spoken so much about demographically specific turnout boosts
 , e.g., GOTV work among college-educated or young voters, we thought it would be
 interesting to look at that strategy from the GOP side.  Whose turnout helps
 Trump?  The only group that was strongly pro-trump in 2016 was White, non-Latinx
-voters without a 4-year college-degree (and not in-college), the WWC.
+voters without a 4-year college-degree (and not in-college), i.e.,
+the so-called WWC.
 Polling so far this cycle
 shows their support for Trump is waning, both among
 [female WWC voters][LAT:WWCWomen]
 and
 [younger WWC voters][Brookings:WWCYouth],
-but they are still, on average, Trump voters. The WWC is
+but overall, WWC voters are still, on average, Trump voters. This leads
+to two possible options for the Republicans:
+
+1. The WWC is
 a big fraction of the US population, and is particularly concentrated
-in a few key states.  
+in a few key states. So one plausible Trump campaign strategy in the
+battleground states might be to work at boosting turnout
+among all WWC voters. 
 
-One plausible Trump campaign strategy in the battleground states might be to work at boosting turnout
-among all WWC voters.  Another strategy, one that seems closer to what is actually happening
-right now, is that the campaign attempts to boost turnout only among its base within the WWC.
-But are there enough of those voters in the battleground states for this strategy to work given the
-current polling? 
+2. Another strategy, which seems closer to what is actually happening
+right now, is to try to boost turnout only among "the base" that has stuck by Trump since the
+2016 election.
 
-The short answer is "no," at least not in most battleground states.
+Could either of these approaches lead Trump to victory in 2020?
 
-We'll look at the results shortly, but first a quick aside about how we analyzed the problem.
-We assume that WWC voters in the battleground states remain like their 2016 selves,
+We'll look at the results shortly, but first a few quick notes about how we analyzed the problem:
+
+- We assume that WWC voters in the battleground states remain like their 2016 selves,
 both in their likelihood
 to vote and in their preference for Trump.  These are very conservative (in the modeling
 sense) assumptions.  All the polling suggests that the WWC has shifted toward the Democrats.  So we
 firmly believe that the amount the GOP would need to boost
 WWC turnout to make up for their current polling deficit,
 is probably higher than what we calculate below.
-
-For each state, we used our MRP model to estimate both the likelihood of voting and the preference
+- For each state, we used our MRP model to estimate both the likelihood of voting and the preference
 for Trump among all voters, grouped by state and membership in the WWC. For each state, we then used
 the 2016 WWC preference for Trump, the total voting age population, and WWC voting age population
 to figure out what extra percentage of the WWC would have to vote in order to negate Biden's current
 lead in that state. 
-We also considered a turnout boost solely among the fraction of WWC people in
+- We also considered a turnout boost solely among the fraction of WWC people in
 Trump's "base," which we took to be the fraction of the WWC which voted for Trump in 2016.
 We assumed all extra turnout in that group will vote 100% for Trump.
-See the note below the chart for the math.
+- See the sidebar at the end of this post for more details on the math.
 
-The results, for all battleground states where Biden has a lead, are charted below.  As a rule,
-turnout swings of 5% in any group or state are rare.  So we read this chart as indicating that,
-with the exception of GA and OH, GOTV among the WWC or base is not going to be sufficient to
-close these gaps. And it would be woefully insufficient elsewhere, in VA of course,
-but also MI, WI, PA and NM.
-
-
+## Results Of Our Analysis
+In each battleground state where Biden currently has a a lead, we show the turnout boost that
+Trump would need in either the WWC overall or his "base" to close the current statewide gap.
+The boost he'd need from his base is always smaller because, as we discussed earlier, that group
+has a higher preference for Trump than the WWC overall.
 
 [BGPolls]: <https://www.270towin.com/2020-polls-biden-trump/>
 [BR:BattlegroundTurnout]: <https://blueripple.github.io/research/mrp-model/p3/main.html>
 [LAT:WWCWomen]: <https://www.latimes.com/politics/story/2020-06-26/behind-trumps-sharp-slump-white-women-who-stuck-with-him-before-are-abandoning-him-now>
 [Brookings:WWCYouth]: <https://www.brookings.edu/blog/fixgov/2020/07/06/president-trump-is-losing-support-among-young-white-working-class-voters/>
+|]
+
+text2 :: T.Text = [here|
+With the exception of GA and OH, GOTV among the WWC or base would require more than a 5%...
+
+So, our analysis of this table is that Trump might be able to close the gap
+with Biden in GA and OH if he can mobilize his most ardent followers within the WWC.
+But in the other battleground states, “rally the base” will be woefully insufficient.
+
+
+
 
 |]
   
-text2 :: T.Text = [here|
+sidebarMD :: T.Text = [here|
 ## Sidebar: The Math
 For those of you interested in how the calculation works in more detail, here you go.
 Let's call the number of people of voting age $N$, using $N_w$ for the number of
@@ -258,19 +274,27 @@ wwcFold = FMR.concatFoldM
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ (fmap (pure @[]) requiredExcessTurnoutF))
 
 
-data StatePoll = StatePoll { abbreviation :: T.Text, demMargin :: Double }
-
-statePollCollonade :: BR.CellStyle StatePoll T.Text -> K.Colonnade K.Headed StatePoll K.Cell
-statePollCollonade cas =
-  let h c = K.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
-  in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . abbreviation))
-     <> K.headed "Biden Lead" (BR.toCell cas "D Margin" "D Margin" (BR.numberToStyledHtml "%2.1f" . demMargin))
+data StatePoll = StatePoll { abbreviation :: T.Text, demMargin :: Double}
 
 type PollMargin = "PollMargin" F.:-> Double  
-           
+
+type BoostResRow = F.Record [BR.StateAbbreviation, PollMargin, ExcessWWCPer, ExcessBasePer]
+
+statePollCollonade :: BR.CellStyle BoostResRow T.Text -> K.Colonnade K.Headed BoostResRow K.Cell
+statePollCollonade cas =
+  let h c = K.Cell (BHA.class_ "brTableHeader") $ BH.toHtml c
+      margin = F.rgetField @PollMargin
+      wwcBoost r = margin r * F.rgetField @ExcessWWCPer r
+      baseBoost r = margin r * F.rgetField @ExcessBasePer r      
+  in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
+     <> K.headed "Biden Lead" (BR.toCell cas "D Margin" "D Margin" (BR.numberToStyledHtml "%2.1f" . margin))
+     <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%2.1f" . wwcBoost))
+     <> K.headed "% Base" (BR.toCell cas "% Base" "% Base" (BR.numberToStyledHtml "%2.1f" . baseBoost))
+
+     
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
-
+  
   requiredExcessTurnout <- K.ignoreCacheTimeM $ do
     electoralWeights_C <- BR.adjCensusElectoralWeightsMRP_ASER5
     prefs_C <- BR.ccesPreferencesASER5_MRP
@@ -286,10 +310,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold (fmap F.rcast ewAndPrefs))
 
   logFrame requiredExcessTurnout
-  let bgPolls = [StatePoll "AZ" 5
+  let bgPolls = [StatePoll "AZ" 5 
                 ,StatePoll "FL" 4
                 ,StatePoll "GA" 3
-                ,StatePoll "IA" 0
+                ,StatePoll "IA" (-1)
                 ,StatePoll "MI" 7
                 ,StatePoll "NC" 5
                 ,StatePoll "NM" 14
@@ -297,7 +321,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                 ,StatePoll "OH" 1
                 ,StatePoll "PA" 8
                 ,StatePoll "TX" 0
-                ,StatePoll "VA" 13
+                ,StatePoll "VA" 12
                 ,StatePoll "WI" 7
                 ]
       bgPollsD = filter (\(StatePoll _ m) -> m > 0) bgPolls
@@ -315,13 +339,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
-        --BR.brAddRawHtmlTable "Polling in Battleground States (7/6/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) bgPolls
+        BR.brAddRawHtmlTable "Needed WWC Boosts in Battleground States (7/10/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) (fmap F.rcast withPollF)
+        brAddMarkDown text2
         _ <- K.addHvega Nothing Nothing
              $ vlRallyWWC
              "Excess WWC/Base Turnout to Make Up Polling Gap"
              (FV.ViewConfig 200 (600 / (realToFrac $ length bgPolls)) 10)
              withPollF
-        brAddMarkDown text2
+        brAddMarkDown sidebarMD
         brAddMarkDown brReadMore
 
 
@@ -336,9 +361,9 @@ vlRallyWWC title vc rows =
       makeBase = GV.calculateAs "datum.PollMargin * datum.ExcessBasePer" "Excess Base %"
       renameMargin = GV.calculateAs "datum.PollMargin" "Poll Margin %"
       renameSA = GV.calculateAs "datum.state_abbreviation" "State"      
-      doFold = GV.foldAs ["Poll Margin %", "Excess WWC %", "Excess Base %"] "Type" "Pct"
+      doFold = GV.foldAs ["Excess WWC %", "Excess Base %"] "Type" "Pct"
       encY = GV.position GV.Y [GV.PName "Type", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
-                              , GV.PSort [GV.CustomSort $ GV.Strings ["Poll Margin %", "Excess WWC %", "Excess Base %"]]
+                              , GV.PSort [GV.CustomSort $ GV.Strings ["Excess WWC %", "Excess Base %"]]
                               ]
       encX = GV.position GV.X [GV.PName "Pct"
                               , GV.PmType GV.Quantitative
@@ -346,7 +371,7 @@ vlRallyWWC title vc rows =
       encFacet = GV.row [GV.FName "State", GV.FmType GV.Nominal]
       encColor = GV.color [GV.MName "Type"
                           , GV.MmType GV.Nominal
-                          , GV.MSort [GV.CustomSort $ GV.Strings ["Poll Margin %", "Excess WWC %", "Excess Base %"]]
+                          , GV.MSort [GV.CustomSort $ GV.Strings ["Excess WWC %", "Excess Base %"]]
                           ]
       enc = GV.encoding . encX . encY . encColor . encFacet
       transform = GV.transform .  makeWWC . makeBase . renameSA . renameMargin . doFold
