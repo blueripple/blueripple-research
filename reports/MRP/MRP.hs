@@ -87,7 +87,7 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostElectoralWeights] &= CA.name "weights" &= CA.help "knit \"Electoral Weights\"",
                                         [PostLanguage] &= CA.name "language" &= CA.help "knit \"Language\"",
                                         [PostBidenVsWWC] &= CA.name "bidenVsWWC" &= CA.help "knit \"BidenVsWWC\"",
-                                        [PostBidenVsWWC] &= CA.name "clusters" &= CA.help "knit \"DistrictClusters\"", 
+                                        [PostDistrictClusters] &= CA.name "clusters" &= CA.help "knit \"DistrictClusters\"", 
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
