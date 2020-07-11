@@ -85,6 +85,10 @@ import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
 
+pollAvgDate = Time.fromGregorian 2020 7 11
+pollAvgDateText = (\(y,m,d) ->  (T.pack $ show m)
+                                <> "/" <> (T.pack $ show d)
+                                <> "/" <> (T.pack $ show y)) $ Time.toGregorian pollAvgDate
 
 text1 :: T.Text
 text1 = [i|
@@ -104,7 +108,7 @@ most diehard supporters, but he'd still lose the rest, as well as the election o
 
 ## Two Possible GOP GOTV Strategies
 According to the [270toWin][BGPolls] polling average,
-as of 7/8/2020, Biden leads in the polls in several battleground states.
+as of $pollAvgDateText$, Biden leads in the polls in several battleground states.
 Since we've spoken so much about demographically specific turnout boosts
 , e.g., GOTV work among college-educated or young voters, we thought it would be
 interesting to look at that strategy from the GOP side.  Whose turnout helps
@@ -163,15 +167,37 @@ has a higher preference for Trump than the WWC overall.
 |]
 
 text2 :: T.Text = [here|
-With the exception of GA and OH, GOTV among the WWC or base would require more than a 5%...
+With the exception of GA and OH, Trump would need more than a 10% surge in voting among the WWC
+to win any of those states, something that has not happened in recent history.
+Typical election-to-election swings in WWC voting are well under 5%.
+[This paper][SociologicalScience:WWCTurnout] breaks this down for the four
+presidential elections between 2004 and 2016, showing almost no shifts in battleground
+state voting for White non-Latinx voters with a high school diploma or less and 5% or
+less variability in the "Some college" group.
+
+It's harder to analyze turnout in
+Trump's "base," but there's no a-priori reason to think it would be possible to drive
+turnout there by more than 5% either. An unlikely 10% turnout shift in the "base"
+could bring AZ, FL, GA, NC, NV, and OH back to the GOP, which still leaves Biden
+winning the election, though not by much.
 
 So, our analysis of this table is that Trump might be able to close the gap
-with Biden in GA and OH if he can mobilize his most ardent followers within the WWC.
+with Biden in GA and OH with a general appeal to the WWC and that there is a small chance
+of winning a few more states if he can mobilize his most ardent followers within the WWC.
 But in the other battleground states, “rally the base” will be woefully insufficient.
+And none of this is enough to swing the election to Trump.
 
+Two important caveats:
 
+-These polls can and will shift between now and election day, so we are
+not complacent.  Progerssives and Dems should work as hard as they can,
+to insure we win the presidential election and as many down-ticket races as possible.
 
+-The polls themselves are weighted by some reasonable calculation of who is likely to vote.  So whatever
+change in turnout the GOP needs, it must happen on top of whatever those voters are saying now.  That makes
+big shifts less likely.
 
+[SociologicalScience:WWCTurnout]: <https://sociologicalscience.com/download/vol-4/november/SocSci_v4_656to685.pdf>
 |]
   
 sidebarMD :: T.Text = [here|
@@ -273,6 +299,10 @@ wwcFold = FMR.concatFoldM
           (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.StateAbbreviation] @[IsWWC, PUMS.Citizens, ET.ElectoralWeight, ET.DemVPV, ET.DemPref])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ (fmap (pure @[]) requiredExcessTurnoutF))
 
+type MaxTurnoutChange = "Max Turnout Change" F.:-> Double
+
+--turnoutChangeF :: FL.Fold (F.Record ([BR.Year, BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ '[ET.ElectoralWeight]))
+--                  (F.Record [BR.StateAbbreviation, MaxTurnoutChange])
 
 data StatePoll = StatePoll { abbreviation :: T.Text, demMargin :: Double}
 
@@ -291,22 +321,46 @@ statePollCollonade cas =
      <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%2.1f" . wwcBoost))
      <> K.headed "% Base" (BR.toCell cas "% Base" "% Base" (BR.numberToStyledHtml "%2.1f" . baseBoost))
 
-     
+type  ASER5State as = (BR.StateAbbreviation ': DT.CatColsASER5) V.++ as
+
+addPUMSZerosF :: FL.Fold (F.Record (ASER5State '[PUMS.Citizens])) (F.FrameRec (ASER5State '[PUMS.Citizens]))
+addPUMSZerosF =
+  let zeroPop ::  F.Record '[PUMS.Citizens]
+      zeroPop = 0 F.&: V.RNil
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     FMR.noUnpack
+     (FMR.assignKeysAndData @'[BR.StateAbbreviation])
+     (FMR.makeRecsWithKey id
+       $ FMR.ReduceFold
+       $ const
+       $ Keyed.addDefaultRec @DT.CatColsASER5 zeroPop)
+                                                                  
+                    
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
   
   requiredExcessTurnout <- K.ignoreCacheTimeM $ do
     electoralWeights_C <- BR.adjCensusElectoralWeightsMRP_ASER5
     prefs_C <- BR.ccesPreferencesASER5_MRP
-    let cachedDeps = (,) <$> electoralWeights_C <*> prefs_C
+    demo_C <- PUMS.pumsLoader
+    let cachedDeps = (,,) <$> electoralWeights_C <*> prefs_C <*> demo_C
     --K.clear "mrp/BidenVsWWC/requiredExcessTurnout.bin"
-    BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs) -> do
-      let isYear y r = F.rgetField @BR.Year r == 2016
+    BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs, demo) -> do
+      let isYear y r = F.rgetField @BR.Year r == y
           isPres r = F.rgetField @ET.Office r == ET.President  
-          ewFrame = F.filterFrame (isYear 2016) adjStateEW
-          prefsFrame = F.filterFrame (\r -> isYear 2016 r && isPres r) statePrefs
+          ewFrame = fmap (F.rcast @(ASER5State '[ET.ElectoralWeight]))
+                    $ F.filterFrame (isYear 2016) adjStateEW
+          prefsFrame = fmap (F.rcast @(ASER5State '[ET.DemVPV, ET.DemPref]))
+                       $ F.filterFrame (\r -> isYear 2016 r && isPres r) statePrefs
+          demoFrame = FL.fold addPUMSZerosF
+                      $ fmap (F.rcast @(ASER5State '[PUMS.Citizens]))
+                      $ FL.fold
+                      (PUMS.pumsStateRollupF (PUMS.pumsKeysToASER5 True . F.rcast))
+                      $ F.filterFrame (isYear 2018) demo
+      
       ewAndPrefs <- K.knitEither $ either (Left . T.pack . show) Right
-                    $ FJ.leftJoinE @(BR.StateAbbreviation ': DT.CatColsASER5) ewFrame prefsFrame
+                    $ FJ.leftJoinE3 @(ASER5State '[]) ewFrame prefsFrame demoFrame
       K.knitMaybe "Error computing requiredExcessTurnout (missing WWC or NonWWC for some state?)" (FL.foldM wwcFold (fmap F.rcast ewAndPrefs))
 
   logFrame requiredExcessTurnout
@@ -339,13 +393,18 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
-        BR.brAddRawHtmlTable "Needed WWC Boosts in Battleground States (7/10/2020)" (BHA.class_ "brTable") (statePollCollonade mempty) (fmap F.rcast withPollF)
+        BR.brAddRawHtmlTable
+          ("Needed WWC Boosts in Battleground States (" <> pollAvgDateText <> ")")
+          (BHA.class_ "brTable")
+          (statePollCollonade mempty)
+          (fmap F.rcast withPollF)
         brAddMarkDown text2
-        _ <- K.addHvega Nothing Nothing
+{-        _ <- K.addHvega Nothing Nothing
              $ vlRallyWWC
              "Excess WWC/Base Turnout to Make Up Polling Gap"
              (FV.ViewConfig 200 (600 / (realToFrac $ length bgPolls)) 10)
              withPollF
+-}
         brAddMarkDown sidebarMD
         brAddMarkDown brReadMore
 
