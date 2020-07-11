@@ -17,7 +17,7 @@
 {-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
-module MRP.BidenVsWWC where
+module MRP.DistrictClusters where
 
 import qualified Control.Foldl                 as FL
 import           Data.Discrimination            ( Grouping )

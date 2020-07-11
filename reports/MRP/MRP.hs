@@ -49,6 +49,7 @@ import qualified MRP.TurnoutGaps as TurnoutGaps
 import qualified MRP.ElectoralWeights as ElectoralWeights
 import qualified MRP.Language as Language
 import qualified MRP.BidenVsWWC as BidenVsWWC
+import qualified MRP.DistrictClusters as DistrictClusters
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -85,7 +86,8 @@ postArgs = PostArgs { posts = CA.enum [[] &= CA.ignore,
                                         [PostTurnoutGaps] &= CA.name "turnout" &= CA.help "knit \"Turnout\"",
                                         [PostElectoralWeights] &= CA.name "weights" &= CA.help "knit \"Electoral Weights\"",
                                         [PostLanguage] &= CA.name "language" &= CA.help "knit \"Language\"",
-                                        [PostBidenVsWWC] &= CA.name "bidenVsWWC" &= CA.help "knit \"BidenVsWWC\"", 
+                                        [PostBidenVsWWC] &= CA.name "bidenVsWWC" &= CA.help "knit \"BidenVsWWC\"",
+                                        [PostBidenVsWWC] &= CA.name "clusters" &= CA.help "knit \"DistrictClusters\"", 
                                         [(minBound :: Post).. ] &= CA.name "all" &= CA.help "knit all"
                                       ]
                     , updated = CA.def
@@ -194,6 +196,9 @@ main = do
         (updated args)
       when (PostBidenVsWWC `elem` (posts args))
         $ BidenVsWWC.post
+        (updated args)
+      when (PostDistrictClusters `elem` (posts args))
+        $ DistrictClusters.post
         (updated args)
 
 

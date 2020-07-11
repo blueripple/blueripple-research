@@ -655,7 +655,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
 ---
   partisanId <- K.ignoreCacheTime partisanIdC
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDateElectoralWeights =  Time.fromGregorian 2020 6 27
+  let pubDateElectoralWeights =  Time.fromGregorian 2020 7 11
   K.newPandoc
     (K.PandocInfo ((postRoute PostElectoralWeights) <> "main")
       (brAddDates updated pubDateElectoralWeights curDate
