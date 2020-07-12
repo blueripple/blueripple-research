@@ -36,6 +36,7 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.InCore                 as FI
 import qualified Polysemy.Error as P
+import qualified Polysemy.ConstraintAbsorber.MonadRandom as PMR
 
 import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
@@ -43,7 +44,9 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Misc                   as FM
-import qualified Frames.Serialize              as FS 
+import qualified Frames.Serialize              as FS
+import qualified Frames.KMeans                 as FK
+import qualified Math.Rescale                  as MR
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -51,6 +54,7 @@ import qualified Frames.Visualization.VegaLite.Data
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
 
+  
 import           Data.String.Here               ( i, here )
 
 import qualified Text.Blaze.Html               as BH
@@ -96,7 +100,7 @@ text2 :: T.Text = [here|
 |]
   
 
-type  ASER5CD as = ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ DT.CatColsASER5) V.++ as
+type ASER5CD as = ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ DT.CatColsASER5) V.++ as
 
 addPUMSZerosF :: FL.Fold (F.Record (ASER5CD '[PUMS.Citizens, PUMS.NonCitizens])) (F.FrameRec (ASER5CD '[PUMS.Citizens, PUMS.NonCitizens]))
 addPUMSZerosF =
@@ -111,7 +115,30 @@ addPUMSZerosF =
        $ const
        $ Keyed.addDefaultRec @DT.CatColsASER5 zeroPop)
                                                                   
-                    
+type PctWWC = "PctWWC" F.:-> Double
+type PctBlack = "PctBlack" F.:-> Double
+type W = "w" F.:-> Double
+
+
+districtToWWCBlack :: FL.Fold
+                        (F.Record (PUMS.CDCounts DT.CatColsASER5))
+                        (F.FrameRec '[BR.StateAbbreviation, BR.CongressionalDistrict, PctWWC, PctBlack, W])
+districtToWWCBlack =
+  let districtToXYW :: FL.Fold (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) (F.Record [PctWWC, PctBlack, W])
+      districtToXYW =
+        let isWWC r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx && F.rgetField @DT.CollegeGradC r == DT.Grad
+            isBlack r =  F.rgetField @DT.Race5C r == DT.R5_Black
+            citizens = realToFrac . F.rgetField @PUMS.Citizens        
+            citizensF = FL.premap citizens FL.sum
+            pctWWCF = (/) <$> FL.prefilter isWWC (FL.premap citizens FL.sum) <*> citizensF
+            pctBlackF = (/) <$> FL.prefilter isBlack (FL.premap citizens FL.sum) <*> citizensF
+        in (\x y w -> x F.&: y F.&: w F.&: V.RNil) <$> pctWWCF <*> pctBlackF <*> citizensF
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     FMR.noUnpack
+     (FMR.assignKeysAndData @'[BR.StateAbbreviation, BR.CongressionalDistrict] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+     (FMR.foldAndAddKey districtToXYW)
+     
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
 
@@ -125,11 +152,26 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
                           
---  K.ignoreCacheTime pums2018ByCD_C >>= logFrame
---  clusteredDistricts <- K.ignoreCacheTimeM $ 
---K.retrieveOrMakeTransformed clusterToS clusterFromS "mrp/DistrictClusters/clusteredDistricts.bin" pums2018ByCD_C $ \pumsByCD -> do
-      
-                                       
+  clusteredDistricts <- K.ignoreCacheTimeM $ 
+    K.retrieveOrMakeTransformed
+    (fmap clusterToS)
+    (fmap clusterFromS)
+    "mrp/DistrictClusters/clusteredDistricts.bin"
+    pums2018ByCD_C $ \pumsByCD -> do
+      let forClustering = FL.fold districtToWWCBlack pumsByCD
+          initialCentroidsF n 
+            = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx
+      FK.kMeansOneWithClusters @PctWWC @PctBlack @W
+        (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
+        (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
+        10
+        10
+        initialCentroidsF
+        (FK.weighted2DRecord @PctWWC @PctBlack @W)
+        FK.euclidSq
+        forClustering
+--  let clusters :: [(Double, Double, Double)] = fmap fst clusteredDistricts 
+  K.liftKnit $ putStrLn $ show clusteredDistricts
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
