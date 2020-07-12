@@ -22,6 +22,7 @@ module MRP.DistrictClusters where
 import qualified Control.Foldl                 as FL
 import           Data.Discrimination            ( Grouping )
 import qualified Data.Map as M
+import           Data.Maybe (catMaybes)
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as Serialize
 import qualified Data.Vector                   as Vec
@@ -122,7 +123,7 @@ type W = "w" F.:-> Double
 
 districtToWWCBlack :: FL.Fold
                         (F.Record (PUMS.CDCounts DT.CatColsASER5))
-                        (F.FrameRec '[BR.StateAbbreviation, BR.CongressionalDistrict, PctWWC, PctBlack, W])
+                        (F.FrameRec '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, PctWWC, PctBlack, W])
 districtToWWCBlack =
   let districtToXYW :: FL.Fold (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) (F.Record [PctWWC, PctBlack, W])
       districtToXYW =
@@ -136,14 +137,25 @@ districtToWWCBlack =
   in FMR.concatFold
      $ FMR.mapReduceFold
      FMR.noUnpack
-     (FMR.assignKeysAndData @'[BR.StateAbbreviation, BR.CongressionalDistrict] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+     (FMR.assignKeysAndData @'[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
      (FMR.foldAndAddKey districtToXYW)
+
+votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[ET.PrefType, BR.DemPref])
+votesToVoteShareF =
+  let
+    party = F.rgetField @ET.Party
+    votes = F.rgetField @ET.Votes
+    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
+    demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
+    demPrefF = demPref <$> demVotesF <*> demRepVotesF
+  in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
 
-  let clusterToS ((x, y, z), recs) = ((x, y , z), fmap FS.toS recs)
-      clusterFromS ((x, y, z), sRecs) = ((x, y, z), fmap FS.fromS sRecs)
+  let clusterRowsToS (cs, rs) = (fmap FS.toS cs, fmap FS.toS rs)
+      clusterRowsFromS (cs', rs') = (fmap FS.fromS cs', fmap FS.fromS rs')
 
   pums2018ByCD_C <- do
     demo_C <- PUMS.pumsLoader
@@ -151,27 +163,50 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       let pums2018Raw = F.filterFrame ((== 2018) . F.rgetField @BR.Year) pumsRaw
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
-                          
-  clusteredDistricts <- K.ignoreCacheTimeM $ 
+
+  K.clearIfPresent "mrp/DistrictClusters/clusteredDistricts.bin"
+  clusteredDistricts <- K.ignoreCacheTimeM $ do
+    houseResults_C <- BR.houseElectionsLoader
+    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseResults_C
     K.retrieveOrMakeTransformed
-    (fmap clusterToS)
-    (fmap clusterFromS)
-    "mrp/DistrictClusters/clusteredDistricts.bin"
-    pums2018ByCD_C $ \pumsByCD -> do
-      let forClustering = FL.fold districtToWWCBlack pumsByCD
-          initialCentroidsF n 
-            = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx
-      FK.kMeansOneWithClusters @PctWWC @PctBlack @W
-        (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
-        (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
-        10
-        10
-        initialCentroidsF
-        (FK.weighted2DRecord @PctWWC @PctBlack @W)
-        FK.euclidSq
-        forClustering
---  let clusters :: [(Double, Double, Double)] = fmap fst clusteredDistricts 
-  K.liftKnit $ putStrLn $ show clusteredDistricts
+      clusterRowsToS
+      clusterRowsFromS
+      "mrp/DistrictClusters/clusteredDistricts.bin"
+      cachedDeps $ \(pumsByCD, houseResults) -> do
+        let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
+            filterHR r = F.rgetField @BR.Year r == 2018
+                         && F.rgetField @BR.Stage r == "gen"
+                         && F.rgetField @BR.Runoff r == False
+                         && F.rgetField @BR.Special r == False
+                         && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
+            houseResults2018 = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, ET.Votes, ET.TotalVotes])
+                               $ F.filterFrame filterHR houseResults
+            houseResults2018F = FMR.concatFold $ FMR.mapReduceFold
+                                FMR.noUnpack
+                                (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                (FMR.foldAndAddKey votesToVoteShareF)
+          
+            forClustering = F.toFrame
+                            $ catMaybes
+                            $ fmap F.recMaybe
+                            $ F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                            (FL.fold districtToWWCBlack pumsByCD)
+                            (FL.fold houseResults2018F houseResults2018)
+        let initialCentroidsF n 
+              = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx            
+        rawClusters <- FK.kMeansOneWithClusters @PctWWC @PctBlack @W
+                       (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
+                       (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
+                       20
+                       10
+                       initialCentroidsF
+                       (FK.weighted2DRecord @PctWWC @PctBlack @W)
+                       FK.euclidSq
+                       forClustering
+        return $ FK.clusteredRowsFull @PctWWC @PctBlack @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
+
+  logFrame $ F.toFrame $ fst clusteredDistricts
+  logFrame $ F.toFrame $ snd clusteredDistricts
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
@@ -183,7 +218,43 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
+        _ <- K.addHvega Nothing Nothing
+             $ clusterVL @PctWWC @PctBlack
+             "2018 House Districts Clustered By %WWC and %Black"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast $ fst clusteredDistricts)
+             (fmap F.rcast $ snd clusteredDistricts)
         brAddMarkDown brReadMore
+
+
+clusterVL :: forall x y f.
+             (Foldable f
+             , FV.ToVLDataValue (F.ElField x)
+             , FV.ToVLDataValue (F.ElField y)
+             , F.ColumnHeaders '[x]
+             , F.ColumnHeaders '[y]
+             )
+          => T.Text
+          -> FV.ViewConfig
+          -> f (F.Record [BR.Year, FK.ClusterId, x, y, W])
+          -> f (F.Record ([BR.Year, FK.ClusterId, FK.MarkLabel, x, y, W, ET.DemPref]))
+          -> GV.VegaLite
+clusterVL title vc centroidRows districtRows =
+  let datCentroids = FV.recordsToVLData id FV.defaultParse centroidRows
+      datDistricts = FV.recordsToVLData id FV.defaultParse districtRows
+      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
+      encColorC = GV.color [FV.mName @W, GV.MmType GV.Quantitative {- , GV.MScale [GV.SScheme "accent" []]-}]
+      encColorD = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encSizeC = GV.size [FV.mName @W, GV.MmType GV.Quantitative]
+      clusterSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC) [], GV.mark GV.Circle [], datCentroids]
+      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD) [], GV.mark GV.Circle [], (GV.transform . makeShare) [], datDistricts]
+  in FV.configuredVegaLite  vc [FV.title title, GV.layer [clusterSpec, districtSpec]]
+  
+
+
+--clusterVL :: T.Text -> [(Double, Double, Double)
 
 {-
 vlRallyWWC :: Foldable f
