@@ -2,12 +2,14 @@
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE DeriveGeneric             #-}
-{-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE GADTs                     #-}
+
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
@@ -15,6 +17,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
 
 module MRP.DistrictClusters where
@@ -151,16 +154,70 @@ votesToVoteShareF =
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
-districtDist :: Foldable f => f (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) -> f (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) -> Double
-districtDist r1s r2s =
-  let asMap = FL.fold (FL.premap (\r-> (F.rcast @DT.CatColsASER5 r, F.rgetField @PUMS.Citizens r)) FL.map)
-      r1Ns = fmap snd $ M.toList $ asMap r1s      
-      r2Ns = fmap snd $ M.toList $ asMap r2s
+{-
+newtype DemoKey ks = DemoKey { unDemoKey :: F.Record ks }
+deriving instance (Show (F.Record ks)) => Show (DemoKey ks)
+deriving instance (Eq (F.Record ks)) => Eq (DemoKey ks)
+deriving instance (Ord (F.Record ks)) => Ord (DemoKey ks)
+
+instance Bounded (DemoKey '[]) where
+  minBound = DemoKey V.RNil
+  maxBound = DemoKey V.RNil
+
+instance (Bounded (DemoKey ks), V.KnownField t, Bounded (V.Snd t)) => Bounded (DemoKey (t ': ks)) where
+  minBound = DemoKey $ minBound F.&: unDemoKey minBound 
+  maxBound = DemoKey $ maxBound F.&: unDemoKey maxBound 
+-}
+
+data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtData :: [F.Record rs] }
+deriving instance (Show (F.Record as), Show (F.Record rs)) => Show (DistrictP as rs)
+
+absMetric :: [Double] -> [Double] -> Double
+absMetric xs ys =  FL.fold FL.sum $ fmap abs $ zipWith (-) xs ys
+
+districtDiff :: forall ks d as rs f.(Ord (F.Record ks)
+                                    , Foldable f
+                                    , ks F.⊆ rs
+                                    , F.ElemOf rs d
+                                    , V.KnownField d
+                                    , Real (V.Snd d)
+                                    )
+             => ([Double] -> [Double] -> Double) 
+             -> DistrictP as rs
+             -> DistrictP as rs
+             -> Double
+districtDiff metric d1 d2 =
+  let asMap = FL.fold (FL.premap (\r-> (F.rcast @ks r, F.rgetField @d r)) FL.map)
+      r1Ns = fmap snd $ M.toList $ asMap $ districtData d1      
+      r2Ns = fmap snd $ M.toList $ asMap $ districtData d2
       r1T = realToFrac $ FL.fold FL.sum r1Ns
       r2T = realToFrac $ FL.fold FL.sum r2Ns
       r1xs = fmap (\n -> realToFrac n/r1T) r1Ns
       r2xs = fmap (\n -> realToFrac n/r2T) r2Ns
-  in FL.fold FL.sum $ fmap abs $ zipWith (-) r1xs r2xs 
+  in FL.fold FL.sum $ fmap abs $ zipWith (-) r1xs r2xs
+
+
+districtMakeSimilar :: forall ks d as f.(Ord (F.Record ks)
+                                        , Foldable f
+                                        , ks F.⊆ (ks V.++ '[d])
+                                        , F.ElemOf (ks V.++ '[d]) d
+                                        , V.KnownField d
+                                        , Real (V.Snd d)
+                                        )
+                    => (Double -> V.Snd d)
+                    -> DistrictP as (ks V.++ '[d])
+                    -> Double -> DistrictP as (ks V.++ '[d])
+                    -> DistrictP as (ks V.++ '[d])
+districtMakeSimilar toD tgtD x patD =
+  let asMap = FL.fold (FL.premap (\r-> (F.rcast @ks r, F.rgetField @d r)) FL.map)
+      tgtNs = fmap snd $ M.toList $ asMap $ districtData tgtD      
+      patKNs = M.toList $ asMap $ districtData patD
+      f nt (kp, np) = (kp, realToFrac np * (1 - x) + realToFrac nt * x)
+      newPatKNs = zipWith f tgtNs patKNs
+      makeD :: Double -> F.Record '[d]
+      makeD x = toD x F.&: V.RNil
+      newPatRecs = fmap (\(k, x) -> V.rappend k  (makeD x)) newPatKNs
+  in DistrictP (districtId patD) True  newPatRecs
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
