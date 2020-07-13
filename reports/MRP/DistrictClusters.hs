@@ -150,6 +150,17 @@ votesToVoteShareF =
     demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
+
+districtDist :: Foldable f => f (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) -> f (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) -> Double
+districtDist r1s r2s =
+  let asMap = FL.fold (FL.premap (\r-> (F.rcast @DT.CatColsASER5 r, F.rgetField @PUMS.Citizens r)) FL.map)
+      r1Ns = fmap snd $ M.toList $ asMap r1s      
+      r2Ns = fmap snd $ M.toList $ asMap r2s
+      r1T = realToFrac $ FL.fold FL.sum r1Ns
+      r2T = realToFrac $ FL.fold FL.sum r2Ns
+      r1xs = fmap (\n -> realToFrac n/r1T) r1Ns
+      r2xs = fmap (\n -> realToFrac n/r2T) r2Ns
+  in FL.fold FL.sum $ fmap abs $ zipWith (-) r1xs r2xs 
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -195,8 +206,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
         let initialCentroidsF n 
               = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx            
         rawClusters <- FK.kMeansOneWithClusters @PctWWC @PctBlack @W
-                       (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
-                       (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale MR.RescaleNone MR.RescaleNone id)
+                       (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale (MR.RescaleNormalize 1) (MR.RescaleNormalize 1) id)
+                       (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale (MR.RescaleNormalize 1) (MR.RescaleNormalize 1) id)
                        20
                        10
                        initialCentroidsF
@@ -243,14 +254,16 @@ clusterVL title vc centroidRows districtRows =
   let datCentroids = FV.recordsToVLData id FV.defaultParse centroidRows
       datDistricts = FV.recordsToVLData id FV.defaultParse districtRows
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      makeCentroidColor = GV.calculateAs "0" "CentroidColor"
+      centroidMark = GV.mark GV.Circle [GV.MColor "grey", GV.MTooltip GV.TTEncoding]
+      districtMark = GV.mark GV.Circle [ GV.MTooltip GV.TTData]
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
-      encColorC = GV.color [FV.mName @W, GV.MmType GV.Quantitative {- , GV.MScale [GV.SScheme "accent" []]-}]
       encColorD = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
       encSizeC = GV.size [FV.mName @W, GV.MmType GV.Quantitative]
-      clusterSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC) [], GV.mark GV.Circle [], datCentroids]
-      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD) [], GV.mark GV.Circle [], (GV.transform . makeShare) [], datDistricts]
-  in FV.configuredVegaLite  vc [FV.title title, GV.layer [clusterSpec, districtSpec]]
+      centroidSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC) [], centroidMark, (GV.transform . makeCentroidColor) [], datCentroids]
+      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD) [], districtMark, (GV.transform . makeShare) [], datDistricts]
+  in FV.configuredVegaLite  vc [FV.title title, GV.layer [centroidSpec, districtSpec]]
   
 
 
