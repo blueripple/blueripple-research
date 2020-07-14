@@ -40,6 +40,7 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.InCore                 as FI
 import qualified Polysemy.Error as P
+import qualified Polysemy.RandomFu             as PRF
 import qualified Polysemy.ConstraintAbsorber.MonadRandom as PMR
 
 import qualified Control.MapReduce             as MR
@@ -76,6 +77,13 @@ import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
 
 import qualified Data.Datamining.Clustering.SGM as SGM
+import qualified Data.Datamining.Clustering.Classifier as SOM
+import qualified Data.Datamining.Clustering.SOM as SOM
+import qualified Math.Geometry.Grid as Grid
+import qualified Math.Geometry.Grid.Square as Grid
+import qualified Math.Geometry.GridMap as GridMap
+import qualified Math.Geometry.GridMap.Lazy as GridMap 
+import qualified Data.Random.Distribution.Uniform as RandomFu
 import qualified Data.Word as Word
 
 
@@ -167,6 +175,9 @@ deriving instance (Show (F.Record as), Show (F.Record rs)) => Show (DistrictP as
 absMetric :: [Double] -> [Double] -> Double
 absMetric xs ys =  FL.fold FL.sum $ fmap abs $ zipWith (-) xs ys
 
+meanAbsMetric :: [Double] -> [Double] -> Double
+meanAbsMetric xs ys =  FL.fold ((/) <$> fmap realToFrac FL.sum <*> fmap realToFrac FL.length)  $ fmap abs $ zipWith (-) xs ys
+
 districtDiff :: forall ks d as rs.(Ord (F.Record ks)
                                   , ks F.⊆ rs
                                   , F.ElemOf rs d
@@ -209,6 +220,34 @@ districtMakeSimilar toD tgtD x patD =
       makeD x = toD x F.&: V.RNil
       newPatRecs = fmap (\(k, x) -> V.rappend k  (makeD x)) newPatKNs
   in DistrictP (districtId patD) True  newPatRecs
+
+buildSOM :: forall ks d as r.
+  (K.KnitEffects r
+  , K.Member PRF.RandomFu r
+  , ks F.⊆ (ks V.++ '[d])
+  , V.KnownField d
+  , F.ElemOf (ks V.++ '[d]) d
+  , Real (V.Snd d)
+  , Ord (F.Record ks)
+  )
+  => (Int, Int) -- rectangular grid sizes
+  -> [DistrictP as (ks V.++ '[d])]
+  -> K.Sem r (SOM.SOM Double Double (GridMap.LGridMap Grid.RectSquareGrid) Double (Int, Int) (DistrictP as (ks V.++ '[d])))
+buildSOM (gridW, gridH) sampleFrom = do
+  let g = Grid.rectSquareGrid gridW gridH
+      numSamples = gridW * gridH
+      sampleUniqueIndex is = do
+        newIndex <- PRF.sampleRVar (RandomFu.uniform 0 (length sampleFrom - 1))
+        if newIndex `elem` is then sampleUniqueIndex is else return (newIndex : is)
+  sampleIndices <- FL.foldM (FL.FoldM (\is _ -> sampleUniqueIndex is) (return []) return) [1..numSamples]
+  let samples = fmap (\n -> sampleFrom !! n) sampleIndices
+      gm = GridMap.lazyGridMap g samples
+      n' = fromIntegral (length sampleFrom)
+      lrf = SOM.decayingGaussian 0.5 0.1 0.3 0.1 n'
+      dDiff = districtDiff @ks @d meanAbsMetric
+      dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
+  return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
+      
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -223,34 +262,37 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
 
+  houseVoteShare2018_C <- do
+    houseResults_C <- BR.houseElectionsLoader
+    BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare2018.bin" houseResults_C $ \houseResults -> do
+      let filterHR r = F.rgetField @BR.Year r == 2018
+                       && F.rgetField @BR.Stage r == "gen"
+                       && F.rgetField @BR.Runoff r == False
+                       && F.rgetField @BR.Special r == False
+                       && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
+          houseResults2018 = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, ET.Votes, ET.TotalVotes])
+                         $ F.filterFrame filterHR houseResults
+          houseResults2018F = FMR.concatFold $ FMR.mapReduceFold
+                              FMR.noUnpack
+                              (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                              (FMR.foldAndAddKey votesToVoteShareF)
+      return $ FL.fold houseResults2018F houseResults2018
+
   K.clearIfPresent "mrp/DistrictClusters/clusteredDistricts.bin"
   clusteredDistricts <- K.ignoreCacheTimeM $ do
-    houseResults_C <- BR.houseElectionsLoader
-    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseResults_C
+    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare2018_C
     K.retrieveOrMakeTransformed
       clusterRowsToS
       clusterRowsFromS
       "mrp/DistrictClusters/clusteredDistricts.bin"
-      cachedDeps $ \(pumsByCD, houseResults) -> do
-        let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
-            filterHR r = F.rgetField @BR.Year r == 2018
-                         && F.rgetField @BR.Stage r == "gen"
-                         && F.rgetField @BR.Runoff r == False
-                         && F.rgetField @BR.Special r == False
-                         && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
-            houseResults2018 = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, ET.Votes, ET.TotalVotes])
-                               $ F.filterFrame filterHR houseResults
-            houseResults2018F = FMR.concatFold $ FMR.mapReduceFold
-                                FMR.noUnpack
-                                (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
-                                (FMR.foldAndAddKey votesToVoteShareF)
-          
+      cachedDeps $ \(pumsByCD, houseVoteShare) -> do
+        let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)          
             forClustering = F.toFrame
                             $ catMaybes
                             $ fmap F.recMaybe
                             $ F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
                             (FL.fold districtToWWCBlack pumsByCD)
-                            (FL.fold houseResults2018F houseResults2018)
+                            houseVoteShare
         let initialCentroidsF n 
               = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx            
         rawClusters <- FK.kMeansOneWithClusters @PctWWC @PctBlack @W
@@ -268,22 +310,40 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   logFrame $ F.toFrame $ snd clusteredDistricts
 
 -- SGM
-  let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict] absMetric
-      dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict] (fromIntegral . round)
-      sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
-      sgm0 = SGM.makeSGM (SGM.exponential 0.5 0.5) 20 1 True dDiff dMakeSimilar 
-  districtsForSGM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
+  districtsForSOM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
     pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
+    houseVoteShare <- K.ignoreCacheTime houseVoteShare2018_C
+    let pumsByCDWithVoteShare = catMaybes
+                                $ fmap F.recMaybe
+                                $ F.leftJoin @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                pumsByCD
+                                houseVoteShare
     return
       $ FL.fold
       (FMR.mapReduceFold
        FMR.noUnpack
-       (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+       (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
        (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False rs) FL.list)
       )
-      pumsByCD
-  let sgm = SGM.trainBatch sgm0 districtsForSGM
-  K.logLE K.Info $ "SOM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
+      pumsByCDWithVoteShare
+      
+  let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
+      dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (fromIntegral . round)
+      sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+      sgm0 = SGM.makeSGM (SGM.exponential 0.1 0.5) 20 0.1 True dDiff dMakeSimilar 
+      sgm = SGM.trainBatch sgm0 districtsForSOM
+  K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
+  let gridW = 3
+      gridH = 3
+  som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridW, gridH) districtsForSOM
+  let som = SOM.trainBatch som0 districtsForSOM
+
+  K.logLE K.Info $ "Building SOM heatmap of DemPref"    
+  let districtPref = F.rgetField @ET.DemPref . districtId
+      heatMap0 :: GridMap.LGridMap Grid.RectSquareGrid Double
+      heatMap0  = GridMap.lazyGridMap (Grid.rectSquareGrid gridW gridH) $ replicate (gridW * gridH) 0      
+      heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (+pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
+  K.logLE K.Info $ "SOM pref map:" <> (T.pack $ show heatMap)      
       
     
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
