@@ -75,6 +75,11 @@ import qualified Numeric.GLM.MixedModel            as GLM
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
 
+import qualified Data.Datamining.Clustering.SGM as SGM
+import qualified Data.Word as Word
+
+
+
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
@@ -154,34 +159,20 @@ votesToVoteShareF =
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
-{-
-newtype DemoKey ks = DemoKey { unDemoKey :: F.Record ks }
-deriving instance (Show (F.Record ks)) => Show (DemoKey ks)
-deriving instance (Eq (F.Record ks)) => Eq (DemoKey ks)
-deriving instance (Ord (F.Record ks)) => Ord (DemoKey ks)
 
-instance Bounded (DemoKey '[]) where
-  minBound = DemoKey V.RNil
-  maxBound = DemoKey V.RNil
-
-instance (Bounded (DemoKey ks), V.KnownField t, Bounded (V.Snd t)) => Bounded (DemoKey (t ': ks)) where
-  minBound = DemoKey $ minBound F.&: unDemoKey minBound 
-  maxBound = DemoKey $ maxBound F.&: unDemoKey maxBound 
--}
-
-data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtData :: [F.Record rs] }
+data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtData :: [F.Record rs] } deriving (Generic)
 deriving instance (Show (F.Record as), Show (F.Record rs)) => Show (DistrictP as rs)
+--instance S.Serialize (DistrictP as rs)
 
 absMetric :: [Double] -> [Double] -> Double
 absMetric xs ys =  FL.fold FL.sum $ fmap abs $ zipWith (-) xs ys
 
-districtDiff :: forall ks d as rs f.(Ord (F.Record ks)
-                                    , Foldable f
-                                    , ks F.⊆ rs
-                                    , F.ElemOf rs d
-                                    , V.KnownField d
-                                    , Real (V.Snd d)
-                                    )
+districtDiff :: forall ks d as rs.(Ord (F.Record ks)
+                                  , ks F.⊆ rs
+                                  , F.ElemOf rs d
+                                  , V.KnownField d
+                                  , Real (V.Snd d)
+                                  )
              => ([Double] -> [Double] -> Double) 
              -> DistrictP as rs
              -> DistrictP as rs
@@ -197,16 +188,16 @@ districtDiff metric d1 d2 =
   in FL.fold FL.sum $ fmap abs $ zipWith (-) r1xs r2xs
 
 
-districtMakeSimilar :: forall ks d as f.(Ord (F.Record ks)
-                                        , Foldable f
-                                        , ks F.⊆ (ks V.++ '[d])
-                                        , F.ElemOf (ks V.++ '[d]) d
-                                        , V.KnownField d
-                                        , Real (V.Snd d)
-                                        )
+districtMakeSimilar :: forall ks d as.(Ord (F.Record ks)
+                                      , ks F.⊆ (ks V.++ '[d])
+                                      , F.ElemOf (ks V.++ '[d]) d
+                                      , V.KnownField d
+                                      , Real (V.Snd d)
+                                      )
                     => (Double -> V.Snd d)
                     -> DistrictP as (ks V.++ '[d])
-                    -> Double -> DistrictP as (ks V.++ '[d])
+                    -> Double
+                    -> DistrictP as (ks V.++ '[d])
                     -> DistrictP as (ks V.++ '[d])
 districtMakeSimilar toD tgtD x patD =
   let asMap = FL.fold (FL.premap (\r-> (F.rcast @ks r, F.rgetField @d r)) FL.map)
@@ -275,6 +266,26 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
 
   logFrame $ F.toFrame $ fst clusteredDistricts
   logFrame $ F.toFrame $ snd clusteredDistricts
+
+-- SGM
+  let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict] absMetric
+      dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict] (fromIntegral . round)
+      sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+      sgm0 = SGM.makeSGM (SGM.exponential 0.5 0.5) 20 1 True dDiff dMakeSimilar 
+  districtsForSGM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
+    pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
+    return
+      $ FL.fold
+      (FMR.mapReduceFold
+       FMR.noUnpack
+       (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+       (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False rs) FL.list)
+      )
+      pumsByCD
+  let sgm = SGM.trainBatch sgm0 districtsForSGM
+  K.logLE K.Info $ "SOM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
+      
+    
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
