@@ -24,6 +24,7 @@ module MRP.DistrictClusters where
 
 import qualified Control.Foldl                 as FL
 import           Data.Discrimination            ( Grouping )
+import qualified Data.List as List
 import qualified Data.Map as M
 import           Data.Maybe (catMaybes)
 import qualified Data.Text                     as T
@@ -233,9 +234,9 @@ buildSOM :: forall ks d as r.
   => (Int, Int) -- rectangular grid sizes
   -> [DistrictP as (ks V.++ '[d])]
   -> K.Sem r (SOM.SOM Double Double (GridMap.LGridMap Grid.RectSquareGrid) Double (Int, Int) (DistrictP as (ks V.++ '[d])))
-buildSOM (gridW, gridH) sampleFrom = do
-  let g = Grid.rectSquareGrid gridW gridH
-      numSamples = gridW * gridH
+buildSOM (gridRows, gridCols) sampleFrom = do
+  let g = Grid.rectSquareGrid gridRows gridCols
+      numSamples = gridRows * gridCols
       sampleUniqueIndex is = do
         newIndex <- PRF.sampleRVar (RandomFu.uniform 0 (length sampleFrom - 1))
         if newIndex `elem` is then sampleUniqueIndex is else return (newIndex : is)
@@ -326,24 +327,26 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
        (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False rs) FL.list)
       )
       pumsByCDWithVoteShare
-      
+{-      
   let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
       dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (fromIntegral . round)
       sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
       sgm0 = SGM.makeSGM (SGM.exponential 0.1 0.5) 20 0.1 True dDiff dMakeSimilar 
       sgm = SGM.trainBatch sgm0 districtsForSOM
   K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
-  let gridW = 3
-      gridH = 3
-  som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridW, gridH) districtsForSOM
+-}
+  let gridRows = 4
+      gridCols = 4
+  som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
   let som = SOM.trainBatch som0 districtsForSOM
 
   K.logLE K.Info $ "Building SOM heatmap of DemPref"    
   let districtPref = F.rgetField @ET.DemPref . districtId
-      heatMap0 :: GridMap.LGridMap Grid.RectSquareGrid Double
-      heatMap0  = GridMap.lazyGridMap (Grid.rectSquareGrid gridW gridH) $ replicate (gridW * gridH) 0      
-      heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (+pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
-  K.logLE K.Info $ "SOM pref map:" <> (T.pack $ show heatMap)      
+      heatMap0 :: GridMap.LGridMap Grid.RectSquareGrid (Int, Double)
+      heatMap0  = GridMap.lazyGridMap (Grid.rectSquareGrid gridRows gridCols) $ replicate (gridRows * gridCols) (0, 0)
+      adjustOne pref (districts, avgPref)  = (districts + 1, ((realToFrac districts * avgPref) + pref)/(realToFrac $ districts + 1))
+      heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (adjustOne pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
+  K.logLE K.Info $ "SOM pref heatMap:" <> (T.pack $ show heatMap)      
       
     
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -363,9 +366,37 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst clusteredDistricts)
              (fmap F.rcast $ snd clusteredDistricts)
+        _ <- K.addHvega Nothing Nothing
+             $ somRectHeatMap
+             "District SOM Heat Map"
+             (FV.ViewConfig 800 800 10)
+             heatMap
         brAddMarkDown brReadMore
 
 
+somRectHeatMap :: T.Text
+               -> FV.ViewConfig
+               -> GridMap.LGridMap Grid.RectSquareGrid (Int, Double)
+               -> GV.VegaLite
+somRectHeatMap title vc gm =
+  let asList = List.sortOn fst $ GridMap.toList gm
+      dataRows = fmap (\((r, c),(n, p)) -> GV.dataRow [("Row", GV.Number $ realToFrac r)
+                                                      , ("Col", GV.Number $ realToFrac c)
+                                                      , ("Num Districts", GV.Number $ realToFrac n)
+                                                      , ("Avg D Margin", GV.Number (p - 0.5))
+                                                      ])
+                 asList
+      dat = GV.dataFromRows [] . FL.fold (FL.Fold (\f g -> f . g) id id) dataRows
+      encX = GV.position GV.X [GV.PName "Col", GV.PmType GV.Ordinal]
+      encY = GV.position GV.Y [GV.PName "Row", GV.PmType GV.Ordinal]
+      encColor = GV.color [GV.MName "Avg D Margin", GV.MmType GV.Quantitative]
+      encSize = GV.size [GV.MName "Num Districts", GV.MmType GV.Quantitative]
+      enc = (GV.encoding . encX . encY . encColor) []
+      mark = GV.mark GV.Rect []
+  in FV.configuredVegaLite vc [FV.title title, enc , mark, dat []]
+      
+
+           
 clusterVL :: forall x y f.
              (Foldable f
              , FV.ToVLDataValue (F.ElField x)
