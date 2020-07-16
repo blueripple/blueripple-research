@@ -327,7 +327,7 @@ recStreamLoader
   -> t m (F.Record rs)
 recStreamLoader dataPath parserOptionsM filterM fixRow = do
   let csvParserOptions =
-        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+        F.defaultParser { F.quotingMode = F.RFC4180Quoting '"' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter = fromMaybe (const True) filterM
   path <- Streamly.yieldM $ liftIO $ getPath dataPath

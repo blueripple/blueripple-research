@@ -248,7 +248,6 @@ buildSOM (gridRows, gridCols) sampleFrom = do
       dDiff = districtDiff @ks @d meanAbsMetric
       dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
   return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
-      
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -263,9 +262,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
 
+  K.clearIfPresent "mrp/DistrictClusters/houseVoteShare2018.bin"
   houseVoteShare2018_C <- do
     houseResults_C <- BR.houseElectionsLoader
     BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare2018.bin" houseResults_C $ \houseResults -> do
+--      logFrame houseResults
       let filterHR r = F.rgetField @BR.Year r == 2018
                        && F.rgetField @BR.Stage r == "gen"
                        && F.rgetField @BR.Runoff r == False
@@ -277,6 +278,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                               FMR.noUnpack
                               (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                               (FMR.foldAndAddKey votesToVoteShareF)
+      logFrame $ F.filterFrame filterHR houseResults
       return $ FL.fold houseResults2018F houseResults2018
 
   K.clearIfPresent "mrp/DistrictClusters/clusteredDistricts.bin"
@@ -286,7 +288,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       clusterRowsToS
       clusterRowsFromS
       "mrp/DistrictClusters/clusteredDistricts.bin"
-      cachedDeps $ \(pumsByCD, houseVoteShare) -> do
+      cachedDeps $ \(pumsByCD, houseVoteShare) -> do      
         let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)          
             forClustering = F.toFrame
                             $ catMaybes
@@ -327,6 +329,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
        (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False rs) FL.list)
       )
       pumsByCDWithVoteShare
+
+  K.logLE K.Info $ "Working with " <> (T.pack $ show (FL.fold FL.length districtsForSOM)) <> " districts." 
 {-      
   let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
       dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (fromIntegral . round)
@@ -335,8 +339,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       sgm = SGM.trainBatch sgm0 districtsForSOM
   K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
 -}
-  let gridRows = 4
-      gridCols = 4
+  let gridRows = 5
+      gridCols = 5
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
   let som = SOM.trainBatch som0 districtsForSOM
 
@@ -347,8 +351,53 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       adjustOne pref (districts, avgPref)  = (districts + 1, ((realToFrac districts * avgPref) + pref)/(realToFrac $ districts + 1))
       heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (adjustOne pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
   K.logLE K.Info $ "SOM pref heatMap:" <> (T.pack $ show heatMap)      
-      
-    
+  K.logLE K.Info $ "Building neighbor plot for SOM"
+  let gm = SOM.toGridMap som
+      bmus :: forall k p x t d gm. (Grid.Index (gm p) ~ k
+                                   , Grid.Index (GridMap.BaseGrid gm p) ~ k
+                                   , Grid.Index (GridMap.BaseGrid gm x) ~ k
+                                   , GridMap.GridMap gm p
+                                   , GridMap.GridMap gm x
+                                   , Grid.Grid (gm p)
+                                   , Num t
+                                   , Num x
+                                   , Num d
+                                   , Ord x
+                                   , Ord k                                   
+                                   ) => (p -> p -> x) -> SOM.SOM t d gm x k p -> p -> Maybe [(k, x)]
+      bmus diff som p = do
+        let gm = SOM.toGridMap som
+            k1 = SOM.classify som p
+        n1 <- GridMap.lookup k1 gm
+        let neighbors = Grid.neighbours (GridMap.toGrid gm) k1
+            neighborIndexAndDiff :: k -> Maybe (k, x)
+            neighborIndexAndDiff k = do
+              nn <- GridMap.lookup k gm
+              return $ (k, diff p nn)
+        neighborDiffs <- traverse neighborIndexAndDiff neighbors
+        return $ (k1, diff n1 p) : neighborDiffs
+      coords :: [((Int, Int), Double)] -> (Double, Double)
+      coords ns =
+        let bmu = head ns
+            bmuD = snd bmu
+            wgt = snd
+            sumWgtF = FL.premap (\(_,d) -> 1/d) FL.sum
+            avgXF = (/) <$> (FL.premap (\((x,_),d) -> realToFrac x/d) FL.sum) <*> sumWgtF
+            avgYF = (/) <$> (FL.premap (\((_,y),d) -> realToFrac y/d) FL.sum) <*> sumWgtF
+        in case bmuD of
+          0 -> (\(x, y) -> (realToFrac x, realToFrac y)) $ fst bmu          
+          _ -> FL.fold ((,) <$> avgXF <*> avgYF) ns
+      districtSOMCoords :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
+                    -> Maybe (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, '("X",Double), '("Y", Double)])
+      districtSOMCoords d = do
+        let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
+        (x, y) <- coords <$> bmus dDiff som d
+        let xyRec :: F.Record ['("X", Double), '("Y", Double)] = x F.&: y F.&: V.RNil
+        return $ V.rappend (districtId d) xyRec
+
+  districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForSOM)  
+  logFrame districtsOnMap
+        
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
@@ -371,14 +420,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
              "District SOM Heat Map"
              (FV.ViewConfig 800 800 10)
              heatMap
+             districtsOnMap
         brAddMarkDown brReadMore
 
 
-somRectHeatMap :: T.Text
+somRectHeatMap :: Foldable f
+               => T.Text
                -> FV.ViewConfig
                -> GridMap.LGridMap Grid.RectSquareGrid (Int, Double)
+               -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, '("X",Double), '("Y", Double)])
                -> GV.VegaLite
-somRectHeatMap title vc gm =
+somRectHeatMap title vc gm distRows =
   let asList = List.sortOn fst $ GridMap.toList gm
       dataRows = fmap (\((r, c),(n, p)) -> GV.dataRow [("Row", GV.Number $ realToFrac r)
                                                       , ("Col", GV.Number $ realToFrac c)
@@ -386,14 +438,24 @@ somRectHeatMap title vc gm =
                                                       , ("Avg D Margin", GV.Number (p - 0.5))
                                                       ])
                  asList
-      dat = GV.dataFromRows [] . FL.fold (FL.Fold (\f g -> f . g) id id) dataRows
-      encX = GV.position GV.X [GV.PName "Col", GV.PmType GV.Ordinal]
-      encY = GV.position GV.Y [GV.PName "Row", GV.PmType GV.Ordinal]
+      somDat = GV.dataFromRows [] . FL.fold (FL.Fold (\f g -> f . g) id id) dataRows      
+      encX = GV.position GV.X [GV.PName "Col", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "Row", GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Avg D Margin", GV.MmType GV.Quantitative]
       encSize = GV.size [GV.MName "Num Districts", GV.MmType GV.Quantitative]
       enc = (GV.encoding . encX . encY . encColor) []
       mark = GV.mark GV.Rect []
-  in FV.configuredVegaLite vc [FV.title title, enc , mark, dat []]
+      hmSpec = GV.asSpec [enc, mark, somDat []]      
+      distDat = FV.recordsToVLData id FV.defaultParse distRows
+      makeLabel = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      prefToShare = GV.calculateAs "datum.DemPref - 0.5" "D Vote Share"
+      encDX = GV.position GV.X [GV.PName "X", GV.PmType GV.Quantitative]
+      encDY = GV.position GV.Y [GV.PName "Y", GV.PmType GV.Quantitative]
+      encDColor = GV.color [GV.MName "D Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encD = (GV.encoding . encDX . encDY . encDColor) []
+      markD = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+      distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare . makeLabel) [], distDat]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec]]
       
 
            
