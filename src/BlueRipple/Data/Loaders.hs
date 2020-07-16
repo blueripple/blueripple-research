@@ -79,9 +79,10 @@ electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Not
 
 
 parsePEParty :: T.Text -> ET.PartyT
-parsePEParty "democrat"   = ET.Democratic
-parsePEParty "republican" = ET.Republican
-parsePEParty _            = ET.Other
+parsePEParty t
+  | T.isInfixOf "democrat" t = ET.Democratic
+  | T.isInfixOf "republican" t = ET.Republican
+  | otherwise = ET.Other
 
 type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidatevotes, BR.Totalvotes, BR.Party]
 type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office, ET.Party, ET.Votes, ET.TotalVotes]

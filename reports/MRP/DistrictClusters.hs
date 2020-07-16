@@ -26,7 +26,7 @@ import qualified Control.Foldl                 as FL
 import           Data.Discrimination            ( Grouping )
 import qualified Data.List as List
 import qualified Data.Map as M
-import           Data.Maybe (catMaybes)
+import           Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as Serialize
 import qualified Data.Vector                   as Vec
@@ -85,9 +85,9 @@ import qualified Math.Geometry.Grid.Square as Grid
 import qualified Math.Geometry.GridMap as GridMap
 import qualified Math.Geometry.GridMap.Lazy as GridMap 
 import qualified Data.Random.Distribution.Uniform as RandomFu
+import qualified Data.Random as RandomFu
+
 import qualified Data.Word as Word
-
-
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -262,7 +262,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
 
-  K.clearIfPresent "mrp/DistrictClusters/houseVoteShare2018.bin"
   houseVoteShare2018_C <- do
     houseResults_C <- BR.houseElectionsLoader
     BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare2018.bin" houseResults_C $ \houseResults -> do
@@ -281,7 +280,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       logFrame $ F.filterFrame filterHR houseResults
       return $ FL.fold houseResults2018F houseResults2018
 
-  K.clearIfPresent "mrp/DistrictClusters/clusteredDistricts.bin"
   clusteredDistricts <- K.ignoreCacheTimeM $ do
     let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare2018_C
     K.retrieveOrMakeTransformed
@@ -316,11 +314,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   districtsForSOM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
     pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
     houseVoteShare <- K.ignoreCacheTime houseVoteShare2018_C
-    let pumsByCDWithVoteShare = catMaybes
-                                $ fmap F.recMaybe
-                                $ F.leftJoin @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
-                                pumsByCD
-                                houseVoteShare
+    let (pumsByCDWithVoteShare, missing) = FJ.leftJoinWithMissing  @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                           pumsByCD
+                                           houseVoteShare
+    K.logLE K.Info $ "Districts with missing house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing)
     return
       $ FL.fold
       (FMR.mapReduceFold
@@ -339,10 +336,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       sgm = SGM.trainBatch sgm0 districtsForSOM
   K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
 -}
-  let gridRows = 5
-      gridCols = 5
+  let gridRows = 2
+      gridCols = 2
+  randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM 
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
-  let som = SOM.trainBatch som0 districtsForSOM
+  let som = SOM.trainBatch som0 randomOrderDistricts
 
   K.logLE K.Info $ "Building SOM heatmap of DemPref"    
   let districtPref = F.rgetField @ET.DemPref . districtId
@@ -432,6 +430,7 @@ somRectHeatMap :: Foldable f
                -> GV.VegaLite
 somRectHeatMap title vc gm distRows =
   let asList = List.sortOn fst $ GridMap.toList gm
+      (nRows, nCols) = FL.fold ((,) <$> (fmap (fromMaybe 0) (FL.premap (fst . fst) FL.maximum)) <*> (fmap (fromMaybe 0) (FL.premap (snd . fst) FL.maximum))) asList  
       dataRows = fmap (\((r, c),(n, p)) -> GV.dataRow [("Row", GV.Number $ realToFrac r)
                                                       , ("Col", GV.Number $ realToFrac c)
                                                       , ("Num Districts", GV.Number $ realToFrac n)
@@ -449,12 +448,15 @@ somRectHeatMap title vc gm distRows =
       distDat = FV.recordsToVLData id FV.defaultParse distRows
       makeLabel = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
       prefToShare = GV.calculateAs "datum.DemPref - 0.5" "D Vote Share"
-      encDX = GV.position GV.X [GV.PName "X", GV.PmType GV.Quantitative]
-      encDY = GV.position GV.Y [GV.PName "Y", GV.PmType GV.Quantitative]
+      encDX = GV.position GV.X [GV.PName "X", GV.PmType GV.Quantitative, GV.PAxis [GV.AxValues $ GV.Numbers $  fmap realToFrac [0..nRows]]]
+      encDY = GV.position GV.Y [GV.PName "Y", GV.PmType GV.Quantitative, GV.PAxis [GV.AxValues $ GV.Numbers $  fmap realToFrac [0..nCols]]]
       encDColor = GV.color [GV.MName "D Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
       encD = (GV.encoding . encDX . encDY . encDColor) []
       markD = GV.mark GV.Circle [GV.MTooltip GV.TTData]
-      distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare . makeLabel) [], distDat]
+      scalesD = GV.selection
+                . GV.select "scalesD" GV.Interval [GV.BindScales]
+                . GV.select "labelsS" GV.Single [GV.Fields ["District"], GV.Bind [GV.ICheckbox "Labels" []]]
+      distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare . makeLabel) [], scalesD [],  distDat]
   in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec]]
       
 
