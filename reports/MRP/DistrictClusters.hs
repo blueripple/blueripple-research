@@ -39,6 +39,7 @@ import           Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Frames as F
 import qualified Frames.Melt as F
+import qualified Frames.CSV as F
 import qualified Frames.InCore                 as FI
 import qualified Polysemy.Error as P
 import qualified Polysemy.RandomFu             as PRF
@@ -135,8 +136,19 @@ addPUMSZerosF =
                                                                   
 type PctWWC = "PctWWC" F.:-> Double
 type PctBlack = "PctBlack" F.:-> Double
-type W = "w" F.:-> Double
+type PctNonWhite = "PctNonWhite" F.:-> Double
+type PctYoung = "PctYoung" F.:-> Double
+type VoteShare2016 = "2016Share" F.:-> Double
+type Cluster = "Cluster" F.:-> (Int, Int)
 
+type instance FI.VectorFor (Int, Int) = K.Vector
+
+isWWC r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx && F.rgetField @DT.CollegeGradC r == DT.Grad
+isBlack r =  F.rgetField @DT.Race5C r == DT.R5_Black
+isNonWhite r =  F.rgetField @DT.Race5C r /= DT.R5_WhiteNonLatinx
+isYoung r = F.rgetField @DT.SimpleAgeC r == DT.Under
+
+type W = "w" F.:-> Double
 
 districtToWWCBlack :: FL.Fold
                         (F.Record (PUMS.CDCounts DT.CatColsASER5))
@@ -144,8 +156,8 @@ districtToWWCBlack :: FL.Fold
 districtToWWCBlack =
   let districtToXYW :: FL.Fold (F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])) (F.Record [PctWWC, PctBlack, W])
       districtToXYW =
-        let isWWC r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx && F.rgetField @DT.CollegeGradC r == DT.Grad
-            isBlack r =  F.rgetField @DT.Race5C r == DT.R5_Black
+        let --isWWC r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx && F.rgetField @DT.CollegeGradC r == DT.Grad
+            --isBlack r =  F.rgetField @DT.Race5C r == DT.R5_Black
             citizens = realToFrac . F.rgetField @PUMS.Citizens        
             citizensF = FL.premap citizens FL.sum
             pctWWCF = (/) <$> FL.prefilter isWWC (FL.premap citizens FL.sum) <*> citizensF
@@ -265,7 +277,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   houseVoteShare2018_C <- do
     houseResults_C <- BR.houseElectionsLoader
     BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare2018.bin" houseResults_C $ \houseResults -> do
---      logFrame houseResults
       let filterHR r = F.rgetField @BR.Year r == 2018
                        && F.rgetField @BR.Stage r == "gen"
                        && F.rgetField @BR.Runoff r == False
@@ -277,7 +288,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                               FMR.noUnpack
                               (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                               (FMR.foldAndAddKey votesToVoteShareF)
-      logFrame $ F.filterFrame filterHR houseResults
       return $ FL.fold houseResults2018F houseResults2018
 
   clusteredDistricts <- K.ignoreCacheTimeM $ do
@@ -307,10 +317,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                        forClustering
         return $ FK.clusteredRowsFull @PctWWC @PctBlack @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
 
-  logFrame $ F.toFrame $ fst clusteredDistricts
-  logFrame $ F.toFrame $ snd clusteredDistricts
-
--- SGM
+-- SOM
   districtsForSOM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
     pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
     houseVoteShare <- K.ignoreCacheTime houseVoteShare2018_C
@@ -348,7 +355,22 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       heatMap0  = GridMap.lazyGridMap (Grid.rectSquareGrid gridRows gridCols) $ replicate (gridRows * gridCols) (0, 0)
       adjustOne pref (districts, avgPref)  = (districts + 1, ((realToFrac districts * avgPref) + pref)/(realToFrac $ districts + 1))
       heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (adjustOne pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
-  K.logLE K.Info $ "SOM pref heatMap:" <> (T.pack $ show heatMap)      
+  K.logLE K.Info $ "Building cluster table"
+  let distStats :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
+                -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]
+      distStats d =
+        let vac = F.rgetField @PUMS.Citizens
+            vacF = fmap realToFrac $ FL.premap vac FL.sum
+            pctWWCF = (/) <$> FL.prefilter isWWC vacF <*> vacF
+            pctNonWhite = (/) <$> FL.prefilter isNonWhite vacF <*> vacF
+            pctYoung = (/) <$> FL.prefilter isYoung vacF <*> vacF
+            statsRec :: [F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])] -> F.Record [PctWWC, PctNonWhite, PctYoung]
+            statsRec rs = FL.fold ((\x y z -> x F.&: y F.&: z F.&: V.RNil) <$> pctWWCF <*> pctNonWhite <*> pctYoung) rs
+            clusterRec :: F.Record '[Cluster] = SOM.classify som d F.&: V.RNil
+        in districtId d F.<+> statsRec (districtData d) F.<+> clusterRec
+      withStatsF = F.toFrame $ fmap distStats districtsForSOM
+  logFrame withStatsF
+--  K.liftKnit $ F.writeCSV "districtStats.csv" withStatsF
   K.logLE K.Info $ "Building neighbor plot for SOM"
   let gm = SOM.toGridMap som
       bmus :: forall k p x t d gm. (Grid.Index (gm p) ~ k

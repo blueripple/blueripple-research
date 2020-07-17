@@ -22,11 +22,12 @@ import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import           Data.Data                      ( Data )
 import           Data.Typeable                  ( Typeable )
+import qualified Data.Random.Source.PureMT     as PureMT
 
 import qualified Frames                        as F
 
 import qualified Knit.Report                   as K
-import           Polysemy.RandomFu              (runRandomIO)
+import           Polysemy.RandomFu              (runRandomIO, runRandomIOPureMT)
 
 import           Data.String.Here               ( here )
 
@@ -114,6 +115,7 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
+  let pureMTseed = PureMT.pureMT 1 
   let logFilter = if debug args > 0
                   then K.logDebug (debug args)
                   else case (diagnostics args) of                         
@@ -125,7 +127,7 @@ main = do
         , K.pandocWriterConfig = pandocWriterConfig
         }      
   eitherDocs <-
-    K.knitHtmls knitConfig $ runRandomIO $ do
+    K.knitHtmls knitConfig $ runRandomIOPureMT pureMTseed $ do
       stateCrossWalkFrame <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
       let statesFromAbbreviations = M.fromList $ fmap (\r -> (F.rgetField @StateAbbreviation r, F.rgetField @StateName r)) $ FL.fold FL.list stateCrossWalkFrame
       K.logLE K.Info "Knitting docs..."      
