@@ -336,8 +336,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       sgm = SGM.trainBatch sgm0 districtsForSOM
   K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
 -}
-  let gridRows = 2
-      gridCols = 2
+  let gridRows = 3
+      gridCols = 3
   randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM 
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
   let som = SOM.trainBatch som0 randomOrderDistricts
@@ -453,11 +453,13 @@ somRectHeatMap title vc gm distRows =
       encDColor = GV.color [GV.MName "D Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
       encD = (GV.encoding . encDX . encDY . encDColor) []
       markD = GV.mark GV.Circle [GV.MTooltip GV.TTData]
-      scalesD = GV.selection
+      selectionD = GV.selection
                 . GV.select "scalesD" GV.Interval [GV.BindScales]
-                . GV.select "labelsS" GV.Single [GV.Fields ["District"], GV.Bind [GV.ICheckbox "Labels" []]]
-      distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare . makeLabel) [], scalesD [],  distDat]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec]]
+      selectionL = GV.selection . GV.select "labelsS" GV.Single [GV.Fields ["District"], GV.Bind [GV.ICheckbox "District" [GV.InName "Labels"]]]
+      distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare) [], selectionD [],  distDat]
+      encT = GV.text [GV.TSelectionCondition (GV.Expr "labelsS") [GV.TName "District"] []] 
+      lSpec = GV.asSpec [(GV.encoding . encDX . encDY . encT) [], (GV.transform . makeLabel)  [], (GV.mark GV.Text []), selectionL [] , distDat]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec, lSpec]]
       
 
            
