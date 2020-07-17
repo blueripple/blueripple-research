@@ -447,6 +447,7 @@ somRectHeatMap title vc gm distRows =
       hmSpec = GV.asSpec [enc, mark, somDat []]      
       distDat = FV.recordsToVLData id FV.defaultParse distRows
       makeLabel = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      makeToggle = GV.calculateAs "\"Off\"" "Labels"
       prefToShare = GV.calculateAs "datum.DemPref - 0.5" "D Vote Share"
       encDX = GV.position GV.X [GV.PName "X", GV.PmType GV.Quantitative, GV.PAxis [GV.AxValues $ GV.Numbers $  fmap realToFrac [0..nRows]]]
       encDY = GV.position GV.Y [GV.PName "Y", GV.PmType GV.Quantitative, GV.PAxis [GV.AxValues $ GV.Numbers $  fmap realToFrac [0..nCols]]]
@@ -455,9 +456,9 @@ somRectHeatMap title vc gm distRows =
       markD = GV.mark GV.Circle [GV.MTooltip GV.TTData]
       selectionD = GV.selection
                 . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
-      selectionL = GV.selection . GV.select "labelsS" GV.Single [GV.Fields ["District"], GV.Bind [GV.ICheckbox "District" [GV.InName "Labels"]]]
+      selectionL = GV.selection . GV.select "LabelsS" GV.Single [GV.Fields ["Labels"], GV.Bind [GV.ICheckbox "Labels" [GV.InName "District Labels"]]]
       distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare) [], selectionD [],  distDat]
-      encT = GV.text [GV.TSelectionCondition (GV.Expr "labelsS") [] [GV.TName "District"]] 
+      encT = GV.text [GV.TSelectionCondition (GV.SelectionName "LabelsS") [] [GV.TName "District", GV.TmType GV.Nominal]] 
       lSpec = GV.asSpec [(GV.encoding . encDX . encDY . encT) [], (GV.transform . makeLabel)  [], GV.mark GV.Text [], selectionL [] , distDat]
   in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec, lSpec]]
       
