@@ -454,11 +454,11 @@ somRectHeatMap title vc gm distRows =
       encD = (GV.encoding . encDX . encDY . encDColor) []
       markD = GV.mark GV.Circle [GV.MTooltip GV.TTData]
       selectionD = GV.selection
-                . GV.select "scalesD" GV.Interval [GV.BindScales]
+                . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
       selectionL = GV.selection . GV.select "labelsS" GV.Single [GV.Fields ["District"], GV.Bind [GV.ICheckbox "District" [GV.InName "Labels"]]]
       distSpec = GV.asSpec [encD, markD, (GV.transform . prefToShare) [], selectionD [],  distDat]
-      encT = GV.text [GV.TSelectionCondition (GV.Expr "labelsS") [GV.TName "District"] []] 
-      lSpec = GV.asSpec [(GV.encoding . encDX . encDY . encT) [], (GV.transform . makeLabel)  [], (GV.mark GV.Text []), selectionL [] , distDat]
+      encT = GV.text [GV.TSelectionCondition (GV.Expr "labelsS") [] [GV.TName "District"]] 
+      lSpec = GV.asSpec [(GV.encoding . encDX . encDY . encT) [], (GV.transform . makeLabel)  [], GV.mark GV.Text [], selectionL [] , distDat]
   in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec, lSpec]]
       
 
