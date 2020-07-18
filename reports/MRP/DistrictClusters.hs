@@ -23,6 +23,7 @@
 module MRP.DistrictClusters where
 
 import qualified Control.Foldl                 as FL
+import qualified Control.Monad.State           as State
 import           Data.Discrimination            ( Grouping )
 import qualified Data.List as List
 import qualified Data.Map as M
@@ -87,6 +88,7 @@ import qualified Math.Geometry.GridMap as GridMap
 import qualified Math.Geometry.GridMap.Lazy as GridMap 
 import qualified Data.Random.Distribution.Uniform as RandomFu
 import qualified Data.Random as RandomFu
+import qualified Data.Sparse.SpMatrix as SLA
 
 import qualified Data.Word as Word
 
@@ -260,6 +262,37 @@ buildSOM (gridRows, gridCols) sampleFrom = do
       dDiff = districtDiff @ks @d meanAbsMetric
       dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
   return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
+
+
+-- NB: Weight is chosen so that for exactly the same and equidistributed,
+-- tr (M'M) = (numPats * numPats)/numClusters
+sameClusterMatrix :: forall c v k p dk. (SOM.Classifier c v k p, Ord dk, Eq k, Ord v) => (p -> dk) -> c v k p -> [p] -> SLA.SpMatrix Int
+sameClusterMatrix getKey som ps =
+  let numPats = length ps
+      getCluster :: p -> State.State (M.Map dk k) k
+      getCluster p = do
+        let k = getKey p
+        m <- State.get
+        case M.lookup k m of
+          Just c -> return c
+          Nothing -> do
+            let c = SOM.classify som p
+            State.put (M.insert k c m)
+            return c      
+      go :: (Int, [p]) -> State.State (M.Map dk k) [(Int, Int, Int)]
+      go (n, ps) = do
+        ks <- traverse getCluster ps
+        let f k1 (k2, m) = if k1 == k2 then Just (n, m, 1) else Nothing
+            swapIndices (a, b, h) = (b, a, h) 
+        case ks of
+          [] -> return []
+          (kh : kt) -> do
+            let upper = catMaybes (fmap (f kh) $ zip kt [(n+1)..])
+                lower = fmap swapIndices upper
+            return $ (n,n,1) : (upper ++ lower)
+      scM = List.concat <$> (traverse go (zip [0..] $ List.tails ps))
+  in SLA.fromListSM (numPats, numPats) $ State.evalState scM M.empty
+      
      
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
@@ -345,9 +378,29 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
 -}
   let gridRows = 3
       gridCols = 3
-  randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM 
+      numDists = length districtsForSOM
+  randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM  
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
   let som = SOM.trainBatch som0 randomOrderDistricts
+  K.logLE K.Info $ "SOM Diagnostics"  
+  let scm = sameClusterMatrix districtId som districtsForSOM
+      effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
+  K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)
+  let numComps = 10
+      compFactor = effClusters / realToFrac (numDists * numDists)
+  K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " different SOMs"
+  som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM) [1..numComps]
+  let soms = fmap (\s -> SOM.trainBatch s randomOrderDistricts) som0s
+      scms = fmap (\s -> sameClusterMatrix districtId s districtsForSOM) soms
+      pairsWithFirst l = case l of
+        [] -> []
+        (x : []) -> []
+        (x : xs) -> fmap (x,) xs
+      allDiffPairs = List.concat . fmap pairsWithFirst . List.tails
+      allDiffSCMPairs = allDiffPairs scms
+      allDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffSCMPairs
+      (meanC, stdC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffTraces
+  K.logLE K.Info $ "<comp> = " <> (T.pack $ show meanC) <> "; sigma(comp)=" <> (T.pack $ show stdC)
 
   K.logLE K.Info $ "Building SOM heatmap of DemPref"    
   let districtPref = F.rgetField @ET.DemPref . districtId

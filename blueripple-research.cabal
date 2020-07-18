@@ -200,6 +200,7 @@ executable mrp-model
                , pandoc
                , polysemy-RandomFu
                , som > 10.0 && < 10.2
+               , sparse-linear-algebra
                , blueripple-research
                , glm-haskell
                , time
