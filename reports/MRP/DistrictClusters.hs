@@ -293,7 +293,23 @@ sameClusterMatrix getKey som ps =
       scM = List.concat <$> (traverse go (zip [0..] $ List.tails ps))
   in SLA.fromListSM (numPats, numPats) $ State.evalState scM M.empty
       
-     
+
+randomSCM :: K.Member GLM.RandomFu r => Int -> Int -> K.Sem r (SLA.SpMatrix Int)
+randomSCM nPats nClusters = do
+  clustered <- traverse (const $ PRF.sampleRVar (RandomFu.uniform 0 nClusters)) [1..nPats]
+  let go :: (Int, [Int]) -> [(Int, Int, Int)]
+      go (n, ks) =
+        let f k1 (k2, m) = if k1 == k2 then Just (n, m, 1) else Nothing
+            swapIndices (a, b, h) = (b, a, h)
+        in case ks of
+          [] -> []
+          (kh : kt) ->
+            let upper = catMaybes (fmap (f kh) $ zip kt [(n+1)..])
+                lower = fmap swapIndices upper
+            in (n,n,1) : (upper ++ lower)
+      scM = List.concat $ fmap go $ zip [0..] $ List.tails clustered
+  return $ SLA.fromListSM (nPats, nPats) scM
+  
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
 
@@ -401,6 +417,16 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       allDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffSCMPairs
       (meanC, stdC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffTraces
   K.logLE K.Info $ "<comp> = " <> (T.pack $ show meanC) <> "; sigma(comp)=" <> (T.pack $ show stdC)
+  K.logLE K.Info $ "Generating random ones for comparison"
+  randomSCMs <- traverse (const $ randomSCM numDists (gridRows * gridCols)) [1..numComps]
+  let allSameEffClusters = fmap (\scm ->  realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)) randomSCMs
+      (meanRCs, stdRCs) = FL.fold ((,) <$> FL.mean <*> FL.std) allSameEffClusters
+  K.logLE K.Info $ "Random SCMs: <eff Clusters> = " <> (T.pack $ show meanRCs) <> "; sigma(eff Clusters)=" <> (T.pack $ show stdRCs)      
+  let allDiffPairsRandom = allDiffPairs randomSCMs
+      randomCompFactor = meanRCs / realToFrac (numDists * numDists)
+      allRandomDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffPairsRandom
+      (meanRS, stdRS) = FL.fold ((,) <$> FL.mean <*> FL.std) allRandomDiffTraces
+  K.logLE K.Info $ "Random SCs: <comp> = " <> (T.pack $ show meanRS) <> "; sigma(comp)=" <> (T.pack $ show stdRS)
 
   K.logLE K.Info $ "Building SOM heatmap of DemPref"    
   let districtPref = F.rgetField @ET.DemPref . districtId
