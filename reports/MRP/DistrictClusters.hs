@@ -274,24 +274,24 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
       return $ FL.fold addPUMSZerosF pumsCDRollup
 
-  houseVoteShare2018_C <- do
+  houseVoteShare_C <- do
     houseResults_C <- BR.houseElectionsLoader
-    BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare2018.bin" houseResults_C $ \houseResults -> do
-      let filterHR r = F.rgetField @BR.Year r == 2018
+    BR.retrieveOrMakeFrame "mrp/DistrictClusters/houseVoteShare.bin" houseResults_C $ \houseResultsRaw -> do
+      let filterHR r = F.rgetField @BR.Year r `elem` [2016, 2018]
                        && F.rgetField @BR.Stage r == "gen"
                        && F.rgetField @BR.Runoff r == False
                        && F.rgetField @BR.Special r == False
                        && (F.rgetField @ET.Party r == ET.Democratic || F.rgetField @ET.Party r == ET.Republican)
-          houseResults2018 = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, ET.Votes, ET.TotalVotes])
-                         $ F.filterFrame filterHR houseResults
-          houseResults2018F = FMR.concatFold $ FMR.mapReduceFold
+          houseResults = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, ET.Votes, ET.TotalVotes])
+                         $ F.filterFrame filterHR houseResultsRaw
+          houseResultsF = FMR.concatFold $ FMR.mapReduceFold
                               FMR.noUnpack
                               (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                               (FMR.foldAndAddKey votesToVoteShareF)
-      return $ FL.fold houseResults2018F houseResults2018
+      return $ FL.fold houseResultsF houseResults
 
   clusteredDistricts <- K.ignoreCacheTimeM $ do
-    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare2018_C
+    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare_C
     K.retrieveOrMakeTransformed
       clusterRowsToS
       clusterRowsFromS
@@ -320,7 +320,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
 -- SOM
   districtsForSOM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
     pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
-    houseVoteShare <- K.ignoreCacheTime houseVoteShare2018_C
+    houseVoteShare <- K.ignoreCacheTime houseVoteShare_C
     let (pumsByCDWithVoteShare, missing) = FJ.leftJoinWithMissing  @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                                            pumsByCD
                                            houseVoteShare
@@ -368,19 +368,28 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
             statsRec rs = FL.fold ((\x y z -> x F.&: y F.&: z F.&: V.RNil) <$> pctWWCF <*> pctNonWhite <*> pctYoung) rs
             clusterRec :: F.Record '[Cluster] = SOM.classify som d F.&: V.RNil
         in districtId d F.<+> statsRec (districtData d) F.<+> clusterRec
-      districtsWithStatsF = F.toFrame $ fmap distStats districtsForSOM      
---  logFrame districtsWithStatsF
-  let dwsCollonnade :: BR.CellStyle (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]) T.Text
-                    -> K.Colonnade K.Headed (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]) K.Cell
+  districtsWithStatsF :: F.FrameRec [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016] <- do
+    houseVoteShare <- K.ignoreCacheTime houseVoteShare_C    
+    let voteShare2016 = fmap (FT.replaceColumn @ET.DemPref @VoteShare2016 id . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref])
+                        $ F.filterFrame ((==2016) . F.rgetField @BR.Year) houseVoteShare
+        (districtsWithStats, missing2016Share)  = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict]
+                                                  (F.toFrame $ fmap distStats districtsForSOM)
+                                                  voteShare2016
+    K.logLE K.Info $ "Districts with missing 2016 house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing2016Share)
+    return $ F.toFrame districtsWithStats
+-- logFrame districtsWithStatsF
+  let dwsCollonnade :: BR.CellStyle (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016]) T.Text
+                    -> K.Colonnade K.Headed (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016]) K.Cell
       dwsCollonnade cas =
         let x = 2
         in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
         <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict))
         <> K.headed "Cluster" (BR.toCell cas "% Under 45" "% Under 45" (BR.textToStyledHtml  . T.pack . show . F.rgetField @Cluster))
-        <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctWWC))
-        <> K.headed "% Non-White" (BR.toCell cas "% Non-White" "% Non-White" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctNonWhite))
-        <> K.headed "% Under 45" (BR.toCell cas "% Under 45" "% Under 45" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctNonWhite))
-        <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @ET.DemPref))
+        <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctWWC))
+        <> K.headed "% Non-White" (BR.toCell cas "% Non-White" "% Non-White" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
+        <> K.headed "% Under 45" (BR.toCell cas "% Under 45" "% Under 45" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
+        <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref))
+        <> K.headed "2016 D Vote Share" (BR.toCell cas "2016 D" "2016 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @VoteShare2016))
        
 --  K.liftKnit $ F.writeCSV "districtStats.csv" withStatsF
   K.logLE K.Info $ "Building neighbor plot for SOM"
