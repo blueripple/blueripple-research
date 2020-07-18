@@ -368,8 +368,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
             statsRec rs = FL.fold ((\x y z -> x F.&: y F.&: z F.&: V.RNil) <$> pctWWCF <*> pctNonWhite <*> pctYoung) rs
             clusterRec :: F.Record '[Cluster] = SOM.classify som d F.&: V.RNil
         in districtId d F.<+> statsRec (districtData d) F.<+> clusterRec
-      withStatsF = F.toFrame $ fmap distStats districtsForSOM
-  logFrame withStatsF
+      districtsWithStatsF = F.toFrame $ fmap distStats districtsForSOM      
+--  logFrame districtsWithStatsF
+  let dwsCollonnade :: BR.CellStyle (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]) T.Text
+                    -> K.Colonnade K.Headed (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]) K.Cell
+      dwsCollonnade cas =
+        let x = 2
+        in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
+        <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict))
+        <> K.headed "Cluster" (BR.toCell cas "% Under 45" "% Under 45" (BR.textToStyledHtml  . T.pack . show . F.rgetField @Cluster))
+        <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctWWC))
+        <> K.headed "% Non-White" (BR.toCell cas "% Non-White" "% Non-White" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctNonWhite))
+        <> K.headed "% Under 45" (BR.toCell cas "% Under 45" "% Under 45" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @PctNonWhite))
+        <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%2f" . (*100) . F.rgetField @ET.DemPref))
+       
 --  K.liftKnit $ F.writeCSV "districtStats.csv" withStatsF
   K.logLE K.Info $ "Building neighbor plot for SOM"
   let gm = SOM.toGridMap som
@@ -416,7 +428,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
         return $ V.rappend (districtId d) xyRec
 
   districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForSOM)  
-  logFrame districtsOnMap
+--  logFrame districtsOnMap
         
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
@@ -441,6 +453,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
              (FV.ViewConfig 800 800 10)
              heatMap
              districtsOnMap
+        BR.brAddRawHtmlTable
+          ("Districts With Stats")
+          (BHA.class_ "brTable")
+          (dwsCollonnade mempty)
+          districtsWithStatsF
         brAddMarkDown brReadMore
 
 
