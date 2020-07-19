@@ -296,7 +296,7 @@ sameClusterMatrix getKey som ps =
 
 randomSCM :: K.Member GLM.RandomFu r => Int -> Int -> K.Sem r (SLA.SpMatrix Int)
 randomSCM nPats nClusters = do
-  clustered <- traverse (const $ PRF.sampleRVar (RandomFu.uniform 0 nClusters)) [1..nPats]
+  clustered <- traverse (const $ PRF.sampleRVar (RandomFu.uniform 1 nClusters)) [1..nPats]
   let go :: (Int, [Int]) -> [(Int, Int, Int)]
       go (n, ks) =
         let f k1 (k2, m) = if k1 == k2 then Just (n, m, 1) else Nothing
@@ -392,39 +392,43 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       sgm = SGM.trainBatch sgm0 districtsForSOM
   K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
 -}
-  let gridRows = 3
-      gridCols = 3
+  let gridRows = 5
+      gridCols = 5
       numDists = length districtsForSOM
   randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM  
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
-  let som = SOM.trainBatch som0 randomOrderDistricts
-  K.logLE K.Info $ "SOM Diagnostics"  
-  let scm = sameClusterMatrix districtId som districtsForSOM
-      effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
-  K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)
+  let som = SOM.trainBatch som0 randomOrderDistricts  
+  K.logLE K.Info $ "SOM Diagnostics"
   let numComps = 10
-      compFactor = effClusters / realToFrac (numDists * numDists)
-  K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " different SOMs"
-  som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM) [1..numComps]
-  let soms = fmap (\s -> SOM.trainBatch s randomOrderDistricts) som0s
-      scms = fmap (\s -> sameClusterMatrix districtId s districtsForSOM) soms
       pairsWithFirst l = case l of
         [] -> []
         (x : []) -> []
         (x : xs) -> fmap (x,) xs
       allDiffPairs = List.concat . fmap pairsWithFirst . List.tails
+  
+  let scm = sameClusterMatrix districtId som districtsForSOM
+      effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
+  K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)  
+  let compFactor = effClusters / realToFrac (numDists * numDists)
+  K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " different SOMs"
+  som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM) [1..numComps]
+  let soms = fmap (\s -> SOM.trainBatch s randomOrderDistricts) som0s
+      scms = fmap (\s -> sameClusterMatrix districtId s districtsForSOM) soms
+
       allDiffSCMPairs = allDiffPairs scms
       allDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffSCMPairs
       (meanC, stdC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffTraces
   K.logLE K.Info $ "<comp> = " <> (T.pack $ show meanC) <> "; sigma(comp)=" <> (T.pack $ show stdC)
+
   K.logLE K.Info $ "Generating random ones for comparison"
   randomSCMs <- traverse (const $ randomSCM numDists (gridRows * gridCols)) [1..numComps]
+  let allRandomTraces = fmap (\scm ->  SLA.trace $ SLA.matMat_ SLA.ABt scm scm) randomSCMs
   let allSameEffClusters = fmap (\scm ->  realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)) randomSCMs
       (meanRCs, stdRCs) = FL.fold ((,) <$> FL.mean <*> FL.std) allSameEffClusters
   K.logLE K.Info $ "Random SCMs: <eff Clusters> = " <> (T.pack $ show meanRCs) <> "; sigma(eff Clusters)=" <> (T.pack $ show stdRCs)      
   let allDiffPairsRandom = allDiffPairs randomSCMs
       randomCompFactor = meanRCs / realToFrac (numDists * numDists)
-      allRandomDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffPairsRandom
+      allRandomDiffTraces = fmap (\(scm1, scm2) -> randomCompFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffPairsRandom
       (meanRS, stdRS) = FL.fold ((,) <$> FL.mean <*> FL.std) allRandomDiffTraces
   K.logLE K.Info $ "Random SCs: <comp> = " <> (T.pack $ show meanRS) <> "; sigma(comp)=" <> (T.pack $ show stdRS)
 
