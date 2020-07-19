@@ -30,7 +30,10 @@ import qualified Data.Map as M
 import           Data.Maybe (catMaybes, fromMaybe)
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as Serialize
+import qualified Data.Set as Set
 import qualified Data.Vector                   as Vec
+import qualified Data.Vector.Unboxed           as UVec
+import qualified Data.Vector.Storable           as SVec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -54,7 +57,9 @@ import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Misc                   as FM
 import qualified Frames.Serialize              as FS
 import qualified Frames.KMeans                 as FK
+import qualified Math.KMeans                   as MK
 import qualified Math.Rescale                  as MR
+import qualified Numeric.LinearAlgebra as LA
 
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -89,6 +94,7 @@ import qualified Math.Geometry.GridMap.Lazy as GridMap
 import qualified Data.Random.Distribution.Uniform as RandomFu
 import qualified Data.Random as RandomFu
 import qualified Data.Sparse.SpMatrix as SLA
+
 
 import qualified Data.Word as Word
 
@@ -141,7 +147,12 @@ type PctBlack = "PctBlack" F.:-> Double
 type PctNonWhite = "PctNonWhite" F.:-> Double
 type PctYoung = "PctYoung" F.:-> Double
 type VoteShare2016 = "2016Share" F.:-> Double
-type Cluster = "Cluster" F.:-> (Int, Int)
+type Cluster k = "Cluster" F.:-> k
+type SOM_Cluster = Cluster (Int, Int)
+type K_Cluster = Cluster Int
+type PCA1 = "PCA1" F.:-> Double
+type PCA2 = "PCA2" F.:-> Double
+
 
 type instance FI.VectorFor (Int, Int) = K.Vector
 
@@ -183,15 +194,45 @@ votesToVoteShareF =
   in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
 
 
-data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtData :: [F.Record rs] } deriving (Generic)
-deriving instance (Show (F.Record as), Show (F.Record rs)) => Show (DistrictP as rs)
+data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtPop :: Int, districtVec :: UVec.Vector Double } deriving (Generic)
+deriving instance Show (F.Record as) => Show (DistrictP as rs)
 --instance S.Serialize (DistrictP as rs)
 
-absMetric :: [Double] -> [Double] -> Double
-absMetric xs ys =  FL.fold FL.sum $ fmap abs $ zipWith (-) xs ys
+vecDemoAsRecs :: forall ks d.
+                  (Ord (F.Record ks)
+                  , Keyed.FiniteSet (F.Record ks)
+                  , V.KnownField d
+--                  , Real (V.Snd d)
+                  )
+              => (Int -> Double -> V.Snd d) -> Int -> UVec.Vector Double -> [F.Record (ks V.++ '[d])]
+vecDemoAsRecs toD pop vecDemo =
+  let keyRecs = Set.toAscList $ Keyed.elements @(F.Record ks)
+      values :: [Double] = UVec.toList vecDemo
+      makeD :: Double -> F.Record '[d]
+      makeD x = toD pop x F.&: V.RNil
+  in zipWith (\k v -> k F.<+> (makeD v)) keyRecs values 
 
-meanAbsMetric :: [Double] -> [Double] -> Double
-meanAbsMetric xs ys =  FL.fold ((/) <$> fmap realToFrac FL.sum <*> fmap realToFrac FL.length)  $ fmap abs $ zipWith (-) xs ys
+districtAsRecs :: forall ks d as rs.
+                  (Ord (F.Record ks)
+                  , ks F.⊆ rs
+                  , Keyed.FiniteSet (F.Record ks)
+                  , F.ElemOf rs d
+                  , V.KnownField d
+                  , Real (V.Snd d)
+                  , rs ~ (ks V.++ '[d])
+                  )
+               => (Int -> Double -> V.Snd d) -> DistrictP as rs -> [F.Record (as V.++ rs)]
+districtAsRecs toD (DistrictP id _ pop vec) = fmap (\r -> id F.<+> r) $ vecDemoAsRecs @ks @d toD pop vec 
+      
+
+absMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
+absMetric xs ys =  UVec.sum $ UVec.map abs $ UVec.zipWith (-) xs ys
+
+--meanAbsMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
+--meanAbsMetric xs ys =  FL.fold FL.mean  $ fmap abs $ Vec.zipWith (-) xs ys
+
+euclideanMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
+euclideanMetric xs ys = UVec.sum $ UVec.map (\x -> x * x) $ UVec.zipWith (-) xs ys
 
 districtDiff :: forall ks d as rs.(Ord (F.Record ks)
                                   , ks F.⊆ rs
@@ -199,20 +240,11 @@ districtDiff :: forall ks d as rs.(Ord (F.Record ks)
                                   , V.KnownField d
                                   , Real (V.Snd d)
                                   )
-             => ([Double] -> [Double] -> Double) 
+             => (UVec.Vector Double -> UVec.Vector Double -> Double) 
              -> DistrictP as rs
              -> DistrictP as rs
              -> Double
-districtDiff metric d1 d2 =
-  let asMap = FL.fold (FL.premap (\r-> (F.rcast @ks r, F.rgetField @d r)) FL.map)
-      r1Ns = fmap snd $ M.toList $ asMap $ districtData d1      
-      r2Ns = fmap snd $ M.toList $ asMap $ districtData d2
-      r1T = realToFrac $ FL.fold FL.sum r1Ns
-      r2T = realToFrac $ FL.fold FL.sum r2Ns
-      r1xs = fmap (\n -> realToFrac n/r1T) r1Ns
-      r2xs = fmap (\n -> realToFrac n/r2T) r2Ns
-  in FL.fold FL.sum $ fmap abs $ zipWith (-) r1xs r2xs
-
+districtDiff metric d1 d2 = metric (districtVec d1) (districtVec d2)
 
 districtMakeSimilar :: forall ks d as.(Ord (F.Record ks)
                                       , ks F.⊆ (ks V.++ '[d])
@@ -226,15 +258,10 @@ districtMakeSimilar :: forall ks d as.(Ord (F.Record ks)
                     -> DistrictP as (ks V.++ '[d])
                     -> DistrictP as (ks V.++ '[d])
 districtMakeSimilar toD tgtD x patD =
-  let asMap = FL.fold (FL.premap (\r-> (F.rcast @ks r, F.rgetField @d r)) FL.map)
-      tgtNs = fmap snd $ M.toList $ asMap $ districtData tgtD      
-      patKNs = M.toList $ asMap $ districtData patD
-      f nt (kp, np) = (kp, realToFrac np * (1 - x) + realToFrac nt * x)
-      newPatKNs = zipWith f tgtNs patKNs
-      makeD :: Double -> F.Record '[d]
-      makeD x = toD x F.&: V.RNil
-      newPatRecs = fmap (\(k, x) -> V.rappend k  (makeD x)) newPatKNs
-  in DistrictP (districtId patD) True  newPatRecs
+  let f t p = p * (1 - x) + t * x
+      newPatVec = UVec.zipWith f (districtVec tgtD) (districtVec patD)
+      newPatPop = round $ f (realToFrac $ districtPop tgtD) (realToFrac $ districtPop patD) 
+  in DistrictP (districtId patD) True newPatPop newPatVec
 
 buildSOM :: forall ks d as r.
   (K.KnitEffects r
@@ -245,10 +272,11 @@ buildSOM :: forall ks d as r.
   , Real (V.Snd d)
   , Ord (F.Record ks)
   )
-  => (Int, Int) -- rectangular grid sizes
+  => (UVec.Vector Double -> UVec.Vector Double -> Double) -- ^ metric for SOM
+  -> (Int, Int) -- rectangular grid sizes
   -> [DistrictP as (ks V.++ '[d])]
   -> K.Sem r (SOM.SOM Double Double (GridMap.LGridMap Grid.RectSquareGrid) Double (Int, Int) (DistrictP as (ks V.++ '[d])))
-buildSOM (gridRows, gridCols) sampleFrom = do
+buildSOM metric (gridRows, gridCols) sampleFrom = do
   let g = Grid.rectSquareGrid gridRows gridCols
       numSamples = gridRows * gridCols
       sampleUniqueIndex is = do
@@ -259,7 +287,7 @@ buildSOM (gridRows, gridCols) sampleFrom = do
       gm = GridMap.lazyGridMap g samples
       n' = fromIntegral (length sampleFrom)
       lrf = SOM.decayingGaussian 0.5 0.1 0.3 0.1 n'
-      dDiff = districtDiff @ks @d meanAbsMetric
+      dDiff = districtDiff @ks @d metric
       dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
   return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
 
@@ -339,64 +367,80 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
                               (FMR.foldAndAddKey votesToVoteShareF)
       return $ FL.fold houseResultsF houseResults
 
-  clusteredDistricts <- K.ignoreCacheTimeM $ do
-    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare_C
-    K.retrieveOrMakeTransformed
-      clusterRowsToS
-      clusterRowsFromS
-      "mrp/DistrictClusters/clusteredDistricts.bin"
-      cachedDeps $ \(pumsByCD, houseVoteShare) -> do      
-        let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)          
-            forClustering = F.toFrame
-                            $ catMaybes
-                            $ fmap F.recMaybe
-                            $ F.leftJoin @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
-                            (FL.fold districtToWWCBlack pumsByCD)
-                            houseVoteShare
-        let initialCentroidsF n 
-              = FMR.functionToFoldM $ \hx -> PMR.absorbMonadRandom $ FK.kMeansPPCentroids @PctWWC @PctBlack @W FK.euclidSq n hx            
-        rawClusters <- FK.kMeansOneWithClusters @PctWWC @PctBlack @W
-                       (FL.premap (\r -> (F.rgetField @PctWWC r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale (MR.RescaleNormalize 1) (MR.RescaleNormalize 1) id)
-                       (FL.premap (\r -> (F.rgetField @PctBlack r, F.rgetField @W r)) $ MR.weightedScaleAndUnscale (MR.RescaleNormalize 1) (MR.RescaleNormalize 1) id)
-                       20
-                       10
-                       initialCentroidsF
-                       (FK.weighted2DRecord @PctWWC @PctBlack @W)
-                       FK.euclidSq
-                       forClustering
-        return $ FK.clusteredRowsFull @PctWWC @PctBlack @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
-
--- SOM
-  districtsForSOM :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
+  K.logLE K.Info $ "Building clustering input"
+  districtsForClustering :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
     pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
     houseVoteShare <- K.ignoreCacheTime houseVoteShare_C
     let (pumsByCDWithVoteShare, missing) = FJ.leftJoinWithMissing  @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                                            pumsByCD
                                            houseVoteShare
+        asVec rs = UVec.fromList $ fmap snd $ M.toAscList $ FL.fold (FL.premap (\r-> (F.rcast @DT.CatColsASER5 r, realToFrac $ F.rgetField @PUMS.Citizens r)) FL.map) rs
+        pop rs = FL.fold (FL.premap (F.rgetField @PUMS.Citizens) FL.sum) rs
     K.logLE K.Info $ "Districts with missing house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing)
     return
       $ FL.fold
       (FMR.mapReduceFold
        FMR.noUnpack
        (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] @(DT.CatColsASER5 V.++ '[PUMS.Citizens]))
-       (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False rs) FL.list)
+       (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False (pop rs) (asVec rs)) FL.list)
       )
       pumsByCDWithVoteShare
 
-  K.logLE K.Info $ "Working with " <> (T.pack $ show (FL.fold FL.length districtsForSOM)) <> " districts." 
-{-      
-  let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
-      dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (fromIntegral . round)
-      sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
-      sgm0 = SGM.makeSGM (SGM.exponential 0.1 0.5) 20 0.1 True dDiff dMakeSimilar 
-      sgm = SGM.trainBatch sgm0 districtsForSOM
-  K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
--}
-  let gridRows = 5
-      gridCols = 5
-      numDists = length districtsForSOM
-  randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForSOM  
-  som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM
+  K.logLE K.Info $ "Computing top 2 PCA components"
+  (pca1v, pca2v) <- do
+    let asSVecs = fmap (SVec.convert . districtVec) districtsForClustering
+        asMat = LA.fromRows asSVecs
+        mTm = (LA.tr asMat) LA.<> asMat
+        (eigVals, eigVecs) = LA.eigSH (LA.trustSym mTm)
+        pc1Vec = SVec.convert $ (LA.toColumns eigVecs) List.!! 0
+        pc2Vec = SVec.convert $ (LA.toColumns eigVecs) List.!! 1
+    K.logLE K.Info $ "Eigenvalues: " <> (T.pack $ show eigVals)
+    K.logLE K.Info $ "PC 1:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc1Vec))
+    K.logLE K.Info $ "PC 2:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc2Vec))
+    return (pc1Vec, pc2Vec)
+    
+
+  clusteredDistricts <- K.ignoreCacheTimeM $ do
+    let cachedDeps = () --(,) <$> pums2018ByCD_C <*> houseVoteShare_C
+    K.retrieveOrMakeTransformed
+      clusterRowsToS
+      clusterRowsFromS
+      "mrp/DistrictClusters/clusteredDistrictsPCA.bin"
+      (pure ()) $ \() -> do      
+        let labelCD d = let r = districtId d in F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)            
+            distWeighted :: MK.Weighted (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])) Double
+            distWeighted = MK.Weighted
+                           40
+                           districtVec
+                           (realToFrac . districtPop)
+            metric = euclideanMetric
+        initialCentroids <- MK.kMeansPPCentroids metric 10 (fmap districtVec districtsForClustering)
+        (MK.Clusters kmClusters, iters) <- MK.weightedKMeans initialCentroids distWeighted metric districtsForClustering
+        let distRec :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
+                    -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, W, PCA1, PCA2]
+            distRec d =
+              let pca1 = UVec.sum $ UVec.zipWith (*) pca1v (districtVec d)
+                  pca2 = UVec.sum $ UVec.zipWith (*) pca2v (districtVec d)
+                  w = districtPop d
+              in (districtId d) F.<+> (w F.&: pca1 F.&: pca2 F.&: V.RNil)
+            processOne c = do
+              (centroidUVec, cW) <- MK.centroid distWeighted (MK.members c)
+              let cPCA1 = UVec.sum $ UVec.zipWith (*) pca1v centroidUVec
+                  cPCA2 = UVec.sum $ UVec.zipWith (*) pca2v centroidUVec
+                  withProjs = fmap distRec (MK.members c)
+              return $ ((cPCA1, cPCA2, cW), withProjs)
+            rawClusters = fmap processOne  (Vec.toList kmClusters) 
+        return $ FK.clusteredRowsFull @PCA1 @PCA2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
+
+-- SOM
+
+  K.logLE K.Info $ "Working with " <> (T.pack $ show (FL.fold FL.length districtsForClustering)) <> " districts." 
+  let gridRows = 3
+      gridCols = 3
+      numDists = length districtsForClustering
+      metric = euclideanMetric
+  randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle districtsForClustering  
+  som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens metric (gridRows, gridCols) districtsForClustering
   let som = SOM.trainBatch som0 randomOrderDistricts  
   K.logLE K.Info $ "SOM Diagnostics"
   let numComps = 10
@@ -406,14 +450,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
         (x : xs) -> fmap (x,) xs
       allDiffPairs = List.concat . fmap pairsWithFirst . List.tails
   
-  let scm = sameClusterMatrix districtId som districtsForSOM
+  let scm = sameClusterMatrix districtId som districtsForClustering
       effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
   K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)  
   let compFactor = effClusters / realToFrac (numDists * numDists)
   K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " different SOMs"
-  som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens (gridRows, gridCols) districtsForSOM) [1..numComps]
+  som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens metric (gridRows, gridCols) districtsForClustering) [1..numComps]
   let soms = fmap (\s -> SOM.trainBatch s randomOrderDistricts) som0s
-      scms = fmap (\s -> sameClusterMatrix districtId s districtsForSOM) soms
+      scms = fmap (\s -> sameClusterMatrix districtId s districtsForClustering) soms
 
       allDiffSCMPairs = allDiffPairs scms
       allDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffSCMPairs
@@ -437,10 +481,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       heatMap0 :: GridMap.LGridMap Grid.RectSquareGrid (Int, Double)
       heatMap0  = GridMap.lazyGridMap (Grid.rectSquareGrid gridRows gridCols) $ replicate (gridRows * gridCols) (0, 0)
       adjustOne pref (districts, avgPref)  = (districts + 1, ((realToFrac districts * avgPref) + pref)/(realToFrac $ districts + 1))
-      heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (adjustOne pref) (SOM.classify som d) gm) heatMap0 id) districtsForSOM
+      heatMap = FL.fold (FL.Fold (\gm d -> let pref = districtPref d in GridMap.adjust (adjustOne pref) (SOM.classify som d) gm) heatMap0 id) districtsForClustering
   K.logLE K.Info $ "Building cluster table"
   let distStats :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
-                -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster]
+                -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, SOM_Cluster]
       distStats d =
         let vac = F.rgetField @PUMS.Citizens
             vacF = fmap realToFrac $ FL.premap vac FL.sum
@@ -449,25 +493,25 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
             pctYoung = (/) <$> FL.prefilter isYoung vacF <*> vacF
             statsRec :: [F.Record (DT.CatColsASER5 V.++ '[PUMS.Citizens])] -> F.Record [PctWWC, PctNonWhite, PctYoung]
             statsRec rs = FL.fold ((\x y z -> x F.&: y F.&: z F.&: V.RNil) <$> pctWWCF <*> pctNonWhite <*> pctYoung) rs
-            clusterRec :: F.Record '[Cluster] = SOM.classify som d F.&: V.RNil
-        in districtId d F.<+> statsRec (districtData d) F.<+> clusterRec
-  districtsWithStatsF :: F.FrameRec [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016] <- do
+            clusterRec :: F.Record '[SOM_Cluster] = SOM.classify som d F.&: V.RNil
+        in districtId d F.<+> statsRec (fmap F.rcast $ districtAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) d) F.<+> clusterRec
+  districtsWithStatsF :: F.FrameRec [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, SOM_Cluster, VoteShare2016] <- do
     houseVoteShare <- K.ignoreCacheTime houseVoteShare_C    
     let voteShare2016 = fmap (FT.replaceColumn @ET.DemPref @VoteShare2016 id . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref])
                         $ F.filterFrame ((==2016) . F.rgetField @BR.Year) houseVoteShare
         (districtsWithStats, missing2016Share)  = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict]
-                                                  (F.toFrame $ fmap distStats districtsForSOM)
+                                                  (F.toFrame $ fmap distStats districtsForClustering)
                                                   voteShare2016
     K.logLE K.Info $ "Districts with missing 2016 house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing2016Share)
     return $ F.toFrame districtsWithStats
 -- logFrame districtsWithStatsF
-  let dwsCollonnade :: BR.CellStyle (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016]) T.Text
-                    -> K.Colonnade K.Headed (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, Cluster, VoteShare2016]) K.Cell
+  let dwsCollonnade :: BR.CellStyle (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, SOM_Cluster, VoteShare2016]) T.Text
+                    -> K.Colonnade K.Headed (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PctWWC, PctNonWhite, PctYoung, SOM_Cluster, VoteShare2016]) K.Cell
       dwsCollonnade cas =
         let x = 2
         in K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation))
         <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict))
-        <> K.headed "Cluster" (BR.toCell cas "% Under 45" "% Under 45" (BR.textToStyledHtml  . T.pack . show . F.rgetField @Cluster))
+        <> K.headed "Cluster" (BR.toCell cas "% Under 45" "% Under 45" (BR.textToStyledHtml  . T.pack . show . F.rgetField @SOM_Cluster))
         <> K.headed "% WWC" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctWWC))
         <> K.headed "% Non-White" (BR.toCell cas "% Non-White" "% Non-White" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
         <> K.headed "% Under 45" (BR.toCell cas "% Under 45" "% Under 45" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
@@ -514,12 +558,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       districtSOMCoords :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
                     -> Maybe (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, '("X",Double), '("Y", Double)])
       districtSOMCoords d = do
-        let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
+        let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens metric
         (x, y) <- coords <$> bmus dDiff som d
         let xyRec :: F.Record ['("X", Double), '("Y", Double)] = x F.&: y F.&: V.RNil
         return $ V.rappend (districtId d) xyRec
 
-  districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForSOM)  
+  districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForClustering)  
 --  logFrame districtsOnMap
         
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -533,12 +577,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
-        _ <- K.addHvega Nothing Nothing
+{-        _ <- K.addHvega Nothing Nothing
              $ clusterVL @PctWWC @PctBlack
              "2018 House Districts Clustered By %WWC and %Black"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst clusteredDistricts)
-             (fmap F.rcast $ snd clusteredDistricts)
+             (fmap F.rcast $ snd clusteredDistricts) -}
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -623,6 +667,16 @@ clusterVL title vc centroidRows districtRows =
   in FV.configuredVegaLite  vc [FV.title title, GV.layer [centroidSpec, districtSpec]]
   
 
+
+{-
+-- SGM      
+  let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens meanAbsMetric
+      dMakeSimilar = districtMakeSimilar @DT.CatColsASER5 @PUMS.Citizens @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (fromIntegral . round)
+      sgm0 :: SGM.SGM Int Double Word (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens]))
+      sgm0 = SGM.makeSGM (SGM.exponential 0.1 0.5) 20 0.1 True dDiff dMakeSimilar 
+      sgm = SGM.trainBatch sgm0 districtsForClustering
+  K.logLE K.Info $ "SGM model map:" <> (T.pack $ show $ fmap districtId $ SGM.modelMap sgm)
+-}
 
 --clusterVL :: T.Text -> [(Double, Double, Double)
 
