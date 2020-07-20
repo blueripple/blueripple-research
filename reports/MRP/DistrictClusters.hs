@@ -196,6 +196,7 @@ votesToVoteShareF =
 
 data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtPop :: Int, districtVec :: UVec.Vector Double } deriving (Generic)
 deriving instance Show (F.Record as) => Show (DistrictP as rs)
+deriving instance Eq (F.Record as) => Eq (DistrictP as rs)
 --instance S.Serialize (DistrictP as rs)
 
 vecDemoAsRecs :: forall ks d.
@@ -407,29 +408,29 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       clusterRowsFromS
       "mrp/DistrictClusters/clusteredDistrictsPCA.bin"
       (pure ()) $ \() -> do      
-        let labelCD d = let r = districtId d in F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)            
+        let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)            
             distWeighted :: MK.Weighted (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])) Double
             distWeighted = MK.Weighted
                            40
                            districtVec
                            (realToFrac . districtPop)
             metric = euclideanMetric
-        initialCentroids <- MK.kMeansPPCentroids metric 10 (fmap districtVec districtsForClustering)
-        (MK.Clusters kmClusters, iters) <- MK.weightedKMeans initialCentroids distWeighted metric districtsForClustering
+        initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric 10 (fmap districtVec districtsForClustering)
+        (MK.Clusters kmClusters, iters) <- MK.weightedKMeans (MK.Centroids $ Vec.fromList initialCentroids) distWeighted metric districtsForClustering
         let distRec :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
                     -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, W, PCA1, PCA2]
             distRec d =
               let pca1 = UVec.sum $ UVec.zipWith (*) pca1v (districtVec d)
                   pca2 = UVec.sum $ UVec.zipWith (*) pca2v (districtVec d)
                   w = districtPop d
-              in (districtId d) F.<+> (w F.&: pca1 F.&: pca2 F.&: V.RNil)
+              in (districtId d) F.<+> (realToFrac w F.&: pca1 F.&: pca2 F.&: V.RNil)
             processOne c = do
               (centroidUVec, cW) <- MK.centroid distWeighted (MK.members c)
               let cPCA1 = UVec.sum $ UVec.zipWith (*) pca1v centroidUVec
                   cPCA2 = UVec.sum $ UVec.zipWith (*) pca2v centroidUVec
                   withProjs = fmap distRec (MK.members c)
               return $ ((cPCA1, cPCA2, cW), withProjs)
-            rawClusters = fmap processOne  (Vec.toList kmClusters) 
+        rawClusters <- K.knitMaybe "Empty Cluster in K_means." $ traverse processOne  (Vec.toList kmClusters) 
         return $ FK.clusteredRowsFull @PCA1 @PCA2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
 
 -- SOM
@@ -577,12 +578,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
       ))
       $ do        
         brAddMarkDown text1
-{-        _ <- K.addHvega Nothing Nothing
-             $ clusterVL @PctWWC @PctBlack
-             "2018 House Districts Clustered By %WWC and %Black"
+        _ <- K.addHvega Nothing Nothing
+             $ clusterVL @PCA1 @PCA2
+             "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst clusteredDistricts)
-             (fmap F.rcast $ snd clusteredDistricts) -}
+             (fmap F.rcast $ snd clusteredDistricts) 
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -658,6 +659,7 @@ clusterVL title vc centroidRows districtRows =
       makeCentroidColor = GV.calculateAs "0" "CentroidColor"
       centroidMark = GV.mark GV.Circle [GV.MColor "grey", GV.MTooltip GV.TTEncoding]
       districtMark = GV.mark GV.Circle [ GV.MTooltip GV.TTData]
+--      encShape = GV.symbol [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
       encColorD = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
