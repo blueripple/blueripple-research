@@ -156,6 +156,9 @@ type PCA2 = "PCA2" F.:-> Double
 
 type instance FI.VectorFor (Int, Int) = K.Vector
 
+instance FV.ToVLDataValue (F.ElField SOM_Cluster) where
+  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+
 isWWC r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx && F.rgetField @DT.CollegeGradC r == DT.Grad
 isBlack r =  F.rgetField @DT.Race5C r == DT.R5_Black
 isNonWhite r =  F.rgetField @DT.Race5C r /= DT.R5_WhiteNonLatinx
@@ -573,12 +576,16 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
           0 -> (\(x, y) -> (realToFrac x, realToFrac y)) $ fst bmu          
           _ -> FL.fold ((,) <$> avgXF <*> avgYF) ns
       districtSOMCoords :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
-                    -> Maybe (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, '("X",Double), '("Y", Double)])
+                        -> Maybe (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, SOM_Cluster, '("X",Double), '("Y", Double)])
       districtSOMCoords d = do
-        let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens metric
-        (x, y) <- coords <$> bmus dDiff som d
-        let xyRec :: F.Record ['("X", Double), '("Y", Double)] = x F.&: y F.&: V.RNil
-        return $ V.rappend (districtId d) xyRec
+        let dDiff = districtDiff @DT.CatColsASER5 @PUMS.Citizens metric        
+        (c, (x, y)) <- do
+          districtBMUs <- bmus dDiff som d
+          let (dX, dY) =  coords districtBMUs
+              dC = fst $ head districtBMUs
+          return (dC, (dX, dY))
+        let cxyRec :: F.Record [SOM_Cluster, '("X", Double), '("Y", Double)] = c F.&: x F.&: y F.&: V.RNil
+        return $ V.rappend (districtId d) cxyRec
 
   districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForClustering)  
 --  logFrame districtsOnMap
@@ -599,13 +606,24 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
+             (fmap F.rcast $ snd kClusteredDistricts)
+        _ <- K.addHvega Nothing Nothing
+             $ kMeansBoxes @PCA1 @PCA2
+             "2018 House Districts: K-Means"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts) 
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
              (FV.ViewConfig 800 800 10)
              heatMap
-             districtsOnMap
+             (fmap F.rcast districtsOnMap)
+        _ <- K.addHvega Nothing Nothing
+             $ somBoxes
+             "District SOM Box & Whisker"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast districtsOnMap)
         BR.brAddRawHtmlTable
           ("Districts With Stats")
           (BHA.class_ "brTable")
@@ -655,6 +673,22 @@ somRectHeatMap title vc gm distRows =
   in FV.configuredVegaLite vc [FV.title title, GV.layer [distSpec, lSpec]]
       
 
+somBoxes ::  Foldable f
+         => T.Text
+         -> FV.ViewConfig
+         -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, SOM_Cluster])
+         -> GV.VegaLite
+somBoxes title vc rows =
+  let somDat = FV.recordsToVLData id FV.defaultParse rows
+      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      boxPlotMark = GV.mark GV.Boxplot [GV.MExtent $ GV.IqrScale 1.0]
+      encX = GV.position GV.X [GV.PName "Dem Vote Share", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @SOM_Cluster, GV.PmType GV.Ordinal]
+--      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative]
+      encTooltip = GV.tooltip [GV.TName "mark_label", GV.TmType GV.Nominal]
+  in FV.configuredVegaLite vc [FV.title title, (GV.encoding . encX . encY . encTooltip) [], boxPlotMark, (GV.transform . makeShare) [], somDat]
+
+
            
 clusterVL :: forall x y f.
              (Foldable f
@@ -687,6 +721,28 @@ clusterVL title vc centroidRows districtRows =
   in FV.configuredVegaLite  vc [FV.title title, GV.layer [centroidSpec, districtSpec]]
   
 
+kMeansBoxes :: forall x y f.
+             (Foldable f
+             , FV.ToVLDataValue (F.ElField x)
+             , FV.ToVLDataValue (F.ElField y)
+             , F.ColumnHeaders '[x]
+             , F.ColumnHeaders '[y]
+             )
+          => T.Text
+          -> FV.ViewConfig
+          -> f (F.Record [BR.Year, FK.ClusterId, x, y, W])
+          -> f (F.Record ([BR.Year, FK.ClusterId, FK.MarkLabel, x, y, W, ET.DemPref]))
+          -> GV.VegaLite
+kMeansBoxes title vc centroidRows districtRows =
+  let datCentroids = FV.recordsToVLData id FV.defaultParse centroidRows
+      datDistricts = FV.recordsToVLData id FV.defaultParse districtRows
+      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      boxPlotMark = GV.mark GV.Boxplot [GV.MExtent $ GV.IqrScale 1.0]
+      encX = GV.position GV.X [GV.PName "Dem Vote Share", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @FK.ClusterId, GV.PmType GV.Ordinal]
+      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative]
+      encTooltip = GV.tooltip [GV.TName "mark_label", GV.TmType GV.Nominal]
+  in FV.configuredVegaLite vc [FV.title title, (GV.encoding . encX . encY . encTooltip) [], boxPlotMark, (GV.transform . makeShare) [], datDistricts]
 
 {-
 -- SGM      
