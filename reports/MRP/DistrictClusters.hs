@@ -343,7 +343,7 @@ randomSCM nPats nClusters = do
   return $ SLA.fromListSM (nPats, nPats) scM
   
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
-post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $ do
+post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClustering" $ do
 
   let clusterRowsToS (cs, rs) = (fmap FS.toS cs, fmap FS.toS rs)
       clusterRowsFromS (cs', rs') = (fmap FS.fromS cs', fmap FS.fromS rs')
