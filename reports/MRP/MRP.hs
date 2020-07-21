@@ -115,7 +115,7 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                brWriterOptionsF
-  let pureMTseed = PureMT.pureMT 1 
+  let pureMTseed = PureMT.pureMT 1
   let logFilter = if debug args > 0
                   then K.logDebug (debug args)
                   else case (diagnostics args) of                         

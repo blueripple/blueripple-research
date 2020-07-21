@@ -295,8 +295,11 @@ buildSOM metric (gridRows, gridCols) sampleFrom = do
 
 -- NB: Weight is chosen so that for exactly the same and equidistributed,
 -- tr (M'M) = (numPats * numPats)/numClusters
-sameClusterMatrix :: forall c v k p dk. (SOM.Classifier c v k p, Ord dk, Eq k, Ord v) => (p -> dk) -> c v k p -> [p] -> SLA.SpMatrix Int
-sameClusterMatrix getKey som ps =
+sameClusterMatrixSOM :: forall c v k p dk. (SOM.Classifier c v k p, Ord dk, Eq k, Ord v) => (p -> dk) -> c v k p -> [p] -> SLA.SpMatrix Int
+sameClusterMatrixSOM getKey som ps = sameClusterMatrix getKey (SOM.classify som) ps
+
+sameClusterMatrix :: forall k p dk. (Ord dk, Eq k) => (p -> dk) -> (p -> k) -> [p] -> SLA.SpMatrix Int
+sameClusterMatrix getKey cluster ps =
   let numPats = length ps
       getCluster :: p -> State.State (M.Map dk k) k
       getCluster p = do
@@ -305,7 +308,7 @@ sameClusterMatrix getKey som ps =
         case M.lookup k m of
           Just c -> return c
           Nothing -> do
-            let c = SOM.classify som p
+            let c = cluster p
             State.put (M.insert k c m)
             return c      
       go :: (Int, [p]) -> State.State (M.Map dk k) [(Int, Int, Int)]
@@ -321,7 +324,7 @@ sameClusterMatrix getKey som ps =
             return $ (n,n,1) : (upper ++ lower)
       scM = List.concat <$> (traverse go (zip [0..] $ List.tails ps))
   in SLA.fromListSM (numPats, numPats) $ State.evalState scM M.empty
-      
+
 
 randomSCM :: K.Member GLM.RandomFu r => Int -> Int -> K.Sem r (SLA.SpMatrix Int)
 randomSCM nPats nClusters = do
@@ -386,6 +389,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
        (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP k False (pop rs) (asVec rs)) FL.list)
       )
       pumsByCDWithVoteShare
+  K.logLE K.Info $ "After joining with 2018 voteshare info, working with " <> (T.pack $ show $ length districtsForClustering) <> " districts."
 
   K.logLE K.Info $ "Computing top 2 PCA components"
   (pca1v, pca2v) <- do
@@ -395,19 +399,20 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
         (eigVals, eigVecs) = LA.eigSH (LA.trustSym mTm)
         pc1Vec = SVec.convert $ (LA.toColumns eigVecs) List.!! 0
         pc2Vec = SVec.convert $ (LA.toColumns eigVecs) List.!! 1
-    K.logLE K.Info $ "Eigenvalues: " <> (T.pack $ show eigVals)
-    K.logLE K.Info $ "PC 1:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc1Vec))
-    K.logLE K.Info $ "PC 2:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc2Vec))
+    K.logLE K.Diagnostic $ "Eigenvalues: " <> (T.pack $ show eigVals)
+    K.logLE K.Diagnostic $ "PC 1:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc1Vec))
+    K.logLE K.Diagnostic $ "PC 2:" <> (T.pack $ show (vecDemoAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) 100 $ pc2Vec))
     return (pc1Vec, pc2Vec)
-    
 
-  clusteredDistricts <- K.ignoreCacheTimeM $ do
-    let cachedDeps = () --(,) <$> pums2018ByCD_C <*> houseVoteShare_C
-    K.retrieveOrMakeTransformed
-      clusterRowsToS
-      clusterRowsFromS
-      "mrp/DistrictClusters/clusteredDistrictsPCA.bin"
-      (pure ()) $ \() -> do      
+  let numComps = 3
+      pairsWithFirst l = case l of
+        [] -> []
+        (x : []) -> []
+        (x : xs) -> fmap (x,) xs
+      allDiffPairs = List.concat . fmap pairsWithFirst . List.tails
+
+  let kClusterDistricts = do
+        K.logLE K.Info $ "Computing K-means"
         let labelCD r = F.rgetField @BR.StateAbbreviation r <> "-" <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)            
             distWeighted :: MK.Weighted (DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])) Double
             distWeighted = MK.Weighted
@@ -432,10 +437,25 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
               return $ ((cPCA1, cPCA2, cW), withProjs)
         rawClusters <- K.knitMaybe "Empty Cluster in K_means." $ traverse processOne  (Vec.toList kmClusters) 
         return $ FK.clusteredRowsFull @PCA1 @PCA2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
-
+  
+  kClusteredDistricts <- kClusterDistricts
+  K.logLE K.Info $ "K-means diagnostics"
+  let kClustered = snd kClusteredDistricts
+      numKDists = length kClustered 
+      kSCM = sameClusterMatrix (F.rcast @'[FK.MarkLabel]) (F.rcast @'[FK.ClusterId]) kClustered
+      kEffClusters = realToFrac (numKDists * numKDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt kSCM kSCM)
+      kCompFactor = kEffClusters / realToFrac (numKDists * numKDists)
+  K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show kEffClusters)  
+  K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " other k-means clusterings for comparison..."
+  kComps <- fmap snd <$> traverse (const kClusterDistricts) [1..numComps]
+  let kSCMs = fmap  (sameClusterMatrix (F.rcast @'[FK.MarkLabel]) (F.rcast @'[FK.ClusterId])) kComps
+      allKSCMPairs = allDiffPairs kSCMs
+      allDiffKTraces = fmap (\(scm1, scm2) -> kCompFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allKSCMPairs
+      (meanKC, stdKC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffKTraces
+  K.logLE K.Info $ "K-meansL <comp> = " <> (T.pack $ show meanKC) <> "; sigma(comp)=" <> (T.pack $ show stdKC)
 -- SOM
 
-  K.logLE K.Info $ "Working with " <> (T.pack $ show (FL.fold FL.length districtsForClustering)) <> " districts." 
+  K.logLE K.Info $ "SOM clustering..."
   let gridRows = 3
       gridCols = 3
       numDists = length districtsForClustering
@@ -444,21 +464,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   som0 <- buildSOM @DT.CatColsASER5 @PUMS.Citizens metric (gridRows, gridCols) districtsForClustering
   let som = SOM.trainBatch som0 randomOrderDistricts  
   K.logLE K.Info $ "SOM Diagnostics"
-  let numComps = 10
-      pairsWithFirst l = case l of
-        [] -> []
-        (x : []) -> []
-        (x : xs) -> fmap (x,) xs
-      allDiffPairs = List.concat . fmap pairsWithFirst . List.tails
+
   
-  let scm = sameClusterMatrix districtId som districtsForClustering
+  
+  let scm = sameClusterMatrixSOM districtId som districtsForClustering
       effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
   K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)  
   let compFactor = effClusters / realToFrac (numDists * numDists)
   K.logLE K.Info $ "Making " <> (T.pack $ show numComps) <> " different SOMs"
   som0s <- traverse (const $ buildSOM @DT.CatColsASER5 @PUMS.Citizens metric (gridRows, gridCols) districtsForClustering) [1..numComps]
   let soms = fmap (\s -> SOM.trainBatch s randomOrderDistricts) som0s
-      scms = fmap (\s -> sameClusterMatrix districtId s districtsForClustering) soms
+      scms = fmap (\s -> sameClusterMatrixSOM districtId s districtsForClustering) soms
 
       allDiffSCMPairs = allDiffPairs scms
       allDiffTraces = fmap (\(scm1, scm2) -> compFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allDiffSCMPairs
@@ -582,8 +598,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
              $ clusterVL @PCA1 @PCA2
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
-             (fmap F.rcast $ fst clusteredDistricts)
-             (fmap F.rcast $ snd clusteredDistricts) 
+             (fmap F.rcast $ fst kClusteredDistricts)
+             (fmap F.rcast $ snd kClusteredDistricts) 
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -657,15 +673,17 @@ clusterVL title vc centroidRows districtRows =
       datDistricts = FV.recordsToVLData id FV.defaultParse districtRows
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
       makeCentroidColor = GV.calculateAs "0" "CentroidColor"
-      centroidMark = GV.mark GV.Circle [GV.MColor "grey", GV.MTooltip GV.TTEncoding]
-      districtMark = GV.mark GV.Circle [ GV.MTooltip GV.TTData]
---      encShape = GV.symbol [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
+      centroidMark = GV.mark GV.Point [GV.MColor "grey", GV.MTooltip GV.TTEncoding]
+      districtMark = GV.mark GV.Point [ GV.MTooltip GV.TTData]
+      encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
       encColorD = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
       encSizeC = GV.size [FV.mName @W, GV.MmType GV.Quantitative]
-      centroidSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC) [], centroidMark, (GV.transform . makeCentroidColor) [], datCentroids]
-      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD) [], districtMark, (GV.transform . makeShare) [], datDistricts]
+      selectionD = GV.selection
+                   . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
+      centroidSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC . encShape) [], centroidMark, (GV.transform . makeCentroidColor) [], datCentroids]
+      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD . encShape) [], districtMark, (GV.transform . makeShare) [], selectionD [], datDistricts]
   in FV.configuredVegaLite  vc [FV.title title, GV.layer [centroidSpec, districtSpec]]
   
 
