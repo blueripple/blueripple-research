@@ -681,12 +681,23 @@ somBoxes ::  Foldable f
 somBoxes title vc rows =
   let somDat = FV.recordsToVLData id FV.defaultParse rows
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
-      boxPlotMark = GV.mark GV.Boxplot [GV.MExtent $ GV.IqrScale 1.0]
+      makeLabel = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      boxPlotMark = GV.mark GV.Boxplot [GV.MExtent $ GV.IqrScale 1.0, GV.MNoOutliers]
       encX = GV.position GV.X [GV.PName "Dem Vote Share", GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @SOM_Cluster, GV.PmType GV.Ordinal]
---      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative]
-      encTooltip = GV.tooltip [GV.TName "mark_label", GV.TmType GV.Nominal]
-  in FV.configuredVegaLite vc [FV.title title, (GV.encoding . encX . encY . encTooltip) [], boxPlotMark, (GV.transform . makeShare) [], somDat]
+      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative,  GV.MScale [GV.SScheme "redblue" []]]
+      encTooltip = GV.tooltip [GV.TName "District", GV.TmType GV.Nominal]
+      boxSpec = GV.asSpec [(GV.encoding . encX . encY) []
+                          , boxPlotMark
+                          , (GV.transform . makeShare . makeLabel) []
+                          ]
+      pointsSpec = GV.asSpec [(GV.encoding . encX . encY . encColor . encTooltip) []
+                             , GV.mark GV.Circle []
+                             ,(GV.transform . makeShare . makeLabel) []
+                             ]
+  in FV.configuredVegaLite vc [FV.title title
+                              , GV.layer [boxSpec, pointsSpec]
+                              , somDat]
 
 
            
