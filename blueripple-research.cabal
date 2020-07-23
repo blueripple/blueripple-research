@@ -79,6 +79,7 @@ library
                  , BlueRipple.Model.MRP                 
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.Turnout_MRP
+                 , BlueRipple.Model.TSNE
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils                                  
                  , Paths_blueripple_research

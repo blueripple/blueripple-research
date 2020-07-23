@@ -107,6 +107,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.Turnout_MRP as BR
+import qualified BlueRipple.Model.TSNE as BR
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
@@ -456,6 +457,19 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       allDiffKTraces = fmap (\(scm1, scm2) -> kCompFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allKSCMPairs
       (meanKC, stdKC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffKTraces
   K.logLE K.Info $ "K-meansL <comp> = " <> (T.pack $ show meanKC) <> "; sigma(comp)=" <> (T.pack $ show stdKC)
+-- tSNE
+  K.logLE K.Info $ "tSNE embedding..."
+  tsneM <- BR.runTSNE
+           districtId
+           (UVec.toList . districtVec)
+           (BR.TSNESettings 30 10 100 0.1 0.01)
+           (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
+           BR.tsne2D_S
+           districtsForClustering
+  K.logLE K.Info $ "TSNE results: " <> (T.pack $ show tsneM)
+           
+
+
 -- SOM
 
   K.logLE K.Info $ "SOM clustering..."
