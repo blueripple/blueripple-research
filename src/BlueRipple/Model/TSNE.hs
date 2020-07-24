@@ -22,7 +22,8 @@ import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
 import qualified Data.Map as M
 import qualified Data.Text as T
---import qualified Streamly.Internal.Fold.Types as SFold
+import qualified Streamly.Internal.Data.Fold.Types as SFold
+import qualified Streamly.Internal.Data.Strict as Streamly
 
 import qualified Data.Algorithm.TSNE as TSNE
 import qualified Data.Algorithm.TSNE.Types as TSNE
@@ -50,13 +51,9 @@ tsne2D_S opt input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2
 
 data TSNESettings = TSNESettings { perplexity :: Int
                                  , learningRate :: Double
-                                 , maxIters :: Int
-                                 , deltaCostRelM :: Maybe Double
-                                 , deltaCostAbsM :: Maybe Double
+                                 , snapshots :: Int
+                                 , itersPer :: Int
                                  }
-
-
-
 
 runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
         => (a -> k)
@@ -65,42 +62,25 @@ runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
         -> (b -> (Int, Double, [c])) -- ^ get iter, cost, solutions
         -> (TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT IO b)
         -> f a
-        -> K.Sem r (M.Map k c)
+        -> K.Sem r [M.Map k c]
 runTSNE key dat settings solutionInfo tsneS as = do
   let asList = FL.fold (FL.premap (\a -> (key a, dat a)) FL.list) as
       (keyList, input) = unzip asList
       options = TSNE.TSNEOptions (perplexity settings) (learningRate settings)
       printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ (show iter) ++ "; cost=" ++ show cost
       solS = {- Streamly.mapM (\b -> printIter b >> return b) $-} tsneS options input
-      checkDeltaAbsCost c1 c2 = maybe False (\x-> abs (c1 - c2) <= x) $ deltaCostAbsM settings
-      checkDeltaRelCost c1 c2 = maybe False (\x-> abs (c1 - c2)/c1 <= x) $ deltaCostRelM settings
-      stop (b1, b2) =
-        let (_, cost1, _) = solutionInfo b1
-            (iters, cost2, _) = solutionInfo b2
-        in (iters > 2) &&
-           ((iters >= maxIters settings)
-           || checkDeltaAbsCost cost1 cost2
-           || checkDeltaRelCost cost1 cost2)
-  first2L <- K.liftKnit $ Streamly.toList $ Streamly.take 2 solS
-  initial2 <- K.knitMaybe "TSNE: Failed to get first 2 iters"
-             $ case first2L of
-                 [x,y] -> Just $ (x,y)
-                 _ -> Nothing
+--      stops = drop 1 $ List.scanl' (flip (-)) 0 $ sort $ iters settings
+      
+      sols <- K.liftKnit
+              $ Streamly.lChunksOf (itersPer settings) Streamly.last Streamly.toList
+              $ Streamly.take (itersPer settings * snapshots settings)
+{-
   solsM <- K.liftKnit
            $ Streamly.head
-           $ Streamly.dropWhile (not . stop)
+           $ Streamly.dropWhile f
            $ Streamly.postscanl' (\(_,x) y -> (x,y)) initial2 (Streamly.drop 2 solS)
-  (sol', sol) <- K.knitMaybe "TSNE: No iterations in stream." $ solsM
-  let (_, cost', _) = solutionInfo sol'
-      (iters, cost, ys) = solutionInfo sol 
-  when (iters >= maxIters settings)
-    $ K.logLE K.Error
-    $ "TSNE: too many iterations (max=" <> (T.pack $ show $ maxIters settings) <> ")"
-  when (checkDeltaAbsCost cost' cost)
-    $ K.logLE K.Diagnostic
-    $ "TSNE: Succeeded. Absolute cost difference =" <> (T.pack $ show $ abs (cost - cost'))
-  when (checkDeltaRelCost cost' cost)
-    $ K.logLE K.Diagnostic
-    $ "TSNE: Succeeded. Relative cost difference =" <> (T.pack $ show $ abs (cost - cost')/cost')
-  return $ M.fromList $ zip keyList ys
+-}
+--  sol <- K.knitMaybe "TSNE: No iterations in stream." $ solsM
+  let getSols (_, _, ys) = ys
+  return $ fmap (M.fromList . zip keyList . getSols) sols
     

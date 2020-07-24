@@ -119,9 +119,9 @@ most diehard supporters, but he'd still lose the rest, as well as the election o
 
 1. **Two Possible GOP GOTV Strategies**
 2. **Results Of Our Analysis**
-3. **Sidebar: The Math**
-4. **What Does It All Mean?**
-5. **Take Action**
+3. **What Does It All Mean?**
+4. **Take Action**
+5. **Sidebar: The Math**
 
 ## Two Possible GOP GOTV Strategies
 According to the [270toWin][BGPolls] polling average,
@@ -147,8 +147,8 @@ battleground states might be to work at boosting turnout
 among all WWC voters. 
 
 2. Another strategy, which seems closer to what is actually happening
-right now, is to try to boost turnout only among "the base" that has stuck by Trump since the
-2016 election.
+right now, is to try to boost turnout only among "the base"--the portion of the
+WWC that voted for Trump in 2016, and has stuck by Trump since then.
 
 Could either of these approaches lead Trump to victory in 2020?
 
