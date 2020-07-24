@@ -153,6 +153,9 @@ type SOM_Cluster = Cluster (Int, Int)
 type K_Cluster = Cluster Int
 type PCA1 = "PCA1" F.:-> Double
 type PCA2 = "PCA2" F.:-> Double
+type TSNE1 = "TSNE1" F.:-> Double
+type TSNE2 = "TSNE2" F.:-> Double
+
 
 
 type instance FI.VectorFor (Int, Int) = K.Vector
@@ -375,16 +378,24 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                               (FMR.foldAndAddKey votesToVoteShareF)
       return $ FL.fold houseResultsF houseResults
 
+  pumsByCDWithVoteShare_C <- do
+    let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare_C
+    BR.retrieveOrMakeFrame "mrp/DistrictClusters/pumsByCDWithVoteShare.bin" cachedDeps $ \(pumsByCD, houseVoteShare) -> do
+      K.logLE K.Info $ "Joining demographics with vote share data"
+      let (pumsByCDWithVoteShare, missing) = FJ.leftJoinWithMissing  @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                             pumsByCD
+                                             houseVoteShare
+      K.logLE K.Info $ "Districts with missing house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing)
+      return pumsByCDWithVoteShare
+
   K.logLE K.Info $ "Building clustering input"
   districtsForClustering :: [DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref] (DT.CatColsASER5 V.++ '[PUMS.Citizens])] <- do
-    pumsByCD <- K.ignoreCacheTime pums2018ByCD_C
-    houseVoteShare <- K.ignoreCacheTime houseVoteShare_C
-    let (pumsByCDWithVoteShare, missing) = FJ.leftJoinWithMissing  @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
-                                           pumsByCD
-                                           houseVoteShare
-        asVec rs = UVec.fromList $ fmap snd $ M.toAscList $ FL.fold (FL.premap (\r-> (F.rcast @DT.CatColsASER5 r, realToFrac $ F.rgetField @PUMS.Citizens r)) FL.map) rs
+    pumsByCDWithVoteShare <- K.ignoreCacheTime pumsByCDWithVoteShare_C
+    let asVec rs = UVec.fromList
+                   $ fmap snd
+                   $ M.toAscList
+                   $ FL.fold (FL.premap (\r-> (F.rcast @DT.CatColsASER5 r, realToFrac $ F.rgetField @PUMS.Citizens r)) FL.map) rs
         pop rs = FL.fold (FL.premap (F.rgetField @PUMS.Citizens) FL.sum) rs
-    K.logLE K.Info $ "Districts with missing house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing)
     return
       $ FL.fold
       (FMR.mapReduceFold
@@ -394,7 +405,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       )
       pumsByCDWithVoteShare
   K.logLE K.Info $ "After joining with 2018 voteshare info, working with " <> (T.pack $ show $ length districtsForClustering) <> " districts."
-
+      
+  let districtsForClustering_C = fmap (const districtsForClustering) pumsByCDWithVoteShare_C
   K.logLE K.Info $ "Computing top 2 PCA components"
   (pca1v, pca2v) <- do
     let asSVecs = fmap (SVec.convert . districtVec) districtsForClustering
@@ -459,17 +471,31 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   K.logLE K.Info $ "K-meansL <comp> = " <> (T.pack $ show meanKC) <> "; sigma(comp)=" <> (T.pack $ show stdKC)
 -- tSNE
   K.logLE K.Info $ "tSNE embedding..."
-  tsneM <- BR.runTSNE
-           districtId
-           (UVec.toList . districtVec)
-           (BR.TSNESettings 30 10 100 0.1 0.01)
-           (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
-           BR.tsne2D_S
-           districtsForClustering
-  K.logLE K.Info $ "TSNE results: " <> (T.pack $ show tsneM)
+  let tsneM n dfc = do
+        K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show n) <> " iterations." 
+        tsneM <- BR.runTSNE
+                 districtId
+                 (UVec.toList . districtVec)
+                 (BR.TSNESettings 30 10 n Nothing Nothing)
+                 (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
+                 BR.tsne2D_S
+                 dfc
            
+        let tSNERec :: (Double, Double) -> F.Record [TSNE1, TSNE2] 
+            tSNERec (x, y) = x F.&: y F.&: V.RNil
+            tSNERecs = fmap (\(k, tSNEXY) -> k F.<+> tSNERec tSNEXY) $ M.toList tsneM
+        return $ F.toFrame tSNERecs
 
+  tSNE_50 <- K.ignoreCacheTimeM
+             $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne50.bin" districtsForClustering_C (tsneM 50)
 
+  tSNE_100 <- K.ignoreCacheTimeM
+              $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne100.bin" districtsForClustering_C (tsneM 100)
+
+  tSNE_200 <- K.ignoreCacheTimeM
+              $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne200.bin" districtsForClustering_C (tsneM 200)
+
+    
 -- SOM
 
   K.logLE K.Info $ "SOM clustering..."
@@ -482,8 +508,6 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   let som = SOM.trainBatch som0 randomOrderDistricts  
   K.logLE K.Info $ "SOM Diagnostics"
 
-  
-  
   let scm = sameClusterMatrixSOM districtId som districtsForClustering
       effClusters = realToFrac (numDists * numDists)/ (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm scm)
   K.logLE K.Info $ "Effective clusters=" <> (T.pack $ show effClusters)  
@@ -626,7 +650,22 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
-             (fmap F.rcast $ snd kClusteredDistricts) 
+             (fmap F.rcast $ snd kClusteredDistricts)
+        _ <- K.addHvega Nothing Nothing
+             $ tsneVL
+             "tSNE Embedding (50 iterations)"
+             (FV.ViewConfig 400 400 10)
+             (fmap F.rcast tSNE_50)
+        _ <- K.addHvega Nothing Nothing
+             $ tsneVL
+             "tSNE Embedding (100 iterations)"
+             (FV.ViewConfig 400 400 10)
+             (fmap F.rcast tSNE_100)
+        _ <- K.addHvega Nothing Nothing
+             $ tsneVL
+             "tSNE Embedding (200 iterations)"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast tSNE_200)
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -646,6 +685,23 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         brAddMarkDown brReadMore
 
 
+tsneVL ::  Foldable f
+       => T.Text
+       -> FV.ViewConfig
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, TSNE1, TSNE2])
+       -> GV.VegaLite
+tsneVL title vc rows =
+  let dat = FV.recordsToVLData id FV.defaultParse rows
+      encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      enc = (GV.encoding . encX . encY . encColor) []      
+      mark = GV.mark GV.Circle []
+      selection = (GV.selection
+                . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]) []
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, (GV.transform . makeShare) [], selection, dat]
+  
 somRectHeatMap :: Foldable f
                => T.Text
                -> FV.ViewConfig

@@ -51,8 +51,8 @@ tsne2D_S opt input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2
 data TSNESettings = TSNESettings { perplexity :: Int
                                  , learningRate :: Double
                                  , maxIters :: Int
-                                 , deltaCostRel :: Double
-                                 , deltaCostAbs :: Double
+                                 , deltaCostRelM :: Maybe Double
+                                 , deltaCostAbsM :: Maybe Double
                                  }
 
 
@@ -71,14 +71,16 @@ runTSNE key dat settings solutionInfo tsneS as = do
       (keyList, input) = unzip asList
       options = TSNE.TSNEOptions (perplexity settings) (learningRate settings)
       printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ (show iter) ++ "; cost=" ++ show cost
-      solS = Streamly.mapM (\b -> printIter b >> return b) $ tsneS options input
+      solS = {- Streamly.mapM (\b -> printIter b >> return b) $-} tsneS options input
+      checkDeltaAbsCost c1 c2 = maybe False (\x-> abs (c1 - c2) <= x) $ deltaCostAbsM settings
+      checkDeltaRelCost c1 c2 = maybe False (\x-> abs (c1 - c2)/c1 <= x) $ deltaCostRelM settings
       stop (b1, b2) =
         let (_, cost1, _) = solutionInfo b1
             (iters, cost2, _) = solutionInfo b2
         in (iters > 2) &&
            ((iters >= maxIters settings)
-           || (abs (cost1 - cost2) <= deltaCostAbs settings)
-           || (abs (cost1 - cost2)/cost1 <= deltaCostRel settings))
+           || checkDeltaAbsCost cost1 cost2
+           || checkDeltaRelCost cost1 cost2)
   first2L <- K.liftKnit $ Streamly.toList $ Streamly.take 2 solS
   initial2 <- K.knitMaybe "TSNE: Failed to get first 2 iters"
              $ case first2L of
@@ -94,11 +96,11 @@ runTSNE key dat settings solutionInfo tsneS as = do
   when (iters >= maxIters settings)
     $ K.logLE K.Error
     $ "TSNE: too many iterations (max=" <> (T.pack $ show $ maxIters settings) <> ")"
-  when (abs (cost' - cost) <= deltaCostAbs settings)
+  when (checkDeltaAbsCost cost' cost)
     $ K.logLE K.Diagnostic
-    $ "TSNE: Succeeded. Absolute cost difference <=" <> (T.pack $ show $ deltaCostAbs settings)
-  when (abs (cost' - cost)/cost <= deltaCostRel settings)
+    $ "TSNE: Succeeded. Absolute cost difference =" <> (T.pack $ show $ abs (cost - cost'))
+  when (checkDeltaRelCost cost' cost)
     $ K.logLE K.Diagnostic
-    $ "TSNE: Succeeded. Relative cost difference <=" <> (T.pack $ show $ deltaCostRel settings)
+    $ "TSNE: Succeeded. Relative cost difference =" <> (T.pack $ show $ abs (cost - cost')/cost')
   return $ M.fromList $ zip keyList ys
     
