@@ -185,6 +185,9 @@ executable mrp-model
                 , MRP.TurnoutGaps
                 , MRP.ElectoralWeights
                 , MRP.Language
+                , MRP.BidenVsWWC
+                , MRP.DistrictClusters
+                , MRP.ElectoralWeights
                 , Visualizations.StatePrefs
   build-depends: base >= 4.11
                , blaze-colonnade

@@ -155,8 +155,9 @@ type PCA1 = "PCA1" F.:-> Double
 type PCA2 = "PCA2" F.:-> Double
 type TSNE1 = "TSNE1" F.:-> Double
 type TSNE2 = "TSNE2" F.:-> Double
-
-
+type TSNEIters = "TSNE_iterations" F.:-> Int
+type TSNEPerplexity = "TSNE_Perplexity" F.:-> Int
+type TSNELearningRate = "TSNE_LearningRate" F.:-> Double
 
 type instance FI.VectorFor (Int, Int) = K.Vector
 
@@ -469,32 +470,30 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       allDiffKTraces = fmap (\(scm1, scm2) -> kCompFactor * (realToFrac $ SLA.trace $ SLA.matMat_ SLA.ABt scm1 scm2)) allKSCMPairs
       (meanKC, stdKC) = FL.fold ((,) <$> FL.mean <*> FL.std) allDiffKTraces
   K.logLE K.Info $ "K-meansL <comp> = " <> (T.pack $ show meanKC) <> "; sigma(comp)=" <> (T.pack $ show stdKC)
+
 -- tSNE
   K.logLE K.Info $ "tSNE embedding..."
-  let tsneM n dfc = do
-        K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show n) <> " iterations." 
-        tsneM <- BR.runTSNE
-                 districtId
-                 (UVec.toList . districtVec)
-                 (BR.TSNESettings 30 10 n Nothing Nothing)
-                 (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
-                 BR.tsne2D_S
-                 dfc
+  let tsneIters = [500, 1000, 2000]
+      tsnePerplexities = [10, 30, 50]
+      tsneLearningRates = [10]
+--  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
+  tSNE_F <- K.ignoreCacheTimeM
+            $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
+    K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations." 
+    tsneMs <- BR.runTSNE
+              districtId
+              (UVec.toList . districtVec)
+              tsnePerplexities
+              tsneLearningRates
+              tsneIters
+              (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
+              BR.tsne2D_S
+              dfc
            
-        let tSNERec :: (Double, Double) -> F.Record [TSNE1, TSNE2] 
-            tSNERec (x, y) = x F.&: y F.&: V.RNil
-            tSNERecs = fmap (\(k, tSNEXY) -> k F.<+> tSNERec tSNEXY) $ M.toList tsneM
-        return $ F.toFrame tSNERecs
-
-  tSNE_50 <- K.ignoreCacheTimeM
-             $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne50.bin" districtsForClustering_C (tsneM 50)
-
-  tSNE_100 <- K.ignoreCacheTimeM
-              $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne100.bin" districtsForClustering_C (tsneM 100)
-
-  tSNE_200 <- K.ignoreCacheTimeM
-              $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne200.bin" districtsForClustering_C (tsneM 200)
-
+    let tSNERec :: BR.TSNEParams -> (Double, Double) -> F.Record [TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2] 
+        tSNERec (BR.TSNEParams p lr n) (x, y) = p F.&: lr F.&: n F.&: x F.&: y F.&: V.RNil
+        tSNERecs p = fmap (\(k, tSNEXY) -> k F.<+> tSNERec p tSNEXY) . M.toList 
+    return $ mconcat $ fmap (\(p, solM) -> F.toFrame $ tSNERecs p solM) $ tsneMs
     
 -- SOM
 
@@ -653,19 +652,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              (fmap F.rcast $ snd kClusteredDistricts)
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (50 iterations)"
+             "tSNE Embedding"
              (FV.ViewConfig 400 400 10)
-             (fmap F.rcast tSNE_50)
-        _ <- K.addHvega Nothing Nothing
-             $ tsneVL
-             "tSNE Embedding (100 iterations)"
-             (FV.ViewConfig 400 400 10)
-             (fmap F.rcast tSNE_100)
-        _ <- K.addHvega Nothing Nothing
-             $ tsneVL
-             "tSNE Embedding (200 iterations)"
-             (FV.ViewConfig 800 800 10)
-             (fmap F.rcast tSNE_200)
+             (fmap F.rcast tSNE_F)
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -688,19 +677,37 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 tsneVL ::  Foldable f
        => T.Text
        -> FV.ViewConfig
-       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, TSNE1, TSNE2])
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
        -> GV.VegaLite
 tsneVL title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
+      listF getField = fmap List.nub $ FL.premap getField FL.list
+      (perpL, lrL, iterL) = FL.fold ((,,)
+                            <$> listF (F.rgetField @TSNEPerplexity)
+                            <*> listF (F.rgetField @TSNELearningRate)
+                            <*> listF (F.rgetField @TSNEIters)) rows
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encRow = GV.row [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
+      encCol = GV.column [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
-      enc = (GV.encoding . encX . encY . encColor) []      
-      mark = GV.mark GV.Circle []
-      selection = (GV.selection
-                . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]) []
-  in FV.configuredVegaLite vc [FV.title title, enc, mark, (GV.transform . makeShare) [], selection, dat]
+      makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+      bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
+{-
+      bindPerplexity = GV.select "sPerplexity" GV.Single [GV.Fields ["TSNE_Perplexity"]
+                                                         , GV.Bind [ GV.ISelect "TSNE_Perplexity" [GV.InName "",GV.InOptions $ fmap (T.pack . show) perpL]]]
+      bindLearningRate = GV.select "sLearningRate" GV.Single [GV.Fields ["TSNE_LearningRate"]
+                                                            , GV.Bind [ GV.ISelect "TSNE_LearningRate" [GV.InName "",GV.InOptions $ fmap (T.pack . show) lrL]]]
+      bindIters = GV.select "sIters" GV.Single [GV.Fields ["TSNE_iterations"]
+                                              , GV.Bind [ GV.ISelect "TSNE_iterations" [GV.InName "",GV.InOptions $ fmap (T.pack . show) iterL]]]
+      filterSelections = GV.filter (GV.FSelection "sPerplexity") . GV.filter (GV.FSelection "sLearningRate") . GV.filter (GV.FSelection "sIters")
+-}
+      enc = (GV.encoding . encX . encY . encRow . encCol . encColor) []
+      transform = (GV.transform . makeShare . makeDistrict) []
+      selection = (GV.selection . bindScales) []
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
   
 somRectHeatMap :: Foldable f
                => T.Text

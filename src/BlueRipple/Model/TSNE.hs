@@ -49,38 +49,41 @@ tsne2D_S :: forall m.(Monad m, Pipes.MonadIO m)
        => TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT m TSNE.TSNEOutput2D
 tsne2D_S opt input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2D opt input       
 
-data TSNESettings = TSNESettings { perplexity :: Int
-                                 , learningRate :: Double
-                                 , snapshots :: Int
-                                 , itersPer :: Int
-                                 }
+data TSNEParams = TSNEParams { perplexity :: Int
+                             , learningRate :: Double
+                             , iters :: Int
+                             }
+
+                    
 
 runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
         => (a -> k)
         -> (a -> [Double])
-        -> TSNESettings
+        -> [Int] -- ^ perplexities
+        -> [Double] -- ^ learning rates
+        -> [Int] -- ^ iters
         -> (b -> (Int, Double, [c])) -- ^ get iter, cost, solutions
         -> (TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT IO b)
         -> f a
-        -> K.Sem r [M.Map k c]
-runTSNE key dat settings solutionInfo tsneS as = do
+        -> K.Sem r [(TSNEParams, M.Map k c)]
+runTSNE key dat perplexities learningRates iters solutionInfo tsneS as = do
   let asList = FL.fold (FL.premap (\a -> (key a, dat a)) FL.list) as
       (keyList, input) = unzip asList
-      options = TSNE.TSNEOptions (perplexity settings) (learningRate settings)
       printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ (show iter) ++ "; cost=" ++ show cost
-      solS = {- Streamly.mapM (\b -> printIter b >> return b) $-} tsneS options input
---      stops = drop 1 $ List.scanl' (flip (-)) 0 $ sort $ iters settings
-      
-      sols <- K.liftKnit
-              $ Streamly.lChunksOf (itersPer settings) Streamly.last Streamly.toList
-              $ Streamly.take (itersPer settings * snapshots settings)
-{-
-  solsM <- K.liftKnit
-           $ Streamly.head
-           $ Streamly.dropWhile f
-           $ Streamly.postscanl' (\(_,x) y -> (x,y)) initial2 (Streamly.drop 2 solS)
--}
---  sol <- K.knitMaybe "TSNE: No iterations in stream." $ solsM
-  let getSols (_, _, ys) = ys
-  return $ fmap (M.fromList . zip keyList . getSols) sols
-    
+      getSols x = let (_, _, ys) = solutionInfo x in ys
+      allIters p lr = do        
+        let solS = tsneS (TSNE.TSNEOptions p lr) input      
+        sols <- K.liftKnit
+                $ Streamly.toList
+                $ Streamly.mapM (\b -> printIter b >> return b) 
+                $ Streamly.map snd
+                $ Streamly.filter ((`elem` iters) . fst)
+                $ Streamly.indexed 
+                $ Streamly.take (maximum iters + 1) solS
+                
+        let maps = fmap (M.fromList . zip keyList . getSols) sols
+            params = fmap (\n -> TSNEParams p lr n) iters
+        return $ zip params maps
+      optionsToRun = [(p, lr) | p <- perplexities, lr <- learningRates]
+  resultsM <- K.sequenceConcurrently $ fmap (\(p, lr) -> allIters p lr) optionsToRun
+  concat <$> (K.knitMaybe "Some tSNE runs failed!" $ sequence resultsM)
