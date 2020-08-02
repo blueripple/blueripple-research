@@ -1,8 +1,8 @@
-packages: ./ 
+packages: ./ ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/tsne
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
-allow-newer: hvega, hashable, base, streamly, polysemy
+allow-newer: hvega, hashable, base, streamly, polysemy, random
 
 source-repository-package
   type: git
@@ -44,6 +44,18 @@ source-repository-package
   location: https://github.com/adamConnerSax/glm-haskell
   tag: d379eae6255ab374905f2857fc8f25d1fb8ec3cb
 
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/tsne
+--  tag: 48af74fdd4c83e453ef7af524baadb780ea87441
+
+source-repository-package
+  type: git
+  location: https://github.com/lehins/massiv
+  tag: a2e8c1933607ae15201d344617bab1d54e2f6175
+  subdir: massiv    
+
+  
 --source-repository-package
 --  type: git
 --  location: https://github.com/blueripple/FEC

@@ -473,20 +473,21 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 
 -- tSNE
   K.logLE K.Info $ "tSNE embedding..."
-  let tsneIters = [500, 1000, 2000]
-      tsnePerplexities = [10, 30, 50]
+  let tsneIters = [1000]
+      tsnePerplexities = [40]
       tsneLearningRates = [10]
 --  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
   tSNE_F <- K.ignoreCacheTimeM
             $ BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
-    K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations." 
+    K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."    
     tsneMs <- BR.runTSNE
+              (Just 1)
               districtId
               (UVec.toList . districtVec)
               tsnePerplexities
               tsneLearningRates
               tsneIters
-              (\x -> (BR.tsneIteration2D x, BR.tsneCost2D x, BR.tsneSolution2D x))
+              (\x -> (BR.tsneIteration2D_M x, BR.tsneCost2D_M x, BR.solutionToList $ BR.tsneSolution2D_M x))
               BR.tsne2D_S
               dfc
            
@@ -653,7 +654,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
              "tSNE Embedding"
-             (FV.ViewConfig 400 400 10)
+             (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_F)
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
@@ -689,8 +690,8 @@ tsneVL title vc rows =
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
-      encRow = GV.row [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
-      encCol = GV.column [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
+      encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
+      encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
       makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
@@ -704,10 +705,11 @@ tsneVL title vc rows =
                                               , GV.Bind [ GV.ISelect "TSNE_iterations" [GV.InName "",GV.InOptions $ fmap (T.pack . show) iterL]]]
       filterSelections = GV.filter (GV.FSelection "sPerplexity") . GV.filter (GV.FSelection "sLearningRate") . GV.filter (GV.FSelection "sIters")
 -}
-      enc = (GV.encoding . encX . encY . encRow . encCol . encColor) []
+      enc = (GV.encoding . encX . encY . encRow . encColor) []
       transform = (GV.transform . makeShare . makeDistrict) []
       selection = (GV.selection . bindScales) []
-  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
+      resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, resolve, dat]
   
 somRectHeatMap :: Foldable f
                => T.Text

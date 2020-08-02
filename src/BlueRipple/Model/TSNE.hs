@@ -41,13 +41,13 @@ fromPipes = Streamly.unfoldrM unconsP
       unconsP p = Pipes.next p >>= either (\_ -> return Nothing) (return . Just)
 
 tsne3D_S :: forall m.(Monad m, Pipes.MonadIO m)
-       => TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT m TSNE.TSNEOutput3D
-tsne3D_S opt input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne3D opt input       
+       => TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT m TSNE.TSNEOutput3D_M
+tsne3D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne3D_M opt seedM input       
 
 
 tsne2D_S :: forall m.(Monad m, Pipes.MonadIO m)
-       => TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT m TSNE.TSNEOutput2D
-tsne2D_S opt input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2D opt input       
+       => TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT m TSNE.TSNEOutput2D_M
+tsne2D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2D_M opt seedM input       
 
 data TSNEParams = TSNEParams { perplexity :: Int
                              , learningRate :: Double
@@ -57,22 +57,23 @@ data TSNEParams = TSNEParams { perplexity :: Int
                     
 
 runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
-        => (a -> k)
+        => Maybe Int -- ^ random seed.  Nothing for system seed.
+        -> (a -> k)
         -> (a -> [Double])
         -> [Int] -- ^ perplexities
         -> [Double] -- ^ learning rates
-        -> [Int] -- ^ iters
+        -> [Int] -- ^ iters        
         -> (b -> (Int, Double, [c])) -- ^ get iter, cost, solutions
-        -> (TSNE.TSNEOptions -> TSNE.TSNEInput -> Streamly.SerialT IO b)
+        -> (TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT IO b)
         -> f a
         -> K.Sem r [(TSNEParams, M.Map k c)]
-runTSNE key dat perplexities learningRates iters solutionInfo tsneS as = do
+runTSNE seedM key dat perplexities learningRates iters solutionInfo tsneS as = do
   let asList = FL.fold (FL.premap (\a -> (key a, dat a)) FL.list) as
-      (keyList, input) = unzip asList
+      (keyList, inputList) = unzip asList
       printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ (show iter) ++ "; cost=" ++ show cost
       getSols x = let (_, _, ys) = solutionInfo x in ys
       allIters p lr = do        
-        let solS = tsneS (TSNE.TSNEOptions p lr) input      
+        let solS = tsneS (TSNE.TSNEOptions p lr) seedM (listToInput inputList)
         sols <- K.liftKnit
                 $ Streamly.toList
                 $ Streamly.mapM (\b -> printIter b >> return b) 

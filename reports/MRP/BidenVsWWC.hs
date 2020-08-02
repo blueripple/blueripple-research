@@ -85,37 +85,44 @@ import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
 
-pollAvgDate = Time.fromGregorian 2020 7 21
+pollAvgDate = Time.fromGregorian 2020 7 26
 pollAvgDateText = (\(y,m,d) ->  (T.pack $ show m)
                                 <> "/" <> (T.pack $ show d)
                                 <> "/" <> (T.pack $ show y)) $ Time.toGregorian pollAvgDate
 
 
-bgPolls = [StatePoll "AZ" 4 
-          ,StatePoll "FL" 6
-          ,StatePoll "GA" (-1)
-          ,StatePoll "IA" (-1)
-          ,StatePoll "MI" 7
-          ,StatePoll "NC" 3
+bgPolls = [StatePoll "AK" 2
+          ,StatePoll "AR" (-2)
+          ,StatePoll "AZ" 4 
+          ,StatePoll "FL" 8
+          ,StatePoll "GA" (-2)
+          ,StatePoll "IA" 2
+          ,StatePoll "MI" 6
+          ,StatePoll "MO" (-7)
+          ,StatePoll "MT" (-9)
+          ,StatePoll "NC" 0
+          ,StatePoll "NH" 7
           ,StatePoll "NM" 14
           ,StatePoll "NV" 4
-          ,StatePoll "OH" 1
-          ,StatePoll "PA" 8
-          ,StatePoll "TX" 1
+          ,StatePoll "OH" (-1)
+          ,StatePoll "PA" 7
+          ,StatePoll "TN" (-9)
+          ,StatePoll "TX" 0
+          ,StatePoll "UT" (-3)
           ,StatePoll "VA" 12
-          ,StatePoll "WI" 7
+          ,StatePoll "WI" 3
           ]
 
 text1 :: T.Text
 text1 = [i|
 In a [previous post][BR:BattlegroundTurnout],
 we analyzed how changes in turnout might help Democrats win in various battleground states.
-Meabwhile, Trump's campaign is doing the same math. AS Trump has fallen in polls of battleground
+Meanwhile, Trump's campaign is doing the same math. AS Trump has fallen in polls of battleground
 states, it's becoming increasingly clear that his re-elections strategy is to "rally the base."
 But can that strategy actually work?
 
 Short answer: no.  Trump might win up to two battleground states by boosting turnout among his
-most diehard supporters, but he'd still lose the rest, as well as the election overall.
+most die-hard supporters, but he'd still lose the rest, as well as the election overall.
 
 1. **Two Possible GOP GOTV Strategies**
 2. **Results Of Our Analysis**
@@ -184,19 +191,26 @@ has a higher preference for Trump than the WWC overall.
 |]
 
 text2 :: T.Text = [here|
-With the exception of TX and OH, Trump would need more than a 10% surge in voting among the WWC
-to win any of those states, something that has not happened in recent history.  
+Trump would need an unheard of 10+% surge
+in voting among the WWC to win any of those states,
+something that has not happened in recent electoral history. Even a very-unlikely
+5% boost in his base only wins AK, IA, and WI.   
 Typical election-to-election swings in WWC voting are well under 5%.
 [This paper][SociologicalScience:WWCTurnout] breaks this down for the four
 presidential elections between 2004 and 2016, showing almost no shifts in battleground
 state voting for White non-Latinx voters with a high school diploma or less and 5% or
 less variability in the "Some college" group.
 
-It's harder to analyze turnout in
-Trump's "base," but there's no a-priori reason to think it would be possible to drive
-turnout there by more than 5% either. An unlikely 10% turnout shift in the "base"
-could bring AZ, FL, TX, NC, NV, and OH back to the GOP, which still leaves Biden
-winning the election, though not by much.
+All of these scenarios leave Biden winning the election.  Let's do the electoral college
+math.  First off, we're assuming Biden loses all the states where he's trailing at all right
+now, that is we're conceding GA, TX and OH, though we believe Biden could win any of these,
+though TX is probably a long-shot.  Not counting the states on this chart, Biden would have
+222 Electoral votes (EVs) and Trump 192 of the 270 EVs needed to win.
+If Biden wins all these states, he would end up
+winning the election with 346 EVs.  Suppose Trump rallies his base and gets a 5% turnout
+boost across the board.  Then he wins AK, IA and WI, shifting 19 EVs.  Biden still
+wins, with 327 EVs.  Even if Trump also takes AZ and NV, the next two states where rallying
+the base might work, Biden will still have 310 EVs and win.  
 
 So, our analysis of this table is that Trump might be able to close the gap
 with Biden in TX and OH with a general appeal to the WWC and that there is a small chance
@@ -204,19 +218,28 @@ of winning a few more states if he can mobilize his most ardent followers within
 But in the other battleground states, “rally the base” will be woefully insufficient.
 And none of this is enough to swing the election to Trump.
 
-Two important caveats:
+Some important caveats:
 
--These polls can and will shift between now and election day, so no one ought to be
-complacent.  Progerssives and Dems should work as hard as they can,
+- These polls can and will shift between now and election day, so no one ought to be
+complacent.  Progressives and Dems should work as hard as they can,
 to insure winning the presidential election and as many down-ticket races as possible.
 Fighting hard in places like GA, which may not be necessary to take the White House but
 where 2 senate seats are up for grabs,
 could well lead to Dems taking control of the Senate.
 
--The polls themselves are weighted by some reasonable calculation of who is likely to vote.
+- The polls themselves are weighted by some reasonable calculation of who is likely to vote.
 So whatever change in turnout the GOP needs,
 it must happen on top of whatever those voters are saying now.
 That makes big shifts less likely.
+
+- One response to this is to
+[argue that Trump voters are "shy" when responding to polls][WP:ShyTrumpVoter]
+and thus polls under count Trump voters.  There is no evidence of this.  The shock of 2016 was
+produced by last-minute changes which polling averages were slow to pick up and some issues
+around [weighting the electorate for education][Upshot:EdWeighting],
+the latter of which have been
+[addressed by the better pollsters][NBC:BetterPolling]
+since.
 
 ## What Does It All Mean?
 
@@ -234,21 +257,14 @@ and win over suburban white college graduates, and
 [fighting to suppress Vote-At-Home/Vote-By-Mail][NPR:TrumpVBM], which Trump
 perceives, [incorrectly][PNAS:NonPartisanVBM], to favor Dem voters.
 
-So, we think Dems need to fight just as hard as ever.  But we also think it's worth
-considering an expanded field for that fight as part of the effort to win the Senate.
-For example, right now, GA and TX appear to be in play and there are 2
-senate races
-(see RCP polling averages [here][RCP:GA1] and [here][RCP:GA2])
-in GA there as well close house races in GA-6 and GA-7. Money spent on any
-of those races, helps win the Presidency, the Senate and maintain control
-of the house.
+So, we think Dems need be especially focused on turning out their base and combating
+voter suppression, particularly in FL, PA, and MI. Trump must hold his slim leads in
+OH, TX, and GA, win all the closer states in the table above *and* win 1 out of 3 of
+FL, PA or MI. If he loses *any* of the other states in our list, MI would no longer
+be enough for Trump and he'd have to win FL or PA.  
 
-In TX, there is a (strong R) [Senate seat][TXSenate] worth fighting for and
-[several house seats][Bitecofer:TX] that could flip. So resources deployed in
-TX help maintain control of the house and force the Republicans to play defense.
-
-We also think it's worth readying ourselves to focus on anti-suppression efforts in the traditional
-battlegrounds, especially WI, MI, PA and FL.
+But FL, PA and MI currently look out of reach via
+traditional tactics.
 If these polling margins hold up as the election gets closer, the primary
 remaining strategy the Trump campaign will have is voter suppression.
 COVID-19 [creates various problems][BR:COVID] for local election officials, and the Republicans at the
@@ -262,23 +278,18 @@ forcing voters to wait in long lines.
 ## Take Action
 With these things in mind, we recommend giving your time and/or money to the following organizations:
 
-- Support Stacey Abrams [Fair Fight][FairFight] in GA. This organization is working to protect the
-franchise for all GA voters, as well as looking outward to protect voters all over the
-country.
+- Support [All Voting is Local][AllVotingIsLocal], a non-profit focused on voting-rights and enfranchisement
+in many of the same states we are highlighting above, as well as GA, which is important this cycle
+as well.
 
 - Support the [Brennan Center][Brennan], working to improve voting systems, fight
 voter suppression and restore voting rights to formerly incarcerated
 citizens.
 
-- If you are donating to candidates, consider expanding your universe of candidates
-to include competitive house seats in GA (GA-6 and GA-7)
-and TX (TX-2, TX-3, TX-10, TX-21, TX-22, TX-23, TX-24, TX-25, and TX-31),
-or even state legislature races in those states.
-Those resources are often efficiently used to drive Dem turnout in competitive parts of the state.
-See [our piece][BR:GA] on the GA state legislature for more there.  We plan a similar
-analysis of the TX state legislature, but in the meantime, [this organization][FlipTxHouse]
-is a good place to start.
-
+[AllVotingIsLocal]: <https://allvotingislocal.org/>
+[NBC:BetterPolling]: <https://www.nbcnews.com/politics/meet-the-press/here-s-how-nbc-news-working-improve-its-state-polling-n1234716>
+[Upshot:EdWeighting]: <https://www.nytimes.com/2017/05/31/upshot/a-2016-review-why-key-state-polls-were-wrong-about-trump.html>
+[WP:ShyTrumpVoter]: <https://www.washingtonpost.com/politics/2020/05/13/theory-that-trumps-support-is-hampered-by-shy-voters-returns-another-election-cycle/>
 [RCP:GA1]: <https://www.realclearpolitics.com/epolls/2020/senate/ga/georgia_senate_perdue_vs_ossoff-7067.html>
 [RCP:GA2]: <https://www.realclearpolitics.com/epolls/2020/senate/ga/georgia_senate_special_election_open_primary-7069.html>
 [FlipTXHouse]: <https://flipthetxhouse.com/>
@@ -304,7 +315,7 @@ WWC voting-age people and $N_x$ for the non-WWC number, so $N=N_w+N_x$.
 Similarly, we'll use
 $V=V_w+V_x$ for the number of voters and $W_w$ and $W_x$
 to work in percentages: $V_w = W_w N_w$ and $V_x = W_x N_x$. $P_w$ denotes the likelihood
-that a member of the WWC votes for Trump (Technical note: $P_w$ is, more precisly, the
+that a member of the WWC votes for Trump (Technical note: $P_w$ is, more precisely, the
 probability that they voted R *given* that they voted D or R. It's possible the non-voting
 or third-party voting members of the WWC have different preferences).
 
@@ -404,7 +415,7 @@ data StatePoll = StatePoll { abbreviation :: T.Text, demMargin :: Double}
 
 type PollMargin = "PollMargin" F.:-> Double  
 
-type BoostResRow = F.Record [BR.StateAbbreviation, PollMargin, ExcessWWCPer, ExcessBasePer]
+type BoostResRow = F.Record [BR.StateAbbreviation, PollMargin, ExcessWWCPer, ExcessBasePer, BR.Electors]
 
 statePollCollonade :: BR.CellStyle BoostResRow T.Text -> K.Colonnade K.Headed BoostResRow K.Cell
 statePollCollonade cas =
@@ -416,6 +427,7 @@ statePollCollonade cas =
      <> K.headed "Projected current D lead (% of Total)" (BR.toCell cas "D Margin" "D Margin" (BR.numberToStyledHtml "%2.1f" . margin))
      <> K.headed "Trump boost needed to tie (%WWC)" (BR.toCell cas "% WWC" "% WWC" (BR.numberToStyledHtml "%2.1f" . wwcBoost))
      <> K.headed "Trump boost needed to tie (% of \"base\")" (BR.toCell cas "% Base" "% Base" (BR.numberToStyledHtml "%2.1f" . baseBoost))
+     <> K.headed "Electoral Votes" (BR.toCell cas "EVs" "EVs" (BR.textToStyledHtml . T.pack . show . F.rgetField @BR.Electors))
 
 type  ASER5State as = (BR.StateAbbreviation ': DT.CatColsASER5) V.++ as
 
@@ -441,7 +453,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
     prefs_C <- BR.ccesPreferencesASER5_MRP
     demo_C <- PUMS.pumsLoader
     let cachedDeps = (,,) <$> electoralWeights_C <*> prefs_C <*> demo_C
-    --K.clear "mrp/BidenVsWWC/requiredExcessTurnout.bin"
+--  K.clear "mrp/BidenVsWWC/requiredExcessTurnout.bin"
     BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs, demo) -> do
       let isYear y r = F.rgetField @BR.Year r == y
           isPres r = F.rgetField @ET.Office r == ET.President  
@@ -461,12 +473,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
 
   logFrame requiredExcessTurnout
  
-  let bgPollsD = filter (\(StatePoll _ m) -> m > 0) bgPolls
+  let bgPollsD = filter (\(StatePoll _ m) -> m > 0 && m < 10) bgPolls
       pollF :: F.FrameRec '[BR.StateAbbreviation, PollMargin] = F.toFrame $ fmap (\(StatePoll sa dm) -> sa F.&: dm F.&: V.RNil) bgPollsD
-  withPollF <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE @'[BR.StateAbbreviation] pollF requiredExcessTurnout
+  electoralVotes <- fmap (F.rcast @[BR.StateAbbreviation, BR.Electors])
+                    . F.filterFrame ((== 2020). F.rgetField @BR.Year)
+                    <$> (K.ignoreCacheTimeM $ BR.electoralCollegeFrame)
+  withPollF <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE3 @'[BR.StateAbbreviation] pollF requiredExcessTurnout electoralVotes
   logFrame withPollF
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDateBidenVsWWC =  Time.fromGregorian 2020 7 25
+  let pubDateBidenVsWWC =  Time.fromGregorian 2020 7 26
   K.newPandoc
     (K.PandocInfo ((postRoute PostBidenVsWWC) <> "main")
       (brAddDates updated pubDateBidenVsWWC curDate
