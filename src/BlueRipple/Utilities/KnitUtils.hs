@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -138,6 +139,58 @@ retrieveOrMakeFrame
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
+
+
+retrieveOrMake2Frames
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
+     , FS.RecSerialize rs1
+     , V.RMap rs1
+     , FI.RecVec rs1
+     , FS.RecSerialize rs2
+     , V.RMap rs2
+     , FI.RecVec rs2
+     )
+  => T.Text
+  -> K.ActionWithCacheTime r b
+  -> (b -> K.Sem r (F.FrameRec rs1, F.FrameRec rs2))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs1, F.FrameRec rs2)) -- inner action does deserializtion. But we may not need to, so we defer
+retrieveOrMake2Frames key cachedDeps action = 
+  let fromOne = fmap FS.toS . FL.fold FL.list
+      toOne = F.toFrame . fmap FS.fromS
+      from (f1, f2) = (fromOne f1, fromOne f2)
+      to (s1, s2) = (toOne s1, toOne s2)
+  in K.wrapPrefix ("BlueRipple.retrieveOrMake2Frames (key=" <> key <> ")")
+     $ K.retrieveOrMakeTransformed from to key cachedDeps action
+
+
+retrieveOrMake3Frames
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
+     , FS.RecSerialize rs1
+     , V.RMap rs1
+     , FI.RecVec rs1
+     , FS.RecSerialize rs2
+     , V.RMap rs2
+     , FI.RecVec rs2
+     , FS.RecSerialize rs3
+     , V.RMap rs3
+     , FI.RecVec rs3
+     )
+  => T.Text
+  -> K.ActionWithCacheTime r b
+  -> (b -> K.Sem r (F.FrameRec rs1, F.FrameRec rs2, F.FrameRec rs3))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs1, F.FrameRec rs2, F.FrameRec rs3)) -- inner action does deserializtion. But we may not need to, so we defer
+retrieveOrMake3Frames key cachedDeps action = 
+  let fromOne = fmap FS.toS . FL.fold FL.list
+      toOne = F.toFrame . fmap FS.fromS
+      from (f1, f2, f3) = (fromOne f1, fromOne f2, fromOne f3)
+      to (s1, s2, s3) = (toOne s1, toOne s2, toOne s3)
+  in K.wrapPrefix ("BlueRipple.retrieveOrMake3Frames (key=" <> key <> ")")
+     $ K.retrieveOrMakeTransformed from to key cachedDeps action
+
+
+
 
 retrieveOrMakeRecList
   :: (K.KnitEffects r
