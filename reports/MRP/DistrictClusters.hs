@@ -439,7 +439,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                            districtVec
                            (realToFrac . districtPop)
             metric = euclideanMetric
-        initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric 10 (fmap districtVec districtsForClustering)
+        initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric 5 (fmap districtVec districtsForClustering)
         (MK.Clusters kmClusters, iters) <- MK.weightedKMeans (MK.Centroids $ Vec.fromList initialCentroids) distWeighted metric districtsForClustering
         let distRec :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PUMS.Citizens] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
                     -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PUMS.Citizens, W, PCA1, PCA2]
@@ -478,7 +478,8 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   let tsneIters = [1000]
       tsnePerplexities = [40]
       tsneLearningRates = [10]
---  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
+      tsneClusters = 5
+  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
   (tSNE_ClustersF, tSNE_ClusteredF) <- K.ignoreCacheTimeM
             $ BR.retrieveOrMake2Frames "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
     K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."    
@@ -508,7 +509,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                        getVec
                        (realToFrac . F.rgetField @PUMS.Citizens)
         metric = euclideanMetric
-    initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric 10 (fmap getVec $ FL.fold FL.list fullTSNEResult)
+    initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric tsneClusters (fmap getVec $ FL.fold FL.list fullTSNEResult)
     (MK.Clusters kmClusters, iters) <- MK.weightedKMeans (MK.Centroids $ Vec.fromList initialCentroids) distWeighted metric fullTSNEResult
     let processOne c = do
           (centroidUVec, cW) <- MK.centroid distWeighted (MK.members c)
@@ -672,7 +673,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              (fmap F.rcast $ snd kClusteredDistricts)
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding"
+             "tSNE Embedding (Colored by Dem Vote Share)"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredF)
         _ <- K.addHvega Nothing Nothing
@@ -697,7 +698,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 tsneVL ::  Foldable f
        => T.Text
        -> FV.ViewConfig
-       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, FK.ClusterId, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
        -> GV.VegaLite
 tsneVL title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
@@ -709,11 +710,13 @@ tsneVL title vc rows =
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
       encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
       encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
       makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
-      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
       bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
 {-
       bindPerplexity = GV.select "sPerplexity" GV.Single [GV.Fields ["TSNE_Perplexity"]
@@ -724,11 +727,11 @@ tsneVL title vc rows =
                                               , GV.Bind [ GV.ISelect "TSNE_iterations" [GV.InName "",GV.InOptions $ fmap (T.pack . show) iterL]]]
       filterSelections = GV.filter (GV.FSelection "sPerplexity") . GV.filter (GV.FSelection "sLearningRate") . GV.filter (GV.FSelection "sIters")
 -}
-      enc = (GV.encoding . encX . encY . encRow . encColor) []
+      enc = (GV.encoding . encX . encY . encColor . encFill . encShape) []
       transform = (GV.transform . makeShare . makeDistrict) []
       selection = (GV.selection . bindScales) []
       resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
-  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, resolve, dat]
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
   
 somRectHeatMap :: (Foldable f, Functor f)
                => T.Text
@@ -809,12 +812,13 @@ clusterVL title vc centroidRows districtRows =
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
       encColorD = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encFillD = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
       encSizeC = GV.size [FV.mName @W, GV.MmType GV.Quantitative]
       selectionD = GV.selection
                    . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
       centroidSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC . encShape) [], centroidMark, (GV.transform . makeCentroidColor) [], datCentroids]
-      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD . encShape) [], districtMark, (GV.transform . makeShare) [], selectionD [], datDistricts]
-  in FV.configuredVegaLite  vc [FV.title title, GV.layer [centroidSpec, districtSpec]]
+      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD . encFillD . encShape) [], districtMark, (GV.transform . makeShare) [], selectionD [], datDistricts]
+  in FV.configuredVegaLite  vc [FV.title title, GV.layer [districtSpec]]
   
 
 kMeansBoxes :: forall x y f.
