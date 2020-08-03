@@ -24,6 +24,7 @@
 module MRP.DistrictClusters where
 
 import qualified Control.Foldl                 as FL
+import qualified Control.Foldl.Statistics      as FLS
 import qualified Control.Monad.State           as State
 import           Data.Discrimination            ( Grouping )
 import qualified Data.List as List
@@ -37,6 +38,8 @@ import qualified Data.Vector.Unboxed           as UVec
 import qualified Data.Vector.Storable           as SVec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+
+import qualified Data.Massiv.Array as MA
 
 import GHC.Generics (Generic)
 
@@ -96,7 +99,6 @@ import qualified Data.Random.Distribution.Uniform as RandomFu
 import qualified Data.Random as RandomFu
 import qualified Data.Sparse.SpMatrix as SLA
 
-
 import qualified Data.Word as Word
 
 import qualified BlueRipple.Data.DataFrames as BR
@@ -109,6 +111,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.Turnout_MRP as BR
 import qualified BlueRipple.Model.TSNE as BR
+import qualified Data.Algorithm.TSNE.Utils as TSNE
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
@@ -350,6 +353,44 @@ randomSCM nPats nClusters = do
             in (n,n,1) : (upper ++ lower)
       scM = List.concat $ fmap go $ zip [0..] $ List.tails clustered
   return $ SLA.fromListSM (nPats, nPats) scM
+
+type Method = "Method" F.:-> T.Text
+type Mean = "mean" F.:-> Double
+type Sigma = "sigma" F.:-> Double
+type ScaledDelta = "scaled_delta" F.:-> Double
+
+computeScaledDelta
+  :: forall rs f.
+  (Foldable f
+  , FI.RecVec (rs V.++ [Method, Mean, Sigma, ScaledDelta])
+  )
+  => T.Text  
+  -> (F.Record rs -> F.Record rs -> Double)
+  -> Double 
+  -> (F.Record rs -> Double)
+  -> f (F.Record rs)
+  -> F.FrameRec (rs V.++ [Method, Mean, Sigma, ScaledDelta])
+computeScaledDelta methodName distance var qty  rows =
+  let length = FL.fold FL.length rows
+      datV = MA.fromList @MA.B MA.Seq $ FL.fold FL.list rows
+      xs = MA.map qty datV
+      offDiagonalDistances
+        = MA.computeAs MA.U $ TSNE.symmetric MA.Seq (MA.Sz1 length)
+          $ \(i MA.:. j) -> if i == j then 0 else exp (- (distance (datV MA.! i) (datV MA.! j))/var)
+      dist v =
+        let xw = MA.computeAs MA.B $ MA.zip xs v
+            mean = FL.fold FLS.meanWeighted xw
+            var = FL.fold (FLS.varianceWeighted mean) xw
+        in (mean, var)            
+      dists = MA.map dist (MA.outerSlices offDiagonalDistances)
+      asRec :: F.Record rs -> (Double, Double) -> F.Record (rs V.++ [Method, Mean, Sigma, ScaledDelta])
+      asRec r (m, v) =
+        let sigma = sqrt v
+            scaledDelta = (qty r - m)/sigma
+            suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta]
+            suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: V.RNil
+        in r F.<+> suffixRec
+  in F.toFrame $ MA.computeAs MA.B $ MA.zipWith asRec datV dists
   
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClustering" $ do
@@ -479,7 +520,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       tsnePerplexities = [40]
       tsneLearningRates = [10]
       tsneClusters = 5
-  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
+--  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
   (tSNE_ClustersF, tSNE_ClusteredF) <- K.ignoreCacheTimeM
             $ BR.retrieveOrMake2Frames "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
     K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."    
@@ -520,9 +561,21 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
     rawClusters <- K.knitMaybe "Empty Cluster in tSNE K-means." $ traverse processOne (Vec.toList kmClusters)
     let (clustersL, clusteredDistrictsL)
           = FK.clusteredRowsFull @TSNE1 @TSNE2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
-        
+    K.logLE K.Info "tSNE computation done."
     return (F.toFrame clustersL, F.toFrame clusteredDistrictsL)
-  logFrame tSNE_ClustersF
+    
+  let tSNE_ClusteredWithSD =
+        let tsneXY r = (F.rgetField @TSNE1 r, F.rgetField @TSNE2 r)
+            tsneDistance r1 r2 =
+              let (x1, y1) = tsneXY r1
+                  (x2, y2) = tsneXY r2
+                  dX = x1 - x2
+                  dY = y1 - y2
+              in (dX * dX) + (dY * dY)
+        in computeScaledDelta "tSNE-embedding" tsneDistance 5.0 (F.rgetField @ET.DemPref) tSNE_ClusteredF
+    
+  logFrame tSNE_ClusteredWithSD
+
 -- SOM      
   K.logLE K.Info $ "SOM clustering..."
   let gridRows = 3
@@ -675,7 +728,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              $ tsneVL
              "tSNE Embedding (Colored by Dem Vote Share)"
              (FV.ViewConfig 800 800 10)
-             (fmap F.rcast tSNE_ClusteredF)
+             (fmap F.rcast tSNE_ClusteredWithSD)
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
@@ -698,7 +751,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 tsneVL ::  Foldable f
        => T.Text
        -> FV.ViewConfig
-       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, FK.ClusterId, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, FK.ClusterId, ScaledDelta, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
        -> GV.VegaLite
 tsneVL title vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
@@ -709,8 +762,8 @@ tsneVL title vc rows =
                             <*> listF (F.rgetField @TSNEIters)) rows
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
-      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
-      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" []]]
+      encColor = GV.color [FV.mName @ScaledDelta, GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encFill = GV.fill [FV.mName @ScaledDelta, GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
       encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
       encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
       encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]

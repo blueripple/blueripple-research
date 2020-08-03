@@ -28,7 +28,8 @@ common deps
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega
                , Frames-utils >= 0.3.0.0
-               , foldl
+               , foldl >= 1.4 && < 1.5
+               , foldl-statistics >= 0.1.5 && < 0.2
                , glm-haskell
                , groups
                , here
@@ -36,6 +37,7 @@ common deps
                , hmatrix
                , knit-haskell >= 0.8.0.0 && < 0.9
                , lucid
+               , massiv >= 0.5.4 && < 0.6
                , map-reduce-folds >= 0.1.0.1
                , pipes
                , polysemy >= 0.2.1.0 && < 1.4
@@ -95,7 +97,7 @@ library
                      , gamma
                      , hashable
                      , hmatrix
-                     , lens
+                     , lens                    
                      , math-functions
                      , mtl
                      , hmatrix-nlopt
