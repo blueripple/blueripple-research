@@ -197,6 +197,7 @@ executable mrp-model
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , colonnade
+               , data-science-utils
                , discrimination
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10

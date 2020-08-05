@@ -110,8 +110,10 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.Turnout_MRP as BR
+
 import qualified BlueRipple.Model.TSNE as BR
 import qualified Data.Algorithm.TSNE.Utils as TSNE
+import qualified Numeric.Clustering.Perplexity as Perplexity
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
 import qualified MRP.CCES_MRP_Analysis as BR
@@ -360,8 +362,9 @@ type Sigma = "sigma" F.:-> Double
 type ScaledDelta = "scaled_delta" F.:-> Double
 
 computeScaledDelta
-  :: forall rs f.
-  (Foldable f
+  :: forall rs f r. 
+  (K.KnitEffects r
+  , Foldable f
   , FI.RecVec (rs V.++ [Method, Mean, Sigma, ScaledDelta])
   )
   => T.Text  
@@ -369,20 +372,25 @@ computeScaledDelta
   -> Double 
   -> (F.Record rs -> Double)
   -> f (F.Record rs)
-  -> F.FrameRec (rs V.++ [Method, Mean, Sigma, ScaledDelta])
-computeScaledDelta methodName distance var qty  rows =
+  -> K.Sem r (F.FrameRec (rs V.++ [Method, Mean, Sigma, ScaledDelta]))
+computeScaledDelta methodName distance perplexity qty  rows = do
   let length = FL.fold FL.length rows
       datV = MA.fromList @MA.B MA.Seq $ FL.fold FL.list rows
       xs = MA.map qty datV
-      offDiagonalDistances
+      distances
         = MA.computeAs MA.U $ TSNE.symmetric MA.Seq (MA.Sz1 length)
-          $ \(i MA.:. j) -> if i == j then 0 else exp (- (distance (datV MA.! i) (datV MA.! j))/var)
-      dist v =
+          $ \(i MA.:. j) -> distance (datV MA.! i) (datV MA.! j)
+  K.logLE K.Info "Computing probabilities from distances.."
+  probabilities <- K.knitEither
+                   $ either (Left . T.pack . show) Right
+                   $ Perplexity.probabilities perplexity distances
+  K.logLE K.Info "Finished computing probabilities from distances."
+  let dist v =
         let xw = MA.computeAs MA.B $ MA.zip xs v
             mean = FL.fold FLS.meanWeighted xw
             var = FL.fold (FLS.varianceWeighted mean) xw
         in (mean, var)            
-      dists = MA.map dist (MA.outerSlices offDiagonalDistances)
+      dists = MA.map dist (MA.outerSlices probabilities)
       asRec :: F.Record rs -> (Double, Double) -> F.Record (rs V.++ [Method, Mean, Sigma, ScaledDelta])
       asRec r (m, v) =
         let sigma = sqrt v
@@ -390,7 +398,7 @@ computeScaledDelta methodName distance var qty  rows =
             suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta]
             suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: V.RNil
         in r F.<+> suffixRec
-  in F.toFrame $ MA.computeAs MA.B $ MA.zipWith asRec datV dists
+  return $ F.toFrame $ MA.computeAs MA.B $ MA.zipWith asRec datV dists
   
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClustering" $ do
@@ -563,16 +571,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
           = FK.clusteredRowsFull @TSNE1 @TSNE2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
     K.logLE K.Info "tSNE computation done."
     return (F.toFrame clustersL, F.toFrame clusteredDistrictsL)
-    
-  let tSNE_ClusteredWithSD =
-        let tsneXY r = (F.rgetField @TSNE1 r, F.rgetField @TSNE2 r)
-            tsneDistance r1 r2 =
-              let (x1, y1) = tsneXY r1
-                  (x2, y2) = tsneXY r2
-                  dX = x1 - x2
-                  dY = y1 - y2
-              in (dX * dX) + (dY * dY)
-        in computeScaledDelta "tSNE-embedding" tsneDistance 5.0 (F.rgetField @ET.DemPref) tSNE_ClusteredF
+
+  K.logLE K.Info "Computing scaled deltas for tSNE result."
+  tSNE_ClusteredWithSD <- do
+    let tsneXY r = (F.rgetField @TSNE1 r, F.rgetField @TSNE2 r)
+        tsneDistance r1 r2 =
+          let (x1, y1) = tsneXY r1
+              (x2, y2) = tsneXY r2
+              dX = x1 - x2
+              dY = y1 - y2
+          in (dX * dX) + (dY * dY)
+    computeScaledDelta "tSNE-embedding" tsneDistance 40.0 (F.rgetField @ET.DemPref) tSNE_ClusteredF
     
   logFrame tSNE_ClusteredWithSD
 

@@ -1,4 +1,4 @@
-packages: ./ ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/tsne
+packages: ./ ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/data-science-utils
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
@@ -29,10 +29,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-hvega
   tag: 4289604f78b513bb6b4aa21237fe5a75693aa5a4
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/data-science-utils
-  tag: cfe8d5f3397d821896201b545b862c82b84b91eb
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/data-science-utils
+--  tag: cfe8d5f3397d821896201b545b862c82b84b91eb
 
 source-repository-package
   type: git
@@ -44,10 +44,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/glm-haskell
   tag: d379eae6255ab374905f2857fc8f25d1fb8ec3cb
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/tsne
---  tag: 48af74fdd4c83e453ef7af524baadb780ea87441
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/tsne
+  tag: 3d900ed7612e223121144b2ebe79acfe5e94f3d3
 
 source-repository-package
   type: git
