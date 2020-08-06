@@ -249,16 +249,12 @@ absMetric xs ys =  UVec.sum $ UVec.map abs $ UVec.zipWith (-) xs ys
 euclideanMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
 euclideanMetric xs ys = UVec.sum $ UVec.map (\x -> x * x) $ UVec.zipWith (-) xs ys
 
-districtDiff :: forall ks d as rs.(Ord (F.Record ks)
-                                  , ks F.⊆ rs
-                                  , F.ElemOf rs d
-                                  , V.KnownField d
-                                  , Real (V.Snd d)
-                                  )
-             => (UVec.Vector Double -> UVec.Vector Double -> Double) 
-             -> DistrictP as rs
-             -> DistrictP as rs
-             -> Double
+districtDiff
+  :: forall ks d as rs.
+     (UVec.Vector Double -> UVec.Vector Double -> Double) 
+  -> DistrictP as rs
+  -> DistrictP as rs
+  -> Double
 districtDiff metric d1 d2 = metric (districtVec d1) (districtVec d2)
 
 districtMakeSimilar :: forall ks d as.(Ord (F.Record ks)
@@ -362,28 +358,33 @@ type Sigma = "sigma" F.:-> Double
 type ScaledDelta = "scaled_delta" F.:-> Double
 
 computeScaledDelta
-  :: forall rs f r. 
+  :: forall ks a f r. 
   (K.KnitEffects r
   , Foldable f
-  , FI.RecVec (rs V.++ [Method, Mean, Sigma, ScaledDelta])
+  , FI.RecVec (ks V.++ [Method, Mean, Sigma, ScaledDelta])
   )
   => T.Text  
-  -> (F.Record rs -> F.Record rs -> Double)
+  -> (a -> a -> Double)
   -> Double 
-  -> (F.Record rs -> Double)
-  -> f (F.Record rs)
-  -> K.Sem r (F.FrameRec (rs V.++ [Method, Mean, Sigma, ScaledDelta]))
-computeScaledDelta methodName distance perplexity qty  rows = do
+  -> (a -> Double)
+  -> (a -> F.Record ks)
+  -> f a
+  -> K.Sem r (F.FrameRec (ks V.++ [Method, Mean, Sigma, ScaledDelta]))
+computeScaledDelta methodName distance perplexity qty key rows = do
   let length = FL.fold FL.length rows
       datV = MA.fromList @MA.B MA.Seq $ FL.fold FL.list rows
       xs = MA.map qty datV
-      distances
+      rawDistances
         = MA.computeAs MA.U $ TSNE.symmetric MA.Seq (MA.Sz1 length)
           $ \(i MA.:. j) -> distance (datV MA.! i) (datV MA.! j)
+      meanDistance = MA.sum rawDistances / (realToFrac $ length * length)
+      distances = MA.computeAs MA.U $ MA.map (/meanDistance) rawDistances 
   K.logLE K.Info "Computing probabilities from distances.."
+--  K.logLE K.Info $ T.pack $ show distances
   probabilities <- K.knitEither
                    $ either (Left . T.pack . show) Right
                    $ Perplexity.probabilities perplexity distances
+--  K.logLE K.Info $ T.pack $ show probabilities
   K.logLE K.Info "Finished computing probabilities from distances."
   let dist v =
         let xw = MA.computeAs MA.B $ MA.zip xs v
@@ -391,13 +392,13 @@ computeScaledDelta methodName distance perplexity qty  rows = do
             var = FL.fold (FLS.varianceWeighted mean) xw
         in (mean, var)            
       dists = MA.map dist (MA.outerSlices probabilities)
-      asRec :: F.Record rs -> (Double, Double) -> F.Record (rs V.++ [Method, Mean, Sigma, ScaledDelta])
-      asRec r (m, v) =
+      asRec :: a -> (Double, Double) -> F.Record (ks V.++ [Method, Mean, Sigma, ScaledDelta])
+      asRec a (m, v) =
         let sigma = sqrt v
-            scaledDelta = (qty r - m)/sigma
+            scaledDelta = (qty a - m)/sigma
             suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta]
             suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: V.RNil
-        in r F.<+> suffixRec
+        in key a F.<+> suffixRec
   return $ F.toFrame $ MA.computeAs MA.B $ MA.zipWith asRec datV dists
   
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
@@ -457,7 +458,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       )
       pumsByCDWithVoteShare
   K.logLE K.Info $ "After joining with 2018 voteshare info, working with " <> (T.pack $ show $ length districtsForClustering) <> " districts."
-      
+
+
+  K.logLE K.Info "Computing scaled deltas for raw districts."
+  rawSD <- do
+    let rawDist = districtDiff euclideanMetric
+    computeScaledDelta "Raw" rawDist 40.0 (F.rgetField @ET.DemPref . districtId) districtId $ districtsForClustering
+
+    
   let districtsForClustering_C = fmap (const districtsForClustering) pumsByCDWithVoteShare_C
   K.logLE K.Info $ "Computing top 2 PCA components"
   (pca1v, pca2v) <- do
@@ -505,8 +513,21 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
               return $ ((cPCA1, cPCA2, cW), withProjs)
         rawClusters <- K.knitMaybe "Empty Cluster in K_means." $ traverse processOne  (Vec.toList kmClusters) 
         return $ FK.clusteredRowsFull @PCA1 @PCA2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
+
   
   kClusteredDistricts <- kClusterDistricts
+  logFrame $ snd kClusteredDistricts
+  K.logLE K.Info "Computing scaled deltas for top two PCA embedding."
+  pcaSD   <- do
+    let pcaXY r = (F.rgetField @PCA1 r, F.rgetField @PCA2 r)    
+        pcaDist r1 r2 =
+          let (x1, y1) = pcaXY r1
+              (x2, y2) = pcaXY r2
+              dx = x1 - x2
+              dy = y1 - y2
+          in (dx * dx) + (dy * dy)
+    computeScaledDelta "PCA" pcaDist 40.0 (F.rgetField @ET.DemPref) id $ snd kClusteredDistricts
+
   K.logLE K.Info $ "K-means diagnostics"
   let kClustered = snd kClusteredDistricts
       numKDists = length kClustered 
@@ -581,9 +602,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
               dX = x1 - x2
               dY = y1 - y2
           in (dX * dX) + (dY * dY)
-    computeScaledDelta "tSNE-embedding" tsneDistance 40.0 (F.rgetField @ET.DemPref) tSNE_ClusteredF
+    computeScaledDelta "tSNE" tsneDistance 40.0 (F.rgetField @ET.DemPref) id tSNE_ClusteredF
     
-  logFrame tSNE_ClusteredWithSD
+--  logFrame tSNE_ClusteredWithSD
 
 -- SOM      
   K.logLE K.Info $ "SOM clustering..."
@@ -709,7 +730,36 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       districtsOnMap <- F.toFrame <$> (K.knitMaybe "Error adding SOM coords to districts" $ traverse districtSOMCoords districtsForClustering)
       return (districtsWithStatsF, districtsOnMap)
 --  logFrame districtsOnMap
-        
+
+  K.logLE K.Info "Computing scaled deltas for SOM embedding."
+  somSD   <- do
+    let somXY r = (F.rgetField @'("X", Double) r, F.rgetField @'("Y", Double) r)    
+        somDist r1 r2 =
+          let (x1, y1) = somXY r1
+              (x2, y2) = somXY r2
+              dx = x1 - x2
+              dy = y1 - y2
+          in (dx * dx) + (dy * dy)
+    computeScaledDelta "SOM" somDist 40.0 (F.rgetField @ET.DemPref) id districtsOnMap
+
+
+  -- put all scaled deltas together
+  let scaledDeltaCols = F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, Method, Mean, Sigma, ScaledDelta]
+      allScaledDeltas =  fmap scaledDeltaCols tSNE_ClusteredWithSD
+                         <> fmap scaledDeltaCols pcaSD
+                         <> fmap scaledDeltaCols rawSD
+                         <> fmap scaledDeltaCols somSD
+      allScaledDeltasForTableF =
+        let methodsF :: FL.Fold (F.Record [Method, Mean, Sigma, ScaledDelta]) (M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta]))
+            methodsF = FL.premap (\r -> (F.rgetField @Method r, F.rcast r)) FL.map 
+        in MR.mapReduceFold
+           MR.noUnpack
+           (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref]) (F.rcast @[Method, Mean, Sigma, ScaledDelta]))
+           (MR.foldAndLabel methodsF (,))
+      sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd     
+      allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF allScaledDeltas
+      
+  K.logLE K.Info $ "allScaledDeltas: " <> (T.pack $ show allScaledDeltasForTable)    
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
@@ -735,7 +785,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              (fmap F.rcast $ snd kClusteredDistricts)
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (Colored by Dem Vote Share)"
+             "tSNE Embedding (Colored by Dem Vote Share, Sized by Anomaly)"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
         _ <- K.addHvega Nothing Nothing
@@ -754,6 +804,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
           (BHA.class_ "brTable")
           (dwsCollonnade mempty)
           districtsWithStatsF
+        BR.brAddRawHtmlTable
+          ("Districts With Scaled Delta")
+          (BHA.class_ "brTable")
+          (sdCollonnade mempty)
+          allScaledDeltasForTable
+          
         brAddMarkDown brReadMore
 
 
@@ -771,12 +827,14 @@ tsneVL title vc rows =
                             <*> listF (F.rgetField @TSNEIters)) rows
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
-      encColor = GV.color [FV.mName @ScaledDelta, GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
-      encFill = GV.fill [FV.mName @ScaledDelta, GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]      
       encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
+      encSize = GV.size [GV.MName "Anomaly Index", GV.MmType GV.Quantitative]
       encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
       encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      makeAbsDelta = GV.calculateAs "abs (datum.scaled_delta)" "Anomaly Index"                        
       makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
       mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
       bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
@@ -789,8 +847,8 @@ tsneVL title vc rows =
                                               , GV.Bind [ GV.ISelect "TSNE_iterations" [GV.InName "",GV.InOptions $ fmap (T.pack . show) iterL]]]
       filterSelections = GV.filter (GV.FSelection "sPerplexity") . GV.filter (GV.FSelection "sLearningRate") . GV.filter (GV.FSelection "sIters")
 -}
-      enc = (GV.encoding . encX . encY . encColor . encFill . encShape) []
-      transform = (GV.transform . makeShare . makeDistrict) []
+      enc = (GV.encoding . encX . encY . encColor . encFill . encShape . encSize) []
+      transform = (GV.transform . makeShare . makeDistrict . makeAbsDelta) []
       selection = (GV.selection . bindScales) []
       resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
   in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
@@ -928,6 +986,23 @@ dwsCollonnade cas =
      <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref))
      <> K.headed "2016 D Vote Share" (BR.toCell cas "2016 D" "2016 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @VoteShare2016))
        
+type SDRow = [BR.StateAbbreviation
+             , BR.CongressionalDistrict
+             , ET.DemPref]
+             
+
+type SDMap = M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta])
+
+sdCollonnade ::  BR.CellStyle (F.Record SDRow, SDMap) T.Text -> K.Colonnade K.Headed (F.Record SDRow, SDMap) K.Cell
+sdCollonnade cas =
+   K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation . fst))
+   <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict . fst))
+   <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref . fst))
+   <> K.headed "tSNE Scaled Delta" (BR.toCell cas "tSNE" "tSNE" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd))
+   <> K.headed "SOM Scaled Delta" (BR.toCell cas "SOM" "SOM" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "SOM" . snd))
+   <> K.headed "PCA Scaled Delta" (BR.toCell cas "PCA" "PCA" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "PCA" . snd))
+   <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))
+   
 
 {-
 -- SGM      
