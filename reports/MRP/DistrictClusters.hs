@@ -756,7 +756,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
            MR.noUnpack
            (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref]) (F.rcast @[Method, Mean, Sigma, ScaledDelta]))
            (MR.foldAndLabel methodsF (,))
-      sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd     
+      sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd     
       allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF allScaledDeltas
       
   K.logLE K.Info $ "allScaledDeltas: " <> (T.pack $ show allScaledDeltasForTable)    
@@ -998,10 +998,13 @@ sdCollonnade cas =
    K.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . F.rgetField @BR.StateAbbreviation . fst))
    <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict . fst))
    <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref . fst))
+   <> K.headed "Raw Mean" (BR.toCell cas "Mean" "Mean" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Mean) . M.lookup "Raw" . snd))
+   <> K.headed "Raw Std Deviation" (BR.toCell cas "Std Dev" "Std Deb" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Sigma) . M.lookup "Raw" . snd))
+   <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))   
    <> K.headed "tSNE Scaled Delta" (BR.toCell cas "tSNE" "tSNE" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd))
    <> K.headed "SOM Scaled Delta" (BR.toCell cas "SOM" "SOM" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "SOM" . snd))
    <> K.headed "PCA Scaled Delta" (BR.toCell cas "PCA" "PCA" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "PCA" . snd))
-   <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))
+
    
 
 {-
