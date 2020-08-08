@@ -85,43 +85,43 @@ import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
 
-pollAvgDate = Time.fromGregorian 2020 7 26
+pollAvgDate = Time.fromGregorian 2020 8 7
 pollAvgDateText = (\(y,m,d) ->  (T.pack $ show m)
                                 <> "/" <> (T.pack $ show d)
                                 <> "/" <> (T.pack $ show y)) $ Time.toGregorian pollAvgDate
 
 
-bgPolls = [StatePoll "AK" 2
+bgPolls = [StatePoll "AK" (-4)
           ,StatePoll "AR" (-2)
-          ,StatePoll "AZ" 4 
-          ,StatePoll "FL" 8
-          ,StatePoll "GA" (-2)
-          ,StatePoll "IA" 2
-          ,StatePoll "MI" 6
+          ,StatePoll "AZ" 5 
+          ,StatePoll "FL" 4
+          ,StatePoll "GA" 0
+          ,StatePoll "IA" 0
+          ,StatePoll "MI" 8
           ,StatePoll "MO" (-7)
-          ,StatePoll "MT" (-9)
-          ,StatePoll "NC" 0
-          ,StatePoll "NH" 7
+          ,StatePoll "MT" (-7)
+          ,StatePoll "NC" 1
+          ,StatePoll "NH" 13
           ,StatePoll "NM" 14
           ,StatePoll "NV" 4
-          ,StatePoll "OH" (-1)
-          ,StatePoll "PA" 7
+          ,StatePoll "OH" 0
+          ,StatePoll "PA" 6
           ,StatePoll "TN" (-9)
-          ,StatePoll "TX" 0
-          ,StatePoll "UT" (-3)
-          ,StatePoll "VA" 12
-          ,StatePoll "WI" 3
+          ,StatePoll "TX" (-1)
+          ,StatePoll "UT" (-19)
+          ,StatePoll "VA" 11
+          ,StatePoll "WI" 8
           ]
 
 text1 :: T.Text
 text1 = [i|
 In a [previous post][BR:BattlegroundTurnout],
 we analyzed how changes in turnout might help Democrats win in various battleground states.
-Meanwhile, Trump's campaign is doing the same math. AS Trump has fallen in polls of battleground
+Meanwhile, Trump's campaign is doing the same math. As Trump has fallen in polls of battleground
 states, it's becoming increasingly clear that his re-elections strategy is to "rally the base."
 But can that strategy actually work?
 
-Short answer: no.  Trump might win up to two battleground states by boosting turnout among his
+Short answer: no.  Trump might win a few battleground states by boosting turnout among his
 most die-hard supporters, but he'd still lose the rest, as well as the election overall.
 
 1. **Two Possible GOP GOTV Strategies**
@@ -136,7 +136,7 @@ as of ${pollAvgDateText}, Biden leads in the polls in several battleground state
 Since we've spoken so much about demographically specific turnout boosts
 , e.g., GOTV work among college-educated or young voters, we thought it would be
 interesting to look at that strategy from the GOP side.  Whose turnout helps
-Trump?  The only group that was strongly pro-trump in 2016 was White, non-Latinx
+Trump?  The only group that was strongly pro-Trump in 2016 was White, non-Latinx
 voters without a 4-year college-degree (and not in-college), i.e.,
 the so-called WWC.
 Polling so far this cycle
@@ -147,13 +147,13 @@ and
 but overall, WWC voters are still, on average, Trump voters. This leads
 to two possible options for the Republicans:
 
-1. The WWC is
+1. Focus on WWC: The WWC is
 a big fraction of the US population, and is particularly concentrated
 in a few key states. So one plausible Trump campaign strategy in the
 battleground states might be to work at boosting turnout
 among all WWC voters. 
 
-2. Another strategy, which seems closer to what is actually happening
+2. Focus on the "Base": Another strategy, which seems closer to what is actually happening
 right now, is to try to boost turnout only among "the base"--the portion of the
 WWC that voted for Trump in 2016, and has stuck by Trump since then.
 
@@ -166,7 +166,7 @@ both in their likelihood
 to vote and in their preference for Trump.  These are very conservative (in the modeling
 sense) assumptions.  All the polling suggests that the WWC has shifted toward the Democrats.  So we
 firmly believe that the amount the GOP would need to boost
-WWC turnout to make up for their current polling deficit,
+WWC turnout to make up for their current polling deficit
 is probably higher than what we calculate below.
 - For each state, we used our MRP model to estimate both the likelihood of voting and the preference
 for Trump among all voters, grouped by state and membership in the WWC. For each state, we then used
@@ -174,12 +174,12 @@ the 2016 WWC preference for Trump, the total voting age population, and WWC voti
 to figure out what extra percentage of the WWC would have to vote in order to negate Biden's current
 lead in that state. 
 - We also considered a turnout boost solely among the fraction of WWC people in
-Trump's "base," which we took to be the fraction of the WWC which voted for Trump in 2016.
+Trump's "base," which we took to be the fraction of the WWC that voted for Trump in 2016.
 We assumed all extra turnout in that group will vote 100% for Trump.
 - See the sidebar at the end of this post for more details on the math.
 
 ## Results Of Our Analysis
-In each battleground state where Biden currently has a a lead, we show the turnout boost that
+In each battleground state where Biden currently has a lead, we show the turnout boost that
 Trump would need in either the WWC overall or his "base" to close the current statewide gap.
 The boost he'd need from his base is always smaller because, as we discussed earlier, that group
 has a higher preference for Trump than the WWC overall.
@@ -191,34 +191,46 @@ has a higher preference for Trump than the WWC overall.
 |]
 
 text2 :: T.Text = [here|
-Trump would need an unheard of 10+% surge
-in voting among the WWC to win any of those states,
-something that has not happened in recent electoral history. Even a very-unlikely
-5% boost in his base only wins AK, IA, and WI.   
-Typical election-to-election swings in WWC voting are well under 5%.
-[This paper][SociologicalScience:WWCTurnout] breaks this down for the four
-presidential elections between 2004 and 2016, showing almost no shifts in battleground
-state voting for White non-Latinx voters with a high school diploma or less and 5% or
-less variability in the "Some college" group.
+For context, typical election-to-election swings in WWC turnout are well under 5%.
+10% turnout surges are virtually unheard of in recent electoral history. 
+[This paper][SociologicalScience:WWCTurnout] breaks this down for the four presidential elections between 2004 and 2016,
+showing almost no shifts in battleground state voting for White non-Latinx voters with a high school diploma
+or less and 5% or less variability in the “Some college” group.
 
-All of these scenarios leave Biden winning the election.  Let's do the electoral college
-math.  First off, we're assuming Biden loses all the states where he's trailing at all right
-now, that is we're conceding GA, TX and OH, though we believe Biden could win any of these,
-though TX is probably a long-shot.  Not counting the states on this chart, Biden would have
-222 Electoral votes (EVs) and Trump 192 of the 270 EVs needed to win.
-If Biden wins all these states, he would end up
-winning the election with 346 EVs.  Suppose Trump rallies his base and gets a 5% turnout
-boost across the board.  Then he wins AK, IA and WI, shifting 19 EVs.  Biden still
-wins, with 327 EVs.  Even if Trump also takes AZ and NV, the next two states where rallying
-the base might work, Biden will still have 310 EVs and win.  
+Thus, we make three observations from our analysis:
 
-So, our analysis of this table is that Trump might be able to close the gap
-with Biden in TX and OH with a general appeal to the WWC and that there is a small chance
-of winning a few more states if he can mobilize his most ardent followers within the WWC.
-But in the other battleground states, “rally the base” will be woefully insufficient.
-And none of this is enough to swing the election to Trump.
+1. If Trump focuses on the WWC broadly,  NC is winnable, but nothing else.
 
-Some important caveats:
+2. If Trump focuses on his hard-core “base,” none of these states is winnable under realistic assumptions based on historical turnout variability.
+
+3. If Trump focuses on his "base" and somehow manages an unprecedented 10% turnout boost there, 
+he could plausibly also win AZ, FL, NV and PA. But, as noted, the odds of this happening from a change
+in turnout are negligible.
+
+If we do the electoral college math,
+Biden wins the election unless the Trump campaign pulls off that unprecedented 10% turnout boost in the base
+*and* everything else breaks his way.
+First, let’s make a conservative assumption that Biden loses all the currently close states
+where he’s trailing or tied right now (AK, AR, GA, IA, OH, TX).
+(In reality, we believe Biden could win most of these.)
+Under that assumption, not counting the states on the chart above,
+Biden would have 226 Electoral votes (EVs) and Trump 204 of the 270 EVs needed to win.
+If Biden wins all the states in the chart, he would end up winning the election with 334 EVs.
+If Trump gets a 5% turnout boost in the WWC and/or his “base” in all of those states, he wins NC,
+but Biden still wins the election with 319 EVs.
+In the black swan scenario in which Trump increases base turnout by 10%,
+he also takes AZ, FL, NV, and PA, and wins,
+though it's important to note how unprecedented such a turnout shift would be.
+ 
+So, our analysis of this table is that Trump can’t plausibly win the election
+just by focusing on turnout of either the WWC or his most die-hard base.
+However, there are some important caveats:
+
+- These calculations assume that the rest of the electorate behaves as expected.
+If Republicans simultaneously engage in voter suppression and other shenanigans to
+reduce Dem turnout at the same time that they focus on their core voters,
+then that could deliver the election for Trump.
+Thus it is especially important that we fight to preserve voters’ rights in the run-up to November.
 
 - These polls can and will shift between now and election day, so no one ought to be
 complacent.  Progressives and Dems should work as hard as they can,
@@ -230,20 +242,18 @@ could well lead to Dems taking control of the Senate.
 - The polls themselves are weighted by some reasonable calculation of who is likely to vote.
 So whatever change in turnout the GOP needs,
 it must happen on top of whatever those voters are saying now.
-That makes big shifts less likely.
+That makes the big shifts discussed above even less likely.
 
 - One response to this is to
 [argue that Trump voters are "shy" when responding to polls][WP:ShyTrumpVoter]
 and thus polls under count Trump voters.  There is no evidence of this.  The shock of 2016 was
 produced by last-minute changes which polling averages were slow to pick up and some issues
 around [weighting the electorate for education][Upshot:EdWeighting],
-the latter of which have been
-[addressed by the better pollsters][NBC:BetterPolling]
-since.
+the latter of which have been [addressed by the better pollsters][NBC:BetterPolling] since.
 
 ## What Does It All Mean?
 
-- Dems could get complacent but they shouldn't.  Just as with
+- Dems could get complacent but we shouldn't.  Just as with
 [recent modeling based on fundamentals and polls][Econ:2020Model], you could make a case that
 Dems should be confident of winning the presidential election.  We hope that's not what you take away
 from this. Trump's campaign sees the same data and will look to rally the base, the WWC at large,
@@ -481,7 +491,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   withPollF <- K.knitEither $ either (Left . T.pack . show) Right $ FJ.leftJoinE3 @'[BR.StateAbbreviation] pollF requiredExcessTurnout electoralVotes
   logFrame withPollF
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDateBidenVsWWC =  Time.fromGregorian 2020 7 26
+  let pubDateBidenVsWWC =  Time.fromGregorian 2020 8 8
   K.newPandoc
     (K.PandocInfo ((postRoute PostBidenVsWWC) <> "main")
       (brAddDates updated pubDateBidenVsWWC curDate
