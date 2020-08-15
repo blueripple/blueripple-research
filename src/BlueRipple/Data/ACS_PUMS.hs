@@ -190,6 +190,7 @@ pumsLoader cacheKey filterRawM = do
         $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations...") Streamly.Fold.head)
         $ Streamly.concatM
         $ Streamly.fold pumsCountSF
+        $ Streamly.tapOffsetEvery 0 500000 (Streamly.Fold.drainBy (const $ ST.liftIO $ putStrLn "500,000"))
         $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished loading. Counting...") Streamly.Fold.head)
 --        $ Streamly.tap (Streamly.Fold.drainBy (const $ ST.liftIO $ putStrLn "."))
         $ pumsRowsLoader filterRawM
