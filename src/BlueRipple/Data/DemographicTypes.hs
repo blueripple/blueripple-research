@@ -159,7 +159,6 @@ type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
-
 data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age4
 type instance FI.VectorFor Age4 = Vec.Vector
@@ -176,6 +175,26 @@ age4ToSimple :: Age4 -> SimpleAge
 age4ToSimple A4_18To24 = Under
 age4ToSimple A4_25To44 = Under
 age4ToSimple _ = EqualOrOver
+
+data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize Age5F
+type instance FI.VectorFor Age5F = Vec.Vector
+instance Grouping Age5F
+instance K.FiniteSet Age5F
+
+type Age5FC = "Age5F" F.:-> Age5F
+
+simpleAgeFrom5F :: SimpleAge -> [Age5F]
+simpleAgeFrom5F Under       = [A5F_Under18, A5F_18To24, A5F_25To44]
+simpleAgeFrom5F EqualOrOver = [A5F_45To64, A5F_65AndOver]
+
+--age5FToAge4 :: Age5F -> Age4
+
+age5FToSimple :: Age5F -> SimpleAge
+age5FToSimple A5F_Under18 = Under
+age5FToSimple A5F_18To24 = Under
+age5FToSimple A5F_25To44 = Under
+age5FToSimple _ = EqualOrOver
 
 
 data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)

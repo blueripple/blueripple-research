@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC  -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.Language where
 
@@ -138,7 +138,7 @@ post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => B
 post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
   K.logLE K.Info "Aggregating ACS PUMS data by state, household language and English language proficiency."                              
   acsLanguageByState' <- K.ignoreCacheTimeM $ do
-    cachedPUMS_Demographics <- PUMS.pumsLoader
+    cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
     BR.retrieveOrMakeFrame "mrp/language/pumsLanguageByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> 
       return $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToLanguage . F.rcast) pumsDemographics
         

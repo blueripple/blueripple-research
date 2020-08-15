@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC  -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.ElectoralWeights where
 
@@ -467,7 +467,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "ElectoralWeig
 -}                           
   --  logFrame inferredTurnoutASE
   -- demographics
-  cachedPUMS_Demographics <- PUMS.pumsLoader
+  cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   pumsASERByStateC <- (fmap (F.filterFrame (statesAfter 2007))) <$> do
     BR.retrieveOrMakeFrame "mrp/weights/pumsASERByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
       let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @BR.PopCountOf BR.PC_Citizen)                         

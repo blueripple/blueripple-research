@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC -O0 -fplugin=Polysemy.Plugin  #-}
 module MRP.TurnoutGaps where
 
 import qualified Control.Foldl                 as FL
@@ -482,7 +482,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       addElectoralWeight r = ET.EW_Census F.&: ET.EW_Citizen F.&: (realToFrac $ F.rgetField @BR.Voted r)/(realToFrac $ F.rgetField @BR.Citizen r) F.&: V.RNil
   asrDemoAndAdjEW_C <- do
     cachedStateTurnout <- BR.stateTurnoutLoader
-    cachedPUMS_Demographics <- PUMS.pumsLoader    
+    cachedPUMS_Demographics <- PUMS.pumsLoaderAdults    
     cachedSimpleASR_Turnout <- BR.simpleASRTurnoutLoader
     let cachedDeps = (,,) <$> cachedStateTurnout <*> cachedPUMS_Demographics <*> cachedSimpleASR_Turnout
     BR.retrieveOrMakeFrame "turnout/asrPumsDemoAndAdjEW.bin" cachedDeps $ \(stateTurnout, pumsDemographics, asrTurnout) -> do
@@ -497,7 +497,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
 
   aseDemoAndAdjEW_C <- do
     cachedStateTurnout <- BR.stateTurnoutLoader
-    cachedPUMS_Demographics <- PUMS.pumsLoader    
+    cachedPUMS_Demographics <- PUMS.pumsLoaderAdults    
     cachedSimpleASE_Turnout <- BR.simpleASETurnoutLoader
     let cachedDeps = (,,) <$> cachedStateTurnout <*> cachedPUMS_Demographics <*> cachedSimpleASE_Turnout
     BR.retrieveOrMakeFrame "turnout/asePumsDemoAndAdjEW.bin" cachedDeps $ \(stateTurnout, pumsDemographics, aseTurnout) -> do
@@ -607,7 +607,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
       K.knitMaybe "Missing key (stateAbbr, year, catColsASR) when joining inferredPrefsASR and asrDemoAndAdjEW"
         $ FJ.leftJoinM @('[BR.StateAbbreviation, BR.Year] V.++ BR.CatColsASR) inferredPrefsASR asrDemoAndAdjEW
 
-  pumsDemographics <- K.ignoreCacheTimeM PUMS.pumsLoader
+  pumsDemographics <- K.ignoreCacheTimeM PUMS.pumsLoaderAdults
   aseAllByState <- K.ignoreCacheTime aseAllByState_C
   asrAllByState <- K.ignoreCacheTime asrAllByState_C
   let labelPSBy x = V.rappend (FT.recordSingleton @ET.PrefType x)
@@ -722,7 +722,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   K.logLE K.Info $ "Working on flippable/need defense CDs..."
   K.logLE K.Diagnostic "Rolling up 2018 PUMAs to CDs..." 
   pumsASRByCD2018_C <- do
-    cachedPUMS_Demographics <- PUMS.pumsLoader    
+    cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
     BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRByCD2018.bin" cachedPUMS_Demographics $ \pumsDemographics ->
                      (fmap (FT.addColumn @BR.PopCountOf BR.PC_Citizen)
                        <$> (PUMS.pumsCDRollup (PUMS.pumsKeysToASR . F.rcast) $ F.filterFrame (isYear 2018) pumsDemographics))

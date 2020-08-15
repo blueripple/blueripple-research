@@ -18,6 +18,7 @@
 
 module BlueRipple.Data.Loaders where
 
+import BlueRipple.Data.LoadersCore
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as DT
@@ -260,7 +261,7 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
 houseElectionsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
 houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.sbin"
-
+{-
 data DataPath = DataSets T.Text | LocalData T.Text
 
 getPath :: DataPath -> IO FilePath
@@ -563,7 +564,7 @@ fixMonadCatch = Streamly.hoist f where
   f = join . fmap P.fromEither . Exceptions.runCatchT
 {-# INLINEABLE fixMonadCatch #-}
 
-
+-}
 {-
 maybeRecListLoader 
    :: forall qs ls rs r

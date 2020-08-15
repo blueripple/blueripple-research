@@ -15,8 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.DeltaVPV where
 
@@ -408,7 +407,7 @@ post stateCrossWalkFrame = P.mapError glmErrorToPandocError $ K.wrapPrefix "Delt
                               ]
   
   pumsASEByStateC <- do
-    cachedPUMS_Data <- PUMS.pumsLoader
+    cachedPUMS_Data <- PUMS.pumsLoaderAdults
     BR.retrieveOrMakeFrame "mrp/dvpv/pumsASEByState.sbin" cachedPUMS_Data $ \pumsACSFrame -> do
       let yFilter r = let yr = F.rgetField @BR.Year r in (yr == 2016) || (yr == 2018)        
           processF = FL.prefilter yFilter $ PUMS.pumsStateRollupF (PUMS.pumsKeysToASE True . F.rcast)
