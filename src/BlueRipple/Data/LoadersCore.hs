@@ -69,6 +69,7 @@ import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
+import qualified Frames.Streamly            as FStreamly
 
 import qualified System.Directory as System
 import GHC.TypeLits (Symbol)
@@ -146,7 +147,7 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
       filter = fromMaybe (const True) filterM
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
   Streamly.map fixRow
-    $ Streamly.tapOffsetEvery 500000 500000 (Streamly.Fold.drainBy (const $ liftIO $ putStrLn "recStreamLoader: 500,000"))
+    $ Streamly.tapOffsetEvery 1000000 1000000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "streamTable.beforeParse" ++ (show $ 500 * n))) "finished.")
     $ BR.loadToRecStream @qs csvParserOptions path filter
 
 -- file has qs
