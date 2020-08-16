@@ -146,6 +146,7 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
       filter = fromMaybe (const True) filterM
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
   Streamly.map fixRow
+    $ Streamly.tapOffsetEvery 500000 500000 (Streamly.Fold.drainBy (const $ liftIO $ putStrLn "recStreamLoader: 500,000"))
     $ BR.loadToRecStream @qs csvParserOptions path filter
 
 -- file has qs
