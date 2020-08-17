@@ -1,4 +1,4 @@
-packages: ./ ~/BlueRipple/data-sets ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/data-science-utils ~/DataScience/Frames-utils
+packages: ./ ~/BlueRipple/data-sets ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/data-science-utils ~/DataScience/Frames-utils ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 

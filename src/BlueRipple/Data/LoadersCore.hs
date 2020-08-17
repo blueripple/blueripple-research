@@ -112,17 +112,17 @@ cachedRecStreamLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> K.Sem r (K.StreamWithCacheTime r (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
+  -> K.Sem r (K.StreamWithCacheTime (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
 cachedRecStreamLoader dataPath parserOptionsM filterM fixRow cachePathM key = do
   let cacheRecList :: T.Text
                    -> K.ActionWithCacheTime r DataPath
-                   -> (DataPath -> Streamly.SerialT (P.Sem r) (F.Record rs))
-                   -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+                   -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
+                   -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
       cacheRecList = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS 
       cacheKey      = (fromMaybe "data/" cachePathM) <> key      
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime dataPath 
-  cacheRecList cacheKey cachedDataPath (\dataPath -> fixMonadCatch $ recStreamLoader dataPath parserOptionsM filterM fixRow)
+  cacheRecList cacheKey cachedDataPath (\dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow)
 
 recStreamLoader
   :: forall qs rs t m
@@ -146,9 +146,7 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter = fromMaybe (const True) filterM
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
-  Streamly.map fixRow
-    $ Streamly.tapOffsetEvery 1000000 1000000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "streamTable.beforeParse" ++ (show $ 500 * n))) "finished.")
-    $ BR.loadToRecStream @qs csvParserOptions path filter
+  Streamly.map fixRow $ BR.loadToRecStream @qs csvParserOptions path filter
 
 -- file has qs
 -- Filter qs
@@ -277,19 +275,19 @@ cachedMaybeRecStreamLoader
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
-  -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+  -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
 cachedMaybeRecStreamLoader dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key = do
   let cacheRecStream :: T.Text
                      -> K.ActionWithCacheTime r DataPath
-                     -> (DataPath -> Streamly.SerialT (P.Sem r) (F.Record rs))
-                     -> K.Sem r (K.StreamWithCacheTime r (F.Record rs))
+                     -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
+                     -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
       cacheRecStream = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS 
       cacheKey      = (fromMaybe "data/" cachePathM) <> key
   K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
   cachedDataPath <- liftIO $ dataPathWithCacheTime dataPath
-  cacheRecStream cacheKey cachedDataPath $ \dataPath -> K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
+  cacheRecStream cacheKey cachedDataPath $ \dataPath -> maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
 
 -- file has fs
 -- load fs
@@ -370,11 +368,11 @@ cachedMaybeFrameLoader dataPath parserOptionsM filterMaybesM fixMaybes transform
   = (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
 
-
+{-
 fixMonadCatch :: (P.MemberWithError (P.Error Exceptions.SomeException) r)
               => Streamly.SerialT (Exceptions.CatchT (K.Sem r)) a -> Streamly.SerialT (K.Sem r) a
 fixMonadCatch = Streamly.hoist f where
   f :: forall r a. (P.MemberWithError (P.Error Exceptions.SomeException) r) =>  Exceptions.CatchT (K.Sem r) a -> K.Sem r a
   f = join . fmap P.fromEither . Exceptions.runCatchT
 {-# INLINEABLE fixMonadCatch #-}
-
+-}

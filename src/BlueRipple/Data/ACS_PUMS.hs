@@ -67,6 +67,7 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
+import qualified Frames.Streamly               as FStreamly
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
@@ -113,11 +114,11 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSENG                        
                         )
 -}
-pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => Maybe (BR.PUMS_Raw -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
-pumsRowsLoader filterRawM =  BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing filterRawM transformPUMSRow
+pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filterRawM transformPUMSRow
 
-pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => t K.StreamlyM (F.Record PUMS_Typed)
-pumsRowsLoaderAdults = pumsRowsLoader  (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
+pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoaderAdults dataPath = pumsRowsLoader dataPath (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
 --BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
   
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
@@ -131,11 +132,11 @@ citizensFold =
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 
-pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
-pumsCountF = FMR.concatFold $ FMR.mapReduceFold
+pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
+pumsCountF = FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-             (FMR.foldAndAddKey citizensFold)
+             (FMR.foldAndLabel citizensFold V.rappend)
 
 --groupStream :: (Streamly.IsStream t, Ord k, Monad m) => Streamly.Fold.Fold m (k, c) (
 
@@ -162,39 +163,76 @@ pumsCountSF = MapReduce.Streamly.toStreamlyFold
 toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
 toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
-pumsLoader
+pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => T.Text
+  => BR.DataPath
+  -> T.Text
   -> Maybe (BR.PUMS_Raw -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader cacheKey filterRawM = do
+pumsLoader' dataPath cacheKey filterRawM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
-  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
-  fmap (fmap F.toFrame . K.streamToAction Streamly.toList)
+  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
     . K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS cacheKey cachedDeps $ \(stateAbbrCrosswalk, _) -> do
-      Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
+      Streamly.yieldM $ K.logStreamly K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
-      Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+      Streamly.yieldM $ K.logStreamly K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
       let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
             in fmap (addAbbr r) abbrM              
-      K.streamlyToKnitS
-        $ Streamly.aheadly
+      Streamly.aheadly
         $ Streamly.map (F.rcast @PUMS)
         $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
         $ Streamly.mapMaybe addStateAbbreviation
         $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations...") Streamly.Fold.head)
         $ Streamly.concatM
         $ Streamly.fold pumsCountSF
---        $ Streamly.tapOffsetEvery 500000 500000 (Streamly.Fold.drainBy (const $ ST.liftIO $ putStrLn "pumsLoader.beforeCount 500,000"))
---        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished loading. Counting...") Streamly.Fold.head)
---        $ Streamly.tap (Streamly.Fold.drainBy (const $ ST.liftIO $ putStrLn "."))
-        $ pumsRowsLoader filterRawM
+        $ Streamly.tapOffsetEvery 10000 10000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader before counting: " ++ (show $ 10000 * n))) "fin ished.")
+        $ pumsRowsLoader dataPath filterRawM
 
+
+pumsLoader
+  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  => T.Text
+  -> Maybe (BR.PUMS_Raw -> Bool) 
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+
+{-
+pumsLoader'
+  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  => T.Text
+  -> Maybe (BR.PUMS_Raw -> Bool) 
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoader' cacheKey filterRawM = do
+  cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
+  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
+  
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, _) -> do
+    let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
+        addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
+        addStateAbbreviation r =
+          let fips = F.rgetField @BR.StateFIPS r
+              abbrM = M.lookup fips abbrFromFIPS
+              addAbbr r abbr = abbr F.&: r
+          in fmap (addAbbr r) abbrM
+    -- load (fixed) rows
+    let rowS = pumsRowsLoader filterRawM
+    K.logLE K.Diagnostic "Loading data from file.  Parsing into rows and fixing fields."    
+    rowRecList <- K.streamlyToKnit $ Streamly.toList rowS
+    K.logLE K.Diagnostic "Counting rows by categories and adding state abbreviations"
+    let counted = FL.fold pumsCountF rowRecList
+        withStateAbbr = catMaybes $ fmap addStateAbbreviation counted
+        finalFrame = F.toFrame $ fmap (F.rcast @PUMS) withStateAbbr
+        countedRows = FL.fold FL.length finalFrame
+    K.logLE K.Diagnostic $ (T.pack $ show countedRows) <> " rows in pumsLoader result."
+    return finalFrame
+-}  
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults = pumsLoader "data/acs1YrPUMS.sbin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
 
@@ -485,29 +523,34 @@ fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
 
 {-
 -- fmap over Frame after load and throwing out bad rows
-transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow y r = F.rcast @PUMS_Typed (mutate r) where
+transformPUMSRow2 :: BR.PUMS_Raw -> F.Record PUMS_Typed
+transformPUMSRow2 r = F.rcast @PUMS_Typed (mutate r) where
 --  addState = FT.recordSingleton @BR.StateFIPS . F.rgetField @PUMSST
-  addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCIT
-  addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPWGTP
-  addAge4 = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.PUMSAGEP
+  addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCITIZEN
+  addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPERWT
+  addAge5F = FT.recordSingleton @BR.Age5FC . intToAge5F . F.rgetField @BR.PUMSAGE
   addSex = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.PUMSSEX
-  addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSSCHL
-  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.PUMSSCHG
-  hN = F.rgetField @BR.PUMSHISP
-  rN = F.rgetField @BR.PUMSRAC1P
-  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
-  addYear = const $ FT.recordSingleton @BR.Year y
-  mutate = FT.retypeColumn @BR.PUMSST @BR.StateFIPS
+  addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSEDUCD
+  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.PUMSGRADEATT
+  lN = F.rgetField @BR.PUMSLANGUAGE
+  ldN = F.rgetField @BR.PUMSLANGUAGED
+  addLanguage r = FT.recordSingleton @BR.LanguageC $ intsToLanguage (lN r) (ldN r)
+  addSpeaksEnglish = FT.recordSingleton @BR.SpeaksEnglishC . intToSpeaksEnglish . F.rgetField @BR.PUMSSPEAKENG
+  hN = F.rgetField @BR.PUMSHISPAN
+  rN = F.rgetField @BR.PUMSRACE
+  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))  
+  mutate = FT.retypeColumn @BR.PUMSSTATEFIP @BR.StateFIPS
            . FT.retypeColumn @BR.PUMSPUMA @BR.PUMA
-           . FT.mutate addYear
+           . FT.retypeColumn @BR.PUMSYEAR @BR.Year
            . FT.mutate addCitizen
            . FT.mutate addWeight
-           . FT.mutate addAge4
+           . FT.mutate addAge5F
            . FT.mutate addSex
            . FT.mutate addEducation
            . FT.mutate addInCollege
            . FT.mutate addRace
+           . FT.mutate addLanguage
+           . FT.mutate addSpeaksEnglish
 -}
 
 {-

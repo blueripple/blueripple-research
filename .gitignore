@@ -22,3 +22,4 @@ reports/MRP/data
 .knit-haskell-cache
 bigData
 posts
+testbed/*.csv
