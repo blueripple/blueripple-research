@@ -24,10 +24,12 @@ import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
 import qualified Control.Monad.Except          as X
+import qualified Control.Monad.Primitive       as Prim
 import qualified Control.Monad.State           as ST
 import qualified Data.Array                    as A
 import qualified Data.Serialize                as S
@@ -140,28 +142,14 @@ pumsCountF = FMR.mapReduceFold
 
 --groupStream :: (Streamly.IsStream t, Ord k, Monad m) => Streamly.Fold.Fold m (k, c) (
 
-strictStreamGrouper :: forall k c m. (Monad m, Ord k) => Streamly.SerialT m (k, c) -> Streamly.SerialT m (k, Seq.Seq c)
-strictStreamGrouper =
-  let strictSeqAppend s !a = s Seq.|> a
-      foldSeq :: Streamly.Fold.Fold m c (Seq.Seq c)
-      foldSeq = Streamly.Fold.mkPure strictSeqAppend Seq.empty id
-      foldStream :: Streamly.Fold.Fold m (k, c) (MS.Map k (Seq.Seq c))
-      foldStream = Streamly.Fold.classify foldSeq
-  in  Streamly.concatM . fmap (Streamly.fromList . MS.toList).  Streamly.fold foldStream
 
-pumsCountSF :: forall t. Streamly.IsStream t => Streamly.Fold.Fold K.StreamlyM (F.Record PUMS_Typed) (t K.StreamlyM (F.Record PUMS_Counted))
-pumsCountSF = MapReduce.Streamly.toStreamlyFold
-              (
-                MapReduce.Streamly.concurrentStreamlyEngine @t @t
-                strictStreamGrouper
-                MapReduce.noUnpack
-                (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-                (MapReduce.foldAndLabel citizensFold V.rappend)
-              )
+pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
+pumsCountStreamlyF = BRF.framesStreamlyMR
+                     (FMR.generalizeUnpack FMR.noUnpack)
+                     (FMR.generalizeAssign
+                       $ FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
+                     (FMR.generalizeReduce $ FMR.foldAndLabel citizensFold V.rappend)
 
-
-toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
-toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
 
 pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
@@ -173,68 +161,43 @@ pumsLoader' dataPath cacheKey filterRawM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
   cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
-  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
-    . K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS cacheKey cachedDeps $ \(stateAbbrCrosswalk, _) -> do
-      Streamly.yieldM $ K.logStreamly K.Diagnostic $ "Loading state abbreviation crosswalk."
+--  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, dataPath') -> do
+      K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
-      Streamly.yieldM $ K.logStreamly K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+      K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
       let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
-            in fmap (addAbbr r) abbrM              
-      Streamly.aheadly
-        $ Streamly.map (F.rcast @PUMS)
-        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
-        $ Streamly.mapMaybe addStateAbbreviation
-        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations...") Streamly.Fold.head)
-        $ Streamly.concatM
-        $ Streamly.fold pumsCountSF
-        $ Streamly.tapOffsetEvery 10000 10000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader before counting: " ++ (show $ 10000 * n))) "fin ished.")
-        $ pumsRowsLoader dataPath filterRawM
+            in fmap (addAbbr r) abbrM
 
+      let fileToFixedS =
+            Streamly.tapOffsetEvery 250000 250000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader from disk: " ++ (show $ 250000 * n))) "pumsLoader from disk finished.")
+            $ pumsRowsLoader dataPath' filterRawM
+      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS fileToFixedS
+      let numRows = FL.fold FL.length allRowsF
+      K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  Counting..."
+      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF allRowsF
+--      let countedL = FL.fold pumsCountF allRowsF
+      let numCounted = FL.fold FL.length countedF
+      K.logLE K.Diagnostic $ "Finished counting. " <> (T.pack $ show numCounted) <> " rows of counts.  Adding state abbreviations..."
+--      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
+      let withAbbrevsF = fmap (F.rcast @PUMS) $ FStreamly.streamlyMapMaybe addStateAbbreviation countedF
+          numFinal = FL.fold FL.length withAbbrevsF
+      K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> (T.pack $ show $ numCounted - numFinal) <> " rows due to unrecognized state FIPS."
+      return withAbbrevsF
+      
 
 pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => T.Text
-  -> Maybe (BR.PUMS_Raw -> Bool) 
+  => Maybe (BR.PUMS_Raw -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Age5F.bin"
 
-{-
-pumsLoader'
-  ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => T.Text
-  -> Maybe (BR.PUMS_Raw -> Bool) 
-  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader' cacheKey filterRawM = do
-  cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
-  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
-  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
-  
-  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, _) -> do
-    let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
-        addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
-        addStateAbbreviation r =
-          let fips = F.rgetField @BR.StateFIPS r
-              abbrM = M.lookup fips abbrFromFIPS
-              addAbbr r abbr = abbr F.&: r
-          in fmap (addAbbr r) abbrM
-    -- load (fixed) rows
-    let rowS = pumsRowsLoader filterRawM
-    K.logLE K.Diagnostic "Loading data from file.  Parsing into rows and fixing fields."    
-    rowRecList <- K.streamlyToKnit $ Streamly.toList rowS
-    K.logLE K.Diagnostic "Counting rows by categories and adding state abbreviations"
-    let counted = FL.fold pumsCountF rowRecList
-        withStateAbbr = catMaybes $ fmap addStateAbbreviation counted
-        finalFrame = F.toFrame $ fmap (F.rcast @PUMS) withStateAbbr
-        countedRows = FL.fold FL.length finalFrame
-    K.logLE K.Diagnostic $ (T.pack $ show countedRows) <> " rows in pumsLoader result."
-    return finalFrame
--}  
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoaderAdults = pumsLoader "data/acs1YrPUMS.sbin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
+pumsLoaderAdults = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Adults_Age5F.bin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum

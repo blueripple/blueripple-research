@@ -62,7 +62,7 @@ main= do
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
-  let pumsCSV = "testbed/smallPUMS.csv"
+  let pumsCSV = "testbed/medPUMS.csv"
       dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)
   K.logLE K.Info "Testing File.toBytes..."
   let rawBytesS =  Streamly.File.toBytes pumsCSV
@@ -74,13 +74,13 @@ makeDoc = do
         = FStreamly.streamTable Frames.defaultParser "bigData/IPUMS/acsSelected2006To2018.csv"
   rawRows <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length pumsRowsRawS
   K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show rawRows) <> " rows."
--}
+
 
   K.logLE K.Info "Testing pumsRowsLoader..."
   let pumsRowsFixedS = PUMS.pumsRowsLoader dataPath Nothing 
   fixedRows <- K.streamlyToKnit $ Streamly.fold Streamly.Fold.length pumsRowsFixedS    
   K.logLE K.Info $ "fixed PUMS data has " <> (T.pack $ show fixedRows) <> " rows."
-
+-}
   K.logLE K.Info "Testing pumsLoader..."
 --  K.clearIfPresent (T.pack "testbed/data/test.sbin")
   pumsAge5F_C <- PUMS.pumsLoader' dataPath "testbed/data/test.sbin" Nothing

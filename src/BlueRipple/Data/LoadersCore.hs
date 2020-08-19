@@ -91,7 +91,7 @@ dataPathWithCacheTime dp@(LocalData _) = do
   return $ K.withCacheTime (Just modTime) (pure dp)
 dataPathWithCacheTime dp@(DataSets _) = return $ K.withCacheTime Nothing (pure dp)
 
-
+{-
 -- file has qs
 -- Filter qs
 -- transform to rs
@@ -123,6 +123,7 @@ cachedRecStreamLoader dataPath parserOptionsM filterM fixRow cachePathM key = do
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime dataPath 
   cacheRecList cacheKey cachedDataPath (\dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow)
+-}
 
 recStreamLoader
   :: forall qs rs t m
@@ -171,8 +172,14 @@ cachedFrameLoader
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
-cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = 
-  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
+cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = do
+  let cacheKey      = (fromMaybe "data/" cachePathM) <> key     
+  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
+  K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
+  BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
+    let recStream = recStreamLoader dataPath parserOptionsM filterM fixRow
+    K.streamlyToKnit $ FStreamly.inCoreAoS recStream
+--  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
 
 
 -- file has qs
@@ -238,7 +245,7 @@ maybeFrameLoader
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM filterMaybesM fixMaybes transformRow
-  = fmap F.toFrame $ Streamly.toList $ K.streamlyToKnitS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
+  = fmap F.toFrame $ K.streamlyToKnit $ Streamly.toList $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
 
 -- file has fs
 -- load fs
