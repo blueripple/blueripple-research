@@ -145,10 +145,9 @@ pumsCountF = FMR.mapReduceFold
 
 pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountStreamlyF = BRF.framesStreamlyMR
-                     (FMR.generalizeUnpack FMR.noUnpack)
-                     (FMR.generalizeAssign
-                       $ FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-                     (FMR.generalizeReduce $ FMR.foldAndLabel citizensFold V.rappend)
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
+                     (FMR.foldAndLabel citizensFold V.rappend)
 
 
 pumsLoader'
