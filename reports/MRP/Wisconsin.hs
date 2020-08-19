@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.Wisconsin where
 

@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC  -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.CachedModels where
 
@@ -107,7 +107,7 @@ statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviatio
 pumsByStateASER :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
 pumsByStateASER = do  
-  cachedPUMS_Demographics <- PUMS.pumsLoader
+  cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
@@ -124,7 +124,7 @@ pumsByStateASER = do
 pumsByStateASER5 :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
 pumsByStateASER5 = do  
-  cachedPUMS_Demographics <- PUMS.pumsLoader
+  cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER5/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics

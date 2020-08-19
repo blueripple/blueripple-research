@@ -20,13 +20,16 @@ module BlueRipple.Data.ACS_PUMS where
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR hiding (fixMonadCatch)
+import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
 import qualified Control.Monad.Except          as X
+import qualified Control.Monad.Primitive       as Prim
 import qualified Control.Monad.State           as ST
 import qualified Data.Array                    as A
 import qualified Data.Serialize                as S
@@ -66,6 +69,7 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
+import qualified Frames.Streamly               as FStreamly
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
@@ -112,17 +116,12 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSENG                        
                         )
 -}
-pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => t K.StreamlyM (F.Record PUMS_Typed)
-pumsRowsLoader = BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
-{-
+pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filterRawM transformPUMSRow
 
-  BR.maybeFrameLoader @(F.RecordColumns BR.PUMS_Raw) @(F.RecordColumns BR.PUMS_Raw) @PUMS_Typed
-                 (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
-                 Nothing
-                 (Frames.Misc.filterOnMaybeField @BR.PUMSAGE (>= 18))
-                 id
-                 transformPUMSRow
--}
+pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoaderAdults dataPath = pumsRowsLoader dataPath (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
+--BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
   
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
 citizensFold =
@@ -135,63 +134,70 @@ citizensFold =
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 
-pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
-pumsCountF = FMR.concatFold $ FMR.mapReduceFold
+pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
+pumsCountF = FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-             (FMR.foldAndAddKey citizensFold)
+             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
+             (FMR.foldAndLabel citizensFold V.rappend)
 
 --groupStream :: (Streamly.IsStream t, Ord k, Monad m) => Streamly.Fold.Fold m (k, c) (
 
-strictStreamGrouper :: forall k c m. (Monad m, Ord k) => Streamly.SerialT m (k, c) -> Streamly.SerialT m (k, Seq.Seq c)
-strictStreamGrouper =
-  let strictSeqAppend s !a = s Seq.|> a
-      foldSeq :: Streamly.Fold.Fold m c (Seq.Seq c)
-      foldSeq = Streamly.Fold.mkPure strictSeqAppend Seq.empty id
-      foldStream :: Streamly.Fold.Fold m (k, c) (MS.Map k (Seq.Seq c))
-      foldStream = Streamly.Fold.classify foldSeq
-  in  Streamly.concatM . fmap (Streamly.fromList . MS.toList).  Streamly.fold foldStream
 
-pumsCountSF :: forall t. Streamly.IsStream t => Streamly.Fold.Fold K.StreamlyM (F.Record PUMS_Typed) (t K.StreamlyM (F.Record PUMS_Counted))
-pumsCountSF = MapReduce.Streamly.toStreamlyFold
-              (
-                MapReduce.Streamly.concurrentStreamlyEngine @t @t
-                strictStreamGrouper
-                MapReduce.noUnpack
-                (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-                (MapReduce.foldAndLabel citizensFold V.rappend)
-              )
+pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
+pumsCountStreamlyF = BRF.framesStreamlyMR
+                     (FMR.generalizeUnpack FMR.noUnpack)
+                     (FMR.generalizeAssign
+                       $ FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
+                     (FMR.generalizeReduce $ FMR.foldAndLabel citizensFold V.rappend)
 
 
-toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
-toStreamlyFold (FL.Fold step start done) = Streamly.Fold.mkPure step start done
-
-pumsLoader
-  ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader = do
+pumsLoader'
+  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  => BR.DataPath
+  -> T.Text
+  -> Maybe (BR.PUMS_Raw -> Bool) 
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoader' dataPath cacheKey filterRawM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
-  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime (BR.LocalData $ T.pack BR.pumsACS1YrCSV)
+  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
-  fmap (fmap F.toFrame . K.streamToAction Streamly.toList)
-    . K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS  ("data/acs1YrPUMS.sbin" :: T.Text) cachedDeps $ \(stateAbbrCrosswalk, _) -> do
-      Streamly.yieldM $ K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
+--  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, dataPath') -> do
+      K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
-      Streamly.yieldM $ K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+      K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
       let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
-            in fmap (addAbbr r) abbrM              
-      K.streamlyToKnitS
-        $ Streamly.aheadly
-        $ Streamly.map (F.rcast @PUMS)
-        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "rcasting") Streamly.Fold.head)
-        $ Streamly.mapMaybe addStateAbbreviation
-        $ Streamly.tap (fmap (const $ K.logStreamly K.Diagnostic "finished counting. Adding Abbreviations") Streamly.Fold.head)
-        $ Streamly.concatM
-        $ Streamly.fold pumsCountSF
-        $ pumsRowsLoader
+            in fmap (addAbbr r) abbrM
+
+      let fileToFixedS =
+            Streamly.tapOffsetEvery 250000 250000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader from disk: " ++ (show $ 250000 * n))) "pumsLoader from disk finished.")
+            $ pumsRowsLoader dataPath' filterRawM
+      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS fileToFixedS
+      let numRows = FL.fold FL.length allRowsF
+      K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  Counting..."
+      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF allRowsF
+--      let countedL = FL.fold pumsCountF allRowsF
+      let numCounted = FL.fold FL.length countedF
+      K.logLE K.Diagnostic $ "Finished counting. " <> (T.pack $ show numCounted) <> " rows of counts.  Adding state abbreviations..."
+--      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
+      let withAbbrevsF = fmap (F.rcast @PUMS) $ FStreamly.streamlyMapMaybe addStateAbbreviation countedF
+          numFinal = FL.fold FL.length withAbbrevsF
+      K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> (T.pack $ show $ numCounted - numFinal) <> " rows due to unrecognized state FIPS."
+      return withAbbrevsF
+      
+
+pumsLoader
+  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  => Maybe (BR.PUMS_Raw -> Bool) 
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Age5F.bin"
+
+pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoaderAdults = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Adults_Age5F.bin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
@@ -205,7 +211,7 @@ pumsRollupF
     , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+  => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
 pumsRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
@@ -234,7 +240,7 @@ pumsCDRollup
    , FI.RecVec (ks ++ [Citizens, NonCitizens])
    , Ord (F.Record ks)
    )
- => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+ => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
  ->  F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup mapKeys pumsFrame = do
@@ -260,7 +266,7 @@ pumsStateRollupF
     , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+  => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (StateCounts ks))
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
@@ -268,53 +274,53 @@ pumsStateRollupF mapKeys =
       reduce = FMR.foldAndAddKey sumPeopleF
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
-pumsKeysToASER5 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
+pumsKeysToASER5 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
 pumsKeysToASER5 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
      F.&: F.rgetField @BR.Race5C r
      F.&: V.RNil
 
 
-pumsKeysToASER4 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
+pumsKeysToASER4 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
 pumsKeysToASER4 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
      F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
 
-pumsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
+pumsKeysToASER :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
 pumsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
      F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
-pumsKeysToLanguage :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record BR.CatColsLanguage
+pumsKeysToLanguage :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record BR.CatColsLanguage
 pumsKeysToLanguage = F.rcast
 
-pumsKeysToASE :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
+pumsKeysToASE :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
 pumsKeysToASE addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
      F.&: V.RNil     
 
-pumsKeysToASR :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASR
+pumsKeysToASR :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASR
 pumsKeysToASR r =
-  (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+  (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
   F.&: (F.rgetField @BR.SexC r)
   F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
   F.&: V.RNil
@@ -347,7 +353,7 @@ type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
                    , BR.StateFIPS
                    , BR.PUMA
-                   , BR.Age4C
+                   , BR.Age5FC
                    , Citizen
                    , BR.CollegeGradC
                    , BR.InCollege
@@ -360,7 +366,7 @@ type PUMS_Typed = '[ BR.Year
 type PUMS_Counted = '[BR.Year
                      , BR.StateFIPS
                      , BR.PUMA
-                     , BR.Age4C
+                     , BR.Age5FC
                      , BR.SexC
                      , BR.CollegeGradC
                      , BR.InCollege
@@ -375,7 +381,7 @@ type PUMS = '[BR.Year
              , BR.StateAbbreviation
              , BR.StateFIPS
              , BR.PUMA
-             , BR.Age4C
+             , BR.Age5FC
              , BR.SexC
              , BR.CollegeGradC
              , BR.InCollege
@@ -388,13 +394,13 @@ type PUMS = '[BR.Year
              
 -- we have to drop all records with age < 18
 -- PUMSAGE
-intToAge4 :: Int -> BR.Age4
-intToAge4 n
-  | n < 18 = error "PUMS record with age < 18"
-  | n < 24 = BR.A4_18To24
-  | n < 45 = BR.A4_25To44
-  | n < 65 = BR.A4_45To64
-  | otherwise = BR.A4_65AndOver
+intToAge5F :: Int -> BR.Age5F
+intToAge5F n
+  | n < 18 = BR.A5F_Under18
+  | n < 24 = BR.A5F_18To24
+  | n < 45 = BR.A5F_25To44
+  | n < 65 = BR.A5F_45To64
+  | otherwise = BR.A5F_65AndOver
 
 -- PUMSCITIZEN
 intToCitizen :: Int -> Bool
@@ -454,7 +460,7 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addName @BR.PUMSYEAR @BR.Year)
             . (FT.addOneFromOne @BR.PUMSCITIZEN @Citizen intToCitizen)
             . (FT.addName @BR.PUMSPERWT @PUMSWeight)
-            . (FT.addOneFromOne @BR.PUMSAGE @BR.Age4C intToAge4)
+            . (FT.addOneFromOne @BR.PUMSAGE @BR.Age5FC intToAge5F)
             . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
             . (FT.addOneFromOne @BR.PUMSEDUCD @BR.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @BR.PUMSGRADEATT @BR.InCollege intToInCollege)
@@ -480,29 +486,34 @@ fixPUMSRow r = (F.rsubset %~ missingInCollegeTo0)
 
 {-
 -- fmap over Frame after load and throwing out bad rows
-transformPUMSRow :: Int -> F.Record PUMS_Raw -> F.Record PUMS_Typed
-transformPUMSRow y r = F.rcast @PUMS_Typed (mutate r) where
+transformPUMSRow2 :: BR.PUMS_Raw -> F.Record PUMS_Typed
+transformPUMSRow2 r = F.rcast @PUMS_Typed (mutate r) where
 --  addState = FT.recordSingleton @BR.StateFIPS . F.rgetField @PUMSST
-  addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCIT
-  addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPWGTP
-  addAge4 = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.PUMSAGEP
+  addCitizen = FT.recordSingleton @Citizen . intToCitizen . F.rgetField @BR.PUMSCITIZEN
+  addWeight = FT.recordSingleton @PUMSWeight . F.rgetField @BR.PUMSPERWT
+  addAge5F = FT.recordSingleton @BR.Age5FC . intToAge5F . F.rgetField @BR.PUMSAGE
   addSex = FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.PUMSSEX
-  addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSSCHL
-  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.PUMSSCHG
-  hN = F.rgetField @BR.PUMSHISP
-  rN = F.rgetField @BR.PUMSRAC1P
-  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
-  addYear = const $ FT.recordSingleton @BR.Year y
-  mutate = FT.retypeColumn @BR.PUMSST @BR.StateFIPS
+  addEducation = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.PUMSEDUCD
+  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.PUMSGRADEATT
+  lN = F.rgetField @BR.PUMSLANGUAGE
+  ldN = F.rgetField @BR.PUMSLANGUAGED
+  addLanguage r = FT.recordSingleton @BR.LanguageC $ intsToLanguage (lN r) (ldN r)
+  addSpeaksEnglish = FT.recordSingleton @BR.SpeaksEnglishC . intToSpeaksEnglish . F.rgetField @BR.PUMSSPEAKENG
+  hN = F.rgetField @BR.PUMSHISPAN
+  rN = F.rgetField @BR.PUMSRACE
+  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))  
+  mutate = FT.retypeColumn @BR.PUMSSTATEFIP @BR.StateFIPS
            . FT.retypeColumn @BR.PUMSPUMA @BR.PUMA
-           . FT.mutate addYear
+           . FT.retypeColumn @BR.PUMSYEAR @BR.Year
            . FT.mutate addCitizen
            . FT.mutate addWeight
-           . FT.mutate addAge4
+           . FT.mutate addAge5F
            . FT.mutate addSex
            . FT.mutate addEducation
            . FT.mutate addInCollege
            . FT.mutate addRace
+           . FT.mutate addLanguage
+           . FT.mutate addSpeaksEnglish
 -}
 
 {-

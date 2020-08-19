@@ -42,6 +42,7 @@ import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR

@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.BidenVsWWC where
 
@@ -461,7 +461,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "BidenVsWWC" $
   requiredExcessTurnout <- K.ignoreCacheTimeM $ do
     electoralWeights_C <- BR.adjCensusElectoralWeightsMRP_ASER5
     prefs_C <- BR.ccesPreferencesASER5_MRP
-    demo_C <- PUMS.pumsLoader
+    demo_C <- PUMS.pumsLoaderAdults
     let cachedDeps = (,,) <$> electoralWeights_C <*> prefs_C <*> demo_C
 --  K.clear "mrp/BidenVsWWC/requiredExcessTurnout.bin"
     BR.retrieveOrMakeFrame "mrp/BidenVsWWC/requiredExcessTurnout.bin" cachedDeps $ \(adjStateEW, statePrefs, demo) -> do

@@ -19,7 +19,7 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
-{-# OPTIONS_GHC  -fplugin=Polysemy.Plugin  #-}
+{-# OPTIONS_GHC -O0 -fplugin=Polysemy.Plugin  #-}
 
 module MRP.DistrictClusters where
 
@@ -408,7 +408,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       clusterRowsFromS (cs', rs') = (fmap FS.fromS cs', fmap FS.fromS rs')
 
   pums2018ByCD_C <- do
-    demo_C <- PUMS.pumsLoader
+    demo_C <- PUMS.pumsLoader Nothing
     BR.retrieveOrMakeFrame "mrp/DistrictClusters/pums2018ByCD.bin" demo_C $ \pumsRaw -> do
       let pums2018Raw = F.filterFrame ((== 2018) . F.rgetField @BR.Year) pumsRaw
       pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw

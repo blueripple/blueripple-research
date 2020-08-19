@@ -68,6 +68,7 @@ library
                  , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
                  , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
+                 , BlueRipple.Data.LoadersCore
                  , BlueRipple.Data.Loaders
                  , BlueRipple.Data.ACS_PUMS
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
@@ -83,7 +84,8 @@ library
                  , BlueRipple.Model.Turnout_MRP
                  , BlueRipple.Model.TSNE
                  , BlueRipple.Utilities.KnitUtils
-                 , BlueRipple.Utilities.TableUtils                                  
+                 , BlueRipple.Utilities.TableUtils
+                 , BlueRipple.Utilities.FramesUtils                                  
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
@@ -169,7 +171,7 @@ executable preference-model
 executable mrp-model
   import: deps
 --  ghc-options: -Wall -O0 
-  ghc-options: -Wall -O0 -threaded 
+  ghc-options: -Wall  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
   other-modules:  MRP.CCESPath
@@ -212,4 +214,20 @@ executable mrp-model
                , blueripple-research
                , glm-haskell
                , time
-  default-language: Haskell2010                 
+  default-language: Haskell2010
+
+executable testbed
+  import: deps
+--  ghc-options: -Wall -O0 
+  ghc-options: -Wall -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: testbed
+  main-is:        Main.hs
+  build-depends: base >= 4.11
+               , cereal >= 0.5.7 && < 0.6
+               , cereal-text >= 0.1.0 && < 0.2
+               , blueripple-research
+               , time
+  default-language: Haskell2010
+  
+
+  
