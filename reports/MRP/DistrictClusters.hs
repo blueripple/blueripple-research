@@ -124,11 +124,70 @@ import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
 
-text1 :: T.Text
-text1 = [i|
+textIntro :: T.Text
+textIntro = [here|
+Most models of voting behavior rely on demographic variables as perdictors. That is, they look at
+voters in various demographic buckets (age, race, education, sex, income, etc.), and their votes
+as reported to surveys, like the CCES survey, or via voter-files.  From this data, probabilities for
+voting for certain candidates based on demogrpahics are inferred and used, along with some weighting
+of the electorate---that is, some model of who is likely to vote---to analyze election results or to
+predict electoral outcomes.
 
+Underlying this work is the idea that these demographic variables are good predictors of voters behavior.
+More sophisticated methods, like MRP, are able to add some geographic variation to these inferences but
+the underlying concept is the same.  If you know someone's demographics, you can estimate the probability
+that they will vote for a candidate of a given party.
+
+Though models of demographics may be very complex, with hundreds or thousands of possible
+combinations of age, sex, etc., these results are often massively simplified when discussed
+and presented in the popular press.  So we look at groups like "White Working-Class Men" or
+"Black Women" as ways of understanding the dynamics of elections.  For example, Rachel Bitecofer
+talks about the importance of "pools of educated voters" in shifting house districts.
+
+We were interested in examining these ideas in a slightly different way.  We start with the
+same general idea, bucket people by demographic groups---in our case by age (under or over 45),
+sex (male or female), education (non-college-grad or college grad)
+and race (Black, Latinx, Asian, White-non-Latinx and other).  We break race down more finely than the
+other categories because there is considerable evidence that Black, Latinx, Asian and White-non-Latinx
+voters are very distinct in their voting behavior and so merging them into White and non-White
+would be insufficient.
+
+Next we tried to understand which house districts were demographically similar to each other.
+This is not simple!  Even in our relatively straightforward demographic breakdown, there are 40
+numbers describing each district (the percentage of people in the district in each category).  What does
+"similar" mean here?
+
+So we tried some things! In each case, we use purely demographic variables to quantify and
+visualize some idea of distance between districts and then add 2018 voting results on top
+in order to see if demographic similarity leads to electoral-outcome similarity.  As we'll
+explain below, we also begin to explore what it means when a district's voting behavior
+looks "out-of-place" or "anomalous" when analyzed this way.
+|]
+  
+textPCAPre :: T.Text
+textPCAPre = [here|
+First, we tried looking at the principal components of the demographics.
+That is, we considered the 438 (dsitricts) row
+by 40 (demographic %s) column matrix, $P$, and looked at the eigen-vectors
+of the two largest eigen-values of $P^TP$.  These shold be the two "directions"
+in demographic space which account for the most variation among districts. We
+project each district onto these two vectors and plot the result along with the
+Dem vote share in the 2018 house race and some k-means clusters.
+This is pictured below.
 |]
 
+
+textPCAPost :: T.Text
+textPCAPost = [here|
+The largest eigenvalue (corresponding to "PCA1") is about 20 times larger than the 2nd
+(corresponding to "PCA2").  The 2nd is about 3 times larger than the 3rd and the spectrum
+gets flatter from there.
+The actual values of the PCA variables don't mean anything.  With a little examination of the vectors
+themselves, it's pretty clear that "PCA1" is roughly a proxy for "White Working Class" and "PCA2"
+is  
+|]
+
+  
 text2 :: T.Text = [here|
 
 |]
@@ -516,7 +575,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 
   
   kClusteredDistricts <- kClusterDistricts
-  logFrame $ snd kClusteredDistricts
+--  logFrame $ snd kClusteredDistricts
   K.logLE K.Info "Computing scaled deltas for top two PCA embedding."
   pcaSD   <- do
     let pcaXY r = (F.rgetField @PCA1 r, F.rgetField @PCA2 r)    
@@ -613,7 +672,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       numDists = length districtsForClustering
       metric = euclideanMetric
       somResultsKey = "mrp/DistrictClusters/SOM_Results.bin"
-  K.clearIfPresent somResultsKey
+--  K.clearIfPresent somResultsKey
   (districtsWithStatsF, districtsOnMap) <- K.ignoreCacheTimeM $ do
     retrieveOrMake2Frames somResultsKey districtsForClustering_C $ \dfc -> do
       randomOrderDistricts <- PRF.sampleRVar $ RandomFu.shuffle dfc
@@ -759,7 +818,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd     
       allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF allScaledDeltas
       
-  K.logLE K.Info $ "allScaledDeltas: " <> (T.pack $ show allScaledDeltasForTable)    
+--  K.logLE K.Info $ "allScaledDeltas: " <> (T.pack $ show allScaledDeltasForTable)    
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
   K.newPandoc
@@ -770,13 +829,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                     ]
       ))
       $ do        
-        brAddMarkDown text1
+        brAddMarkDown textIntro
+        brAddMarkDown textPCAPre
         _ <- K.addHvega Nothing Nothing
              $ clusterVL @PCA1 @PCA2
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts)
+        brAddMarkDown textPCAPost
         _ <- K.addHvega Nothing Nothing
              $ kMeansBoxes @PCA1 @PCA2
              "2018 House Districts: K-Means"
