@@ -56,13 +56,13 @@ main= do
   resE <- K.knitHtml knitConfig makeDoc
   case resE of
     Right htmlAsText ->
-      K.writeAndMakePathLT "docs/simple_example.html" htmlAsText
+      K.writeAndMakePathLT "testbed.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
-  let pumsCSV = "testbed/medPUMS.csv"
+  let pumsCSV = "../bigData/test/smallPUMS.csv"
       dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)
   K.logLE K.Info "Testing File.toBytes..."
   let rawBytesS =  Streamly.File.toBytes pumsCSV

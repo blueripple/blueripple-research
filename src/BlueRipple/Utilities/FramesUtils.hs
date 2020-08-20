@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies     #-}
+{-# LANGUAGE TypeOperators    #-}
 module BlueRipple.Utilities.FramesUtils where
 
 import qualified Control.MapReduce.Core as MapReduce
@@ -28,6 +29,22 @@ streamGrouper ::
 streamGrouper = Streamly.concatM . Streamly.fold groupFold
   where groupFold = fmap mapToStream $ Streamly.Fold.classify Frames.Streamly.inCoreAoS_F
         mapToStream = Streamly.fromFoldable . Map.toList
+
+streamGrouper2 ::
+--  forall ks cs m.
+  (Prim.PrimMonad m
+  , Ord (Frames.Record ks)
+  , Frames.InCore.RecVec cs)
+  => Streamly.SerialT m (Frames.Record ks, Frames.Record cs)
+  -> Streamly.SerialT m (Frames.Record ks, (Int, Frames.Rec (((->) Int) Frames.:. Frames.ElField) cs))
+streamGrouper2 = Streamly.concatM . Streamly.fold groupFold
+  where groupFold = fmap mapToStream $ Streamly.Fold.classify Frames.Streamly.inCoreSoA_F
+        mapToStream = Streamly.fromFoldable . Map.toList        
+
+fixStreamGrouper2 :: Monad m
+                  => Streamly.SerialT m (Frames.Record ks, (Int, Frames.Rec (((->) Int) Frames.:. Frames.ElField) cs))
+                  -> Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs)
+fixStreamGrouper2 = Streamly.map (\(k, (n, soa)) ->  (k, Frames.InCore.toAoS n soa))
         
 framesStreamlyMR ::
   (Prim.PrimMonad m
@@ -48,7 +65,7 @@ framesStreamlyMR unpack (MapReduce.AssignM af) reduce =
         MapReduce.FilterM f -> Streamly.filterM f
         MapReduce.UnpackM f -> Streamly.concatMapM (fmap Streamly.fromFoldable . f)
       assignS = Streamly.mapM af
-      groupS = streamGrouper
+      groupS = fixStreamGrouper2 . streamGrouper2
       reduceS = Streamly.mapM (\(k, cF) -> reduceFunctionM reduce k cF)
       processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS 
   in Foldl.FoldM (\s a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS

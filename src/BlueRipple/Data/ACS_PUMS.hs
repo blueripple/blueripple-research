@@ -133,6 +133,7 @@ citizensFold =
      $ FF.toFoldRecord citF
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
+{-# INLINE citizensFold #-}
 
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
 pumsCountF = FMR.mapReduceFold
@@ -178,7 +179,8 @@ pumsLoader' dataPath cacheKey filterRawM = do
             $ pumsRowsLoader dataPath' filterRawM
       allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS fileToFixedS
       let numRows = FL.fold FL.length allRowsF
-      K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  Counting..."
+          numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) allRowsF
+      K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  " <> (T.pack $ show numYoung) <> " under 18. Counting..."
       countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF allRowsF
 --      let countedL = FL.fold pumsCountF allRowsF
       let numCounted = FL.fold FL.length countedF
