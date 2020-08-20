@@ -62,7 +62,7 @@ main= do
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
-  let pumsCSV = "testbed/medPUMS.csv"
+  let pumsCSV = "../bigData/test/medPUMS.csv"
       dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)
   K.logLE K.Info "Testing File.toBytes..."
   let rawBytesS =  Streamly.File.toBytes pumsCSV

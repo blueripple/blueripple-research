@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 module BlueRipple.Data.CPSTurnoutPUMS.CPSTurnoutPUMS_Path where
 
-dataDir = "./bigData/IPUMS/"
+dataDir = "../bigData/IPUMS/"
 
 cpsTurnoutPUMSCSV :: FilePath
 cpsTurnoutPUMSCSV = dataDir ++ "CPS_Voting_2008to2018.csv"

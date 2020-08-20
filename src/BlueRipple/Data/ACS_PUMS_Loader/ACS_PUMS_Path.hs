@@ -9,7 +9,7 @@ import qualified Frames.TH                     as F
 import qualified Data.Text as T
 
 dataDir :: T.Text
-dataDir = "./bigData/IPUMS/"
+dataDir = "../bigData/IPUMS/"
 
 pumsACS1YrCSV :: FilePath
 pumsACS1YrCSV = T.unpack $ dataDir <> "/acsSelected2006To2018.csv"
