@@ -219,7 +219,7 @@ executable mrp-model
 executable testbed
   import: deps
 --  ghc-options: -Wall -O0 
-  ghc-options: -Wall -prof -auto-all -fexternal-interpreter -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  ghc-options: -Wall -prof -fprof-auto -fexternal-interpreter -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: testbed
   main-is:        Main.hs
   build-depends: base >= 4.11
