@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE DeriveAnyClass         #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -17,6 +18,7 @@ import           Control.Arrow                  ( (>>>) )
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
+import Data.Hashable (Hashable)
 import qualified Data.Map                      as M
 import qualified Data.Monoid                   as Mon
 import qualified Data.Text                     as T
@@ -101,7 +103,7 @@ allCatKeysASER4 = [catKeyASER4 a s e r | a <- [EqualOrOver, Under], e <- [NonGra
 type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
 
 
-data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic, Hashable)
 instance S.Serialize Sex
 type instance FI.VectorFor Sex = Vec.Vector
 instance Grouping Sex
@@ -129,7 +131,7 @@ instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
 
 type IsCitizen = "IsCitizen" F.:-> Bool
 
-data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
+data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic, Hashable)
 
 
 instance S.Serialize CollegeGrad
@@ -176,7 +178,7 @@ age4ToSimple A4_18To24 = Under
 age4ToSimple A4_25To44 = Under
 age4ToSimple _ = EqualOrOver
 
-data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Age5F
 type instance FI.VectorFor Age5F = Vec.Vector
 instance Grouping Age5F
@@ -311,7 +313,7 @@ instance K.FiniteSet TurnoutRace
 
 type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
-data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Race5
 type instance FI.VectorFor Race5 = Vec.Vector
 instance Grouping Race5
@@ -371,7 +373,7 @@ data Language = English
               | Korean
               | Russian
               | FrenchCreole
-              | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+              | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize Language
 type instance FI.VectorFor Language = Vec.Vector
@@ -383,7 +385,7 @@ instance FV.ToVLDataValue (F.ElField LanguageC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 
-data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 instance S.Serialize SpeaksEnglish
 type instance FI.VectorFor SpeaksEnglish = Vec.Vector
 instance Grouping SpeaksEnglish
