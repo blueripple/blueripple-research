@@ -166,7 +166,7 @@ looks "out-of-place" or "anomalous" when analyzed this way.
   
 textPCAPre :: T.Text
 textPCAPre = [here|
-First, we tried looking at the principal components of the demographics.
+First, we tried looking at the [principal components][Wikipedia:PCA] of the demographics.
 That is, we considered the 438 (dsitricts) row
 by 40 (demographic %s) column matrix, $P$, and looked at the eigen-vectors
 of the two largest eigen-values of $P^TP$.  These shold be the two "directions"
@@ -174,6 +174,8 @@ in demographic space which account for the most variation among districts. We
 project each district onto these two vectors and plot the result along with the
 Dem vote share in the 2018 house race and some k-means clusters.
 This is pictured below.
+
+[Wikipedia:PCA]: <https://en.wikipedia.org/wiki/Principal_component_analysis>
 |]
 
 
@@ -182,12 +184,49 @@ textPCAPost = [here|
 The largest eigenvalue (corresponding to "PCA1") is about 20 times larger than the 2nd
 (corresponding to "PCA2").  The 2nd is about 3 times larger than the 3rd and the spectrum
 gets flatter from there.
-The actual values of the PCA variables don't mean anything.  With a little examination of the vectors
-themselves, it's pretty clear that "PCA1" is roughly a proxy for "White Working Class" and "PCA2"
-is  
+The actual values of the PCA variables don't mean anything obvious.
+With a little examination of the vectors
+themselves, it's pretty clear that "PC1" is roughly a proxy for "White Working Class" and "PC2"
+is something more obscure, since it must be orthogonal to the eigenvector of "PC1".
+
+The most striking thing is how clearly separated the blue (house districts that elected democrats)
+are from the red districts (house districts that elected republicans).
+Recall that vote-share was not in any way involved in the computation of the principal components.
+And yet, the projection of the demographics onto the principal components shows a clear if
+hard-to-specify relationship between demographics and election outcome.
+
+Also of note are some districts which seem "out-of-place", for example FL-25, which is
+a faint red-dot (PC1 = 90866, PC2=-35377) surrounded by blue dots.  FL-25 is 76% Latinx,
+which would usually suggest a democratic district, like NJ-8 just below it in the PCA chart.
+But over 50% of the Latinx residents of FL-25 are Cuban and Cubans are much more likely to
+vote Republican than other Latinx voters.  Other out-of-place districts may likewise
+have district-specific explanations.  But others might be places worth looking for flippable
+dsitricts.
+
 |]
 
-  
+textSOMPre :: T.Text
+textSOMPre = [here|
+PCA is a standard approach to simplifying a high-dimensional problem.  But it suffers
+some weaknesses, primarily that 
+|]
+
+textSOMPost :: T.Text
+textSOMPost = [here|
+Next
+|]
+
+
+text_tSNEPre :: T.Text
+text_tSNEPre = [here|
+
+|]
+
+text_tSNEPost :: T.Text
+text_tSNEPost = [here|
+Next
+|]
+
 text2 :: T.Text = [here|
 
 |]
@@ -216,13 +255,13 @@ type VoteShare2016 = "2016Share" F.:-> Double
 type Cluster k = "Cluster" F.:-> k
 type SOM_Cluster = Cluster (Int, Int)
 type K_Cluster = Cluster Int
-type PCA1 = "PCA1" F.:-> Double
-type PCA2 = "PCA2" F.:-> Double
-type TSNE1 = "TSNE1" F.:-> Double
-type TSNE2 = "TSNE2" F.:-> Double
-type TSNEIters = "TSNE_iterations" F.:-> Int
-type TSNEPerplexity = "TSNE_Perplexity" F.:-> Int
-type TSNELearningRate = "TSNE_LearningRate" F.:-> Double
+type PC1 = "PC1" F.:-> Double
+type PC2 = "PC2" F.:-> Double
+type TSNE1 = "tSNE1" F.:-> Double
+type TSNE2 = "tSNE2" F.:-> Double
+type TSNEIters = "tSNE_iterations" F.:-> Int
+type TSNEPerplexity = "tSNE_Perplexity" F.:-> Int
+type TSNELearningRate = "tSNE_LearningRate" F.:-> Double
 
 type instance FI.VectorFor (Int, Int) = K.Vector
 
@@ -558,7 +597,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         initialCentroids <- PMR.absorbMonadRandom $ MK.kMeansPPCentroids metric 5 (fmap districtVec districtsForClustering)
         (MK.Clusters kmClusters, iters) <- MK.weightedKMeans (MK.Centroids $ Vec.fromList initialCentroids) distWeighted metric districtsForClustering
         let distRec :: DistrictP [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PUMS.Citizens] (DT.CatColsASER5 V.++ '[PUMS.Citizens])
-                    -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PUMS.Citizens, W, PCA1, PCA2]
+                    -> F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, PUMS.Citizens, W, PC1, PC2]
             distRec d =
               let pca1 = UVec.sum $ UVec.zipWith (*) pca1v (districtVec d)
                   pca2 = UVec.sum $ UVec.zipWith (*) pca2v (districtVec d)
@@ -571,14 +610,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                   withProjs = fmap distRec (MK.members c)
               return $ ((cPCA1, cPCA2, cW), withProjs)
         rawClusters <- K.knitMaybe "Empty Cluster in K_means." $ traverse processOne  (Vec.toList kmClusters) 
-        return $ FK.clusteredRowsFull @PCA1 @PCA2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
+        return $ FK.clusteredRowsFull @PC1 @PC2 @W labelCD $ M.fromList [((2018 F.&: V.RNil) :: F.Record '[BR.Year], rawClusters)]
 
   
   kClusteredDistricts <- kClusterDistricts
 --  logFrame $ snd kClusteredDistricts
   K.logLE K.Info "Computing scaled deltas for top two PCA embedding."
   pcaSD   <- do
-    let pcaXY r = (F.rgetField @PCA1 r, F.rgetField @PCA2 r)    
+    let pcaXY r = (F.rgetField @PC1 r, F.rgetField @PC2 r)    
         pcaDist r1 r2 =
           let (x1, y1) = pcaXY r1
               (x2, y2) = pcaXY r2
@@ -832,34 +871,39 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         brAddMarkDown textIntro
         brAddMarkDown textPCAPre
         _ <- K.addHvega Nothing Nothing
-             $ clusterVL @PCA1 @PCA2
+             $ clusterVL @PC1 @PC2
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts)
         brAddMarkDown textPCAPost
+{-        
         _ <- K.addHvega Nothing Nothing
              $ kMeansBoxes @PCA1 @PCA2
              "2018 House Districts: K-Means"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts)
+-}
+        _ <- K.addHvega Nothing Nothing
+             $ somRectHeatMap
+             "District SOM Heat Map"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast districtsOnMap)
+             
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
              "tSNE Embedding (Colored by Dem Vote Share, Sized by Anomaly)"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
-        _ <- K.addHvega Nothing Nothing
-             $ somRectHeatMap
-             "District SOM Heat Map"
-             (FV.ViewConfig 800 800 10)
---             heatMap
-             (fmap F.rcast districtsOnMap)
+           
+{-             
         _ <- K.addHvega Nothing Nothing
              $ somBoxes
              "District SOM Box & Whisker"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast districtsOnMap)
+-}
         BR.brAddRawHtmlTable
           ("Districts With Stats")
           (BHA.class_ "brTable")
