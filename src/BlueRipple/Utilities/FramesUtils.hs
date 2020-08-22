@@ -41,6 +41,7 @@ streamGrouper ::
 streamGrouper = Streamly.concatM . Streamly.fold groupFold
   where groupFold = fmap mapToStream $ Streamly.Fold.classify Frames.Streamly.inCoreAoS_F
         mapToStream = Streamly.fromFoldable . Map.toList
+{-# INLINEABLE streamGrouper #-}
 
 -- defer toAoS step until grouping is complete?
 streamGrouper2 ::
@@ -50,12 +51,12 @@ streamGrouper2 ::
   )
   => Streamly.SerialT m (Frames.Record ks, Frames.Record cs)
   -> Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs)
-streamGrouper2 = Streamly.map (\(k, (n, soa)) ->  (k, Frames.InCore.toAoS n soa))
+streamGrouper2 = Streamly.map (\(!k, (!n, !soa)) ->  (k, Frames.InCore.toAoS n soa))
                  . Streamly.concatM
                  . Streamly.fold groupFold
   where groupFold = fmap mapToStream $ Streamly.Fold.classify Frames.Streamly.inCoreSoA_F
         mapToStream = Streamly.fromFoldable . Map.toList        
- 
+{-# INLINEABLE streamGrouper2 #-} 
   
 framesStreamlyMRM ::
   (Prim.PrimMonad m
@@ -77,7 +78,7 @@ framesStreamlyMRM unpack (MapReduce.AssignM af) reduce =
         MapReduce.UnpackM f -> Streamly.concatMapM (fmap Streamly.fromFoldable . f)
       assignS = Streamly.mapM af
       groupS = streamGrouper2
-      reduceS = Streamly.mapM (\(k, cF) -> reduceFunctionM reduce k cF)
+      reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
       processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS 
   in Foldl.FoldM (\s a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
 {-# INLINEABLE framesStreamlyMRM #-}
@@ -115,7 +116,7 @@ classifyHT = Streamly.Fold.Fold step init done where
   init :: m (HT m ks cs) = Prim.stToPrim $ HashTable.new
 
   step :: HT m ks cs -> (Frames.Record ks, Frames.Record cs) -> m (HT m ks cs)
-  step ht (k, c) = Prim.stToPrim $ do
+  step ht (!k, !c) = Prim.stToPrim $ do
     HashTable.mutateST ht k (addOneST c)
     return ht
 
@@ -129,9 +130,9 @@ classifyHT = Streamly.Fold.Fold step init done where
     return (0, Frames.InCore.initialCapacity, mvs)          
 
   addOneST :: Frames.Record cs -> Maybe (FeedIn m cs) -> ST.ST (Prim.PrimState m) (Maybe (FeedIn m cs), ())
-  addOneST c prevM = fmap (\x -> (Just x, ())) $ case prevM of
+  addOneST c vM = fmap (\x -> (Just x, ())) $ case vM of
     Nothing -> initial >>= flip feed c
-    Just ht -> feed ht c    
+    Just v -> feed v c    
 
   fin (n, _, mvs') =
     do vs <- Frames.InCore.freezeRec (Proxy::Proxy cs) n mvs'
@@ -139,7 +140,7 @@ classifyHT = Streamly.Fold.Fold step init done where
   
   finalize :: (Frames.Record k, FeedIn (ST.ST (Prim.PrimState m)) cs)
            -> (ST.ST (Prim.PrimState m)) (Frames.Record k, Frames.FrameRec cs)
-  finalize (k, v) = do
+  finalize (!k, !v) = do
     frame <- uncurry Frames.toAoS <$> fin v
     return (k, frame)
 
@@ -149,6 +150,7 @@ classifyHT = Streamly.Fold.Fold step init done where
   done :: HT m ks cs -> m (Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs))
   done = Prim.stToPrim . HashTable.foldM (\s (k, v) -> return $ finalize (k, v) `Streamly.consM` s) Streamly.nil
 -}
+{-# INLINEABLE streamGrouperHT #-}
 
 streamGrouperHT :: (Prim.PrimMonad m
                    , Monad m
@@ -182,7 +184,7 @@ framesStreamlyMRM_HT unpack (MapReduce.AssignM af) reduce =
         MapReduce.UnpackM f -> Streamly.concatMapM (fmap Streamly.fromFoldable . f)
       assignS = Streamly.mapM af
       groupS = streamGrouperHT
-      reduceS = Streamly.mapM (\(k, cF) -> reduceFunctionM reduce k cF)
+      reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
       processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS 
   in Foldl.FoldM (\s a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
 {-# INLINEABLE framesStreamlyMRM_HT #-}

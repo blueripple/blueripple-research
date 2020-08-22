@@ -133,15 +133,15 @@ citizensFold =
      $ FF.toFoldRecord citF
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
---{-# INLINE citizensFold #-}
+{-# INLINE citizensFold #-}
 
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
 pumsCountF = FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
              (FMR.foldAndLabel citizensFold V.rappend)
+{-# INLINEABLE pumsCountF #-}
 
---groupStream :: (Streamly.IsStream t, Ord k, Monad m) => Streamly.Fold.Fold m (k, c) (
 
 
 pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
@@ -149,7 +149,7 @@ pumsCountStreamlyF = BRF.framesStreamlyMR
                      FMR.noUnpack
                      (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
                      (FMR.foldAndLabel citizensFold V.rappend)
-
+{-# INLINEABLE pumsCountStreamlyF #-}
 
 pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
