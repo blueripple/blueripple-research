@@ -36,6 +36,7 @@ import qualified Data.Set as Set
 import qualified Data.Vector                   as Vec
 import qualified Data.Vector.Unboxed           as UVec
 import qualified Data.Vector.Storable           as SVec
+import qualified Data.Vector.Generic as GVec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -126,10 +127,10 @@ import qualified MRP.CCES as CCES
 
 textIntro :: T.Text
 textIntro = [here|
-Most models of voting behavior rely on demographic variables as perdictors. That is, they look at
+Most models of voting behavior rely on demographic variables as predictors. That is, they look at
 voters in various demographic buckets (age, race, education, sex, income, etc.), and their votes
 as reported to surveys, like the CCES survey, or via voter-files.  From this data, probabilities for
-voting for certain candidates based on demogrpahics are inferred and used, along with some weighting
+voting for certain candidates based on demographics are inferred and used, along with some weighting
 of the electorate---that is, some model of who is likely to vote---to analyze election results or to
 predict electoral outcomes.
 
@@ -167,12 +168,12 @@ looks "out-of-place" or "anomalous" when analyzed this way.
 textPCAPre :: T.Text
 textPCAPre = [here|
 First, we tried looking at the [principal components][Wikipedia:PCA] of the demographics.
-That is, we considered the 438 (dsitricts) row
+That is, we considered the 438 (districts) row
 by 40 (demographic %s) column matrix, $P$, and looked at the eigen-vectors
-of the two largest eigen-values of $P^TP$.  These shold be the two "directions"
+of the two largest eigen-values of $P^TP$.  These should be the two "directions"
 in demographic space which account for the most variation among districts. We
 project each district onto these two vectors and plot the result along with the
-Dem vote share in the 2018 house race and some k-means clusters.
+Dem vote share in the 2018 house race.
 This is pictured below.
 
 [Wikipedia:PCA]: <https://en.wikipedia.org/wiki/Principal_component_analysis>
@@ -181,54 +182,165 @@ This is pictured below.
 
 textPCAPost :: T.Text
 textPCAPost = [here|
-The largest eigenvalue (corresponding to "PCA1") is about 20 times larger than the 2nd
-(corresponding to "PCA2").  The 2nd is about 3 times larger than the 3rd and the spectrum
+The largest eigenvalue (corresponding to "PC1") is about 20 times larger than the 2nd
+(corresponding to "PC2").  The 2nd is about 3 times larger than the 3rd and the spectrum
 gets flatter from there.
 The actual values of the PCA variables don't mean anything obvious.
 With a little examination of the vectors
-themselves, it's pretty clear that "PC1" is roughly a proxy for "White Working Class" and "PC2"
-is something more obscure, since it must be orthogonal to the eigenvector of "PC1".
+themselves, it's pretty clear that negative values of "PC1" correspond roughly to
+"White Working Class" and positive values of "PC2" correspond roughly to "Black Working Class".
 
-The most striking thing is how clearly separated the blue (house districts that elected democrats)
+Some examples of how this plays out:  the district in the lower-right corner is HI-1, a district
+which is 54% Asian, 19% White and 5% Latinx and 2% Black.  So it's a place with lower
+than typical numbers of White and Black working class folks.  By contrast, the lower-leftmost district
+(which is hard to see on the chart) is MT-0,
+a district that is 91% White, 6% Native American and 2% Latinx. With a median income of about $54,000,
+MT-0 is full of White working class people but almost no black people at all. As a last example,
+consider GA-5, the district John Lewis's represented until his death
+and the district with the largest projection on PC2.
+GA-5 is 58% Black, 32% White, 6% Latinx and 5% Asian.
+The median income in GA-5 is about $57,000. So GA-5 has many working class Black people and
+*comparatively* few white ones.
+
+The most striking thing is how strongly separated the blue (house districts that elected democrats)
 are from the red districts (house districts that elected republicans).
 Recall that vote-share was not in any way involved in the computation of the principal components.
 And yet, the projection of the demographics onto the principal components shows a clear if
 hard-to-specify relationship between demographics and election outcome.
 
 Also of note are some districts which seem "out-of-place", for example FL-25, which is
-a faint red-dot (PC1 = 90866, PC2=-35377) surrounded by blue dots.  FL-25 is 76% Latinx,
-which would usually suggest a democratic district, like NJ-8 just below it in the PCA chart.
-But over 50% of the Latinx residents of FL-25 are Cuban and Cubans are much more likely to
+a faint red-dot (PC1 = -52740, PC2=3313) surrounded by blue dots.  FL-25 is 76% Latinx,
+which would usually suggest a democratic district, like NJ-8, just below it in the chart.
+But over 50% of the Latinx residents of FL-25 are Cuban, and Cubans are much more likely to
 vote Republican than other Latinx voters.  Other out-of-place districts may likewise
 have district-specific explanations.  But others might be places worth looking for flippable
-dsitricts.
+districts.
 
+Principal components analysis is an example of dimension-reduction and, in the case where
+it's used to look at only a small number of components, something we will call an "embedding".
+By an "embedding" we mean somehow representing the high-dimensional space in a lower-dimensional
+one.  Such a thing has nothing specific to say about how alike or different things are, though
+we may try to use the embedded distances that way.  This is different from using "clustering"
+to visualize high-dimensional data.  Clustering is entirely about similarity and difference
+but often has nothing more specific to say than whether things are in the same cluster.
+
+These methods are often combined; frequently an embedding is then clustered
+(using k-means, or something similar) or data is clustered and then embedded, where
+the clusters may be more easily viewed.
 |]
 
 textSOMPre :: T.Text
 textSOMPre = [here|
-PCA is a standard approach to simplifying a high-dimensional problem.  But it suffers
-some weaknesses, primarily that 
+So let's cluster this data and see what that looks like!  As an example of clustering,
+we will use Self-Organizing-Maps (SOMs).  The SOM is an interesting clustering method
+because it can preserve a bit more information than just what's in each cluster.  It can
+also identify nearby clusters, or more precisely, it may preserve some of the structure
+of the high-dimensional data.  To make an SOM, we choose
+a few districts at random and "place" them at the points of a 3x3 grid.  Then we use
+all the districts to "train" the SOM as follows: one district at a time, we find the
+"closest" (here we use the absolute-value of the coordinate differences in
+the high-dimensional space) district to it on the grid.  Then we move the district on
+the grid closer to the input district.  We do the same, but to a lesser extent with the
+nearest neighbors of that point on the grid.  Once the SOM has seen all the districts,
+we stop and then use each point of the grid as a cluster by assigning every district to
+its closest grid point in the now-rearranged grid.  Since the SOM has some concept
+of nearness built in, we make a sort of embedding out of these clusters by plotting them
+on the grid.  We assign coordinates by using a weighted average of the inverse distances
+to the closest grid district and its nearest neighbors. Like the PCA chart, we assign a
+color to each district based on the D vs. R vote-share in the 2018 house elections.
 |]
 
 textSOMPost :: T.Text
 textSOMPost = [here|
-Next
+Again we see some very clear separation between blue and red districts and then
+some clusters which are mixed.  Even within the mixed clusters, using our ad-hoc
+embedding scheme, we see some blue/red separation.  That is, in mixed clusters,
+blue districts often "lean" toward a bluer cluster and red ones toward a redder
+cluster.  This again, supports our intuition that demographics determines a
+great deal of voting behavior.
 |]
 
 
 text_tSNEPre :: T.Text
 text_tSNEPre = [here|
+One weakness of the PCA embedding was that it made inefficient use of
+the 2D space.  It also is prone to showing some things as close that
+might actually be fairly far apart, just in directions which are orthogonal
+to the PCs we used.  For example, neither of the first 2 PCs had a strong
+educational component.
 
+"t-Distributed Stochastic Neighbor Embedding" (tSNE) is a (non-linear) technique for
+overcoming some of these issues.  Rather than project the high-dimensional data
+directly, tSNE attempts to build a 2D representation which preserves the distribution
+of distances to neighbors.  Roughly, tSNE begins by computing, for each district,
+a probability distribution over the other districts, where nearness corresponds to
+high probability.  Then it builds a
+2-dimensional set of coordinates such that these neighbor probabilities are as
+close as possible to the original ones.
+There's one crucial parameter, called "perplexity" which roughly
+stands in for the number of nearest neighbors each district should have.
+At low perplexity, only the very nearest neighbors have probabilities much different from 0,
+at higher perplexities, more neighbors have non-zero probabilities.  
+
+As with the other charts, on the tSNE chart below,
+we add color to each district to show
+2-party vote-share.
 |]
 
-text_tSNEPost :: T.Text
-text_tSNEPost = [here|
-Next
+textAnomaly :: T.Text
+textAnomaly = [here|
+
+A detour is in order to talk about where we're trying to go with all this.
+Our basic interest is identifying districts which elected a Republican
+to the house in the last election
+(2018 here) but are demographically more similar to a set of districts which,
+on average, elected Democrats.  These districts might be "flippable" in this
+election or in the future. We're also interested in the same thing but with
+the parties reversed.  Those are districts we might need to work harder to defend.
+
+So far, we have a simple tSNE inspired approach to this.  First we choose
+a demographic distance between districts--this could be the original 40-dimensional
+distance, which we call "Raw", the distance using the first two
+principal components, the distance using the tSNE coordinates,
+or the distance on our SOM embedding.  Then, as in the first step of
+tSNE, we construct a probability distribution over pairs of districts
+such that "closer" districts have higher probability than ones further
+apart.  We use those probabilities to construct a distribution
+of 2-party vote-shares.  In particular, for the $i$th district,
+we compute the mean, $m_i$, and standard
+deviation $\sigma_i$ of that distribution.  Then, for the district in question, we
+look at the standard-deviation-scaled difference between the 2-party vote
+share, $v_i$, in the district and
+what is "expected" using the probability weighted neighbors:
+$a_i = \frac{v_i - m_i}{\sigma_i}$.
+
+|]
+  
+textFlip :: T.Text
+textFlip = [here|
+One issue is immediately apparent.  There are a lot of large dark blue points,
+and a few large dark red ones. These are districts where Democrats or Republicans
+ran unopposed, thus they are anomalous, but likely not in a very interesting way!
+This makes it clear that we really care only about anomalies where $v_i$ and $m_i$ are on
+different sides of 50%. Plotting that (which we call the "Flip Index") instead, we get the chart below.
 |]
 
-text2 :: T.Text = [here|
+textQuestions :: T.Text = [here|
+Some questions:
 
+1. Is this way of looking at "anomalousness" at all useful?  On the one hand, it makes some intuitive sense:
+make some sensible definition of "neighborhood" and then use that to consider what's unexpected.  However, tSNE
+itself is not a method for detecting outliers since it shifts relative distances.  I don't think that's
+what we're doing here, though we are using tSNE inspired probabilities to construct our neighborhood.
+
+2. We're struggling with districts where candidates ran unopposed.  These are outliers but not errors
+and they shouldn't be dropped.  Should we transform vote-share somehow?  Or, at the very least, set the vote-share
+of the unopposed to the max/min vote-share in a competitive district?  Is there some clever way to use neighborhoods
+to set a better edge?
+
+3. Is there a better way than the "Flip Index" idea to focus in on the question of flippability?
+
+The table below has all this data in tabular form.cp
 |]
   
 
@@ -454,12 +566,13 @@ type Method = "Method" F.:-> T.Text
 type Mean = "mean" F.:-> Double
 type Sigma = "sigma" F.:-> Double
 type ScaledDelta = "scaled_delta" F.:-> Double
+type FlipIndex = "flip_index" F.:-> Double
 
 computeScaledDelta
   :: forall ks a f r. 
   (K.KnitEffects r
   , Foldable f
-  , FI.RecVec (ks V.++ [Method, Mean, Sigma, ScaledDelta])
+  , FI.RecVec (ks V.++ [Method, Mean, Sigma, ScaledDelta, FlipIndex])
   )
   => T.Text  
   -> (a -> a -> Double)
@@ -467,7 +580,7 @@ computeScaledDelta
   -> (a -> Double)
   -> (a -> F.Record ks)
   -> f a
-  -> K.Sem r (F.FrameRec (ks V.++ [Method, Mean, Sigma, ScaledDelta]))
+  -> K.Sem r (F.FrameRec (ks V.++ [Method, Mean, Sigma, ScaledDelta, FlipIndex]))
 computeScaledDelta methodName distance perplexity qty key rows = do
   let length = FL.fold FL.length rows
       datV = MA.fromList @MA.B MA.Seq $ FL.fold FL.list rows
@@ -490,12 +603,13 @@ computeScaledDelta methodName distance perplexity qty key rows = do
             var = FL.fold (FLS.varianceWeighted mean) xw
         in (mean, var)            
       dists = MA.map dist (MA.outerSlices probabilities)
-      asRec :: a -> (Double, Double) -> F.Record (ks V.++ [Method, Mean, Sigma, ScaledDelta])
+      asRec :: a -> (Double, Double) -> F.Record (ks V.++ [Method, Mean, Sigma, ScaledDelta, FlipIndex])
       asRec a (m, v) =
         let sigma = sqrt v
             scaledDelta = (qty a - m)/sigma
-            suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta]
-            suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: V.RNil
+            flipIndex = if (qty a - 0.5) * (m - 0.5) < 0 then abs scaledDelta else 0
+            suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta, FlipIndex]
+            suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: flipIndex F.&: V.RNil
         in key a F.<+> suffixRec
   return $ F.toFrame $ MA.computeAs MA.B $ MA.zipWith asRec datV dists
   
@@ -562,12 +676,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   rawSD <- do
     let rawDist = districtDiff euclideanMetric
     computeScaledDelta "Raw" rawDist 40.0 (F.rgetField @ET.DemPref . districtId) districtId $ districtsForClustering
-
+  logFrame rawSD
     
   let districtsForClustering_C = fmap (const districtsForClustering) pumsByCDWithVoteShare_C
   K.logLE K.Info $ "Computing top 2 PCA components"
   (pca1v, pca2v) <- do
-    let asSVecs = fmap (SVec.convert . districtVec) districtsForClustering
+    let center v = let m = (realToFrac $ GVec.sum v)/(realToFrac $ GVec.length v) in GVec.map ((-) m) v
+        asSVecs = fmap (center . SVec.convert . districtVec) districtsForClustering
         asMat = LA.fromRows asSVecs
         mTm = (LA.tr asMat) LA.<> asMat
         (eigVals, eigVecs) = LA.eigSH (LA.trustSym mTm)
@@ -644,10 +759,10 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 -- tSNE
   K.logLE K.Info $ "tSNE embedding..."
   let tsneIters = [1000]
-      tsnePerplexities = [40]
+      tsnePerplexities = [10]
       tsneLearningRates = [10]
       tsneClusters = 5
---  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
+  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
   (tSNE_ClustersF, tSNE_ClusteredF) <- K.ignoreCacheTimeM
             $ BR.retrieveOrMake2Frames "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
     K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."    
@@ -700,7 +815,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
               dX = x1 - x2
               dY = y1 - y2
           in (dX * dX) + (dY * dY)
-    computeScaledDelta "tSNE" tsneDistance 40.0 (F.rgetField @ET.DemPref) id tSNE_ClusteredF
+    computeScaledDelta "tSNE" tsneDistance 10.0 (F.rgetField @ET.DemPref) id tSNE_ClusteredF
     
 --  logFrame tSNE_ClusteredWithSD
 
@@ -842,17 +957,17 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 
 
   -- put all scaled deltas together
-  let scaledDeltaCols = F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, Method, Mean, Sigma, ScaledDelta]
+  let scaledDeltaCols = F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, Method, Mean, Sigma, ScaledDelta, FlipIndex]
       allScaledDeltas =  fmap scaledDeltaCols tSNE_ClusteredWithSD
                          <> fmap scaledDeltaCols pcaSD
                          <> fmap scaledDeltaCols rawSD
                          <> fmap scaledDeltaCols somSD
       allScaledDeltasForTableF =
-        let methodsF :: FL.Fold (F.Record [Method, Mean, Sigma, ScaledDelta]) (M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta]))
+        let methodsF :: FL.Fold (F.Record [Method, Mean, Sigma, ScaledDelta, FlipIndex]) (M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta, FlipIndex]))
             methodsF = FL.premap (\r -> (F.rgetField @Method r, F.rcast r)) FL.map 
         in MR.mapReduceFold
            MR.noUnpack
-           (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref]) (F.rcast @[Method, Mean, Sigma, ScaledDelta]))
+           (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref]) (F.rcast @[Method, Mean, Sigma, ScaledDelta, FlipIndex]))
            (MR.foldAndLabel methodsF (,))
       sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd     
       allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF allScaledDeltas
@@ -869,10 +984,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
       ))
       $ do        
         brAddMarkDown textIntro
+        brLineBreak
         brAddMarkDown textPCAPre
         _ <- K.addHvega Nothing Nothing
              $ clusterVL @PC1 @PC2
-             "2018 House Districts: K-Means"
+             "2018 House Districts: Demographic Principal Components"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts)
@@ -885,18 +1001,38 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              (fmap F.rcast $ fst kClusteredDistricts)
              (fmap F.rcast $ snd kClusteredDistricts)
 -}
+        brLineBreak
+        brAddMarkDown textSOMPre
         _ <- K.addHvega Nothing Nothing
              $ somRectHeatMap
              "District SOM Heat Map"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast districtsOnMap)
-             
+        brAddMarkDown textSOMPost
+        brLineBreak
+        brAddMarkDown text_tSNEPre             
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (Colored by Dem Vote Share, Sized by Anomaly)"
+             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share)"
+             TSNE_VoteShare
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
-           
+        brAddMarkDown textAnomaly
+        _ <- K.addHvega Nothing Nothing
+             $ tsneVL
+             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share, Sized by Anomaly)"
+             TSNE_Anomaly
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast tSNE_ClusteredWithSD)
+        brAddMarkDown textFlip     
+        _ <- K.addHvega Nothing Nothing
+             $ tsneVL
+             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share, Sized by Flip Index)"
+             TSNE_Flip
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast tSNE_ClusteredWithSD)
+        brAddMarkDown textQuestions     
+        
 {-             
         _ <- K.addHvega Nothing Nothing
              $ somBoxes
@@ -904,59 +1040,59 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast districtsOnMap)
 -}
-        BR.brAddRawHtmlTable
-          ("Districts With Stats")
-          (BHA.class_ "brTable")
-          (dwsCollonnade mempty)
-          districtsWithStatsF
+       
         BR.brAddRawHtmlTable
           ("Districts With Scaled Delta")
           (BHA.class_ "brTable")
           (sdCollonnade mempty)
           allScaledDeltasForTable
+        BR.brAddRawHtmlTable
+          ("Districts With Stats")
+          (BHA.class_ "brTable")
+          (dwsCollonnade mempty)
+          districtsWithStatsF
           
         brAddMarkDown brReadMore
 
+data TSNE_Chart = TSNE_VoteShare | TSNE_Anomaly | TSNE_Flip
 
 tsneVL ::  Foldable f
        => T.Text
+       -> TSNE_Chart
        -> FV.ViewConfig
-       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, FK.ClusterId, ScaledDelta, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
+       -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, FK.ClusterId, ScaledDelta, FlipIndex, TSNEPerplexity, TSNELearningRate, TSNEIters, TSNE1, TSNE2])
        -> GV.VegaLite
-tsneVL title vc rows =
+tsneVL title chartType vc rows =
   let dat = FV.recordsToVLData id FV.defaultParse rows
       listF getField = fmap List.nub $ FL.premap getField FL.list
       (perpL, lrL, iterL) = FL.fold ((,,)
                             <$> listF (F.rgetField @TSNEPerplexity)
                             <*> listF (F.rgetField @TSNELearningRate)
                             <*> listF (F.rgetField @TSNEIters)) rows
+      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
+      makeAbsAnomaly = GV.calculateAs "abs (datum.scaled_delta)" "Anomaly Index"
+      makeFlipIndex = GV.calculateAs "max(0.5, datum.flip_index)" "Flip Index"
+      makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
-      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]      
-      encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
-      encSize = GV.size [GV.MName "Anomaly Index", GV.MmType GV.Quantitative]
-      encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
-      encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
-      makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
-      makeAbsDelta = GV.calculateAs "abs (datum.scaled_delta)" "Anomaly Index"                        
-      makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encAll = encX . encY . encColor . encFill
+      encSpecific = case chartType of
+        TSNE_VoteShare -> id
+        TSNE_Anomaly -> GV.size [GV.MName "Anomaly Index", GV.MmType GV.Quantitative]
+        TSNE_Flip -> GV.size [GV.MName "Flip Index", GV.MmType GV.Quantitative]
+      enc = (GV.encoding . encAll . encSpecific) []
       mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
       bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
-{-
-      bindPerplexity = GV.select "sPerplexity" GV.Single [GV.Fields ["TSNE_Perplexity"]
-                                                         , GV.Bind [ GV.ISelect "TSNE_Perplexity" [GV.InName "",GV.InOptions $ fmap (T.pack . show) perpL]]]
-      bindLearningRate = GV.select "sLearningRate" GV.Single [GV.Fields ["TSNE_LearningRate"]
-                                                            , GV.Bind [ GV.ISelect "TSNE_LearningRate" [GV.InName "",GV.InOptions $ fmap (T.pack . show) lrL]]]
-      bindIters = GV.select "sIters" GV.Single [GV.Fields ["TSNE_iterations"]
-                                              , GV.Bind [ GV.ISelect "TSNE_iterations" [GV.InName "",GV.InOptions $ fmap (T.pack . show) iterL]]]
-      filterSelections = GV.filter (GV.FSelection "sPerplexity") . GV.filter (GV.FSelection "sLearningRate") . GV.filter (GV.FSelection "sIters")
--}
-      enc = (GV.encoding . encX . encY . encColor . encFill . encShape . encSize) []
-      transform = (GV.transform . makeShare . makeDistrict . makeAbsDelta) []
+      transform = (GV.transform . makeShare . makeDistrict . makeAbsAnomaly . makeFlipIndex) []
       selection = (GV.selection . bindScales) []
       resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
   in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
+{-
+      encCol = GV.column [FV.fName @TSNEIters, GV.FmType GV.Ordinal]
+      encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
+-}
   
 somRectHeatMap :: (Foldable f, Functor f)
                => T.Text
@@ -1032,7 +1168,7 @@ clusterVL title vc centroidRows districtRows =
       makeShare = GV.calculateAs "datum.DemPref - 0.5" "Dem Vote Share"
       makeCentroidColor = GV.calculateAs "0" "CentroidColor"
       centroidMark = GV.mark GV.Point [GV.MColor "grey", GV.MTooltip GV.TTEncoding]
-      districtMark = GV.mark GV.Point [ GV.MTooltip GV.TTData]
+      districtMark = GV.mark GV.Circle [ GV.MTooltip GV.TTData]
       encShape = GV.shape [FV.mName @FK.ClusterId, GV.MmType GV.Nominal]
       encX = GV.position GV.X [FV.pName @x, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @y, GV.PmType GV.Quantitative]
@@ -1042,7 +1178,7 @@ clusterVL title vc centroidRows districtRows =
       selectionD = GV.selection
                    . GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
       centroidSpec = GV.asSpec [(GV.encoding . encX . encY . encSizeC . encShape) [], centroidMark, (GV.transform . makeCentroidColor) [], datCentroids]
-      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD . encFillD . encShape) [], districtMark, (GV.transform . makeShare) [], selectionD [], datDistricts]
+      districtSpec = GV.asSpec [(GV.encoding . encX . encY . encColorD) [], districtMark, (GV.transform . makeShare) [], selectionD [], datDistricts]
   in FV.configuredVegaLite  vc [FV.title title, GV.layer [districtSpec]]
   
 
@@ -1096,7 +1232,7 @@ type SDRow = [BR.StateAbbreviation
              , ET.DemPref]
              
 
-type SDMap = M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta])
+type SDMap = M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta, FlipIndex])
 
 sdCollonnade ::  BR.CellStyle (F.Record SDRow, SDMap) T.Text -> K.Colonnade K.Headed (F.Record SDRow, SDMap) K.Cell
 sdCollonnade cas =
@@ -1105,7 +1241,8 @@ sdCollonnade cas =
    <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref . fst))
    <> K.headed "Mean Vote Share (Raw)" (BR.toCell cas "Mean" "Mean" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Mean) . M.lookup "Raw" . snd))
    <> K.headed "Std Deviation (Raw)" (BR.toCell cas "Std Dev" "Std Deb" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Sigma) . M.lookup "Raw" . snd))
-   <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))   
+   <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))
+   <> K.headed "Raw Flip Index" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @FlipIndex) . M.lookup "Raw" . snd))   
    <> K.headed "tSNE Scaled Delta" (BR.toCell cas "tSNE" "tSNE" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd))
    <> K.headed "SOM Scaled Delta" (BR.toCell cas "SOM" "SOM" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "SOM" . snd))
    <> K.headed "PCA Scaled Delta" (BR.toCell cas "PCA" "PCA" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "PCA" . snd))
