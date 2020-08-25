@@ -7,15 +7,14 @@
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE GADTs                     #-}
-
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE PolyKinds                 #-}
+{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
@@ -124,6 +123,17 @@ import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
 import MRP.CCES
 import qualified MRP.CCES as CCES
+
+
+{-
+TODO:
+1. Color tSNE by meaningful variables.  Starting with all 40 buckets individually.
+2. Unweighted NN?
+3. Fix "Vote Share" as name
+4. Look at logistic regression (MRP fixed-only??) for same buckets.
+5. Color tSNE by region?
+6. Other variables altogether.  How long has the incumbent been there, etc.
+-}
 
 textIntro :: T.Text
 textIntro = [here|
@@ -339,8 +349,14 @@ of the unopposed to the max/min vote-share in a competitive district?  Is there 
 to set a better edge?
 
 3. Is there a better way than the "Flip Index" idea to focus in on the question of flippability?
+|]
 
-The table below has all this data in tabular form.cp
+textAnomalyVsShare :: T.Text = [here|
+Also, we can look directly at anomaly vs 2018 vote-share (and add 2016 vote-share via color):
+|]
+
+textEndForNow :: T.Text = [here|
+The table below has all this data in tabular form.
 |]
   
 
@@ -359,11 +375,12 @@ addPUMSZerosF =
        $ const
        $ Keyed.addDefaultRec @DT.CatColsASER5 zeroPop)
                                                                   
+type PopPct = "Pct Pop" F.:-> Double
 type PctWWC = "PctWWC" F.:-> Double
 type PctBlack = "PctBlack" F.:-> Double
 type PctNonWhite = "PctNonWhite" F.:-> Double
 type PctYoung = "PctYoung" F.:-> Double
-type VoteShare2016 = "2016Share" F.:-> Double
+type Pref2016 = "Pref2016" F.:-> Double
 type Cluster k = "Cluster" F.:-> k
 type SOM_Cluster = Cluster (Int, Int)
 type K_Cluster = Cluster Int
@@ -642,6 +659,12 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                               (FMR.foldAndAddKey votesToVoteShareF)
       return $ FL.fold houseResultsF houseResults
 
+--  let voteShare2016 :: F.FrameRec BR.HouseElectionCols
+--                    -> F.FrameRec [BR.StateAbbreviation, BR.CongressionalDistrict, Pref2016]
+  let voteShare2016 hvs = fmap (FT.replaceColumn @ET.DemPref @Pref2016 id . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref])
+                          $ F.filterFrame ((==2016) . F.rgetField @BR.Year) hvs
+
+
   pumsByCDWithVoteShare_C <- do
     let cachedDeps = (,) <$> pums2018ByCD_C <*> houseVoteShare_C
     BR.retrieveOrMakeFrame "mrp/DistrictClusters/pumsByCDWithVoteShare.bin" cachedDeps $ \(pumsByCD, houseVoteShare) -> do
@@ -757,12 +780,13 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   K.logLE K.Info $ "K-meansL <comp> = " <> (T.pack $ show meanKC) <> "; sigma(comp)=" <> (T.pack $ show stdKC)
 
 -- tSNE
-  K.logLE K.Info $ "tSNE embedding..."
-  let tsneIters = [1000]
-      tsnePerplexities = [10]
+  K.logLE K.Info $ "tSNE embedding..."    
+  let tsnePerplexity = 40
+      tsneIters = [1000]
+      tsnePerplexities = [tsnePerplexity]
       tsneLearningRates = [10]
       tsneClusters = 5
-  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
+--  K.clearIfPresent "mrp/DistrictClusters/tsne.bin"
   (tSNE_ClustersF, tSNE_ClusteredF) <- K.ignoreCacheTimeM
             $ BR.retrieveOrMake2Frames "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
     K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."    
@@ -815,9 +839,15 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
               dX = x1 - x2
               dY = y1 - y2
           in (dX * dX) + (dY * dY)
-    computeScaledDelta "tSNE" tsneDistance 10.0 (F.rgetField @ET.DemPref) id tSNE_ClusteredF
+    computeScaledDelta "tSNE" tsneDistance (realToFrac tsnePerplexity) (F.rgetField @ET.DemPref) id tSNE_ClusteredF
     
---  logFrame tSNE_ClusteredWithSD
+  --  logFrame tSNE_ClusteredWithSD
+  -- build a frame of demographic buckets with tSNE info attached
+  let longDistrictData = F.toFrame $ concat $ fmap (\d -> fmap (districtId d F.<+>) (vecDemoAsRecs @DT.CatColsASER5 @PopPct (const id) 0 (districtVec d))) districtsForClustering
+  longDistrictsWith_tSNE <- K.knitEither
+                            $ either (Left . T.pack . show) Right
+                            $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict] longDistrictData tSNE_ClusteredWithSD
+--  logFrame longDistrictsWith_tSNE
 
 -- SOM      
   K.logLE K.Info $ "SOM clustering..."
@@ -880,12 +910,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                 clusterRec :: F.Record '[SOM_Cluster] = SOM.classify som d F.&: V.RNil
             in districtId d F.<+> statsRec (fmap F.rcast $ districtAsRecs @DT.CatColsASER5 @PUMS.Citizens (\pop pct -> round $ pct * realToFrac pop) d) F.<+> clusterRec
       districtsWithStatsF :: F.FrameRec DWSRow <- do
-        houseVoteShare <- K.ignoreCacheTime houseVoteShare_C    
-        let voteShare2016 = fmap (FT.replaceColumn @ET.DemPref @VoteShare2016 id . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref])
-                            $ F.filterFrame ((==2016) . F.rgetField @BR.Year) houseVoteShare
+        hvs <- K.ignoreCacheTime houseVoteShare_C 
+        let vs2016 = voteShare2016 hvs
             (districtsWithStats, missing2016Share)  = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict]
                                                       (F.toFrame $ fmap distStats districtsForClustering)
-                                                      voteShare2016
+                                                      vs2016
         K.logLE K.Info $ "Districts with missing 2016 house results (dropped from analysis):" <> (T.pack $ show $ List.nub $ missing2016Share)
         return $ F.toFrame districtsWithStats
 -- logFrame districtsWithStatsF
@@ -962,7 +991,14 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                          <> fmap scaledDeltaCols pcaSD
                          <> fmap scaledDeltaCols rawSD
                          <> fmap scaledDeltaCols somSD
-      allScaledDeltasForTableF =
+  hvs <- K.ignoreCacheTime houseVoteShare_C 
+  let vs2016 = voteShare2016 hvs
+  scaledDeltasW2016 <- K.knitEither
+                       $ either (Left . T.pack . show) Right
+                       $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict]
+                       allScaledDeltas
+                       vs2016
+  let allScaledDeltasForTableF =
         let methodsF :: FL.Fold (F.Record [Method, Mean, Sigma, ScaledDelta, FlipIndex]) (M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta, FlipIndex]))
             methodsF = FL.premap (\r -> (F.rgetField @Method r, F.rcast r)) FL.map 
         in MR.mapReduceFold
@@ -1013,25 +1049,32 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         brAddMarkDown text_tSNEPre             
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share)"
+             ("tSNE Embedding (Perplexity=" <> (T.pack $ show tsnePerplexity) <> "; Colored by Dem Vote Share)")
              TSNE_VoteShare
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
         brAddMarkDown textAnomaly
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share, Sized by Anomaly)"
+             ("tSNE Embedding (Perplexity=" <> (T.pack $ show tsnePerplexity) <> "; Colored by Dem Vote Share, Sized by Anomaly)")
              TSNE_Anomaly
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
         brAddMarkDown textFlip     
         _ <- K.addHvega Nothing Nothing
              $ tsneVL
-             "tSNE Embedding (Perplexity=40; Colored by Dem Vote Share, Sized by Flip Index)"
+             ("tSNE Embedding (Perplexity=" <> (T.pack $ show tsnePerplexity) <> "; Colored by Dem Vote Share, Sized by Flip Index)")
              TSNE_Flip
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
-        brAddMarkDown textQuestions     
+        brAddMarkDown textAnomalyVsShare
+        _ <- K.addHvega Nothing Nothing
+             $ anomalyVsShare
+             "Raw anomaly vs 2018 vote share (color for 2016 vote share)"
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast $ F.filterFrame ((== "Raw") . F.rgetField @Method) scaledDeltasW2016)
+        brAddMarkDown textQuestions
+        brAddMarkDown textEndForNow
         
 {-             
         _ <- K.addHvega Nothing Nothing
@@ -1054,6 +1097,72 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
           
         brAddMarkDown brReadMore
 
+anomalyVsShare :: Foldable f
+  => T.Text
+  -> FV.ViewConfig
+  -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, ScaledDelta, FlipIndex, Pref2016])
+  -> GV.VegaLite
+anomalyVsShare title vc rows=
+  let dat = FV.recordsToVLData id FV.defaultParse rows      
+      make2018Share = GV.calculateAs "datum.DemPref - 0.5" "2018 Dem Vote Share"
+      make2016Share = GV.calculateAs "datum.Pref2016 - 0.5" "2016 Dem Vote Share"
+      makeAnomaly = GV.calculateAs "datum.scaled_delta" "Anomaly"
+      transform = (GV.transform . make2018Share . make2016Share . makeAnomaly) []
+      encX = GV.position GV.X [GV.PName "2018 Dem Vote Share", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "Anomaly", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "2016 Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      enc = (GV.encoding . encX . encY . encColor) []
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, dat]
+
+type DemoLabel = "Demographic" F.:-> T.Text
+
+catToLabel :: F.Record DT.CatColsASER5 -> T.Text
+catToLabel r =
+  let ageLabel = case F.rgetField @DT.SimpleAgeC r of
+        DT.Under -> "U"
+        DT.EqualOrOver -> "O"
+      sexLabel = case F.rgetField @DT.SexC r of
+        DT.Female -> "F"
+        DT.Male -> "M"
+      educationLabel = case F.rgetField @DT.CollegeGradC r of
+        DT.Grad -> "G"
+        DT.NonGrad -> "N"
+      raceLabel = case F.rgetField @DT.Race5C r of
+        DT.R5_Black -> "B"
+        DT.R5_Latinx -> "L"
+        DT.R5_Asian -> "A"
+        DT.R5_WhiteNonLatinx -> "W"
+        DT.R5_Other -> "O"
+  in ageLabel <> sexLabel <> educationLabel <> raceLabel
+
+{-        
+tsneDemoVL ::  Foldable f
+       => T.Text
+       -> FV.ViewConfig
+       -> f (F.Record ([BR.StateAbbreviation, BR.CongressionalDistrict, TSNE1, TSNE2] V.++ DT.CatColsASER5)
+       -> GV.VegaLite
+tsneDemoVL title chartType vc rows =  
+  let label r = FT.transform catToLabel r 
+      dat = FV.recordsToVLData id FV.defaultParse (fmap label rows)
+      makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
+      encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
+      encAll = encX . encY . encColor . encFill
+      encSpecific = case chartType of
+        TSNE_VoteShare -> id
+        TSNE_Anomaly -> GV.size [GV.MName "Anomaly Index", GV.MmType GV.Quantitative]
+        TSNE_Flip -> GV.size [GV.MName "Flip Index", GV.MmType GV.Quantitative]
+      enc = (GV.encoding . encAll . encSpecific) []
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+      bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
+      transform = (GV.transform . makeShare . makeDistrict . makeAbsAnomaly . makeFlipIndex) []
+      selection = (GV.selection . bindScales) []
+      resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
+-}
 data TSNE_Chart = TSNE_VoteShare | TSNE_Anomaly | TSNE_Flip
 
 tsneVL ::  Foldable f
@@ -1213,7 +1322,7 @@ type DWSRow = [BR.StateAbbreviation
               , PctNonWhite
               , PctYoung
               , SOM_Cluster
-              , VoteShare2016]
+              , Pref2016]
 
 dwsCollonnade :: BR.CellStyle (F.Record DWSRow) T.Text -> K.Colonnade K.Headed (F.Record DWSRow) K.Cell
 dwsCollonnade cas =
@@ -1225,7 +1334,7 @@ dwsCollonnade cas =
      <> K.headed "% Non-White" (BR.toCell cas "% Non-White" "% Non-White" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
      <> K.headed "% Under 45" (BR.toCell cas "% Under 45" "% Under 45" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @PctNonWhite))
      <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref))
-     <> K.headed "2016 D Vote Share" (BR.toCell cas "2016 D" "2016 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @VoteShare2016))
+     <> K.headed "2016 D Vote Share" (BR.toCell cas "2016 D" "2016 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @Pref2016))
        
 type SDRow = [BR.StateAbbreviation
              , BR.CongressionalDistrict
