@@ -1067,6 +1067,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              TSNE_Flip
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast tSNE_ClusteredWithSD)
+        _ <- K.addHvega Nothing Nothing
+             $ tsneDemoVL
+             ("tSNE Embedding (Perplexity=" <> (T.pack $ show tsnePerplexity) <> "; Colored by Demographic groups.")
+             (FV.ViewConfig 800 800 10)
+             (fmap F.rcast longDistrictsWith_tSNE)                         
         brAddMarkDown textAnomalyVsShare
         _ <- K.addHvega Nothing Nothing
              $ anomalyVsShare
@@ -1117,7 +1122,7 @@ anomalyVsShare title vc rows=
 
 type DemoLabel = "Demographic" F.:-> T.Text
 
-catToLabel :: F.Record DT.CatColsASER5 -> T.Text
+catToLabel :: F.Record DT.CatColsASER5 -> F.Record '[DemoLabel]
 catToLabel r =
   let ageLabel = case F.rgetField @DT.SimpleAgeC r of
         DT.Under -> "U"
@@ -1134,35 +1139,33 @@ catToLabel r =
         DT.R5_Asian -> "A"
         DT.R5_WhiteNonLatinx -> "W"
         DT.R5_Other -> "O"
-  in ageLabel <> sexLabel <> educationLabel <> raceLabel
+  in (ageLabel <> sexLabel <> educationLabel <> raceLabel) F.&: V.RNil
 
-{-        
-tsneDemoVL ::  Foldable f
-       => T.Text
-       -> FV.ViewConfig
-       -> f (F.Record ([BR.StateAbbreviation, BR.CongressionalDistrict, TSNE1, TSNE2] V.++ DT.CatColsASER5)
-       -> GV.VegaLite
-tsneDemoVL title chartType vc rows =  
+        
+tsneDemoVL ::  (Foldable f, Functor f)
+           => T.Text
+           -> FV.ViewConfig
+           -> f (F.Record ([BR.StateAbbreviation, BR.CongressionalDistrict, TSNE1, TSNE2, PopPct] V.++ DT.CatColsASER5))
+           -> GV.VegaLite
+tsneDemoVL title vc rows =  
   let label r = FT.transform catToLabel r 
       dat = FV.recordsToVLData id FV.defaultParse (fmap label rows)
       makeDistrict = GV.calculateAs "datum.state_abbreviation + \"-\" + datum.congressional_district" "District"
       encX = GV.position GV.X [FV.pName @TSNE1, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [FV.pName @TSNE2, GV.PmType GV.Quantitative]
-      encColor = GV.color [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
-      encFill = GV.fill [GV.MName "Dem Vote Share", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "redblue" [], GV.SDomainMid 0]]
-      encAll = encX . encY . encColor . encFill
-      encSpecific = case chartType of
-        TSNE_VoteShare -> id
-        TSNE_Anomaly -> GV.size [GV.MName "Anomaly Index", GV.MmType GV.Quantitative]
-        TSNE_Flip -> GV.size [GV.MName "Flip Index", GV.MmType GV.Quantitative]
-      enc = (GV.encoding . encAll . encSpecific) []
-      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
-      bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
-      transform = (GV.transform . makeShare . makeDistrict . makeAbsAnomaly . makeFlipIndex) []
-      selection = (GV.selection . bindScales) []
-      resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
-  in FV.configuredVegaLite vc [FV.title title, enc, mark, transform, selection, dat]
--}
+      encColor = GV.color [FV.mName @PopPct, GV.MmType GV.Quantitative]
+      encAll = encX . encY . encColor 
+      enc = (GV.encoding . encAll) []
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+      transform = (GV.transform . makeDistrict) []
+      facet = GV.facetFlow [FV.fName @DemoLabel, GV.FmType GV.Nominal]
+      eachSpec = GV.asSpec [enc, transform, mark]
+--      bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
+  
+--      selection = (GV.selection . bindScales) []
+--      resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [eachSpec], GV.columns 2, dat]
+
 data TSNE_Chart = TSNE_VoteShare | TSNE_Anomaly | TSNE_Flip
 
 tsneVL ::  Foldable f
