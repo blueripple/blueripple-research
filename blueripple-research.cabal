@@ -76,6 +76,7 @@ library
                  , BlueRipple.Data.CPSVoterPUMS
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Path
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame
+                 , BlueRipple.Data.FromDB
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
@@ -90,6 +91,8 @@ library
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
                      , blaze-colonnade
+                     , beam-core >= 0.9.0.0
+                     , beam-sqlite 
                      , colonnade
                      , data-default
                      , declarative
@@ -106,9 +109,11 @@ library
                      , hmatrix-nlopt
                      , nonlinear-optimization >= 0.3.11 && < 0.4
                      , nonlinear-optimization-ad >= 0.2 && < 0.3
+                     , OpenFEC-beam
                      , pandoc
                      , parallel
                      , random >= 1.1 && < 1.2.0.0
+                     , sqlite-simple
                      , template-haskell
                      , time
                      , tuple

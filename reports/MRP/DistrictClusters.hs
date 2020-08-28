@@ -781,7 +781,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 
 -- tSNE
   K.logLE K.Info $ "tSNE embedding..."    
-  let tsnePerplexity = 40
+  let tsnePerplexity = 10
       tsneIters = [1000]
       tsnePerplexities = [tsnePerplexity]
       tsneLearningRates = [10]
@@ -843,7 +843,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
     
   --  logFrame tSNE_ClusteredWithSD
   -- build a frame of demographic buckets with tSNE info attached
-  let longDistrictData = F.toFrame $ concat $ fmap (\d -> fmap (districtId d F.<+>) (vecDemoAsRecs @DT.CatColsASER5 @PopPct (const id) 0 (districtVec d))) districtsForClustering
+  let longDistrictData = F.toFrame
+                         $ concat
+                         $ fmap (\d -> fmap (districtId d F.<+>) (vecDemoAsRecs @DT.CatColsASER5 @PopPct (\tp p -> 100*p / realToFrac tp) (round $ UVec.sum $ districtVec d) (districtVec d))) districtsForClustering
   longDistrictsWith_tSNE <- K.knitEither
                             $ either (Left . T.pack . show) Right
                             $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict] longDistrictData tSNE_ClusteredWithSD
@@ -1070,7 +1072,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         _ <- K.addHvega Nothing Nothing
              $ tsneDemoVL
              ("tSNE Embedding (Perplexity=" <> (T.pack $ show tsnePerplexity) <> "; Colored by Demographic groups.")
-             (FV.ViewConfig 800 800 10)
+             (FV.ViewConfig 100 100 10)
              (fmap F.rcast longDistrictsWith_tSNE)                         
         brAddMarkDown textAnomalyVsShare
         _ <- K.addHvega Nothing Nothing
@@ -1160,11 +1162,8 @@ tsneDemoVL title vc rows =
       transform = (GV.transform . makeDistrict) []
       facet = GV.facetFlow [FV.fName @DemoLabel, GV.FmType GV.Nominal]
       eachSpec = GV.asSpec [enc, transform, mark]
---      bindScales =  GV.select "scalesD" GV.Interval [GV.BindScales, GV.Clear "click[event.shiftKey]"]
-  
---      selection = (GV.selection . bindScales) []
---      resolve = (GV.resolve . GV.resolution (GV.RScale [ (GV.ChY, GV.Independent), (GV.ChX, GV.Independent)])) []
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [eachSpec], GV.columns 2, dat]
+      resolve = GV.resolve . GV.resolution (GV.RScale [(GV.ChColor, GV.Independent)])
+  in FV.configuredVegaLite vc [FV.title title, GV.specification (eachSpec), facet, resolve [], GV.columns 3, dat]
 
 data TSNE_Chart = TSNE_VoteShare | TSNE_Anomaly | TSNE_Flip
 

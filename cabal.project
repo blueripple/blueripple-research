@@ -4,6 +4,13 @@ with-compiler: ghc
 --allow-newer: base, primitive, 
 allow-newer: hvega, hashable, base, streamly, polysemy, random, random-fu, random-source, knit-haskell
 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/FEC
+  subdir: OpenFEC-beam
+  tag: 6118344de7746ae40e2d4acc1e815f648531c320
+
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/blueripple/data-sets
@@ -55,15 +62,22 @@ source-repository-package
   tag: a2e8c1933607ae15201d344617bab1d54e2f6175
   subdir: massiv    
 
-  
---source-repository-package
---  type: git
---  location: https://github.com/blueripple/FEC
---  tag: 1c5f8b91e86df7056da4000548b10da00e10272c
---  subdir: OpenFEC-beam
+-- Beam
+source-repository-package
+    type: git
+    location: https://github.com/haskell-beam/beam
+    subdir: beam-core
+    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
 
---source-repository-package
---  type: git
---  location: https://github.com/DougBurke/hvega
---  tag: 76761025da4f0fd0bc55640d93ac2422977002fb
---  subdir: hvega
+source-repository-package
+    type: git
+    location: https://github.com/haskell-beam/beam
+    subdir: beam-sqlite
+    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+
+source-repository-package
+    type: git
+    location: https://github.com/haskell-beam/beam
+    subdir: beam-migrate
+    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65  
+  
