@@ -55,6 +55,8 @@ import           Data.Time.Calendar.WeekDate    ( toWeekDate )
 import           Data.Time.LocalTime            ( LocalTime(..)
                                                 , TimeOfDay(..)
                                                 )
+import           Data.Time.Clock (utctDay)                 
+import           Data.Time.Clock.System (getSystemTime, systemToUTCTime)                 
 import           Data.Tuple.Select              ( sel1
                                                 , sel2
                                                 , sel3
@@ -101,6 +103,8 @@ electionResults dbConn = do
 
 endOfDayOn d = LocalTime d (TimeOfDay 23 59 59)
 startOfDayOn d = LocalTime d (TimeOfDay 0 0 0)
+
+
 netSpendingByCandidateBetweenDates
   :: SL.Connection
   -> FEC.Office
@@ -110,6 +114,7 @@ netSpendingByCandidateBetweenDates
   -> Maybe FEC.District
   -> IO
        [ ( FEC.CandidateID
+         , FEC.Name
          , FEC.State
          , FEC.District
          , FEC.Party
@@ -212,9 +217,9 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
       $ B.runSelectReturningList
       $ B.select
       $ do
-          candidateWithForecast <- allCandsWithForecasts -- this has only candidateID col
+--          candidateWithForecast <- allCandsWithForecasts -- this has only candidateID col
           candidate             <- candidatesInElection
-          B.guard_ ((candidateWithForecast `B.references_` candidate)) -- only include candidates for whom we have fcast data
+--          B.guard_ ((candidateWithForecast `B.references_` candidate)) -- only include candidates for whom we have fcast data
           disbursement <- B.leftJoin_
             aggregatedDisbursements
             (\(id, _) -> (id `B.references_` candidate))
@@ -229,6 +234,7 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
             (\(id, _) -> (id `B.references_` candidate))
           pure
             ( ( candidate ^. FEC.candidate_id
+              , candidate ^. FEC.candidate_name
               , candidate ^. FEC.candidate_state
               , candidate ^. FEC.candidate_district
               , candidate ^. FEC.candidate_party
@@ -241,9 +247,122 @@ netSpendingByCandidateBetweenDates dbConn office startDayM endDay stateM distric
             )
     let g = maybe 0 (maybe 0 id)
     return $ fmap
-      (\((c, s, d, p), (db, is, io, pe)) -> (c, s, d, p, g db, g is, g io, g pe)
+      (\((c, n, s, d, p), (db, is, io, pe)) -> (c, n, s, d, p, g db, g is, g io, g pe)
       )
       netSpending
+
+
+candidateMoneySummary
+  :: SL.Connection
+  -> Maybe FEC.Office
+  -> Maybe FEC.State
+  -> Maybe FEC.District
+  -> IO
+       [ ( FEC.CandidateID
+         , FEC.Name
+         , FEC.State
+         , FEC.District
+         , FEC.Party
+         , FEC.Amount
+         , FEC.Amount
+         , FEC.Amount
+         , FEC.Amount
+         , FEC.Amount
+         , FEC.Amount
+         )
+       ]
+candidateMoneySummary dbConn officeM stateM districtM
+  = do
+    endDay <- utctDay . systemToUTCTime <$> getSystemTime
+    let
+      allCandidates    = B.all_ (FEC._openFEC_DB_candidate FEC.openFEC_DB)
+      allTotals        = B.all_ (FEC._openFEC_DB_candidate_totals FEC.openFEC_DB)
+      allIndExpenditures =
+        B.all_ (FEC._openFEC_DB_indExpenditure FEC.openFEC_DB)
+      allPartyExpenditures =
+        B.all_ (FEC._openFEC_DB_partyExpenditure FEC.openFEC_DB)
+      districtM' = officeM >>= (\office -> if office /= FEC.House then Just 0 else districtM) -- the 0 default here is bad.  I should throw an error...
+      stateFilter c = maybe
+        (B.val_ True)
+        (\state -> (FEC._candidate_state c B.==. B.val_ state))
+        stateM
+      districtFilter c = maybe
+        (B.val_ True)
+        (\district -> (FEC._candidate_district c B.==. B.val_ district))
+        districtM'
+      candidatesInElection =
+        B.filter_
+            (\c ->
+              (     (stateFilter c)
+              B.&&. (maybe (B.val_ True) (\x -> FEC._candidate_office c B.==. B.val_ x) officeM)
+              B.&&. (districtFilter c)
+              )
+            )
+          $ allCandidates
+      aggregatedIndExpenditures =
+        B.aggregate_
+            (\(id, supportOpposeFlag, amount) ->
+              (B.group_ id, B.group_ supportOpposeFlag, B.sum_ amount)
+            )
+          $ do
+              ie <- flip B.filter_ allIndExpenditures $ \c -> FEC._indExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay)
+              pure
+                ( FEC._indExpenditure_candidate_id ie
+                , FEC._indExpenditure_support_oppose_indicator ie
+                , FEC._indExpenditure_amount ie
+                )
+      aggregatedIESupport =
+        B.filter_ (\x -> sel2 x B.==. B.val_ FEC.Support)
+          $ aggregatedIndExpenditures
+      aggregatedIEOppose =
+        B.filter_ (\x -> sel2 x B.==. B.val_ FEC.Oppose)
+          $ aggregatedIndExpenditures
+      aggregatedPartyExpenditures =
+        B.aggregate_ (\(id, amount) -> (B.group_ id, B.sum_ amount)) $ do
+          pe <- flip B.filter_ allPartyExpenditures $ \c -> FEC._partyExpenditure_date c B.<. (B.val_ $ endOfDayOn endDay)
+          pure
+            ( FEC._partyExpenditure_candidate_id pe
+            , FEC._partyExpenditure_amount pe
+            )
+    netMoney <-
+      B.runBeamSqlite dbConn
+      $ B.runSelectReturningList
+      $ B.select
+      $ do
+--          candidateWithForecast <- allCandsWithForecasts -- this has only candidateID col
+          candidate             <- candidatesInElection
+          totals <- allTotals          
+          B.guard_ (FEC._candidate_totals_candidate_id totals `B.references_` candidate) -- only include candidates for whom we have fcast data
+          indSupport <- B.leftJoin_
+            aggregatedIESupport
+            (\(id, _, _) -> (id `B.references_` candidate))
+          indOppose <- B.leftJoin_
+            aggregatedIEOppose
+            (\(id, _, _) -> (id `B.references_` candidate))
+          partyExpenditures <- B.leftJoin_
+            aggregatedPartyExpenditures
+            (\(id, _) -> (id `B.references_` candidate))
+          
+          pure
+            ( ( candidate ^. FEC.candidate_id
+              , candidate ^. FEC.candidate_name
+              , candidate ^. FEC.candidate_state
+              , candidate ^. FEC.candidate_district
+              , candidate ^. FEC.candidate_party
+              )
+            , ( totals ^. FEC.candidate_totals_cash_on_hand
+              , totals ^. FEC.candidate_totals_disbursements
+              , totals ^. FEC.candidate_totals_receipts
+              , sel3 indSupport
+              , sel3 indOppose
+              , snd partyExpenditures
+              )
+            )
+    let g = maybe 0 (maybe 0 id)
+    return $ fmap
+      (\((c, n, s, d, p), (coh, db, rcpts, is, io, pe)) -> (c, n, s, d, p, coh, db, rcpts, g is, g io, g pe)
+      )
+      netMoney
 
 
 spendingAndForecastByRace
@@ -430,7 +549,7 @@ allHouseCSV = do
   dbConn <- SL.open "/Users/adam/Google Drive/FEC.db"
   let
     header
-      = "candidate_id,state_abbreviation,congressional_district,candidate_party,candidate_name,date,win_percentage,voteshare,disbursement,ind_support,ind_oppose,party_expenditures"
+      = "candidate_id,candidate_name,state_abbreviation,congressional_district,candidate_party,candidate_name,date,win_percentage,voteshare,disbursement,ind_support,ind_oppose,party_expenditures"
   rows   <- spendingAndForecastByRace dbConn FEC.House Nothing Nothing -- this will be BIG
   handle <- Sys.openFile
     "/Users/adam/DataScience/FEC/BlueRipple/data/forecastAndSpending.csv"
@@ -445,8 +564,10 @@ electionDay = fromGregorian 2018 11 06
 
 netSpendingByHouseCandidatesBetweenCSV :: Maybe Day -> Day -> IO ()
 netSpendingByHouseCandidatesBetweenCSV startDayM endDay = do
-  let tupleToCSV (id, s, dst, p, db, is, io, pe) =
+  let tupleToCSV (id, n, s, dst, p, db, is, io, pe) =
         id
+          <> ","
+          <> n
           <> ","
           <> s
           <> ","
@@ -461,7 +582,7 @@ netSpendingByHouseCandidatesBetweenCSV startDayM endDay = do
           <> T.pack (TP.printf "%.0g" io)
           <> ","
           <> T.pack (TP.printf "%.0g" pe)
-  dbConn <- SL.open "/Users/adam/Google Drive/FEC.db"
+  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
   let
     header
       = "candidate_id,state_abbreviation,congressional_district,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
@@ -476,7 +597,7 @@ netSpendingByHouseCandidatesBetweenCSV startDayM endDay = do
                                              Nothing
   let startDayNamePart = maybe "" (\sd -> "From" ++ toYYYYMMDD sd) startDayM
       fname =
-        "/Users/adam/DataScience/FEC/BlueRipple/data/allSpending"
+        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allHouseSpending"
           ++ startDayNamePart
           ++ "Through"
           ++ toYYYYMMDD endDay
@@ -485,6 +606,95 @@ netSpendingByHouseCandidatesBetweenCSV startDayM endDay = do
   T.hPutStrLn handle header
   mapM (T.hPutStrLn handle . tupleToCSV) rows
   Sys.hClose handle
+
+
+netSpendingBySenateCandidatesBetweenCSV :: Maybe Day -> Day -> IO ()
+netSpendingBySenateCandidatesBetweenCSV startDayM endDay = do
+  let tupleToCSV (id, n, s, p, _, db, is, io, pe) =
+        id
+          <> ","
+          <> n
+          <> ","
+          <> s
+          <> ","
+          <> T.pack (show p)
+          <> ","
+          <> T.pack (TP.printf "%.0g" db)
+          <> ","
+          <> T.pack (TP.printf "%.0g" is)
+          <> ","
+          <> T.pack (TP.printf "%.0g" io)
+          <> ","
+          <> T.pack (TP.printf "%.0g" pe)
+  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
+  let
+    header
+      = "candidate_id,state_abbreviation,candidate_party,disbursement,ind_support,ind_oppose,party_expenditures"
+    wZero n = (if n < 10 then "0" else "") ++ show n
+    toYYYYMMDD day =
+      let (y, m, d) = toGregorian day in show y ++ wZero m ++ wZero d
+  rows <- netSpendingByCandidateBetweenDates dbConn
+                                             FEC.Senate
+                                             startDayM
+                                             endDay
+                                             Nothing
+                                             Nothing
+  let startDayNamePart = maybe "" (\sd -> "From" ++ toYYYYMMDD sd) startDayM
+      fname =
+        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allSenateSpending"
+          ++ startDayNamePart
+          ++ "Through"
+          ++ toYYYYMMDD endDay
+          ++ ".csv"
+  handle <- Sys.openFile fname Sys.WriteMode
+  T.hPutStrLn handle header
+  mapM (T.hPutStrLn handle . tupleToCSV) rows
+  Sys.hClose handle
+
+
+moneySummaryCSV :: IO ()
+moneySummaryCSV = do
+  let tupleToCSV (id, n, s, d, p, coh, db, rcpts, is, io, pe) =
+        id
+          <> ","
+          <> "\"" <> n <> "\""
+          <> ","
+          <> s
+          <> ","
+          <> T.pack (show d)
+          <> ","
+          <> T.pack (show p)
+          <> ","
+          <> T.pack (TP.printf "%.0g" coh)
+          <> ","
+          <> T.pack (TP.printf "%.0g" db)
+          <> ","
+          <> T.pack (TP.printf "%.0g" rcpts)
+          <> ","
+          <> T.pack (TP.printf "%.0g" is)
+          <> ","
+          <> T.pack (TP.printf "%.0g" io)
+          <> ","
+          <> T.pack (TP.printf "%.0g" pe)
+  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
+  let
+    header
+      = "candidate_id,state_abbreviation,district,candidate_party,cash_on_hand,disbursements,receipts,ind_support,ind_oppose,party_expenditures"
+    wZero n = (if n < 10 then "0" else "") ++ show n
+    toYYYYMMDD day =
+      let (y, m, d) = toGregorian day in show y ++ wZero m ++ wZero d
+  rows <- candidateMoneySummary
+          dbConn
+          Nothing  
+          Nothing
+          Nothing
+  let fname =
+        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allMoney2020.csv"
+  handle <- Sys.openFile fname Sys.WriteMode
+  T.hPutStrLn handle header
+  mapM (T.hPutStrLn handle . tupleToCSV) rows
+  Sys.hClose handle
+
 
 
 

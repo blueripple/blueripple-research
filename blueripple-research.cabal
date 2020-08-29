@@ -222,6 +222,15 @@ executable mrp-model
                , time
   default-language: Haskell2010
 
+executable FEC-data
+  import: deps
+  ghc-options: -Wall
+  hs-source-dirs: FEC-data
+  main-is: Main.hs
+  build-depends: base  
+               , blueripple-research
+               , time
+                 
 executable testbed
   import: deps
 --  ghc-options: -Wall -O0 

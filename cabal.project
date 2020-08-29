@@ -1,14 +1,14 @@
-packages: ./ ~/BlueRipple/data-sets ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/data-science-utils ~/DataScience/knit-haskell
+packages: ./ ~/BlueRipple/data-sets ~/Development/haskell/polysemy-extra/polysemy-RandomFu ~/DataScience/data-science-utils ~/DataScience/knit-haskell ~/DataScience/FEC/OpenFEC-beam
 jobs: 4
 with-compiler: ghc
 --allow-newer: base, primitive, 
 allow-newer: hvega, hashable, base, streamly, polysemy, random, random-fu, random-source, knit-haskell
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/FEC
-  subdir: OpenFEC-beam
-  tag: 6118344de7746ae40e2d4acc1e815f648531c320
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/FEC
+--  subdir: OpenFEC-beam
+--  tag: 6118344de7746ae40e2d4acc1e815f648531c320
 
 
 --source-repository-package
