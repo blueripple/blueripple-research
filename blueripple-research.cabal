@@ -230,7 +230,17 @@ executable FEC-data
   build-depends: base  
                , blueripple-research
                , time
-                 
+
+executable house-data
+  import: deps
+  ghc-options: -Wall
+  hs-source-dirs: house-data
+  main-is: Main.hs
+  build-depends: base  
+               , blueripple-research
+               , blueripple-data-sets
+
+                                
 executable testbed
   import: deps
 --  ghc-options: -Wall -O0 

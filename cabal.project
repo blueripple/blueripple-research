@@ -1,4 +1,4 @@
-packages: ./ 
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: hashable, random
@@ -6,10 +6,10 @@ allow-newer: hashable, random
 -- random because of polysemy-zoo
 
              
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: d4ab8501a3e84a99130c9ac7a65ddb66ff5bdaa2
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: d4ab8501a3e84a99130c9ac7a65ddb66ff5bdaa2
 
 source-repository-package
   type: git

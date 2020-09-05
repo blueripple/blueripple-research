@@ -679,7 +679,7 @@ moneySummaryCSV = do
   dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
   let
     header
-      = "candidate_id,state_abbreviation,district,candidate_party,cash_on_hand,disbursements,receipts,ind_support,ind_oppose,party_expenditures"
+      = "candidate_id,candidate_name,state_abbreviation,congressional_district,party,cash_on_hand,disbursements,receipts,ind_support,ind_oppose,party_expenditures"
     wZero n = (if n < 10 then "0" else "") ++ show n
     toYYYYMMDD day =
       let (y, m, d) = toGregorian day in show y ++ wZero m ++ wZero d
