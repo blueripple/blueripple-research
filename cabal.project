@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ~/DataScience/Frames-utils
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: hashable, random, cereal-time:time
@@ -27,10 +27,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-map-reduce
   tag: 0e4409a4861e31e915b457a37fc359814ab781c6
     
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 06dd975da0f53af952e9e25dd02a50dda43ced60
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: fdaea2b36e5046b76b111325c8764a6f3c713245
   
 source-repository-package
   type: git

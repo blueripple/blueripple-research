@@ -11,6 +11,7 @@ import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
 import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
+import qualified Frames.ShowCSV as FCSV
 import qualified Data.Serialize                as SE
 import qualified Data.Vinyl                    as V
 import qualified Data.Vector                   as Vec
@@ -20,6 +21,7 @@ import qualified Graphics.Vega.VegaLite        as GV
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified BlueRipple.Data.DataFrames    as BR
+
 
 -- Serialize for caching
 -- FI.VectorFor for frames
@@ -31,6 +33,7 @@ data MajorPartyParticipation = Neither
                              | Both deriving (Show,Enum,Eq,Ord,Bounded,Generic)
 
 instance S.Serialize MajorPartyParticipation
+instance FCSV.ShowCSV MajorPartyParticipation
 type instance FI.VectorFor MajorPartyParticipation = Vec.Vector
 instance Grouping MajorPartyParticipation
 
@@ -48,6 +51,7 @@ data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq,
 type instance FI.VectorFor PartyT = Vec.Vector
 instance S.Serialize PartyT
 instance Grouping PartyT
+instance FCSV.ShowCSV PartyT
 
 type Party = "Party" F.:-> PartyT
 instance FV.ToVLDataValue (F.ElField Party) where
@@ -57,6 +61,7 @@ data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Or
 type instance FI.VectorFor OfficeT = Vec.Vector
 instance S.Serialize OfficeT
 instance Grouping OfficeT
+instance FCSV.ShowCSV OfficeT
 
 type Office = "Office" F.:-> OfficeT
 instance FV.ToVLDataValue (F.ElField Office) where
@@ -76,6 +81,7 @@ type PrefType = "PrefType" F.:-> PrefTypeT
 type instance FI.VectorFor PrefTypeT = Vec.Vector
 instance Grouping PrefTypeT
 instance SE.Serialize PrefTypeT
+instance FCSV.ShowCSV PrefTypeT
 
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
@@ -94,6 +100,7 @@ type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSource
 type instance FI.VectorFor ElectoralWeightSourceT = Vec.Vector
 instance Grouping ElectoralWeightSourceT
 instance SE.Serialize ElectoralWeightSourceT
+instance FCSV.ShowCSV ElectoralWeightSourceT
 instance FV.ToVLDataValue (F.ElField ElectoralWeightSource) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
@@ -106,6 +113,7 @@ type ElectoralWeightOf = "ElectoralWeightOf" F.:-> ElectoralWeightOfT
 type instance FI.VectorFor ElectoralWeightOfT = Vec.Vector
 instance Grouping ElectoralWeightOfT
 instance SE.Serialize ElectoralWeightOfT
+instance FCSV.ShowCSV ElectoralWeightOfT
 
 
 type CVAP = "CVAP" F.:-> Int
@@ -130,6 +138,7 @@ type VoteWhyNotC = "VoteWhyNot" F.:-> VoteWhyNot
 type instance FI.VectorFor VoteWhyNot = Vec.Vector
 instance Grouping VoteWhyNot
 instance SE.Serialize VoteWhyNot
+instance FCSV.ShowCSV VoteWhyNot
 
 data RegWhyNot = RWN_MissedDeadline
                | RWN_DidntKnowHow
@@ -156,6 +165,7 @@ type VoteHowC = "VoteHow" F.:-> VoteHow
 type instance FI.VectorFor VoteHow = Vec.Vector
 instance Grouping VoteHow
 instance SE.Serialize VoteHow
+instance FCSV.ShowCSV VoteHow
 
 data VoteWhen = VW_ElectionDay
               | VW_BeforeElectionDay
@@ -179,6 +189,7 @@ type VotedYNC = "Voted" F.:-> VotedYN
 type instance FI.VectorFor VotedYN = Vec.Vector
 instance Grouping VotedYN
 instance SE.Serialize VotedYN
+instance FCSV.ShowCSV VotedYN
 
 data RegisteredYN = RYN_NotRegistered
                   | RYN_Registered
@@ -189,6 +200,7 @@ type RegisteredYNC = "RegisteredYN" F.:-> RegisteredYN
 type instance FI.VectorFor RegisteredYN = Vec.Vector
 instance Grouping RegisteredYN
 instance SE.Serialize RegisteredYN
+instance FCSV.ShowCSV RegisteredYN
 
 type DemPref    = "DemPref"    F.:-> Double
 

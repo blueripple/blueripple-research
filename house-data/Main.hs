@@ -18,6 +18,7 @@ import qualified Data.Text as T
 import qualified Data.Vinyl as V
 
 import qualified Frames as F
+import qualified Frames.CSV as F
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.MapReduce as FMR
@@ -81,11 +82,12 @@ makeDoc = do
                      $ either (Left . T.pack . show) Right
                      $ FJ.leftJoinE @'[BR.StateName] pollsF abbrF
     -- make each poll a row
-    let flattenPollsF = FMR.concatFold
+    let includeRow r = (F.rgetField @BR.Cycle r == 2020) && (F.rgetField @ET.Party r `elem` [ET.Democratic, ET.Republican])
+        flattenPollsF = FMR.concatFold
                         $ FMR.mapReduceFold
-                        (FMR.unpackFilterOnField @ET.Party (`elem` [ET.Democratic, ET.Republican]))
+                        (FMR.unpackFilterRow includeRow)
                         (FMR.assignKeysAndData @'[BR.StateAbbreviation, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.EndDate] @'[ET.Party, BR.Pct])
-                        (FMR.foldAndAddKey toVoteShareF)
+                        (FMR.foldAndAddKey pctVoteShareF)
     let flattenedPollsF = FL.fold flattenPollsF pollsWithAbbr
     let grades = ["A+", "A", "A-", "A/B", "B+", "B", "B-", "B/C", "C+", "C", "C-", "C/D", "D+", "D", "D-", "D/F", "F"]
         acceptableGrade = ["A+", "A", "A-", "A/B", "B+", "B"]
@@ -105,15 +107,60 @@ makeDoc = do
         choosePollF = FMR.concatFold
                       $ FMR.mapReduceFold
                       FMR.noUnpack
-                      (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.Pollster, BR.FteGrade, BR.EndDate, BR.DemPref])
+                      (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.Pollster, BR.FteGrade, BR.EndDate, BestPoll])
                       (FMR.foldAndAddKey (fmap fromJust $ FL.maximumBy (\p1 p2 -> comparePolls (F.rcast p1) (F.rcast p2))))
-        chosenFrame = FL.fold choosePollF flattenedPollsF
-    return chosenFrame
+        chosenPollFrame = FL.fold choosePollF flattenedPollsF
+        
+        houseVoteShareF = FMR.concatFold $ FMR.mapReduceFold
+                          (FMR.unpackFilterOnField @BR.Year (==2018))
+                          (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict])
+                          (FMR.foldAndAddKey votesToVoteShareF)
+        adjCD r = if (F.rgetField @BR.CongressionalDistrict r == 0) then (F.rputField @BR.CongressionalDistrict 1 r) else r -- 538 codes at-large as district 1 while our results file codes them as 0
+        houseResultsFrame = fmap adjCD $ FL.fold houseVoteShareF electionsF
+
+    -- Now the money
+    let sumMoneyF :: FL.Fold (F.Record [BR.CashOnHand, BR.Disbursements, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]) (F.Record '[AllMoney])
+        sumMoneyF = FL.Fold
+                    (\s r -> s
+                             + (realToFrac $ F.rgetField @BR.CashOnHand r)
+                             + (realToFrac $ F.rgetField @BR.Disbursements r)
+                             + (realToFrac $ F.rgetField @BR.IndSupport r)
+                             + (realToFrac $ F.rgetField @BR.IndOppose r)
+                             + (realToFrac $ F.rgetField @BR.PartyExpenditures r))
+                    0
+                    FT.recordSingleton
+        flattenMoneyF = FMR.concatFold
+                        $ FMR.mapReduceFold
+                        (FMR.noUnpack)
+                        (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict])
+                        (FMR.foldAndAddKey sumMoneyF)
+        allMoneyFrame = FL.fold flattenMoneyF fecF
+    moneyElexFrame <- K.knitEither
+                      $ either (Left . T.pack . show) Right
+                      $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict] houseResultsFrame (fmap adjCD allMoneyFrame)
+
+    let (polledFrame, unpolledKeys) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] moneyElexFrame chosenPollFrame
+        unPolledFrame = F.filterFrame ((`elem` unpolledKeys) . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict]) moneyElexFrame
+    BR.logFrame polledFrame
+    K.liftKnit $ F.writeCSV "polled.csv" polledFrame    
+    BR.logFrame unPolledFrame
+    K.liftKnit $ F.writeCSV "unpolled.csv" unPolledFrame
+    
+{-       
+    with2018Frame <- K.knitEither
+                     $ either (Left . T.pack . show) Right
+                     $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict] chosenPollFrame houseResultsFrame
+-}
+    return moneyElexFrame
   K.ignoreCacheTime houseRaceInfo_C >>= BR.logFrame  
   return ()
 
-toVoteShareF :: FL.Fold (F.Record [ET.Party, BR.Pct]) (F.Record '[ET.PrefType, ET.DemPref])
-toVoteShareF =
+type AllMoney = "All Money" F.:-> Double
+      
+type BestPoll = "Best Poll Two-Party D Share" F.:-> Double
+
+pctVoteShareF :: FL.Fold (F.Record [ET.Party, BR.Pct]) (F.Record '[BestPoll])
+pctVoteShareF =
   let
     party = F.rgetField @ET.Party
     pct = F.rgetField @BR.Pct
@@ -121,11 +168,25 @@ toVoteShareF =
     demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap pct FL.sum
     demPref d dr = if dr > 0 then d/dr else 0
     demPrefF = demPref <$> demVotesF <*> demRepVotesF
-  in fmap (\x -> FT.recordSingleton ET.VoteShare `V.rappend` FT.recordSingleton @BR.DemPref x) demPrefF
+  in fmap (FT.recordSingleton @BestPoll) demPrefF
+
+type Result2018 = "2018 Two-Party D Share" F.:-> Double
+
+votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[Result2018])
+votesToVoteShareF =
+  let
+    party = F.rgetField @ET.Party
+    votes = F.rgetField @ET.Votes
+    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
+    demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
+    demPrefF = demPref <$> demVotesF <*> demRepVotesF
+  in fmap (FT.recordSingleton @Result2018) demPrefF
 
 
-type HousePollRow' = '[BR.State, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
-type HousePollRow = '[BR.StateName, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
+
+type HousePollRow' = '[BR.State, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
+type HousePollRow = '[BR.StateName, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
 
 housePolls2020Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec HousePollRow))
 housePolls2020Loader =  BR.cachedMaybeFrameLoader @(F.RecordColumns BR.HousePolls2020) @HousePollRow' @HousePollRow

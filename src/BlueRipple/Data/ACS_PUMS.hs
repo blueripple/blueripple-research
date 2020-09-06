@@ -40,6 +40,7 @@ import qualified Data.Map.Strict                      as MS
 import           Data.Maybe                     ( fromMaybe, catMaybes)
 import qualified Data.Sequence                 as Seq
 import qualified Data.Text                     as T
+import qualified Data.Text.IO                     as T
 import           Data.Text                      ( Text )
 import           Text.Read                      (readMaybe)
 import qualified Data.Vinyl                    as V
@@ -95,6 +96,7 @@ import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
+import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
@@ -174,7 +176,7 @@ pumsLoader' dataPath cacheKey filterRawM = do
             in fmap (addAbbr r) abbrM
 
       let fileToFixedS =
-            Streamly.tapOffsetEvery 250000 250000 (FStreamly.runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader from disk: " ++ (show $ 250000 * n))) "pumsLoader from disk finished.")
+            Streamly.tapOffsetEvery 250000 250000 (runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader from disk: " ++ (show $ 250000 * n))) "pumsLoader from disk finished.")
             $ pumsRowsLoader dataPath' filterRawM
       allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS fileToFixedS
       let numRows = FL.fold FL.length allRowsF
@@ -185,7 +187,7 @@ pumsLoader' dataPath cacheKey filterRawM = do
       let numCounted = FL.fold FL.length countedF
       K.logLE K.Diagnostic $ "Finished counting. " <> (T.pack $ show numCounted) <> " rows of counts.  Adding state abbreviations..."
 --      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
-      let withAbbrevsF = fmap (F.rcast @PUMS) $ FStreamly.streamlyMapMaybe addStateAbbreviation countedF
+      let withAbbrevsF = fmap (F.rcast @PUMS) $ FStreamly.mapMaybe addStateAbbreviation countedF
           numFinal = FL.fold FL.length withAbbrevsF
       K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> (T.pack $ show $ numCounted - numFinal) <> " rows due to unrecognized state FIPS."
       return withAbbrevsF
@@ -467,6 +469,19 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSGRADEATT @BR.InCollege intToInCollege)
             . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
             . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
+
+
+
+-- tracing fold
+runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
+runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
+  start = ST.liftIO (T.putStr startMsg) >> return 0
+  step !n _ = ST.liftIO $ do
+    t <- System.Clock.getTime System.Clock.ProcessCPUTime
+    putStr $ show t ++ ": "
+    T.putStrLn $ countMsg n
+    return (n+1)
+  done _ = ST.liftIO $ T.putStrLn endMsg
 
 
 {-

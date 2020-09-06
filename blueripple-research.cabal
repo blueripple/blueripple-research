@@ -22,6 +22,7 @@ common deps
                , blueripple-data-sets
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
+               , clock >= 0.8 && < 0.9
                , containers
                , exceptions >= 0.10.4 && < 0.11
                , Frames >= 0.6.1 && < 0.8
