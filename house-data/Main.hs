@@ -68,14 +68,13 @@ main= do
 
 makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
-  K.clearIfPresent "data/housePolls2020.bin" 
   pollData_C <- housePolls2020Loader
   fecData_C <- fec2020Loader
   houseElections_C <- BR.houseElectionsLoader
   stateAbbr_C <- BR.stateAbbrCrosswalkLoader
 
   let houseRaceDeps = (,,,) <$> pollData_C <*> stateAbbr_C <*> houseElections_C <*> fecData_C
-  K.clearIfPresent "house-data/houseRaceInfo.bin" -- until we have it right
+--  K.clearIfPresent "house-data/houseRaceInfo.bin" -- until we have it right
   houseRaceInfo_C <- BR.retrieveOrMakeFrame "house-data/houseRaceInfo.bin" houseRaceDeps $ \(pollsF, abbrF, electionsF, fecF) -> do
     -- add state abbreviations to pollData
     pollsWithAbbr <- K.knitEither
@@ -107,7 +106,7 @@ makeDoc = do
         choosePollF = FMR.concatFold
                       $ FMR.mapReduceFold
                       FMR.noUnpack
-                      (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.Pollster, BR.FteGrade, BR.EndDate, BestPoll])
+                      (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict] @[BR.Pollster, BR.FteGrade, BR.EndDate, BestPollShare, BestPollDiff])
                       (FMR.foldAndAddKey (fmap fromJust $ FL.maximumBy (\p1 p2 -> comparePolls (F.rcast p1) (F.rcast p2))))
         chosenPollFrame = FL.fold choosePollF flattenedPollsF
         
@@ -129,9 +128,10 @@ makeDoc = do
                              + (realToFrac $ F.rgetField @BR.PartyExpenditures r))
                     0
                     FT.recordSingleton
+        filterToHouse r = "H" `T.isPrefixOf` F.rgetField @BR.CandidateId r 
         flattenMoneyF = FMR.concatFold
                         $ FMR.mapReduceFold
-                        (FMR.noUnpack)
+                        (FMR.unpackFilterRow filterToHouse)
                         (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict])
                         (FMR.foldAndAddKey sumMoneyF)
         allMoneyFrame = FL.fold flattenMoneyF fecF
@@ -141,50 +141,63 @@ makeDoc = do
 
     let (polledFrame, unpolledKeys) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] moneyElexFrame chosenPollFrame
         unPolledFrame = F.filterFrame ((`elem` unpolledKeys) . F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict]) moneyElexFrame
-    BR.logFrame polledFrame
     K.liftKnit $ F.writeCSV "polled.csv" polledFrame    
-    BR.logFrame unPolledFrame
     K.liftKnit $ F.writeCSV "unpolled.csv" unPolledFrame
     
-{-       
-    with2018Frame <- K.knitEither
-                     $ either (Left . T.pack . show) Right
-                     $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict] chosenPollFrame houseResultsFrame
--}
     return moneyElexFrame
-  K.ignoreCacheTime houseRaceInfo_C >>= BR.logFrame  
+  -- State Leg overlaps
+  cdToStateLower_C <- cd116FromStateLower2016Loader
+  cdToStateUpper_C <- cd116FromStateLower2016Loader
+  K.ignoreCacheTime cdToStateLower_C >>= BR.logFrame
   return ()
 
 type AllMoney = "All Money" F.:-> Double
       
-type BestPoll = "Best Poll Two-Party D Share" F.:-> Double
+type BestPollShare = "Best Poll Two-Party D Share" F.:-> Double
+type BestPollDiff = "Best Poll D-R" F.:-> Double
 
-pctVoteShareF :: FL.Fold (F.Record [ET.Party, BR.Pct]) (F.Record '[BestPoll])
+pctVoteShareF :: FL.Fold (F.Record [ET.Party, BR.Pct]) (F.Record '[BestPollShare ,BestPollDiff])
 pctVoteShareF =
   let
     party = F.rgetField @ET.Party
     pct = F.rgetField @BR.Pct
     demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap pct FL.sum
-    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap pct FL.sum
-    demPref d dr = if dr > 0 then d/dr else 0
-    demPrefF = demPref <$> demVotesF <*> demRepVotesF
-  in fmap (FT.recordSingleton @BestPoll) demPrefF
+    repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap pct FL.sum
+--    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap pct FL.sum
+    demShare d r = if d + r > 0 then d / (d + r) else 0
+    demDiff d r = if (d + r) > 0 then (d - r) / (d + r) else 0
+    demShareF = demShare <$> demVotesF <*> repVotesF
+    demDiffF = demDiff <$> demVotesF <*> repVotesF
+  in (\s d -> s F.&: d F.&: V.RNil) <$> demShareF <*> demDiffF
 
-type Result2018 = "2018 Two-Party D Share" F.:-> Double
+type Share2018 = "2018 Two-Party D Share" F.:-> Double
+type Diff2018 = "2018 D-R" F.:-> Double
 
-votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[Result2018])
+votesToVoteShareF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record '[Share2018, Diff2018])
 votesToVoteShareF =
   let
     party = F.rgetField @ET.Party
     votes = F.rgetField @ET.Votes
     demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
-    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
-    demPref d dr = if dr > 0 then realToFrac d/realToFrac dr else 0
-    demPrefF = demPref <$> demVotesF <*> demRepVotesF
-  in fmap (FT.recordSingleton @Result2018) demPrefF
+    repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
+    thirdPartyVotes = FL.prefilter (\r -> not $ party r `elem` [ET.Democratic, ET.Republican]) $ FL.premap votes FL.sum
+--    demRepVotesF = FL.prefilter (\r -> let p = party r in (p == ET.Democratic || p == ET.Republican)) $ FL.premap votes FL.sum
+    fixVotes r tp = if r == 0 then tp else r
+    demShare d r tp = let ov = fixVotes r tp in if d + ov > 0 then realToFrac d / realToFrac (d + ov) else 0
+    demDiff d r tp = let ov = fixVotes r tp in if d + ov > 0 then realToFrac (d - ov) / realToFrac (d + ov) else 0
+    demShareF = demShare <$> demVotesF <*> repVotesF <*> thirdPartyVotes
+    demDiffF = demDiff <$> demVotesF <*> repVotesF <*> thirdPartyVotes
+  in (\s d -> s F.&: d F.&: V.RNil) <$> demShareF <*> demDiffF
 
 
 
+cd116FromStateLower2016Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CD116FromStateLower2016))
+cd116FromStateLower2016Loader =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.cd116FromStateLower2016CSV) Nothing Nothing id Nothing "cd116FromStateLower2016.bin"
+
+cd116FromStateUpper2016Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CD116FromStateUpper2016))
+cd116FromStateUpper2016Loader =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.cd116FromStateUpper2016CSV) Nothing Nothing id Nothing "cd116FromStateUpper2016.bin"
+
+{-
 type HousePollRow' = '[BR.State, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
 type HousePollRow = '[BR.StateName, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
 
@@ -212,7 +225,40 @@ fixHousePollRow = F.rcast . addCols where
 
 
 type FECRaw = [BR.CandidateId, BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
-type FECRow =  [BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
+type FECRow =  [BR.CandidateId,BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
+
+
+fec2020Loader ::  (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec FECRow))
+fec2020Loader = BR.cachedFrameLoader (BR.DataSets $ T.pack BR.allMoney2020CSV) Nothing Nothing fixFECRow Nothing "allMoney2020.bin"
+-}
+type HousePollRow' = '[BR.State, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
+type HousePollRow = '[BR.StateName, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
+
+housePolls2020Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec HousePollRow))
+housePolls2020Loader =  BR.cachedMaybeFrameLoader @(F.RecordColumns BR.HousePolls2020) @HousePollRow' @HousePollRow
+                        (BR.DataSets $ T.pack BR.housePolls2020CSV)
+                        Nothing
+                        Nothing
+                        id
+                        fixHousePollRow
+                        Nothing
+                        "housePolls2020.bin"
+
+
+parseHousePollParty :: T.Text -> ET.PartyT
+parseHousePollParty t
+  | T.isInfixOf "DEM" t = ET.Democratic
+  | T.isInfixOf "REP" t = ET.Republican
+  | otherwise = ET.Other
+
+fixHousePollRow :: F.Record HousePollRow' -> F.Record HousePollRow
+fixHousePollRow = F.rcast . addCols where
+  addCols = FT.addName @BR.State @BR.StateName
+            . FT.addOneFromOne @BR.CandidateParty @ET.Party parseHousePollParty
+
+
+type FECRaw = [BR.CandidateId, BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
+type FECRow =  [BR.CandidateId,BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
 
 
 fec2020Loader ::  (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec FECRow))

@@ -240,7 +240,6 @@ executable house-data
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets
-
                                 
 executable testbed
   import: deps

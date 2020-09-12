@@ -665,17 +665,17 @@ moneySummaryCSV = do
           <> ","
           <> T.pack (show p)
           <> ","
-          <> T.pack (TP.printf "%.0g" coh)
+          <> T.pack (TP.printf "%.0f" coh)
           <> ","
-          <> T.pack (TP.printf "%.0g" db)
+          <> T.pack (TP.printf "%.0f" db)
           <> ","
-          <> T.pack (TP.printf "%.0g" rcpts)
+          <> T.pack (TP.printf "%.0f" rcpts)
           <> ","
-          <> T.pack (TP.printf "%.0g" is)
+          <> T.pack (TP.printf "%.0f" is)
           <> ","
-          <> T.pack (TP.printf "%.0g" io)
+          <> T.pack (TP.printf "%.0f" io)
           <> ","
-          <> T.pack (TP.printf "%.0g" pe)
+          <> T.pack (TP.printf "%.0f" pe)
   dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
   let
     header
@@ -689,7 +689,7 @@ moneySummaryCSV = do
           Nothing
           Nothing
   let fname =
-        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allMoney2020.csv"
+        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allMoney_20200902.csv"
   handle <- Sys.openFile fname Sys.WriteMode
   T.hPutStrLn handle header
   mapM (T.hPutStrLn handle . tupleToCSV) rows
