@@ -1,10 +1,13 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module Main where
@@ -13,14 +16,24 @@ module Main where
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
 import           Data.Maybe (fromJust)
+import qualified Data.List as L
 import qualified Data.Ord as Ord
 import qualified Data.Text as T
+import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.Core as V
+import qualified Data.Vinyl.Functor as V
+
+import qualified Data.Serialize as S
+
+import qualified Text.Printf as Printf
 
 import qualified Frames as F
 import qualified Frames.CSV as F
+import qualified Frames.InCore as FI
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
+import qualified Frames.Streamly.CSV as FS
 import qualified Frames.MapReduce as FMR
 
 import qualified BlueRipple.Data.DataFrames as BR
@@ -28,6 +41,11 @@ import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
+
+import qualified Streamly as Streamly
+import qualified Streamly.Prelude as Streamly
+
+import GHC.Generics (Generic)
 
 import qualified Knit.Report as K
 --import qualified Knit.Report.Cache as K
@@ -147,9 +165,49 @@ makeDoc = do
     return moneyElexFrame
   -- State Leg overlaps
   cdToStateLower_C <- cd116FromStateLower2016Loader
-  cdToStateUpper_C <- cd116FromStateLower2016Loader
-  K.ignoreCacheTime cdToStateLower_C >>= BR.logFrame
+  cdToStateUpper_C <- cd116FromStateUpper2016Loader
+  let sortedOverlapDeps = (,) <$> cdToStateLower_C <*> cdToStateUpper_C
+  K.clearIfPresent "house-data/sortedOverlap.bin"
+  sortedOverlap_C <- BR.retrieveOrMakeFrame "house-data/sortedOverlap.bin" sortedOverlapDeps $ \(cdToLower, cdToUpper) -> do
+    let fixedLower = fmap (F.rcast @OverlapRow . FT.transform fixLower) cdToLower
+        fixedUpper = fmap (F.rcast @OverlapRow . FT.transform fixUpper) cdToUpper
+        comp a b = compare (F.rgetField @BR.StateAbbreviation a) (F.rgetField @BR.StateAbbreviation b)
+                   <> compare (F.rgetField @BR.CongressionalDistrict a) (F.rgetField @BR.CongressionalDistrict b)
+                   <> compare (F.rgetField @StateOffice b) (F.rgetField @StateOffice a)
+                   <> compare (F.rgetField @BR.FracCDFromSLD b) (F.rgetField @BR.FracCDFromSLD a)
+        sortedOverlap = F.toFrame $ L.sortBy comp $ FL.fold FL.list $ fixedLower <> fixedUpper
+        renderOverlapRec :: F.Rec (V.Lift (->) V.ElField (V.Const T.Text)) OverlapRow =
+          FS.liftFieldRender id
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
+          V.:& FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
+          V.:& V.RNil
+    K.liftKnit $ FS.writeLines @_ @Streamly.SerialT "cdStateOverlaps.csv" $ FS.streamSV' renderOverlapRec "," $ Streamly.fromFoldable sortedOverlap
+    return sortedOverlap
+  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
   return ()
+
+type OverlapRow = [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracCDFromSLD, BR.FracSLDFromCD]
+
+data StateOfficeT = Upper | Lower deriving (Show, Eq, Ord, Generic)
+type instance FI.VectorFor StateOfficeT = Vec.Vector
+instance S.Serialize StateOfficeT
+
+type StateOffice = "State Office" F.:-> StateOfficeT
+type StateDistrict = "State District" F.:-> T.Text
+
+fixLower :: F.Record '[BR.StateLower] -> F.Record '[StateOffice, StateDistrict]
+fixLower r =
+  let d = T.pack . show $ F.rgetField @BR.StateLower r
+  in Lower F.&: d F.&: V.RNil
+
+fixUpper :: F.Record '[BR.StateUpper] -> F.Record '[StateOffice, StateDistrict]
+fixUpper r =
+  let d = F.rgetField @BR.StateUpper r
+  in Upper F.&: d F.&: V.RNil
+
 
 type AllMoney = "All Money" F.:-> Double
       
