@@ -176,7 +176,7 @@ makeDoc = do
                    <> compare (F.rgetField @StateOffice b) (F.rgetField @StateOffice a)
                    <> compare (F.rgetField @BR.FracCDFromSLD b) (F.rgetField @BR.FracCDFromSLD a)
         sortedOverlap = F.toFrame $ L.sortBy comp $ FL.fold FL.list $ fixedLower <> fixedUpper
-        renderOverlapRec :: F.Rec (V.Lift (->) V.ElField (V.Const T.Text)) OverlapRow =
+        renderOverlapRec {-:: F.Rec (V.Lift (->) V.ElField (V.Const T.Text)) OverlapRow -} =
           FS.liftFieldRender id
           V.:& FS.liftFieldRender (T.pack . show)
           V.:& FS.liftFieldRender (T.pack . show)
