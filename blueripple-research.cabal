@@ -37,6 +37,7 @@ common deps
                , hvega >= 0.7.0 && < 0.10
                , hmatrix
                , knit-haskell >= 0.8.0.0 && < 0.10
+               , lens 
                , lucid
                , massiv >= 0.5.4 && < 0.6
                , map-reduce-folds >= 0.1.0.1
@@ -51,6 +52,7 @@ common deps
                , statistics
                , streamly >= 0.7.2 && < 0.8
                , text
+               , time
                , tsne >= 1.2 && < 1.4
                , vector
                , vinyl >= 0.12 && < 0.14
@@ -235,8 +237,15 @@ executable FEC-data
 executable house-data
   import: deps
   ghc-options: -Wall
-  hs-source-dirs: house-data
+  hs-source-dirs: house-data, reports
   main-is: Main.hs
+  other-modules: MRP.CachedModels
+               , MRP.CCES
+               , MRP.CCESFrame
+               , MRP.CCESPath
+               , MRP.CCES_MRP_Analysis
+               , MRP.Common
+                                  
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets

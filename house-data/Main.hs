@@ -41,6 +41,9 @@ import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified MRP.CachedModels as MRP
 
 import qualified Streamly as Streamly
 import qualified Streamly.Prelude as Streamly
@@ -167,7 +170,7 @@ makeDoc = do
   cdToStateLower_C <- cd116FromStateLower2016Loader
   cdToStateUpper_C <- cd116FromStateUpper2016Loader
   let sortedOverlapDeps = (,) <$> cdToStateLower_C <*> cdToStateUpper_C
-  K.clearIfPresent "house-data/sortedOverlap.bin"
+--  K.clearIfPresent "house-data/sortedOverlap.bin"
   sortedOverlap_C <- BR.retrieveOrMakeFrame "house-data/sortedOverlap.bin" sortedOverlapDeps $ \(cdToLower, cdToUpper) -> do
     let fixedLower = fmap (F.rcast @OverlapRow . FT.transform fixLower) cdToLower
         fixedUpper = fmap (F.rcast @OverlapRow . FT.transform fixUpper) cdToUpper
@@ -186,11 +189,43 @@ makeDoc = do
           V.:& V.RNil
     K.liftKnit $ FS.writeLines @_ @Streamly.SerialT "cdStateOverlaps.csv" $ FS.streamSV' renderOverlapRec "," $ Streamly.fromFoldable sortedOverlap
     return sortedOverlap
-  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
+--  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
+  -- StateLeg demographics and post-stratification
+  -- We'll do the PUMS rollup separately because it might take a while and will not change much
+  pumsDemographics_C <- PUMS.pumsLoader -- NB: This still has under 18s in it.  We need to filter before post-strat.
+  pums2018ByPUMA_C <- BR.retrieveOrMakeFrame "house-data/pums2016ByPUMA.bin" pumsDemographics_C $ \pums -> do
+    let f r = (F.rgetField @BR.Year r == 2018) && (F.rgetField @DT.Age5F r /= DT.A5F_Under18)
+        filteredPUMS = F.filterFrame f pums
+    return $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True) filteredPUMS
+  K.ignoreCacheTime pums2018ByPUMA_C >>= BR.logFrame
+    
+  stateUpperFromPUMA_C <- stateUpperFromPUMA
+  stateLowerFromPUMA_C <- stateLowerFromPUMA
+  ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
+  censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
+  let stateLegPostStratDeps = (,,,,)
+                              <$> stateUpperFromPUMA_C
+                              <*> stateLowerFromPUMA_C
+                              <*> pums2018ByPUMA_C
+                              <*> ccesMR_Prefs_C
+                              <*> censusBasedAdjEWs_C
+  K.clearIfPresent "house-data/stateLegPostStrat.bin" -- until it's working
+  stateLegPostStrat_C <- BR.retrieveOrMakeFrame "house-data/stateLegPostStrat.bin" stateLegPostStratDeps
+                         $ \(upperFromPUMA, lowerFromPUMA, pumsDemographics, ccesMR_Prefs, adjCensusEWs) -> do
+    -- TODO
+    -- 1. combine upper lower frames to one (should be one row per SLD)
+    -- 2. Fold with pumsData to create ASER5 (remember to filter!!) info for each state Leg district (40 rows per SLD)
+    -- 3. Use to build summary demographics, pref and 2018-turnout-weighted pref. (Should be one row per SLD)
+    let fixedLower = fmap (F.rcast @SLDPumaRow . FT.transform fixLower) lowerToPUMA
+        fixedUpper = fmap (F.rcast @SLDPumaRow . FT.transform fixUpper) upperToPUMA
+        sldFromPUMA = fixedLower <> fixedUpper
+    return sldFromPUMA
+  K.ignoreCacheTime stateLegPostStrat_C >>= BR.logFrame
   return ()
 
 type OverlapRow = [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracCDFromSLD, BR.FracSLDFromCD]
-
+type SLDPumaRow = [BR.StateAbbreviation, StateOffice, StateDistrict, BR.PUMA, BR.FracSLDFromPUMA, BR.FracPUMAFromSLD]
+  
 data StateOfficeT = Upper | Lower deriving (Show, Eq, Ord, Generic)
 type instance FI.VectorFor StateOfficeT = Vec.Vector
 instance S.Serialize StateOfficeT
@@ -255,40 +290,15 @@ cd116FromStateLower2016Loader =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.c
 cd116FromStateUpper2016Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CD116FromStateUpper2016))
 cd116FromStateUpper2016Loader =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.cd116FromStateUpper2016CSV) Nothing Nothing id Nothing "cd116FromStateUpper2016.bin"
 
-{-
-type HousePollRow' = '[BR.State, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
-type HousePollRow = '[BR.StateName, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
+stateUpperFromPUMA :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.StateUpper2016FromPUMA))
+stateUpperFromPUMA =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.stateUpper2016FromPUMACSV) Nothing Nothing id Nothing "stateUpper2016FromPUMA.bin"
 
-housePolls2020Loader :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec HousePollRow))
-housePolls2020Loader =  BR.cachedMaybeFrameLoader @(F.RecordColumns BR.HousePolls2020) @HousePollRow' @HousePollRow
-                        (BR.DataSets $ T.pack BR.housePolls2020CSV)
-                        Nothing
-                        Nothing
-                        id
-                        fixHousePollRow
-                        Nothing
-                        "housePolls2020.bin"
+stateLowerFromPUMA :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.StateLower2016FromPUMA))
+stateLowerFromPUMA =  BR.cachedFrameLoader (BR.DataSets $ T.pack BR.stateLower2016FromPUMACSV) Nothing Nothing id Nothing "stateLower2016FromPUMA.bin"
 
 
-parseHousePollParty :: T.Text -> ET.PartyT
-parseHousePollParty t
-  | T.isInfixOf "DEM" t = ET.Democratic
-  | T.isInfixOf "REP" t = ET.Republican
-  | otherwise = ET.Other
-
-fixHousePollRow :: F.Record HousePollRow' -> F.Record HousePollRow
-fixHousePollRow = F.rcast . addCols where
-  addCols = FT.addName @BR.State @BR.StateName
-            . FT.addOneFromOne @BR.CandidateParty @ET.Party parseHousePollParty
 
 
-type FECRaw = [BR.CandidateId, BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
-type FECRow =  [BR.CandidateId,BR.CandidateName, BR.StateAbbreviation, BR.CongressionalDistrict, ET.Party, BR.CashOnHand, BR.Disbursements, BR.Receipts, BR.IndSupport, BR.IndOppose, BR.PartyExpenditures]
-
-
-fec2020Loader ::  (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec FECRow))
-fec2020Loader = BR.cachedFrameLoader (BR.DataSets $ T.pack BR.allMoney2020CSV) Nothing Nothing fixFECRow Nothing "allMoney2020.bin"
--}
 type HousePollRow' = '[BR.State, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, BR.CandidateParty, BR.Pct]
 type HousePollRow = '[BR.StateName, BR.Cycle, BR.Pollster, BR.FteGrade, BR.CongressionalDistrict, BR.StartDate, BR.EndDate, BR.Internal, BR.CandidateName, ET.Party, BR.Pct]
 
