@@ -18,6 +18,7 @@ import qualified Data.Map as M
 import           Data.Maybe (fromJust)
 import qualified Data.List as L
 import qualified Data.Ord as Ord
+import qualified Data.Random.Source.PureMT     as PureMT
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
@@ -44,6 +45,8 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified MRP.CachedModels as MRP
+
+import qualified Polysemy.RandomFu as P
 
 import qualified Streamly as Streamly
 import qualified Streamly.Prelude as Streamly
@@ -80,14 +83,15 @@ main= do
         { K.outerLogPrefix = Just "house-data.Main"
         , K.logIf = K.logDiagnostic
         , K.pandocWriterConfig = pandocWriterConfig
-        }      
-  resE <- K.knitHtml knitConfig makeDoc
+        }
+       pureMTseed = PureMT.pureMT 1  
+  resE <- K.knitHtml knitConfig $ P.runRandomIOPureMT pureMTseed $ makeDoc
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "housedata.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
-makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
+makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member P.RandomFu r) => K.Sem r ()
 makeDoc = do
   pollData_C <- housePolls2020Loader
   fecData_C <- fec2020Loader
@@ -192,11 +196,10 @@ makeDoc = do
 --  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
   -- StateLeg demographics and post-stratification
   -- We'll do the PUMS rollup separately because it might take a while and will not change much
-  pumsDemographics_C <- PUMS.pumsLoader -- NB: This still has under 18s in it.  We need to filter before post-strat.
+  pumsDemographics_C <- PUMS.pumsLoader Nothing
   pums2018ByPUMA_C <- BR.retrieveOrMakeFrame "house-data/pums2016ByPUMA.bin" pumsDemographics_C $ \pums -> do
-    let f r = (F.rgetField @BR.Year r == 2018) && (F.rgetField @DT.Age5F r /= DT.A5F_Under18)
-        filteredPUMS = F.filterFrame f pums
-    return $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True) filteredPUMS
+    let g r = (F.rgetField @BR.Year r == 2018) && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
+    return $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) $ F.filterFrame g pums
   K.ignoreCacheTime pums2018ByPUMA_C >>= BR.logFrame
     
   stateUpperFromPUMA_C <- stateUpperFromPUMA
@@ -216,8 +219,8 @@ makeDoc = do
     -- 1. combine upper lower frames to one (should be one row per SLD)
     -- 2. Fold with pumsData to create ASER5 (remember to filter!!) info for each state Leg district (40 rows per SLD)
     -- 3. Use to build summary demographics, pref and 2018-turnout-weighted pref. (Should be one row per SLD)
-    let fixedLower = fmap (F.rcast @SLDPumaRow . FT.transform fixLower) lowerToPUMA
-        fixedUpper = fmap (F.rcast @SLDPumaRow . FT.transform fixUpper) upperToPUMA
+    let fixedUpper = fmap (F.rcast @SLDPumaRow . FT.transform fixUpper) upperFromPUMA
+        fixedLower = fmap (F.rcast @SLDPumaRow . FT.transform fixLower) lowerFromPUMA
         sldFromPUMA = fixedLower <> fixedUpper
     return sldFromPUMA
   K.ignoreCacheTime stateLegPostStrat_C >>= BR.logFrame

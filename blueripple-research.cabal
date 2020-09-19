@@ -249,6 +249,7 @@ executable house-data
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets
+               , polysemy-RandomFu
                                 
 executable testbed
   import: deps
