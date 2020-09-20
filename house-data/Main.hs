@@ -235,12 +235,13 @@ makeDoc = do
                         $ either (Left . T.pack . show) Right
                         $ FJ.leftJoinE @[BR.StateAbbreviation, BR.PUMA] sldFromPUMA pumsDemographics
     return sldFromPUMA_ASER5
---  K.ignoreCacheTime sldFromPUMA_ASER5_C >>= BR.logFrame
+{-  K.ignoreCacheTime sldFromPUMA_ASER5_C >>= BR.logFrame
   K.ignoreCacheTime sldFromPUMA_ASER5_C  >>= K.liftKnit
     . FS.writeCSV_Show "sldFromPUMS_ASER5.csv"
     . F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "PA"
                            && F.rgetField @StateOffice r == Lower
-                           && F.rgetField @StateDistrict r == "63") 
+                           && F.rgetField @StateDistrict r == "63")
+-}
   sldASER5_C <- BR.retrieveOrMakeFrame "house-data/sldASER5.bin" sldFromPUMA_ASER5_C $ \sldFromPUMA_ASER5 -> do
     let pumaWeightedPeopleF :: FL.Fold
                                (F.Record [BR.FracSLDFromPUMA, PUMS.Citizens, PUMS.NonCitizens])
@@ -260,19 +261,37 @@ makeDoc = do
                  (FMR.foldAndAddKey pumaWeightedPeopleF)
     K.logLE K.Info "pre PUMA fold"
     return $ FL.fold pumasF sldFromPUMA_ASER5
---  K.ignoreCacheTime sldASER5_C >>= BR.logFrame
+{-  K.ignoreCacheTime sldASER5_C >>= BR.logFrame
   K.ignoreCacheTime sldASER5_C >>= K.liftKnit
     . FS.writeCSV_Show "sldASER5.csv"
     . F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "PA"
                            && F.rgetField @StateOffice r == Lower
-                           && F.rgetField @StateDistrict r == "63") 
+                           && F.rgetField @StateDistrict r == "63")
+-}
   ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
   censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
-
+  let sldWithPrefAndWeightDeps = (,,) <$> sldASER5_C <*> ccesMR_Prefs_C <*> censusBasedAdjEWs_C 
+  sldWithPrefAndWeight_C <- BR.retrieveOrMakeFrame "house-data/sldWithPrefAndWeight.bin" sldWithPrefAndWeightDeps
+    $ \(sldASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
+    let prefs2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) ccesMR_Prefs
+        ew2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) censusBasedAdjEWs
+    sldASER5wPrefs <- K.knitEither
+      $ either (Left . T.pack . show) Right
+      $ FJ.leftJoinE @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) sldASER5 prefs2018
+    sldASER5wPrefsEws <- K.knitEither
+      $ either (Left . T.pack . show) Right
+      $ FJ.leftJoinE @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) sldASER5wPrefs ew2018
+    return $ fmap (F.rcast @([BR.StateAbbreviation, StateOffice, StateDistrict] V.++ DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight])) sldASER5wPrefsEws
+  K.ignoreCacheTime sldWithPrefAndWeight_C >>= BR.logFrame  
   return ()
 
 type OverlapRow = [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracCDFromSLD, BR.FracSLDFromCD]
 type SLDPumaRow = [BR.StateAbbreviation, StateOffice, StateDistrict, BR.PUMA, BR.FracSLDFromPUMA, BR.FracPUMAFromSLD]
+
+type SLD_PctWhite = "SLD_PctWhite" F.:-> Double
+type SLD_PctBlack = "SLD_PctBlack" F.:-> Double
+type SLD_PctLatinx = "SLD_PctLatinX" F.:-> Double
+type SLD_PctOther = "SLD_PctOther" F.:-> Double
 
 type TotalFromPUMA = "TotalFromPUMA" F.:-> Double
 
