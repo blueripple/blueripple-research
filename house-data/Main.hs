@@ -15,6 +15,7 @@ module Main where
 
 
 import qualified Control.Foldl as FL
+import           Data.Discrimination            ( Grouping )
 import qualified Data.Map as M
 import           Data.Maybe (fromJust)
 import qualified Data.List as L
@@ -261,13 +262,6 @@ makeDoc = do
                  (FMR.foldAndAddKey pumaWeightedPeopleF)
     K.logLE K.Info "pre PUMA fold"
     return $ FL.fold pumasF sldFromPUMA_ASER5
-{-  K.ignoreCacheTime sldASER5_C >>= BR.logFrame
-  K.ignoreCacheTime sldASER5_C >>= K.liftKnit
-    . FS.writeCSV_Show "sldASER5.csv"
-    . F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "PA"
-                           && F.rgetField @StateOffice r == Lower
-                           && F.rgetField @StateDistrict r == "63")
--}
   ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
   censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
   let sldWithPrefAndWeightDeps = (,,) <$> sldASER5_C <*> ccesMR_Prefs_C <*> censusBasedAdjEWs_C 
@@ -282,22 +276,85 @@ makeDoc = do
       $ either (Left . T.pack . show) Right
       $ FJ.leftJoinE @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) sldASER5wPrefs ew2018
     return $ fmap (F.rcast @([BR.StateAbbreviation, StateOffice, StateDistrict] V.++ DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight])) sldASER5wPrefsEws
-  K.ignoreCacheTime sldWithPrefAndWeight_C >>= BR.logFrame  
+--  K.ignoreCacheTime sldWithPrefAndWeight_C >>= BR.logFrame
+--  K.clearIfPresent "house-data/postStratifiedSLD.bin"
+  postStratifiedSLD_C <- BR.retrieveOrMakeFrame "house-data/postStratifiedSLD.bin" sldWithPrefAndWeight_C $ \sldWithPrefAndWeight -> do
+    let postStratOneF :: FL.Fold
+          (F.Record (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight]))
+          (F.Record [SLD_VAP, SLD_PctWhite, SLD_PctBlack, SLD_PctLatinx, SLD_PctAsian, SLD_PctOther, SLD_DPrefPS, SLD_EWPS, SLD_DSharePS, SLD_DEdgePS])
+        postStratOneF =
+          let cit = F.rgetField @PUMS.Citizens
+              ew = F.rgetField @ET.ElectoralWeight
+              dPref = F.rgetField @ET.DemPref
+--              ncit = F.rgetField @PUMS.NonCitizens
+              citF = FL.premap cit FL.sum
+              racePctF x = (/) <$> (fmap realToFrac $ FL.prefilter (\r -> F.rgetField @DT.Race5C r == x) citF) <*> (fmap realToFrac citF)
+              citWgtdF g = (/) <$> (FL.premap (\r -> realToFrac (cit r) * g r) FL.sum) <*> (fmap realToFrac citF)
+              wgtdDPrefF = citWgtdF dPref
+              wgtdEWF = citWgtdF ew
+              voteWgtd g = (/) <$> (FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum) <*> (FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum)
+              wgtdDShareF = voteWgtd dPref --citWgtdF (\r -> F.rgetField @ET.DemPref r * F.rgetField @ET.ElectoralWeight r)
+              wgtdDEdgeF = voteWgtd (\r -> (2 * dPref r) - 1)
+          in (\vap pw pb pl pa po prefPS ewPS sharePS edgePS
+               -> vap F.&: pw F.&: pb F.&: pl F.&: pa F.&: po F.&: prefPS F.&: ewPS F.&: sharePS F.&: edgePS F.&: V.RNil)
+             <$> citF
+             <*> racePctF DT.R5_WhiteNonLatinx
+             <*> racePctF DT.R5_Black
+             <*> racePctF DT.R5_Latinx
+             <*> racePctF DT.R5_Asian
+             <*> racePctF DT.R5_Other
+             <*> wgtdDPrefF
+             <*> wgtdEWF
+             <*> wgtdDShareF
+             <*> wgtdDEdgeF
+        postStratF = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @[BR.StateAbbreviation, StateOffice, StateDistrict])
+                     (FMR.foldAndAddKey postStratOneF)
+    return $ FL.fold postStratF sldWithPrefAndWeight
+--  K.ignoreCacheTime postStratifiedSLD_C >>= BR.logFrame
+  let keyDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
+        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [("AZ", 6), ("GA", 7), ("MI", 6), ("OH", 1), ("OH", 12), ("PA", 10), ("TX", 10), ("TX", 24), ("TX", 31)]
+      minSLDInCD = 0.5
+  K.clearIfPresent "house-data/overlappingSLD.bin"
+  let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
+  overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-date/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do
+    let enoughInKeyDistrict r = (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `elem` keyDistricts)
+                                && (F.rgetField @BR.FracSLDFromCD r >= minSLDInCD)
+        overlapsInKeyDs = fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracSLDFromCD])
+                          $ F.filterFrame enoughInKeyDistrict sldCDOverlaps
+    overlapsPS <- K.knitEither
+                  $ either (Left . T.pack . show) Right
+                  $ FJ.leftJoinE @[BR.StateAbbreviation, StateOffice, StateDistrict] overlapsInKeyDs postStratifiedSLDs
+     
+    return overlapsPS
+  K.ignoreCacheTime overlappingSLDs_C  >>= K.liftKnit . FS.writeCSV_Show "overlappingSLDs.csv"
+--  K.ignoreCacheTime overlappingSLDs >>= BR.logFrame
   return ()
 
 type OverlapRow = [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracCDFromSLD, BR.FracSLDFromCD]
 type SLDPumaRow = [BR.StateAbbreviation, StateOffice, StateDistrict, BR.PUMA, BR.FracSLDFromPUMA, BR.FracPUMAFromSLD]
 
+type SLD_VAP = "SLD_VAP" F.:-> Int
 type SLD_PctWhite = "SLD_PctWhite" F.:-> Double
 type SLD_PctBlack = "SLD_PctBlack" F.:-> Double
-type SLD_PctLatinx = "SLD_PctLatinX" F.:-> Double
+type SLD_PctLatinx = "SLD_PctLatinx" F.:-> Double
+type SLD_PctAsian = "SLD_PctAsian" F.:-> Double
 type SLD_PctOther = "SLD_PctOther" F.:-> Double
+type SLD_DPrefPS = "SLD_DPrefPS" F.:-> Double
+type SLD_EWPS = "SLD_EWPS" F.:-> Double
+type SLD_DSharePS = "SLD_DSharePS" F.:-> Double
+type SLD_DEdgePS = "SLD_DEdgePS" F.:-> Double                
 
+--type PctSLDInCD = "PctSLDInCD" F.:-> Double
+             
 type TotalFromPUMA = "TotalFromPUMA" F.:-> Double
 
 data StateOfficeT = Upper | Lower deriving (Show, Eq, Ord, Generic)
 type instance FI.VectorFor StateOfficeT = Vec.Vector
 instance S.Serialize StateOfficeT
+instance Grouping StateOfficeT
 
 type StateOffice = "State Office" F.:-> StateOfficeT
 type StateDistrict = "State District" F.:-> T.Text
