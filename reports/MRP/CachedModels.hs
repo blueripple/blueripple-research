@@ -119,7 +119,7 @@ pumsByStateASER = do
                        FMR.noUnpack
                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
                        (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
-    return $ FL.fold addDefaultsF rollup
+    return $ FL.fold addDefaultsF $ F.filterFrame (\r -> F.rgetField @BR.StateFIPS r < 60) rollup
 
 pumsByStateASER5 :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
@@ -136,7 +136,7 @@ pumsByStateASER5 = do
                        FMR.noUnpack
                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
                        (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
-    return $ FL.fold addDefaultsF rollup
+    return $ FL.fold addDefaultsF $ F.filterFrame (\r -> F.rgetField @BR.StateFIPS r < 60) rollup
 
 
 censusElectoralWeightsASER_MRP :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)

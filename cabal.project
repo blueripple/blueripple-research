@@ -1,4 +1,4 @@
-packages: ./ 
+packages: ./ ~/BlueRipple/data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: hashable, random, cereal-time:time
@@ -6,10 +6,10 @@ allow-newer: hashable, random, cereal-time:time
 -- random because of polysemy-zoo
 
              
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: 52512135db937b21726a1bb9a51fe820ed5400c5
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: 52512135db937b21726a1bb9a51fe820ed5400c5
 
 source-repository-package
   type: git

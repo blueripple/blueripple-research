@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -O0 -freduction-depth=0 #-}
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module Main where
 
@@ -24,6 +25,7 @@ import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.Core as V
 import qualified Data.Vinyl.Functor as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Data.Serialize as S
 
@@ -44,6 +46,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.Keyed         as BK
 import qualified MRP.CachedModels as MRP
 
 import qualified Polysemy.RandomFu as P
@@ -197,38 +200,82 @@ makeDoc = do
   -- StateLeg demographics and post-stratification
   -- We'll do the PUMS rollup separately because it might take a while and will not change much
   pumsDemographics_C <- PUMS.pumsLoader Nothing
-  pums2018ByPUMA_C <- BR.retrieveOrMakeFrame "house-data/pums2016ByPUMA.bin" pumsDemographics_C $ \pums -> do
+  pums2018ByPUMA_C <- BR.retrieveOrMakeFrame "house-data/pums2018ByPUMA.bin" pumsDemographics_C $ \pums -> do
     let g r = (F.rgetField @BR.Year r == 2018) && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
-    return $ FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) $ F.filterFrame g pums
-  K.ignoreCacheTime pums2018ByPUMA_C >>= BR.logFrame
+        rolledUpToPUMA = FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) $ F.filterFrame g pums
+        zeroCount :: F.Record [PUMS.Citizens, PUMS.NonCitizens]
+        zeroCount = 0 F.&: 0 F.&: V.RNil
+        addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
+                          (FMR.noUnpack)
+                          (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.PUMA])
+                          ( FMR.makeRecsWithKey id
+                            $ FMR.ReduceFold
+                            $ const
+                            $ BK.addDefaultRec @DT.CatColsASER5 zeroCount
+                          )
+    return $ F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA
     
   stateUpperFromPUMA_C <- stateUpperFromPUMA
+--  K.ignoreCacheTime stateUpperFromPUMA_C >>= BR.logFrame
   stateLowerFromPUMA_C <- stateLowerFromPUMA
-  ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
-  censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
-  let stateLegPostStratDeps = (,,,,)
+
+  let stateLegPostStratDeps = (,,)
                               <$> stateUpperFromPUMA_C
                               <*> stateLowerFromPUMA_C
                               <*> pums2018ByPUMA_C
-                              <*> ccesMR_Prefs_C
-                              <*> censusBasedAdjEWs_C
+--                              <*> ccesMR_Prefs_C
+--                              <*> censusBasedAdjEWs_C
   K.clearIfPresent "house-data/stateLegPostStrat.bin" -- until it's working
-  stateLegPostStrat_C <- BR.retrieveOrMakeFrame "house-data/stateLegPostStrat.bin" stateLegPostStratDeps
-                         $ \(upperFromPUMA, lowerFromPUMA, pumsDemographics, ccesMR_Prefs, adjCensusEWs) -> do
-    -- TODO
-    -- 1. combine upper lower frames to one (should be one row per SLD)
-    -- 2. Fold with pumsData to create ASER5 (remember to filter!!) info for each state Leg district (40 rows per SLD)
-    -- 3. Use to build summary demographics, pref and 2018-turnout-weighted pref. (Should be one row per SLD)
+  sldFromPUMA_ASER5_C <- BR.retrieveOrMakeFrame "house-data/sldFromPUMA_ASER5.bin" stateLegPostStratDeps
+                        $ \(upperFromPUMA, lowerFromPUMA, pumsDemographics) -> do
     let fixedUpper = fmap (F.rcast @SLDPumaRow . FT.transform fixUpper) upperFromPUMA
         fixedLower = fmap (F.rcast @SLDPumaRow . FT.transform fixLower) lowerFromPUMA
         sldFromPUMA = fixedLower <> fixedUpper
-    return sldFromPUMA
-  K.ignoreCacheTime stateLegPostStrat_C >>= BR.logFrame
+    sldFromPUMA_ASER5 <- K.knitEither
+                        $ either (Left . T.pack . show) Right
+                        $ FJ.leftJoinE @[BR.StateAbbreviation, BR.PUMA] sldFromPUMA pumsDemographics
+    return sldFromPUMA_ASER5
+--  K.ignoreCacheTime sldFromPUMA_ASER5_C >>= BR.logFrame
+  K.ignoreCacheTime sldFromPUMA_ASER5_C  >>= K.liftKnit
+    . FS.writeCSV_Show "sldFromPUMS_ASER5.csv"
+    . F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "PA"
+                           && F.rgetField @StateOffice r == Lower
+                           && F.rgetField @StateDistrict r == "63") 
+  sldASER5_C <- BR.retrieveOrMakeFrame "house-data/sldASER5.bin" sldFromPUMA_ASER5_C $ \sldFromPUMA_ASER5 -> do
+    let pumaWeightedPeopleF :: FL.Fold
+                               (F.Record [BR.FracSLDFromPUMA, PUMS.Citizens, PUMS.NonCitizens])
+                               (F.Record [TotalFromPUMA, PUMS.Citizens, PUMS.NonCitizens])
+        pumaWeightedPeopleF =
+          let wgt = F.rgetField @BR.FracSLDFromPUMA
+              cit = F.rgetField @PUMS.Citizens
+              ncit = F.rgetField @PUMS.NonCitizens
+              totalF = FL.premap wgt FL.sum
+              wgtdCitF = fmap round $ FL.premap (\r -> wgt r * (realToFrac $ cit r)) FL.sum
+              wgtdNCitF = fmap round $ FL.premap (\r -> wgt r * (realToFrac $ ncit r)) FL.sum
+          in (\t c n -> t F.&: c F.&: n F.&: V.RNil) <$> totalF <*> wgtdCitF <*> wgtdNCitF
+        pumasF = FMR.concatFold
+                 $ FMR.mapReduceFold
+                 (FMR.noUnpack)
+                 (FMR.assignKeysAndData @([BR.StateAbbreviation, StateOffice, StateDistrict] V.++ DT.CatColsASER5))
+                 (FMR.foldAndAddKey pumaWeightedPeopleF)
+    K.logLE K.Info "pre PUMA fold"
+    return $ FL.fold pumasF sldFromPUMA_ASER5
+--  K.ignoreCacheTime sldASER5_C >>= BR.logFrame
+  K.ignoreCacheTime sldASER5_C >>= K.liftKnit
+    . FS.writeCSV_Show "sldASER5.csv"
+    . F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "PA"
+                           && F.rgetField @StateOffice r == Lower
+                           && F.rgetField @StateDistrict r == "63") 
+  ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
+  censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
+
   return ()
 
 type OverlapRow = [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracCDFromSLD, BR.FracSLDFromCD]
 type SLDPumaRow = [BR.StateAbbreviation, StateOffice, StateDistrict, BR.PUMA, BR.FracSLDFromPUMA, BR.FracPUMAFromSLD]
-  
+
+type TotalFromPUMA = "TotalFromPUMA" F.:-> Double
+
 data StateOfficeT = Upper | Lower deriving (Show, Eq, Ord, Generic)
 type instance FI.VectorFor StateOfficeT = Vec.Vector
 instance S.Serialize StateOfficeT

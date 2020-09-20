@@ -236,7 +236,7 @@ executable FEC-data
 
 executable house-data
   import: deps
-  ghc-options: -Wall
+  ghc-options: -Wall -threaded 
   hs-source-dirs: house-data, reports
   main-is: Main.hs
   other-modules: MRP.CachedModels
