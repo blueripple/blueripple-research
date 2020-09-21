@@ -188,14 +188,14 @@ makeDoc = do
                    <> compare (F.rgetField @BR.FracCDFromSLD b) (F.rgetField @BR.FracCDFromSLD a)
         sortedOverlap = F.toFrame $ L.sortBy comp $ FL.fold FL.list $ fixedLower <> fixedUpper
         renderOverlapRec {-:: F.Rec (V.Lift (->) V.ElField (V.Const T.Text)) OverlapRow -} =
-          FS.liftFieldRender id
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
-          V.:& FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
+          FS.formatTextAsIs
+          V.:& FS.formatWithShow 
+          V.:& FS.formatWithShow 
+          V.:& FS.formatWithShow 
+          V.:& FS.liftFieldFormatter (T.pack . Printf.printf "%.2f" . (*100))
+          V.:& FS.liftFieldFormatter (T.pack . Printf.printf "%.2f" . (*100))
           V.:& V.RNil
-    K.liftKnit $ FS.writeLines @_ @Streamly.SerialT "cdStateOverlaps.csv" $ FS.streamSV' renderOverlapRec "," $ Streamly.fromFoldable sortedOverlap
+    K.liftKnit $ FS.writeLines "cdStateOverlaps.csv" $ FS.streamSV' renderOverlapRec "," $ Streamly.fromFoldable sortedOverlap
     return sortedOverlap
 --  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
   -- StateLeg demographics and post-stratification
@@ -328,26 +328,26 @@ makeDoc = do
                   $ either (Left . T.pack . show) Right
                   $ FJ.leftJoinE @[BR.StateAbbreviation, StateOffice, StateDistrict] overlapsInKeyDs postStratifiedSLDs
 
-    let renderPct :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
-        renderPct = FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
+    let formatPct :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
+        formatPct = FS.liftFieldFormatter (T.pack . Printf.printf "%.2f" . (*100))
         renderRec =
-          FS.liftFieldRender id
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& FS.liftFieldRender id
-          V.:& renderPct          
-          V.:& FS.liftFieldRender (T.pack . show)
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
-          V.:& renderPct
+          FS.formatTextAsIs
+          V.:& FS.formatWithShow
+          V.:& FS.formatWithShow
+          V.:& FS.formatTextAsIs
+          V.:& formatPct          
+          V.:& FS.formatWithShow
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
           V.:& V.RNil
-    K.liftKnit $ FS.writeLines @_ @Streamly.SerialT "overlappingSLDs.csv" $ FS.streamSV' renderRec "," $ Streamly.fromFoldable overlapsPS
+    K.liftKnit $ FS.writeLines "overlappingSLDs.csv" $ FS.streamSV' renderRec "," $ Streamly.fromFoldable overlapsPS
     return overlapsPS
 --  K.ignoreCacheTime overlappingSLDs_C  >>= K.liftKnit . FS.writeCSV_Show "overlappingSLDs.csv"  
 --  K.ignoreCacheTime overlappingSLDs >>= BR.logFrame
