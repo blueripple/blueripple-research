@@ -319,7 +319,7 @@ makeDoc = do
       minSLDInCD = 0.5
   K.clearIfPresent "house-data/overlappingSLD.bin"
   let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
-  overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-date/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do
+  overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-data/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do
     let enoughInKeyDistrict r = (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `elem` keyDistricts)
                                 && (F.rgetField @BR.FracSLDFromCD r >= minSLDInCD)
         overlapsInKeyDs = fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracSLDFromCD])
@@ -327,9 +327,29 @@ makeDoc = do
     overlapsPS <- K.knitEither
                   $ either (Left . T.pack . show) Right
                   $ FJ.leftJoinE @[BR.StateAbbreviation, StateOffice, StateDistrict] overlapsInKeyDs postStratifiedSLDs
-     
+
+    let renderPct :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
+        renderPct = FS.liftFieldRender (T.pack . Printf.printf "%.2f" . (*100))
+        renderRec =
+          FS.liftFieldRender id
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& FS.liftFieldRender id
+          V.:& renderPct          
+          V.:& FS.liftFieldRender (T.pack . show)
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& renderPct
+          V.:& V.RNil
+    K.liftKnit $ FS.writeLines @_ @Streamly.SerialT "overlappingSLDs.csv" $ FS.streamSV' renderRec "," $ Streamly.fromFoldable overlapsPS
     return overlapsPS
-  K.ignoreCacheTime overlappingSLDs_C  >>= K.liftKnit . FS.writeCSV_Show "overlappingSLDs.csv"
+--  K.ignoreCacheTime overlappingSLDs_C  >>= K.liftKnit . FS.writeCSV_Show "overlappingSLDs.csv"  
 --  K.ignoreCacheTime overlappingSLDs >>= BR.logFrame
   return ()
 
