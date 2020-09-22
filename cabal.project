@@ -30,8 +30,13 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 755f65806c3a35482806da0303cb1ffc283c9fd1
-  
+  tag: bdcca5fc848759a344473f00874555159728d372
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: 8c5c0a346c379c24255fd8eeee848662278f7a05
+    
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega

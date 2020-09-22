@@ -70,7 +70,8 @@ import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Streamly               as FStreamly
+import qualified Frames.Streamly.InCore        as FStreamly
+import qualified Frames.Streamly.Transform     as FStreamly
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV

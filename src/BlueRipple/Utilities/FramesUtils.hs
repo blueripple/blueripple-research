@@ -21,7 +21,7 @@ import qualified Data.Map.Strict as Map
 
 import qualified Frames 
 import qualified Frames.InCore
-import qualified Frames.Streamly 
+import qualified Frames.Streamly.InCore as Frames.Streamly
 import qualified Streamly
 import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
