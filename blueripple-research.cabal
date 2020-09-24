@@ -61,7 +61,7 @@ common deps
                      
 library
   import: deps
-  ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16 -fprint-potential-instances
     
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.Keyed

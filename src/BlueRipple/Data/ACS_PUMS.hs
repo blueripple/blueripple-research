@@ -229,43 +229,78 @@ pumsRollupF mapKeys =
       reduce = FMR.foldAndAddKey sumPeopleF
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
+type TotalWeight = "TotalWeight" F.:-> Double
 
-sumWeightedPeopleF :: FL.Fold (F.Record [BR.PUMAWgt, Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
-sumWeightedPeopleF =
-  let wgt = F.rgetField @BR.PUMAWgt
-      c = F.rgetField @Citizens
-      nc = F.rgetField @NonCitizens
-      wgtCitF = FL.premap (\r -> wgt r * realToFrac (c r)) FL.sum
-      wgtNCitF = FL.premap (\r -> wgt r * realToFrac (nc r)) FL.sum
-  in (\wc wnc -> (round wc) F.&: (round wnc) F.&: V.RNil) <$> wgtCitF <*> wgtNCitF
+sumWeightedPeopleF :: (F.Record rs -> Double) 
+                      -> (F.Record rs -> Int)
+                      -> (F.Record rs -> Int)
+                      -> FL.Fold (F.Record rs) (F.Record [TotalWeight, Citizens, NonCitizens])
+sumWeightedPeopleF wgt cit nonCit =
+  let wgtCitF = FL.premap (\r -> wgt r * realToFrac (cit r)) FL.sum
+      wgtNCitF = FL.premap (\r -> wgt r * realToFrac (nonCit r)) FL.sum
+      totalF = FL.premap wgt FL.sum
+  in (\t wc wnc -> t F.&: (round wc) F.&: (round wnc) F.&: V.RNil) <$> totalF <*> wgtCitF <*> wgtNCitF
 
 
-type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ [Citizens, NonCitizens]
-
+type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ [TotalWeight, Citizens, NonCitizens]
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
    , K.CacheEffectsD r
-   ,ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens, BR.CongressionalDistrict, BR.PUMAWgt] ++ ks)
-   , FI.RecVec (ks ++ [Citizens, NonCitizens])
+--   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [ Citizens, NonCitizens])
+   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] V.++ ks)
+   , (ks V.++ [Citizens, NonCitizens]) ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [Citizens, NonCitizens])
+   , ks ⊆ (ks V.++ [Citizens, NonCitizens])
+   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ (ks V.++ [ Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]))
+   , F.ElemOf (ks V.++ [Citizens, NonCitizens]) Citizens
+   , F.ElemOf (ks V.++ [Citizens, NonCitizens]) NonCitizens
+   , FJ.CanLeftJoinM ([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) (PUMACounts ks) (F.RecordColumns BR.CD116FromPUMA2012)
+   , FI.RecVec (ks V.++ [Citizens, NonCitizens])
+   , FI.RecVec (ks V.++ [TotalWeight, Citizens, NonCitizens])
+   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) Citizens
+   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) NonCitizens
+   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.FracCDInPUMA
+   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.CongressionalDistrict
    , Ord (F.Record ks)
+   , BR.FiniteSet (F.Record ks)
+   , V.RMap ks
+   , V.ReifyConstraint Show F.ElField ks
+   , V.RecordToList ks
    )
  => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
- ->  F.FrameRec PUMS
+ -> F.Frame BR.CD116FromPUMA2012
+ -> F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
-pumsCDRollup mapKeys pumsFrame = do
-  pumaToCD2012 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> K.ignoreCacheTimeM BR.puma2012ToCD116Loader
-  pumaToCD2000 <- fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CongressionalDistrict, BR.PUMAWgt]) <$> K.ignoreCacheTimeM BR.puma2000ToCD116Loader
-  let addYears ys f = F.toFrame $ concat $ fmap (\r -> fmap (\y -> FT.addColumn @BR.Year y r) ys) $ FL.fold FL.list f
-      pumaToCD = addYears [2012, 2014, 2016, 2018] pumaToCD2012 <> addYears [2008, 2010] pumaToCD2000      
-      pumsWithCDAndWeightM = F.leftJoin @[BR.Year, BR.StateFIPS, BR.PUMA] pumsFrame pumaToCD
-      summary = M.filter (\(n,m) -> n /= m) $ FL.fold (Frames.Misc.goodDataByKey @[BR.Year, BR.StateFIPS, BR.PUMA]) pumsWithCDAndWeightM
-      pumsWithCDAndWeight = catMaybes $ fmap F.recMaybe pumsWithCDAndWeightM
-  K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
-  let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks) @[BR.PUMAWgt,Citizens, NonCitizens]
-      reduce = FMR.foldAndAddKey sumWeightedPeopleF
-  return $ FL.fold (FMR.concatFold $ FMR.mapReduceFold unpack assign reduce) pumsWithCDAndWeight
+pumsCDRollup mapKeys cdFromPUMA pums = do
+  -- roll up to PUMA
+  let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF $ mapKeys . F.rcast) pums
+      -- add zero rows
+      zeroCount :: F.Record [Citizens, NonCitizens]
+      zeroCount = 0 F.&: 0 F.&: V.RNil
+      addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
+                        (FMR.noUnpack)
+                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA])
+                        ( FMR.makeRecsWithKey id
+                          $ FMR.ReduceFold
+                          $ const
+                          $ BR.addDefaultRec @ks zeroCount                          
+                        )
+      rolledUpToPUMA :: F.FrameRec (PUMACounts ks) = F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA'
+  -- add the CD information on the appropriate PUMAs    
+  byPUMAWithCDAndWeight <- K.knitEither
+                           $ either (Left . T.pack . show) Right
+                           $ FJ.leftJoinE @([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) rolledUpToPUMA cdFromPUMA
+  -- roll it up to the CD level
+
+  let demoByCDF  =  FMR.concatFold
+                    $ FMR.mapReduceFold
+                    (FMR.noUnpack)
+                    (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[BR.FracCDInPUMA, Citizens, NonCitizens])
+                    (FMR.foldAndAddKey @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[TotalWeight, Citizens, NonCitizens]
+                      $ sumWeightedPeopleF  (F.rgetField @BR.FracCDInPUMA) (F.rgetField @Citizens) (F.rgetField @NonCitizens))
+                   
+--  K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
+  return $ FL.fold demoByCDF byPUMAWithCDAndWeight
 
 
 type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ [Citizens, NonCitizens]

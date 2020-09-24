@@ -111,14 +111,16 @@ presidentialByStateFrame = cachedMaybeFrameLoader @(F.RecordColumns BR.President
   Nothing
   "presByState.sbin"
 
-puma2012ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)
-                      => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.PUMA2012ToCD116))
-puma2012ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2012ToCD116CSV) Nothing Nothing id Nothing "puma2012ToCD116.sbin"
 
+cd116FromPUMA2012Loader :: (K.KnitEffects r, K.CacheEffectsD r)
+                      => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CD116FromPUMA2012))
+cd116FromPUMA2012Loader = cachedFrameLoader (DataSets $ T.pack BR.cd116FromPUMA2012CSV) Nothing Nothing id Nothing "cd116FromPUMA2012.bin"
+
+{-
 puma2000ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)
                       => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.PUMA2000ToCD116))
 puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing Nothing id Nothing "puma2000ToCD116.sbin"
-
+-}
 county2010ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)
                         => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyToCD116))
 county2010ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
