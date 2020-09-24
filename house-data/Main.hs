@@ -181,6 +181,58 @@ makeDoc = do
     K.liftKnit $ F.writeCSV "unpolled.csv" unPolledFrame
     
     return moneyElexFrame
+  -- congressional district analysis via MRP
+  -- roll PUMS data up to CDs
+  cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+  pumsDemographics_C <- PUMS.pumsLoader Nothing
+  let pumsByCDDeps = (,) <$> cd116FromPUMA2012_C <*> pumsDemographics_C
+  K.clearIfPresent "house-data/pumsByCD2018.bin"
+  pumsByCD2018ASER5_C <- BR.retrieveOrMakeFrame "house-data/pumsByCD2018.bin" pumsByCDDeps $ \(cdFromPUMA, pums) -> do
+    let g r = (F.rgetField @BR.Year r == 2018)
+              && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
+              && (F.rgetField @BR.StateFIPS r < 60) -- filter out non-states, except DC
+    PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
+--  K.ignoreCacheTime  pumsByCD2018ASER5_C >>= BR.logFrame
+  ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
+  censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
+  -- join with Prefs and EWs and post-stratify
+  let cdPostStratDeps = (,,) <$> pumsByCD2018ASER5_C <*> ccesMR_Prefs_C <*> censusBasedAdjEWs_C
+  --K.clearIfPresent "house-data/cdPostStrat.bin"
+  cdPostStrat_C <- BR.retrieveOrMakeFrame "house-data/cdPostStrat.bin" cdPostStratDeps
+    $ \(cdASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
+    let prefs2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) ccesMR_Prefs
+        ew2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) censusBasedAdjEWs
+    cdWithPrefsAndEWs <- K.knitEither
+                         $ either (Left . T.pack . show) Right
+                         $ FJ.leftJoinE3 @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) cdASER5 prefs2018 ew2018
+    let postStratF = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @[BR.StateAbbreviation, BR.CongressionalDistrict])
+                     (FMR.foldAndAddKey postStratOneF)
+        cdPostStrat = FL.fold postStratF cdWithPrefsAndEWs
+        renderRec =
+          FS.formatTextAsIs
+          V.:& FS.formatWithShow
+          V.:& FS.formatWithShow
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& formatPct
+          V.:& V.RNil
+    K.liftKnit $ FS.writeLines "houseMRP.csv" $ FS.streamSV' renderRec "," $ Streamly.fromFoldable cdPostStrat
+    return cdPostStrat    
+--  K.ignoreCacheTime  cdPostStrat_C >>= BR.logFrame
+--    return $ fmap (F.rcast @([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight])) cdWithPrefsAndEWs
+
+  
+
   -- State Leg overlaps
   cdToStateLower_C <- cd116FromStateLower2016Loader
   cdToStateUpper_C <- cd116FromStateUpper2016Loader
@@ -207,10 +259,10 @@ makeDoc = do
 --  K.ignoreCacheTime sortedOverlap_C >>= BR.logFrame
   -- StateLeg demographics and post-stratification
   -- We'll do the PUMS rollup separately because it might take a while and will not change much
-  pumsDemographics_C <- PUMS.pumsLoader Nothing
+
   pums2018ByPUMA_C <- BR.retrieveOrMakeFrame "house-data/pums2018ByPUMA.bin" pumsDemographics_C $ \pums -> do
     let g r = (F.rgetField @BR.Year r == 2018) && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
-        rolledUpToPUMA = FL.fold (PUMS.pumsRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) $ F.filterFrame g pums
+        rolledUpToPUMA = FL.fold (PUMS.pumsRollupF g $ PUMS.pumsKeysToASER5 True . F.rcast) pums
         zeroCount :: F.Record [PUMS.Citizens, PUMS.NonCitizens]
         zeroCount = 0 F.&: 0 F.&: V.RNil
         addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
@@ -269,8 +321,7 @@ makeDoc = do
                  (FMR.foldAndAddKey pumaWeightedPeopleF)
     K.logLE K.Info "pre PUMA fold"
     return $ FL.fold pumasF sldFromPUMA_ASER5
-  ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
-  censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
+
   let sldWithPrefAndWeightDeps = (,,) <$> sldASER5_C <*> ccesMR_Prefs_C <*> censusBasedAdjEWs_C 
   sldWithPrefAndWeight_C <- BR.retrieveOrMakeFrame "house-data/sldWithPrefAndWeight.bin" sldWithPrefAndWeightDeps
     $ \(sldASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
@@ -284,39 +335,9 @@ makeDoc = do
       $ FJ.leftJoinE @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) sldASER5wPrefs ew2018
     return $ fmap (F.rcast @([BR.StateAbbreviation, StateOffice, StateDistrict] V.++ DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight])) sldASER5wPrefsEws
 --  K.ignoreCacheTime sldWithPrefAndWeight_C >>= BR.logFrame
-  K.clearIfPresent "house-data/postStratifiedSLD.bin"
+  --K.clearIfPresent "house-data/postStratifiedSLD.bin"
   postStratifiedSLD_C <- BR.retrieveOrMakeFrame "house-data/postStratifiedSLD.bin" sldWithPrefAndWeight_C $ \sldWithPrefAndWeight -> do
-    let postStratOneF :: FL.Fold
-          (F.Record (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight]))
-          (F.Record [VAP, PctWhite, PctBlack, PctLatinx, PctAsian, PctOther, DPrefPS, EWPS, DSharePS, DEdgePS, DEdgePS_EP])
-        postStratOneF =
-          let cit = F.rgetField @PUMS.Citizens
-              ew = F.rgetField @ET.ElectoralWeight
-              dPref = F.rgetField @ET.DemPref
---              ncit = F.rgetField @PUMS.NonCitizens
-              citF = FL.premap cit FL.sum
-              racePctF x = (/) <$> (fmap realToFrac $ FL.prefilter (\r -> F.rgetField @DT.Race5C r == x) citF) <*> (fmap realToFrac citF)
-              citWgtdF g = (/) <$> (FL.premap (\r -> realToFrac (cit r) * g r) FL.sum) <*> (fmap realToFrac citF)
-              wgtdDPrefF = citWgtdF dPref
-              wgtdEWF = citWgtdF ew
-              voteWgtd g = (/) <$> (FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum) <*> (FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum)
-              wgtdDShareF = voteWgtd dPref --citWgtdF (\r -> F.rgetField @ET.DemPref r * F.rgetField @ET.ElectoralWeight r)
-              wgtdDEdgeF = voteWgtd (\r -> (2 * dPref r) - 1)
-              wgtdDEdge_EPF = citWgtdF (\r -> (2 * dPref r) - 1)
-          in (\vap pw pb pl pa po prefPS ewPS sharePS edgePS edgePS_EP
-               -> vap F.&: pw F.&: pb F.&: pl F.&: pa F.&: po F.&: prefPS F.&: ewPS F.&: sharePS F.&: edgePS F.&: edgePS_EP F.&: V.RNil)
-             <$> citF
-             <*> racePctF DT.R5_WhiteNonLatinx
-             <*> racePctF DT.R5_Black
-             <*> racePctF DT.R5_Latinx
-             <*> racePctF DT.R5_Asian
-             <*> racePctF DT.R5_Other
-             <*> wgtdDPrefF
-             <*> wgtdEWF
-             <*> wgtdDShareF
-             <*> wgtdDEdgeF
-             <*> wgtdDEdge_EPF
-        postStratF = FMR.concatFold
+    let postStratF = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
                      (FMR.assignKeysAndData @[BR.StateAbbreviation, StateOffice, StateDistrict])
@@ -325,8 +346,8 @@ makeDoc = do
 --  K.ignoreCacheTime postStratifiedSLD_C >>= BR.logFrame
   let keyDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
         = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [("AZ", 6), ("GA", 7), ("MI", 6), ("OH", 1), ("OH", 12), ("PA", 10), ("TX", 10), ("TX", 24), ("TX", 31)]
-      minSLDInCD = 0.10
-      closeEnough = 0.15
+      minSLDInCD = 0.01
+      closeEnough = 0.50
   K.clearIfPresent "house-data/overlappingSLD.bin"
   let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
   overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-data/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do
@@ -337,11 +358,8 @@ makeDoc = do
     overlapsPS <- fmap (F.filterFrame ((<= closeEnough) . abs . F.rgetField @DEdgePS))
                   <$> K.knitEither
                   $ either (Left . T.pack . show) Right
-                  $ FJ.leftJoinE @[BR.StateAbbreviation, StateOffice, StateDistrict] overlapsInKeyDs postStratifiedSLDs
-
-    let formatPct :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
-        formatPct = FS.liftFieldFormatter (T.pack . Printf.printf "%.2f" . (*100))
-        renderRec =
+                  $ FJ.leftJoinE @[BR.StateAbbreviation, StateOffice, StateDistrict] overlapsInKeyDs postStratifiedSLDs   
+    let renderRec =
           FS.formatTextAsIs
           V.:& FS.formatWithShow
           V.:& FS.formatWithShow
@@ -402,7 +420,38 @@ type DEdgePS = "DEdgePS" F.:-> Double
 type DSharePS_EP = "DSharePS_EP" F.:-> Double
 type DEdgePS_EP = "DEdgePS_EP" F.:-> Double                
 
---type PctSLDInCD = "PctSLDInCD" F.:-> Double
+formatPct :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
+formatPct = FS.liftFieldFormatter (T.pack . Printf.printf "%.2f" . (*100))
+
+postStratOneF :: FL.Fold
+                 (F.Record (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight]))
+                 (F.Record [VAP, PctWhite, PctBlack, PctLatinx, PctAsian, PctOther, DPrefPS, EWPS, DSharePS, DEdgePS, DEdgePS_EP])
+postStratOneF =
+  let cit = F.rgetField @PUMS.Citizens
+      ew = F.rgetField @ET.ElectoralWeight
+      dPref = F.rgetField @ET.DemPref
+      citF = FL.premap cit FL.sum
+      racePctF x = (/) <$> (fmap realToFrac $ FL.prefilter (\r -> F.rgetField @DT.Race5C r == x) citF) <*> (fmap realToFrac citF)
+      citWgtdF g = (/) <$> (FL.premap (\r -> realToFrac (cit r) * g r) FL.sum) <*> (fmap realToFrac citF)
+      wgtdDPrefF = citWgtdF dPref
+      wgtdEWF = citWgtdF ew
+      voteWgtd g = (/) <$> (FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum) <*> (FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum)
+      wgtdDShareF = voteWgtd dPref --citWgtdF (\r -> F.rgetField @ET.DemPref r * F.rgetField @ET.ElectoralWeight r)
+      wgtdDEdgeF = voteWgtd (\r -> (2 * dPref r) - 1)
+      wgtdDEdge_EPF = citWgtdF (\r -> (2 * dPref r) - 1)
+  in (\vap pw pb pl pa po prefPS ewPS sharePS edgePS edgePS_EP
+       -> vap F.&: pw F.&: pb F.&: pl F.&: pa F.&: po F.&: prefPS F.&: ewPS F.&: sharePS F.&: edgePS F.&: edgePS_EP F.&: V.RNil)
+     <$> citF
+     <*> racePctF DT.R5_WhiteNonLatinx
+     <*> racePctF DT.R5_Black
+     <*> racePctF DT.R5_Latinx
+     <*> racePctF DT.R5_Asian
+     <*> racePctF DT.R5_Other
+     <*> wgtdDPrefF
+     <*> wgtdEWF
+     <*> wgtdDShareF
+     <*> wgtdDEdgeF
+     <*> wgtdDEdge_EPF
              
 type TotalFromPUMA = "TotalFromPUMA" F.:-> Double
 

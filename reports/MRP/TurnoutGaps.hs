@@ -723,9 +723,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "TurnoutScenar
   K.logLE K.Diagnostic "Rolling up 2018 PUMAs to CDs..." 
   pumsASRByCD2018_C <- do
     cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
-    BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRByCD2018.bin" cachedPUMS_Demographics $ \pumsDemographics ->
+    cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+    let cachedDeps = (,) <$> cachedPUMS_Demographics <*> cd116FromPUMA2012_C
+    BR.retrieveOrMakeFrame "mrp/turnoutGaps/pumsASRByCD2018.bin" cachedDeps $ \(pumsDemographics, cdFromPUMA) ->
                      (fmap (FT.addColumn @BR.PopCountOf BR.PC_Citizen)
-                       <$> (PUMS.pumsCDRollup (PUMS.pumsKeysToASR . F.rcast) $ F.filterFrame (isYear 2018) pumsDemographics))
+                       <$> (PUMS.pumsCDRollup (isYear 2018) (PUMS.pumsKeysToASR . F.rcast) cdFromPUMA pumsDemographics))
 
   pumsASRAdjTurnoutByCD2018 <- K.ignoreCacheTimeM $ do
     cachedStateTurnout <- BR.stateTurnoutLoader

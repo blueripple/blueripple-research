@@ -362,6 +362,7 @@ The table below has all this data in tabular form.
 
 type ASER5CD as = ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ DT.CatColsASER5) V.++ as
 
+{-
 addPUMSZerosF :: FL.Fold (F.Record (ASER5CD '[PUMS.Citizens, PUMS.NonCitizens])) (F.FrameRec (ASER5CD '[PUMS.Citizens, PUMS.NonCitizens]))
 addPUMSZerosF =
   let zeroPop ::  F.Record '[PUMS.Citizens, PUMS.NonCitizens]
@@ -374,7 +375,7 @@ addPUMSZerosF =
        $ FMR.ReduceFold
        $ const
        $ Keyed.addDefaultRec @DT.CatColsASER5 zeroPop)
-                                                                  
+-}                                                                
 type PopPct = "Pct Pop" F.:-> Double
 type PctWWC = "PctWWC" F.:-> Double
 type PctBlack = "PctBlack" F.:-> Double
@@ -638,10 +639,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
 
   pums2018ByCD_C <- do
     demo_C <- PUMS.pumsLoader Nothing
-    BR.retrieveOrMakeFrame "mrp/DistrictClusters/pums2018ByCD.bin" demo_C $ \pumsRaw -> do
-      let pums2018Raw = F.filterFrame ((== 2018) . F.rgetField @BR.Year) pumsRaw
-      pumsCDRollup <- PUMS.pumsCDRollup (PUMS.pumsKeysToASER5 True . F.rcast) pums2018Raw
-      return $ FL.fold addPUMSZerosF pumsCDRollup
+    cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+    let cachedDeps = (,) <$> demo_C <*> cd116FromPUMA2012_C
+    BR.retrieveOrMakeFrame "mrp/DistrictClusters/pums2018ByCD.bin" cachedDeps $ \(pumsRaw, cdFromPUMA) -> do
+      pumsCDRollup <- PUMS.pumsCDRollup ((== 2018) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pumsRaw
+      return pumsCDRollup
 
   houseVoteShare_C <- do
     houseResults_C <- BR.houseElectionsLoader

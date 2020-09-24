@@ -28,6 +28,7 @@ import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
+import qualified Control.Monad                 as M
 import qualified Control.Monad.Except          as X
 import qualified Control.Monad.Primitive       as Prim
 import qualified Control.Monad.State           as ST
@@ -221,13 +222,14 @@ pumsRollupF
     , FI.RecVec (ks ++ [Citizens, NonCitizens])
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+  => (F.Record PUMS -> Bool)
+  -> (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
-pumsRollupF mapKeys =
+pumsRollupF keepIf mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
       assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] ++ ks) @[Citizens, NonCitizens]
       reduce = FMR.foldAndAddKey sumPeopleF
-  in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
+  in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 type TotalWeight = "TotalWeight" F.:-> Double
 
@@ -247,7 +249,6 @@ pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
    , K.CacheEffectsD r
---   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [ Citizens, NonCitizens])
    , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] V.++ ks)
    , (ks V.++ [Citizens, NonCitizens]) ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [Citizens, NonCitizens])
    , ks ⊆ (ks V.++ [Citizens, NonCitizens])
@@ -261,19 +262,21 @@ pumsCDRollup
    , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) NonCitizens
    , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.FracCDInPUMA
    , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.CongressionalDistrict
+   , F.ElemOf (ks V.++ [TotalWeight, Citizens, NonCitizens]) TotalWeight
    , Ord (F.Record ks)
    , BR.FiniteSet (F.Record ks)
    , V.RMap ks
    , V.ReifyConstraint Show F.ElField ks
    , V.RecordToList ks
    )
- => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+ => (F.Record PUMS -> Bool)
+ -> (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
  -> F.Frame BR.CD116FromPUMA2012
  -> F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
-pumsCDRollup mapKeys cdFromPUMA pums = do
+pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   -- roll up to PUMA
-  let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF $ mapKeys . F.rcast) pums
+  let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF keepIf $ mapKeys . F.rcast) pums
       -- add zero rows
       zeroCount :: F.Record [Citizens, NonCitizens]
       zeroCount = 0 F.&: 0 F.&: V.RNil
@@ -286,21 +289,27 @@ pumsCDRollup mapKeys cdFromPUMA pums = do
                           $ BR.addDefaultRec @ks zeroCount                          
                         )
       rolledUpToPUMA :: F.FrameRec (PUMACounts ks) = F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA'
-  -- add the CD information on the appropriate PUMAs    
+  -- add the CD information on the appropriate PUMAs
+{-  
   byPUMAWithCDAndWeight <- K.knitEither
-                           $ either (Left . T.pack . show) Right
+                           $ either (Left . ("From leftJoinE in pumsCDRollup: " <>) . T.pack . show) Right
                            $ FJ.leftJoinE @([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) rolledUpToPUMA cdFromPUMA
+-}
+  let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) rolledUpToPUMA cdFromPUMA
+  M.when (not $ null missing) $ K.knitError $ "missing items in join: " <> (T.pack . show $ missing)
   -- roll it up to the CD level
-
   let demoByCDF  =  FMR.concatFold
                     $ FMR.mapReduceFold
                     (FMR.noUnpack)
                     (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[BR.FracCDInPUMA, Citizens, NonCitizens])
                     (FMR.foldAndAddKey @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[TotalWeight, Citizens, NonCitizens]
-                      $ sumWeightedPeopleF  (F.rgetField @BR.FracCDInPUMA) (F.rgetField @Citizens) (F.rgetField @NonCitizens))
-                   
---  K.logLE K.Diagnostic $ "pumsCDRollup summary: " <> (T.pack $ show summary)    
-  return $ FL.fold demoByCDF byPUMAWithCDAndWeight
+                      $ sumWeightedPeopleF  (F.rgetField @BR.FracCDInPUMA) (F.rgetField @Citizens) (F.rgetField @NonCitizens))                   
+      demoByCD = FL.fold demoByCDF byPUMAWithCDAndWeight
+      diagnosticF = (,,) <$> FL.length <*> FL.premap (F.rgetField @TotalWeight) FL.minimum <*> FL.premap (F.rgetField @TotalWeight) FL.maximum
+      (rows, minTW, maxTW) = FL.fold diagnosticF demoByCD     
+  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
+  K.logLE K.Diagnostic $ "All TotalWeight in [" <> (T.pack . show $ minTW) <> ", " <> (T.pack . show $ maxTW) <> "]"
+  return demoByCD
 
 
 type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ [Citizens, NonCitizens]

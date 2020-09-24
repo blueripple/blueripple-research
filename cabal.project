@@ -1,4 +1,4 @@
-packages: ./ ~/BlueRipple/data-sets
+packages: ./ ~/BlueRipple/data-sets ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 allow-newer: hashable, random, cereal-time:time
@@ -30,7 +30,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: bdcca5fc848759a344473f00874555159728d372
+  tag: 4023f107614bd7cc95a34a26664e7800044ec6da
 
 source-repository-package
   type: git
