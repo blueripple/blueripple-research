@@ -71,12 +71,12 @@ import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.Turnout_MRP as BR
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
-import qualified MRP.CCES_MRP_Analysis as BR
+import qualified BlueRipple.Model.CCES_MRP_Analysis as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
-import MRP.CCES
-import qualified MRP.CCES as CCES
+import BlueRipple.Data.CCES
+import qualified BlueRipple.Data.CCES as CCES
 
 
 text1 :: T.Text

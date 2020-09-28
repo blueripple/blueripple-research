@@ -79,8 +79,8 @@ import qualified BlueRipple.Model.PostStratify as BR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import MRP.Common
-import MRP.CCES
-import qualified MRP.CCES_MRP_Analysis as BR
+import BlueRipple.Data.CCES
+import qualified BlueRipple.Model.CCES_MRP_Analysis as BR
 import qualified PreferenceModel.Common as PrefModel
 import qualified Frames.Melt as F
 import qualified BlueRipple.Data.ACS_PUMS as PUMS

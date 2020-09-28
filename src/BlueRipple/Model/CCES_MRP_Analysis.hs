@@ -15,8 +15,8 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
-module MRP.CCES_MRP_Analysis where
+--{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+module BlueRipple.Model.CCES_MRP_Analysis where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
@@ -37,6 +37,7 @@ import qualified Frames.MapReduce              as FMR
 import qualified Frames.Serialize              as FS
 
 import qualified Knit.Report                   as K
+import qualified Knit.Effect.Serialize         as KS
 
 import qualified Numeric.GLM.Bootstrap         as GLM
 import qualified Numeric.GLM.MixedModel         as GLM
@@ -46,7 +47,7 @@ import qualified BlueRipple.Data.DemographicTypes
                                                as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP     as BR
-import           MRP.CCES
+import           BlueRipple.Data.CCES
 
 
 import qualified BlueRipple.Data.Keyed         as BR
@@ -222,7 +223,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedCCES_Data >>= fa
           Just tmpDir -> K.ignoreCacheTimeM
-                         $ K.retrieveOrMakeTransformed
+                         $ K.retrieveOrMakeTransformed @KS.DefaultSerializer @KS.DefaultCacheData
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)

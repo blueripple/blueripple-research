@@ -58,7 +58,7 @@ import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP as BR
 import MRP.Common
-import MRP.CCES as CCES
+import BlueRipple.Data.CCES as CCES
 
 import qualified PreferenceModel.Common as PrefModel
 

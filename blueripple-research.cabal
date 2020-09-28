@@ -47,7 +47,7 @@ common deps
                , polysemy >= 0.2.1.0 && < 1.4
                , polysemy-plugin
                , primitive >= 0.7.0.0
-               , profunctors
+               , profunctors               
                , random-fu >= 0.2.7.3
                , random-source
                , semirings >= 0.5 && < 0.6
@@ -57,7 +57,7 @@ common deps
                , time
                , tsne >= 1.2 && < 1.4
                , vector
-               , vinyl >= 0.12 && < 0.14
+               , vinyl >= 0.13 && < 0.14
                      
 library
   import: deps
@@ -81,10 +81,14 @@ library
                  , BlueRipple.Data.CPSVoterPUMS
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Path
                  , BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame
-                 , BlueRipple.Data.FromDB
+                 , BlueRipple.Data.CCESPath
+                 , BlueRipple.Data.CCESFrame
+                 , BlueRipple.Data.CCES
+                 , BlueRipple.Model.CachedModels
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
+                 , BlueRipple.Model.CCES_MRP_Analysis
                  , BlueRipple.Model.MRP                 
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.Turnout_MRP
@@ -95,9 +99,7 @@ library
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
-                     , blaze-colonnade
-                     , beam-core >= 0.9.0.0
-                     , beam-sqlite 
+                     , blaze-colonnade                   
                      , colonnade
                      , data-default
                      , declarative
@@ -113,12 +115,10 @@ library
                      , mtl
                      , hmatrix-nlopt
                      , nonlinear-optimization >= 0.3.11 && < 0.4
-                     , nonlinear-optimization-ad >= 0.2 && < 0.3
-                     , OpenFEC-beam
+                     , nonlinear-optimization-ad >= 0.2 && < 0.3                  
                      , pandoc
                      , parallel
-                     , random >= 1.1 && < 1.2.0.0
-                     , sqlite-simple
+                     , random >= 1.1 && < 1.3                
                      , template-haskell
                      , time
                      , tuple
@@ -185,12 +185,7 @@ executable mrp-model
   ghc-options: -Wall  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: reports
   main-is:        MRP/MRP.hs
-  other-modules:  MRP.CCESPath
-                , MRP.CCES
-                , MRP.CCESFrame
-                , MRP.CCES_MRP_Analysis
-                , MRP.Common
-                , MRP.CachedModels
+  other-modules: MRP.Common
                 , PreferenceModel.Common
                 , MRP.WWC
                 , MRP.Pools
@@ -232,22 +227,22 @@ executable FEC-data
   ghc-options: -Wall
   hs-source-dirs: FEC-data
   main-is: Main.hs
-  build-depends: base  
+  other-modules: FromDB
+  build-depends: base
+               , beam-core >= 0.9.0.0
+               , beam-sqlite 
                , blueripple-research
+               , data-default
+               , OpenFEC-beam
+               , sqlite-simple
                , time
+               , tuple
 
 executable house-data
   import: deps
   ghc-options: -Wall -threaded 
   hs-source-dirs: house-data, reports
-  main-is: Main.hs
-  other-modules: MRP.CachedModels
-               , MRP.CCES
-               , MRP.CCESFrame
-               , MRP.CCESPath
-               , MRP.CCES_MRP_Analysis
-               , MRP.Common
-                                  
+  main-is: Main.hs                                  
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets

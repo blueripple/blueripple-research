@@ -15,7 +15,7 @@
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TupleSections             #-}
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+--{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module BlueRipple.Model.Turnout_MRP where
 
@@ -38,6 +38,7 @@ import qualified Frames.MapReduce              as FMR
 import qualified Frames.Serialize              as FS
 
 import qualified Knit.Report                   as K
+import qualified Knit.Effect.Serialize         as KS
 
 import qualified Numeric.GLM.Bootstrap         as GLM
 import qualified Numeric.GLM.MixedModel         as GLM
@@ -112,7 +113,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedDat >>= fa 
           Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data 
-                         $ K.retrieveOrMakeTransformed
+                         $ K.retrieveOrMakeTransformed @KS.DefaultSerializer @KS.DefaultCacheData
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)                         
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)

@@ -55,9 +55,9 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Model.PostStratify as BR
 import qualified BlueRipple.Data.UsefulDataJoins as BR
-import qualified MRP.CCES_MRP_Analysis as BR
+import qualified BlueRipple.Model.CCES_MRP_Analysis as BR
 
-import MRP.CCES
+import qualified BlueRipple.Data.CCES as CCES
 
 
 import qualified Visualizations.StatePrefs as BR
@@ -91,7 +91,7 @@ post = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Wisconsin" $ do
   let predictorsASER = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASER)
       predictorsASE =  GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASE)
       predictorsASR = GLM.Intercept : fmap GLM.Predictor (BR.allSimplePredictors @BR.CatColsASR)
-  cachedCCES_Data <- ccesDataLoader
+  cachedCCES_Data <- CCES.ccesDataLoader
   inferredPrefsASER <-  K.ignoreCacheTimeM $ do
     BR.retrieveOrMakeFrame "mrp/simpleASER_MR.bin" cachedCCES_Data $ const $  
       stateAndNation <$> (BR.mrpPrefs @BR.CatColsASER GLM.MDVNone (Just "ASER") cachedCCES_Data predictorsASER BR.catPredMaps)

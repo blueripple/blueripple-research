@@ -55,7 +55,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.Keyed         as BK
-import qualified MRP.CachedModels as MRP
+import qualified BlueRipple.Model.CachedModels as MRP
 
 import qualified Polysemy.RandomFu as P
 
@@ -186,12 +186,17 @@ makeDoc = do
   cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
   pumsDemographics_C <- PUMS.pumsLoader Nothing
   let pumsByCDDeps = (,) <$> cd116FromPUMA2012_C <*> pumsDemographics_C
-  K.clearIfPresent "house-data/pumsByCD2018.bin"
+--  K.clearIfPresent "house-data/pumsByCD2018.bin"
   pumsByCD2018ASER5_C <- BR.retrieveOrMakeFrame "house-data/pumsByCD2018.bin" pumsByCDDeps $ \(cdFromPUMA, pums) -> do
     let g r = (F.rgetField @BR.Year r == 2018)
               && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
               && (F.rgetField @BR.StateFIPS r < 60) -- filter out non-states, except DC
+    let pums2018WeightTotal =
+          FL.fold (FL.prefilter g
+                    $ FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) pums
+    K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)
     PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
+    
 --  K.ignoreCacheTime  pumsByCD2018ASER5_C >>= BR.logFrame
   ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
   censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
@@ -200,6 +205,9 @@ makeDoc = do
   --K.clearIfPresent "house-data/cdPostStrat.bin"
   cdPostStrat_C <- BR.retrieveOrMakeFrame "house-data/cdPostStrat.bin" cdPostStratDeps
     $ \(cdASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
+    let pums2018WeightTotal =
+          FL.fold (FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) cdASER5
+    K.logLE K.Diagnostic $ "(cdASER5) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)          
     let prefs2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) ccesMR_Prefs
         ew2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) censusBasedAdjEWs
     cdWithPrefsAndEWs <- K.knitEither
@@ -302,15 +310,16 @@ makeDoc = do
                            && F.rgetField @StateOffice r == Lower
                            && F.rgetField @StateDistrict r == "63")
 -}
+  K.clearIfPresent "house-data/sldASER5" -- until it's working
   sldASER5_C <- BR.retrieveOrMakeFrame "house-data/sldASER5.bin" sldFromPUMA_ASER5_C $ \sldFromPUMA_ASER5 -> do
     let pumaWeightedPeopleF :: FL.Fold
-                               (F.Record [BR.FracSLDFromPUMA, PUMS.Citizens, PUMS.NonCitizens])
+                               (F.Record [BR.FracSLDFromPUMA, BR.FracPUMAFromSLD, PUMS.Citizens, PUMS.NonCitizens])
                                (F.Record [TotalFromPUMA, PUMS.Citizens, PUMS.NonCitizens])
         pumaWeightedPeopleF =
-          let wgt = F.rgetField @BR.FracSLDFromPUMA
+          let wgt = F.rgetField @BR.FracPUMAFromSLD
               cit = F.rgetField @PUMS.Citizens
               ncit = F.rgetField @PUMS.NonCitizens
-              totalF = FL.premap wgt FL.sum
+              totalF = FL.premap (F.rgetField @BR.FracSLDFromPUMA) FL.sum
               wgtdCitF = fmap round $ FL.premap (\r -> wgt r * (realToFrac $ cit r)) FL.sum
               wgtdNCitF = fmap round $ FL.premap (\r -> wgt r * (realToFrac $ ncit r)) FL.sum
           in (\t c n -> t F.&: c F.&: n F.&: V.RNil) <$> totalF <*> wgtdCitF <*> wgtdNCitF
@@ -345,9 +354,17 @@ makeDoc = do
     return $ FL.fold postStratF sldWithPrefAndWeight
 --  K.ignoreCacheTime postStratifiedSLD_C >>= BR.logFrame
   let keyDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
-        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [("AZ", 6), ("GA", 7), ("MI", 6), ("OH", 1), ("OH", 12), ("PA", 10), ("TX", 10), ("TX", 24), ("TX", 31)]
-      minSLDInCD = 0.01
-      closeEnough = 0.50
+        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [("AZ", 6)
+                                                 , ("GA", 7)
+                                                 , ("MI", 6)
+                                                 , ("OH", 1)
+                                                 , ("OH", 12)
+                                                 , ("PA", 10)
+                                                 , ("TX", 10)
+                                                 , ("TX", 24)
+                                                 , ("TX", 31)]
+      minSLDInCD = 0.5
+      closeEnough = 0.1
   K.clearIfPresent "house-data/overlappingSLD.bin"
   let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
   overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-data/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do

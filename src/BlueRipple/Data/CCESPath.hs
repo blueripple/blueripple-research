@@ -1,10 +1,11 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module MRP.CCESPath where
+module BlueRipple.Data.CCESPath where
 
 import qualified Frames.TH                     as F
 
-dataDir = "./reports/MRP/data/"
+dataDir :: FilePath
+dataDir = "../bigData/CCES/"
 
 ccesCSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.csv"
 

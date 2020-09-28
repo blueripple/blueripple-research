@@ -116,13 +116,12 @@ import qualified Data.Algorithm.TSNE.Utils as TSNE
 import qualified Numeric.Clustering.Perplexity as Perplexity
 
 import qualified BlueRipple.Data.UsefulDataJoins as BR
-import qualified MRP.CCES_MRP_Analysis as BR
-import qualified MRP.CachedModels as BR
+import qualified BlueRipple.Model.CCES_MRP_Analysis as BR
+import qualified BlueRipple.Model.CachedModels as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed         as Keyed
 import MRP.Common
-import MRP.CCES
-import qualified MRP.CCES as CCES
+import qualified BlueRipple.Data.CCES as CCES
 
 
 {-

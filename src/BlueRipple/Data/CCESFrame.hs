@@ -16,13 +16,13 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module MRP.CCESFrame
-  ( module MRP.CCESPath
-  , module MRP.CCESFrame
+module BlueRipple.Data.CCESFrame
+  ( module BlueRipple.Data.CCESPath
+  , module BlueRipple.Data.CCESFrame
   )
 where
 
-import           MRP.CCESPath
+import           BlueRipple.Data.CCESPath
 import qualified Knit.Report                   as K
 
 import qualified Control.Foldl                 as FL

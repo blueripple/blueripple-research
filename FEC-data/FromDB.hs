@@ -11,7 +11,7 @@
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
-module BlueRipple.Data.FromDB where
+module FromDB where
 
 --import           ExploreFEC.Data.Spending                 (CandidateSpending (..),
 --                                                           describeSpending)

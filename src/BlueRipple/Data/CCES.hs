@@ -20,10 +20,10 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0              #-}
-module MRP.CCES
+module BlueRipple.Data.CCES
   (
-    module MRP.CCES
-  , module MRP.CCESFrame
+    module BlueRipple.Data.CCES
+  , module BlueRipple.Data.CCESFrame
   )
   where
 
@@ -35,7 +35,7 @@ import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as Keyed
 
-import           MRP.CCESFrame
+import           BlueRipple.Data.CCESFrame
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))

@@ -1,7 +1,7 @@
 packages: ./ ~/BlueRipple/data-sets ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
-allow-newer: hashable, random, cereal-time:time
+allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
 -- hashable because of foldl-statistics
 -- random because of polysemy-zoo
 
@@ -16,21 +16,27 @@ source-repository-package
   location: https://github.com/adamConnerSax/FEC
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
-               
+
+-- Fixes ghc-8.10 panic, bumps random and ghc-prim.  At the cost of no longer having RevState 
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/polysemy-zoo
+  tag: f66744f0382e0969fce060df709a173d3b5e04d2
+                 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
   tag: e06f935d7f12fd1939e12b96e2ea1a839fb98a09
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag: 0e4409a4861e31e915b457a37fc359814ab781c6
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-map-reduce
+--  tag: 0e4409a4861e31e915b457a37fc359814ab781c6
     
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 4023f107614bd7cc95a34a26664e7800044ec6da
+  tag: 6735d38d026cae8a661c86633e5d9bb445bd58d7
 
 source-repository-package
   type: git
@@ -40,7 +46,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega
-  tag: 4289604f78b513bb6b4aa21237fe5a75693aa5a4
+  tag: 0a8c5e67dcef6fc5b48b5f302ff49c797e4b5fe6
 
 source-repository-package
   type: git
@@ -55,7 +61,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/glm-haskell
-  tag: d47fc87492914c6687382b8b00d43b5319e6443a
+  tag: bda73ddec82c8738ae4f9a4c1ea541ee5738c94b
 
 source-repository-package
   type: git
