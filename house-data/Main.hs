@@ -413,9 +413,17 @@ sldScatter :: Foldable f
   -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracSLDFromCD, DSharePS, DEdgePS])
   -> GV.VegaLite
 sldScatter title vc rows =
-  let dat = FV.recordsToVLData id FV.defaultParse rows      
-      encX = GV.position GV.X [FV.pName @BR.FracSLDFromCD, GV.PmType GV.Quantitative]
-      encY = GV.position GV.Y [FV.pName @DEdgePS, GV.PmType GV.Quantitative]
+  let toVLDataRec = FV.useColName FV.textAsVLStr
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLStrViaShow
+                    V.:& FV.useColName FV.textAsVLStr
+                    V.:& FV.asVLData  (GV.Number . (*100)) "% of SLD in CD"
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.asVLData  (GV.Number . (*100)) "(D-R)/(D+R)"
+                    V.:& V.RNil
+      dat = FV.recordsToData toVLDataRec rows
+      encX = GV.position GV.X [GV.PName "% of SLD in CD", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "(D-R)/(D+R)", GV.PmType GV.Quantitative]
       encColor = GV.color [FV.mName @BR.StateAbbreviation, GV.MmType GV.Nominal]
       enc = (GV.encoding . encX . encY . encColor) []
       mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
