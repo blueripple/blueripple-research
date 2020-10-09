@@ -183,8 +183,10 @@ makeDoc = do
     return moneyElexFrame
   -- congressional district analysis via MRP
   -- roll PUMS data up to CDs
-  cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+
   pumsDemographics_C <- PUMS.pumsLoader Nothing
+{-  
+  cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
   let pumsByCDDeps = (,) <$> cd116FromPUMA2012_C <*> pumsDemographics_C
 --  K.clearIfPresent "house-data/pumsByCD2018.bin"
   pumsByCD2018ASER5_C <- BR.retrieveOrMakeFrame "house-data/pumsByCD2018.bin" pumsByCDDeps $ \(cdFromPUMA, pums) -> do
@@ -196,8 +198,10 @@ makeDoc = do
                     $ FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) pums
     K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)
     PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
-    
---  K.ignoreCacheTime  pumsByCD2018ASER5_C >>= BR.logFrame
+-}
+
+  -- NB: there is a cached model version but this does more during the fold for the % by race so I left it here as is.
+  pumsByCD2018ASER5_C <- MRP.pumsByCD2018ASER5  
   ccesMR_Prefs_C <- MRP.ccesPreferencesASER5_MRP
   censusBasedAdjEWs_C <- MRP.adjCensusElectoralWeightsMRP_ASER5
   -- join with Prefs and EWs and post-stratify
@@ -354,7 +358,7 @@ makeDoc = do
     return $ FL.fold postStratF sldWithPrefAndWeight
 --  K.ignoreCacheTime postStratifiedSLD_C >>= BR.logFrame
   let keyDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
-        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [("AZ", 6)
+        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [ ("AZ", 6)
                                                  , ("GA", 7)
                                                  , ("MI", 6)
                                                  , ("OH", 1)
@@ -363,8 +367,11 @@ makeDoc = do
                                                  , ("TX", 10)
                                                  , ("TX", 24)
                                                  , ("TX", 31)]
-      minSLDInCD = 0.5
-      closeEnough = 0.1
+      gaDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
+        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [ ("GA", 6)
+                                                 , ("GA", 7)]
+      minSLDInCD = 0.01
+      closeEnough = 1
   K.clearIfPresent "house-data/overlappingSLD.bin"
   let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
   overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-data/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do

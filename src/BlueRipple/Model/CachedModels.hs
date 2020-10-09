@@ -281,3 +281,73 @@ ccesPreferencesASER5_MRP = do
       BR.mrpPrefs @DT.CatColsASER5 GLM.MDVNone (Just "ASER5") cachedCCES_Data predictorsASER5 BR.catPredMaps      
 
 
+type PumsByCDASER5Row = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+                        V.++ DT.CatColsASER5
+                        V.++ [PUMS.TotalWeight, PUMS.Citizens, PUMS.NonCitizens]
+
+pumsByCD2018ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+                  => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PumsByCDASER5Row))
+pumsByCD2018ASER5 = do
+  cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+  pumsDemographics_C <- PUMS.pumsLoader Nothing
+  let pumsByCDDeps = (,) <$> cd116FromPUMA2012_C <*> pumsDemographics_C
+--  K.clearIfPresent "house-data/pumsByCD2018.bin"
+  BR.retrieveOrMakeFrame "house-data/pumsByCD2018.bin" pumsByCDDeps $ \(cdFromPUMA, pums) -> do
+    let g r = (F.rgetField @BR.Year r == 2018)
+              && (F.rgetField @DT.Age5FC r /= DT.A5F_Under18)
+              && (F.rgetField @BR.StateFIPS r < 60) -- filter out non-states, except DC
+    let pums2018WeightTotal =
+          FL.fold (FL.prefilter g
+                    $ FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) pums
+    K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)
+    PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
+
+
+type PSRow = [DT.PopCountOf, DT.PopCount, ET.PrefType, ET.DemPref, ET.ElectoralWeight, ET.DemShare]
+
+postStratOneF :: FL.Fold
+                 (F.Record (DT.CatColsASER5 V.++ [PUMS.Citizens, ET.DemPref, ET.ElectoralWeight]))
+                 (F.Record PSRow)
+postStratOneF =
+  let cit = F.rgetField @PUMS.Citizens
+      ew = F.rgetField @ET.ElectoralWeight
+      dPref = F.rgetField @ET.DemPref
+      citF = FL.premap cit FL.sum
+      citWgtdF g = (/) <$> (FL.premap (\r -> realToFrac (cit r) * g r) FL.sum) <*> (fmap realToFrac citF)
+      wgtdDPrefF = citWgtdF dPref
+      wgtdEWF = citWgtdF ew
+      voteWgtd g = (/) <$> (FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum) <*> (FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum)
+      wgtdDShareF = voteWgtd dPref --citWgtdF (\r -> F.rgetField @ET.DemPref r * F.rgetField @ET.ElectoralWeight r)
+  in (\vap prefPS ewPS sharePS -> DT.PC_VAP F.&: vap F.&: ET.PSByVAP F.&: prefPS F.&: ewPS F.&: sharePS F.&: V.RNil)
+     <$> citF
+     <*> wgtdDPrefF
+     <*> wgtdEWF
+     <*> wgtdDShareF
+
+
+type HouseModelRow = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.ElectoralWeightSource, ET.ElectoralWeightOf] V.++ PSRow
+
+house2020ModeledCCESPrefsASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
+                                  => K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelRow))
+house2020ModeledCCESPrefsASER5 = do
+  cachedPumsByCD2018 <- pumsByCD2018ASER5
+  cachedCCES_Prefs <- ccesPreferencesASER5_MRP
+  cachedCensusAdjEWs <- adjCensusElectoralWeightsMRP_ASER5
+  let cdPostStratDeps = (,,) <$> cachedPumsByCD2018 <*> cachedCCES_Prefs <*> cachedCensusAdjEWs
+  --K.clearIfPresent "house-data/cdPostStrat.bin"
+  BR.retrieveOrMakeFrame "model/house2020/cdPostStrat.bin" cdPostStratDeps
+    $ \(cdASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
+    let pums2018WeightTotal =
+          FL.fold (FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) cdASER5
+    K.logLE K.Diagnostic $ "(cdASER5) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)          
+    let prefs2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) ccesMR_Prefs
+        ew2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) censusBasedAdjEWs
+    cdWithPrefsAndEWs <- K.knitEither
+                         $ either (Left . T.pack . show) Right
+                         $ FJ.leftJoinE3 @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) cdASER5 prefs2018 ew2018
+    let postStratF = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, ET.ElectoralWeightSource, ET.ElectoralWeightOf])
+                     (FMR.foldAndAddKey postStratOneF)
+    return $ FL.fold postStratF cdWithPrefsAndEWs

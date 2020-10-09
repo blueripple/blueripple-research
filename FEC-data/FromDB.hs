@@ -676,7 +676,7 @@ moneySummaryCSV = do
           <> T.pack (TP.printf "%.0f" io)
           <> ","
           <> T.pack (TP.printf "%.0f" pe)
-  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020.db"
+  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020_senate.db"
   let
     header
       = "candidate_id,candidate_name,state_abbreviation,congressional_district,party,cash_on_hand,disbursements,receipts,ind_support,ind_oppose,party_expenditures"

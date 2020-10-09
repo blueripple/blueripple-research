@@ -177,8 +177,8 @@ looks "out-of-place" or "anomalous" when analyzed this way.
 textPCAPre :: T.Text
 textPCAPre = [here|
 First, we tried looking at the [principal components][Wikipedia:PCA] of the demographics.
-That is, we considered the 438 (districts) row
-by 40 (demographic %s) column matrix, $P$, and looked at the eigen-vectors
+That is, we considered the 438 x 40 matrix, $P$, of congressional districts by demographic %s
+, and looked at the eigen-vectors
 of the two largest eigen-values of $P^TP$.  These should be the two "directions"
 in demographic space which account for the most variation among districts. We
 project each district onto these two vectors and plot the result along with the
@@ -196,7 +196,7 @@ The largest eigenvalue (corresponding to "PC1") is about 20 times larger than th
 gets flatter from there.
 The actual values of the PCA variables don't mean anything obvious.
 With a little examination of the vectors
-themselves, it's pretty clear that negative values of "PC1" correspond roughly to
+themselves, it's pretty clear that positive values of "PC1" correspond roughly to
 "White Working Class" and positive values of "PC2" correspond roughly to "Black Working Class".
 
 Some examples of how this plays out:  the district in the lower-right corner is HI-1, a district
@@ -218,34 +218,38 @@ And yet, the projection of the demographics onto the principal components shows 
 hard-to-specify relationship between demographics and election outcome.
 
 Also of note are some districts which seem "out-of-place", for example FL-25, which is
-a faint red-dot (PC1 = -52740, PC2=3313) surrounded by blue dots.  FL-25 is 76% Latinx,
+a faint red-dot (PC1 = 44,840, PC2=-3,883) surrounded by blue dots.  FL-25 is 76% Latinx,
 which would usually suggest a democratic district, like NJ-8, just below it in the chart.
 But over 50% of the Latinx residents of FL-25 are Cuban, and Cubans are much more likely to
 vote Republican than other Latinx voters.  Other out-of-place districts may likewise
-have district-specific explanations.  But others might be places worth looking for flippable
+have district-specific explanations.  Others might be places worth looking for flippable
 districts.
 
-Principal components analysis is an example of dimension-reduction and, in the case where
-it's used to look at only a small number of components, something we will call an "embedding".
-By an "embedding" we mean somehow representing the high-dimensional space in a lower-dimensional
-one.  Such a thing has nothing specific to say about how alike or different things are, though
-we may try to use the embedded distances that way.  This is different from using "clustering"
-to visualize high-dimensional data.  Clustering is entirely about similarity and difference
-but often has nothing more specific to say than whether things are in the same cluster.
+Principal components analysis is an example of dimension-reduction, a large family
+of data-analysis techniques fall into this category, since making sense of high-dimensional
+data often requires some lower-dimensional way of describing it.
 
-These methods are often combined; frequently an embedding is then clustered
-(using k-means, or something similar) or data is clustered and then embedded, where
-the clusters may be more easily viewed.
+Another way of simplifying or organizing hard-to-describe data, is "clustering",
+that is, using some algorithm to group your data points by some measure of similarity.
+This is not necessarily a dimensional reduction, since the clusters can be computed
+in the original, high-dimensional space. 
+
+These methods are often combined; frequently a dimensional-reduction is then clustered
+(using k-means, or something similar), or data is clustered and then reduced to
+a lower number of dimensions where the clusters may be more easily viewed.
 |]
 
 textSOMPre :: T.Text
 textSOMPre = [here|
-So let's cluster this data and see what that looks like!  As an example of clustering,
+As an example of clustering,
 we will use Self-Organizing-Maps (SOMs).  The SOM is an interesting clustering method
-because it can preserve a bit more information than just what's in each cluster.  It can
-also identify nearby clusters, or more precisely, it may preserve some of the structure
-of the high-dimensional data.  To make an SOM, we choose
-a few districts at random and "place" them at the points of a 3x3 grid.  Then we use
+because it can preserve a bit more information than just what's in each cluster.  SOMs can
+also preserve some of the "topological" structure
+of the high-dimensional data by placing similar clusters near to each other in a grid.
+To make an SOM, we choose
+a few districts at random and "place" them at the points of a 3x3 grid
+(NB: The size and shape/connectivity of the grid is a choice,
+and often tuned for problem-specific reasons).  Then we use
 all the districts to "train" the SOM as follows: one district at a time, we find the
 "closest" (here we use the absolute-value of the coordinate differences in
 the high-dimensional space) district to it on the grid.  Then we move the district on
@@ -272,11 +276,11 @@ great deal of voting behavior.
 
 text_tSNEPre :: T.Text
 text_tSNEPre = [here|
-One weakness of the PCA embedding was that it made inefficient use of
-the 2D space.  It also is prone to showing some things as close that
-might actually be fairly far apart, just in directions which are orthogonal
-to the PCs we used.  For example, neither of the first 2 PCs had a strong
-educational component.
+One weakness of the PCA embedding and the SOM is that they make inefficient use of
+the 2D space.  They're also prone to showing some things as close that
+might actually be fairly far apart: In the PCA case because we have projected out
+information about things not in the first two principal components and in the SOM case
+because clustering, even SOM clustering, works much harder to find similarity than quantify it.
 
 "t-Distributed Stochastic Neighbor Embedding" (tSNE) is a (non-linear) technique for
 overcoming some of these issues.  Rather than project the high-dimensional data
@@ -303,9 +307,9 @@ A detour is in order to talk about where we're trying to go with all this.
 Our basic interest is identifying districts which elected a Republican
 to the house in the last election
 (2018 here) but are demographically more similar to a set of districts which,
-on average, elected Democrats.  These districts might be "flippable" in this
-election or in the future. We're also interested in the same thing but with
-the parties reversed.  Those are districts we might need to work harder to defend.
+on average, elected Democrats.  These districts might be "flippable".
+We're also interested in the same thing but with
+the parties reversed.  Those districts might be especially vulnerable.
 
 So far, we have a simple tSNE inspired approach to this.  First we choose
 a demographic distance between districts--this could be the original 40-dimensional
@@ -636,13 +640,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   let clusterRowsToS (cs, rs) = (fmap FS.toS cs, fmap FS.toS rs)
       clusterRowsFromS (cs', rs') = (fmap FS.fromS cs', fmap FS.fromS rs')
 
-  pums2018ByCD_C <- do
-    demo_C <- PUMS.pumsLoader Nothing
-    cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
-    let cachedDeps = (,) <$> demo_C <*> cd116FromPUMA2012_C
-    BR.retrieveOrMakeFrame "mrp/DistrictClusters/pums2018ByCD.bin" cachedDeps $ \(pumsRaw, cdFromPUMA) -> do
-      pumsCDRollup <- PUMS.pumsCDRollup ((== 2018) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pumsRaw
-      return pumsCDRollup
+  pums2018ByCD_C <- BR.pumsByCD2018ASER5
 
   houseVoteShare_C <- do
     houseResults_C <- BR.houseElectionsLoader
@@ -700,7 +698,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
   rawSD <- do
     let rawDist = districtDiff euclideanMetric
     computeScaledDelta "Raw" rawDist 40.0 (F.rgetField @ET.DemPref . districtId) districtId $ districtsForClustering
-  logFrame rawSD
+--  logFrame rawSD
     
   let districtsForClustering_C = fmap (const districtsForClustering) pumsByCDWithVoteShare_C
   K.logLE K.Info $ "Computing top 2 PCA components"
@@ -996,21 +994,23 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
                          <> fmap scaledDeltaCols somSD
   hvs <- K.ignoreCacheTime houseVoteShare_C 
   let vs2016 = voteShare2016 hvs
+  house2018Modeled <- K.ignoreCacheTimeM $ BR.house2020ModeledCCESPrefsASER5
   scaledDeltasW2016 <- K.knitEither
                        $ either (Left . T.pack . show) Right
-                       $ FJ.leftJoinE @[BR.StateAbbreviation, BR.CongressionalDistrict]
+                       $ FJ.leftJoinE3 @[BR.StateAbbreviation, BR.CongressionalDistrict]
                        allScaledDeltas
                        vs2016
+                       $ fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemShare]) house2018Modeled
   let allScaledDeltasForTableF =
         let methodsF :: FL.Fold (F.Record [Method, Mean, Sigma, ScaledDelta, FlipIndex]) (M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta, FlipIndex]))
             methodsF = FL.premap (\r -> (F.rgetField @Method r, F.rcast r)) FL.map 
         in MR.mapReduceFold
            MR.noUnpack
-           (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref]) (F.rcast @[Method, Mean, Sigma, ScaledDelta, FlipIndex]))
+           (MR.assign (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, ET.DemShare]) (F.rcast @[Method, Mean, Sigma, ScaledDelta, FlipIndex]))
            (MR.foldAndLabel methodsF (,))
       sortFunction = fromMaybe 0 . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd     
-      allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF allScaledDeltas
-      
+      allScaledDeltasForTable = List.sortOn sortFunction $ FL.fold allScaledDeltasForTableF scaledDeltasW2016
+    
 --  K.logLE K.Info $ "allScaledDeltas: " <> (T.pack $ show allScaledDeltasForTable)    
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDateDistrictClusters =  Time.fromGregorian 2020 7 25
@@ -1043,9 +1043,9 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
         brLineBreak
         brAddMarkDown textSOMPre
         _ <- K.addHvega Nothing Nothing
-             $ somRectHeatMap
-             "District SOM Heat Map"
-             (FV.ViewConfig 800 800 10)
+             $ somRect
+             "House District Demographics: SOM"
+             (FV.ViewConfig 600 600 10)
              (fmap F.rcast districtsOnMap)
         brAddMarkDown textSOMPost
         brLineBreak
@@ -1206,12 +1206,12 @@ tsneVL title chartType vc rows =
       encRow = GV.row [FV.fName @TSNEPerplexity, GV.FmType GV.Ordinal]
 -}
   
-somRectHeatMap :: (Foldable f, Functor f)
+somRect :: (Foldable f, Functor f)
                => T.Text
                -> FV.ViewConfig
                -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ET.DemPref, SOM_Cluster, '("X",Double), '("Y", Double)])
                -> GV.VegaLite
-somRectHeatMap title vc distRows =
+somRect title vc distRows =
   let (nRows, nCols) = FL.fold ((,)
                                  <$> (fmap (fromMaybe 0) (FL.premap (fst . F.rgetField @SOM_Cluster) FL.maximum))
                                  <*> (fmap (fromMaybe 0) (FL.premap (snd . F.rgetField @SOM_Cluster) FL.maximum))) distRows
@@ -1341,7 +1341,9 @@ dwsCollonnade cas =
        
 type SDRow = [BR.StateAbbreviation
              , BR.CongressionalDistrict
-             , ET.DemPref]
+             , ET.DemPref
+             , ET.DemShare
+             ]
              
 
 type SDMap = M.Map T.Text (F.Record [Mean, Sigma, ScaledDelta, FlipIndex])
@@ -1352,6 +1354,7 @@ sdCollonnade cas =
    <> K.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . F.rgetField @BR.CongressionalDistrict . fst))
    <> K.headed "2018 D Vote Share" (BR.toCell cas "2018 D" "2018 D" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemPref . fst))
    <> K.headed "Mean Vote Share (Raw)" (BR.toCell cas "Mean" "Mean" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Mean) . M.lookup "Raw" . snd))
+   <> K.headed "MRP modeled vote share" (BR.toCell cas "Mean" "Mean" (BR.numberToStyledHtml "%.1f" . (*100) . F.rgetField @ET.DemShare . fst))
    <> K.headed "Std Deviation (Raw)" (BR.toCell cas "Std Dev" "Std Deb" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Sigma) . M.lookup "Raw" . snd))
    <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))
    <> K.headed "Raw Flip Index" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @FlipIndex) . M.lookup "Raw" . snd))   

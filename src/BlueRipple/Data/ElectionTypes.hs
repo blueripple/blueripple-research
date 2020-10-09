@@ -203,7 +203,7 @@ instance SE.Serialize RegisteredYN
 instance FCSV.ShowCSV RegisteredYN
 
 type DemPref    = "DemPref"    F.:-> Double
-
+type DemShare   = "DemShare"   F.:-> Double
 type DemVPV     = "DemVPV"     F.:-> Double
 
 
