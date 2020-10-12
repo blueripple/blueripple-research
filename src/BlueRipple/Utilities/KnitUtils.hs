@@ -18,6 +18,7 @@ import qualified Knit.Report.Cache             as KC
 import qualified Knit.Effect.AtomicCache       as KC
 
 import qualified Control.Monad.Except          as X
+import qualified Control.Exception as EX
 import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
@@ -43,6 +44,7 @@ import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
 
 import qualified System.Directory as System
+import qualified System.IO.Error as SE
 
 knitX
   :: forall r a
@@ -210,13 +212,15 @@ retrieveOrMakeRecList key cachedDeps action =
 
 
 -- TODO: add error handling to return Nothing in time slot
-fileDependency :: (K.KnitEffects r
-                  , K.CacheEffectsD r)
+fileDependency :: (K.KnitEffects r, K.CacheEffectsD r)
   => FilePath
   -> K.Sem r (K.ActionWithCacheTime r ())
 fileDependency fp = do
-  modTime <- K.liftKnit $ System.getModificationTime fp
-  return $ K.withCacheTime (Just modTime) (return ())
+  modTimeE <- K.liftKnit $ EX.tryJust (X.guard . SE.isDoesNotExistError) $ System.getModificationTime fp
+  let modTimeM = case modTimeE of
+        Left e -> Nothing
+        Right modTime -> Just modTime    
+  return $ K.withCacheTime modTimeM (return ())
 
 
 updateIf :: K.Member (P.Embed IO) r => K.ActionWithCacheTime r b -> K.ActionWithCacheTime r a -> (a -> K.Sem r b) -> K.Sem r (K.ActionWithCacheTime r b)
