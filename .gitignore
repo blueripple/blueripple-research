@@ -6,6 +6,7 @@
 .#*
 /dist-newstyle
 cabal.project.local
+data/topoJSON/*.json
 *.png
 TAGS
 .ghc*
