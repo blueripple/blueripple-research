@@ -6,7 +6,6 @@
 .#*
 /dist-newstyle
 cabal.project.local
-*.json
 *.png
 TAGS
 .ghc*
@@ -24,3 +23,4 @@ bigData
 posts
 testbed/*.csv
 *.csv
+stan.html
