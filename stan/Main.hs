@@ -87,10 +87,10 @@ makeDoc = do
   let addDir d fp = d ++ "/" ++ fp
       modelDir = "stan"
       model = "prefMRP"
-      outputPre = model ++ "_out"
       modelFile =  model ++ ".stan"
+      outputFile n =  model ++ "_" ++ show n ++ ".csv"
       datFile = model ++ "_dat.json"      
-      numChains = 1
+      numChains = 4
   json_C <- do
     let jsonFP = addDir modelDir datFile
     curJSON_C <- BR.fileDependency jsonFP
@@ -118,25 +118,29 @@ makeDoc = do
                   <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
                   <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
       K.liftKnit $ SJ.frameToStanJSONFile jsonFP dataF pres2016WithZeros      
-  let stanOutputFiles = fmap (\n -> model ++ "_" ++ show n) [1..numChains]
+  let stanOutputFiles = fmap (\n -> outputFile n) [1..numChains]
+  stanMakeConfig <- K.liftKnit $ CS.makeDefaultMakeConfig (addDir modelDir model)
   stanOutput_C <- do    
-    curStanOutputs_C <- fmap (foldl (<>) (K.onlyCacheTime Nothing)) $ traverse (BR.fileDependency . addDir modelDir) stanOutputFiles
+    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDir modelDir) stanOutputFiles
     curModel_C <- BR.fileDependency (addDir modelDir modelFile)
     let runStanDeps = (,) <$> json_C <*> curModel_C
-    BR.updateIf curStanOutputs_C runStanDeps $ \_ ->  do     
+        runOneChain chainIndex = do 
+          let config = (CS.makeDefaultSample model chainIndex) { CS.inputData = Just (addDir modelDir datFile)
+                                                               , CS.output = Just (addDir modelDir $ outputFile chainIndex) 
+                                                               , CS.numSamples = Just 10
+                                                               , CS.numWarmup = Just 10
+                                                               }
+          K.logLE K.Info $ "Running " <> T.pack model <> " for chain " <> (T.pack $ show chainIndex)
+          K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine config)
+          K.liftKnit $ CS.stan (addDir modelDir model) config
+          K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
+          
+    res <- K.ignoreCacheTimeM $ BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
-      K.liftKnit (CS.make =<< CS.makeDefaultMakeConfig (addDir modelDir model))
-      let config = (CS.makeDefaultSample model 1) { CS.inputData = Just (addDir modelDir datFile)
-                                                  , CS.output = Just (addDir modelDir outputPre)
-                                                  , CS.numSamples = Just 10
-                                                  , CS.numWarmup = Just 10
-                                                  }
-      K.logLE K.Info $ "Running " <> T.pack model <> " for chain " <> "1"
-      K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine config)
-      K.liftKnit $ CS.stan (addDir modelDir model) config
-      K.logLE K.Info $ "Finished chain " <> "1"
-  --      outputFile <- pure $ Maybe.fromMaybe (error "impossible") $ CS.output config
-  --    let outputFile = output.csv
-  let summaryConfig = CS.makeDefaultSummaryConfig $ fmap (addDir modelDir) stanOutputFiles
-  K.logLE K.Diagnostic $ "Summary command: " <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine summaryConfig))
+      K.liftKnit $ CS.make stanMakeConfig
+      maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..numChains])
+    K.knitMaybe "THere was an error running an MCMC chain." res    
+  let summaryConfig = (CS.makeDefaultSummaryConfig $ fmap (addDir modelDir) stanOutputFiles)
+                      {CS.exePath = Just $ (CS.cmdStanDir stanMakeConfig) ++ "/bin/stansummary"} 
+  K.logLE K.Diagnostic $ "Summary command: " <> (T.pack $ (CS.cmdStanDir stanMakeConfig) ++ "/bin/stansummary") <> " " <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine summaryConfig))
   K.liftKnit $ putStrLn . CS.unparsed =<< CS.stansummary summaryConfig

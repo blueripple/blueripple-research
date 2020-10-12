@@ -229,3 +229,8 @@ updateIf cur deps update = if KC.cacheTime cur >= KC.cacheTime deps then return 
     updatedB <- K.ignoreCacheTime deps >>= update
     nowCT <- K.liftKnit $ Time.getCurrentTime
     return $ KC.withCacheTime (Just nowCT) (return updatedB)
+
+oldestUnit :: (Foldable f, Functor f, Applicative m) => f (K.WithCacheTime m w) -> K.WithCacheTime m ()
+oldestUnit cts = K.withCacheTime t (pure ()) where
+--  w = foldMap id $ fmap KC.ignoreCacheTime cts
+  t = minimum $ FL.fold FL.list $ fmap KC.cacheTime cts
