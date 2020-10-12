@@ -56,7 +56,8 @@ common deps
                , text
                , time
                , tsne >= 1.2 && < 1.4
-               , vector
+               , vector >= 0.11 && < 0.13
+               , vector-builder >= 0.3.7 && < 0.4
                , vinyl >= 0.13 && < 0.14
                      
 library
@@ -95,11 +96,14 @@ library
                  , BlueRipple.Model.TSNE
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
-                 , BlueRipple.Utilities.FramesUtils                                  
+                 , BlueRipple.Utilities.FramesUtils
+                 , Stan.Frames.JSON
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
-                     , blaze-colonnade                   
+                     , aeson >= 1.4 && < 1.6
+                     , blaze-colonnade
+                     , bytestring >= 0.10 && < 0.12
                      , colonnade
                      , data-default
                      , declarative
@@ -222,6 +226,16 @@ executable mrp-model
                , time
   default-language: Haskell2010
 
+executable stan-models
+  import: deps
+  ghc-options: -Wall -threaded 
+  hs-source-dirs: stan
+  main-is: Main.hs                                  
+  build-depends: base  
+               , blueripple-research
+               , blueripple-data-sets
+               , hs-cmdstan
+  
 executable FEC-data
   import: deps
   ghc-options: -Wall

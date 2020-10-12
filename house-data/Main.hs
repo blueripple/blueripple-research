@@ -370,12 +370,22 @@ makeDoc = do
       gaDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
         = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [ ("GA", 6)
                                                  , ("GA", 7)]
+      txDistricts :: [F.Record [BR.StateAbbreviation, BR.CongressionalDistrict]]
+        = fmap (\(a, d) -> a F.&: d F.&: V.RNil) [ ("TX", 7)
+                                                 , ("TX", 10)
+                                                 , ("TX", 21)
+                                                 , ("TX", 23)                                                 
+                                                 , ("TX", 24)
+                                                 , ("TX", 32)                                                     
+                                                 ]
+          
       minSLDInCD = 0.01
       closeEnough = 1
+      districts = gaDistricts <> txDistricts
   K.clearIfPresent "house-data/overlappingSLD.bin"
   let overlappingSLDDeps = (,) <$> sortedOverlap_C <*> postStratifiedSLD_C 
   overlappingSLDs_C <- BR.retrieveOrMakeFrame "house-data/overlappingSLD.bin" overlappingSLDDeps $ \(sldCDOverlaps, postStratifiedSLDs) -> do
-    let enoughInKeyDistrict r = (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `elem` keyDistricts)
+    let enoughInKeyDistrict r = (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `elem` districts)
                                 && (F.rgetField @BR.FracSLDFromCD r >= minSLDInCD)
         overlapsInKeyDs = fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, StateOffice, StateDistrict, BR.FracSLDFromCD])
                           $ F.filterFrame enoughInKeyDistrict sldCDOverlaps

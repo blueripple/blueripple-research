@@ -1081,6 +1081,11 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
              "Raw anomaly vs 2018 vote share (color for 2016 vote share)"
              (FV.ViewConfig 800 800 10)
              (fmap F.rcast $ F.filterFrame ((== "Raw") . F.rgetField @Method) scaledDeltasW2016)
+        _ <- K.addHvega Nothing Nothing
+             $ anomalyVsModeledShare
+             "Modeled Vs. Actual 2018 Share"
+             (FV.ViewConfig 600 600 10)
+             (fmap F.rcast scaledDeltasW2016)
         brAddMarkDown textQuestions
         brAddMarkDown textEndForNow
         
@@ -1104,6 +1109,30 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "DistrictClust
           districtsWithStatsF
           
         brAddMarkDown brReadMore
+
+
+anomalyVsModeledShare :: Foldable f
+                      => T.Text
+                      -> FV.ViewConfig
+                      -> f (F.Record [BR.StateAbbreviation, BR.CongressionalDistrict, ScaledDelta, ET.DemPref, Pref2016, ET.DemShare])
+                      -> GV.VegaLite
+anomalyVsModeledShare title vc rows =
+  let shareToEdge s = 2*s - 1
+      toVLDataRec = FV.useColName FV.textAsVLStr
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.asVLData (GV.Number) "Anomaly (Raw)"
+                    V.:& FV.asVLData (GV.Number . (*100) . shareToEdge) "2018 D Edge"
+                    V.:& FV.asVLData (GV.Number . (*100) . shareToEdge) "2016 D Edge"
+                    V.:& FV.asVLData (GV.Number . (*100) . shareToEdge) "Modeled 2018 D Edge"
+                    V.:& V.RNil
+      dat = FV.recordsToData toVLDataRec rows
+      encX = GV.position GV.X [GV.PName "2018 D Edge", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "Modeled 2018 D Edge", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "Anomaly (Raw)", GV.MmType GV.Quantitative]
+      enc = (GV.encoding . encX . encY . encColor) []
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+  in FV.configuredVegaLite vc [FV.title title, enc, mark, dat]
+        
 
 anomalyVsShare :: Foldable f
   => T.Text
@@ -1358,9 +1387,9 @@ sdCollonnade cas =
    <> K.headed "Std Deviation (Raw)" (BR.toCell cas "Std Dev" "Std Deb" (BR.maybeNumberToStyledHtml "%.1f" . fmap ((*100) . F.rgetField @Sigma) . M.lookup "Raw" . snd))
    <> K.headed "Raw Scaled Delta" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "Raw" . snd))
    <> K.headed "Raw Flip Index" (BR.toCell cas "Raw" "Raw" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @FlipIndex) . M.lookup "Raw" . snd))   
-   <> K.headed "tSNE Scaled Delta" (BR.toCell cas "tSNE" "tSNE" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd))
-   <> K.headed "SOM Scaled Delta" (BR.toCell cas "SOM" "SOM" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "SOM" . snd))
-   <> K.headed "PCA Scaled Delta" (BR.toCell cas "PCA" "PCA" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "PCA" . snd))
+--   <> K.headed "tSNE Scaled Delta" (BR.toCell cas "tSNE" "tSNE" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "tSNE" . snd))
+--   <> K.headed "SOM Scaled Delta" (BR.toCell cas "SOM" "SOM" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "SOM" . snd))
+--   <> K.headed "PCA Scaled Delta" (BR.toCell cas "PCA" "PCA" (BR.maybeNumberToStyledHtml "%.2f" . fmap (F.rgetField @ScaledDelta) . M.lookup "PCA" . snd))
 
    
 

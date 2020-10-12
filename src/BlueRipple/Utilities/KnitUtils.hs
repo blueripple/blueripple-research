@@ -15,6 +15,7 @@ import qualified Knit.Report                   as K
 import qualified Knit.Report.Input.MarkDown.PandocMarkDown
                                                as K
 import qualified Knit.Report.Cache             as KC
+import qualified Knit.Effect.AtomicCache       as KC
 
 import qualified Control.Monad.Except          as X
 import qualified Control.Foldl                 as FL
@@ -27,6 +28,7 @@ import qualified Data.Time.Clock               as Time
 import qualified Data.Time.Format              as Time
 import qualified Data.Vinyl                    as V
 
+import qualified Polysemy as P
 import           Polysemy.Error                 ( Error )
 
 import qualified Text.Pandoc.Options           as PA
@@ -39,6 +41,8 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Frames.Serialize              as FS
 import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
+
+import qualified System.Directory as System
 
 knitX
   :: forall r a
@@ -189,9 +193,6 @@ retrieveOrMake3Frames key cachedDeps action =
   in K.wrapPrefix ("BlueRipple.retrieveOrMake3Frames (key=" <> key <> ")")
      $ K.retrieveOrMakeTransformed from to key cachedDeps action
 
-
-
-
 retrieveOrMakeRecList
   :: (K.KnitEffects r
      , K.CacheEffectsD r
@@ -206,3 +207,21 @@ retrieveOrMakeRecList
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
+
+
+-- TODO: add error handling to return Nothing in time slot
+fileDependency :: (K.KnitEffects r
+                  , K.CacheEffectsD r)
+  => FilePath
+  -> K.Sem r (K.ActionWithCacheTime r ())
+fileDependency fp = do
+  modTime <- K.liftKnit $ System.getModificationTime fp
+  return $ K.withCacheTime (Just modTime) (return ())
+
+
+updateIf :: K.Member (P.Embed IO) r => K.ActionWithCacheTime r b -> K.ActionWithCacheTime r a -> (a -> K.Sem r b) -> K.Sem r (K.ActionWithCacheTime r b)
+updateIf cur deps update = if KC.cacheTime cur >= KC.cacheTime deps then return cur else updatedAWCT where
+  updatedAWCT = do
+    updatedB <- K.ignoreCacheTime deps >>= update
+    nowCT <- K.liftKnit $ Time.getCurrentTime
+    return $ KC.withCacheTime (Just nowCT) (return updatedB)
