@@ -29,7 +29,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
-
+import qualified System.Environment as Env
 
 import qualified Knit.Report as K
 import Data.String.Here (here)
@@ -71,6 +71,13 @@ main= do
 
 makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
+  clangBinDirM <- K.liftKnit $ Env.lookupEnv "CLANG_BINDIR"
+  case clangBinDirM of
+    Nothing -> K.logLE K.Info "CLANG_BINDIR not set. Using exisiting path is correct for clang."
+    Just clangBinDir -> do
+      curPath <- K.liftKnit $ Env.getEnv "PATH"
+      K.logLE K.Info $ "Current path: " <> (T.pack $ show curPath) <> ".  Adding " <> (T.pack $ show clangBinDir) <> " for llvm clang."
+      K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
   cces_C <- CCES.ccesDataLoader
   ccesPres2016ASER5_C <- BR.retrieveOrMakeFrame "stan/ccesPres2016.bin" cces_C $ \cces -> do
     K.logLE K.Info "CCES data.  Rebuilding presidential 2016 ASER5 rollup."
@@ -102,18 +109,21 @@ makeDoc = do
           enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
           enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
           enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
+          enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
           enumF = (,,,,) <$> enumSexF <*> enumAgeF <*> enumEducationF <*> enumRaceF <*> enumStateF
           ((sexF, toSex), (ageF, toAge), (educationF, toEducation), (raceF, toRace), (stateF, toState)) = FL.fold enumF pres2016WithZeros
+          (categoryF, toCategory) = FL.fold enumCategoryF pres2016WithZeros
           dataF = SJ.namedF "G" FL.length
                   <> SJ.constDataF "J_state" (IM.size toState)
                   <> SJ.constDataF "J_sex" (IM.size toSex)
                   <> SJ.constDataF "J_age" (IM.size toAge)
                   <> SJ.constDataF "J_educ" (IM.size toEducation)
                   <> SJ.constDataF "J_race" (IM.size toRace)
-                  <> SJ.valueToPairF "sex" sexF
-                  <> SJ.valueToPairF "age" ageF
-                  <> SJ.valueToPairF "education" educationF
-                  <> SJ.valueToPairF "race" raceF
+--                  <> SJ.valueToPairF "sex" sexF
+--                  <> SJ.valueToPairF "age" ageF
+--                  <> SJ.valueToPairF "education" educationF
+--                  <> SJ.valueToPairF "race" raceF
+                  <> SJ.valueToPairF "category" categoryF
                   <> SJ.valueToPairF "state" stateF
                   <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
                   <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
@@ -127,8 +137,8 @@ makeDoc = do
         runOneChain chainIndex = do 
           let config = (CS.makeDefaultSample model chainIndex) { CS.inputData = Just (addDir modelDir datFile)
                                                                , CS.output = Just (addDir modelDir $ outputFile chainIndex) 
-                                                               , CS.numSamples = Just 10
-                                                               , CS.numWarmup = Just 10
+                                                               , CS.numSamples = Just 1000
+                                                               , CS.numWarmup = Just 1000
                                                                }
           K.logLE K.Info $ "Running " <> T.pack model <> " for chain " <> (T.pack $ show chainIndex)
           K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine config)
@@ -140,7 +150,6 @@ makeDoc = do
       K.liftKnit $ CS.make stanMakeConfig
       maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..numChains])
     K.knitMaybe "THere was an error running an MCMC chain." res    
-  let summaryConfig = (CS.makeDefaultSummaryConfig $ fmap (addDir modelDir) stanOutputFiles)
-                      {CS.exePath = Just $ (CS.cmdStanDir stanMakeConfig) ++ "/bin/stansummary"} 
+  summaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDir modelDir) stanOutputFiles)
   K.logLE K.Diagnostic $ "Summary command: " <> (T.pack $ (CS.cmdStanDir stanMakeConfig) ++ "/bin/stansummary") <> " " <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine summaryConfig))
   K.liftKnit $ putStrLn . CS.unparsed =<< CS.stansummary summaryConfig

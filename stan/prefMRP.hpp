@@ -58,36 +58,24 @@ using stan::math::pow;
 
 static int current_statement__ = 0;
 static const std::vector<string> locations_array__ = {" (found before start of program)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 18, column 2 to column 13)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 19, column 2 to column 21)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 20, column 2 to column 21)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 21, column 2 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 22, column 2 to column 23)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 31, column 2 to line 32, column 77)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 20, column 2 to column 47)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 42, column 2 to column 71)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 43, column 2 to column 36)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 37, column 2 to column 56)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 2, column 2 to column 19)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 3, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 4, column 2 to column 23)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 5, column 2 to column 23)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 6, column 2 to column 24)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 7, column 2 to column 24)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 8, column 36 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 8, column 2 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 9, column 36 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 9, column 2 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 10, column 43 to column 44)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 10, column 2 to column 46)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 11, column 38 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 11, column 2 to column 41)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 12, column 40 to column 41)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 12, column 2 to column 43)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 13, column 25 to column 26)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 13, column 2 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 14, column 29 to column 30)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 14, column 2 to column 32)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 19, column 9 to column 14)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 20, column 9 to column 14)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 21, column 9 to column 15)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 22, column 9 to column 15)"};
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 13, column 67 to column 68)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 13, column 2 to column 70)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 14, column 25 to column 26)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 14, column 2 to column 28)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 15, column 29 to column 30)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 15, column 2 to column 32)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 20, column 9 to column 40)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/prefMRP.stan', line 42, column 32 to column 63)"};
 
 
 
@@ -100,13 +88,11 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
   int J_age;
   int J_educ;
   int J_race;
-  std::vector<int> sex;
-  std::vector<int> age;
-  std::vector<int> education;
-  std::vector<int> race;
-  std::vector<int> state;
+  std::vector<int> category;
   std::vector<int> D_votes;
   std::vector<int> Total_votes;
+  int beta_1dim__;
+  int probs_1dim__;
  
  public:
   ~prefMRP_model() final { }
@@ -138,216 +124,137 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
       pos__ = std::numeric_limits<int>::min();
       
       pos__ = 1;
-      current_statement__ = 7;
+      current_statement__ = 5;
       context__.validate_dims("data initialization","G","int",
           context__.to_vec());
       G = std::numeric_limits<int>::min();
       
-      current_statement__ = 7;
+      current_statement__ = 5;
       G = context__.vals_i("G")[(1 - 1)];
-      current_statement__ = 7;
-      current_statement__ = 7;
+      current_statement__ = 5;
+      current_statement__ = 5;
       check_greater_or_equal(function__, "G", G, 0);
-      current_statement__ = 8;
+      current_statement__ = 6;
       context__.validate_dims("data initialization","J_state","int",
           context__.to_vec());
       J_state = std::numeric_limits<int>::min();
       
-      current_statement__ = 8;
+      current_statement__ = 6;
       J_state = context__.vals_i("J_state")[(1 - 1)];
-      current_statement__ = 8;
-      current_statement__ = 8;
+      current_statement__ = 6;
+      current_statement__ = 6;
       check_greater_or_equal(function__, "J_state", J_state, 1);
-      current_statement__ = 9;
+      current_statement__ = 7;
       context__.validate_dims("data initialization","J_sex","int",
           context__.to_vec());
       J_sex = std::numeric_limits<int>::min();
       
-      current_statement__ = 9;
+      current_statement__ = 7;
       J_sex = context__.vals_i("J_sex")[(1 - 1)];
-      current_statement__ = 9;
-      current_statement__ = 9;
+      current_statement__ = 7;
+      current_statement__ = 7;
       check_greater_or_equal(function__, "J_sex", J_sex, 1);
-      current_statement__ = 10;
+      current_statement__ = 8;
       context__.validate_dims("data initialization","J_age","int",
           context__.to_vec());
       J_age = std::numeric_limits<int>::min();
       
-      current_statement__ = 10;
+      current_statement__ = 8;
       J_age = context__.vals_i("J_age")[(1 - 1)];
-      current_statement__ = 10;
-      current_statement__ = 10;
+      current_statement__ = 8;
+      current_statement__ = 8;
       check_greater_or_equal(function__, "J_age", J_age, 1);
-      current_statement__ = 11;
+      current_statement__ = 9;
       context__.validate_dims("data initialization","J_educ","int",
           context__.to_vec());
       J_educ = std::numeric_limits<int>::min();
       
-      current_statement__ = 11;
+      current_statement__ = 9;
       J_educ = context__.vals_i("J_educ")[(1 - 1)];
-      current_statement__ = 11;
-      current_statement__ = 11;
+      current_statement__ = 9;
+      current_statement__ = 9;
       check_greater_or_equal(function__, "J_educ", J_educ, 1);
-      current_statement__ = 12;
+      current_statement__ = 10;
       context__.validate_dims("data initialization","J_race","int",
           context__.to_vec());
       J_race = std::numeric_limits<int>::min();
       
-      current_statement__ = 12;
+      current_statement__ = 10;
       J_race = context__.vals_i("J_race")[(1 - 1)];
-      current_statement__ = 12;
-      current_statement__ = 12;
+      current_statement__ = 10;
+      current_statement__ = 10;
       check_greater_or_equal(function__, "J_race", J_race, 1);
+      current_statement__ = 11;
+      validate_non_negative_index("category", "G", G);
+      current_statement__ = 12;
+      context__.validate_dims("data initialization","category","int",
+          context__.to_vec(G));
+      category = std::vector<int>(G, std::numeric_limits<int>::min());
+      
+      current_statement__ = 12;
+      assign(category, nil_index_list(), context__.vals_i("category"),
+        "assigning variable category");
+      current_statement__ = 12;
+      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
+        current_statement__ = 12;
+        current_statement__ = 12;
+        check_greater_or_equal(function__, "category[sym1__]",
+                               category[(sym1__ - 1)], 1);}
+      current_statement__ = 12;
+      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
+        current_statement__ = 12;
+        current_statement__ = 12;
+        check_less_or_equal(function__, "category[sym1__]",
+                            category[(sym1__ - 1)],
+                            (((J_age * J_sex) * J_educ) * J_race));}
       current_statement__ = 13;
-      validate_non_negative_index("sex", "G", G);
-      current_statement__ = 14;
-      context__.validate_dims("data initialization","sex","int",
-          context__.to_vec(G));
-      sex = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 14;
-      assign(sex, nil_index_list(), context__.vals_i("sex"),
-        "assigning variable sex");
-      current_statement__ = 14;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 14;
-        current_statement__ = 14;
-        check_greater_or_equal(function__, "sex[sym1__]", sex[(sym1__ - 1)],
-                               1);}
-      current_statement__ = 14;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 14;
-        current_statement__ = 14;
-        check_less_or_equal(function__, "sex[sym1__]", sex[(sym1__ - 1)],
-                            J_sex);}
-      current_statement__ = 15;
-      validate_non_negative_index("age", "G", G);
-      current_statement__ = 16;
-      context__.validate_dims("data initialization","age","int",
-          context__.to_vec(G));
-      age = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 16;
-      assign(age, nil_index_list(), context__.vals_i("age"),
-        "assigning variable age");
-      current_statement__ = 16;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 16;
-        current_statement__ = 16;
-        check_greater_or_equal(function__, "age[sym1__]", age[(sym1__ - 1)],
-                               1);}
-      current_statement__ = 16;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 16;
-        current_statement__ = 16;
-        check_less_or_equal(function__, "age[sym1__]", age[(sym1__ - 1)],
-                            J_age);}
-      current_statement__ = 17;
-      validate_non_negative_index("education", "G", G);
-      current_statement__ = 18;
-      context__.validate_dims("data initialization","education","int",
-          context__.to_vec(G));
-      education = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 18;
-      assign(education, nil_index_list(), context__.vals_i("education"),
-        "assigning variable education");
-      current_statement__ = 18;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 18;
-        current_statement__ = 18;
-        check_greater_or_equal(function__, "education[sym1__]",
-                               education[(sym1__ - 1)], 1);}
-      current_statement__ = 18;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 18;
-        current_statement__ = 18;
-        check_less_or_equal(function__, "education[sym1__]",
-                            education[(sym1__ - 1)], J_educ);}
-      current_statement__ = 19;
-      validate_non_negative_index("race", "G", G);
-      current_statement__ = 20;
-      context__.validate_dims("data initialization","race","int",
-          context__.to_vec(G));
-      race = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 20;
-      assign(race, nil_index_list(), context__.vals_i("race"),
-        "assigning variable race");
-      current_statement__ = 20;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 20;
-        current_statement__ = 20;
-        check_greater_or_equal(function__, "race[sym1__]",
-                               race[(sym1__ - 1)], 1);}
-      current_statement__ = 20;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 20;
-        current_statement__ = 20;
-        check_less_or_equal(function__, "race[sym1__]", race[(sym1__ - 1)],
-                            J_race);}
-      current_statement__ = 21;
-      validate_non_negative_index("state", "G", G);
-      current_statement__ = 22;
-      context__.validate_dims("data initialization","state","int",
-          context__.to_vec(G));
-      state = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 22;
-      assign(state, nil_index_list(), context__.vals_i("state"),
-        "assigning variable state");
-      current_statement__ = 22;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 22;
-        current_statement__ = 22;
-        check_greater_or_equal(function__, "state[sym1__]",
-                               state[(sym1__ - 1)], 1);}
-      current_statement__ = 22;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 22;
-        current_statement__ = 22;
-        check_less_or_equal(function__, "state[sym1__]", state[(sym1__ - 1)],
-                            J_state);}
-      current_statement__ = 23;
       validate_non_negative_index("D_votes", "G", G);
-      current_statement__ = 24;
+      current_statement__ = 14;
       context__.validate_dims("data initialization","D_votes","int",
           context__.to_vec(G));
       D_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 24;
+      current_statement__ = 14;
       assign(D_votes, nil_index_list(), context__.vals_i("D_votes"),
         "assigning variable D_votes");
-      current_statement__ = 24;
+      current_statement__ = 14;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 24;
-        current_statement__ = 24;
+        current_statement__ = 14;
+        current_statement__ = 14;
         check_greater_or_equal(function__, "D_votes[sym1__]",
                                D_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 25;
+      current_statement__ = 15;
       validate_non_negative_index("Total_votes", "G", G);
-      current_statement__ = 26;
+      current_statement__ = 16;
       context__.validate_dims("data initialization","Total_votes","int",
           context__.to_vec(G));
       Total_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 26;
+      current_statement__ = 16;
       assign(Total_votes, nil_index_list(), context__.vals_i("Total_votes"),
         "assigning variable Total_votes");
-      current_statement__ = 26;
+      current_statement__ = 16;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 26;
-        current_statement__ = 26;
+        current_statement__ = 16;
+        current_statement__ = 16;
         check_greater_or_equal(function__, "Total_votes[sym1__]",
                                Total_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 27;
-      validate_non_negative_index("bSex", "J_sex", J_sex);
-      current_statement__ = 28;
-      validate_non_negative_index("bAge", "J_age", J_age);
-      current_statement__ = 29;
-      validate_non_negative_index("bEducation", "J_educ", J_educ);
-      current_statement__ = 30;
-      validate_non_negative_index("bRace", "J_race", J_race);
+      current_statement__ = 17;
+      beta_1dim__ = std::numeric_limits<int>::min();
+      
+      current_statement__ = 17;
+      beta_1dim__ = (((J_sex * J_age) * J_educ) * J_race);
+      current_statement__ = 17;
+      validate_non_negative_index("beta", "J_sex * J_age * J_educ * J_race",
+                                  beta_1dim__);
+      current_statement__ = 18;
+      probs_1dim__ = std::numeric_limits<int>::min();
+      
+      current_statement__ = 18;
+      probs_1dim__ = (((J_age * J_sex) * J_educ) * J_race);
+      current_statement__ = 18;
+      validate_non_negative_index("probs", "J_age * J_sex * J_educ * J_race",
+                                  probs_1dim__);
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -356,11 +263,7 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
     num_params_r__ = 0U;
     
     try {
-      num_params_r__ += 1;
-      num_params_r__ += J_sex;
-      num_params_r__ += J_age;
-      num_params_r__ += J_educ;
-      num_params_r__ += J_race;
+      num_params_r__ += beta_1dim__;
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -383,52 +286,18 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
 
     
     try {
-      local_scalar_t__ alpha;
-      alpha = DUMMY_VAR__;
+      Eigen::Matrix<local_scalar_t__, -1, 1> beta;
+      beta = Eigen::Matrix<local_scalar_t__, -1, 1>(beta_1dim__);
+      stan::math::fill(beta, DUMMY_VAR__);
       
       current_statement__ = 1;
-      alpha = in__.scalar();
-      Eigen::Matrix<local_scalar_t__, -1, 1> bSex;
-      bSex = Eigen::Matrix<local_scalar_t__, -1, 1>(J_sex);
-      stan::math::fill(bSex, DUMMY_VAR__);
-      
-      current_statement__ = 2;
-      bSex = in__.vector(J_sex);
-      Eigen::Matrix<local_scalar_t__, -1, 1> bAge;
-      bAge = Eigen::Matrix<local_scalar_t__, -1, 1>(J_age);
-      stan::math::fill(bAge, DUMMY_VAR__);
-      
-      current_statement__ = 3;
-      bAge = in__.vector(J_age);
-      Eigen::Matrix<local_scalar_t__, -1, 1> bEducation;
-      bEducation = Eigen::Matrix<local_scalar_t__, -1, 1>(J_educ);
-      stan::math::fill(bEducation, DUMMY_VAR__);
-      
-      current_statement__ = 4;
-      bEducation = in__.vector(J_educ);
-      Eigen::Matrix<local_scalar_t__, -1, 1> bRace;
-      bRace = Eigen::Matrix<local_scalar_t__, -1, 1>(J_race);
-      stan::math::fill(bRace, DUMMY_VAR__);
-      
-      current_statement__ = 5;
-      bRace = in__.vector(J_race);
+      beta = in__.vector(beta_1dim__);
       {
-        current_statement__ = 6;
+        current_statement__ = 4;
         lp_accum__.add(
           binomial_logit_lpmf<propto__>(D_votes, Total_votes,
-            add(
-              add(
-                add(
-                  add(alpha,
-                    rvalue(bSex,
-                      cons_list(index_multi(sex), nil_index_list()), "bSex")),
-                  rvalue(bAge, cons_list(index_multi(age), nil_index_list()),
-                    "bAge")),
-                rvalue(bEducation,
-                  cons_list(index_multi(education), nil_index_list()),
-                  "bEducation")),
-              rvalue(bRace, cons_list(index_multi(race), nil_index_list()),
-                "bRace"))));
+            rvalue(beta, cons_list(index_multi(category), nil_index_list()),
+              "beta")));
       }
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
@@ -462,44 +331,14 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
 
     
     try {
-      double alpha;
-      alpha = std::numeric_limits<double>::quiet_NaN();
+      Eigen::Matrix<double, -1, 1> beta;
+      beta = Eigen::Matrix<double, -1, 1>(beta_1dim__);
+      stan::math::fill(beta, std::numeric_limits<double>::quiet_NaN());
       
       current_statement__ = 1;
-      alpha = in__.scalar();
-      Eigen::Matrix<double, -1, 1> bSex;
-      bSex = Eigen::Matrix<double, -1, 1>(J_sex);
-      stan::math::fill(bSex, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 2;
-      bSex = in__.vector(J_sex);
-      Eigen::Matrix<double, -1, 1> bAge;
-      bAge = Eigen::Matrix<double, -1, 1>(J_age);
-      stan::math::fill(bAge, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 3;
-      bAge = in__.vector(J_age);
-      Eigen::Matrix<double, -1, 1> bEducation;
-      bEducation = Eigen::Matrix<double, -1, 1>(J_educ);
-      stan::math::fill(bEducation, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 4;
-      bEducation = in__.vector(J_educ);
-      Eigen::Matrix<double, -1, 1> bRace;
-      bRace = Eigen::Matrix<double, -1, 1>(J_race);
-      stan::math::fill(bRace, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 5;
-      bRace = in__.vector(J_race);
-      vars__.emplace_back(alpha);
-      for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-        vars__.emplace_back(bSex[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-        vars__.emplace_back(bAge[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-        vars__.emplace_back(bEducation[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-        vars__.emplace_back(bRace[(sym1__ - 1)]);}
+      beta = in__.vector(beta_1dim__);
+      for (int sym1__ = 1; sym1__ <= beta_1dim__; ++sym1__) {
+        vars__.emplace_back(beta[(sym1__ - 1)]);}
       if (logical_negation((primitive_value(emit_transformed_parameters__) ||
             primitive_value(emit_generated_quantities__)))) {
         return ;
@@ -507,6 +346,29 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
       if (logical_negation(emit_generated_quantities__)) {
         return ;
       } 
+      Eigen::Matrix<double, -1, 1> probs;
+      probs = Eigen::Matrix<double, -1, 1>(probs_1dim__);
+      stan::math::fill(probs, std::numeric_limits<double>::quiet_NaN());
+      
+      current_statement__ = 3;
+      assign(probs, nil_index_list(),
+        inv_logit(
+          rvalue(beta, cons_list(index_multi(category), nil_index_list()),
+            "beta")), "assigning variable probs");
+      current_statement__ = 2;
+      for (int sym1__ = 1; sym1__ <= probs_1dim__; ++sym1__) {
+        current_statement__ = 2;
+        current_statement__ = 2;
+        check_greater_or_equal(function__, "probs[sym1__]",
+                               probs[(sym1__ - 1)], 0);}
+      current_statement__ = 2;
+      for (int sym1__ = 1; sym1__ <= probs_1dim__; ++sym1__) {
+        current_statement__ = 2;
+        current_statement__ = 2;
+        check_less_or_equal(function__, "probs[sym1__]", probs[(sym1__ - 1)],
+                            1);}
+      for (int sym1__ = 1; sym1__ <= probs_1dim__; ++sym1__) {
+        vars__.emplace_back(probs[(sym1__ - 1)]);}
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -528,97 +390,27 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
       pos__ = std::numeric_limits<int>::min();
       
       pos__ = 1;
-      double alpha;
-      alpha = std::numeric_limits<double>::quiet_NaN();
-      
-      current_statement__ = 1;
-      alpha = context__.vals_r("alpha")[(1 - 1)];
-      Eigen::Matrix<double, -1, 1> bSex;
-      bSex = Eigen::Matrix<double, -1, 1>(J_sex);
-      stan::math::fill(bSex, std::numeric_limits<double>::quiet_NaN());
+      Eigen::Matrix<double, -1, 1> beta;
+      beta = Eigen::Matrix<double, -1, 1>(beta_1dim__);
+      stan::math::fill(beta, std::numeric_limits<double>::quiet_NaN());
       
       {
-        std::vector<local_scalar_t__> bSex_flat__;
-        current_statement__ = 2;
-        assign(bSex_flat__, nil_index_list(), context__.vals_r("bSex"),
-          "assigning variable bSex_flat__");
-        current_statement__ = 2;
+        std::vector<local_scalar_t__> beta_flat__;
+        current_statement__ = 1;
+        assign(beta_flat__, nil_index_list(), context__.vals_r("beta"),
+          "assigning variable beta_flat__");
+        current_statement__ = 1;
         pos__ = 1;
-        current_statement__ = 2;
-        for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-          current_statement__ = 2;
-          assign(bSex, cons_list(index_uni(sym1__), nil_index_list()),
-            bSex_flat__[(pos__ - 1)], "assigning variable bSex");
-          current_statement__ = 2;
+        current_statement__ = 1;
+        for (int sym1__ = 1; sym1__ <= beta_1dim__; ++sym1__) {
+          current_statement__ = 1;
+          assign(beta, cons_list(index_uni(sym1__), nil_index_list()),
+            beta_flat__[(pos__ - 1)], "assigning variable beta");
+          current_statement__ = 1;
           pos__ = (pos__ + 1);}
       }
-      Eigen::Matrix<double, -1, 1> bAge;
-      bAge = Eigen::Matrix<double, -1, 1>(J_age);
-      stan::math::fill(bAge, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> bAge_flat__;
-        current_statement__ = 3;
-        assign(bAge_flat__, nil_index_list(), context__.vals_r("bAge"),
-          "assigning variable bAge_flat__");
-        current_statement__ = 3;
-        pos__ = 1;
-        current_statement__ = 3;
-        for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-          current_statement__ = 3;
-          assign(bAge, cons_list(index_uni(sym1__), nil_index_list()),
-            bAge_flat__[(pos__ - 1)], "assigning variable bAge");
-          current_statement__ = 3;
-          pos__ = (pos__ + 1);}
-      }
-      Eigen::Matrix<double, -1, 1> bEducation;
-      bEducation = Eigen::Matrix<double, -1, 1>(J_educ);
-      stan::math::fill(bEducation, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> bEducation_flat__;
-        current_statement__ = 4;
-        assign(bEducation_flat__, nil_index_list(),
-          context__.vals_r("bEducation"),
-          "assigning variable bEducation_flat__");
-        current_statement__ = 4;
-        pos__ = 1;
-        current_statement__ = 4;
-        for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-          current_statement__ = 4;
-          assign(bEducation, cons_list(index_uni(sym1__), nil_index_list()),
-            bEducation_flat__[(pos__ - 1)], "assigning variable bEducation");
-          current_statement__ = 4;
-          pos__ = (pos__ + 1);}
-      }
-      Eigen::Matrix<double, -1, 1> bRace;
-      bRace = Eigen::Matrix<double, -1, 1>(J_race);
-      stan::math::fill(bRace, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> bRace_flat__;
-        current_statement__ = 5;
-        assign(bRace_flat__, nil_index_list(), context__.vals_r("bRace"),
-          "assigning variable bRace_flat__");
-        current_statement__ = 5;
-        pos__ = 1;
-        current_statement__ = 5;
-        for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-          current_statement__ = 5;
-          assign(bRace, cons_list(index_uni(sym1__), nil_index_list()),
-            bRace_flat__[(pos__ - 1)], "assigning variable bRace");
-          current_statement__ = 5;
-          pos__ = (pos__ + 1);}
-      }
-      vars__.emplace_back(alpha);
-      for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-        vars__.emplace_back(bSex[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-        vars__.emplace_back(bAge[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-        vars__.emplace_back(bEducation[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-        vars__.emplace_back(bRace[(sym1__ - 1)]);}
+      for (int sym1__ = 1; sym1__ <= beta_1dim__; ++sym1__) {
+        vars__.emplace_back(beta[(sym1__ - 1)]);}
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -629,25 +421,17 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
   inline void get_param_names(std::vector<std::string>& names__) const {
     
     names__.clear();
-    names__.emplace_back("alpha");
-    names__.emplace_back("bSex");
-    names__.emplace_back("bAge");
-    names__.emplace_back("bEducation");
-    names__.emplace_back("bRace");
+    names__.emplace_back("beta");
+    names__.emplace_back("probs");
     } // get_param_names() 
     
   inline void get_dims(std::vector<std::vector<size_t>>& dimss__) const
     final {
     dimss__.clear();
-    dimss__.emplace_back(std::vector<size_t>{});
+    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(beta_1dim__)});
     
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_sex)});
-    
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_age)});
-    
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_educ)});
-    
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_race)});
+    dimss__.emplace_back(std::vector<size_t>{
+                                             static_cast<size_t>(probs_1dim__)});
     
     } // get_dims() 
     
@@ -657,29 +441,19 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
                                       bool emit_generated_quantities__ = true) const
     final {
     
-    param_names__.emplace_back(std::string() + "alpha");
-    for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
+    for (int sym1__ = 1; sym1__ <= beta_1dim__; ++sym1__) {
       {
-        param_names__.emplace_back(std::string() + "bSex" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bAge" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bEducation" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bRace" + '.' + std::to_string(sym1__));
+        param_names__.emplace_back(std::string() + "beta" + '.' + std::to_string(sym1__));
       }}
     if (emit_transformed_parameters__) {
       
     }
     
     if (emit_generated_quantities__) {
-      
+      for (int sym1__ = 1; sym1__ <= probs_1dim__; ++sym1__) {
+        {
+          param_names__.emplace_back(std::string() + "probs" + '.' + std::to_string(sym1__));
+        }}
     }
     
     } // constrained_param_names() 
@@ -690,42 +464,32 @@ class prefMRP_model final : public model_base_crtp<prefMRP_model> {
                                         bool emit_generated_quantities__ = true) const
     final {
     
-    param_names__.emplace_back(std::string() + "alpha");
-    for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
+    for (int sym1__ = 1; sym1__ <= beta_1dim__; ++sym1__) {
       {
-        param_names__.emplace_back(std::string() + "bSex" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bAge" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bEducation" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "bRace" + '.' + std::to_string(sym1__));
+        param_names__.emplace_back(std::string() + "beta" + '.' + std::to_string(sym1__));
       }}
     if (emit_transformed_parameters__) {
       
     }
     
     if (emit_generated_quantities__) {
-      
+      for (int sym1__ = 1; sym1__ <= probs_1dim__; ++sym1__) {
+        {
+          param_names__.emplace_back(std::string() + "probs" + '.' + std::to_string(sym1__));
+        }}
     }
     
     } // unconstrained_param_names() 
     
   inline std::string get_constrained_sizedtypes() const {
     stringstream s__;
-    s__ << "[{\"name\":\"alpha\",\"type\":{\"name\":\"real\"},\"block\":\"parameters\"},{\"name\":\"bSex\",\"type\":{\"name\":\"vector\",\"length\":" << J_sex << "},\"block\":\"parameters\"},{\"name\":\"bAge\",\"type\":{\"name\":\"vector\",\"length\":" << J_age << "},\"block\":\"parameters\"},{\"name\":\"bEducation\",\"type\":{\"name\":\"vector\",\"length\":" << J_educ << "},\"block\":\"parameters\"},{\"name\":\"bRace\",\"type\":{\"name\":\"vector\",\"length\":" << J_race << "},\"block\":\"parameters\"}]";
+    s__ << "[{\"name\":\"beta\",\"type\":{\"name\":\"vector\",\"length\":" << beta_1dim__ << "},\"block\":\"parameters\"},{\"name\":\"probs\",\"type\":{\"name\":\"vector\",\"length\":" << probs_1dim__ << "},\"block\":\"generated_quantities\"}]";
     return s__.str();
     } // get_constrained_sizedtypes() 
     
   inline std::string get_unconstrained_sizedtypes() const {
     stringstream s__;
-    s__ << "[{\"name\":\"alpha\",\"type\":{\"name\":\"real\"},\"block\":\"parameters\"},{\"name\":\"bSex\",\"type\":{\"name\":\"vector\",\"length\":" << J_sex << "},\"block\":\"parameters\"},{\"name\":\"bAge\",\"type\":{\"name\":\"vector\",\"length\":" << J_age << "},\"block\":\"parameters\"},{\"name\":\"bEducation\",\"type\":{\"name\":\"vector\",\"length\":" << J_educ << "},\"block\":\"parameters\"},{\"name\":\"bRace\",\"type\":{\"name\":\"vector\",\"length\":" << J_race << "},\"block\":\"parameters\"}]";
+    s__ << "[{\"name\":\"beta\",\"type\":{\"name\":\"vector\",\"length\":" << beta_1dim__ << "},\"block\":\"parameters\"},{\"name\":\"probs\",\"type\":{\"name\":\"vector\",\"length\":" << probs_1dim__ << "},\"block\":\"generated_quantities\"}]";
     return s__.str();
     } // get_unconstrained_sizedtypes() 
     
