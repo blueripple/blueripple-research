@@ -98,6 +98,7 @@ library
                  , BlueRipple.Utilities.TableUtils
                  , BlueRipple.Utilities.FramesUtils
                  , Stan.JSON
+                 , Stan.Parameters
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
