@@ -29,6 +29,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
+import qualified Stan.Parameters as SP
 import qualified System.Environment as Env
 
 import qualified Knit.Report as K
@@ -98,22 +99,23 @@ makeDoc = do
       outputFile n =  model ++ "_" ++ show n ++ ".csv"
       datFile = model ++ "_dat.json"      
       numChains = 4
+
+  let enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
+      enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
+      enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
+      enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
+      enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
+      enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
+      
   json_C <- do
     let jsonFP = addDir modelDir datFile
     curJSON_C <- BR.fileDependency jsonFP
     BR.updateIf curJSON_C ccesPres2016ASER5_C $ \pres2016WithZeros -> do
       K.logLE K.Info $ "CCES rollup changed.  Rebuilding Stan JSON input at \"" <> (T.pack jsonFP) <> "\"."
-      -- build the enumerating fold
-      let enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
-          enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
-          enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
-          enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
-          enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
-          enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
-          enumF = (,,,,) <$> enumSexF <*> enumAgeF <*> enumEducationF <*> enumRaceF <*> enumStateF
-          ((sexF, toSex), (ageF, toAge), (educationF, toEducation), (raceF, toRace), (stateF, toState)) = FL.fold enumF pres2016WithZeros
-          (categoryF, toCategory) = FL.fold enumCategoryF pres2016WithZeros
-          dataF = SJ.namedF "G" FL.length
+      -- build and do the enumerating fold
+      let enumF = (,,,,,) <$> enumSexF <*> enumAgeF <*> enumEducationF <*> enumRaceF <*> enumStateF <*> enumCategoryF
+          ((sexF, toSex), (ageF, toAge), (educationF, toEducation), (raceF, toRace), (stateF, toState), (categoryF, toCategory)) = FL.fold enumF pres2016WithZeros
+      let dataF = SJ.namedF "G" FL.length
                   <> SJ.constDataF "J_state" (IM.size toState)
                   <> SJ.constDataF "J_sex" (IM.size toSex)
                   <> SJ.constDataF "J_age" (IM.size toAge)
@@ -127,7 +129,7 @@ makeDoc = do
                   <> SJ.valueToPairF "state" stateF
                   <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
                   <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-      K.liftKnit $ SJ.frameToStanJSONFile jsonFP dataF pres2016WithZeros      
+      K.liftKnit $ SJ.frameToStanJSONFile jsonFP dataF pres2016WithZeros
   let stanOutputFiles = fmap (\n -> outputFile n) [1..numChains]
   stanMakeConfig <- K.liftKnit $ CS.makeDefaultMakeConfig (addDir modelDir model)
   stanOutput_C <- do    
@@ -152,4 +154,12 @@ makeDoc = do
     K.knitMaybe "THere was an error running an MCMC chain." res    
   summaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDir modelDir) stanOutputFiles)
   K.logLE K.Diagnostic $ "Summary command: " <> (T.pack $ (CS.cmdStanDir stanMakeConfig) ++ "/bin/stansummary") <> " " <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine summaryConfig))
-  K.liftKnit $ putStrLn . CS.unparsed =<< CS.stansummary summaryConfig
+  summary <- K.liftKnit $ CS.stansummary summaryConfig
+  K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
+  probs <- fmap CS.mean <$> (K.knitEither $ SP.parse1D "probs" (CS.paramStats summary))
+  K.logLE K.Info $ "Probs: " <> (T.pack . show $ probs)
+  -- rebuild category index
+  cces <- K.ignoreCacheTime ccesPres2016ASER5_C
+  let (_, toCategory) = FL.fold enumCategoryF cces
+  K.logLE K.Info $ "With Categories: " <> (T.pack . show . fmap (\(i, c) -> (SP.getIndexed probs i, c))  $ IM.toList toCategory)
+  
