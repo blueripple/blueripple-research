@@ -42,6 +42,13 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcLogSummary :: Bool
   }
 
+-- produce JSON from the data 
+type JSONAction r a = a -> K.Sem r A.Encoding
+
+-- produce a result of type b from the data and the model summary
+-- NB: the cache time will give you newest of data and stan output
+type ResultAction r a b = CS.StanSummary -> K.ActionWithCacheTime r a -> K.Sem r b  
+
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp
 
@@ -71,7 +78,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT numChains numWarmupM numSample
   let stanMakeConfig = stanMakeConfig' { CS.stancFlags = stancConfigM }
       stanExeConfigF chainIndex = (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
                                   { CS.inputData = Just (addDirFP modelDirS $ datFile modelNameT)
-                                  , CS.output = Just (addDirFP modelDirS $ outputFile modelDirT chainIndex) 
+                                  , CS.output = Just (addDirFP modelDirS $ outputFile modelNameT chainIndex) 
                                   , CS.numSamples = numSamplesM
                                   , CS.numWarmup = numWarmupM
                                   }
@@ -79,12 +86,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT numChains numWarmupM numSample
   stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDirFP modelDirS) stanOutputFiles)
   return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT numChains True
 
--- produce JSON from the data 
-type JSONAction r a = a -> K.Sem r A.Encoding
 
--- produce a result of type b from the data and the model summary
--- NB: the cache time will give you newest of data and stan output
-type ResultAction r a b = CS.StanSummary -> K.ActionWithCacheTime r a -> K.Sem r b
 
 runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
          => ModelRunnerConfig
@@ -102,10 +104,14 @@ runModel config makeJSON makeResult cachedA = do
     Just clangBinDir -> do
       curPath <- K.liftKnit $ Env.getEnv "PATH"
       K.logLE K.Info $ "Current path: " <> (T.pack $ show curPath) <> ".  Adding " <> (T.pack $ show clangBinDir) <> " for llvm clang."
+      K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
   json_C <- do
     let jsonFP = addDirFP (T.unpack $ mrcModelDir config) $ datFile $ mrcModel config
     curJSON_C <- BR.fileDependency jsonFP
-    BR.updateIf curJSON_C cachedA $ \a -> makeJSON a >>= K.liftKnit . BL.writeFile (datFile $ mrcModel config) . A.encodingToLazyByteString
+    BR.updateIf curJSON_C cachedA $ \a -> do
+      K.logLE K.Info $ "JSON data in \"" <> (T.pack jsonFP) <> "\" is missing or out of date.  Rebuilding..."
+      makeJSON a >>= K.liftKnit . BL.writeFile jsonFP . A.encodingToLazyByteString
+      K.logLE K.Info "Finished rebuilding JSON."
   stanOutput_C <-  do
     curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDirFP modelDirS) outputFiles
     curModel_C <- BR.fileDependency (addDirFP modelDirS $ modelFile $ mrcModel config)

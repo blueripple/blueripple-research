@@ -71,8 +71,8 @@ main= do
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
 
-runPrefMRPModel :: forall r.(K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r ()
-runPrefMRPModel = do
+runPrefMRPModels :: forall r.(K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r ()
+runPrefMRPModels = do
   -- wrangle data  
   cces_C <- CCES.ccesDataLoader
   ccesPres2016ASER5_C <- BR.retrieveOrMakeFrame "stan/ccesPres2016.bin" cces_C $ \cces -> do
@@ -126,16 +126,16 @@ runPrefMRPModel = do
                     <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
                     <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
         K.knitEither $ SJ.frameToStanJSONEncoding dataF ccesASER5
-      processSummary summary _ = do
---        ccesASER5 <- K.ignoreCacheTime ccesASER5_C
---        let (_, toCategory) = FL.fold enumCategoryF ccesASE
+      resultsNational summary _ = do
         probs <- fmap CS.mean <$> (K.knitEither $ SP.parse1D "probs" (CS.paramStats summary)) 
         K.logLE K.Info $ "With Categories: " <> (T.pack . show . fmap (\(i, c) -> (SP.getIndexed probs i, c))  $ IM.toList toCategory)
-  stanConfig <- SM.makeDefaultModelRunnerConfig "stan" "prefMRP" 4 (Just 1000) (Just 1000) Nothing
-  SM.runModel stanConfig makeJson processSummary ccesPres2016ASER5_C
+  stanConfigNational <- SM.makeDefaultModelRunnerConfig "stan" "prefR" 4 (Just 1000) (Just 1000) Nothing
+  SM.runModel stanConfigNational makeJson resultsNational ccesPres2016ASER5_C
+--  let resultsWithStates summary _ = do
+        
         
 makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
-makeDoc = runPrefMRPModel
+makeDoc = runPrefMRPModels
 {-
   clangBinDirM <- K.liftKnit $ Env.lookupEnv "CLANG_BINDIR"
   case clangBinDirM of
