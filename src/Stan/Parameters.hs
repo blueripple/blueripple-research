@@ -70,6 +70,9 @@ deriving instance (Show (NTuple dim), Show a) => Show (ParameterStatistics dim a
 
 instance Functor (ParameterStatistics dim) where
   fmap f (ParameterStatistics o nt v) = ParameterStatistics o nt (fmap f v)
+
+getDims :: ParameterStatistics dim a -> NTuple dim
+getDims (ParameterStatistics _ x _) = x
   
 getIndexed :: forall dim a. IndexFunction dim => ParameterStatistics dim a -> NTuple dim -> a
 getIndexed (ParameterStatistics offset dims vec) index = vec V.! tupleToIndex @dim offset dims index 

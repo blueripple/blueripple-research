@@ -14,11 +14,15 @@ data {
   int<lower = 0> D_votes[G];
   int<lower = 0> Total_votes[G];
 }
+transformed data {
+  int <lower=1> nCat;
+  nCat =  J_age * J_sex * J_educ * J_race;
+}
 
 parameters {
   //  real alpha;
-  vector[J_sex * J_age * J_educ * J_race] beta;
-  real alpha[J_sex * J_age * J_educ * J_race][J_state];
+  vector[nCat] beta;
+  matrix[J_state, nCat] alpha;
   //  vector[J_sex] bSex;
   //  vector[J_age] bAge;
   //  vector[J_educ] bEducation;
@@ -34,12 +38,20 @@ transformed parameters {
 */
 model {
   //  sigma_theta ~ normal (0, 1);
-  //  alpha_p ~ normal (0.5, 1);
-  D_votes ~ binomial_logit(Total_votes, beta[category]); //bSex[sex] + bAge[age] + bEducation[education] + bRace[race]);
+  to_vector(alpha) ~ normal (0, 1);
+  for (g in 1:G) {
+    D_votes[g] ~ binomial_logit(Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
+  }
 }
   
     
 generated quantities {
-  vector <lower = 0, upper = 1>[J_age * J_sex * J_educ * J_race] probs;
-  probs = inv_logit(beta[category] + alpha[category][state]);    
+  vector <lower = 0, upper = 1> [nCat] nationalProbs;
+  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
+  nationalProbs = inv_logit(beta[category]);
+  for (s in 1:J_state) {
+    for (c in 1:nCat) {
+      stateProbs[s, c] = inv_logit(beta[c] + alpha[s, c]);
+    }
+  }
 }

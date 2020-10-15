@@ -102,7 +102,7 @@ class prefR_model final : public model_base_crtp<prefR_model> {
   std::vector<std::string> model_compile_info() const {
     std::vector<std::string> stanc_info;
     stanc_info.push_back("stanc_version = stanc3 v2.24.1");
-    stanc_info.push_back("stancflags = ");
+    stanc_info.push_back("stancflags = --include-paths= --use-opencl");
     return stanc_info;
   }
   

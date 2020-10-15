@@ -15,6 +15,7 @@ import qualified CmdStan.Types as CS
 import           CmdStan (StancConfig(..)
                          , makeDefaultStancConfig
                          , StanExeConfig(..)
+                         , StanSummary
                          )
 {-                 
 import           CmdStan.Types (StanMakeConfig(..)
@@ -124,6 +125,7 @@ runModel config makeJSON makeResult cachedA = do
           K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
     res_C <- BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
+      K.logLE K.Info $ "Make CommandLine: " <> (T.pack $ CS.makeConfigToCmdLine (mrcStanMakeConfig config))
       K.liftKnit $ CS.make (mrcStanMakeConfig config)
       maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..(mrcNumChains config)])
     K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain." 

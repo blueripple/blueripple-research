@@ -5,6 +5,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 module Main where
 
 import qualified Control.Foldl as FL
@@ -14,12 +15,15 @@ import qualified Data.Maybe as Maybe
 
 import qualified Data.Text as T
 import qualified Frames as F
+import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames.MapReduce as FMR
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Model.CCES_MRP_Analysis as CCES
@@ -126,11 +130,37 @@ runPrefMRPModels = do
                     <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
                     <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
         K.knitEither $ SJ.frameToStanJSONEncoding dataF ccesASER5
-      resultsNational summary _ = do
+{-      resultsNational summary _ = do
         probs <- fmap CS.mean <$> (K.knitEither $ SP.parse1D "probs" (CS.paramStats summary)) 
         K.logLE K.Info $ "With Categories: " <> (T.pack . show . fmap (\(i, c) -> (SP.getIndexed probs i, c))  $ IM.toList toCategory)
-  stanConfigNational <- SM.makeDefaultModelRunnerConfig "stan" "prefR" 4 (Just 1000) (Just 1000) Nothing
-  SM.runModel stanConfigNational makeJson resultsNational ccesPres2016ASER5_C
+-}
+{-      resultsWithStates :: MR.ResultAction r _ (F.FrameRec ( '[BR.StateAbbreviation]
+                                                             V.++
+                                                             DT.CatColsASER5
+                                                             V.++
+                                                             '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
+                                                           ))      -}
+      resultsWithStates summary _ = do
+        stateProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse2D "stateProbs" (CS.paramStats summary))
+        -- build rows to left join
+        let (states, cats) = SP.getDims stateProbs
+            indices = [(stateI, catI) | stateI <- [1..states], catI <- [1..cats]]
+            makeRow (stateI, catI) = do
+              abbr <- IM.lookup stateI toState 
+              catRec <- IM.lookup catI toCategory
+              let prob = SP.getIndexed stateProbs (stateI, catI)
+                  vpv = 2 * prob - 1
+                  x :: F.Record ('[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ [BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+                  x = (abbr F.&: catRec) F.<+> (2016 F.&: ET.President F.&: vpv F.&: prob F.&: V.RNil)
+              return x
+        probRows <- K.knitMaybe "Error looking up indices.  Should be impossible!"
+                    $ traverse makeRow indices
+        BR.logFrame probRows
+        return probRows       
+  let stancConfig = (SM.makeDefaultStancConfig "/Users/adam/BlueRipple/research/stan/prefMR") { CS.useOpenCL = False }
+  stanConfig <- SM.makeDefaultModelRunnerConfig "stan" "prefMR" 4 (Just 1000) (Just 1000) (Just stancConfig)
+  _ <- SM.runModel stanConfig makeJson resultsWithStates ccesPres2016ASER5_C
+  return ()
 --  let resultsWithStates summary _ = do
         
         
