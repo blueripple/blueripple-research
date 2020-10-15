@@ -25,3 +25,4 @@ posts
 testbed/*.csv
 *.csv
 stan.html
+stan/*.json
