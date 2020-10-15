@@ -40,6 +40,5 @@ model {
     
 generated quantities {
   vector <lower = 0, upper = 1>[J_age * J_sex * J_educ * J_race] probs;
-  probs = inv_logit(beta[category]);
-    
+  probs = inv_logit(beta[category]);    
 }

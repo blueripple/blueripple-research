@@ -2,14 +2,30 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-module Stan.ModelRunner where
+module Stan.ModelRunner
+  (
+    module Stan.ModelRunner
+  , module CmdStan
+--  , module CmdStan.Types
+  ) where
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 
+import           CmdStan (StancConfig(..)
+                         , makeDefaultStancConfig
+                         , StanExeConfig(..)
+                         )
+{-                 
+import           CmdStan.Types (StanMakeConfig(..)
+                               , StanSummaryConfig(..)
+                               )
+-}
+
 import qualified Knit.Report as K
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
+import           Control.Monad (when)
 import qualified Data.Aeson.Encoding as A
 import qualified Data.ByteString.Lazy as BL
 import qualified Polysemy as P
@@ -23,7 +39,23 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcModelDir :: T.Text
   , mrcModel :: T.Text
   , mrcNumChains :: Int
+  , mrcLogSummary :: Bool
   }
+
+addDirT :: T.Text -> T.Text -> T.Text
+addDirT dir fp = dir <> "/" <> fp
+
+addDirFP :: FilePath -> FilePath -> FilePath
+addDirFP dir fp = dir ++ "/" ++ fp
+
+datFile :: T.Text -> FilePath
+datFile modelNameT = (T.unpack modelNameT) ++ "_dat.json"      
+
+modelFile :: T.Text -> FilePath
+modelFile modelNameT =  (T.unpack modelNameT) ++ ".stan"
+
+outputFile :: T.Text -> Int -> FilePath
+outputFile modelNameT chainIndex =  (T.unpack modelNameT ++ "_" ++ show chainIndex ++ ".csv")
 
 makeDefaultModelRunnerConfig :: P.Member (P.Embed IO) r
                              => T.Text
@@ -31,28 +63,27 @@ makeDefaultModelRunnerConfig :: P.Member (P.Embed IO) r
                              -> Int
                              -> Maybe Int
                              -> Maybe Int
+                             -> Maybe CS.StancConfig
                              -> K.Sem r ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT numChains numWarmupM numSamplesM = do
-  let addDir d fp = d ++ "/" ++ fp
-      modelDirS = T.unpack modelDirT
-      modelNameS = T.unpack modelNameT
-      datFile = modelNameS ++ "_dat.json"      
-      outputFile n =  modelNameS ++ "_" ++ show n ++ ".csv"
-  stanMakeConfig <- K.liftKnit $ CS.makeDefaultMakeConfig (addDir modelDirS modelNameS)
-  let stanExeConfigF chainIndex = (CS.makeDefaultSample modelNameS chainIndex) { CS.inputData = Just (addDir modelDirS datFile)
-                                                                               , CS.output = Just (addDir modelDirS $ outputFile chainIndex) 
-                                                                               , CS.numSamples = numSamplesM
-                                                                               , CS.numWarmup = numWarmupM
-                                                                               }
-  let stanOutputFiles = fmap (\n -> outputFile n) [1..numChains]
-  stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDir modelDirS) stanOutputFiles)
-  return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT numChains
-  
+makeDefaultModelRunnerConfig modelDirT modelNameT numChains numWarmupM numSamplesM stancConfigM = do
+  let modelDirS = T.unpack modelDirT
+  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ addDirT modelDirT modelNameT)
+  let stanMakeConfig = stanMakeConfig' { CS.stancFlags = stancConfigM }
+      stanExeConfigF chainIndex = (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
+                                  { CS.inputData = Just (addDirFP modelDirS $ datFile modelNameT)
+                                  , CS.output = Just (addDirFP modelDirS $ outputFile modelDirT chainIndex) 
+                                  , CS.numSamples = numSamplesM
+                                  , CS.numWarmup = numWarmupM
+                                  }
+  let stanOutputFiles = fmap (\n -> outputFile modelNameT n) [1..numChains]
+  stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDirFP modelDirS) stanOutputFiles)
+  return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT numChains True
 
--- produce JSON from the data, store in FilePath
+-- produce JSON from the data 
 type JSONAction r a = a -> K.Sem r A.Encoding
 
 -- produce a result of type b from the data and the model summary
+-- NB: the cache time will give you newest of data and stan output
 type ResultAction r a b = CS.StanSummary -> K.ActionWithCacheTime r a -> K.Sem r b
 
 runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
@@ -62,45 +93,42 @@ runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
          -> K.ActionWithCacheTime r a
          -> K.Sem r b
 runModel config makeJSON makeResult cachedA = do
-  let addDir d fp = d ++ "/" ++ fp
-      modelNameS = T.unpack $ mrcModel config
+  let modelNameS = T.unpack $ mrcModel config
       modelDirS = T.unpack $ mrcModelDir config
-      modelFile = modelNameS ++ ".stan"
-      datFile = modelNameS ++ "_dat.json"      
-      outputFile n = modelNameS ++ "_" ++ show n ++ ".csv"
-      outputFiles = fmap (\n -> outputFile n) [1..(mrcNumChains config)]
+      outputFiles = fmap (\n -> outputFile (mrcModel config) n) [1..(mrcNumChains config)]
   clangBinDirM <- K.liftKnit $ Env.lookupEnv "CLANG_BINDIR"
   case clangBinDirM of
     Nothing -> K.logLE K.Info "CLANG_BINDIR not set. Using existing path for clang."
     Just clangBinDir -> do
       curPath <- K.liftKnit $ Env.getEnv "PATH"
       K.logLE K.Info $ "Current path: " <> (T.pack $ show curPath) <> ".  Adding " <> (T.pack $ show clangBinDir) <> " for llvm clang."
-  let modelDir = mrcModelDir config
   json_C <- do
-    let jsonFP = addDir modelDirS datFile
+    let jsonFP = addDirFP (T.unpack $ mrcModelDir config) $ datFile $ mrcModel config
     curJSON_C <- BR.fileDependency jsonFP
-    BR.updateIf curJSON_C cachedA $ \a -> makeJSON a >>= K.liftKnit . BL.writeFile datFile . A.encodingToLazyByteString
-
+    BR.updateIf curJSON_C cachedA $ \a -> makeJSON a >>= K.liftKnit . BL.writeFile (datFile $ mrcModel config) . A.encodingToLazyByteString
   stanOutput_C <-  do
-    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDir modelDirS) outputFiles
-    curModel_C <- BR.fileDependency (addDir modelDirS modelFile)
+    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDirFP modelDirS) outputFiles
+    curModel_C <- BR.fileDependency (addDirFP modelDirS $ modelFile $ mrcModel config)
     let runStanDeps = (,) <$> json_C <*> curModel_C
         runOneChain chainIndex = do 
           let exeConfig = (mrcStanExeConfigF config) chainIndex          
           K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> (T.pack $ show chainIndex)
           K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine exeConfig)
-          K.liftKnit $ CS.stan (addDir modelDirS modelNameS) exeConfig
+          K.liftKnit $ CS.stan (addDirFP modelDirS modelNameS) exeConfig
           K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
-    res <- K.ignoreCacheTimeM $ BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
+    res_C <- BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
       K.liftKnit $ CS.make (mrcStanMakeConfig config)
       maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..(mrcNumChains config)])
-    K.knitMaybe "THere was an error running an MCMC chain." res
+    K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain." 
+    return res_C
   K.logLE K.Diagnostic $ "Summary command: "
     <> (T.pack $ (CS.cmdStanDir . mrcStanMakeConfig $ config) ++ "/bin/stansummary")
     <> " "
     <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (mrcStanSummaryConfig config)))
   summary <- K.liftKnit $ CS.stansummary (mrcStanSummaryConfig config)
-  makeResult summary cachedA 
+  when (mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
+  let resultDeps = const <$> cachedA <*> stanOutput_C
+  makeResult summary resultDeps 
                          
                            

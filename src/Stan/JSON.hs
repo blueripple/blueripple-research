@@ -26,9 +26,12 @@ instance X.Exception StanJSONException
 
 frameToStanJSONFile :: Foldable f => FilePath -> StanJSONF row A.Series -> f row -> IO ()
 frameToStanJSONFile fp stanJSONF rows = do
-  case FL.foldM stanJSONF rows of
-    Right s -> BL.writeFile fp $ A.encodingToLazyByteString $ A.pairs s
+  case frameToStanJSONEncoding stanJSONF rows of
+    Right e -> BL.writeFile fp $ A.encodingToLazyByteString e
     Left err -> X.throwIO $ StanJSONException err 
+
+frameToStanJSONEncoding :: Foldable f => StanJSONF row A.Series -> f row -> Either T.Text A.Encoding
+frameToStanJSONEncoding stanJSONF = fmap A.pairs . FL.foldM stanJSONF
 
 -- once we have folds for each piece of data, we use this to combine and get one fold for the data object
 jsonObject :: (Foldable f, Foldable g) => f (StanJSONF row A.Series) -> g row -> Either T.Text A.Encoding
