@@ -157,8 +157,8 @@ runPrefMRPModels = do
                     $ traverse makeRow indices
         BR.logFrame probRows
         return probRows       
-  let stancConfig = (SM.makeDefaultStancConfig "/Users/adam/BlueRipple/research/stan/prefMR") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig "stan" "prefMR" 4 (Just 1000) (Just 1000) (Just stancConfig)
+  let stancConfig = (SM.makeDefaultStancConfig "/Users/adam/BlueRipple/research/stan/ccesPref/prefMR") { CS.useOpenCL = False }
+  stanConfig <- SM.makeDefaultModelRunnerConfig "stan/ccesPref" "prefMR" (Just "ccesPref.json") 4 (Just 1000) (Just 1000) (Just stancConfig)
   _ <- SM.runModel stanConfig makeJson resultsWithStates ccesPres2016ASER5_C
   return ()
 --  let resultsWithStates summary _ = do

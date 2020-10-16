@@ -39,6 +39,7 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcModelDir :: T.Text
   , mrcModel :: T.Text
+  , mrcDatFile :: FilePath
   , mrcNumChains :: Int
   , mrcLogSummary :: Bool
   }
@@ -56,8 +57,8 @@ addDirT dir fp = dir <> "/" <> fp
 addDirFP :: FilePath -> FilePath -> FilePath
 addDirFP dir fp = dir ++ "/" ++ fp
 
-datFile :: T.Text -> FilePath
-datFile modelNameT = (T.unpack modelNameT) ++ "_dat.json"      
+defaultDatFile :: T.Text -> FilePath
+defaultDatFile modelNameT = (T.unpack modelNameT) ++ "_dat.json"      
 
 modelFile :: T.Text -> FilePath
 modelFile modelNameT =  (T.unpack modelNameT) ++ ".stan"
@@ -68,24 +69,28 @@ outputFile modelNameT chainIndex =  (T.unpack modelNameT ++ "_" ++ show chainInd
 makeDefaultModelRunnerConfig :: P.Member (P.Embed IO) r
                              => T.Text
                              -> T.Text
+                             -> Maybe T.Text
+                             -> Maybe T.Text 
                              -> Int
                              -> Maybe Int
                              -> Maybe Int
                              -> Maybe CS.StancConfig
                              -> K.Sem r ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT numChains numWarmupM numSamplesM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
   let modelDirS = T.unpack modelDirT
+      modelName = maybe modelNameT id outputFilePrefixM
+      datFile = maybe (defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ addDirT modelDirT modelNameT)
   let stanMakeConfig = stanMakeConfig' { CS.stancFlags = stancConfigM }
       stanExeConfigF chainIndex = (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
-                                  { CS.inputData = Just (addDirFP modelDirS $ datFile modelNameT)
-                                  , CS.output = Just (addDirFP modelDirS $ outputFile modelNameT chainIndex) 
+                                  { CS.inputData = Just (addDirFP modelDirS $ datFile)
+                                  , CS.output = Just (addDirFP modelDirS $ outputFile modelName chainIndex) 
                                   , CS.numSamples = numSamplesM
                                   , CS.numWarmup = numWarmupM
                                   }
   let stanOutputFiles = fmap (\n -> outputFile modelNameT n) [1..numChains]
   stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDirFP modelDirS) stanOutputFiles)
-  return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT numChains True
+  return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT datFile numChains True
 
 
 
@@ -107,7 +112,7 @@ runModel config makeJSON makeResult cachedA = do
       K.logLE K.Info $ "Current path: " <> (T.pack $ show curPath) <> ".  Adding " <> (T.pack $ show clangBinDir) <> " for llvm clang."
       K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
   json_C <- do
-    let jsonFP = addDirFP (T.unpack $ mrcModelDir config) $ datFile $ mrcModel config
+    let jsonFP = addDirFP (T.unpack $ mrcModelDir config) $ mrcDatFile config 
     curJSON_C <- BR.fileDependency jsonFP
     BR.updateIf curJSON_C cachedA $ \a -> do
       K.logLE K.Info $ "JSON data in \"" <> (T.pack jsonFP) <> "\" is missing or out of date.  Rebuilding..."
