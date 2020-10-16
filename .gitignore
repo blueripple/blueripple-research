@@ -25,5 +25,10 @@ posts
 testbed/*.csv
 *.csv
 stan.html
-stan/*/*.json
-stan/*/*.csv
+stan/*/output
+stan/*/data
+stan/*/*_model
+stan/*/*/output
+stan/*/*/data
+stan/*/*/*_model
+

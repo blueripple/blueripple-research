@@ -22,6 +22,7 @@ transformed data {
 parameters {
   //  real alpha;
   vector[nCat] beta;
+  real<lower = 0> sigma_alpha;
   matrix[J_state, nCat] alpha;
   //  vector[J_sex] bSex;
   //  vector[J_age] bAge;
@@ -37,14 +38,13 @@ transformed parameters {
 }
 */
 model {
-  //  sigma_theta ~ normal (0, 1);
-  to_vector(alpha) ~ normal (0, 1);
+  sigma_alpha ~ normal (0, 10);
+  to_vector(alpha) ~ normal (0, sigma_alpha);
   for (g in 1:G) {
     D_votes[g] ~ binomial_logit(Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
   }
 }
-  
-    
+      
 generated quantities {
   vector <lower = 0, upper = 1> [nCat] nationalProbs;
   matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
