@@ -31,4 +31,6 @@ stan/*/*_model
 stan/*/*/output
 stan/*/*/data
 stan/*/*/*_model
-
+/*.html
+/*.csv
+/*.xlsx
