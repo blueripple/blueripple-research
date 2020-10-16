@@ -238,6 +238,7 @@ executable stan-models
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets
+               , polysemy-RandomFu
                , hs-cmdstan
   
 executable FEC-data

@@ -13,6 +13,7 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
 
+import qualified Data.Random.Source.PureMT     as PureMT
 import qualified Data.Text as T
 import qualified Frames as F
 import qualified Data.Vinyl as V
@@ -33,7 +34,6 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Model.CachedModels as BRC
 import qualified BlueRipple.Model.StanCCES as BRS
 
-
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
@@ -42,6 +42,7 @@ import qualified Stan.ModelRunner as SM
 import qualified System.Environment as Env
 
 import qualified Knit.Report as K
+import           Polysemy.RandomFu              (RandomFu, runRandomIO, runRandomIOPureMT)
 import Data.String.Here (here)
 
 
@@ -72,7 +73,8 @@ main= do
         , K.logIf = K.logDiagnostic
         , K.pandocWriterConfig = pandocWriterConfig
         }
-  resE <- K.knitHtml knitConfig $ makeDoc
+  let pureMTseed = PureMT.pureMT 1
+  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ makeDoc
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "stan.html" htmlAsText
@@ -81,16 +83,15 @@ main= do
 
         
         
-makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
+makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 makeDoc = do
-  K.logLE K.Info "glm-haskell model fit for 2016 presidential votes:"
-  let g r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @BR.Office r == ET.President)
-  glmHaskell_C <- F.filterFrame g <$> BRC.ccesPreferencesASER5_MRP
-  K.ignoreCacheTime glmHaskell_C >>= logFrame
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
-  stan_C <- BRS.prefASER5_MR ET.President 2016
-  K.ignoreCacheTime stan_C >>= logFrame
-
+  stan <- K.ignoreCacheTimeM $ BRS.prefASER5_MR ET.President 2016
+  BR.logFrame stan
+  K.logLE K.Info "glm-haskell model fit for 2016 presidential votes:"
+  let g r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)
+  glmHaskell <- F.filterFrame g <$> (K.ignoreCacheTimeM $ BRC.ccesPreferencesASER5_MRP)
+  BR.logFrame glmHaskell
 
 runPrefMRPModels :: forall r.(K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r ()
 runPrefMRPModels = do
@@ -151,9 +152,7 @@ runPrefMRPModels = do
         stateProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse2D "stateProbs" (CS.paramStats summary))
         -- build rows to left join
         let (states, cats) = SP.getDims stateProbs
-            indices = [(stateI, ca
-
-                         tI) | stateI <- [1..states], catI <- [1..cats]]
+            indices = [(stateI, catI) | stateI <- [1..states], catI <- [1..cats]]
             makeRow (stateI, catI) = do
               abbr <- IM.lookup stateI toState 
               catRec <- IM.lookup catI toCategory
