@@ -96,6 +96,8 @@ makeDefaultModelRunnerConfig modelDirT modelNameT datFileM outputFilePrefixM num
   stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDirFP (modelDirS ++ "/output")) stanOutputFiles)
   return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT (T.pack datFileS) outputFilePrefix numChains True
 
+modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
+modelCacheTime config = BR.fileDependency (T.unpack $ mrcModelDir config <> mrcModel config <> ".stan")
 
 
 runModel :: (K.KnitEffects r,  K.CacheEffectsD r)

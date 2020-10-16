@@ -41,7 +41,7 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 
 prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             => ET.Office
+             => ET.OfficeT
              -> Int
              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec
                                                   ( '[BR.StateAbbreviation]
@@ -50,17 +50,17 @@ prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
                                                     V.++
                                                     '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
                                                   )))
-prefMR office year = do
+prefASER5_MR office year = do
   -- wrangle data  
-  cces_C <- CCES.ccesDataLoader
   countFold <- K.knitEither $ case (office, year) of
     (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
     (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
     (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
     (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
     _ -> Left $ T.pack (show office) <> "/" <> (T.pack $ show year) <> " not available."
-  let officeYear = (T.pack $ show office) <> "_" <> (T.pack $ show year)
-      countCacheKey = "data/stan/ccesCount_" <> officeYear <> ".bin"  
+  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+      countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"  
+  cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ \cces -> do
     K.logLE K.Info $ "CCES data:  Rebuilding " <> countCacheKey
     let addZerosF =  FMR.concatFold $ FMR.mapReduceFold
@@ -71,7 +71,7 @@ prefMR office year = do
                        $ const
                        $ BK.addDefaultRec @DT.CatColsASER5 BR.zeroCount )
         counted = FL.fold countFold cces
-        countedWithZeros = FL.fold addZerosF pres2016        
+        countedWithZeros = FL.fold addZerosF counted
     return countedWithZeros
   -- build enumeration folds
   let enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
@@ -94,7 +94,7 @@ prefMR office year = do
         , (educationF, toEducation)
         , (raceF, toRace)
         , (stateF, toState)
-        , (categoryF, toCategory)) = FL.fold enumF pres2016WithZeros
+        , (categoryF, toCategory)) = FL.fold enumF countedWithZeros
   -- create model runner actions        
   let makeJson ccesASER5 = do
         let dataF = SJ.namedF "G" FL.length
@@ -123,13 +123,24 @@ prefMR office year = do
               let prob = SP.getIndexed stateProbs (stateI, catI)
                   vpv = 2 * prob - 1
                   x :: F.Record ('[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ [BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
-                  x = (abbr F.&: catRec) F.<+> (y F.&: office F.&: vpv F.&: prob F.&: V.RNil)
+                  x = (abbr F.&: catRec) F.<+> (year F.&: office F.&: vpv F.&: prob F.&: V.RNil)
               return x
-        probRows <- K.knitMaybe "Error looking up indices.  Should be impossible!"
+        probRows <- fmap F.toFrame
+                    $ K.knitMaybe "Error looking up indices.  Should be impossible!"
                     $ traverse makeRow indices
         BR.logFrame probRows
         return probRows       
-  let stancConfig = (SM.makeDefaultStancConfig "/Users/adam/BlueRipple/research/stan/ccesPref/prefMR") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig "stan/ccesPref" "prefMR" (Just "ccesPref.json") (Just yearOffice) 4 (Just 1000) (Just 1000) (Just stancConfig)
-  _ <- SM.runModel stanConfig makeJson resultsWithStates ccesASER5_C
-  return ()
+  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_model") { CS.useOpenCL = False }
+  stanConfig <- SM.makeDefaultModelRunnerConfig
+                "stan/voterPref"
+                "binomial_ASER5_state_model"
+                (Just $ "cces_" <> officeYearT <> ".json")
+                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_model")
+                4
+                (Just 1000)
+                (Just 1000)
+                (Just stancConfig)
+  let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> ".bin"
+  modelDep <- SM.modelCacheTime stanConfig
+  let dataModelDep = const <$> modelDep <*> ccesASER5_C
+  BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> SM.runModel stanConfig makeJson resultsWithStates ccesASER5_C
