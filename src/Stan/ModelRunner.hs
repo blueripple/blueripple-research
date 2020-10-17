@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
 module Stan.ModelRunner
   (
     module Stan.ModelRunner
@@ -27,6 +28,7 @@ import           CmdStan.Types (StanMakeConfig(..)
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.Logger            as K
+import qualified Knit.Effect.Serialize            as K
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import           Control.Monad (when)
@@ -49,12 +51,14 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcLogSummary :: Bool
   }
 
--- produce JSON from the data 
-type JSONAction r a = a -> K.Sem r A.Encoding
+
+
+-- produce indexes and json producer from the data 
+type DataWrangler a b = a -> (b, a -> Either T.Text A.Encoding)
 
 -- produce a result of type b from the data and the model summary
--- NB: the cache time will give you newest of data and stan output
-type ResultAction r a b = CS.StanSummary -> K.ActionWithCacheTime r a -> K.Sem r b  
+-- NB: the cache time will give you newest of data, indices and stan output
+type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
 
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp
@@ -64,9 +68,6 @@ addDirFP dir fp = dir ++ "/" ++ fp
 
 defaultDatFile :: T.Text -> FilePath
 defaultDatFile modelNameT = (T.unpack modelNameT) ++ ".json"      
-
-
-
 
 outputFile :: T.Text -> Int -> FilePath
 outputFile outputFilePrefix chainIndex = (T.unpack outputFilePrefix ++ "_" ++ show chainIndex ++ ".csv")
@@ -110,13 +111,13 @@ modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => ModelRunnerConfig -> 
 modelCacheTime config = BR.fileDependency (T.unpack $ addDirT (mrcModelDir config) $ SB.modelFile $ mrcModel config)
 
 
-runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
+runModel :: (K.KnitEffects r,  K.CacheEffectsD r, K.DefaultSerializer b)
          => ModelRunnerConfig
-         -> JSONAction r a
-         -> ResultAction r a b
+         -> DataWrangler a b
+         -> ResultAction r a b c
          -> K.ActionWithCacheTime r a
-         -> K.Sem r b
-runModel config makeJSON makeResult cachedA = do
+         -> K.Sem r c
+runModel config dataWrangler makeResult cachedA = do
   let modelNameS = T.unpack $ mrcModel config
       modelDirS = T.unpack $ mrcModelDir config
 
@@ -124,19 +125,26 @@ runModel config makeJSON makeResult cachedA = do
   let outputFiles = fmap (\n -> outputFile (mrcOutputPrefix config) n) [1..(mrcNumChains config)]
   checkClangEnv
   checkDir (mrcModelDir config) >>= K.knitMaybe "Model directory is missing!" 
-  createDirIfNecessary (mrcModelDir config <> "/data")
-  createDirIfNecessary (mrcModelDir config <> "/output")
+  createDirIfNecessary (mrcModelDir config <> "/data") -- json inputs
+  createDirIfNecessary (mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
-  json_C <- do
-    let jsonFP = addDirFP (modelDirS ++ "/data") $ T.unpack $ mrcDatFile config 
-    curJSON_C <- BR.fileDependency jsonFP
+
+
+  let indexCacheKey :: T.Text = "stan/index/" <> (mrcOutputPrefix config) <> ".bin"
+      jsonFP = addDirFP (modelDirS ++ "/data") $ T.unpack $ mrcDatFile config
+  curJSON_C <- BR.fileDependency jsonFP      
+  let indexJsonDeps = const <$> cachedA <*> curJSON_C  
+  indices_C <- K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData indexCacheKey indexJsonDeps $ \a -> do
+    let (indices, makeJsonE) = dataWrangler a
     BR.updateIf curJSON_C cachedA $ \a -> do
-      K.logLE K.Info $ "JSON data in \"" <> (T.pack jsonFP) <> "\" is missing or out of date.  Rebuilding..."
-      makeJSON a >>= K.liftKnit . BL.writeFile jsonFP . A.encodingToLazyByteString
+      K.logLE K.Info $ "Indices/JSON data in \"" <> (T.pack jsonFP) <> "\" is missing or out of date.  Rebuilding..."
+      jsonEncoding <- K.knitEither $ makeJsonE a 
+      K.liftKnit . BL.writeFile jsonFP $ A.encodingToLazyByteString jsonEncoding
       K.logLE K.Info "Finished rebuilding JSON."
+    return indices
   stanOutput_C <-  do
     curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDirFP (modelDirS ++ "/output")) outputFiles
-    let runStanDeps = (,) <$> json_C <*> curModel_C
+    let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
         runOneChain chainIndex = do 
           let exeConfig = (mrcStanExeConfigF config) chainIndex          
           K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> (T.pack $ show chainIndex)
@@ -156,7 +164,7 @@ runModel config makeJSON makeResult cachedA = do
     <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (mrcStanSummaryConfig config)))
   summary <- K.liftKnit $ CS.stansummary (mrcStanSummaryConfig config)
   when (mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
-  let resultDeps = const <$> cachedA <*> stanOutput_C
+  let resultDeps = (\a b c -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
   makeResult summary resultDeps 
 
 checkClangEnv ::  (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) => K.Sem r ()

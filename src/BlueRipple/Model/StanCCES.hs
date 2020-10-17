@@ -20,6 +20,7 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Serialize as FS
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -43,8 +44,69 @@ import qualified Knit.Report as K
 import Data.String.Here (here)
 
 
+type CCES_CountRow = '[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ BR.CountCols
+ccesDataWrangler :: SM.DataWrangler
+                    (F.FrameRec CCES_CountRow)
+                    (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
+ccesDataWrangler cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
+  enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
+  enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
+  enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
+  enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
+  enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
+  enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
+  -- do outer enumeration fold for indices
+  enumF = (,,,,,)
+    <$> enumSexF
+    <*> enumAgeF
+    <*> enumEducationF
+    <*> enumRaceF
+    <*> enumStateF
+    <*> enumCategoryF
+  ((sexF, toSex)
+    , (ageF, toAge)
+    , (educationF, toEducation)
+    , (raceF, toRace)
+    , (stateF, toState)
+    , (categoryF, toCategory)) = FL.fold enumF cces
+  makeJsonE x = SJ.frameToStanJSONEncoding dataF cces where
+    dataF = SJ.namedF "G" FL.length
+            <> SJ.constDataF "J_state" (IM.size toState)
+            <> SJ.constDataF "J_sex" (IM.size toSex)
+            <> SJ.constDataF "J_age" (IM.size toAge)
+            <> SJ.constDataF "J_educ" (IM.size toEducation)
+            <> SJ.constDataF "J_race" (IM.size toRace)
+--          <> SJ.valueToPairF "sex" sexF
+--          <> SJ.valueToPairF "age" ageF
+--          <> SJ.valueToPairF "education" educationF
+--          <> SJ.valueToPairF "race" raceF
+            <> SJ.valueToPairF "category" categoryF
+            <> SJ.valueToPairF "state" stateF
+            <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+            <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
+  
+
+countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec CCES_CountRow)
+countCCESASER5 office year ccesMRP = do
+  countFold <- K.knitEither $ case (office, year) of
+    (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
+    (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
+    (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
+    (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
+    _ -> Left $ T.pack (show office) <> "/" <> (T.pack $ show year) <> " not available."
+  let addZerosF =  FMR.concatFold $ FMR.mapReduceFold
+                   (FMR.noUnpack)
+                   (FMR.splitOnKeys @'[BR.StateAbbreviation])
+                   ( FMR.makeRecsWithKey id
+                     $ FMR.ReduceFold
+                     $ const
+                     $ BK.addDefaultRec @DT.CatColsASER5 BR.zeroCount )
+      counted = FL.fold countFold ccesMRP
+      countedWithZeros = FL.fold addZerosF counted
+  return countedWithZeros
+
 prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             -> ET.OfficeT
+             => ET.OfficeT
              -> Int
              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec
                                                   ( '[BR.StateAbbreviation]
@@ -54,7 +116,12 @@ prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
                                                     '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
                                                   )))
 prefASER5_MR office year = do
-  -- wrangle data  
+  -- count data
+  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+      countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
+  cces_C <- CCES.ccesDataLoader
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
+{-  
   countFold <- K.knitEither $ case (office, year) of
     (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
     (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
@@ -76,46 +143,10 @@ prefASER5_MR office year = do
         counted = FL.fold countFold cces
         countedWithZeros = FL.fold addZerosF counted
     return countedWithZeros
-  -- build enumeration folds
-  let enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
-      enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
-      enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
-      enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
-      enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
-      enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
-  -- do outer enumeration fold for indices
-  countedWithZeros <- K.ignoreCacheTime ccesASER5_C
-  let enumF = (,,,,,)
-        <$> enumSexF
-        <*> enumAgeF
-        <*> enumEducationF
-        <*> enumRaceF
-        <*> enumStateF
-        <*> enumCategoryF
-      ((sexF, toSex)
-        , (ageF, toAge)
-        , (educationF, toEducation)
-        , (raceF, toRace)
-        , (stateF, toState)
-        , (categoryF, toCategory)) = FL.fold enumF countedWithZeros
-  -- create model runner actions        
-  let makeJson ccesASER5 = do
-        let dataF = SJ.namedF "G" FL.length
-                    <> SJ.constDataF "J_state" (IM.size toState)
-                    <> SJ.constDataF "J_sex" (IM.size toSex)
-                    <> SJ.constDataF "J_age" (IM.size toAge)
-                    <> SJ.constDataF "J_educ" (IM.size toEducation)
-                    <> SJ.constDataF "J_race" (IM.size toRace)
---                  <> SJ.valueToPairF "sex" sexF
---                  <> SJ.valueToPairF "age" ageF
---                  <> SJ.valueToPairF "education" educationF
---                  <> SJ.valueToPairF "race" raceF
-                    <> SJ.valueToPairF "category" categoryF
-                    <> SJ.valueToPairF "state" stateF
-                    <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-                    <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-        K.knitEither $ SJ.frameToStanJSONEncoding dataF ccesASER5
-      resultsWithStates summary _ = do
+-}
+  let resultsWithStates summary cachedDataIndex = do
+        (_, (toState, toCategoryS)) <- K.ignoreCacheTime cachedDataIndex
+        let toCategory = fmap FS.fromS toCategoryS
         stateProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse2D "stateProbs" (CS.paramStats summary))
         -- build rows to left join
         let (states, cats) = SP.getDims stateProbs
@@ -156,7 +187,7 @@ prefASER5_MR office year = do
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig makeJson resultsWithStates ccesASER5_C
+    SM.runModel stanConfig ccesDataWrangler resultsWithStates ccesASER5_C
 
 
 binomialASER5_StateDataBlock :: SB.DataBlock
@@ -212,7 +243,7 @@ binomialASER5_StateGeneratedQuantitiesBlock = [here|
 |]
 
 binomialASER5_StateGQLooBlock :: SB.GeneratedQuantitiesBlock
-binomialASER5_StateGLooBlock = [here|
+binomialASER5_StateGQLooBlock = [here|
   vector[G] log_lik;  
   for (g in 1:G) {
       log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]])

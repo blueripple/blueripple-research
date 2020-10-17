@@ -102,6 +102,7 @@ library
                  , Stan.Parameters
                  , Stan.ModelRunner
                  , Stan.ModelBuilder
+                 , Stan.RScriptBuilder
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
