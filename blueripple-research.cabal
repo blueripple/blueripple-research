@@ -101,6 +101,7 @@ library
                  , Stan.JSON
                  , Stan.Parameters
                  , Stan.ModelRunner
+                 , Stan.ModelBuilder
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4

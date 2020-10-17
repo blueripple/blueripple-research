@@ -12,6 +12,7 @@ module Stan.ModelRunner
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
+import qualified Stan.ModelBuilder as SB
 
 import           CmdStan (StancConfig(..)
                          , makeDefaultStancConfig
@@ -64,15 +65,16 @@ addDirFP dir fp = dir ++ "/" ++ fp
 defaultDatFile :: T.Text -> FilePath
 defaultDatFile modelNameT = (T.unpack modelNameT) ++ ".json"      
 
-modelFile :: T.Text -> FilePath
-modelFile modelNameT =  (T.unpack modelNameT) ++ ".stan"
+
+
 
 outputFile :: T.Text -> Int -> FilePath
 outputFile outputFilePrefix chainIndex = (T.unpack outputFilePrefix ++ "_" ++ show chainIndex ++ ".csv")
 
-makeDefaultModelRunnerConfig :: P.Member (P.Embed IO) r
+makeDefaultModelRunnerConfig :: K.KnitEffects r
                              => T.Text
                              -> T.Text
+                             -> Maybe SB.StanModel -- ^ Assume model file exists when Nothing.  Otherwise generate from this and use.
                              -> Maybe T.Text
                              -> Maybe T.Text 
                              -> Int
@@ -80,10 +82,18 @@ makeDefaultModelRunnerConfig :: P.Member (P.Embed IO) r
                              -> Maybe Int
                              -> Maybe CS.StancConfig
                              -> K.Sem r ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = maybe modelNameT id outputFilePrefixM
-      datFileS = maybe (defaultDatFile modelNameT) T.unpack datFileM
+  case modelM of
+    Nothing -> return ()
+    Just m -> do
+      modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame m modelDirT modelNameT
+      case modelState of
+        SB.New -> K.logLE K.Info $ "Given model was new."
+        SB.Same -> K.logLE K.Info $ "Given model was the same as existing model file."
+        SB.Updated newName -> K.logLE K.Info $ "Given model was different from exisiting.  Old one was moved to \"" <>  newName <> "\"."        
+  let datFileS = maybe (defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ addDirT modelDirT modelNameT)
   let stanMakeConfig = stanMakeConfig' { CS.stancFlags = stancConfigM }
       stanExeConfigF chainIndex = (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
@@ -97,7 +107,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT datFileM outputFilePrefixM num
   return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT (T.pack datFileS) outputFilePrefix numChains True
 
 modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = BR.fileDependency (T.unpack $ mrcModelDir config <> mrcModel config <> ".stan")
+modelCacheTime config = BR.fileDependency (T.unpack $ addDirT (mrcModelDir config) $ SB.modelFile $ mrcModel config)
 
 
 runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
@@ -109,11 +119,14 @@ runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
 runModel config makeJSON makeResult cachedA = do
   let modelNameS = T.unpack $ mrcModel config
       modelDirS = T.unpack $ mrcModelDir config
-      outputFiles = fmap (\n -> outputFile (mrcOutputPrefix config) n) [1..(mrcNumChains config)]
+
+  curModel_C <- BR.fileDependency (addDirFP modelDirS $ T.unpack $ SB.modelFile $ mrcModel config)    
+  let outputFiles = fmap (\n -> outputFile (mrcOutputPrefix config) n) [1..(mrcNumChains config)]
   checkClangEnv
   checkDir (mrcModelDir config) >>= K.knitMaybe "Model directory is missing!" 
   createDirIfNecessary (mrcModelDir config <> "/data")
   createDirIfNecessary (mrcModelDir config <> "/output")
+  createDirIfNecessary (mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   json_C <- do
     let jsonFP = addDirFP (modelDirS ++ "/data") $ T.unpack $ mrcDatFile config 
     curJSON_C <- BR.fileDependency jsonFP
@@ -123,7 +136,6 @@ runModel config makeJSON makeResult cachedA = do
       K.logLE K.Info "Finished rebuilding JSON."
   stanOutput_C <-  do
     curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDirFP (modelDirS ++ "/output")) outputFiles
-    curModel_C <- BR.fileDependency (addDirFP modelDirS $ modelFile $ mrcModel config)
     let runStanDeps = (,) <$> json_C <*> curModel_C
         runOneChain chainIndex = do 
           let exeConfig = (mrcStanExeConfigF config) chainIndex          

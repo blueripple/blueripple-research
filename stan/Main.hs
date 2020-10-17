@@ -169,6 +169,7 @@ runPrefMRPModels = do
   stanConfig <- SM.makeDefaultModelRunnerConfig
     "stan/voterPref"
     "binomial_ASER5_state_model"
+    Nothing
     (Just "cces_President_2016.json")
     (Just "cces_President_2016_binomial_ASER5_state")
     4

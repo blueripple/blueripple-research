@@ -36,12 +36,15 @@ import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
+import qualified Stan.ModelBuilder as SB
 import qualified System.Environment as Env
 
 import qualified Knit.Report as K
+import Data.String.Here (here)
+
 
 prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             => ET.OfficeT
+             -> ET.OfficeT
              -> Int
              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec
                                                   ( '[BR.StateAbbreviation]
@@ -109,7 +112,7 @@ prefASER5_MR office year = do
 --                  <> SJ.valueToPairF "race" raceF
                     <> SJ.valueToPairF "category" categoryF
                     <> SJ.valueToPairF "state" stateF
-                    <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ F.rgetField @BR.UnweightedSuccesses)
+                    <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
                     <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
         K.knitEither $ SJ.frameToStanJSONEncoding dataF ccesASER5
       resultsWithStates summary _ = do
@@ -131,9 +134,17 @@ prefASER5_MR office year = do
         BR.logFrame probRows
         return probRows       
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_model") { CS.useOpenCL = False }
+      model = SB.StanModel
+              binomialASER5_StateDataBlock
+              (Just binomialASER5_StateTransformedDataBlock)
+              binomialASER5_StateParametersBlock
+              Nothing
+              binomialASER5_StateModelBlock
+              (Just binomialASER5_StateGeneratedQuantitiesBlock)
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 "binomial_ASER5_state_model"
+                (Just model)
                 (Just $ "cces_" <> officeYearT <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_model")
                 4
@@ -143,4 +154,68 @@ prefASER5_MR office year = do
   let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> ".bin"
   modelDep <- SM.modelCacheTime stanConfig
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
-  BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> SM.runModel stanConfig makeJson resultsWithStates ccesASER5_C
+  BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
+    K.logLE K.Info "Data or model newer than last cached result. Rerunning."
+    SM.runModel stanConfig makeJson resultsWithStates ccesASER5_C
+
+
+binomialASER5_StateDataBlock :: SB.DataBlock
+binomialASER5_StateDataBlock = [here|
+  int<lower = 0> G; // number of cells
+  int<lower = 1> J_state; // number of states
+  int<lower = 1> J_sex; // number of sex categories
+  int<lower = 1> J_age; // number of age categories
+  int<lower = 1> J_educ; // number of education categories
+  int<lower = 1> J_race; // number of race categories  
+  //  int<lower = 1, upper = J_sex> sex[G];
+  //  int<lower = 1, upper = J_age> age[G];
+  //  int<lower = 1, upper = J_educ> education[G];
+  //  int<lower = 1, upper = J_race> race[G];
+  int<lower = 1, upper = J_state> state[G];
+  int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
+  int<lower = 0> D_votes[G];
+  int<lower = 0> Total_votes[G];
+|]
+
+binomialASER5_StateTransformedDataBlock :: SB.TransformedDataBlock
+binomialASER5_StateTransformedDataBlock = [here|
+  int <lower=1> nCat;
+  nCat =  J_age * J_sex * J_educ * J_race;
+|]
+
+binomialASER5_StateParametersBlock :: SB.ParametersBlock
+binomialASER5_StateParametersBlock = [here|
+  vector[nCat] beta;
+  real<lower=0> sigma_alpha;
+  matrix[J_state, nCat] alpha;
+|]
+
+binomialASER5_StateModelBlock :: SB.ModelBlock
+binomialASER5_StateModelBlock = [here|
+  sigma_alpha ~ normal (0, 10);
+  to_vector(alpha) ~ normal (0, sigma_alpha);
+  for (g in 1:G) {
+   D_votes[g] ~ binomial_logit(Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
+  }
+|]
+
+binomialASER5_StateGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_StateGeneratedQuantitiesBlock = [here|
+  vector <lower = 0, upper = 1> [nCat] nationalProbs;
+  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
+  nationalProbs = inv_logit(beta[category]);
+  for (s in 1:J_state) {
+    for (c in 1:nCat) {
+      stateProbs[s, c] = inv_logit(beta[c] + alpha[s, c]);
+    }
+  }
+|]
+
+binomialASER5_StateGQLooBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_StateGLooBlock = [here|
+  vector[G] log_lik;  
+  for (g in 1:G) {
+      log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]])
+    }
+  }
+|]    
