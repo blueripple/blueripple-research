@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -31,7 +32,12 @@ type DataWrangler a b = a -> (b, a -> Either T.Text A.Encoding)
 
 -- produce a result of type b from the data and the model summary
 -- NB: the cache time will give you newest of data, indices and stan output
-type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
+--type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
+
+data ResultAction r a b c where
+  UseSummary :: (CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c) -> ResultAction r a b c
+  SkipSummary :: (K.ActionWithCacheTime r (a, b) -> K.Sem r c) -> ResultAction r a b c
+  DoNothing :: ResultAction r a b ()
 
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp

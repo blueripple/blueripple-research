@@ -42,7 +42,7 @@ import qualified System.Directory as Dir
 makeDefaultModelRunnerConfig :: K.KnitEffects r
                              => T.Text
                              -> T.Text
-                             -> Maybe SB.StanModel -- ^ Assume model file exists when Nothing.  Otherwise generate from this and use.
+                             -> Maybe (SB.GeneratedQuantities, SB.StanModel) -- ^ Assume model file exists when Nothing.  Otherwise generate from this and use.
                              -> Maybe T.Text
                              -> Maybe T.Text 
                              -> Int
@@ -55,8 +55,8 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       outputFilePrefix = maybe modelNameT id outputFilePrefixM
   case modelM of
     Nothing -> return ()
-    Just m -> do
-      modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame m modelDirT modelNameT
+    Just (gq, m) -> do
+      modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDirT modelNameT
       case modelState of
         SB.New -> K.logLE K.Info $ "Given model was new."
         SB.Same -> K.logLE K.Info $ "Given model was the same as existing model file."
@@ -152,14 +152,18 @@ runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
     K.logLE K.Info "writing R scripts"
     K.liftKnit $ writeRScripts rScriptsToWrite config
     return res_C
-  K.logLE K.Diagnostic $ "Summary command: "
-    <> (T.pack $ (CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
-    <> " "
-    <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
-  summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
-  when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
   let resultDeps = (\a b c -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
-  makeResult summary resultDeps 
+  case makeResult of
+    SC.UseSummary f -> do 
+      K.logLE K.Diagnostic $ "Summary command: "
+        <> (T.pack $ (CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+        <> " "
+        <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
+      summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
+      when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
+      f summary resultDeps
+    SC.SkipSummary f -> f resultDeps
+    SC.DoNothing -> return ()
 
 checkClangEnv ::  (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) => K.Sem r ()
 checkClangEnv = K.wrapPrefix "checkClangEnv" $ do

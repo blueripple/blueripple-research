@@ -144,17 +144,10 @@ prefASER5_MR office year = do
         --BR.logFrame probRows
         return probRows       
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state") { CS.useOpenCL = False }
-      model = SB.StanModel
-              binomialASER5_StateDataBlock
-              (Just binomialASER5_StateTransformedDataBlock)
-              binomialASER5_StateParametersBlock
-              Nothing
-              binomialASER5_StateModelBlock
-              (Just binomialASER5_StateGeneratedQuantitiesBlock)
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 "binomial_ASER5_state_model"
-                (Just model)
+                (Just (SB.NoLL, model_v1))
                 (Just $ "cces_" <> officeYearT <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_model")
                 4
@@ -166,7 +159,7 @@ prefASER5_MR office year = do
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler resultsWithStates ccesASER5_C
+    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary resultsWithStates) ccesASER5_C
 
 
 prefASER5_MR_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
@@ -179,26 +172,18 @@ prefASER5_MR_Loo office year = do
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let results _ _ = return ()
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_loo") { CS.useOpenCL = False }
-      model = SB.StanModel
-              binomialASER5_StateDataBlock
-              (Just binomialASER5_StateTransformedDataBlock)
-              binomialASER5_StateParametersBlock
-              Nothing
-              binomialASER5_StateModelBlock
-              (Just binomialASER5_StateGQLooBlock)
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 "binomial_ASER5_state_loo"
-                (Just model)
+                (Just (SB.OnlyLL, model_v1))
                 (Just $ "cces_" <> officeYearT <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_loo")
                 4
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler results ccesASER5_C
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
 
 prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -210,27 +195,38 @@ prefASER5_MR_v2_Loo office year = do
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let results _ _ = return ()
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v2_loo") { CS.useOpenCL = False }
-      model = SB.StanModel
-              binomialASER5_StateDataBlock
-              (Just binomialASER5_StateTransformedDataBlock)
-              binomialASER5_v2_StateParametersBlock
-              Nothing
-              binomialASER5_v2_StateModelBlock
-              (Just binomialASER5_v2_StateGQLooBlock)
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 "binomial_ASER5_state_v2_loo"
-                (Just model)
+                (Just (SB.OnlyLL, model_v2))
                 (Just $ "cces_" <> officeYearT <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v2_loo")
                 4
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler results ccesASER5_C
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
 
+model_v1 :: SB.StanModel
+model_v1 = SB.StanModel
+           binomialASER5_StateDataBlock
+           (Just binomialASER5_StateTransformedDataBlock)
+           binomialASER5_StateParametersBlock
+           Nothing
+           binomialASER5_StateModelBlock
+           (Just binomialASER5_StateGeneratedQuantitiesBlock)
+           binomialASER5_StateGQLLBlock
+
+model_v2 :: SB.StanModel
+model_v2 = SB.StanModel
+           binomialASER5_StateDataBlock
+           (Just binomialASER5_StateTransformedDataBlock)
+           binomialASER5_v2_StateParametersBlock
+           Nothing
+           binomialASER5_v2_StateModelBlock
+           (Just binomialASER5_v2_StateGeneratedQuantitiesBlock)
+           binomialASER5_v2_StateGQLLBlock
 
 binomialASER5_StateDataBlock :: SB.DataBlock
 binomialASER5_StateDataBlock = [here|
@@ -284,8 +280,8 @@ binomialASER5_StateGeneratedQuantitiesBlock = [here|
   }
 |]
 
-binomialASER5_StateGQLooBlock :: SB.GeneratedQuantitiesBlock
-binomialASER5_StateGQLooBlock = [here|
+binomialASER5_StateGQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_StateGQLLBlock = [here|
   vector[G] log_lik;  
   for (g in 1:G) {
       log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
@@ -315,8 +311,8 @@ binomialASER5_v2_StateGeneratedQuantitiesBlock = [here|
   stateProbs = inv_logit(beta[category] + alpha[state])
 |]
 
-binomialASER5_v2_StateGQLooBlock :: SB.GeneratedQuantitiesBlock
-binomialASER5_v2_StateGQLooBlock = [here|
+binomialASER5_v2_StateGQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v2_StateGQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g]]);

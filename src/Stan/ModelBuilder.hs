@@ -30,6 +30,7 @@ type TransformedParametersBlock = T.Text
 type ModelBlock = T.Text
 type GeneratedQuantitiesBlock = T.Text
 
+data GeneratedQuantities = NoLL | OnlyLL | All 
 
 data StanModel = StanModel { dataBlock :: DataBlock
                            , transformedDataBlockM :: Maybe TransformedDataBlock
@@ -37,10 +38,11 @@ data StanModel = StanModel { dataBlock :: DataBlock
                            , transformedParametersBlockM :: Maybe TransformedParametersBlock
                            , modelBlock :: ModelBlock
                            , generatedQuantitiesBlockM :: Maybe GeneratedQuantitiesBlock
+                           , genLogLikelihoodBlock :: GeneratedQuantitiesBlock
                            } deriving (Show, Eq, Ord)
 
-stanModelAsText :: StanModel -> T.Text
-stanModelAsText sm =
+stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
+stanModelAsText gq sm =
   let section h b = h <> " {\n" <> b <> "\n}\n"
       maybeSection h = maybe "" (section h)
   in section "data" (dataBlock sm)
@@ -48,7 +50,13 @@ stanModelAsText sm =
      <> section "parameters" (parametersBlock sm)
      <> maybeSection "transformed parameters" (transformedParametersBlockM sm)
      <> section "model" (modelBlock sm)
-     <> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
+     <> case gq of
+          NoLL -> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
+          OnlyLL -> section "generated quantities" (genLogLikelihoodBlock sm)
+          All -> section "generated quantities"
+                 $ genLogLikelihoodBlock sm
+                 <> "\n"
+                 <> fromMaybe "" (generatedQuantitiesBlockM sm)
 
 modelFile :: T.Text -> T.Text
 modelFile modelNameT =  modelNameT <> ".stan"
@@ -57,28 +65,28 @@ modelFile modelNameT =  modelNameT <> ".stan"
 -- need an available file name to proceed
 data ModelState = New | Same | Updated T.Text deriving (Show)
 
-renameAndWriteIfNotSame :: StanModel -> T.Text -> T.Text -> IO ModelState
-renameAndWriteIfNotSame m modelDir modelName = do
+renameAndWriteIfNotSame :: GeneratedQuantities -> StanModel -> T.Text -> T.Text -> IO ModelState
+renameAndWriteIfNotSame gq m modelDir modelName = do
   let fileName d n = T.unpack $ d <> "/" <> n <> ".stan"
       curFile = fileName modelDir modelName
       findAvailableName modelDir modelName n = do
         let newName = fileName modelDir (modelName <> "_o" <> (T.pack $ show n)) 
         newExists <- Dir.doesFileExist newName
         if newExists then findAvailableName modelDir modelName (n+1) else return $ T.pack newName
+      newModel =  stanModelAsText gq m 
   exists <- Dir.doesFileExist curFile
   case exists of
     False -> do
-      T.writeFile (fileName modelDir modelName) $ stanModelAsText m
+      T.writeFile (fileName modelDir modelName) newModel
       return New
     True -> do
-      let new = stanModelAsText m
       extant <- T.readFile curFile
-      case extant == new of
+      case extant == newModel of
         True -> return Same
         False -> do
           newName <- findAvailableName modelDir modelName 1
           Dir.renameFile (fileName modelDir modelName) (T.unpack newName)
-          T.writeFile (fileName modelDir modelName) $ stanModelAsText m
+          T.writeFile (fileName modelDir modelName) newModel
           return $ Updated newName
         
 
