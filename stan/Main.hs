@@ -80,16 +80,17 @@ main= do
       K.writeAndMakePathLT "stan.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
-
-        
-        
+                
 makeDoc :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 makeDoc = do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
   stan <- K.ignoreCacheTimeM $ BRS.prefASER5_MR ET.President 2016
-  BR.logFrame stan
+  BRS.prefASER5_MR_Loo ET.President 2016
+  
+--  BR.logFrame stan
+{-
   K.logLE K.Info "glm-haskell model fit for 2016 presidential votes:"
   let g r = (F.rgetField @BR.Year r == 2016) && (F.rgetField @ET.Office r == ET.President)
   glmHaskell <- F.filterFrame g <$> (K.ignoreCacheTimeM $ BRC.ccesPreferencesASER5_MRP)
   BR.logFrame glmHaskell
-
+-}

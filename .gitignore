@@ -18,6 +18,8 @@ examples/html
 *.ps
 *.aux
 *.png
+.Rdata
+.Rhistory
 reports/MRP/data
 .knit-haskell-cache
 bigData
@@ -28,9 +30,11 @@ stan.html
 stan/*/output
 stan/*/data
 stan/*/*_model
+stan/*/*_loo
 stan/*/*/output
 stan/*/*/data
 stan/*/*/*_model
+stan/*/*/*_loo
 /*.html
 /*.csv
 /*.xlsx

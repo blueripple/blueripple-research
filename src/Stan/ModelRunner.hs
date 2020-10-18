@@ -13,18 +13,16 @@ module Stan.ModelRunner
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
+import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.RScriptBuilder as SR
+
 
 import           CmdStan (StancConfig(..)
                          , makeDefaultStancConfig
                          , StanExeConfig(..)
                          , StanSummary
                          )
-{-                 
-import           CmdStan.Types (StanMakeConfig(..)
-                               , StanSummaryConfig(..)
-                               )
--}
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.Logger            as K
@@ -36,41 +34,10 @@ import qualified Data.Aeson.Encoding as A
 import qualified Data.ByteString.Lazy as BL
 import qualified Polysemy as P
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified System.Environment as Env
 import qualified System.Directory as Dir
 
-data ModelRunnerConfig = ModelRunnerConfig
-  { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeConfigF :: Int -> CS.StanExeConfig
-  , mrcStanSummaryConfig :: CS.StansummaryConfig
-  , mrcModelDir :: T.Text
-  , mrcModel :: T.Text
-  , mrcDatFile :: T.Text
-  , mrcOutputPrefix :: T.Text
-  , mrcNumChains :: Int
-  , mrcLogSummary :: Bool
-  }
-
-
-
--- produce indexes and json producer from the data 
-type DataWrangler a b = a -> (b, a -> Either T.Text A.Encoding)
-
--- produce a result of type b from the data and the model summary
--- NB: the cache time will give you newest of data, indices and stan output
-type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
-
-addDirT :: T.Text -> T.Text -> T.Text
-addDirT dir fp = dir <> "/" <> fp
-
-addDirFP :: FilePath -> FilePath -> FilePath
-addDirFP dir fp = dir ++ "/" ++ fp
-
-defaultDatFile :: T.Text -> FilePath
-defaultDatFile modelNameT = (T.unpack modelNameT) ++ ".json"      
-
-outputFile :: T.Text -> Int -> FilePath
-outputFile outputFilePrefix chainIndex = (T.unpack outputFilePrefix ++ "_" ++ show chainIndex ++ ".csv")
 
 makeDefaultModelRunnerConfig :: K.KnitEffects r
                              => T.Text
@@ -82,7 +49,7 @@ makeDefaultModelRunnerConfig :: K.KnitEffects r
                              -> Maybe Int
                              -> Maybe Int
                              -> Maybe CS.StancConfig
-                             -> K.Sem r ModelRunnerConfig
+                             -> K.Sem r SC.ModelRunnerConfig
 makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = maybe modelNameT id outputFilePrefixM
@@ -94,44 +61,69 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
         SB.New -> K.logLE K.Info $ "Given model was new."
         SB.Same -> K.logLE K.Info $ "Given model was the same as existing model file."
         SB.Updated newName -> K.logLE K.Info $ "Given model was different from exisiting.  Old one was moved to \"" <>  newName <> "\"."        
-  let datFileS = maybe (defaultDatFile modelNameT) T.unpack datFileM
-  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ addDirT modelDirT modelNameT)
+  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
+  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDirT modelNameT)
   let stanMakeConfig = stanMakeConfig' { CS.stancFlags = stancConfigM }
       stanExeConfigF chainIndex = (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
-                                  { CS.inputData = Just (addDirFP (modelDirS ++ "/data") $ datFileS)
-                                  , CS.output = Just (addDirFP (modelDirS ++ "/output") $ outputFile outputFilePrefix chainIndex) 
+                                  { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") $ datFileS)
+                                  , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix chainIndex) 
                                   , CS.numSamples = numSamplesM
                                   , CS.numWarmup = numWarmupM
                                   }
-  let stanOutputFiles = fmap (\n -> outputFile outputFilePrefix n) [1..numChains]
-  stanSummaryConfig <- K.liftKnit $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (addDirFP (modelDirS ++ "/output")) stanOutputFiles)
-  return $ ModelRunnerConfig stanMakeConfig stanExeConfigF stanSummaryConfig modelDirT modelNameT (T.pack datFileS) outputFilePrefix numChains True
+  let stanOutputFiles = fmap (\n -> SC.outputFile outputFilePrefix n) [1..numChains]
+  stanSummaryConfig <- K.liftKnit
+                       $ CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (SC.addDirFP (modelDirS ++ "/output")) stanOutputFiles)
+  return $ SC.ModelRunnerConfig
+    stanMakeConfig
+    stanExeConfigF
+    stanSummaryConfig
+    modelDirT
+    modelNameT
+    (T.pack datFileS)
+    outputFilePrefix
+    numChains
+    True
 
-modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = BR.fileDependency (T.unpack $ addDirT (mrcModelDir config) $ SB.modelFile $ mrcModel config)
+modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
+modelCacheTime config = BR.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
 
+data RScripts = None | ShinyStan | Loo | Both deriving (Show, Eq, Ord)
+
+writeRScripts :: RScripts -> SC.ModelRunnerConfig -> IO ()
+writeRScripts rScripts config = do
+  dirBase <- T.pack <$> Dir.getCurrentDirectory
+  let modelDir = SC.mrcModelDir config
+      scriptPrefix = SC.mrcOutputPrefix config
+      writeShiny = SR.shinyStanScript config dirBase >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> "_shinystan.R") 
+      writeLoo = SR.looScript config dirBase scriptPrefix 10 >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> ".R") 
+  case rScripts of
+    None -> return ()
+    ShinyStan -> writeShiny
+    Loo -> writeLoo
+    Both -> writeShiny >> writeLoo
 
 runModel :: (K.KnitEffects r,  K.CacheEffectsD r, K.DefaultSerializer b)
-         => ModelRunnerConfig
-         -> DataWrangler a b
-         -> ResultAction r a b c
+         => SC.ModelRunnerConfig
+         -> RScripts
+         -> SC.DataWrangler a b
+         -> SC.ResultAction r a b c
          -> K.ActionWithCacheTime r a
          -> K.Sem r c
-runModel config dataWrangler makeResult cachedA = do
-  let modelNameS = T.unpack $ mrcModel config
-      modelDirS = T.unpack $ mrcModelDir config
+runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
+  let modelNameS = T.unpack $ SC.mrcModel config
+      modelDirS = T.unpack $ SC.mrcModelDir config
 
-  curModel_C <- BR.fileDependency (addDirFP modelDirS $ T.unpack $ SB.modelFile $ mrcModel config)    
-  let outputFiles = fmap (\n -> outputFile (mrcOutputPrefix config) n) [1..(mrcNumChains config)]
+  curModel_C <- BR.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)    
+  let outputFiles = fmap (\n -> SC.outputFile (SC.mrcOutputPrefix config) n) [1..(SC.mrcNumChains config)]
   checkClangEnv
-  checkDir (mrcModelDir config) >>= K.knitMaybe "Model directory is missing!" 
-  createDirIfNecessary (mrcModelDir config <> "/data") -- json inputs
-  createDirIfNecessary (mrcModelDir config <> "/output") -- csv model run output
-  createDirIfNecessary (mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
+  checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!" 
+  createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
+  createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
+  createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
 
 
-  let indexCacheKey :: T.Text = "stan/index/" <> (mrcOutputPrefix config) <> ".bin"
-      jsonFP = addDirFP (modelDirS ++ "/data") $ T.unpack $ mrcDatFile config
+  let indexCacheKey :: T.Text = "stan/index/" <> (SC.mrcOutputPrefix config) <> ".bin"
+      jsonFP = SC.addDirFP (modelDirS ++ "/data") $ T.unpack $ SC.mrcDatFile config
   curJSON_C <- BR.fileDependency jsonFP      
   let indexJsonDeps = const <$> cachedA <*> curJSON_C  
   indices_C <- K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData indexCacheKey indexJsonDeps $ \a -> do
@@ -143,27 +135,29 @@ runModel config dataWrangler makeResult cachedA = do
       K.logLE K.Info "Finished rebuilding JSON."
     return indices
   stanOutput_C <-  do
-    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . addDirFP (modelDirS ++ "/output")) outputFiles
+    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
         runOneChain chainIndex = do 
-          let exeConfig = (mrcStanExeConfigF config) chainIndex          
+          let exeConfig = (SC.mrcStanExeConfigF config) chainIndex          
           K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> (T.pack $ show chainIndex)
           K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine exeConfig)
-          K.liftKnit $ CS.stan (addDirFP modelDirS modelNameS) exeConfig
+          K.liftKnit $ CS.stan (SC.addDirFP modelDirS modelNameS) exeConfig
           K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
     res_C <- BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
-      K.logLE K.Info $ "Make CommandLine: " <> (T.pack $ CS.makeConfigToCmdLine (mrcStanMakeConfig config))
-      K.liftKnit $ CS.make (mrcStanMakeConfig config)
-      maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..(mrcNumChains config)])
-    K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain." 
+      K.logLE K.Info $ "Make CommandLine: " <> (T.pack $ CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
+      K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
+      maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1..(SC.mrcNumChains config)])
+    K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."
+    K.logLE K.Info "writing R scripts"
+    K.liftKnit $ writeRScripts rScriptsToWrite config
     return res_C
   K.logLE K.Diagnostic $ "Summary command: "
-    <> (T.pack $ (CS.cmdStanDir . mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+    <> (T.pack $ (CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
     <> " "
-    <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (mrcStanSummaryConfig config)))
-  summary <- K.liftKnit $ CS.stansummary (mrcStanSummaryConfig config)
-  when (mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
+    <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
+  summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
+  when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
   let resultDeps = (\a b c -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
   makeResult summary resultDeps 
 
