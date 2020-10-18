@@ -21,7 +21,7 @@ int <lower=1> nCat;
 parameters {
 vector[nCat] beta;
   real<lower=0> sigma_alpha;
-  matrix<multiplier=sigma_alpha>[J_state, nCat] alpha;
+  matrix[J_state, nCat] alpha;
 }
 model {
 sigma_alpha ~ normal (0, 10);
@@ -31,8 +31,12 @@ sigma_alpha ~ normal (0, 10);
   }
 }
 generated quantities {
-vector[G] log_lik;  
-  for (g in 1:G) {
-      log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
+vector <lower = 0, upper = 1> [nCat] nationalProbs;
+  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
+  nationalProbs = inv_logit(beta[category]);
+  for (s in 1:J_state) {
+    for (c in 1:nCat) {
+      stateProbs[s, c] = inv_logit(beta[c] + alpha[s, c]);
+    }
   }
 }

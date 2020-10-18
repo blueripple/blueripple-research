@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC  -O0 #-}
 
 module BlueRipple.Model.StanCCES where
 
@@ -140,7 +141,7 @@ prefASER5_MR office year = do
         probRows <- fmap F.toFrame
                     $ K.knitMaybe "Error looking up indices.  Should be impossible!"
                     $ traverse makeRow indices
-        BR.logFrame probRows
+        --BR.logFrame probRows
         return probRows       
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state") { CS.useOpenCL = False }
       model = SB.StanModel
@@ -199,6 +200,37 @@ prefASER5_MR_Loo office year = do
                 (Just stancConfig)
   SM.runModel stanConfig SM.Loo ccesDataWrangler results ccesASER5_C
 
+prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
+             => ET.OfficeT
+             -> Int
+             -> K.Sem r ()
+prefASER5_MR_v2_Loo office year = do
+  -- count data
+  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+      countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
+  cces_C <- CCES.ccesDataLoader
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
+  let results _ _ = return ()
+  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v2_loo") { CS.useOpenCL = False }
+      model = SB.StanModel
+              binomialASER5_StateDataBlock
+              (Just binomialASER5_StateTransformedDataBlock)
+              binomialASER5_v2_StateParametersBlock
+              Nothing
+              binomialASER5_v2_StateModelBlock
+              (Just binomialASER5_v2_StateGQLooBlock)
+  stanConfig <- SM.makeDefaultModelRunnerConfig
+                "stan/voterPref"
+                "binomial_ASER5_state_v2_loo"
+                (Just model)
+                (Just $ "cces_" <> officeYearT <> ".json")
+                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v2_loo")
+                4
+                (Just 1000)
+                (Just 1000)
+                (Just stancConfig)
+  SM.runModel stanConfig SM.Loo ccesDataWrangler results ccesASER5_C
+
 
 binomialASER5_StateDataBlock :: SB.DataBlock
 binomialASER5_StateDataBlock = [here|
@@ -228,7 +260,7 @@ binomialASER5_StateParametersBlock :: SB.ParametersBlock
 binomialASER5_StateParametersBlock = [here|
   vector[nCat] beta;
   real<lower=0> sigma_alpha;
-  matrix[J_state, nCat] alpha;
+  matrix<multiplier=sigma_alpha>[J_state, nCat] alpha;
 |]
 
 binomialASER5_StateModelBlock :: SB.ModelBlock
@@ -259,3 +291,34 @@ binomialASER5_StateGQLooBlock = [here|
       log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
   }
 |]    
+
+
+binomialASER5_v2_StateParametersBlock :: SB.ParametersBlock
+binomialASER5_v2_StateParametersBlock = [here|
+  vector[nCat] beta;
+  real<lower=0> sigma_alpha;
+  vector<multiplier=sigma_alpha>[J_state] alpha;
+|]
+
+binomialASER5_v2_StateModelBlock :: SB.ModelBlock
+binomialASER5_v2_StateModelBlock = [here|
+  sigma_alpha ~ normal (0, 10);
+  alpha ~ normal (0, sigma_alpha);
+  D_votes ~ binomial_logit(Total_votes, beta[category] + alpha[state]);  
+|]
+
+binomialASER5_v2_StateGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v2_StateGeneratedQuantitiesBlock = [here|
+  vector <lower = 0, upper = 1> [nCat] nationalProbs;
+  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
+  nationalProbs = inv_logit(beta[category]);
+  stateProbs = inv_logit(beta[category] + alpha[state])
+|]
+
+binomialASER5_v2_StateGQLooBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v2_StateGQLooBlock = [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g]]);
+  }
+|]      

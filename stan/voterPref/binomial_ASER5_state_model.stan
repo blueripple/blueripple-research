@@ -21,7 +21,7 @@ int <lower=1> nCat;
 parameters {
 vector[nCat] beta;
   real<lower=0> sigma_alpha;
-  matrix[J_state, nCat] alpha;
+  matrix<multiplier=sigma_alpha>[J_state, nCat] alpha;
 }
 model {
 sigma_alpha ~ normal (0, 10);

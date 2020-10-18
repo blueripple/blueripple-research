@@ -86,6 +86,7 @@ makeDoc = do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
   stan <- K.ignoreCacheTimeM $ BRS.prefASER5_MR ET.President 2016
   BRS.prefASER5_MR_Loo ET.President 2016
+  BRS.prefASER5_MR_v2_Loo ET.President 2016
   
 --  BR.logFrame stan
 {-

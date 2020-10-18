@@ -60,7 +60,7 @@ static int current_statement__ = 0;
 static const std::vector<string> locations_array__ = {" (found before start of program)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 22, column 0 to column 18)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 23, column 2 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 2 to column 30)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 2 to column 54)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 34, column 0 to column 51)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 35, column 2 to column 59)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 36, column 2 to column 44)",
@@ -91,8 +91,8 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 18, column 0 to column 19)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 19, column 2 to column 42)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 22, column 7 to column 11)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 9 to column 16)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 18 to column 22)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 33 to column 40)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 24, column 42 to column 46)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 34, column 31 to column 35)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 35, column 33 to column 40)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_model.stan', line 35, column 42 to column 46)"};
@@ -359,6 +359,32 @@ class binomial_ASER5_state_model_model final : public model_base_crtp<binomial_A
       
       current_statement__ = 3;
       alpha = in__.matrix(J_state, nCat);
+      current_statement__ = 3;
+      for (int sym1__ = 1; sym1__ <= J_state; ++sym1__) {
+        current_statement__ = 3;
+        for (int sym2__ = 1; sym2__ <= nCat; ++sym2__) {
+          current_statement__ = 3;
+          if (jacobian__) {
+            current_statement__ = 3;
+            assign(alpha,
+              cons_list(index_uni(sym1__),
+                cons_list(index_uni(sym2__), nil_index_list())),
+              stan::math::offset_multiplier_constrain(
+                rvalue(alpha,
+                  cons_list(index_uni(sym1__),
+                    cons_list(index_uni(sym2__), nil_index_list())), "alpha"),
+                0, sigma_alpha, lp__), "assigning variable alpha");
+          } else {
+            current_statement__ = 3;
+            assign(alpha,
+              cons_list(index_uni(sym1__),
+                cons_list(index_uni(sym2__), nil_index_list())),
+              stan::math::offset_multiplier_constrain(
+                rvalue(alpha,
+                  cons_list(index_uni(sym1__),
+                    cons_list(index_uni(sym2__), nil_index_list())), "alpha"),
+                0, sigma_alpha), "assigning variable alpha");
+          }}}
       {
         current_statement__ = 12;
         lp_accum__.add(normal_lpdf<propto__>(sigma_alpha, 0, 10));
@@ -428,6 +454,19 @@ class binomial_ASER5_state_model_model final : public model_base_crtp<binomial_A
       
       current_statement__ = 3;
       alpha = in__.matrix(J_state, nCat);
+      current_statement__ = 3;
+      for (int sym1__ = 1; sym1__ <= J_state; ++sym1__) {
+        current_statement__ = 3;
+        for (int sym2__ = 1; sym2__ <= nCat; ++sym2__) {
+          current_statement__ = 3;
+          assign(alpha,
+            cons_list(index_uni(sym1__),
+              cons_list(index_uni(sym2__), nil_index_list())),
+            stan::math::offset_multiplier_constrain(
+              rvalue(alpha,
+                cons_list(index_uni(sym1__),
+                  cons_list(index_uni(sym2__), nil_index_list())), "alpha"),
+              0, sigma_alpha), "assigning variable alpha");}}
       for (int sym1__ = 1; sym1__ <= nCat; ++sym1__) {
         vars__.emplace_back(beta[(sym1__ - 1)]);}
       vars__.emplace_back(sigma_alpha);
@@ -585,6 +624,19 @@ class binomial_ASER5_state_model_model final : public model_base_crtp<binomial_A
             current_statement__ = 3;
             pos__ = (pos__ + 1);}}
       }
+      current_statement__ = 3;
+      for (int sym1__ = 1; sym1__ <= J_state; ++sym1__) {
+        current_statement__ = 3;
+        for (int sym2__ = 1; sym2__ <= nCat; ++sym2__) {
+          current_statement__ = 3;
+          assign(alpha,
+            cons_list(index_uni(sym1__),
+              cons_list(index_uni(sym2__), nil_index_list())),
+            stan::math::offset_multiplier_free(
+              rvalue(alpha,
+                cons_list(index_uni(sym1__),
+                  cons_list(index_uni(sym2__), nil_index_list())), "alpha"),
+              0, sigma_alpha), "assigning variable alpha");}}
       for (int sym1__ = 1; sym1__ <= nCat; ++sym1__) {
         vars__.emplace_back(beta[(sym1__ - 1)]);}
       vars__.emplace_back(sigma_alpha);
