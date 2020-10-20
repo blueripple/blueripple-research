@@ -104,6 +104,7 @@ library
                  , Stan.ModelRunner
                  , Stan.ModelBuilder
                  , Stan.RScriptBuilder
+                 , Stan.Frames
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
@@ -111,6 +112,7 @@ library
                      , blaze-colonnade
                      , bytestring >= 0.10 && < 0.12
                      , colonnade
+                     , cereal-vector >= 0.2 && < 0.3
                      , data-default
                      , declarative
                      , direct-sqlite >= 2.3.23

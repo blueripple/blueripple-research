@@ -36,6 +36,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
+import qualified Stan.Frames as SF
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified Stan.ModelBuilder as SB
@@ -86,7 +87,32 @@ ccesDataWrangler cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
             <> SJ.valueToPairF "state" stateF
             <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
             <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-  
+
+
+ccesDataWrangler2 :: SC.DataWrangler
+                    (F.FrameRec CCES_CountRow)
+                    (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
+ccesDataWrangler2 cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
+  enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
+  encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
+  encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
+  encodeEducation = SF.toRecEncoding @DT.CollegeGradC $ SJ.dummyEncodeEnum @DT.CollegeGrad
+  encodeRace = SF.toRecEncoding @DT.Race5C $ SJ.dummyEncodeEnum @DT.Race5
+  encodeCatCols :: SJ.Encoding SJ.IntVec (F.Record DT.CatColsASER5)
+  encodeCatCols = SF.composeIntVecRecEncodings encodeAge 
+                  $ SF.composeIntVecRecEncodings encodeSex
+                  $ SF.composeIntVecRecEncodings encodeEducation encodeRace
+  (catColsIndexer, toCatCols) = encodeCatCols
+  (stateF, toState) = FL.fold enumStateF cces
+  makeJsonE x = SJ.frameToStanJSONEncoding dataF cces where
+    dataF = SJ.namedF "G" FL.length
+            <> SJ.constDataF "J_state" (IM.size toState)
+            <> SJ.constDataF "K" (M.size toCatCols)
+            <> SJ.valueToPairF "X" (SJ.jsonArrayMF $ catColsIndexer . F.rcast @DT.CatColsASER5)
+            <> SJ.valueToPairF "state" stateF
+            <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+            <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
+    
 
 countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec CCES_CountRow)
 countCCESASER5 office year ccesMRP = do
@@ -257,13 +283,13 @@ prefASER5_MR_v4_Loo office year = do
                 "stan/voterPref"
                 "binomial_ASER5_state_v4_loo"
                 (Just (SB.OnlyLL, model_v4))
-                (Just $ "cces_" <> officeYearT <> ".json")
+                (Just $ "cces_" <> officeYearT <> "v2.json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v4_loo")
                 4
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C    
+  SM.runModel stanConfig SM.Loo ccesDataWrangler2 SC.DoNothing ccesASER5_C    
 
 model_v1 :: SB.StanModel
 model_v1 = SB.StanModel
@@ -302,7 +328,7 @@ model_v4 = SB.StanModel
            binomialASER5_v4_ParametersBlock
            Nothing
            binomialASER5_v4_ModelBlock
-           (Just binomialASER5_v4_GeneratedQuantitiesBlock)
+           Nothing
            binomialASER5_v4_GQLLBlock
 
 
@@ -421,17 +447,10 @@ binomialASER5_v3_GQLLBlock = [here|
 binomialASER5_v4_DataBlock :: SB.DataBlock
 binomialASER5_v4_DataBlock = [here|
   int<lower = 0> G; // number of cells
-  int<lower = 1> J_state; // number of states
-  int<lower = 1> J_sex; // number of sex categories
-  int<lower = 1> J_age; // number of age categories
-  int<lower = 1> J_educ; // number of education categories
-  int<lower = 1> J_race; // number of race categories  
-  int<lower = 1, upper = J_sex> sex[G];
-  int<lower = 1, upper = J_age> age[G];
-  int<lower = 1, upper = J_educ> education[G];
-  int<lower = 1, upper = J_race> race[G];
   int<lower = 1, upper = J_state> state[G];
-  int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
+  int<lower = 1> J_state; // number of states
+  int<lower = 1> K; // number of cols in predictor matrix
+  matrix[G, K] X;
   int<lower = 0> D_votes[G];
   int<lower = 0> Total_votes[G];
 |]
@@ -440,48 +459,27 @@ binomialASER5_v4_DataBlock = [here|
 
 binomialASER5_v4_ParametersBlock :: SB.ParametersBlock
 binomialASER5_v4_ParametersBlock = [here|
-  vector[J_sex] alpha_sex;
-  vector[J_age] alpha_age;
-  vector[J_educ] alpha_education;
-  vector[J_race] alpha_race;
+  real alpha;
+  vector[K] beta;
 |]
 
 binomialASER5_v4_ModelBlock :: SB.ModelBlock
 binomialASER5_v4_ModelBlock = [here|
-  alpha_sex[1] ~ normal(0,10);
-  alpha_sex[2] ~ normal(0,10);
-  alpha_age[1] ~ normal(0,10);
-  alpha_education[2] ~ normal(0,10);
-  alpha_education[2] ~ normal(0,10);
-  alpha_race[1] ~ normal(0,10);
-  alpha_race[2] ~ normal(0,10);
-  alpha_race[3] ~ normal(0,10);
-  alpha_race[4] ~ normal(0,10);
-  alpha_race[5] ~ normal(0,10);
-  for (g in 1:G) {
-    D_votes[g] ~ binomial_logit(Total_votes[g], alpha_sex[sex[g]] + alpha_age[age[g]] + alpha_education[education[g]] + alpha_race[race[g]]);
-  }
+    D_votes ~ binomial_logit(Total_votes, alpha + X * beta);
 |]
 
+  {-
 binomialASER5_v4_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v4_GeneratedQuantitiesBlock = [here|
-  matrix<lower = 0, upper = 1>[J_sex, J_age, J_educ, J_race] nationalProbs;
-  for (s in 1:J_sex) {
-    for (a in 1:J_age) {
-      for (e in 1:J_educ) {
-        for (r in 1:J_race) {
-          nationalProbs = inv_logit(alpha_sex[s] + alpha_age[a] + alpha_education[e] + alpha_race[r])
-        }
-      }
-    }
-  }
+  matrix<lower = 0, upper = 1>[K] nationalProbs;
 |]
-
+-}
+  
 binomialASER5_v4_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v4_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha_sex[sex[g]] + alpha_age[age[g]] + alpha_education[education[g]] + alpha_race[race[g]]);
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta);
   }
 |]       
 

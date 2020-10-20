@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Stan.JSON where
@@ -14,11 +15,63 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
 
 --import qualified Data.Vector as V
+import Data.Vector.Serialize()
+import qualified Data.Vector.Generic as Vec
+import qualified Data.Vector.Unboxed as VU
 import qualified VectorBuilder.Builder as VB
 import qualified VectorBuilder.Vector as VB
 
 type StanJSONF row t = FL.FoldM (Either T.Text) row t
+type Encoding k a = (a -> Maybe k, M.Map k a)
+type EncoderF k a = FL.Fold a (Encoding k a)
+
+-- special case for single field int encodings which happen a lot
 type IntEncoderF a =  FL.Fold a (a -> Maybe Int, IM.IntMap a)
+
+data Product a b c = Product { combine :: (a, b) -> c
+                             , prjA :: c -> a
+                             , prjB :: c -> b
+                             }
+
+composeEncodingsWith :: Ord k3 => ((k1, k2) -> k3) -> Product a b c -> Encoding k1 a -> Encoding k2 b -> Encoding k3 c
+composeEncodingsWith combineIndex pp (tok1, fromk1) (tok2, fromk2) =
+   let composeMaps m1 m2 = M.fromList $ [(combineIndex (k1, k2), combine pp (a, b)) | (k1, a) <- M.toList m1, (k2, b) <- M.toList m2]
+       composeTok tok1 tok2 c = curry combineIndex <$> tok1 (prjA pp c) <*> tok2 (prjB pp c)
+   in (composeTok tok1 tok2,  composeMaps fromk1 fromk2)
+   
+composeEncodersWith :: Ord k3 => ((k1, k2) -> k3) -> Product a b c -> EncoderF k1 a -> EncoderF k2 b -> EncoderF k3 c
+composeEncodersWith combineIndex pp f1 f2 =
+  composeEncodingsWith combineIndex pp <$> FL.premap (prjA pp) f1 <*> FL.premap (prjB pp) f2
+
+tupleProduct :: Product a b (a, b)
+tupleProduct = Product id fst snd
+
+composeEncoders :: (Ord k1, Ord k2) => EncoderF k1 a -> EncoderF k2 b -> EncoderF (k1, k2) (a, b)
+composeEncoders = composeEncodersWith id tupleProduct 
+
+type IntVec = VU.Vector Int
+
+-- encode [a, b, c, d] as [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]
+dummyEncodeEnum :: forall a.(Enum a, Bounded a) => Encoding IntVec a 
+dummyEncodeEnum = (toK, m) where
+  allEnum = [(minBound :: a)..(maxBound :: a)]
+  levels = length allEnum
+  dummyN = levels - 1
+  g :: Int -> Int -> Maybe (Int, Int)
+  g m n
+    | n == dummyN = Nothing -- end of vector
+    | n == m = Just (1, n + 1) 
+    | otherwise = Just (0, n + 1)
+  makeVec a = VU.unfoldr (g $ (fromEnum a - 1)) 0
+  toK = Just . makeVec 
+  m = M.fromList $ fmap (\a -> (makeVec a, a)) allEnum
+
+composeIntVecEncoders :: Product a b c -> EncoderF IntVec a -> EncoderF IntVec b -> EncoderF IntVec c
+composeIntVecEncoders = composeEncodersWith (uncurry (VU.++)) 
+
+
+composeIntVecEncodings :: Product a b c -> Encoding IntVec a -> Encoding IntVec b -> Encoding IntVec c
+composeIntVecEncodings = composeEncodingsWith (uncurry (VU.++)) 
 
 
 data StanJSONException = StanJSONException T.Text deriving Show
@@ -50,7 +103,22 @@ enumerateField textA intEncoderF toA = fmap (\(getOneM, toInt) -> (stanF getOneM
       Just n -> Right $ vb <> (VB.singleton $ A.toJSON n)
       Nothing -> Left $ "Int index not found for " <> textA (toA r)
     init = return VB.empty
-    extract = return . A.Array . VB.build 
+    extract = return . A.Array . VB.build
+
+vecEncoder :: forall row a b. (Ord a, Vec.Vector VU.Vector b, A.ToJSON b)
+  => (a -> T.Text) -- ^ for errors
+  -> EncoderF (VU.Vector b) a
+  -> (row -> a)
+  -> FL.Fold row (StanJSONF row A.Value, M.Map (VU.Vector b) a)
+vecEncoder textA encodeF toA = fmap (\(getOneM, toInt) -> (stanF getOneM, toInt)) $ FL.premap toA encodeF where
+  stanF :: (a -> Maybe (VU.Vector b)) -> StanJSONF row A.Value
+  stanF g = FL.FoldM step init extract where
+    step vb r = case g (toA r) of
+      Just v -> Right $ vb <> (VB.singleton $ A.toJSON v)
+      Nothing -> Left $ "index not found for " <> textA (toA r)
+    init = return VB.empty
+    extract = return . A.Array . VB.build
+  
 
 -- NB: THese folds form a semigroup & monoid since @Series@ does
 -- NB: Series includes @ToJSON a => (T.Text, a)@ pairs.
@@ -69,6 +137,14 @@ jsonArrayF toA = FL.generalize $ FL.Fold step init extract where
   step vb r = vb <> (VB.singleton . A.toJSON $ toA r)
   init = mempty
   extract = A.Array . VB.build
+
+jsonArrayMF :: A.ToJSON a => (row -> Maybe a) -> StanJSONF row A.Value
+jsonArrayMF toMA = FL.FoldM step init extract where
+  step vb r = case toMA r of
+    Nothing -> Left $ "Failed indexing in jsonArrayMF"
+    Just a -> Right $ vb <> (VB.singleton $ A.toJSON a)
+  init = Right mempty
+  extract = Right . A.Array . VB.build
 
 valueToPairF :: T.Text -> StanJSONF row A.Value -> StanJSONF row A.Series
 valueToPairF name = fmap (\a -> name A..= a) 
