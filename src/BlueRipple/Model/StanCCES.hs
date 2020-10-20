@@ -78,10 +78,10 @@ ccesDataWrangler cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
             <> SJ.constDataF "J_age" (IM.size toAge)
             <> SJ.constDataF "J_educ" (IM.size toEducation)
             <> SJ.constDataF "J_race" (IM.size toRace)
---          <> SJ.valueToPairF "sex" sexF
---          <> SJ.valueToPairF "age" ageF
---          <> SJ.valueToPairF "education" educationF
---          <> SJ.valueToPairF "race" raceF
+            <> SJ.valueToPairF "sex" sexF
+            <> SJ.valueToPairF "age" ageF
+            <> SJ.valueToPairF "education" educationF
+            <> SJ.valueToPairF "race" raceF
             <> SJ.valueToPairF "category" categoryF
             <> SJ.valueToPairF "state" stateF
             <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
@@ -106,6 +106,17 @@ countCCESASER5 office year ccesMRP = do
       counted = FL.fold countFold ccesMRP
       countedWithZeros = FL.fold addZerosF counted
   return countedWithZeros
+
+countCCESASER5' :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec CCES_CountRow)
+countCCESASER5' office year ccesMRP = do
+  countFold <- K.knitEither $ case (office, year) of
+    (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
+    (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
+    (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
+    (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
+    _ -> Left $ T.pack (show office) <> "/" <> (T.pack $ show year) <> " not available."
+  let counted = FL.fold countFold ccesMRP
+  return counted
 
 prefASER5_MR :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -192,9 +203,9 @@ prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
 prefASER5_MR_v2_Loo office year = do
   -- count data
   let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
-      countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
+      countCacheKey = "data/stan/cces/stateVotesASER5_v2" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v2_loo") { CS.useOpenCL = False }
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -207,6 +218,52 @@ prefASER5_MR_v2_Loo office year = do
                 (Just 1000)
                 (Just stancConfig)
   SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
+
+prefASER5_MR_v3_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
+             => ET.OfficeT
+             -> Int
+             -> K.Sem r ()
+prefASER5_MR_v3_Loo office year = do
+  -- count data
+  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+      countCacheKey = "data/stan/cces/stateVotesASER5_v3" <> officeYearT <> ".bin"
+  cces_C <- CCES.ccesDataLoader
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
+  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v3_loo") { CS.useOpenCL = False }
+  stanConfig <- SM.makeDefaultModelRunnerConfig
+                "stan/voterPref"
+                "binomial_ASER5_state_v3_loo"
+                (Just (SB.OnlyLL, model_v3))
+                (Just $ "cces_" <> officeYearT <> ".json")
+                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v3_loo")
+                4
+                (Just 1000)
+                (Just 1000)
+                (Just stancConfig)
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
+
+prefASER5_MR_v4_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
+             => ET.OfficeT
+             -> Int
+             -> K.Sem r ()
+prefASER5_MR_v4_Loo office year = do
+  -- count data
+  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+      countCacheKey = "data/stan/cces/stateVotesASER5_v4" <> officeYearT <> ".bin"
+  cces_C <- CCES.ccesDataLoader
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
+  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v4_loo") { CS.useOpenCL = False }
+  stanConfig <- SM.makeDefaultModelRunnerConfig
+                "stan/voterPref"
+                "binomial_ASER5_state_v4_loo"
+                (Just (SB.OnlyLL, model_v4))
+                (Just $ "cces_" <> officeYearT <> ".json")
+                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v4_loo")
+                4
+                (Just 1000)
+                (Just 1000)
+                (Just stancConfig)
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C    
 
 model_v1 :: SB.StanModel
 model_v1 = SB.StanModel
@@ -228,6 +285,27 @@ model_v2 = SB.StanModel
            (Just binomialASER5_v2_StateGeneratedQuantitiesBlock)
            binomialASER5_v2_StateGQLLBlock
 
+model_v3 :: SB.StanModel
+model_v3 = SB.StanModel
+           binomialASER5_StateDataBlock
+           (Just binomialASER5_StateTransformedDataBlock)
+           binomialASER5_v3_ParametersBlock
+           Nothing
+           binomialASER5_v3_ModelBlock
+           (Just binomialASER5_v3_GeneratedQuantitiesBlock)
+           binomialASER5_v3_GQLLBlock
+
+model_v4 :: SB.StanModel
+model_v4 = SB.StanModel
+           binomialASER5_v4_DataBlock
+           Nothing
+           binomialASER5_v4_ParametersBlock
+           Nothing
+           binomialASER5_v4_ModelBlock
+           (Just binomialASER5_v4_GeneratedQuantitiesBlock)
+           binomialASER5_v4_GQLLBlock
+
+
 binomialASER5_StateDataBlock :: SB.DataBlock
 binomialASER5_StateDataBlock = [here|
   int<lower = 0> G; // number of cells
@@ -236,10 +314,6 @@ binomialASER5_StateDataBlock = [here|
   int<lower = 1> J_age; // number of age categories
   int<lower = 1> J_educ; // number of education categories
   int<lower = 1> J_race; // number of race categories  
-  //  int<lower = 1, upper = J_sex> sex[G];
-  //  int<lower = 1, upper = J_age> age[G];
-  //  int<lower = 1, upper = J_educ> education[G];
-  //  int<lower = 1, upper = J_race> race[G];
   int<lower = 1, upper = J_state> state[G];
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
@@ -318,3 +392,98 @@ binomialASER5_v2_StateGQLLBlock = [here|
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g]]);
   }
 |]      
+
+
+binomialASER5_v3_ParametersBlock :: SB.ParametersBlock
+binomialASER5_v3_ParametersBlock = [here|
+  vector[nCat] beta;
+|]
+
+binomialASER5_v3_ModelBlock :: SB.ModelBlock
+binomialASER5_v3_ModelBlock = [here|
+  D_votes ~ binomial_logit(Total_votes, beta[category]);  
+|]
+
+binomialASER5_v3_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v3_GeneratedQuantitiesBlock = [here|
+  vector <lower = 0, upper = 1> [nCat] nationalProbs;
+  nationalProbs = inv_logit(beta[category]);
+|]
+
+binomialASER5_v3_GQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v3_GQLLBlock = [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]]);
+  }
+|]
+
+binomialASER5_v4_DataBlock :: SB.DataBlock
+binomialASER5_v4_DataBlock = [here|
+  int<lower = 0> G; // number of cells
+  int<lower = 1> J_state; // number of states
+  int<lower = 1> J_sex; // number of sex categories
+  int<lower = 1> J_age; // number of age categories
+  int<lower = 1> J_educ; // number of education categories
+  int<lower = 1> J_race; // number of race categories  
+  int<lower = 1, upper = J_sex> sex[G];
+  int<lower = 1, upper = J_age> age[G];
+  int<lower = 1, upper = J_educ> education[G];
+  int<lower = 1, upper = J_race> race[G];
+  int<lower = 1, upper = J_state> state[G];
+  int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
+  int<lower = 0> D_votes[G];
+  int<lower = 0> Total_votes[G];
+|]
+
+  
+
+binomialASER5_v4_ParametersBlock :: SB.ParametersBlock
+binomialASER5_v4_ParametersBlock = [here|
+  vector[J_sex] alpha_sex;
+  vector[J_age] alpha_age;
+  vector[J_educ] alpha_education;
+  vector[J_race] alpha_race;
+|]
+
+binomialASER5_v4_ModelBlock :: SB.ModelBlock
+binomialASER5_v4_ModelBlock = [here|
+  alpha_sex[1] ~ normal(0,10);
+  alpha_sex[2] ~ normal(0,10);
+  alpha_age[1] ~ normal(0,10);
+  alpha_education[2] ~ normal(0,10);
+  alpha_education[2] ~ normal(0,10);
+  alpha_race[1] ~ normal(0,10);
+  alpha_race[2] ~ normal(0,10);
+  alpha_race[3] ~ normal(0,10);
+  alpha_race[4] ~ normal(0,10);
+  alpha_race[5] ~ normal(0,10);
+  for (g in 1:G) {
+    D_votes[g] ~ binomial_logit(Total_votes[g], alpha_sex[sex[g]] + alpha_age[age[g]] + alpha_education[education[g]] + alpha_race[race[g]]);
+  }
+|]
+
+binomialASER5_v4_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v4_GeneratedQuantitiesBlock = [here|
+  matrix<lower = 0, upper = 1>[J_sex, J_age, J_educ, J_race] nationalProbs;
+  for (s in 1:J_sex) {
+    for (a in 1:J_age) {
+      for (e in 1:J_educ) {
+        for (r in 1:J_race) {
+          nationalProbs = inv_logit(alpha_sex[s] + alpha_age[a] + alpha_education[e] + alpha_race[r])
+        }
+      }
+    }
+  }
+|]
+
+binomialASER5_v4_GQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v4_GQLLBlock = [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha_sex[sex[g]] + alpha_age[age[g]] + alpha_education[education[g]] + alpha_race[race[g]]);
+  }
+|]       
+
+
+  

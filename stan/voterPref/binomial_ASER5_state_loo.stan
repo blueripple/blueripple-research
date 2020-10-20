@@ -5,10 +5,6 @@ int<lower = 0> G; // number of cells
   int<lower = 1> J_age; // number of age categories
   int<lower = 1> J_educ; // number of education categories
   int<lower = 1> J_race; // number of race categories  
-  //  int<lower = 1, upper = J_sex> sex[G];
-  //  int<lower = 1, upper = J_age> age[G];
-  //  int<lower = 1, upper = J_educ> education[G];
-  //  int<lower = 1, upper = J_race> race[G];
   int<lower = 1, upper = J_state> state[G];
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
