@@ -27,11 +27,13 @@ import           CmdStan (StancConfig(..)
 import qualified Knit.Report as K
 import qualified Knit.Effect.Logger            as K
 import qualified Knit.Effect.Serialize            as K
+import qualified Knit.Effect.AtomicCache          as K (cacheTime)
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import           Control.Monad (when)
 import qualified Data.Aeson.Encoding as A
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Maybe as Maybe
 import qualified Polysemy as P
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -125,7 +127,10 @@ runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
   let indexCacheKey :: T.Text = "stan/index/" <> (SC.mrcOutputPrefix config) <> ".bin"
       jsonFP = SC.addDirFP (modelDirS ++ "/data") $ T.unpack $ SC.mrcDatFile config
   curJSON_C <- BR.fileDependency jsonFP      
-  let indexJsonDeps = const <$> cachedA <*> curJSON_C  
+  let indexJsonDeps = const <$> cachedA <*> curJSON_C
+  when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
+    K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack jsonFP <> "\") is missing.  Deleting cached indices to force rebuild."
+    K.clearIfPresent @_ @K.DefaultCacheData indexCacheKey
   indices_C <- K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData indexCacheKey indexJsonDeps $ \a -> do
     let (indices, makeJsonE) = dataWrangler a
     BR.updateIf curJSON_C cachedA $ \a -> do

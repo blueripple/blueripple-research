@@ -58,54 +58,27 @@ using stan::math::pow;
 
 static int current_statement__ = 0;
 static const std::vector<string> locations_array__ = {" (found before start of program)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 18, column 0 to column 24)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 19, column 2 to column 26)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 20, column 2 to column 33)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 21, column 2 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 39, column 0 to column 18)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 41, column 4 to column 160)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 40, column 17 to line 42, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 40, column 2 to line 42, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 24, column 0 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 25, column 2 to column 30)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 26, column 2 to column 30)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 27, column 2 to column 36)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 28, column 2 to column 36)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 29, column 2 to column 31)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 30, column 2 to column 31)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 31, column 2 to column 31)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 32, column 2 to column 31)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 33, column 2 to column 31)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 35, column 4 to column 141)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 34, column 17 to line 36, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 34, column 2 to line 36, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 11, column 0 to column 11)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 12, column 2 to column 17)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 18, column 0 to column 18)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 20, column 4 to column 88)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 19, column 17 to line 21, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 19, column 2 to line 21, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 15, column 0 to column 56)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 2, column 0 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 3, column 2 to column 25)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 4, column 2 to column 23)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 5, column 2 to column 23)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 6, column 2 to column 24)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 7, column 2 to column 24)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 8, column 36 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 8, column 2 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 9, column 36 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 9, column 2 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 10, column 43 to column 44)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 10, column 2 to column 46)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 11, column 38 to column 39)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 11, column 2 to column 41)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 12, column 40 to column 41)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 12, column 2 to column 43)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 13, column 67 to column 68)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 13, column 2 to column 70)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 14, column 25 to column 26)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 14, column 2 to column 28)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 15, column 29 to column 30)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 15, column 2 to column 32)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 18, column 7 to column 12)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 19, column 9 to column 14)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 20, column 9 to column 15)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 21, column 9 to column 15)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 39, column 7 to column 8)"};
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 4, column 40 to column 41)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 4, column 2 to column 43)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 5, column 2 to column 19)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 6, column 9 to column 10)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 6, column 12 to column 13)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 6, column 2 to column 17)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 7, column 25 to column 26)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 7, column 2 to column 28)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 8, column 29 to column 30)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 8, column 2 to column 32)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 12, column 9 to column 10)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v4_loo.stan', line 18, column 7 to column 8)"};
 
 
 
@@ -114,16 +87,9 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
  private:
   int G;
   int J_state;
-  int J_sex;
-  int J_age;
-  int J_educ;
-  int J_race;
-  std::vector<int> sex;
-  std::vector<int> age;
-  std::vector<int> education;
-  std::vector<int> race;
   std::vector<int> state;
-  std::vector<int> category;
+  int K;
+  Eigen::Matrix<double, -1, -1> X;
   std::vector<int> D_votes;
   std::vector<int> Total_votes;
  
@@ -157,240 +123,122 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
       pos__ = std::numeric_limits<int>::min();
       
       pos__ = 1;
-      current_statement__ = 22;
+      current_statement__ = 8;
       context__.validate_dims("data initialization","G","int",
           context__.to_vec());
       G = std::numeric_limits<int>::min();
       
-      current_statement__ = 22;
+      current_statement__ = 8;
       G = context__.vals_i("G")[(1 - 1)];
-      current_statement__ = 22;
-      current_statement__ = 22;
+      current_statement__ = 8;
+      current_statement__ = 8;
       check_greater_or_equal(function__, "G", G, 0);
-      current_statement__ = 23;
+      current_statement__ = 9;
       context__.validate_dims("data initialization","J_state","int",
           context__.to_vec());
       J_state = std::numeric_limits<int>::min();
       
-      current_statement__ = 23;
+      current_statement__ = 9;
       J_state = context__.vals_i("J_state")[(1 - 1)];
-      current_statement__ = 23;
-      current_statement__ = 23;
+      current_statement__ = 9;
+      current_statement__ = 9;
       check_greater_or_equal(function__, "J_state", J_state, 1);
-      current_statement__ = 24;
-      context__.validate_dims("data initialization","J_sex","int",
-          context__.to_vec());
-      J_sex = std::numeric_limits<int>::min();
-      
-      current_statement__ = 24;
-      J_sex = context__.vals_i("J_sex")[(1 - 1)];
-      current_statement__ = 24;
-      current_statement__ = 24;
-      check_greater_or_equal(function__, "J_sex", J_sex, 1);
-      current_statement__ = 25;
-      context__.validate_dims("data initialization","J_age","int",
-          context__.to_vec());
-      J_age = std::numeric_limits<int>::min();
-      
-      current_statement__ = 25;
-      J_age = context__.vals_i("J_age")[(1 - 1)];
-      current_statement__ = 25;
-      current_statement__ = 25;
-      check_greater_or_equal(function__, "J_age", J_age, 1);
-      current_statement__ = 26;
-      context__.validate_dims("data initialization","J_educ","int",
-          context__.to_vec());
-      J_educ = std::numeric_limits<int>::min();
-      
-      current_statement__ = 26;
-      J_educ = context__.vals_i("J_educ")[(1 - 1)];
-      current_statement__ = 26;
-      current_statement__ = 26;
-      check_greater_or_equal(function__, "J_educ", J_educ, 1);
-      current_statement__ = 27;
-      context__.validate_dims("data initialization","J_race","int",
-          context__.to_vec());
-      J_race = std::numeric_limits<int>::min();
-      
-      current_statement__ = 27;
-      J_race = context__.vals_i("J_race")[(1 - 1)];
-      current_statement__ = 27;
-      current_statement__ = 27;
-      check_greater_or_equal(function__, "J_race", J_race, 1);
-      current_statement__ = 28;
-      validate_non_negative_index("sex", "G", G);
-      current_statement__ = 29;
-      context__.validate_dims("data initialization","sex","int",
-          context__.to_vec(G));
-      sex = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 29;
-      assign(sex, nil_index_list(), context__.vals_i("sex"),
-        "assigning variable sex");
-      current_statement__ = 29;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 29;
-        current_statement__ = 29;
-        check_greater_or_equal(function__, "sex[sym1__]", sex[(sym1__ - 1)],
-                               1);}
-      current_statement__ = 29;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 29;
-        current_statement__ = 29;
-        check_less_or_equal(function__, "sex[sym1__]", sex[(sym1__ - 1)],
-                            J_sex);}
-      current_statement__ = 30;
-      validate_non_negative_index("age", "G", G);
-      current_statement__ = 31;
-      context__.validate_dims("data initialization","age","int",
-          context__.to_vec(G));
-      age = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 31;
-      assign(age, nil_index_list(), context__.vals_i("age"),
-        "assigning variable age");
-      current_statement__ = 31;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 31;
-        current_statement__ = 31;
-        check_greater_or_equal(function__, "age[sym1__]", age[(sym1__ - 1)],
-                               1);}
-      current_statement__ = 31;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 31;
-        current_statement__ = 31;
-        check_less_or_equal(function__, "age[sym1__]", age[(sym1__ - 1)],
-                            J_age);}
-      current_statement__ = 32;
-      validate_non_negative_index("education", "G", G);
-      current_statement__ = 33;
-      context__.validate_dims("data initialization","education","int",
-          context__.to_vec(G));
-      education = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 33;
-      assign(education, nil_index_list(), context__.vals_i("education"),
-        "assigning variable education");
-      current_statement__ = 33;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 33;
-        current_statement__ = 33;
-        check_greater_or_equal(function__, "education[sym1__]",
-                               education[(sym1__ - 1)], 1);}
-      current_statement__ = 33;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 33;
-        current_statement__ = 33;
-        check_less_or_equal(function__, "education[sym1__]",
-                            education[(sym1__ - 1)], J_educ);}
-      current_statement__ = 34;
-      validate_non_negative_index("race", "G", G);
-      current_statement__ = 35;
-      context__.validate_dims("data initialization","race","int",
-          context__.to_vec(G));
-      race = std::vector<int>(G, std::numeric_limits<int>::min());
-      
-      current_statement__ = 35;
-      assign(race, nil_index_list(), context__.vals_i("race"),
-        "assigning variable race");
-      current_statement__ = 35;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 35;
-        current_statement__ = 35;
-        check_greater_or_equal(function__, "race[sym1__]",
-                               race[(sym1__ - 1)], 1);}
-      current_statement__ = 35;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 35;
-        current_statement__ = 35;
-        check_less_or_equal(function__, "race[sym1__]", race[(sym1__ - 1)],
-                            J_race);}
-      current_statement__ = 36;
+      current_statement__ = 10;
       validate_non_negative_index("state", "G", G);
-      current_statement__ = 37;
+      current_statement__ = 11;
       context__.validate_dims("data initialization","state","int",
           context__.to_vec(G));
       state = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 37;
+      current_statement__ = 11;
       assign(state, nil_index_list(), context__.vals_i("state"),
         "assigning variable state");
-      current_statement__ = 37;
+      current_statement__ = 11;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 37;
-        current_statement__ = 37;
+        current_statement__ = 11;
+        current_statement__ = 11;
         check_greater_or_equal(function__, "state[sym1__]",
                                state[(sym1__ - 1)], 1);}
-      current_statement__ = 37;
+      current_statement__ = 11;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 37;
-        current_statement__ = 37;
+        current_statement__ = 11;
+        current_statement__ = 11;
         check_less_or_equal(function__, "state[sym1__]", state[(sym1__ - 1)],
                             J_state);}
-      current_statement__ = 38;
-      validate_non_negative_index("category", "G", G);
-      current_statement__ = 39;
-      context__.validate_dims("data initialization","category","int",
-          context__.to_vec(G));
-      category = std::vector<int>(G, std::numeric_limits<int>::min());
+      current_statement__ = 12;
+      context__.validate_dims("data initialization","K","int",
+          context__.to_vec());
+      K = std::numeric_limits<int>::min();
       
-      current_statement__ = 39;
-      assign(category, nil_index_list(), context__.vals_i("category"),
-        "assigning variable category");
-      current_statement__ = 39;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 39;
-        current_statement__ = 39;
-        check_greater_or_equal(function__, "category[sym1__]",
-                               category[(sym1__ - 1)], 1);}
-      current_statement__ = 39;
-      for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 39;
-        current_statement__ = 39;
-        check_less_or_equal(function__, "category[sym1__]",
-                            category[(sym1__ - 1)],
-                            (((J_age * J_sex) * J_educ) * J_race));}
-      current_statement__ = 40;
+      current_statement__ = 12;
+      K = context__.vals_i("K")[(1 - 1)];
+      current_statement__ = 12;
+      current_statement__ = 12;
+      check_greater_or_equal(function__, "K", K, 1);
+      current_statement__ = 13;
+      validate_non_negative_index("X", "G", G);
+      current_statement__ = 14;
+      validate_non_negative_index("X", "K", K);
+      current_statement__ = 15;
+      context__.validate_dims("data initialization","X","double",
+          context__.to_vec(G, K));
+      X = Eigen::Matrix<double, -1, -1>(G, K);
+      stan::math::fill(X, std::numeric_limits<double>::quiet_NaN());
+      
+      {
+        std::vector<local_scalar_t__> X_flat__;
+        current_statement__ = 15;
+        assign(X_flat__, nil_index_list(), context__.vals_r("X"),
+          "assigning variable X_flat__");
+        current_statement__ = 15;
+        pos__ = 1;
+        current_statement__ = 15;
+        for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
+          current_statement__ = 15;
+          for (int sym2__ = 1; sym2__ <= G; ++sym2__) {
+            current_statement__ = 15;
+            assign(X,
+              cons_list(index_uni(sym2__),
+                cons_list(index_uni(sym1__), nil_index_list())),
+              X_flat__[(pos__ - 1)], "assigning variable X");
+            current_statement__ = 15;
+            pos__ = (pos__ + 1);}}
+      }
+      current_statement__ = 16;
       validate_non_negative_index("D_votes", "G", G);
-      current_statement__ = 41;
+      current_statement__ = 17;
       context__.validate_dims("data initialization","D_votes","int",
           context__.to_vec(G));
       D_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 41;
+      current_statement__ = 17;
       assign(D_votes, nil_index_list(), context__.vals_i("D_votes"),
         "assigning variable D_votes");
-      current_statement__ = 41;
+      current_statement__ = 17;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 41;
-        current_statement__ = 41;
+        current_statement__ = 17;
+        current_statement__ = 17;
         check_greater_or_equal(function__, "D_votes[sym1__]",
                                D_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 42;
+      current_statement__ = 18;
       validate_non_negative_index("Total_votes", "G", G);
-      current_statement__ = 43;
+      current_statement__ = 19;
       context__.validate_dims("data initialization","Total_votes","int",
           context__.to_vec(G));
       Total_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 43;
+      current_statement__ = 19;
       assign(Total_votes, nil_index_list(), context__.vals_i("Total_votes"),
         "assigning variable Total_votes");
-      current_statement__ = 43;
+      current_statement__ = 19;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 43;
-        current_statement__ = 43;
+        current_statement__ = 19;
+        current_statement__ = 19;
         check_greater_or_equal(function__, "Total_votes[sym1__]",
                                Total_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 44;
-      validate_non_negative_index("alpha_sex", "J_sex", J_sex);
-      current_statement__ = 45;
-      validate_non_negative_index("alpha_age", "J_age", J_age);
-      current_statement__ = 46;
-      validate_non_negative_index("alpha_education", "J_educ", J_educ);
-      current_statement__ = 47;
-      validate_non_negative_index("alpha_race", "J_race", J_race);
-      current_statement__ = 48;
+      current_statement__ = 20;
+      validate_non_negative_index("beta", "K", K);
+      current_statement__ = 21;
       validate_non_negative_index("log_lik", "G", G);
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
@@ -400,10 +248,8 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
     num_params_r__ = 0U;
     
     try {
-      num_params_r__ += J_sex;
-      num_params_r__ += J_age;
-      num_params_r__ += J_educ;
-      num_params_r__ += J_race;
+      num_params_r__ += 1;
+      num_params_r__ += K;
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -426,61 +272,22 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
 
     
     try {
-      Eigen::Matrix<local_scalar_t__, -1, 1> alpha_sex;
-      alpha_sex = Eigen::Matrix<local_scalar_t__, -1, 1>(J_sex);
-      stan::math::fill(alpha_sex, DUMMY_VAR__);
+      local_scalar_t__ alpha;
+      alpha = DUMMY_VAR__;
       
       current_statement__ = 1;
-      alpha_sex = in__.vector(J_sex);
-      Eigen::Matrix<local_scalar_t__, -1, 1> alpha_age;
-      alpha_age = Eigen::Matrix<local_scalar_t__, -1, 1>(J_age);
-      stan::math::fill(alpha_age, DUMMY_VAR__);
+      alpha = in__.scalar();
+      Eigen::Matrix<local_scalar_t__, -1, 1> beta;
+      beta = Eigen::Matrix<local_scalar_t__, -1, 1>(K);
+      stan::math::fill(beta, DUMMY_VAR__);
       
       current_statement__ = 2;
-      alpha_age = in__.vector(J_age);
-      Eigen::Matrix<local_scalar_t__, -1, 1> alpha_education;
-      alpha_education = Eigen::Matrix<local_scalar_t__, -1, 1>(J_educ);
-      stan::math::fill(alpha_education, DUMMY_VAR__);
-      
-      current_statement__ = 3;
-      alpha_education = in__.vector(J_educ);
-      Eigen::Matrix<local_scalar_t__, -1, 1> alpha_race;
-      alpha_race = Eigen::Matrix<local_scalar_t__, -1, 1>(J_race);
-      stan::math::fill(alpha_race, DUMMY_VAR__);
-      
-      current_statement__ = 4;
-      alpha_race = in__.vector(J_race);
+      beta = in__.vector(K);
       {
-        current_statement__ = 9;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_sex[(1 - 1)], 0, 10));
-        current_statement__ = 10;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_sex[(2 - 1)], 0, 10));
-        current_statement__ = 11;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_age[(1 - 1)], 0, 10));
-        current_statement__ = 12;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_education[(2 - 1)], 0, 10));
-        current_statement__ = 13;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_education[(2 - 1)], 0, 10));
-        current_statement__ = 14;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_race[(1 - 1)], 0, 10));
-        current_statement__ = 15;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_race[(2 - 1)], 0, 10));
-        current_statement__ = 16;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_race[(3 - 1)], 0, 10));
-        current_statement__ = 17;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_race[(4 - 1)], 0, 10));
-        current_statement__ = 18;
-        lp_accum__.add(normal_lpdf<propto__>(alpha_race[(5 - 1)], 0, 10));
-        current_statement__ = 21;
-        for (int g = 1; g <= G; ++g) {
-          current_statement__ = 19;
-          lp_accum__.add(
-            binomial_logit_lpmf<propto__>(D_votes[(g - 1)],
-              Total_votes[(g - 1)],
-              (((alpha_sex[(sex[(g - 1)] - 1)] +
-                  alpha_age[(age[(g - 1)] - 1)]) +
-                 alpha_education[(education[(g - 1)] - 1)]) +
-                alpha_race[(race[(g - 1)] - 1)])));}
+        current_statement__ = 7;
+        lp_accum__.add(
+          binomial_logit_lpmf<propto__>(D_votes, Total_votes,
+            add(alpha, multiply(X, beta))));
       }
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
@@ -514,38 +321,20 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
 
     
     try {
-      Eigen::Matrix<double, -1, 1> alpha_sex;
-      alpha_sex = Eigen::Matrix<double, -1, 1>(J_sex);
-      stan::math::fill(alpha_sex, std::numeric_limits<double>::quiet_NaN());
+      double alpha;
+      alpha = std::numeric_limits<double>::quiet_NaN();
       
       current_statement__ = 1;
-      alpha_sex = in__.vector(J_sex);
-      Eigen::Matrix<double, -1, 1> alpha_age;
-      alpha_age = Eigen::Matrix<double, -1, 1>(J_age);
-      stan::math::fill(alpha_age, std::numeric_limits<double>::quiet_NaN());
+      alpha = in__.scalar();
+      Eigen::Matrix<double, -1, 1> beta;
+      beta = Eigen::Matrix<double, -1, 1>(K);
+      stan::math::fill(beta, std::numeric_limits<double>::quiet_NaN());
       
       current_statement__ = 2;
-      alpha_age = in__.vector(J_age);
-      Eigen::Matrix<double, -1, 1> alpha_education;
-      alpha_education = Eigen::Matrix<double, -1, 1>(J_educ);
-      stan::math::fill(alpha_education, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 3;
-      alpha_education = in__.vector(J_educ);
-      Eigen::Matrix<double, -1, 1> alpha_race;
-      alpha_race = Eigen::Matrix<double, -1, 1>(J_race);
-      stan::math::fill(alpha_race, std::numeric_limits<double>::quiet_NaN());
-      
-      current_statement__ = 4;
-      alpha_race = in__.vector(J_race);
-      for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-        vars__.emplace_back(alpha_sex[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-        vars__.emplace_back(alpha_age[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-        vars__.emplace_back(alpha_education[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-        vars__.emplace_back(alpha_race[(sym1__ - 1)]);}
+      beta = in__.vector(K);
+      vars__.emplace_back(alpha);
+      for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
+        vars__.emplace_back(beta[(sym1__ - 1)]);}
       if (logical_negation((primitive_value(emit_transformed_parameters__) ||
             primitive_value(emit_generated_quantities__)))) {
         return ;
@@ -557,15 +346,15 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
       log_lik = Eigen::Matrix<double, -1, 1>(G);
       stan::math::fill(log_lik, std::numeric_limits<double>::quiet_NaN());
       
-      current_statement__ = 8;
+      current_statement__ = 6;
       for (int g = 1; g <= G; ++g) {
-        current_statement__ = 6;
+        current_statement__ = 4;
         assign(log_lik, cons_list(index_uni(g), nil_index_list()),
           binomial_logit_lpmf<false>(D_votes[(g - 1)], Total_votes[(g - 1)],
-            (((alpha_sex[(sex[(g - 1)] - 1)] + alpha_age[(age[(g - 1)] - 1)])
-               + alpha_education[(education[(g - 1)] - 1)]) +
-              alpha_race[(race[(g - 1)] - 1)])), "assigning variable log_lik");
-      }
+            (alpha +
+              multiply(
+                rvalue(X, cons_list(index_uni(g), nil_index_list()), "X"),
+                beta))), "assigning variable log_lik");}
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
         vars__.emplace_back(log_lik[(sym1__ - 1)]);}
     } catch (const std::exception& e) {
@@ -589,96 +378,33 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
       pos__ = std::numeric_limits<int>::min();
       
       pos__ = 1;
-      Eigen::Matrix<double, -1, 1> alpha_sex;
-      alpha_sex = Eigen::Matrix<double, -1, 1>(J_sex);
-      stan::math::fill(alpha_sex, std::numeric_limits<double>::quiet_NaN());
+      double alpha;
+      alpha = std::numeric_limits<double>::quiet_NaN();
+      
+      current_statement__ = 1;
+      alpha = context__.vals_r("alpha")[(1 - 1)];
+      Eigen::Matrix<double, -1, 1> beta;
+      beta = Eigen::Matrix<double, -1, 1>(K);
+      stan::math::fill(beta, std::numeric_limits<double>::quiet_NaN());
       
       {
-        std::vector<local_scalar_t__> alpha_sex_flat__;
-        current_statement__ = 1;
-        assign(alpha_sex_flat__, nil_index_list(),
-          context__.vals_r("alpha_sex"),
-          "assigning variable alpha_sex_flat__");
-        current_statement__ = 1;
-        pos__ = 1;
-        current_statement__ = 1;
-        for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-          current_statement__ = 1;
-          assign(alpha_sex, cons_list(index_uni(sym1__), nil_index_list()),
-            alpha_sex_flat__[(pos__ - 1)], "assigning variable alpha_sex");
-          current_statement__ = 1;
-          pos__ = (pos__ + 1);}
-      }
-      Eigen::Matrix<double, -1, 1> alpha_age;
-      alpha_age = Eigen::Matrix<double, -1, 1>(J_age);
-      stan::math::fill(alpha_age, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> alpha_age_flat__;
+        std::vector<local_scalar_t__> beta_flat__;
         current_statement__ = 2;
-        assign(alpha_age_flat__, nil_index_list(),
-          context__.vals_r("alpha_age"),
-          "assigning variable alpha_age_flat__");
+        assign(beta_flat__, nil_index_list(), context__.vals_r("beta"),
+          "assigning variable beta_flat__");
         current_statement__ = 2;
         pos__ = 1;
         current_statement__ = 2;
-        for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
+        for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
           current_statement__ = 2;
-          assign(alpha_age, cons_list(index_uni(sym1__), nil_index_list()),
-            alpha_age_flat__[(pos__ - 1)], "assigning variable alpha_age");
+          assign(beta, cons_list(index_uni(sym1__), nil_index_list()),
+            beta_flat__[(pos__ - 1)], "assigning variable beta");
           current_statement__ = 2;
           pos__ = (pos__ + 1);}
       }
-      Eigen::Matrix<double, -1, 1> alpha_education;
-      alpha_education = Eigen::Matrix<double, -1, 1>(J_educ);
-      stan::math::fill(alpha_education, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> alpha_education_flat__;
-        current_statement__ = 3;
-        assign(alpha_education_flat__, nil_index_list(),
-          context__.vals_r("alpha_education"),
-          "assigning variable alpha_education_flat__");
-        current_statement__ = 3;
-        pos__ = 1;
-        current_statement__ = 3;
-        for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-          current_statement__ = 3;
-          assign(alpha_education,
-            cons_list(index_uni(sym1__), nil_index_list()),
-            alpha_education_flat__[(pos__ - 1)],
-            "assigning variable alpha_education");
-          current_statement__ = 3;
-          pos__ = (pos__ + 1);}
-      }
-      Eigen::Matrix<double, -1, 1> alpha_race;
-      alpha_race = Eigen::Matrix<double, -1, 1>(J_race);
-      stan::math::fill(alpha_race, std::numeric_limits<double>::quiet_NaN());
-      
-      {
-        std::vector<local_scalar_t__> alpha_race_flat__;
-        current_statement__ = 4;
-        assign(alpha_race_flat__, nil_index_list(),
-          context__.vals_r("alpha_race"),
-          "assigning variable alpha_race_flat__");
-        current_statement__ = 4;
-        pos__ = 1;
-        current_statement__ = 4;
-        for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-          current_statement__ = 4;
-          assign(alpha_race, cons_list(index_uni(sym1__), nil_index_list()),
-            alpha_race_flat__[(pos__ - 1)], "assigning variable alpha_race");
-          current_statement__ = 4;
-          pos__ = (pos__ + 1);}
-      }
-      for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
-        vars__.emplace_back(alpha_sex[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-        vars__.emplace_back(alpha_age[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-        vars__.emplace_back(alpha_education[(sym1__ - 1)]);}
-      for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-        vars__.emplace_back(alpha_race[(sym1__ - 1)]);}
+      vars__.emplace_back(alpha);
+      for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
+        vars__.emplace_back(beta[(sym1__ - 1)]);}
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
       // Next line prevents compiler griping about no return
@@ -689,23 +415,17 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
   inline void get_param_names(std::vector<std::string>& names__) const {
     
     names__.clear();
-    names__.emplace_back("alpha_sex");
-    names__.emplace_back("alpha_age");
-    names__.emplace_back("alpha_education");
-    names__.emplace_back("alpha_race");
+    names__.emplace_back("alpha");
+    names__.emplace_back("beta");
     names__.emplace_back("log_lik");
     } // get_param_names() 
     
   inline void get_dims(std::vector<std::vector<size_t>>& dimss__) const
     final {
     dimss__.clear();
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_sex)});
+    dimss__.emplace_back(std::vector<size_t>{});
     
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_age)});
-    
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_educ)});
-    
-    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(J_race)});
+    dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(K)});
     
     dimss__.emplace_back(std::vector<size_t>{static_cast<size_t>(G)});
     
@@ -717,21 +437,10 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
                                       bool emit_generated_quantities__ = true) const
     final {
     
-    for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
+    param_names__.emplace_back(std::string() + "alpha");
+    for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
       {
-        param_names__.emplace_back(std::string() + "alpha_sex" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_age" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_education" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_race" + '.' + std::to_string(sym1__));
+        param_names__.emplace_back(std::string() + "beta" + '.' + std::to_string(sym1__));
       }}
     if (emit_transformed_parameters__) {
       
@@ -752,21 +461,10 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
                                         bool emit_generated_quantities__ = true) const
     final {
     
-    for (int sym1__ = 1; sym1__ <= J_sex; ++sym1__) {
+    param_names__.emplace_back(std::string() + "alpha");
+    for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
       {
-        param_names__.emplace_back(std::string() + "alpha_sex" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_age; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_age" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_educ; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_education" + '.' + std::to_string(sym1__));
-      }}
-    for (int sym1__ = 1; sym1__ <= J_race; ++sym1__) {
-      {
-        param_names__.emplace_back(std::string() + "alpha_race" + '.' + std::to_string(sym1__));
+        param_names__.emplace_back(std::string() + "beta" + '.' + std::to_string(sym1__));
       }}
     if (emit_transformed_parameters__) {
       
@@ -783,13 +481,13 @@ class binomial_ASER5_state_v4_loo_model final : public model_base_crtp<binomial_
     
   inline std::string get_constrained_sizedtypes() const {
     stringstream s__;
-    s__ << "[{\"name\":\"alpha_sex\",\"type\":{\"name\":\"vector\",\"length\":" << J_sex << "},\"block\":\"parameters\"},{\"name\":\"alpha_age\",\"type\":{\"name\":\"vector\",\"length\":" << J_age << "},\"block\":\"parameters\"},{\"name\":\"alpha_education\",\"type\":{\"name\":\"vector\",\"length\":" << J_educ << "},\"block\":\"parameters\"},{\"name\":\"alpha_race\",\"type\":{\"name\":\"vector\",\"length\":" << J_race << "},\"block\":\"parameters\"},{\"name\":\"log_lik\",\"type\":{\"name\":\"vector\",\"length\":" << G << "},\"block\":\"generated_quantities\"}]";
+    s__ << "[{\"name\":\"alpha\",\"type\":{\"name\":\"real\"},\"block\":\"parameters\"},{\"name\":\"beta\",\"type\":{\"name\":\"vector\",\"length\":" << K << "},\"block\":\"parameters\"},{\"name\":\"log_lik\",\"type\":{\"name\":\"vector\",\"length\":" << G << "},\"block\":\"generated_quantities\"}]";
     return s__.str();
     } // get_constrained_sizedtypes() 
     
   inline std::string get_unconstrained_sizedtypes() const {
     stringstream s__;
-    s__ << "[{\"name\":\"alpha_sex\",\"type\":{\"name\":\"vector\",\"length\":" << J_sex << "},\"block\":\"parameters\"},{\"name\":\"alpha_age\",\"type\":{\"name\":\"vector\",\"length\":" << J_age << "},\"block\":\"parameters\"},{\"name\":\"alpha_education\",\"type\":{\"name\":\"vector\",\"length\":" << J_educ << "},\"block\":\"parameters\"},{\"name\":\"alpha_race\",\"type\":{\"name\":\"vector\",\"length\":" << J_race << "},\"block\":\"parameters\"},{\"name\":\"log_lik\",\"type\":{\"name\":\"vector\",\"length\":" << G << "},\"block\":\"generated_quantities\"}]";
+    s__ << "[{\"name\":\"alpha\",\"type\":{\"name\":\"real\"},\"block\":\"parameters\"},{\"name\":\"beta\",\"type\":{\"name\":\"vector\",\"length\":" << K << "},\"block\":\"parameters\"},{\"name\":\"log_lik\",\"type\":{\"name\":\"vector\",\"length\":" << G << "},\"block\":\"generated_quantities\"}]";
     return s__.str();
     } // get_unconstrained_sizedtypes() 
     

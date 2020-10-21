@@ -73,6 +73,12 @@ composeIntVecEncoders = composeEncodersWith (uncurry (VU.++))
 composeIntVecEncodings :: Product a b c -> Encoding IntVec a -> Encoding IntVec b -> Encoding IntVec c
 composeIntVecEncodings = composeEncodingsWith (uncurry (VU.++)) 
 
+-- this function can crash!!
+vecEncodingLength :: VU.Unbox b => Encoding (VU.Vector b) c -> Int 
+vecEncodingLength (_, m) = case M.toList m of
+  [] -> 0
+  ((v, _) : _) -> VU.length v
+
 
 data StanJSONException = StanJSONException T.Text deriving Show
 instance X.Exception StanJSONException

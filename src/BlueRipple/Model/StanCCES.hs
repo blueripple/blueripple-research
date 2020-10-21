@@ -104,10 +104,11 @@ ccesDataWrangler2 cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
                   $ SF.composeIntVecRecEncodings encodeEducation encodeRace
   (catColsIndexer, toCatCols) = encodeCatCols
   (stateF, toState) = FL.fold enumStateF cces
+  k = SJ.vecEncodingLength encodeCatCols 
   makeJsonE x = SJ.frameToStanJSONEncoding dataF cces where
     dataF = SJ.namedF "G" FL.length
             <> SJ.constDataF "J_state" (IM.size toState)
-            <> SJ.constDataF "K" (M.size toCatCols)
+            <> SJ.constDataF "K" k
             <> SJ.valueToPairF "X" (SJ.jsonArrayMF $ catColsIndexer . F.rcast @DT.CatColsASER5)
             <> SJ.valueToPairF "state" stateF
             <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
@@ -283,7 +284,7 @@ prefASER5_MR_v4_Loo office year = do
                 "stan/voterPref"
                 "binomial_ASER5_state_v4_loo"
                 (Just (SB.OnlyLL, model_v4))
-                (Just $ "cces_" <> officeYearT <> "v2.json")
+                (Just $ "cces_" <> officeYearT <> "_v2.json")
                 (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v4_loo")
                 4
                 (Just 1000)
@@ -447,8 +448,8 @@ binomialASER5_v3_GQLLBlock = [here|
 binomialASER5_v4_DataBlock :: SB.DataBlock
 binomialASER5_v4_DataBlock = [here|
   int<lower = 0> G; // number of cells
-  int<lower = 1, upper = J_state> state[G];
   int<lower = 1> J_state; // number of states
+  int<lower = 1, upper = J_state> state[G];
   int<lower = 1> K; // number of cols in predictor matrix
   matrix[G, K] X;
   int<lower = 0> D_votes[G];
