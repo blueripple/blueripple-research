@@ -90,7 +90,11 @@ frameToStanJSONFile fp stanJSONF rows = do
     Left err -> X.throwIO $ StanJSONException err 
 
 frameToStanJSONEncoding :: Foldable f => StanJSONF row A.Series -> f row -> Either T.Text A.Encoding
-frameToStanJSONEncoding stanJSONF = fmap A.pairs . FL.foldM stanJSONF
+frameToStanJSONEncoding stanJSONF = fmap A.pairs . frameToStanJSONSeries stanJSONF
+
+frameToStanJSONSeries :: Foldable f => StanJSONF row A.Series -> f row -> Either T.Text A.Series
+frameToStanJSONSeries = FL.foldM
+
 
 -- once we have folds for each piece of data, we use this to combine and get one fold for the data object
 jsonObject :: (Foldable f, Foldable g) => f (StanJSONF row A.Series) -> g row -> Either T.Text A.Encoding

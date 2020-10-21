@@ -104,14 +104,74 @@ writeRScripts rScripts config = do
     Loo -> writeLoo
     Both -> writeShiny >> writeLoo
 
-runModel :: (K.KnitEffects r,  K.CacheEffectsD r, K.DefaultSerializer b)
+wrangleDataWithoutPredictions :: (K.KnitEffects r,  K.CacheEffectsD r)
+                              => SC.ModelRunnerConfig
+                              -> SC.DataWrangler a b ()
+                              -> K.ActionWithCacheTime r a
+                              -> K.Sem r (K.ActionWithCacheTime r b)
+wrangleDataWithoutPredictions config dw a = wrangleData config dw a () 
+
+wrangleData :: (K.KnitEffects r,  K.CacheEffectsD r)
+            => SC.ModelRunnerConfig 
+            -> SC.DataWrangler a b p 
+            -> K.ActionWithCacheTime r a
+            -> p
+            -> K.Sem r (K.ActionWithCacheTime r b)
+wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _  = do
+  let indexAndEncoder_C = fmap indexAndEncoder cachedA
+      b_C = fmap fst indexAndEncoder_C
+      encoder_C = fmap snd indexAndEncoder_C      
+  index_C <- manageIndex config indexType b_C
+  curJSON_C <-  BR.fileDependency $ jsonFP config
+  let newJSON_C = encoder_C <*> cachedA
+  updatedJSON_C <- BR.updateIf curJSON_C newJSON_C $ \e -> do
+    jsonEncoding <- K.knitEither e
+    K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
+  return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index  
+
+wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeToPredict) cachedA p  = do
+  let indexAndEncoder_C = fmap indexAndEncoder cachedA
+      b_C = fmap fst indexAndEncoder_C
+      encoder_C = fmap snd indexAndEncoder_C      
+  index_C <- manageIndex config indexType b_C
+  curJSON_C <-  BR.fileDependency $ jsonFP config
+  let newJSON_C = encoder_C <*> cachedA
+      jsonDeps = (,) <$> newJSON_C <*> index_C 
+  updatedJSON_C <- BR.updateIf curJSON_C jsonDeps $ \(e, b) -> do
+    dataEncoding <- K.knitEither e
+    toPredictEncoding <- K.knitEither $ encodeToPredict b p 
+    K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
+  return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index 
+
+
+manageIndex :: (K.KnitEffects r,  K.CacheEffectsD r)
+            => SC.ModelRunnerConfig
+            -> SC.DataIndexerType b
+            -> K.ActionWithCacheTime r b
+            -> K.Sem r (K.ActionWithCacheTime r b)
+manageIndex config dataIndexer bFromA_C = do
+  case dataIndexer of
+    SC.CacheableIndex indexCacheKey -> do
+      curJSON_C <-  BR.fileDependency $ jsonFP config
+      when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
+        K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
+        K.clearIfPresent @_ @K.DefaultCacheData (indexCacheKey config)
+      K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData (indexCacheKey config) bFromA_C (return . id)
+    _  -> return bFromA_C
+
+
+jsonFP :: SC.ModelRunnerConfig -> FilePath
+jsonFP config =  SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.unpack $ SC.mrcDatFile config
+
+runModel :: (K.KnitEffects r,  K.CacheEffectsD r)
          => SC.ModelRunnerConfig
          -> RScripts
-         -> SC.DataWrangler a b
-         -> SC.ResultAction r a b c
+         -> SC.DataWrangler a b p
+         -> SC.ResultAction r a b p c
+         -> p
          -> K.ActionWithCacheTime r a
          -> K.Sem r c
-runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
+runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = do
   let modelNameS = T.unpack $ SC.mrcModel config
       modelDirS = T.unpack $ SC.mrcModelDir config
 
@@ -122,23 +182,7 @@ runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
-
-
-  let indexCacheKey :: T.Text = "stan/index/" <> (SC.mrcOutputPrefix config) <> ".bin"
-      jsonFP = SC.addDirFP (modelDirS ++ "/data") $ T.unpack $ SC.mrcDatFile config
-  curJSON_C <- BR.fileDependency jsonFP      
-  let indexJsonDeps = const <$> cachedA <*> curJSON_C
-  when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
-    K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack jsonFP <> "\") is missing.  Deleting cached indices to force rebuild."
-    K.clearIfPresent @_ @K.DefaultCacheData indexCacheKey
-  indices_C <- K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData indexCacheKey indexJsonDeps $ \a -> do
-    let (indices, makeJsonE) = dataWrangler a
-    BR.updateIf curJSON_C cachedA $ \a -> do
-      K.logLE K.Info $ "Indices/JSON data in \"" <> (T.pack jsonFP) <> "\" is missing or out of date.  Rebuilding..."
-      jsonEncoding <- K.knitEither $ makeJsonE a 
-      K.liftKnit . BL.writeFile jsonFP $ A.encodingToLazyByteString jsonEncoding
-      K.logLE K.Info "Finished rebuilding JSON."
-    return indices
+  indices_C <- wrangleData config dataWrangler cachedA toPredict
   stanOutput_C <-  do
     curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
@@ -166,8 +210,8 @@ runModel config rScriptsToWrite dataWrangler makeResult cachedA = do
         <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
       summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
       when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
-      f summary resultDeps
-    SC.SkipSummary f -> f resultDeps
+      f summary toPredict resultDeps
+    SC.SkipSummary f -> f toPredict resultDeps
     SC.DoNothing -> return ()
 
 checkClangEnv ::  (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) => K.Sem r ()

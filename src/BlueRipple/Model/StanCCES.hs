@@ -50,8 +50,8 @@ import Data.String.Here (here)
 type CCES_CountRow = '[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ BR.CountCols
 ccesDataWrangler :: SC.DataWrangler
                     (F.FrameRec CCES_CountRow)
-                    (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
+                    (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5)) ()
+ccesDataWrangler = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f where  
   enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
   enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
   enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
@@ -59,40 +59,41 @@ ccesDataWrangler cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
   enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
   enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
   -- do outer enumeration fold for indices
-  enumF = (,,,,,)
-    <$> enumSexF
-    <*> enumAgeF
-    <*> enumEducationF
-    <*> enumRaceF
-    <*> enumStateF
-    <*> enumCategoryF
-  ((sexF, toSex)
-    , (ageF, toAge)
-    , (educationF, toEducation)
-    , (raceF, toRace)
-    , (stateF, toState)
-    , (categoryF, toCategory)) = FL.fold enumF cces
-  makeJsonE x = SJ.frameToStanJSONEncoding dataF cces where
-    dataF = SJ.namedF "G" FL.length
-            <> SJ.constDataF "J_state" (IM.size toState)
-            <> SJ.constDataF "J_sex" (IM.size toSex)
-            <> SJ.constDataF "J_age" (IM.size toAge)
-            <> SJ.constDataF "J_educ" (IM.size toEducation)
-            <> SJ.constDataF "J_race" (IM.size toRace)
-            <> SJ.valueToPairF "sex" sexF
-            <> SJ.valueToPairF "age" ageF
-            <> SJ.valueToPairF "education" educationF
-            <> SJ.valueToPairF "race" raceF
-            <> SJ.valueToPairF "category" categoryF
-            <> SJ.valueToPairF "state" stateF
-            <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-            <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
+  f cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
+    enumF = (,,,,,)
+      <$> enumSexF
+      <*> enumAgeF
+      <*> enumEducationF
+      <*> enumRaceF
+      <*> enumStateF
+      <*> enumCategoryF
+    ((sexF, toSex)
+      , (ageF, toAge)
+      , (educationF, toEducation)
+      , (raceF, toRace)
+      , (stateF, toState)
+      , (categoryF, toCategory)) = FL.fold enumF cces
+    makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
+      dataF = SJ.namedF "G" FL.length
+              <> SJ.constDataF "J_state" (IM.size toState)
+              <> SJ.constDataF "J_sex" (IM.size toSex)
+              <> SJ.constDataF "J_age" (IM.size toAge)
+              <> SJ.constDataF "J_educ" (IM.size toEducation)
+              <> SJ.constDataF "J_race" (IM.size toRace)
+              <> SJ.valueToPairF "sex" sexF
+              <> SJ.valueToPairF "age" ageF
+              <> SJ.valueToPairF "education" educationF
+              <> SJ.valueToPairF "race" raceF
+              <> SJ.valueToPairF "category" categoryF
+              <> SJ.valueToPairF "state" stateF
+              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
 
 
 ccesDataWrangler2 :: SC.DataWrangler
                     (F.FrameRec CCES_CountRow)
-                    (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler2 cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
+                    (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5)) ()
+ccesDataWrangler2 = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f where
   enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
@@ -103,16 +104,17 @@ ccesDataWrangler2 cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
                   $ SF.composeIntVecRecEncodings encodeSex
                   $ SF.composeIntVecRecEncodings encodeEducation encodeRace
   (catColsIndexer, toCatCols) = encodeCatCols
-  (stateF, toState) = FL.fold enumStateF cces
-  k = SJ.vecEncodingLength encodeCatCols 
-  makeJsonE x = SJ.frameToStanJSONEncoding dataF cces where
-    dataF = SJ.namedF "G" FL.length
-            <> SJ.constDataF "J_state" (IM.size toState)
-            <> SJ.constDataF "K" k
-            <> SJ.valueToPairF "X" (SJ.jsonArrayMF $ catColsIndexer . F.rcast @DT.CatColsASER5)
-            <> SJ.valueToPairF "state" stateF
-            <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-            <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
+  f cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
+    (stateF, toState) = FL.fold enumStateF cces
+    k = SJ.vecEncodingLength encodeCatCols 
+    makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
+      dataF = SJ.namedF "G" FL.length
+              <> SJ.constDataF "J_state" (IM.size toState)
+              <> SJ.constDataF "K" k
+              <> SJ.valueToPairF "X" (SJ.jsonArrayMF $ catColsIndexer . F.rcast @DT.CatColsASER5)
+              <> SJ.valueToPairF "state" stateF
+              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
     
 
 countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec CCES_CountRow)
@@ -161,7 +163,7 @@ prefASER5_MR office year = do
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let resultsWithStates summary cachedDataIndex = do
+  let resultsWithStates summary _ cachedDataIndex = do
         (_, (toState, toCategoryS)) <- K.ignoreCacheTime cachedDataIndex
         let toCategory = fmap FS.fromS toCategoryS
         stateProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse2D "stateProbs" (CS.paramStats summary))
@@ -197,7 +199,7 @@ prefASER5_MR office year = do
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary resultsWithStates) ccesASER5_C
+    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary resultsWithStates) () ccesASER5_C
 
 
 prefASER5_MR_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
@@ -221,7 +223,7 @@ prefASER5_MR_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C 
 
 prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -244,7 +246,7 @@ prefASER5_MR_v2_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C
 
 prefASER5_MR_v3_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -267,7 +269,7 @@ prefASER5_MR_v3_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing ccesASER5_C
+  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C
 
 prefASER5_MR_v4_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -290,7 +292,7 @@ prefASER5_MR_v4_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler2 SC.DoNothing ccesASER5_C    
+  SM.runModel stanConfig SM.Loo ccesDataWrangler2 SC.DoNothing () ccesASER5_C    
 
 model_v1 :: SB.StanModel
 model_v1 = SB.StanModel
