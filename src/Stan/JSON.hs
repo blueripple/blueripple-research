@@ -80,6 +80,12 @@ vecEncodingLength (_, m) = case M.toList m of
   ((v, _) : _) -> VU.length v
 
 
+flipIntIndex :: Ord a => IM.IntMap a -> M.Map a Int
+flipIntIndex = M.fromList . fmap (\(n, a) -> (a, n)) . IM.toList
+
+flipIndex :: Ord a => M.Map k a -> M.Map a k
+flipIndex =  M.fromList . fmap (\(k, a) -> (a, k)) . M.toList
+
 data StanJSONException = StanJSONException T.Text deriving Show
 instance X.Exception StanJSONException
 
@@ -158,6 +164,7 @@ jsonArrayMF toMA = FL.FoldM step init extract where
 
 valueToPairF :: T.Text -> StanJSONF row A.Value -> StanJSONF row A.Series
 valueToPairF name = fmap (\a -> name A..= a) 
+
 
 enumerate :: Ord a => Int -> IntEncoderF a
 enumerate start = FL.Fold step init done where

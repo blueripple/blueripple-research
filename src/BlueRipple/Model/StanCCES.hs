@@ -17,6 +17,7 @@ import qualified Data.Maybe as Maybe
 
 import qualified Data.Text as T
 import qualified Frames as F
+import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -24,6 +25,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -48,10 +50,12 @@ import Data.String.Here (here)
 
 
 type CCES_CountRow = '[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ BR.CountCols
+
 ccesDataWrangler :: SC.DataWrangler
                     (F.FrameRec CCES_CountRow)
-                    (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5)) ()
-ccesDataWrangler = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f where  
+                    (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
+                    (F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5))
+ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where  
   enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
   enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
   enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
@@ -88,13 +92,27 @@ ccesDataWrangler = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mr
               <> SJ.valueToPairF "state" stateF
               <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
               <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
+  g (toState, toCategory) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
+    toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
+    toCategoryIndexM c = M.lookup c$ SJ.flipIntIndex (fmap FS.fromS toCategory)
+    predictF = SJ.namedF "M" FL.length
+               <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
+               <> SJ.valueToPairF "predict_Category" (SJ.jsonArrayMF (toCategoryIndexM . F.rcast @DT.CatColsASER5))
+               
 
-
+{-
+<> SJ.valueToPairF "predict_Age" (SJ.jsonArrayMF (flip IM.lookup toAge . F.rgetField @DT.SimpleAgeC))
+               <> SJ.valueToPairF "predict_Sex" (SJ.jsonArrayMF (flip IM.lookup toSex . F.rgetField @DT.SexC))
+               <> SJ.valueToPairF "predict_Education" (SJ.jsonArrayMF (flip IM.lookup toEducation . F.rgetField @DT.CollegeGradC))
+               <> SJ.valueToPairF "predict_Sex" (SJ.jsonArrayMF (flip IM.lookup toSex . F.rgetField @DT.SexC))
+               
+-}                                                  
 ccesDataWrangler2 :: SC.DataWrangler
-                    (F.FrameRec CCES_CountRow)
-                    (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5)) ()
-ccesDataWrangler2 = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f where
-  enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
+                     (F.FrameRec CCES_CountRow)
+                    (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
+                    (F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5))
+ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where
+  enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1) 
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
   encodeEducation = SF.toRecEncoding @DT.CollegeGradC $ SJ.dummyEncodeEnum @DT.CollegeGrad
@@ -105,17 +123,21 @@ ccesDataWrangler2 = SC.Wrangle (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.m
                   $ SF.composeIntVecRecEncodings encodeEducation encodeRace
   (catColsIndexer, toCatCols) = encodeCatCols
   f cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
-    (stateF, toState) = FL.fold enumStateF cces
+    (stateM, toState) = FL.fold enumStateF cces
     k = SJ.vecEncodingLength encodeCatCols 
     makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
       dataF = SJ.namedF "G" FL.length
               <> SJ.constDataF "J_state" (IM.size toState)
               <> SJ.constDataF "K" k
-              <> SJ.valueToPairF "X" (SJ.jsonArrayMF $ catColsIndexer . F.rcast @DT.CatColsASER5)
-              <> SJ.valueToPairF "state" stateF
-              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-    
+              <> SJ.valueToPairF "X" (SJ.jsonArrayMF (\r -> catColsIndexer $ F.rcast @DT.CatColsASER5 r))
+              <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
+              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF (F.rgetField @BR.Count))
+  g (toState, _) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
+    toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
+    predictF = SJ.namedF "M" FL.length
+               <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
+               <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5)) 
 
 countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec CCES_CountRow)
 countCCESASER5 office year ccesMRP = do
@@ -161,28 +183,21 @@ prefASER5_MR office year = do
   -- count data
   let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
+  allStatesL <- do
+    stateXWalk <- K.ignoreCacheTimeM $ BR.stateAbbrCrosswalkLoader
+    return $ fmap (F.rgetField @BR.StateAbbreviation) .  FL.fold FL.list . F.filterFrame ((<60) . F.rgetField @BR.StateFIPS) $ stateXWalk 
+  let toPredict :: F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5)
+      toPredict = F.toFrame [ s F.&: cat | s <- allStatesL, cat <- DT.allCatKeysASER5]
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let resultsWithStates summary _ cachedDataIndex = do
+  let resultsWithStates summary toPredict cachedDataIndex = do
         (_, (toState, toCategoryS)) <- K.ignoreCacheTime cachedDataIndex
-        let toCategory = fmap FS.fromS toCategoryS
-        stateProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse2D "stateProbs" (CS.paramStats summary))
-        -- build rows to left join
-        let (states, cats) = SP.getDims stateProbs
-            indices = [(stateI, catI) | stateI <- [1..states], catI <- [1..cats]]
-            makeRow (stateI, catI) = do
-              abbr <- IM.lookup stateI toState 
-              catRec <- IM.lookup catI toCategory
-              let prob = SP.getIndexed stateProbs (stateI, catI)
-                  vpv = 2 * prob - 1
-                  x :: F.Record ('[BR.StateAbbreviation] V.++ DT.CatColsASER5 V.++ [BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
-                  x = (abbr F.&: catRec) F.<+> (year F.&: office F.&: vpv F.&: prob F.&: V.RNil)
-              return x
-        probRows <- fmap F.toFrame
-                    $ K.knitMaybe "Error looking up indices.  Should be impossible!"
-                    $ traverse makeRow indices
-        --BR.logFrame probRows
-        return probRows       
+        predictProbs <- fmap CS.mean <$> (K.knitEither $ SP.parse1D "predicted" (CS.paramStats summary))
+        let yoRec :: F.Record '[BR.Year, ET.Office] = year F.&: office F.&: V.RNil
+            probRec :: Double -> F.Record [ET.DemVPV, BR.DemPref]
+            probRec x = (2*x -1 ) F.&: x F.&: V.RNil
+            makeRow key prob = key F.<+> yoRec F.<+> probRec prob        
+        return $ F.toFrame $ fmap (uncurry makeRow) $ zip (FL.fold FL.list toPredict) $ Vec.toList $ SP.getVector predictProbs
   let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state") { CS.useOpenCL = False }
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -199,7 +214,7 @@ prefASER5_MR office year = do
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary resultsWithStates) () ccesASER5_C
+    SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary resultsWithStates) toPredict ccesASER5_C
 
 
 prefASER5_MR_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
@@ -223,7 +238,7 @@ prefASER5_MR_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C 
+  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C 
 
 prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -246,7 +261,7 @@ prefASER5_MR_v2_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C
+  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
 
 prefASER5_MR_v3_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -269,7 +284,7 @@ prefASER5_MR_v3_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler SC.DoNothing () ccesASER5_C
+  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
 
 prefASER5_MR_v4_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
@@ -292,7 +307,7 @@ prefASER5_MR_v4_Loo office year = do
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo ccesDataWrangler2 SC.DoNothing () ccesASER5_C    
+  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler2) SC.DoNothing () ccesASER5_C    
 
 model_v1 :: SB.StanModel
 model_v1 = SB.StanModel
@@ -347,6 +362,9 @@ binomialASER5_StateDataBlock = [here|
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
   int<lower = 0> Total_votes[G];
+  int<lower = 0> M; // number of predictions
+  int<lower = 0> predict_State[M];
+  int<lower = 0> predict_Category[M];
 |]
 
 binomialASER5_StateTransformedDataBlock :: SB.TransformedDataBlock
@@ -373,13 +391,9 @@ binomialASER5_StateModelBlock = [here|
 
 binomialASER5_StateGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_StateGeneratedQuantitiesBlock = [here|
-  vector <lower = 0, upper = 1> [nCat] nationalProbs;
-  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
-  nationalProbs = inv_logit(beta[category]);
-  for (s in 1:J_state) {
-    for (c in 1:nCat) {
-      stateProbs[s, c] = inv_logit(beta[c] + alpha[s, c]);
-    }
+  vector <lower = 0, upper = 1> [M] predicted;
+  for (p in 1:M) {
+    predicted[p] = inv_logit(beta[predict_Category[p]] + alpha[predict_State[p], predict_Category[p]]);
   }
 |]
 

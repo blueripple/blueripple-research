@@ -9,9 +9,6 @@ int<lower = 0> G; // number of cells
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
   int<lower = 0> Total_votes[G];
-  int<lower = 0> M; // number of predictions
-  int<lower = 0> predict_State[M];
-  int<lower = 0> predict_Category[M];
 }
 transformed data {
 int <lower=1> nCat;

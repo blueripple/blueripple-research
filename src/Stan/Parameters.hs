@@ -73,7 +73,10 @@ instance Functor (ParameterStatistics dim) where
 
 getDims :: ParameterStatistics dim a -> NTuple dim
 getDims (ParameterStatistics _ x _) = x
-  
+
+getVector :: ParameterStatistics dim a -> V.Vector a
+getVector (ParameterStatistics _ _ vec) = vec
+
 getIndexed :: forall dim a. IndexFunction dim => ParameterStatistics dim a -> NTuple dim -> a
 getIndexed (ParameterStatistics offset dims vec) index = vec V.! tupleToIndex @dim offset dims index 
 

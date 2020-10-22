@@ -9,6 +9,9 @@ int<lower = 0> G; // number of cells
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
   int<lower = 0> Total_votes[G];
+  int<lower = 0> M; // number of predictions
+  int<lower = 0> predict_State[M];
+  int<lower = 0> predict_Category[M];
 }
 transformed data {
 int <lower=1> nCat;
@@ -27,12 +30,8 @@ sigma_alpha ~ normal (0, 10);
   }
 }
 generated quantities {
-vector <lower = 0, upper = 1> [nCat] nationalProbs;
-  matrix <lower = 0, upper = 1> [J_state, nCat] stateProbs;
-  nationalProbs = inv_logit(beta[category]);
-  for (s in 1:J_state) {
-    for (c in 1:nCat) {
-      stateProbs[s, c] = inv_logit(beta[c] + alpha[s, c]);
-    }
+vector <lower = 0, upper = 1> [M] predicted;
+  for (p in 1:M) {
+    predicted[p] = inv_logit(beta[predict_Category[p]] + alpha[predict_State[p], predict_Category[p]]);
   }
 }

@@ -38,6 +38,11 @@ data DataWrangler a b p where
   Wrangle :: DataIndexerType b -> (a -> (b, a -> Either T.Text A.Series)) -> DataWrangler a b ()
   WrangleWithPredictions :: DataIndexerType b -> (a -> (b, a -> Either T.Text A.Series)) -> (b -> p -> Either T.Text A.Series) -> DataWrangler a b p
 
+noPredictions :: DataWrangler a b p -> DataWrangler a b ()
+noPredictions w@(Wrangle _ _) = w
+noPredictions (WrangleWithPredictions x y _) = Wrangle x y
+
+
 dataIndexerType :: DataWrangler a b p -> DataIndexerType b
 dataIndexerType (Wrangle i _) = i
 dataIndexerType (WrangleWithPredictions i _ _) = i

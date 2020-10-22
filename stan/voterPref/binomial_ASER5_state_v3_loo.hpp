@@ -58,12 +58,12 @@ using stan::math::pow;
 
 static int current_statement__ = 0;
 static const std::vector<string> locations_array__ = {" (found before start of program)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 18, column 0 to column 18)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 24, column 0 to column 18)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 26, column 4 to column 86)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 25, column 17 to line 27, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 25, column 2 to line 27, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 21, column 0 to column 54)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 21, column 0 to column 18)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 27, column 0 to column 18)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 29, column 4 to column 86)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 28, column 17 to line 30, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 28, column 2 to line 30, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 24, column 0 to column 54)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 2, column 0 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 3, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 4, column 2 to column 23)",
@@ -78,10 +78,15 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 10, column 2 to column 28)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 11, column 29 to column 30)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 11, column 2 to column 32)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 14, column 0 to column 19)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 15, column 2 to column 42)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 18, column 7 to column 11)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 24, column 7 to column 8)"};
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 12, column 2 to column 19)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 13, column 31 to column 32)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 13, column 2 to column 34)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 14, column 34 to column 35)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 14, column 2 to column 37)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 17, column 0 to column 19)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 18, column 2 to column 42)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 21, column 7 to column 11)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_ASER5_state_v3_loo.stan', line 27, column 7 to column 8)"};
 
 
 
@@ -98,6 +103,9 @@ class binomial_ASER5_state_v3_loo_model final : public model_base_crtp<binomial_
   std::vector<int> category;
   std::vector<int> D_votes;
   std::vector<int> Total_votes;
+  int M;
+  std::vector<int> predict_State;
+  std::vector<int> predict_Category;
   int nCat;
  
  public:
@@ -268,16 +276,59 @@ class binomial_ASER5_state_v3_loo_model final : public model_base_crtp<binomial_
         check_greater_or_equal(function__, "Total_votes[sym1__]",
                                Total_votes[(sym1__ - 1)], 0);}
       current_statement__ = 21;
+      context__.validate_dims("data initialization","M","int",
+          context__.to_vec());
+      M = std::numeric_limits<int>::min();
+      
+      current_statement__ = 21;
+      M = context__.vals_i("M")[(1 - 1)];
+      current_statement__ = 21;
+      current_statement__ = 21;
+      check_greater_or_equal(function__, "M", M, 0);
+      current_statement__ = 22;
+      validate_non_negative_index("predict_State", "M", M);
+      current_statement__ = 23;
+      context__.validate_dims("data initialization","predict_State","int",
+          context__.to_vec(M));
+      predict_State = std::vector<int>(M, std::numeric_limits<int>::min());
+      
+      current_statement__ = 23;
+      assign(predict_State, nil_index_list(),
+        context__.vals_i("predict_State"), "assigning variable predict_State");
+      current_statement__ = 23;
+      for (int sym1__ = 1; sym1__ <= M; ++sym1__) {
+        current_statement__ = 23;
+        current_statement__ = 23;
+        check_greater_or_equal(function__, "predict_State[sym1__]",
+                               predict_State[(sym1__ - 1)], 0);}
+      current_statement__ = 24;
+      validate_non_negative_index("predict_Category", "M", M);
+      current_statement__ = 25;
+      context__.validate_dims("data initialization","predict_Category","int",
+          context__.to_vec(M));
+      predict_Category = std::vector<int>(M, std::numeric_limits<int>::min());
+      
+      current_statement__ = 25;
+      assign(predict_Category, nil_index_list(),
+        context__.vals_i("predict_Category"),
+        "assigning variable predict_Category");
+      current_statement__ = 25;
+      for (int sym1__ = 1; sym1__ <= M; ++sym1__) {
+        current_statement__ = 25;
+        current_statement__ = 25;
+        check_greater_or_equal(function__, "predict_Category[sym1__]",
+                               predict_Category[(sym1__ - 1)], 0);}
+      current_statement__ = 26;
       nCat = std::numeric_limits<int>::min();
       
-      current_statement__ = 22;
+      current_statement__ = 27;
       nCat = (((J_age * J_sex) * J_educ) * J_race);
-      current_statement__ = 21;
-      current_statement__ = 21;
+      current_statement__ = 26;
+      current_statement__ = 26;
       check_greater_or_equal(function__, "nCat", nCat, 1);
-      current_statement__ = 23;
+      current_statement__ = 28;
       validate_non_negative_index("beta", "nCat", nCat);
-      current_statement__ = 24;
+      current_statement__ = 29;
       validate_non_negative_index("log_lik", "G", G);
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
