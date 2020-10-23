@@ -71,6 +71,11 @@ deriving instance (Show (NTuple dim), Show a) => Show (ParameterStatistics dim a
 instance Functor (ParameterStatistics dim) where
   fmap f (ParameterStatistics o nt v) = ParameterStatistics o nt (fmap f v)
 
+-- we can fold over the vector of values
+-- This may well not be what you mean in >1 dimension !!
+instance Foldable (ParameterStatistics dim) where
+  foldMap f = foldMap f . getVector
+
 getDims :: ParameterStatistics dim a -> NTuple dim
 getDims (ParameterStatistics _ x _) = x
 
