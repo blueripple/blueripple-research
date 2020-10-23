@@ -99,7 +99,7 @@ makeDoc = do
                              2016                     
 
   K.logLE K.Info $ "allBuckets vs sepFixedWithStates"
-  let compList = zip (FL.fold FL.list stan_allBuckets) $ fmap (F.rgetField @BR.DemPref) $ FL.fold FL.list stan_sepFixedWithStates
+  let compList = zip (FL.fold FL.list stan_allBuckets) $ fmap (F.rgetField @ET.DemPref) $ FL.fold FL.list stan_sepFixedWithStates
   K.logLE K.Info $ T.intercalate "\n" . fmap (T.pack . show) $ compList
   
   BRS.prefASER5_MR_Loo ("v1", BRS.ccesDataWrangler) ("binomial_allBuckets", BRS.model_BinomialAllBuckets) ET.President 2016

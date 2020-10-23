@@ -19,7 +19,7 @@ real alpha;
 model {
 sigma_aState ~ normal(0, 10);
     aState ~ normal(0, sigma_aState);
-    D_votes ~ binomial_logit(Total_votes, alpha + X * beta + aState[state]);
+    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
 }
 generated quantities {
 vector[G] log_lik;

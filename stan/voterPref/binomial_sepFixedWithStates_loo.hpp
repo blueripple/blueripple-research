@@ -68,7 +68,7 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 26, column 2 to line 28, column 3)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 20, column 0 to column 29)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 21, column 4 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 22, column 4 to column 76)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 22, column 4 to column 78)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 2, column 0 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 3, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 4, column 40 to column 41)",

@@ -15,6 +15,7 @@ report.html
 examples/html
 *.prof
 *.hp
+*.hpp
 *.ps
 *.aux
 *.png

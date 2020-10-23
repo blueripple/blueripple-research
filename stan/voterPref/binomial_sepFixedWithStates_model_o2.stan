@@ -19,11 +19,11 @@ real alpha;
 model {
 sigma_aState ~ normal(0, 10);
     aState ~ normal(0, sigma_aState);
-    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
+    D_votes ~ binomial_logit(Total_votes, alpha + X * beta + aState[state]);
 }
 generated quantities {
 vector<lower = 0, upper = 1>[M] predicted;
   for (p in 1:M) {
-    predicted[p] = inv_logit(alpha + (predict_X[p] * beta) + aState[predict_State[p]]);
+    predicted[p] = inv_logit(alpha + predict_X[p] * beta + aState[predict_State[p]]);
   }
 }
