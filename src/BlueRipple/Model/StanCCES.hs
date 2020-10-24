@@ -23,6 +23,8 @@ import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
+import qualified Frames.Transform as FT
+import qualified Frames.SimpleJoins as FJ
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -116,6 +118,24 @@ extractResults year office summary toPredict = do
        makeRow key prob = key F.<+> yoRec F.<+> probRec prob        
    return $ F.toFrame $ fmap (uncurry makeRow) $ zip (FL.fold FL.list toPredict) (FL.fold FL.list predictProbs)
 
+comparePredictions ::  K.KnitEffects r
+                   => F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+                   -> F.FrameRec (CCES_CountRow DT.CatColsASER5)
+                   -> K.Sem r ()
+comparePredictions predictions input = do
+  joined <- K.knitEither
+            $ either (Left. T.pack . show) Right
+            $ FJ.leftJoinE @(CCES_KeyRow DT.CatColsASER5) input predictions
+  let p = F.rgetField @ET.DemPref
+      n = F.rgetField @BR.Count
+      s = realToFrac . round @_ @Int . F.rgetField @BR.WeightedSuccesses 
+      rowCountError r = abs (p r * realToFrac (n r) - s r) 
+      countErrorOfVotersF = (\x y -> x / realToFrac y) <$> FL.premap rowCountError FL.sum <*> FL.premap n FL.sum
+      countErrorOfDemsF = (\x y -> x / realToFrac y) <$> FL.premap rowCountError FL.sum <*> FL.premap s FL.sum             
+      (countErrorV, countErrorD) = FL.fold ((,) <$> countErrorOfVotersF <*> countErrorOfDemsF) joined
+  K.logLE K.Info $ "absolute count error (fraction of all votes): " <> (T.pack $ show countErrorV)
+  K.logLE K.Info $ "absolute count error (fraction of D votes): " <> (T.pack $ show countErrorD) 
+
 ccesDataWrangler2 :: CCESDataWrangler DT.CatColsASER5 (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
 ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where
   enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1) 
@@ -145,34 +165,8 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
                <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
                <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5)) 
 
-
-{-
-countCCESASER5 :: K.KnitEffects r
-               => ET.OfficeT
-               -> Int
-               -> F.FrameRec CCES.CCES_MRP
-               -> K.Sem r (F.FrameRec (CCES_CountRow DT.CatColsASER5))
+countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec (CCES_CountRow DT.CatColsASER5))
 countCCESASER5 office year ccesMRP = do
-  countFold <- K.knitEither $ case (office, year) of
-    (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
-    (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
-    (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
-    (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
-    _ -> Left $ T.pack (show office) <> "/" <> (T.pack $ show year) <> " not available."
-  let addZerosF =  FMR.concatFold $ FMR.mapReduceFold
-                   (FMR.noUnpack)
-                   (FMR.splitOnKeys @'[BR.StateAbbreviation])
-                   ( FMR.makeRecsWithKey id
-                     $ FMR.ReduceFold
-                     $ const
-                     $ BK.addDefaultRec @DT.CatColsASER5 BR.zeroCount )
-      counted = FL.fold countFold ccesMRP
-      countedWithZeros = FL.fold addZerosF counted
-  return countedWithZeros
--}
-
-countCCESASER5' :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec (CCES_CountRow DT.CatColsASER5))
-countCCESASER5' office year ccesMRP = do
   countFold <- K.knitEither $ case (office, year) of
     (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
     (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
@@ -202,7 +196,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   let toPredict :: F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5)
       toPredict = F.toFrame [ s F.&: cat | s <- allStatesL, cat <- DT.allCatKeysASER5]
   cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -217,7 +211,11 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> "_" <> modelName <> ".bin"
   modelDep <- SM.modelCacheTime stanConfig
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
-      getResults s tp _ = K.knitEither $ extractResults year office s tp
+      getResults s tp inputAndIndex_C = do
+        (input, _) <- K.ignoreCacheTime inputAndIndex_C
+        predictions <- K.knitEither $ extractResults year office s tp
+        comparePredictions predictions input
+        return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
     SM.runModel stanConfig SM.ShinyStan ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
@@ -234,7 +232,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
   let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
   let stancConfig = (SM.makeDefaultStancConfig $ T.unpack $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
   stanConfig <- SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -248,6 +246,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just stancConfig)
   SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C 
 
+{-
 prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
              => ET.OfficeT
              -> Int
@@ -316,6 +315,7 @@ prefASER5_MR_v4_Loo office year = do
                 (Just 1000)
                 (Just stancConfig)
   SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler2) SC.DoNothing () ccesASER5_C    
+-}
 
 model_BinomialAllBuckets :: SB.StanModel
 model_BinomialAllBuckets = SB.StanModel
