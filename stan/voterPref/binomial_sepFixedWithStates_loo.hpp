@@ -62,13 +62,15 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 15, column 2 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 16, column 2 to column 29)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 17, column 2 to column 51)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 25, column 0 to column 18)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 27, column 4 to column 107)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 26, column 17 to line 28, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 26, column 2 to line 28, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 20, column 0 to column 29)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 21, column 4 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 22, column 4 to column 78)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 27, column 0 to column 18)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 29, column 4 to column 107)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 28, column 17 to line 30, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 28, column 2 to line 30, column 3)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 20, column 0 to column 20)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 21, column 2 to column 21)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 22, column 2 to column 31)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 23, column 2 to column 35)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 24, column 2 to column 76)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 2, column 0 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 3, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 4, column 40 to column 41)",
@@ -89,7 +91,7 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 11, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 15, column 9 to column 10)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 17, column 35 to column 42)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 25, column 7 to column 8)"};
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_loo.stan', line 27, column 7 to column 8)"};
 
 
 
@@ -137,63 +139,63 @@ class binomial_sepFixedWithStates_loo_model final : public model_base_crtp<binom
       pos__ = std::numeric_limits<int>::min();
       
       pos__ = 1;
-      current_statement__ = 12;
+      current_statement__ = 14;
       context__.validate_dims("data initialization","G","int",
           context__.to_vec());
       G = std::numeric_limits<int>::min();
       
-      current_statement__ = 12;
+      current_statement__ = 14;
       G = context__.vals_i("G")[(1 - 1)];
-      current_statement__ = 12;
-      current_statement__ = 12;
+      current_statement__ = 14;
+      current_statement__ = 14;
       check_greater_or_equal(function__, "G", G, 0);
-      current_statement__ = 13;
+      current_statement__ = 15;
       context__.validate_dims("data initialization","J_state","int",
           context__.to_vec());
       J_state = std::numeric_limits<int>::min();
       
-      current_statement__ = 13;
-      J_state = context__.vals_i("J_state")[(1 - 1)];
-      current_statement__ = 13;
-      current_statement__ = 13;
-      check_greater_or_equal(function__, "J_state", J_state, 1);
-      current_statement__ = 14;
-      validate_non_negative_index("state", "G", G);
       current_statement__ = 15;
+      J_state = context__.vals_i("J_state")[(1 - 1)];
+      current_statement__ = 15;
+      current_statement__ = 15;
+      check_greater_or_equal(function__, "J_state", J_state, 1);
+      current_statement__ = 16;
+      validate_non_negative_index("state", "G", G);
+      current_statement__ = 17;
       context__.validate_dims("data initialization","state","int",
           context__.to_vec(G));
       state = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 15;
+      current_statement__ = 17;
       assign(state, nil_index_list(), context__.vals_i("state"),
         "assigning variable state");
-      current_statement__ = 15;
+      current_statement__ = 17;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 15;
-        current_statement__ = 15;
+        current_statement__ = 17;
+        current_statement__ = 17;
         check_greater_or_equal(function__, "state[sym1__]",
                                state[(sym1__ - 1)], 1);}
-      current_statement__ = 15;
+      current_statement__ = 17;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 15;
-        current_statement__ = 15;
+        current_statement__ = 17;
+        current_statement__ = 17;
         check_less_or_equal(function__, "state[sym1__]", state[(sym1__ - 1)],
                             J_state);}
-      current_statement__ = 16;
+      current_statement__ = 18;
       context__.validate_dims("data initialization","K","int",
           context__.to_vec());
       K = std::numeric_limits<int>::min();
       
-      current_statement__ = 16;
-      K = context__.vals_i("K")[(1 - 1)];
-      current_statement__ = 16;
-      current_statement__ = 16;
-      check_greater_or_equal(function__, "K", K, 1);
-      current_statement__ = 17;
-      validate_non_negative_index("X", "G", G);
       current_statement__ = 18;
-      validate_non_negative_index("X", "K", K);
+      K = context__.vals_i("K")[(1 - 1)];
+      current_statement__ = 18;
+      current_statement__ = 18;
+      check_greater_or_equal(function__, "K", K, 1);
       current_statement__ = 19;
+      validate_non_negative_index("X", "G", G);
+      current_statement__ = 20;
+      validate_non_negative_index("X", "K", K);
+      current_statement__ = 21;
       context__.validate_dims("data initialization","X","double",
           context__.to_vec(G, K));
       X = Eigen::Matrix<double, -1, -1>(G, K);
@@ -201,86 +203,86 @@ class binomial_sepFixedWithStates_loo_model final : public model_base_crtp<binom
       
       {
         std::vector<local_scalar_t__> X_flat__;
-        current_statement__ = 19;
+        current_statement__ = 21;
         assign(X_flat__, nil_index_list(), context__.vals_r("X"),
           "assigning variable X_flat__");
-        current_statement__ = 19;
+        current_statement__ = 21;
         pos__ = 1;
-        current_statement__ = 19;
+        current_statement__ = 21;
         for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
-          current_statement__ = 19;
+          current_statement__ = 21;
           for (int sym2__ = 1; sym2__ <= G; ++sym2__) {
-            current_statement__ = 19;
+            current_statement__ = 21;
             assign(X,
               cons_list(index_uni(sym2__),
                 cons_list(index_uni(sym1__), nil_index_list())),
               X_flat__[(pos__ - 1)], "assigning variable X");
-            current_statement__ = 19;
+            current_statement__ = 21;
             pos__ = (pos__ + 1);}}
       }
-      current_statement__ = 20;
+      current_statement__ = 22;
       validate_non_negative_index("D_votes", "G", G);
-      current_statement__ = 21;
+      current_statement__ = 23;
       context__.validate_dims("data initialization","D_votes","int",
           context__.to_vec(G));
       D_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 21;
+      current_statement__ = 23;
       assign(D_votes, nil_index_list(), context__.vals_i("D_votes"),
         "assigning variable D_votes");
-      current_statement__ = 21;
+      current_statement__ = 23;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 21;
-        current_statement__ = 21;
+        current_statement__ = 23;
+        current_statement__ = 23;
         check_greater_or_equal(function__, "D_votes[sym1__]",
                                D_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 22;
+      current_statement__ = 24;
       validate_non_negative_index("Total_votes", "G", G);
-      current_statement__ = 23;
+      current_statement__ = 25;
       context__.validate_dims("data initialization","Total_votes","int",
           context__.to_vec(G));
       Total_votes = std::vector<int>(G, std::numeric_limits<int>::min());
       
-      current_statement__ = 23;
+      current_statement__ = 25;
       assign(Total_votes, nil_index_list(), context__.vals_i("Total_votes"),
         "assigning variable Total_votes");
-      current_statement__ = 23;
+      current_statement__ = 25;
       for (int sym1__ = 1; sym1__ <= G; ++sym1__) {
-        current_statement__ = 23;
-        current_statement__ = 23;
+        current_statement__ = 25;
+        current_statement__ = 25;
         check_greater_or_equal(function__, "Total_votes[sym1__]",
                                Total_votes[(sym1__ - 1)], 0);}
-      current_statement__ = 24;
+      current_statement__ = 26;
       context__.validate_dims("data initialization","M","int",
           context__.to_vec());
       M = std::numeric_limits<int>::min();
       
-      current_statement__ = 24;
-      M = context__.vals_i("M")[(1 - 1)];
-      current_statement__ = 24;
-      current_statement__ = 24;
-      check_greater_or_equal(function__, "M", M, 0);
-      current_statement__ = 25;
-      validate_non_negative_index("predict_State", "M", M);
       current_statement__ = 26;
+      M = context__.vals_i("M")[(1 - 1)];
+      current_statement__ = 26;
+      current_statement__ = 26;
+      check_greater_or_equal(function__, "M", M, 0);
+      current_statement__ = 27;
+      validate_non_negative_index("predict_State", "M", M);
+      current_statement__ = 28;
       context__.validate_dims("data initialization","predict_State","int",
           context__.to_vec(M));
       predict_State = std::vector<int>(M, std::numeric_limits<int>::min());
       
-      current_statement__ = 26;
+      current_statement__ = 28;
       assign(predict_State, nil_index_list(),
         context__.vals_i("predict_State"), "assigning variable predict_State");
-      current_statement__ = 26;
+      current_statement__ = 28;
       for (int sym1__ = 1; sym1__ <= M; ++sym1__) {
-        current_statement__ = 26;
-        current_statement__ = 26;
+        current_statement__ = 28;
+        current_statement__ = 28;
         check_greater_or_equal(function__, "predict_State[sym1__]",
                                predict_State[(sym1__ - 1)], 0);}
-      current_statement__ = 27;
-      validate_non_negative_index("predict_X", "M", M);
-      current_statement__ = 28;
-      validate_non_negative_index("predict_X", "K", K);
       current_statement__ = 29;
+      validate_non_negative_index("predict_X", "M", M);
+      current_statement__ = 30;
+      validate_non_negative_index("predict_X", "K", K);
+      current_statement__ = 31;
       context__.validate_dims("data initialization","predict_X","double",
           context__.to_vec(M, K));
       predict_X = Eigen::Matrix<double, -1, -1>(M, K);
@@ -288,29 +290,29 @@ class binomial_sepFixedWithStates_loo_model final : public model_base_crtp<binom
       
       {
         std::vector<local_scalar_t__> predict_X_flat__;
-        current_statement__ = 29;
+        current_statement__ = 31;
         assign(predict_X_flat__, nil_index_list(),
           context__.vals_r("predict_X"),
           "assigning variable predict_X_flat__");
-        current_statement__ = 29;
+        current_statement__ = 31;
         pos__ = 1;
-        current_statement__ = 29;
+        current_statement__ = 31;
         for (int sym1__ = 1; sym1__ <= K; ++sym1__) {
-          current_statement__ = 29;
+          current_statement__ = 31;
           for (int sym2__ = 1; sym2__ <= M; ++sym2__) {
-            current_statement__ = 29;
+            current_statement__ = 31;
             assign(predict_X,
               cons_list(index_uni(sym2__),
                 cons_list(index_uni(sym1__), nil_index_list())),
               predict_X_flat__[(pos__ - 1)], "assigning variable predict_X");
-            current_statement__ = 29;
+            current_statement__ = 31;
             pos__ = (pos__ + 1);}}
       }
-      current_statement__ = 30;
-      validate_non_negative_index("beta", "K", K);
-      current_statement__ = 31;
-      validate_non_negative_index("aState", "J_state", J_state);
       current_statement__ = 32;
+      validate_non_negative_index("beta", "K", K);
+      current_statement__ = 33;
+      validate_non_negative_index("aState", "J_state", J_state);
+      current_statement__ = 34;
       validate_non_negative_index("log_lik", "G", G);
     } catch (const std::exception& e) {
       stan::lang::rethrow_located(e, locations_array__[current_statement__]);
@@ -392,10 +394,14 @@ class binomial_sepFixedWithStates_loo_model final : public model_base_crtp<binom
         }}
       {
         current_statement__ = 9;
-        lp_accum__.add(normal_lpdf<propto__>(sigma_aState, 0, 10));
+        lp_accum__.add(normal_lpdf<propto__>(alpha, 0, 2));
         current_statement__ = 10;
-        lp_accum__.add(normal_lpdf<propto__>(aState, 0, sigma_aState));
+        lp_accum__.add(normal_lpdf<propto__>(beta, 0, 1));
         current_statement__ = 11;
+        lp_accum__.add(normal_lpdf<propto__>(sigma_aState, 0, 10));
+        current_statement__ = 12;
+        lp_accum__.add(normal_lpdf<propto__>(aState, 0, sigma_aState));
+        current_statement__ = 13;
         lp_accum__.add(
           binomial_logit_lpmf<propto__>(D_votes, Total_votes,
             add(add(alpha, multiply(X, beta)),

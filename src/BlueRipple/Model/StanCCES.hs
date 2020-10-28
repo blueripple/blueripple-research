@@ -198,7 +198,8 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig
+  stanConfig <- SC.noLogOfSummary
+                <$> SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 (modelName <> "_model")
                 (Just (SB.NoLL, model))
@@ -234,7 +235,8 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
   let stancConfig = (SM.makeDefaultStancConfig $ T.unpack $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig
+  stanConfig <- SC.noLogOfSummary
+                <$> SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
                 (modelName <> "_loo")
                 (Just (SB.OnlyLL, model))
@@ -367,6 +369,27 @@ model_v5 = SB.StanModel
            binomialASER5_v5_ModelBlock
            (Just binomialASER5_v5_GeneratedQuantitiesBlock)
            binomialASER5_v5_GQLLBlock
+
+model_v6 :: SB.StanModel
+model_v6 = SB.StanModel
+           binomialASER5_v4_DataBlock
+           (Just binomialASER5_v6_TransformedDataBlock)
+           binomialASER5_v6_ParametersBlock
+           Nothing
+           binomialASER5_v6_ModelBlock
+           (Just binomialASER5_v6_GeneratedQuantitiesBlock)
+           binomialASER5_v6_GQLLBlock
+
+
+model_v7 :: SB.StanModel
+model_v7 = SB.StanModel
+           binomialASER5_v4_DataBlock
+           (Just binomialASER5_v6_TransformedDataBlock)
+           binomialASER5_v7_ParametersBlock
+           Nothing
+           binomialASER5_v7_ModelBlock
+           (Just binomialASER5_v6_GeneratedQuantitiesBlock)
+           binomialASER5_v6_GQLLBlock
 
 
 binomialASER5_StateDataBlock :: SB.DataBlock
@@ -541,18 +564,18 @@ binomialASER5_v5_ParametersBlock = [here|
 
 binomialASER5_v5_ModelBlock :: SB.ModelBlock
 binomialASER5_v5_ModelBlock = [here|
-    sigma_aState ~ normal(0, 10);
-    aState ~ normal(0, sigma_aState);
-    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
+  alpha ~ normal(0,2);
+  beta ~ normal(0,1);
+  sigma_aState ~ normal(0, 10);
+  aState ~ normal(0, sigma_aState);
+  D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
 |]
 
 
 binomialASER5_v5_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v5_GeneratedQuantitiesBlock = [here|
   vector<lower = 0, upper = 1>[M] predicted;
-  for (p in 1:M) {
-    predicted[p] = inv_logit(alpha + (predict_X[p] * beta) + aState[predict_State[p]]);
-  }
+  predicted = inv_logit(alpha + (predict_X * beta) + aState[predict_State]);
 |]
 
   
@@ -563,6 +586,107 @@ binomialASER5_v5_GQLLBlock = [here|
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + aState[state[g]]);
   }
 |]       
+
+binomialASER5_v6_TransformedDataBlock :: SB.TransformedDataBlock
+binomialASER5_v6_TransformedDataBlock = [here|
+  vector[G] intcpt;
+  vector[M] predictIntcpt;
+  matrix[G, K+1] XI; // add the intercept so the covariance matrix is easier to deal with
+  matrix[M, K+1] predict_XI;
+  for (g in 1:G)
+    intcpt[g] = 1;
+  XI = append_col(intcpt, X);
+  for (m in 1:M)
+    predictIntcpt[m] = 1;
+  predict_XI = append_col(predictIntcpt, predict_X);
+|]
+
+binomialASER5_v6_ParametersBlock :: SB.ParametersBlock
+binomialASER5_v6_ParametersBlock = [here|
+  real alpha; // overall intercept
+  vector[K] beta; // fixed effects
+  vector<lower=0> [K+1] sigma;
+  vector[K+1] betaState[J_state]; // state-level coefficients  
+|]
+
+binomialASER5_v6_ModelBlock :: SB.ModelBlock
+binomialASER5_v6_ModelBlock = [here|
+  alpha ~ normal(0,2); // weak prior around 50%
+  beta ~ normal(0,1);
+  sigma ~ normal(0,10);
+  for (s in 1:J_state)
+    betaState[s] ~ normal(0, sigma);
+  {
+    vector[G] xiBetaState;
+    for (g in 1:G)
+      xiBetaState[g] = XI[g] * betaState[state[g]];
+    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + xiBetaState);
+  }
+|]
+
+
+binomialASER5_v6_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v6_GeneratedQuantitiesBlock = [here|
+  vector<lower = 0, upper = 1>[M] predicted;
+  for (m in 1:M)
+    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + (predict_XI[m] * betaState[predict_State[m]]));
+|]
+
   
+binomialASER5_v6_GQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v6_GQLLBlock = [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + XI[g] * betaState[state[g]]);
+  }
+|]       
+
+
+binomialASER5_v7_ParametersBlock :: SB.ParametersBlock
+binomialASER5_v7_ParametersBlock = [here|
+  real alpha; // overall intercept
+  vector[K] beta; // fixed effects
+  vector<lower=0> [K+1] tau; // group effects scales
+  corr_matrix[K+1] Omega; // group effect correlations
+  vector[K+1] betaState[J_state]; // state-level coefficients  
+|]
+
+binomialASER5_v7_ModelBlock :: SB.ModelBlock
+binomialASER5_v7_ModelBlock = [here|
+  alpha ~ normal(0,2); // weak prior around 50%
+  beta ~ normal(0,1);
+  tau ~ cauchy(0, 2.5);
+  Omega ~ lkj_corr(2);
+  for (s in 1:J_state) {
+    vector[K] zero;
+    for (k in 1:(K+1))
+      zero[k] = 0;
+    betaState[s] ~ multi_normal(zero, quad_form_diag(Omega, tau));
+  }
+  {
+    vector[G] xiBetaState;
+    for (g in 1:G)
+      xiBetaState[g] = XI[g] * betaState[state[g]];
+    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + xiBetaState);
+  }
+|]
+
+{-
+binomialASER5_v7_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v7_GeneratedQuantitiesBlock = [here|
+  vector<lower = 0, upper = 1>[M] predicted;
+  for (m in 1:M)
+    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + (predict_XI[m] * betaState[predict_State[m]]));
+|]
+
+  
+binomialASER5_v7_GQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialASER5_v7_GQLLBlock = [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + XI[g] * betaState[state[g]]);
+  }
+|]       
+-}
 
   

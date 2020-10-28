@@ -62,13 +62,13 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 15, column 2 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 16, column 2 to column 29)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 17, column 2 to column 51)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 25, column 0 to column 42)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 27, column 4 to column 87)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 26, column 17 to line 28, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 26, column 2 to line 28, column 3)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 20, column 0 to column 29)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 21, column 4 to column 37)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 22, column 4 to column 78)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 27, column 0 to column 42)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 28, column 2 to column 76)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 20, column 0 to column 20)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 21, column 2 to column 21)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 22, column 2 to column 31)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 23, column 2 to column 35)",
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 24, column 2 to column 76)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 2, column 0 to column 17)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 3, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 4, column 40 to column 41)",
@@ -89,7 +89,7 @@ static const std::vector<string> locations_array__ = {" (found before start of p
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 11, column 2 to column 25)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 15, column 9 to column 10)",
                                                       " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 17, column 35 to column 42)",
-                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 25, column 29 to column 30)"};
+                                                      " (in '/Users/adam/BlueRipple/research/stan/voterPref/binomial_sepFixedWithStates_model.stan', line 27, column 29 to column 30)"};
 
 
 
@@ -391,6 +391,10 @@ class binomial_sepFixedWithStates_model_model final : public model_base_crtp<bin
               sigma_aState), "assigning variable aState");
         }}
       {
+        current_statement__ = 7;
+        lp_accum__.add(normal_lpdf<propto__>(alpha, 0, 2));
+        current_statement__ = 8;
+        lp_accum__.add(normal_lpdf<propto__>(beta, 0, 1));
         current_statement__ = 9;
         lp_accum__.add(normal_lpdf<propto__>(sigma_aState, 0, 10));
         current_statement__ = 10;
@@ -481,17 +485,13 @@ class binomial_sepFixedWithStates_model_model final : public model_base_crtp<bin
       predicted = Eigen::Matrix<double, -1, 1>(M);
       stan::math::fill(predicted, std::numeric_limits<double>::quiet_NaN());
       
-      current_statement__ = 8;
-      for (int p = 1; p <= M; ++p) {
-        current_statement__ = 6;
-        assign(predicted, cons_list(index_uni(p), nil_index_list()),
-          inv_logit(
-            ((alpha +
-               multiply(
-                 rvalue(predict_X, cons_list(index_uni(p), nil_index_list()),
-                   "predict_X"), beta)) +
-              aState[(predict_State[(p - 1)] - 1)])),
-          "assigning variable predicted");}
+      current_statement__ = 6;
+      assign(predicted, nil_index_list(),
+        inv_logit(
+          add(add(alpha, multiply(predict_X, beta)),
+            rvalue(aState,
+              cons_list(index_multi(predict_State), nil_index_list()),
+              "aState"))), "assigning variable predicted");
       current_statement__ = 5;
       for (int sym1__ = 1; sym1__ <= M; ++sym1__) {
         current_statement__ = 5;

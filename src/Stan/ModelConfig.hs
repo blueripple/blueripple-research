@@ -28,6 +28,9 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcLogSummary :: Bool
   }
 
+noLogOfSummary :: ModelRunnerConfig -> ModelRunnerConfig
+noLogOfSummary sc = sc { mrcLogSummary = False }
+
 -- produce indexes and json producer from the data as well as a data-set to predict.
 data DataIndexerType b where
   NoIndex :: DataIndexerType ()

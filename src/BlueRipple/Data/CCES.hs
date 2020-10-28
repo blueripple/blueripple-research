@@ -131,10 +131,6 @@ type CCES_MRP = '[ Year
                  , Pres2008VoteParty
                  ]                
 
--- these are orphans but where could they go?
--- I guess we could newtype "ElField" somehow, just for serialization? Then coerce back and forth...
---instance (S.Serialize (V.Snd t), V.KnownField t) => S.Serialize (F.ElField t)
---instance S.Serialize (F.Record CCES_MRP)
 
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
 minus1 x = x - 1

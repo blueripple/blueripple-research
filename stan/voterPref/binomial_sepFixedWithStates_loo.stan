@@ -17,9 +17,11 @@ real alpha;
   vector<multiplier=sigma_aState> [J_state] aState;
 }
 model {
-sigma_aState ~ normal(0, 10);
-    aState ~ normal(0, sigma_aState);
-    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
+alpha ~ normal(0,2);
+  beta ~ normal(0,1);
+  sigma_aState ~ normal(0, 10);
+  aState ~ normal(0, sigma_aState);
+  D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + aState[state]);
 }
 generated quantities {
 vector[G] log_lik;
