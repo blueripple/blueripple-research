@@ -1,7 +1,10 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 module BlueRipple.Data.ElectionTypes where
@@ -14,7 +17,9 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.ShowCSV as FCSV
 import qualified Data.Serialize                as SE
 import qualified Data.Vinyl                    as V
-import qualified Data.Vector                   as Vec
+import qualified Data.Vector.Unboxed           as UVec
+import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
+import           Data.Word                      (Word8)
 import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
 import qualified Graphics.Vega.VegaLite        as GV
@@ -34,8 +39,12 @@ data MajorPartyParticipation = Neither
 
 instance S.Serialize MajorPartyParticipation
 instance FCSV.ShowCSV MajorPartyParticipation
-type instance FI.VectorFor MajorPartyParticipation = Vec.Vector
 instance Grouping MajorPartyParticipation
+derivingUnbox "MajorPartyParticipation"
+  [t|MajorPartyParticipation -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor MajorPartyParticipation = UVec.Vector
 
 updateMajorPartyParticipation
   :: MajorPartyParticipation -> T.Text -> MajorPartyParticipation
@@ -48,20 +57,28 @@ updateMajorPartyParticipation x       _            = x
 type MajorPartyParticipationC = "MajorPartyParticipation" F.:-> MajorPartyParticipation
 
 data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor PartyT = Vec.Vector
 instance S.Serialize PartyT
 instance Grouping PartyT
 instance FCSV.ShowCSV PartyT
+derivingUnbox "PartyT"
+  [t|PartyT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor PartyT = UVec.Vector
 
 type Party = "Party" F.:-> PartyT
 instance FV.ToVLDataValue (F.ElField Party) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor OfficeT = Vec.Vector
 instance S.Serialize OfficeT
 instance Grouping OfficeT
 instance FCSV.ShowCSV OfficeT
+derivingUnbox "OfficeT"
+  [t|OfficeT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor OfficeT = UVec.Vector
 
 type Office = "Office" F.:-> OfficeT
 instance FV.ToVLDataValue (F.ElField Office) where
@@ -78,18 +95,17 @@ instance FV.ToVLDataValue (F.ElField TotalVotes) where
 data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq , Ord, Show, Generic)
 
 type PrefType = "PrefType" F.:-> PrefTypeT
-type instance FI.VectorFor PrefTypeT = Vec.Vector
 instance Grouping PrefTypeT
 instance SE.Serialize PrefTypeT
 instance FCSV.ShowCSV PrefTypeT
+derivingUnbox "PrefTypeT"
+  [t|PrefTypeT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor PrefTypeT = UVec.Vector
 
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
-
-type EWCols = [ElectoralWeightSource, ElectoralWeightOf, ElectoralWeight]
-
-ewRec :: ElectoralWeightSourceT -> ElectoralWeightOfT -> Double -> F.Record EWCols
-ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 
 type ElectoralWeight = "ElectoralWeight" F.:-> Double
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
@@ -97,10 +113,17 @@ instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
 
 data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq , Ord, Show, Generic)
 type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSourceT
-type instance FI.VectorFor ElectoralWeightSourceT = Vec.Vector
+
 instance Grouping ElectoralWeightSourceT
 instance SE.Serialize ElectoralWeightSourceT
 instance FCSV.ShowCSV ElectoralWeightSourceT
+derivingUnbox "ElectoralWeightSourceT"
+  [t|ElectoralWeightSourceT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor ElectoralWeightSourceT = UVec.Vector
+
+
 instance FV.ToVLDataValue (F.ElField ElectoralWeightSource) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
@@ -110,10 +133,20 @@ data ElectoralWeightOfT = EW_Eligible -- ^ Voting Eligible Population
                         | EW_All -- ^ Voting Age Population (all)
                         deriving (Enum, Bounded, Eq , Ord, Show, Generic)
 type ElectoralWeightOf = "ElectoralWeightOf" F.:-> ElectoralWeightOfT
-type instance FI.VectorFor ElectoralWeightOfT = Vec.Vector
 instance Grouping ElectoralWeightOfT
 instance SE.Serialize ElectoralWeightOfT
 instance FCSV.ShowCSV ElectoralWeightOfT
+derivingUnbox "ElectoralWeightOfT"
+  [t|ElectoralWeightOfT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor ElectoralWeightOfT = UVec.Vector
+
+
+type EWCols = [ElectoralWeightSource, ElectoralWeightOf, ElectoralWeight]
+
+ewRec :: ElectoralWeightSourceT -> ElectoralWeightOfT -> Double -> F.Record EWCols
+ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 
 
 type CVAP = "CVAP" F.:-> Int
@@ -135,10 +168,14 @@ data VoteWhyNot = VWN_PhysicallyUnable
                 deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
 type VoteWhyNotC = "VoteWhyNot" F.:-> VoteWhyNot
-type instance FI.VectorFor VoteWhyNot = Vec.Vector
 instance Grouping VoteWhyNot
 instance SE.Serialize VoteWhyNot
 instance FCSV.ShowCSV VoteWhyNot
+derivingUnbox "VoteWhyNot"
+  [t|VoteWhyNot -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor VoteWhyNot = UVec.Vector
 
 data RegWhyNot = RWN_MissedDeadline
                | RWN_DidntKnowHow
@@ -151,9 +188,13 @@ data RegWhyNot = RWN_MissedDeadline
                 deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
 type RegWhyNotC = "RegWhyNot" F.:-> RegWhyNot
-type instance FI.VectorFor RegWhyNot = Vec.Vector
 instance Grouping RegWhyNot
 instance SE.Serialize RegWhyNot
+derivingUnbox "RegWhyNot"
+  [t|RegWhyNot -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor RegWhyNot = UVec.Vector
 
 data VoteHow = VH_InPerson
              | VH_ByMail
@@ -162,10 +203,14 @@ data VoteHow = VH_InPerson
 
 
 type VoteHowC = "VoteHow" F.:-> VoteHow
-type instance FI.VectorFor VoteHow = Vec.Vector
 instance Grouping VoteHow
 instance SE.Serialize VoteHow
 instance FCSV.ShowCSV VoteHow
+derivingUnbox "VoteHow"
+  [t|VoteHow -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor VoteHow = UVec.Vector
 
 data VoteWhen = VW_ElectionDay
               | VW_BeforeElectionDay
@@ -173,9 +218,13 @@ data VoteWhen = VW_ElectionDay
               deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
 type VoteWhenC = "VoteWhen" F.:-> VoteWhen
-type instance FI.VectorFor VoteWhen = Vec.Vector
 instance Grouping VoteWhen
 instance SE.Serialize VoteWhen
+derivingUnbox "VoteWhen"
+  [t|VoteWhen -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor VoteWhen = UVec.Vector
 
 data VotedYN = VYN_DidNotVote
              | VYN_Voted
@@ -186,10 +235,14 @@ data VotedYN = VYN_DidNotVote
              deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
 type VotedYNC = "Voted" F.:-> VotedYN
-type instance FI.VectorFor VotedYN = Vec.Vector
 instance Grouping VotedYN
 instance SE.Serialize VotedYN
 instance FCSV.ShowCSV VotedYN
+derivingUnbox "VotedYN"
+  [t|VotedYN -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor VotedYN = UVec.Vector
 
 data RegisteredYN = RYN_NotRegistered
                   | RYN_Registered
@@ -197,10 +250,14 @@ data RegisteredYN = RYN_NotRegistered
                   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
            
 type RegisteredYNC = "RegisteredYN" F.:-> RegisteredYN
-type instance FI.VectorFor RegisteredYN = Vec.Vector
 instance Grouping RegisteredYN
 instance SE.Serialize RegisteredYN
 instance FCSV.ShowCSV RegisteredYN
+derivingUnbox "RegisteredYN"
+  [t|RegisteredYN -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor RegisteredYN = UVec.Vector
 
 type DemPref    = "DemPref"    F.:-> Double
 type DemShare   = "DemShare"   F.:-> Double

@@ -47,5 +47,6 @@ import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 
 F.tableTypes' pumsACS1YrRowGen
+F.tableTypes' pumsACS1YrRowGen'
 
 

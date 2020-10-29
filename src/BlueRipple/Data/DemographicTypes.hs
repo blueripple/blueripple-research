@@ -1,11 +1,14 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveAnyClass         #-}
+{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
@@ -30,12 +33,15 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
-import qualified Data.Vector                   as Vec
+--import qualified Data.Vector                   as Vec
+import qualified Data.Vector.Unboxed           as UVec
+import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 import           Data.Vinyl.TypeLevel           (type (++))
 import           Data.Vinyl.Lens                (type (⊆))
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.XRec               as V
+import           Data.Word                      (Word8)
 import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
 import qualified Frames.Visualization.VegaLite.Data
@@ -49,9 +55,14 @@ import qualified Graphics.Vega.VegaLite        as GV
 
 data DemographicGrouping = ASE | ASR | ASER | ASER4 | ASER5 deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
-type instance FI.VectorFor DemographicGrouping = Vec.Vector
 instance Grouping DemographicGrouping
 instance K.FiniteSet DemographicGrouping
+
+derivingUnbox "DemographicGrouping"
+  [t|DemographicGrouping -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor DemographicGrouping = UVec.Vector
 
 type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
 
@@ -62,7 +73,12 @@ data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord
 instance S.Serialize PopCountOfT
 instance Grouping PopCountOfT
 instance K.FiniteSet PopCountOfT
-type instance FI.VectorFor PopCountOfT = Vec.Vector
+
+derivingUnbox "PopCountOfT"
+  [t|PopCountOfT -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor PopCountOfT = UVec.Vector
 
 type PopCountOf = "PopCountOf" F.:-> PopCountOfT
 instance FV.ToVLDataValue (F.ElField PopCountOf) where
@@ -70,44 +86,16 @@ instance FV.ToVLDataValue (F.ElField PopCountOf) where
 
 type PopCount = "PopCount" F.:-> Int
 
-type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
-catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
-catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
-
-allCatKeysASER = [catKeyASER a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [NonWhite, White]]
-
-type CatColsASE = '[SimpleAgeC, SexC, CollegeGradC]
-catKeyASE :: SimpleAge -> Sex -> CollegeGrad -> F.Record CatColsASE
-catKeyASE a s e = a F.&: s F.&: e F.&: V.RNil
-
-allCatKeysASE = [catKeyASE a s e | a <- [EqualOrOver, Under], s <- [Female, Male], e <- [NonGrad, Grad]]
-
-type CatColsASR = '[SimpleAgeC, SexC, SimpleRaceC]
-catKeyASR :: SimpleAge -> Sex -> SimpleRace -> F.Record CatColsASR
-catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
-
-allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
-
-type CatColsASER5 = '[SimpleAgeC, SexC, CollegeGradC, Race5C]
-catKeyASER5 :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> F.Record CatColsASER5
-catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
-
-allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
-
-type CatColsASER4 = '[SimpleAgeC, SexC, CollegeGradC, Race4C]
-catKeyASER4 :: SimpleAge -> Sex -> CollegeGrad -> Race4 -> F.Record CatColsASER4
-catKeyASER4 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
-
-allCatKeysASER4 = [catKeyASER4 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
-
-type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
-
-
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic, Hashable)
 instance S.Serialize Sex
-type instance FI.VectorFor Sex = Vec.Vector
+
 instance Grouping Sex
 instance K.FiniteSet Sex
+derivingUnbox "Sex"
+  [t|Sex -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Sex = UVec.Vector
 
 type SexC = "Sex" F.:-> Sex
 
@@ -116,13 +104,14 @@ instance FV.ToVLDataValue (F.ElField SexC) where
 
 --
 data SimpleRace = NonWhite | White deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
-
 instance S.Serialize SimpleRace
-
-type instance FI.VectorFor SimpleRace = Vec.Vector
-
 instance Grouping SimpleRace
 instance K.FiniteSet SimpleRace
+derivingUnbox "SimpleRace"
+  [t|SimpleRace -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor SimpleRace = UVec.Vector
 
 type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
 
@@ -132,14 +121,14 @@ instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
 type IsCitizen = "IsCitizen" F.:-> Bool
 
 data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic, Hashable)
-
-
 instance S.Serialize CollegeGrad
-
-type instance FI.VectorFor CollegeGrad = Vec.Vector
-
 instance Grouping CollegeGrad
 instance K.FiniteSet CollegeGrad
+derivingUnbox "CollegeGrad"
+  [t|CollegeGrad -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor CollegeGrad = UVec.Vector
 
 type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
 
@@ -149,13 +138,14 @@ instance FV.ToVLDataValue (F.ElField CollegeGradC) where
 type InCollege = "InCollege" F.:-> Bool
 
 data SimpleAge = Under | EqualOrOver deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
-
 instance S.Serialize SimpleAge
-
-type instance FI.VectorFor SimpleAge = Vec.Vector
-
 instance Grouping SimpleAge
 instance K.FiniteSet SimpleAge
+derivingUnbox "SimpleAge"
+  [t|SimpleAge -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor SimpleAge = UVec.Vector
 
 type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
@@ -163,9 +153,13 @@ instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
 
 data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age4
-type instance FI.VectorFor Age4 = Vec.Vector
 instance Grouping Age4
 instance K.FiniteSet Age4
+derivingUnbox "Age4"
+  [t|Age4 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Age4 = UVec.Vector
 
 type Age4C = "Age4" F.:-> Age4
 
@@ -180,9 +174,13 @@ age4ToSimple _ = EqualOrOver
 
 data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Age5F
-type instance FI.VectorFor Age5F = Vec.Vector
 instance Grouping Age5F
 instance K.FiniteSet Age5F
+derivingUnbox "Age5F"
+  [t|Age5F -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Age5F = UVec.Vector
 
 type Age5FC = "Age5F" F.:-> Age5F
 
@@ -201,9 +199,13 @@ age5FToSimple _ = EqualOrOver
 
 data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age5
-type instance FI.VectorFor Age5 = Vec.Vector
 instance Grouping Age5
 instance K.FiniteSet Age5
+derivingUnbox "Age5"
+  [t|Age5 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Age5 = UVec.Vector
 
 type Age5C = "Age5" F.:-> Age5
 
@@ -213,9 +215,13 @@ simpleAgeFrom5 EqualOrOver = [A5_45To64, A5_65To74, A5_75AndOver]
 
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Education
-type instance FI.VectorFor Education = Vec.Vector
 instance Grouping Education
 instance K.FiniteSet Education
+derivingUnbox "Education"
+  [t|Education -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Education = UVec.Vector
 
 type EducationC = "Education" F.:-> Education
 
@@ -277,9 +283,13 @@ turnoutEducationLabel AD = "AD"
 
 data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
-type instance FI.VectorFor ACSRace = Vec.Vector
 instance Grouping ACSRace
 instance K.FiniteSet ACSRace
+derivingUnbox "ACSRace"
+  [t|ACSRace -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor ACSRace = UVec.Vector
 
 type ACSRaceC = "ACSRace" F.:-> ACSRace
 
@@ -307,17 +317,26 @@ asACSLabel (a, s) = sexLabel s <> age5Label a
 
 data TurnoutRace = Turnout_All | Turnout_WhiteNonHispanic | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize TurnoutRace
-type instance FI.VectorFor TurnoutRace = Vec.Vector
+
 instance Grouping TurnoutRace
 instance K.FiniteSet TurnoutRace
+derivingUnbox "TurnoutRace"
+  [t|TurnoutRace -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor TurnoutRace = UVec.Vector
 
 type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
 data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Race5
-type instance FI.VectorFor Race5 = Vec.Vector
 instance Grouping Race5
 instance K.FiniteSet Race5
+derivingUnbox "Race5"
+  [t|Race5 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Race5 = UVec.Vector
 
 type Race5C = "Race5" F.:-> Race5
 instance FV.ToVLDataValue (F.ElField Race5C) where
@@ -333,9 +352,13 @@ simpleRaceFromRace5 R5_WhiteNonLatinx = White
 
 data Race4 = R4_Other | R4_Black | R4_Latinx | R4_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Race4
-type instance FI.VectorFor Race4 = Vec.Vector
 instance Grouping Race4
 instance K.FiniteSet Race4
+derivingUnbox "Race4"
+  [t|Race4 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Race4 = UVec.Vector
 
 type Race4C = "Race4" F.:-> Race4
 instance FV.ToVLDataValue (F.ElField Race4C) where
@@ -376,9 +399,13 @@ data Language = English
               | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize Language
-type instance FI.VectorFor Language = Vec.Vector
 instance Grouping Language
 instance K.FiniteSet Language
+derivingUnbox "Language"
+  [t|Language -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Language = UVec.Vector
 
 type LanguageC = "Language" F.:-> Language
 instance FV.ToVLDataValue (F.ElField LanguageC) where
@@ -387,15 +414,67 @@ instance FV.ToVLDataValue (F.ElField LanguageC) where
 
 data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 instance S.Serialize SpeaksEnglish
-type instance FI.VectorFor SpeaksEnglish = Vec.Vector
 instance Grouping SpeaksEnglish
 instance K.FiniteSet SpeaksEnglish
+derivingUnbox "SpeaksEnglish"
+  [t|SpeaksEnglish -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor SpeaksEnglish = UVec.Vector
 
 type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
 instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
 
+type IncomeC = "Income" F.:-> Double
+
+data CensusRegion = NewEngland
+                  | MiddleAtlantic
+                  | EastNorthCentral
+                  | WestNorthCentral
+                  | SouthAtlantic
+                  | EastSouthCentral
+                  | WestSouthCentral
+                  | Mountain
+                  | Pacific
+                  deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+
+instance S.Serialize CensusRegion
+
+
+type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
+catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
+catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+
+allCatKeysASER = [catKeyASER a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [NonWhite, White]]
+
+type CatColsASE = '[SimpleAgeC, SexC, CollegeGradC]
+catKeyASE :: SimpleAge -> Sex -> CollegeGrad -> F.Record CatColsASE
+catKeyASE a s e = a F.&: s F.&: e F.&: V.RNil
+
+allCatKeysASE = [catKeyASE a s e | a <- [EqualOrOver, Under], s <- [Female, Male], e <- [NonGrad, Grad]]
+
+type CatColsASR = '[SimpleAgeC, SexC, SimpleRaceC]
+catKeyASR :: SimpleAge -> Sex -> SimpleRace -> F.Record CatColsASR
+catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
+
+allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
+
+type CatColsASER5 = '[SimpleAgeC, SexC, CollegeGradC, Race5C]
+catKeyASER5 :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> F.Record CatColsASER5
+catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+
+allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
+
+type CatColsASER4 = '[SimpleAgeC, SexC, CollegeGradC, Race4C]
+catKeyASER4 :: SimpleAge -> Sex -> CollegeGrad -> Race4 -> F.Record CatColsASER4
+catKeyASER4 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+
+allCatKeysASER4 = [catKeyASER4 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
+
+type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
+      
 
 asrTurnoutLabel' :: (Age5, Sex, TurnoutRace) -> T.Text
 asrTurnoutLabel' (a, s, r) = turnoutRaceLabel r <> sexLabel s <> age5Label a

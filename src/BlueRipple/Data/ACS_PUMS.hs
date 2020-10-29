@@ -428,7 +428,7 @@ type PUMS_Typed = '[ BR.Year
                    , BR.SexC
                    , BR.Race5C
                    , BR.LanguageC
-                   , BR.SpeaksEnglishC
+                   , BR.SpeaksEnglishC                   
                  ]
 
 type PUMS_Counted = '[BR.Year
