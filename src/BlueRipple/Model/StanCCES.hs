@@ -248,76 +248,6 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just stancConfig)
   SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C 
 
-{-
-prefASER5_MR_v2_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             => ET.OfficeT
-             -> Int
-             -> K.Sem r ()
-prefASER5_MR_v2_Loo office year = do
-  -- count data
-  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
-      countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
-  cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
-  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v2_loo") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig
-                "stan/voterPref"
-                "binomial_ASER5_state_v2_loo"
-                (Just (SB.OnlyLL, model_v2))
-                (Just $ "cces_" <> officeYearT <> ".json")
-                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v2_loo")
-                4
-                (Just 1000)
-                (Just 1000)
-                (Just stancConfig)
-  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
-
-prefASER5_MR_v3_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             => ET.OfficeT
-             -> Int
-             -> K.Sem r ()
-prefASER5_MR_v3_Loo office year = do
-  -- count data
-  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
-      countCacheKey = "data/stan/cces/stateVotesASER5_v3" <> officeYearT <> ".bin"
-  cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
-  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v3_loo") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig
-                "stan/voterPref"
-                "binomial_ASER5_state_v3_loo"
-                (Just (SB.OnlyLL, model_v3))
-                (Just $ "cces_" <> officeYearT <> ".json")
-                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v3_loo")
-                4
-                (Just 1000)
-                (Just 1000)
-                (Just stancConfig)
-  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
-
-prefASER5_MR_v4_Loo :: forall r.(K.KnitEffects r,  K.CacheEffectsD r)
-             => ET.OfficeT
-             -> Int
-             -> K.Sem r ()
-prefASER5_MR_v4_Loo office year = do
-  -- count data
-  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
-      countCacheKey = "data/stan/cces/stateVotesASER5_v4" <> officeYearT <> ".bin"
-  cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5' office year
-  let stancConfig = (SM.makeDefaultStancConfig "stan/voterPref/binomial_ASER5_state_v4_loo") { CS.useOpenCL = False }
-  stanConfig <- SM.makeDefaultModelRunnerConfig
-                "stan/voterPref"
-                "binomial_ASER5_state_v4_loo"
-                (Just (SB.OnlyLL, model_v4))
-                (Just $ "cces_" <> officeYearT <> "_v2.json")
-                (Just $ "cces_" <> officeYearT <> "_binomial_ASER5_state_v4_loo")
-                4
-                (Just 1000)
-                (Just 1000)
-                (Just stancConfig)
-  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler2) SC.DoNothing () ccesASER5_C    
--}
 
 model_BinomialAllBuckets :: SB.StanModel
 model_BinomialAllBuckets = SB.StanModel
@@ -386,10 +316,10 @@ model_v7 = SB.StanModel
            binomialASER5_v4_DataBlock
            (Just binomialASER5_v6_TransformedDataBlock)
            binomialASER5_v7_ParametersBlock
-           Nothing
+           (Just binomialASER5_v7_TransformedParametersBlock)
            binomialASER5_v7_ModelBlock
-           (Just binomialASER5_v6_GeneratedQuantitiesBlock)
-           binomialASER5_v6_GQLLBlock
+           (Just binomialASER5_v7_GeneratedQuantitiesBlock)
+           binomialASER5_v7_GQLLBlock
 
 
 binomialASER5_StateDataBlock :: SB.DataBlock
@@ -646,37 +576,37 @@ binomialASER5_v7_ParametersBlock :: SB.ParametersBlock
 binomialASER5_v7_ParametersBlock = [here|
   real alpha; // overall intercept
   vector[K] beta; // fixed effects
-  vector<lower=0> [K+1] tau; // group effects scales
-  corr_matrix[K+1] Omega; // group effect correlations
-  vector[K+1] betaState[J_state]; // state-level coefficients  
+  vector<lower=0, upper=pi()/2> [K+1] tau_unif; // group effects scales
+  cholesky_factor_corr[K+1] L_Omega; // group effect correlations
+  matrix[K+1, J_state] z; // state-level coefficients pre-transform
 |]
 
+binomialASER5_v7_TransformedParametersBlock :: SB.TransformedParametersBlock
+binomialASER5_v7_TransformedParametersBlock = [here|
+  vector<lower=0>[K+1] tau;
+  matrix[J_state, K+1] betaState; // state-level coefficients
+  for (k in 1:(K+1))
+    tau[k] = 2.5 * tan(tau_unif[k]);
+  betaState = (diag_pre_multiply(tau, L_Omega) * z)';
+|]
+  
+
+  
 binomialASER5_v7_ModelBlock :: SB.ModelBlock
 binomialASER5_v7_ModelBlock = [here|
   alpha ~ normal(0,2); // weak prior around 50%
   beta ~ normal(0,1);
-  tau ~ cauchy(0, 2.5);
-  Omega ~ lkj_corr(2);
-  for (s in 1:J_state) {
-    vector[K] zero;
-    for (k in 1:(K+1))
-      zero[k] = 0;
-    betaState[s] ~ multi_normal(zero, quad_form_diag(Omega, tau));
-  }
-  {
-    vector[G] xiBetaState;
-    for (g in 1:G)
-      xiBetaState[g] = XI[g] * betaState[state[g]];
-    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + xiBetaState);
-  }
+  to_vector(z) ~ std_normal();
+  L_Omega ~ lkj_corr_cholesky(2);
+  D_votes ~ binomial_logit(Total_votes, alpha + X * beta + rows_dot_product(betaState[state], XI));
 |]
 
-{-
+
 binomialASER5_v7_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v7_GeneratedQuantitiesBlock = [here|
   vector<lower = 0, upper = 1>[M] predicted;
   for (m in 1:M)
-    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + (predict_XI[m] * betaState[predict_State[m]]));
+    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + dot_product(predict_XI[m], betaState[predict_State[m]]));
 |]
 
   
@@ -684,9 +614,9 @@ binomialASER5_v7_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v7_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + XI[g] * betaState[state[g]]);
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + dot_product(XI[g], betaState[state[g]]));
   }
 |]       
--}
+
 
   

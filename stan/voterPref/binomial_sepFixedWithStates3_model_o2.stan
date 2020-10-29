@@ -25,26 +25,30 @@ vector[G] intcpt;
 parameters {
 real alpha; // overall intercept
   vector[K] beta; // fixed effects
-  vector<lower=0, upper=pi()/2> [K+1] tau_unif; // group effects scales
-  cholesky_factor_corr[K+1] L_Omega; // group effect correlations
-  matrix[K+1, J_state] z; // state-level coefficients pre-transform
-}
-transformed parameters {
-vector<lower=0>[K+1] tau;
-  matrix[J_state, K+1] betaState; // state-level coefficients
-  for (k in 1:(K+1))
-    tau[k] = 2.5 * tan(tau_unif[k]);
-  betaState = (diag_pre_multiply(tau, L_Omega) * z)';
+  vector<lower=0> [K+1] tau; // group effects scales
+  corr_matrix[K+1] Omega; // group effect correlations
+  vector[K+1] betaState[J_state]; // state-level coefficients
 }
 model {
 alpha ~ normal(0,2); // weak prior around 50%
   beta ~ normal(0,1);
-  to_vector(z) ~ std_normal();
-  L_Omega ~ lkj_corr_cholesky(2);
-  D_votes ~ binomial_logit(Total_votes, alpha + X * beta + rows_dot_product(betaState[state], XI));
+  tau ~ cauchy(0, 2.5);
+  Omega ~ lkj_corr(2);
+  for (s in 1:J_state) {
+    vector[K] zero;
+    for (k in 1:(K+1))
+      zero[k] = 0;
+    betaState[s] ~ multi_normal(zero, quad_form_diag(Omega, tau));
+  }
+  {
+    vector[G] xiBetaState;
+    for (g in 1:G)
+      xiBetaState[g] = XI[g] * betaState[state[g]];
+    D_votes ~ binomial_logit(Total_votes, alpha + (X * beta) + xiBetaState);
+  }
 }
 generated quantities {
 vector<lower = 0, upper = 1>[M] predicted;
   for (m in 1:M)
-    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + dot_product(predict_XI[m], betaState[predict_State[m]]));
+    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + (predict_XI[m] * betaState[predict_State[m]]));
 }

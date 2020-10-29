@@ -44,7 +44,8 @@ alpha ~ normal(0,2); // weak prior around 50%
   D_votes ~ binomial_logit(Total_votes, alpha + X * beta + rows_dot_product(betaState[state], XI));
 }
 generated quantities {
-vector<lower = 0, upper = 1>[M] predicted;
-  for (m in 1:M)
-    predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + dot_product(predict_XI[m], betaState[predict_State[m]]));
+vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + dot_product(XI[g], betaState[state[g]]));
+  }
 }

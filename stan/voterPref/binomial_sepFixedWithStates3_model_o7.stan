@@ -30,8 +30,8 @@ real alpha; // overall intercept
   matrix[K+1, J_state] z; // state-level coefficients pre-transform
 }
 transformed parameters {
-vector<lower=0>[K+1] tau;
-  matrix[J_state, K+1] betaState; // state-level coefficients
+matrix[J_state, K+1] betaState; // state-level coefficients
+  vector<lower=0>[K+1] tau;
   for (k in 1:(K+1))
     tau[k] = 2.5 * tan(tau_unif[k]);
   betaState = (diag_pre_multiply(tau, L_Omega) * z)';
