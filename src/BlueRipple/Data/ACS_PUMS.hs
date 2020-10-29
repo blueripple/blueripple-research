@@ -518,6 +518,30 @@ intToSpeaksEnglish n
   | n `elem` [2, 3, 4, 5] = BR.SE_Yes
   | n == 6                = BR.SE_Some
   | otherwise             = BR.SE_No
+
+
+intToCensusRegion :: Int -> BR.CensusRegion
+intToCensusRegion n
+  | n == 11 = BR.NewEngland
+  | n == 12 = BR.MiddleAtlantic
+  | n == 21 = BR.EastNorthCentral
+  | n == 22 = BR.WestNorthCentral
+  | n == 31 = BR.SouthAtlantic
+  | n == 32 = BR.EastSouthCentral
+  | n == 33 = BR.WestSouthCentral
+  | n == 41 = BR.Mountain
+  | n == 42 = BR.Pacific
+  | otherwise = BR.UnknownRegion
+  
+
+intToCensusMetro :: Int -> BR.CensusMetro
+intToCensusMetro n
+  | n == 1 = BR.NonMetro
+  | n == 2 = BR.MetroPrincipal
+  | n == 3 = BR.MetroOther
+  | n == 4 = BR.MetroMixed
+  | otherwise = BR.MetroUnknown
+
   
 
 transformPUMSRow :: BR.PUMS_Raw -> F.Record PUMS_Typed

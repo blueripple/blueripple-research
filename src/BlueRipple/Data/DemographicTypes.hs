@@ -33,7 +33,6 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
---import qualified Data.Vector                   as Vec
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 import           Data.Vinyl.TypeLevel           (type (++))
@@ -426,8 +425,16 @@ type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
 instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+type Income = "Income" F.:-> Double
+type AvgIncome = "AvgIncome" F.:-> Double
+type MedianIncome = "MedianIncome" F.:-> Double
 
-type IncomeC = "Income" F.:-> Double
+type SocSecIncome = "SocSecIncome" F.:-> Double
+type AvgSocSecIncome = "AvgSocSecIncome" F.:-> Double
+
+type PctPovertyLine = "PctPovertyLine" F.:-> Double
+type PctInPoverty = "PctInPoverty" F.:-> Double
+type PctInPoverty2 = "PctInPoverty2" F.:-> Double
 
 data CensusRegion = NewEngland
                   | MiddleAtlantic
@@ -438,9 +445,62 @@ data CensusRegion = NewEngland
                   | WestSouthCentral
                   | Mountain
                   | Pacific
+                  | UnknownRegion
                   deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize CensusRegion
+instance Grouping CensusRegion
+instance K.FiniteSet CensusRegion
+derivingUnbox "CensusRegion"
+  [t|CensusRegion -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor CensusRegion = UVec.Vector
+
+type CensusRegionC = "CensusRegion" F.:-> CensusRegion
+
+
+type PopPerSqMile = "PopPerSqMile" F.:-> Double
+
+
+data CensusMetro = MetroUnknown
+                 | NonMetro
+                 | MetroPrincipal
+                 | MetroOther
+                 | MetroMixed deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+
+
+instance S.Serialize CensusMetro
+instance Grouping CensusMetro
+instance K.FiniteSet CensusMetro
+derivingUnbox "CensusMetro"
+  [t|CensusMetro -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor CensusMetro = UVec.Vector
+
+type CensusMetroC = "CensusMetro" F.:-> CensusMetro
+type PctInMetro = "PctIntMetro" F.:-> Double
+
+data EmploymentStatus = Employed
+                      | Unemployed
+                      | NotInLaborForce
+                      | EmploymentUnknown deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+
+instance S.Serialize EmploymentStatus
+instance Grouping EmploymentStatus
+instance K.FiniteSet EmploymentStatus
+derivingUnbox "EmploymentStatus"
+  [t|EmploymentStatus -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor EmploymentStatus = UVec.Vector
+
+type EmploymentStatusC = "EmploymentStatus" F.:-> EmploymentStatus
+type PctUnemployed = "PctUnemployed" F.:-> Double
+
+
+
 
 
 type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
