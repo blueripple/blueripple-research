@@ -421,19 +421,29 @@ type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
                    , BR.StateFIPS
                    , BR.PUMA
+                   , BR.CensusRegionC
+                   , BR.CensusMetroC
+                   , BR.PopPerSqMile
                    , BR.Age5FC
-                   , Citizen
                    , BR.CollegeGradC
                    , BR.InCollege
                    , BR.SexC
-                   , BR.Race5C
+                   , BR.Race5C                   
                    , BR.LanguageC
-                   , BR.SpeaksEnglishC                   
+                   , BR.SpeaksEnglishC
+                   , BR.EmploymentStatusC
+                   , BR.Income
+                   , BR.SocSecIncome
+                   , BR.PctOfPovertyLine
+                   , BR.Citizen
                  ]
 
 type PUMS_Counted = '[BR.Year
                      , BR.StateFIPS
                      , BR.PUMA
+                     , BR.CensusRegionC
+                     , BR.PctInMetro
+                     , BR.PopPerSqMile
                      , BR.Age5FC
                      , BR.SexC
                      , BR.CollegeGradC
@@ -441,14 +451,22 @@ type PUMS_Counted = '[BR.Year
                      , BR.Race5C
                      , BR.LanguageC
                      , BR.SpeaksEnglishC
+                     , BR.PctUnemployed
+                     , BR.AvgIncome
+                     , BR.MedianIncome
+                     , BR.PctUnderPovertyLine
+                     , BR.PctUnder2xPovertyLine
                      , Citizens
                      , NonCitizens
                      ]
 
 type PUMS = '[BR.Year
-             , BR.StateAbbreviation
              , BR.StateFIPS
+             , BR.StateAbbreviation
              , BR.PUMA
+             , BR.CensusRegionC
+             , BR.PctInMetro
+             , BR.PopPerSqMile
              , BR.Age5FC
              , BR.SexC
              , BR.CollegeGradC
@@ -456,9 +474,74 @@ type PUMS = '[BR.Year
              , BR.Race5C
              , BR.LanguageC
              , BR.SpeaksEnglishC
+             , BR.PctUnemployed
+             , BR.AvgIncome
+             , BR.MedianIncome
+             , BR.PctUnderPovertyLine
+             , BR.PctUnder2xPovertyLine
              , Citizens
              , NonCitizens
-             ]               
+             ]
+
+
+regionF :: FL.Fold BR.CensusRegion BR.CensusRegion
+regionF = FL.lastDef BR.UnknownRegion
+
+metroF :: FL.Fold (Double, BR.CensusMetro) Double
+metroF =
+  let wgtF = FL.premap fst FL.sum
+      wgtInCityF = FL.prefilter ((`elem` [BR.MetroPrincipal, BR.MetroOther, BR.MetroMixed]) . snd) wgtF
+  in (/) <$> wgtInCityF <*> wgtF
+
+densityF :: FL.Fold (Double, Double) Double
+densityF =
+  let wgtF = FL.premap fst FL.sum
+      wgtSumF = FL.premap (\(w, d) -> w * d) FL.sum
+  in (/) <$> wgtSumF <*> wgtF 
+    
+unemploymentF :: FL.Fold (Double, BR.EmploymentStatus) Double
+unemploymentF =
+   let wgtF = FL.premap fst FL.sum
+       wgtUnemployedF = FL.prefilter ((== BR.Unemployed) . snd) wgtF
+  in (/) <$> wgtUnemployedF <*> wgtF
+
+avgIncomeF :: FL.Fold (Double, Double) Double
+avgIncomeF =
+   let wgtF = FL.premap fst FL.sum
+       wgtIncomeF = FL.premap (\(w, i) -> w * i) FL.sum
+  in (/) <$> wgtIncomeF <*> wgtF
+
+weightedMedian :: Ord a => a -> [(Int, a)] -> a
+weightedMedian dfltA l =
+  let ordered = L.sortOn snd l
+      middleWeight = (FL.fold (FL.premap fst FL.sum) l)/2
+      ((_, res), _) = L.mapAccumL (\(sumW, aRes) (w, aNext) -> let newW = sumW + w in ((newW, if newW < middleWeight then aNext else aRes), ())) (0, dfltA) ordered
+  in res
+
+medianIncomeF :: FL.Fold (Double, Double) Double
+medianIncomeF = fmap (weightedMedian 0) $ FL.premap (\(w, i) -> (round w, i)) FL.list
+
+
+pctUnderF :: Double -> FL.Fold (Double, Double) Double
+pctUnderF factor =
+  let wgtF = FL.premap fst FL.sum
+      wgtUnderF = FL.prefilter ((< factor) . snd) wgtF
+  in (/) <$> wgtUnderF <*> wgtF
+  
+
+pumsRowCountF :: FL.Fold
+               (F.Record '[PUMSWeight, BR.CensusRegionC, BR.CensusMetroC, Citizen])
+               (F.Record [Citizens, BR.CensusRegionC, BR.PctInMetro, NonCitizens])
+pumsRowCountF =
+  let citizen = F.rgetField @Citizen
+      wgt = F.rgetField @PUMSWeight
+      citF = FL.prefilter citizen $ FL.premap wgt FL.sum
+      nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
+  in FF.sequenceRecFold
+     $ FF.toFoldRecord citF
+     V.:& FF.toFoldRecord nonCitF
+     V.:& V.RNil
+{-# INLINE pumsRowCountF #-}            
              
 -- we have to drop all records with age < 18
 -- PUMSAGE
@@ -533,7 +616,6 @@ intToCensusRegion n
   | n == 42 = BR.Pacific
   | otherwise = BR.UnknownRegion
   
-
 intToCensusMetro :: Int -> BR.CensusMetro
 intToCensusMetro n
   | n == 1 = BR.NonMetro
@@ -542,6 +624,13 @@ intToCensusMetro n
   | n == 4 = BR.MetroMixed
   | otherwise = BR.MetroUnknown
 
+intToEmploymentStatus :: Int -> BR.EmploymentStatus
+intToEmploymentStatus n
+  | n == 1 = BR.Employed
+  | n == 2 = BR.Unemployed
+  | n == 3 = BR.NotInLaborForce
+  | otherwise = BR.EmploymentUnknown
+
   
 
 transformPUMSRow :: BR.PUMS_Raw -> F.Record PUMS_Typed
@@ -549,6 +638,9 @@ transformPUMSRow = F.rcast . addCols where
   addCols = (FT.addOneFrom @'[BR.PUMSHISPAN, BR.PUMSRACE]  @BR.Race5C intsToRace5)
             . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
             . (FT.addName @BR.PUMSPUMA @BR.PUMA)
+            . (FT.addOneFromOne @BR.PUMSREGION @BR.CensusRegionC intToCensusRegion)
+            . (FT.addOneFromOne @BR.PUMSMETRO @BR.CensusMetroC intToCensusMetro)
+            . (FT.addName @BR.PUMSDENSITY @BR.PopPerSqMile)
             . (FT.addName @BR.PUMSYEAR @BR.Year)
             . (FT.addOneFromOne @BR.PUMSCITIZEN @Citizen intToCitizen)
             . (FT.addName @BR.PUMSPERWT @PUMSWeight)
@@ -556,6 +648,10 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSSEX @BR.SexC intToSex)
             . (FT.addOneFromOne @BR.PUMSEDUCD @BR.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @BR.PUMSGRADEATT @BR.InCollege intToInCollege)
+            . (FT.addOneFromOne @BR.PUMSEMPSTAT @BR.EmploymentStatusC intToEmploymentStatus)
+            . (FT.addName @BR.PUMSINCTOT @BR.Income)
+            . (FT.addName @BR.PUMSINCSS @BR.SocSecIncome)
+            . (FT.addName @BR.PUMSPOVERTY @BR.PctOfPovertyLine)
             . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
             . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
 

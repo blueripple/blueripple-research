@@ -432,9 +432,9 @@ type MedianIncome = "MedianIncome" F.:-> Double
 type SocSecIncome = "SocSecIncome" F.:-> Double
 type AvgSocSecIncome = "AvgSocSecIncome" F.:-> Double
 
-type PctPovertyLine = "PctPovertyLine" F.:-> Double
-type PctInPoverty = "PctInPoverty" F.:-> Double
-type PctInPoverty2 = "PctInPoverty2" F.:-> Double
+type PctOfPovertyLine = "PctOfPovertyLine" F.:-> Double
+type PctUnderPovertyLine = "PctUnderPovertyLine" F.:-> Double
+type PctUnder2xPovertyLine = "PctUnder2xPovertyLine" F.:-> Double
 
 data CensusRegion = NewEngland
                   | MiddleAtlantic

@@ -25,7 +25,7 @@ pumsACS1YrCSV' :: FilePath
 pumsACS1YrCSV' = T.unpack $ dataDir <> "/acsByPUMA_2006To2018.csv"
 
 
-pumsACS1YrRowGen' = (F.rowGen pumsACS1YrCSV) { F.tablePrefix = "PUMS"
+pumsACS1YrRowGen' = (F.rowGen pumsACS1YrCSV') { F.tablePrefix = "PUMS"
                                              , F.separator   = ","
                                              , F.rowTypeName = "PUMS_Raw2"
                                              }
