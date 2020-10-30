@@ -425,6 +425,9 @@ type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
 instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
   toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
 
+type PctNativeEnglish = "PctNativeEnglish" F.:-> Double
+type PctNoEnglish = "PctNoEnglish" F.:-> Double
+
 type Income = "Income" F.:-> Double
 type AvgIncome = "AvgIncome" F.:-> Double
 type MedianIncome = "MedianIncome" F.:-> Double

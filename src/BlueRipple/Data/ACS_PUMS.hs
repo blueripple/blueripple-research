@@ -6,6 +6,7 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
@@ -126,7 +127,8 @@ pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filter
 pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
 pumsRowsLoaderAdults dataPath = pumsRowsLoader dataPath (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
 --BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
-  
+
+{-  
 citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
 citizensFold =
   let citizen = F.rgetField @Citizen
@@ -138,12 +140,19 @@ citizensFold =
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 {-# INLINE citizensFold #-}
+-}
+type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
+type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
+type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
+--type PUMSKeys = PUMADesc V.++ PUMABucket
+--type PUMSKeysWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA] V.++ PUMABucket
+
 
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
 pumsCountF = FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-             (FMR.foldAndLabel citizensFold V.rappend)
+             (FMR.assignKeysAndData @(PUMADesc ++ PUMABucket) @PUMSCountFromFields)
+             (FMR.foldAndLabel pumsRowCountF  V.rappend)
 {-# INLINEABLE pumsCountF #-}
 
 
@@ -151,8 +160,9 @@ pumsCountF = FMR.mapReduceFold
 pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountStreamlyF = BRF.framesStreamlyMR
                      FMR.noUnpack
-                     (FMR.assignKeysAndData @'[BR.Year, BR.StateFIPS, BR.PUMA, BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC])
-                     (FMR.foldAndLabel citizensFold V.rappend)
+                     (FMR.assignKeysAndData @(PUMADesc ++ PUMABucket) @PUMSCountFromFields
+                     )
+                     (FMR.foldAndLabel pumsRowCountF V.rappend)
 {-# INLINEABLE pumsCountStreamlyF #-}
 
 pumsLoader'
@@ -210,28 +220,61 @@ pumsLoaderAdults = do
 
 --  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Adults_Age5F.bin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
 
+
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
 
-type PUMACounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] ++ ks ++ [Citizens, NonCitizens]
+
+type TotalWeight = "TotalWeight" F.:-> Double
+type WeightedCountFields = '[TotalWeight] ++ PUMSCountToFields
+
+sumPUMSCountedF :: Maybe (F.Record rs -> Double) -- otherwise weight by people
+                -> (F.Record rs -> F.Record PUMSCountToFields)
+                -> FL.Fold (F.Record rs) (F.Record WeightedCountFields)
+sumPUMSCountedF wgtM flds =
+  let wgt = fromMaybe (\r -> realToFrac (F.rgetField @Citizens (flds r) + F.rgetField @NonCitizens (flds r))) wgtM
+      wgtdSumF f = FL.premap (\r -> wgt r * f (flds r)) FL.sum
+      wgtdF f = (/) <$> wgtdSumF f <*> FL.premap wgt FL.sum
+      (citF, nonCitF) = case wgtM of
+        Nothing -> (FL.premap (F.rgetField @Citizens . flds) FL.sum
+                   ,  FL.premap (F.rgetField @NonCitizens . flds) FL.sum
+                   )
+        Just wgt -> (fmap round $ wgtdF (realToFrac . F.rgetField @Citizens)
+                    , fmap round $ wgtdF (realToFrac . F.rgetField @NonCitizens))        
+  in  FF.sequenceRecFold
+      $ FF.toFoldRecord (FL.premap wgt FL.sum)
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PopPerSqMile))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNativeEnglish))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNoEnglish))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnemployed))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgIncome))
+      V.:& FF.toFoldRecord (FL.premap (\r -> (round (wgt r), F.rgetField @BR.MedianIncome r)) medianIncomeF)
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgSocSecIncome))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnderPovertyLine))
+      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
+      V.:& FF.toFoldRecord citF
+      V.:& FF.toFoldRecord nonCitF
+      V.:& V.RNil                         
+      
+
+type PUMACounts ks = PUMADescWA ++ ks ++ PUMSCountToFields
 
 
 pumsRollupF
   :: forall ks
-  . (ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] ++ ks)
-    , FI.RecVec (ks ++ [Citizens, NonCitizens])
+  . (ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields)
+    , FI.RecVec (ks ++ PUMSCountToFields)
     , Ord (F.Record ks)
     )
   => (F.Record PUMS -> Bool)
-  -> (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+  -> (F.Record PUMABucket -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
 pumsRollupF keepIf mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] ++ ks) @[Citizens, NonCitizens]
-      reduce = FMR.foldAndAddKey sumPeopleF
-  in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
-
-type TotalWeight = "TotalWeight" F.:-> Double
+      assign = FMR.assignKeysAndData @(PUMADesc ++ ks) @PUMSCountToFields
+      reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
+  in FL.prefilter keepIf $ fmap (fmap F.rcast) $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 sumWeightedPeopleF :: (F.Record rs -> Double)
                       -> (F.Record rs -> Double)
@@ -245,7 +288,7 @@ sumWeightedPeopleF fracOfTotalInRow fracOfRowInTotal cit nonCit =
   in (\t wc wnc -> t F.&: (round wc) F.&: (round wnc) F.&: V.RNil) <$> totalF <*> wgtCitF <*> wgtNCitF
 
 
-type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ [TotalWeight, Citizens, NonCitizens]
+type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ WeightedCountFields
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
@@ -274,7 +317,7 @@ pumsCDRollup
    , V.RecordToList ks
    )
  => (F.Record PUMS -> Bool)
- -> (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+ -> (F.Record PUMABucket -> F.Record ks)
  -> F.Frame BR.CD116FromPUMA2012
  -> F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
@@ -286,8 +329,8 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF keepIf $ mapKeys . F.rcast) pums
   K.logLE K.Diagnostic $ "Total cit+non-cit post rollup=" <> (T.pack $ show $ totalPeople rolledUpToPUMA')
       -- add zero rows
-  let zeroCount :: F.Record [Citizens, NonCitizens]
-      zeroCount = 0 F.&: 0 F.&: V.RNil
+  let zeroCount :: F.Record PUMSCountToFields
+      zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
       addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
                         (FMR.noUnpack)
                         (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA])
@@ -420,8 +463,8 @@ type NonCitizens = "NonCitizens" F.:-> Int
 type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
                    , BR.StateFIPS
-                   , BR.PUMA
                    , BR.CensusRegionC
+                   , BR.PUMA
                    , BR.CensusMetroC
                    , BR.PopPerSqMile
                    , BR.Age5FC
@@ -435,25 +478,26 @@ type PUMS_Typed = '[ BR.Year
                    , BR.Income
                    , BR.SocSecIncome
                    , BR.PctOfPovertyLine
-                   , BR.Citizen
+                   , Citizen
                  ]
 
 type PUMS_Counted = '[BR.Year
                      , BR.StateFIPS
+                     , BR.CensusRegionC                   
                      , BR.PUMA
-                     , BR.CensusRegionC
-                     , BR.PctInMetro
-                     , BR.PopPerSqMile
                      , BR.Age5FC
                      , BR.SexC
                      , BR.CollegeGradC
                      , BR.InCollege
                      , BR.Race5C
-                     , BR.LanguageC
-                     , BR.SpeaksEnglishC
+                     , BR.PctInMetro
+                     , BR.PopPerSqMile
+                     , BR.PctNativeEnglish
+                     , BR.PctNoEnglish                   
                      , BR.PctUnemployed
                      , BR.AvgIncome
                      , BR.MedianIncome
+                     , BR.AvgSocSecIncome
                      , BR.PctUnderPovertyLine
                      , BR.PctUnder2xPovertyLine
                      , Citizens
@@ -463,8 +507,8 @@ type PUMS_Counted = '[BR.Year
 type PUMS = '[BR.Year
              , BR.StateFIPS
              , BR.StateAbbreviation
-             , BR.PUMA
              , BR.CensusRegionC
+             , BR.PUMA
              , BR.PctInMetro
              , BR.PopPerSqMile
              , BR.Age5FC
@@ -472,11 +516,12 @@ type PUMS = '[BR.Year
              , BR.CollegeGradC
              , BR.InCollege
              , BR.Race5C
-             , BR.LanguageC
-             , BR.SpeaksEnglishC
+             , BR.PctNativeEnglish
+             , BR.PctNoEnglish
              , BR.PctUnemployed
              , BR.AvgIncome
              , BR.MedianIncome
+             , BR.AvgSocSecIncome
              , BR.PctUnderPovertyLine
              , BR.PctUnder2xPovertyLine
              , Citizens
@@ -486,30 +531,53 @@ type PUMS = '[BR.Year
 
 regionF :: FL.Fold BR.CensusRegion BR.CensusRegion
 regionF = FL.lastDef BR.UnknownRegion
+{-# INLINE regionF #-}
+
+asPct :: Double -> Double -> Double
+asPct x y = 100 * x / y
+{-# INLINE asPct #-}
 
 metroF :: FL.Fold (Double, BR.CensusMetro) Double
 metroF =
   let wgtF = FL.premap fst FL.sum
       wgtInCityF = FL.prefilter ((`elem` [BR.MetroPrincipal, BR.MetroOther, BR.MetroMixed]) . snd) wgtF
-  in (/) <$> wgtInCityF <*> wgtF
+  in asPct <$> wgtInCityF <*> wgtF
+{-# INLINE metroF #-}
 
 densityF :: FL.Fold (Double, Double) Double
 densityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = FL.premap (\(w, d) -> w * d) FL.sum
   in (/) <$> wgtSumF <*> wgtF 
-    
-unemploymentF :: FL.Fold (Double, BR.EmploymentStatus) Double
-unemploymentF =
+{-# INLINE densityF #-}
+
+pctNativeEnglishF :: FL.Fold (Double, BR.Language) Double
+pctNativeEnglishF =
+  let wgtF = FL.premap fst FL.sum
+      wgtNativeEnglishF = FL.prefilter ((== BR.English) . snd) wgtF
+  in asPct <$> wgtNativeEnglishF <*> wgtF
+{-# INLINE pctNativeEnglishF #-}
+
+pctNoEnglishF :: FL.Fold (Double, BR.SpeaksEnglish) Double
+pctNoEnglishF =
+  let wgtF = FL.premap fst FL.sum
+      wgtNoEnglishF = FL.prefilter ((== BR.SE_No) . snd) wgtF
+  in asPct <$> wgtNoEnglishF <*> wgtF  
+{-# INLINE pctNoEnglishF #-}
+     
+pctUnemploymentF :: FL.Fold (Double, BR.EmploymentStatus) Double
+pctUnemploymentF =
    let wgtF = FL.premap fst FL.sum
        wgtUnemployedF = FL.prefilter ((== BR.Unemployed) . snd) wgtF
-  in (/) <$> wgtUnemployedF <*> wgtF
+  in asPct <$> wgtUnemployedF <*> wgtF
+{-# INLINE pctUnemploymentF #-}
 
 avgIncomeF :: FL.Fold (Double, Double) Double
 avgIncomeF =
    let wgtF = FL.premap fst FL.sum
        wgtIncomeF = FL.premap (\(w, i) -> w * i) FL.sum
   in (/) <$> wgtIncomeF <*> wgtF
+{-# INLINE avgIncomeF #-}
 
 weightedMedian :: Ord a => a -> [(Int, a)] -> a
 weightedMedian dfltA l =
@@ -517,28 +585,65 @@ weightedMedian dfltA l =
       middleWeight = (FL.fold (FL.premap fst FL.sum) l)/2
       ((_, res), _) = L.mapAccumL (\(sumW, aRes) (w, aNext) -> let newW = sumW + w in ((newW, if newW < middleWeight then aNext else aRes), ())) (0, dfltA) ordered
   in res
+{-# INLINE weightedMedian #-}
 
 medianIncomeF :: FL.Fold (Double, Double) Double
 medianIncomeF = fmap (weightedMedian 0) $ FL.premap (\(w, i) -> (round w, i)) FL.list
-
+{-# INLINE medianIncomeF #-}
 
 pctUnderF :: Double -> FL.Fold (Double, Double) Double
 pctUnderF factor =
   let wgtF = FL.premap fst FL.sum
       wgtUnderF = FL.prefilter ((< factor) . snd) wgtF
-  in (/) <$> wgtUnderF <*> wgtF
-  
+  in asPct <$> wgtUnderF <*> wgtF
+{-# INLINE pctUnderF #-}
+
+type PUMSCountFromFields = [PUMSWeight
+                           , BR.CensusMetroC
+                           , BR.PopPerSqMile
+                           , BR.LanguageC
+                           , BR.SpeaksEnglishC
+                           , BR.EmploymentStatusC
+                           , BR.Income
+                           , BR.SocSecIncome
+                           , BR.PctOfPovertyLine
+                           , Citizen]
+                           
+type PUMSCountToFields = [BR.PctInMetro
+                         , BR.PopPerSqMile
+                         , BR.PctNativeEnglish
+                         , BR.PctNoEnglish
+                         , BR.PctUnemployed
+                         , BR.AvgIncome
+                         , BR.MedianIncome
+                         , BR.AvgSocSecIncome
+                         , BR.PctUnderPovertyLine
+                         , BR.PctUnder2xPovertyLine
+                         , Citizens
+                         , NonCitizens]                          
+                       
 
 pumsRowCountF :: FL.Fold
-               (F.Record '[PUMSWeight, BR.CensusRegionC, BR.CensusMetroC, Citizen])
-               (F.Record [Citizens, BR.CensusRegionC, BR.PctInMetro, NonCitizens])
+               (F.Record PUMSCountFromFields)
+               (F.Record PUMSCountToFields)
 pumsRowCountF =
-  let citizen = F.rgetField @Citizen
-      wgt = F.rgetField @PUMSWeight
+  let wgt = F.rgetField @PUMSWeight
+      wgtAnd f r = (realToFrac @_ @Double (wgt r), f r)      
+      citizen = F.rgetField @Citizen
       citF = FL.prefilter citizen $ FL.premap wgt FL.sum
       nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
   in FF.sequenceRecFold
-     $ FF.toFoldRecord citF
+     $ FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.CensusMetroC)) metroF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.PopPerSqMile)) densityF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.LanguageC)) pctNativeEnglishF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.SpeaksEnglishC)) pctNoEnglishF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.EmploymentStatusC)) pctUnemploymentF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.Income)) avgIncomeF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.Income)) medianIncomeF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.SocSecIncome)) avgIncomeF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.PctOfPovertyLine)) (pctUnderF 100))
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.PctOfPovertyLine)) (pctUnderF 200))
+     V.:& FF.toFoldRecord citF
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 {-# INLINE pumsRowCountF #-}            
@@ -649,9 +754,9 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSEDUCD @BR.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @BR.PUMSGRADEATT @BR.InCollege intToInCollege)
             . (FT.addOneFromOne @BR.PUMSEMPSTAT @BR.EmploymentStatusC intToEmploymentStatus)
-            . (FT.addName @BR.PUMSINCTOT @BR.Income)
-            . (FT.addName @BR.PUMSINCSS @BR.SocSecIncome)
-            . (FT.addName @BR.PUMSPOVERTY @BR.PctOfPovertyLine)
+            . (FT.addOneFromOne @BR.PUMSINCTOT @BR.Income realToFrac)
+            . (FT.addOneFromOne @BR.PUMSINCSS @BR.SocSecIncome realToFrac)
+            . (FT.addOneFromOne @BR.PUMSPOVERTY @BR.PctOfPovertyLine realToFrac)
             . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
             . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
 
