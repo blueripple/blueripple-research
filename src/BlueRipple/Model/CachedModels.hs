@@ -281,9 +281,7 @@ ccesPreferencesASER5_MRP = do
       BR.mrpPrefs @DT.CatColsASER5 GLM.MDVNone (Just "ASER5") cachedCCES_Data predictorsASER5 BR.catPredMaps      
 
 
-type PumsByCDASER5Row = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
-                        V.++ DT.CatColsASER5
-                        V.++ [PUMS.TotalWeight, PUMS.Citizens, PUMS.NonCitizens]
+type PumsByCDASER5Row = PUMS.CDCounts DT.CatColsASER5 
 
 pumsByCD2018ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
                   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PumsByCDASER5Row))

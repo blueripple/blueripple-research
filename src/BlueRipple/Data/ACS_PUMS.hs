@@ -103,49 +103,16 @@ import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
-{-
-type FullRowC fullRow = (V.RMap fullRow
-                        , F.ReadRec fullRow
-                        , FI.RecVec fullRow
-                        , F.ElemOf fullRow BR.PUMSPUMA
-                        , F.ElemOf fullRow BR.PUMSAGEP
-                        , F.ElemOf fullRow BR.PUMSCIT
-                        , F.ElemOf fullRow BR.PUMSHISP
-                        , F.ElemOf fullRow BR.PUMSPWGTP
-                        , F.ElemOf fullRow BR.PUMSRAC1P
-                        , F.ElemOf fullRow BR.PUMSSCHG
-                        , F.ElemOf fullRow BR.PUMSSCHL
-                        , F.ElemOf fullRow BR.PUMSSEX
-                        , F.ElemOf fullRow BR.PUMSST
-                        , F.ElemOf fullRow BR.PUMSLANP
-                        , F.ElemOf fullRow BR.PUMSENG                        
-                        )
--}
+
 pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw2 -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
 pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filterRawM transformPUMSRow
 
 pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
 pumsRowsLoaderAdults dataPath = pumsRowsLoader dataPath (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
---BR.recStreamLoader (BR.LocalData $ T.pack BR.pumsACS1YrCSV) Nothing (Just ((>= 18) . F.rgetField @BR.PUMSAGE )) transformPUMSRow
 
-{-  
-citizensFold :: FL.Fold (F.Record '[PUMSWeight, Citizen]) (F.Record [Citizens, NonCitizens])
-citizensFold =
-  let citizen = F.rgetField @Citizen
-      wgt = F.rgetField @PUMSWeight
-      citF = FL.prefilter citizen $ FL.premap wgt FL.sum
-      nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
-  in FF.sequenceRecFold
-     $ FF.toFoldRecord citF
-     V.:& FF.toFoldRecord nonCitF
-     V.:& V.RNil
-{-# INLINE citizensFold #-}
--}
 type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
---type PUMSKeys = PUMADesc V.++ PUMABucket
---type PUMSKeysWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA] V.++ PUMABucket
 
 
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
@@ -209,7 +176,7 @@ pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => Maybe (BR.PUMS_Raw2 -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Age5F.bin"
+pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/test/acs1YrPUMS_Age5F.bin"
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults = do
@@ -218,19 +185,13 @@ pumsLoaderAdults = do
     return $ F.filterFrame (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18) allPUMS
 
 
---  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Adults_Age5F.bin" (Just ((>= 18) . F.rgetField @BR.PUMSAGE) )
-
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
 
-
-type TotalWeight = "TotalWeight" F.:-> Double
-type WeightedCountFields = '[TotalWeight] ++ PUMSCountToFields
-
 sumPUMSCountedF :: Maybe (F.Record rs -> Double) -- otherwise weight by people
                 -> (F.Record rs -> F.Record PUMSCountToFields)
-                -> FL.Fold (F.Record rs) (F.Record WeightedCountFields)
+                -> FL.Fold (F.Record rs) (F.Record PUMSCountToFields)
 sumPUMSCountedF wgtM flds =
   let wgt = fromMaybe (\r -> realToFrac (F.rgetField @Citizens (flds r) + F.rgetField @NonCitizens (flds r))) wgtM
       wgtdSumF f = FL.premap (\r -> wgt r * f (flds r)) FL.sum
@@ -242,8 +203,7 @@ sumPUMSCountedF wgtM flds =
         Just wgt -> (fmap round $ wgtdF (realToFrac . F.rgetField @Citizens)
                     , fmap round $ wgtdF (realToFrac . F.rgetField @NonCitizens))        
   in  FF.sequenceRecFold
-      $ FF.toFoldRecord (FL.premap wgt FL.sum)
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
+      $ FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PopPerSqMile))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNativeEnglish))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNoEnglish))
@@ -273,9 +233,10 @@ pumsRollupF
 pumsRollupF keepIf mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
       assign = FMR.assignKeysAndData @(PUMADescWA ++ ks) @PUMSCountToFields
-      reduce = FMR.foldAndAddKey (fmap (F.rcast @PUMSCountToFields) $ sumPUMSCountedF Nothing id)
+      reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
+{-
 sumWeightedPeopleF :: (F.Record rs -> Double)
                       -> (F.Record rs -> Double)
                       -> (F.Record rs -> Int)
@@ -286,30 +247,46 @@ sumWeightedPeopleF fracOfTotalInRow fracOfRowInTotal cit nonCit =
       wgtNCitF = FL.premap (\r -> fracOfRowInTotal r * realToFrac (nonCit r)) FL.sum
       totalF = FL.premap fracOfTotalInRow FL.sum
   in (\t wc wnc -> t F.&: (round wc) F.&: (round wnc) F.&: V.RNil) <$> totalF <*> wgtCitF <*> wgtNCitF
+-}
 
-{-
-type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ WeightedCountFields
+type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.CongressionalDistrict] 
+type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
    , K.CacheEffectsD r
-   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] V.++ ks)
-   , (ks V.++ [Citizens, NonCitizens]) ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ ks V.++ [Citizens, NonCitizens])
-   , ks ⊆ (ks V.++ [Citizens, NonCitizens])
-   , ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA] V.++ (ks V.++ [ Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]))
-   , F.ElemOf (ks V.++ [Citizens, NonCitizens]) Citizens
-   , F.ElemOf (ks V.++ [Citizens, NonCitizens]) NonCitizens
-   , FJ.CanLeftJoinM ([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) (PUMACounts ks) (F.RecordColumns BR.CD116FromPUMA2012)
-   , FI.RecVec (ks V.++ [Citizens, NonCitizens])
-   , FI.RecVec (ks V.++ [TotalWeight, Citizens, NonCitizens])
-   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) Citizens
-   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) NonCitizens
-   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.FracCDInPUMA
-   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.FracPUMAInCD
-   , F.ElemOf ((ks V.++ [Citizens, NonCitizens] V.++ [BR.CongressionalDistrict, BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])) BR.CongressionalDistrict
-   , F.ElemOf (ks V.++ [TotalWeight, Citizens, NonCitizens]) TotalWeight
-   , F.ElemOf (ks V.++ [TotalWeight, Citizens, NonCitizens]) Citizens
-   , F.ElemOf (ks V.++ [TotalWeight, Citizens, NonCitizens]) NonCitizens
+   , FJ.CanLeftJoinM [BR.StateFIPS, BR.PUMA] (PUMACounts ks) (F.RecordColumns BR.CD116FromPUMA2012)
+   , FI.RecVec (ks ++ PUMSCountToFields)
+   , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
+   , F.ElemOf (ks ++ PUMSCountToFields) Citizens
+   , F.ElemOf (ks ++ PUMSCountToFields) NonCitizens
+   , (ks ++ PUMSCountToFields) ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields)
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.AvgIncome
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.AvgSocSecIncome
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.MedianIncome
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctInMetro
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctNativeEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctNoEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctUnder2xPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctUnderPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PctUnemployed
+   , F.ElemOf (ks ++ PUMSCountToFields) BR.PopPerSqMile
+   , ks ⊆ (ks ++ PUMSCountToFields)
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.AvgIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.AvgSocSecIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) Citizens
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.FracPUMAInCD
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.MedianIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) NonCitizens
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctInMetro
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctNativeEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctNoEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctUnderPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctUnder2xPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PctUnemployed
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.PopPerSqMile
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.CongressionalDistrict
+   , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
    , Ord (F.Record ks)
    , BR.FiniteSet (F.Record ks)
    , V.RMap ks
@@ -333,7 +310,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
       zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
       addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
                         (FMR.noUnpack)
-                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA])
+                        (FMR.assignKeysAndData @PUMADescWA)
                         ( FMR.makeRecsWithKey id
                           $ FMR.ReduceFold
                           $ const
@@ -342,32 +319,26 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
       rolledUpToPUMA :: F.FrameRec (PUMACounts ks) = F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA'
   K.logLE K.Diagnostic $ "Total cit+non-cit post addZeros=" <> (T.pack $ show $ totalPeople rolledUpToPUMA)                                                     
   -- add the CD information on the appropriate PUMAs
-{-  
-  byPUMAWithCDAndWeight <- K.knitEither
-                           $ either (Left . ("From leftJoinE in pumsCDRollup: " <>) . T.pack . show) Right
-                           $ FJ.leftJoinE @([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) rolledUpToPUMA cdFromPUMA
--}
-  let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @([BR.StateAbbreviation, BR.StateFIPS, BR.PUMA]) rolledUpToPUMA cdFromPUMA
+  let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
   M.when (not $ null missing) $ K.knitError $ "missing items in join: " <> (T.pack . show $ missing)
   -- roll it up to the CD level
   let demoByCDF  =  FMR.concatFold
                     $ FMR.mapReduceFold
                     (FMR.noUnpack)
-                    (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[BR.FracCDInPUMA, BR.FracPUMAInCD, Citizens, NonCitizens])
-                    (FMR.foldAndAddKey @([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks) @[TotalWeight, Citizens, NonCitizens]
-                      $ sumWeightedPeopleF
-                      (F.rgetField @BR.FracCDInPUMA) -- these should add to 1
-                      (F.rgetField @BR.FracPUMAInCD) 
-                      (F.rgetField @Citizens)
-                      (F.rgetField @NonCitizens))                   
+                    (FMR.assignKeysAndData
+                      @('[BR.Year] ++ CDDescWA ++ ks)
+                      @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
+                    (FMR.foldAndAddKey {-@('[BR.Year] ++ CDDescWA ++ ks) @PUMSCountToFields -}
+                      $ sumPUMSCountedF
+                      (Just $ F.rgetField @BR.FracPUMAInCD)
+                      F.rcast
+                    )
       demoByCD = FL.fold demoByCDF byPUMAWithCDAndWeight
-      diagnosticF = (,,) <$> FL.length <*> FL.premap (F.rgetField @TotalWeight) FL.minimum <*> FL.premap (F.rgetField @TotalWeight) FL.maximum
-      (rows, minTW, maxTW) = FL.fold diagnosticF demoByCD     
+      rows = FL.fold FL.length demoByCD
   K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
-  K.logLE K.Diagnostic $ "All TotalWeight in [" <> (T.pack . show $ minTW) <> ", " <> (T.pack . show $ maxTW) <> "]"
   K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> (T.pack $ show $ totalPeople demoByCD)
   return demoByCD
--}
+
 
 type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields
 
@@ -383,7 +354,7 @@ pumsStateRollupF
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
       assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks) @PUMSCountToFields
-      reduce = FMR.foldAndAddKey (fmap (F.rcast @PUMSCountToFields) $ sumPUMSCountedF Nothing id)
+      reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 pumsKeysToASER5 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5

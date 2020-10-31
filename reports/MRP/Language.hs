@@ -135,7 +135,9 @@ alternateVoteF =
 -}
   
 post :: forall r.(K.KnitMany r, K.CacheEffectsD r, K.Member GLM.RandomFu r) => Bool -> K.Sem r ()
-post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ do
+post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ return ()
+{-
+do
   K.logLE K.Info "Aggregating ACS PUMS data by state, household language and English language proficiency."                              
   acsLanguageByState' <- K.ignoreCacheTimeM $ do
     cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
@@ -208,7 +210,7 @@ post updated = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "Language" $ d
           
       brAddMarkDown text2
       brAddMarkDown brReadMore
-
+-}
 
 
 usStatesTopoJSONUrl = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json"
