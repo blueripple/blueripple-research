@@ -121,7 +121,7 @@ type FullRowC fullRow = (V.RMap fullRow
                         , F.ElemOf fullRow BR.PUMSENG                        
                         )
 -}
-pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
+pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw2 -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
 pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filterRawM transformPUMSRow
 
 pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
@@ -169,7 +169,7 @@ pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => BR.DataPath
   -> T.Text
-  -> Maybe (BR.PUMS_Raw -> Bool) 
+  -> Maybe (BR.PUMS_Raw2 -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader' dataPath cacheKey filterRawM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
@@ -207,7 +207,7 @@ pumsLoader' dataPath cacheKey filterRawM = do
 
 pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => Maybe (BR.PUMS_Raw -> Bool) 
+  => Maybe (BR.PUMS_Raw2 -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV) "data/acs1YrPUMS_Age5F.bin"
 
@@ -249,7 +249,7 @@ sumPUMSCountedF wgtM flds =
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNoEnglish))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnemployed))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgIncome))
-      V.:& FF.toFoldRecord (FL.premap (\r -> (round (wgt r), F.rgetField @BR.MedianIncome r)) medianIncomeF)
+      V.:& FF.toFoldRecord (FL.premap (\r -> (wgt r, F.rgetField @BR.MedianIncome (flds r))) medianIncomeF)
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgSocSecIncome))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnderPovertyLine))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
@@ -263,7 +263,7 @@ type PUMACounts ks = PUMADescWA ++ ks ++ PUMSCountToFields
 
 pumsRollupF
   :: forall ks
-  . (ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields)
+  . (ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
     , FI.RecVec (ks ++ PUMSCountToFields)
     , Ord (F.Record ks)
     )
@@ -272,9 +272,9 @@ pumsRollupF
   -> FL.Fold (F.Record PUMS) (F.FrameRec (PUMACounts ks))
 pumsRollupF keepIf mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @(PUMADesc ++ ks) @PUMSCountToFields
-      reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
-  in FL.prefilter keepIf $ fmap (fmap F.rcast) $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
+      assign = FMR.assignKeysAndData @(PUMADescWA ++ ks) @PUMSCountToFields
+      reduce = FMR.foldAndAddKey (fmap (F.rcast @PUMSCountToFields) $ sumPUMSCountedF Nothing id)
+  in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 sumWeightedPeopleF :: (F.Record rs -> Double)
                       -> (F.Record rs -> Double)
@@ -287,7 +287,7 @@ sumWeightedPeopleF fracOfTotalInRow fracOfRowInTotal cit nonCit =
       totalF = FL.premap fracOfTotalInRow FL.sum
   in (\t wc wnc -> t F.&: (round wc) F.&: (round wnc) F.&: V.RNil) <$> totalF <*> wgtCitF <*> wgtNCitF
 
-
+{-
 type CDCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] ++ ks ++ WeightedCountFields
 pumsCDRollup
  :: forall ks r
@@ -367,22 +367,23 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   K.logLE K.Diagnostic $ "All TotalWeight in [" <> (T.pack . show $ minTW) <> ", " <> (T.pack . show $ maxTW) <> "]"
   K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> (T.pack $ show $ totalPeople demoByCD)
   return demoByCD
+-}
 
-
-type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ [Citizens, NonCitizens]
+type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields
 
 pumsStateRollupF
   :: forall ks
-  . (ks ⊆ ([BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.PUMA, Citizens, NonCitizens] ++ ks)
-    , FI.RecVec (ks ++ [Citizens, NonCitizens])
+  . (
+    ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
+    , FI.RecVec (ks ++ PUMSCountToFields)
     , Ord (F.Record ks)
     )
-  => (F.Record [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record ks)
+  => (F.Record PUMABucket -> F.Record ks)
   -> FL.Fold (F.Record PUMS) (F.FrameRec (StateCounts ks))
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks) @[Citizens, NonCitizens]
-      reduce = FMR.foldAndAddKey sumPeopleF
+      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks) @PUMSCountToFields
+      reduce = FMR.foldAndAddKey (fmap (F.rcast @PUMSCountToFields) $ sumPUMSCountedF Nothing id)
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 pumsKeysToASER5 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
@@ -582,7 +583,7 @@ avgIncomeF =
 weightedMedian :: Ord a => a -> [(Int, a)] -> a
 weightedMedian dfltA l =
   let ordered = L.sortOn snd l
-      middleWeight = (FL.fold (FL.premap fst FL.sum) l)/2
+      middleWeight = (FL.fold (FL.premap fst FL.sum) l) `div` 2
       ((_, res), _) = L.mapAccumL (\(sumW, aRes) (w, aNext) -> let newW = sumW + w in ((newW, if newW < middleWeight then aNext else aRes), ())) (0, dfltA) ordered
   in res
 {-# INLINE weightedMedian #-}
@@ -738,7 +739,7 @@ intToEmploymentStatus n
 
   
 
-transformPUMSRow :: BR.PUMS_Raw -> F.Record PUMS_Typed
+transformPUMSRow :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
 transformPUMSRow = F.rcast . addCols where
   addCols = (FT.addOneFrom @'[BR.PUMSHISPAN, BR.PUMSRACE]  @BR.Race5C intsToRace5)
             . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
