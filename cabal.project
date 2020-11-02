@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-hvega ~/DataScience/hs-cmdstan ../data-sets
+packages: ./ ~/DataScience/hs-cmdstan 
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
@@ -11,10 +11,10 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-h
 --  tag: 1481b2311f70a59b4a2f0c0855eb47db2e7b4c00
    
              
---source-repository-package
---  type: git
---  location: https://github.com/blueripple/data-sets
---  tag: 12cbb9c693630d5a5e6f555b74bd6ac3936963eb
+source-repository-package
+  type: git
+  location: https://github.com/blueripple/data-sets
+  tag: 0b76d5d89c160d34217d4adfd1acc7b762c6ed17
 
 source-repository-package
   type: git
@@ -53,10 +53,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-streamly
   tag: 8c5c0a346c379c24255fd8eeee848662278f7a05
     
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-hvega
---  tag: 0a8c5e67dcef6fc5b48b5f302ff49c797e4b5fe6
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: aa024db6591b77a83f9efa63c7bc08b263d43c23
 
 source-repository-package
   type: git
