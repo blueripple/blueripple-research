@@ -286,9 +286,9 @@ type PumsByCDASER5Row = PUMS.CDCounts DT.CatColsASER5
 pumsByCD2018ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
                   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PumsByCDASER5Row))
 pumsByCD2018ASER5 = do
-  cd116FromPUMA2012_C <- BR.cd116FromPUMA2012Loader
+  cdFromPUMA2012_C <- BR.allCDFromPUMA2012Loader
   pumsDemographics_C <- PUMS.pumsLoader Nothing
-  let pumsByCDDeps = (,) <$> cd116FromPUMA2012_C <*> pumsDemographics_C
+  let pumsByCDDeps = (,) <$> cdFromPUMA2012_C <*> pumsDemographics_C
 --  K.clearIfPresent "house-data/pumsByCD2018.bin"
   BR.retrieveOrMakeFrame "house-data/pumsByCD2018.bin" pumsByCDDeps $ \(cdFromPUMA, pums) -> do
     let g r = (F.rgetField @BR.Year r == 2018)

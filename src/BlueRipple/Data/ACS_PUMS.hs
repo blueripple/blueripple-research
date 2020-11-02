@@ -176,7 +176,7 @@ pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => Maybe (BR.PUMS_Raw2 -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/test/acs1YrPUMS_Age5F.bin"
+pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS_Age5F.bin"
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults = do
@@ -200,8 +200,8 @@ sumPUMSCountedF wgtM flds =
         Nothing -> (FL.premap (F.rgetField @Citizens . flds) FL.sum
                    ,  FL.premap (F.rgetField @NonCitizens . flds) FL.sum
                    )
-        Just wgt -> (fmap round $ wgtdF (realToFrac . F.rgetField @Citizens)
-                    , fmap round $ wgtdF (realToFrac . F.rgetField @NonCitizens))        
+        Just wgt -> (fmap round $ wgtdSumF (realToFrac . F.rgetField @Citizens)
+                    , fmap round $ wgtdSumF (realToFrac . F.rgetField @NonCitizens))        
   in  FF.sequenceRecFold
       $ FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PopPerSqMile))
@@ -255,7 +255,7 @@ pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
    , K.CacheEffectsD r
-   , FJ.CanLeftJoinM [BR.StateFIPS, BR.PUMA] (PUMACounts ks) (F.RecordColumns BR.CD116FromPUMA2012)
+   , FJ.CanLeftJoinM [BR.Year, BR.StateFIPS, BR.PUMA] (PUMACounts ks) BR.DatedCDFromPUMA2012
    , FI.RecVec (ks ++ PUMSCountToFields)
    , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
    , F.ElemOf (ks ++ PUMSCountToFields) Citizens
@@ -295,7 +295,7 @@ pumsCDRollup
    )
  => (F.Record PUMS -> Bool)
  -> (F.Record PUMABucket -> F.Record ks)
- -> F.Frame BR.CD116FromPUMA2012
+ -> F.FrameRec BR.DatedCDFromPUMA2012
  -> F.FrameRec PUMS
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
@@ -319,7 +319,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
       rolledUpToPUMA :: F.FrameRec (PUMACounts ks) = F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA'
   K.logLE K.Diagnostic $ "Total cit+non-cit post addZeros=" <> (T.pack $ show $ totalPeople rolledUpToPUMA)                                                     
   -- add the CD information on the appropriate PUMAs
-  let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
+  let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
   M.when (not $ null missing) $ K.knitError $ "missing items in join: " <> (T.pack . show $ missing)
   -- roll it up to the CD level
   let demoByCDF  =  FMR.concatFold
@@ -335,7 +335,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
                     )
       demoByCD = FL.fold demoByCDF byPUMAWithCDAndWeight
       rows = FL.fold FL.length demoByCD
-  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
+--  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
   K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> (T.pack $ show $ totalPeople demoByCD)
   return demoByCD
 
@@ -636,7 +636,7 @@ intToCitizen n = if n >= 3 then False else True
 
 -- PUMSEDUCD (rather than EDUC)
 intToCollegeGrad :: Int -> BR.CollegeGrad
-intToCollegeGrad n = if n <= 101 then BR.NonGrad else BR.Grad
+intToCollegeGrad n = if n < 101 then BR.NonGrad else BR.Grad
 
 -- GRADEATT
 intToInCollege :: Int -> Bool

@@ -112,9 +112,29 @@ presidentialByStateFrame = cachedMaybeFrameLoader @(F.RecordColumns BR.President
   "presByState.sbin"
 
 
-cd116FromPUMA2012Loader :: (K.KnitEffects r, K.CacheEffectsD r)
-                      => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CD116FromPUMA2012))
-cd116FromPUMA2012Loader = cachedFrameLoader (DataSets $ T.pack BR.cd116FromPUMA2012CSV) Nothing Nothing id Nothing "cd116FromPUMA2012.bin"
+cdFromPUMA2012Loader :: (K.KnitEffects r, K.CacheEffectsD r)
+                      => Int -> K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CDFromPUMA2012))
+cdFromPUMA2012Loader congress = do 
+  (csvPath, cacheKey) <- case congress of
+    113 -> return $ (BR.cd113FromPUMA2012CSV, "data/cd113FromPUMA2012.bin")
+    114 -> return $ (BR.cd114FromPUMA2012CSV, "data/cd114FromPUMA2012.bin")
+    115 -> return $ (BR.cd115FromPUMA2012CSV, "data/cd115FromPUMA2012.bin")
+    116 -> return $ (BR.cd116FromPUMA2012CSV, "data/cd116FromPUMA2012.bin")
+    _ -> K.knitError "PUMA for congressional district crosswalk only available for 113th, 114th, 115th and 116th congress"
+  cachedFrameLoader (DataSets $ T.pack csvPath) Nothing Nothing id Nothing cacheKey where --"cd116FromPUMA2012.bin"
+
+type DatedCDFromPUMA2012 = '[BR.Year] V.++ (F.RecordColumns BR.CDFromPUMA2012)
+
+allCDFromPUMA2012Loader :: (K.KnitEffects r, K.CacheEffectsD r)
+                        => K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
+allCDFromPUMA2012Loader = do
+  let addYear :: Int -> BR.CDFromPUMA2012 -> F.Record DatedCDFromPUMA2012
+      addYear y r = (y F.&: V.RNil) `V.rappend` r
+      loadWithYear :: (K.KnitEffects r, K.CacheEffectsD r) => (Int, Int) -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
+      loadWithYear (year, congress) = fmap (fmap (addYear year)) <$> cdFromPUMA2012Loader congress
+  withYears_C <- sequenceA <$> traverse loadWithYear [(2012, 113), (2014, 114), (2016, 115), (2018, 116)]
+  BR.retrieveOrMakeFrame "data/cdFromPUMA2012.bin" withYears_C $ \withYears -> return $ mconcat withYears      
+
 
 {-
 puma2000ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)

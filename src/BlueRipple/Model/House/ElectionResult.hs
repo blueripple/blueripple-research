@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC  -O0 #-}
 
-module BlueRipple.Model.House.ElectionResults where
+module BlueRipple.Model.House.ElectionResult where
 
 import qualified Control.Foldl as FL
 import qualified Data.IntMap.Strict as IM
@@ -25,6 +25,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
+import qualified Frames.Folds       as FF
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -33,6 +34,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Keyed as BK
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
@@ -47,14 +49,108 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import Data.String.Here (here)
 
-type PctNonWhite = "PctNonWhite" F.:-> Double
-type PctGrad = "PctGrad" F.:-> Double
-type PctUnder45 = "PctUnder45" F.:-> Double
+type FracUnder45 = "FracUnder45" F.:-> Double
+type FracFemale = "FracFemale" F.:-> Double
+type FracGrad = "FracGrad" F.:-> Double
+type FracNonWhite = "FracNonWhite" F.:-> Double
+type FracCitizen = "FracCitizen" F.:-> Double
+
+type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+
+type DemographicsR = [ FracUnder45
+                     , FracFemale
+                     , FracGrad
+                     , FracNonWhite
+                     , FracCitizen
+                     , DT.MedianIncome
+                     , DT.PopPerSqMile
+                     , PUMS.Citizens
+                     ]
+
+pumsF :: FL.Fold (F.Record (PUMS.CDCounts DT.CatColsASER)) (F.FrameRec (KeyR V.++ DemographicsR))
+pumsF = FMR.concatFold
+        $ FMR.mapReduceFold
+        FMR.noUnpack
+        (FMR.assignKeysAndData @KeyR)
+        (FMR.foldAndAddKey pumsDataF)
+
+pumsDataF :: FL.Fold
+             (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.MedianIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
+             (F.Record DemographicsR)
+pumsDataF =
+  let cit = F.rgetField @PUMS.Citizens
+      citF = FL.premap cit FL.sum
+      intRatio x y = realToFrac x / realToFrac y 
+      fracF f = intRatio <$> FL.prefilter f citF <*> citF
+      citWgtdSumF f = FL.premap (\r -> realToFrac (cit r) * f r) FL.sum 
+      citWgtdF f = (/) <$> citWgtdSumF f <*> fmap realToFrac citF
+  in FF.sequenceRecFold
+     $ FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
+     V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
+     V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
+     V.:& FF.toFoldRecord (fracF ((== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
+     V.:& FF.toFoldRecord (intRatio <$> citF <*> (FL.premap (F.rgetField @PUMS.NonCitizens) FL.sum))
+     V.:& FF.toFoldRecord (FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
+     V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
+     V.:& FF.toFoldRecord citF
+     V.:& V.RNil
+
+type DVotes = "DVotes" F.:-> Int
+type RVotes = "RVotes" F.:-> Int
+
+type ElectionR = [DVotes, RVotes]
+
+electionF :: FL.Fold (F.Record BR.HouseElectionCols) (F.FrameRec (KeyR V.++ ElectionR))
+electionF = FMR.concatFold
+            $ FMR.mapReduceFold
+            FMR.noUnpack
+            (FMR.assignKeysAndData @KeyR)
+            (FMR.foldAndAddKey flattenVotesF)
+
+flattenVotesF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record ElectionR)
+flattenVotesF =
+  let party = F.rgetField @ET.Party
+      votes = F.rgetField @ET.Votes
+      demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+      repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
+  in (\dv rv -> dv F.&: rv F.&: V.RNil) <$> demVotesF <*> repVotesF 
+
+prepCachedData :: (K.KnitEffects r,  K.CacheEffectsD r)
+               => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (KeyR V.++ DemographicsR), F.FrameRec (KeyR V.++ ElectionR)))
+prepCachedData = do
+  pums_C <- PUMS.pumsLoaderAdults
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
+  pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> 
+     PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
+  -- investigate college grad %
+  pums <- K.ignoreCacheTime pums_C
+  let yrState y sa r = F.rgetField @BR.Year r == y
+                       && F.rgetField @BR.StateAbbreviation r == sa     
+      pumsGA2018 = FL.fold (PUMS.pumsStateRollupF (PUMS.pumsKeysToASER True)) $ F.filterFrame (yrState 2018 "GA") pums
+  BR.logFrame pumsGA2018
+  --
+  demographicsByCD_C <- BR.retrieveOrMakeFrame "model/house/demographics.bin" pumsByCD_C $ (return . FL.fold pumsF)
+  houseElections_C <- BR.houseElectionsLoader  
+  elections_C <- BR.retrieveOrMakeFrame "model/house/electionResults.bin" houseElections_C $ \houseElex -> do
+    let electionResults = FL.fold electionF (F.filterFrame ((>= 2012) . F.rgetField @BR.Year) houseElex)
+    return electionResults
+  return $ (,) <$> demographicsByCD_C <*> elections_C
+        
+
+  
+  
+
+     
+{-              
+-- f :: (F.FrameRec (KeyR V.++ DemographicsR), F.FrameRec (KeyR V.++ ElectionR)) -> ((), Either T.Text A Series))
+houseDataWrangler :: SC.DataWrangler (F.FrameRec (KeyR V.++ DemographicsR), F.FrameRec HouseElectionCols) () ()
+houseDataWrangler = SC.Wrangle NoIndex (\x -> ((), f x)) where
+  -- house cols 
+
+                     
 
 
-
-
-houseDataWrangler :: SC.DataWrangler (Fram
 
 CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
 houseDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where  
@@ -617,3 +713,4 @@ binomialASER5_v7_GQLLBlock = [here|
 
 
   
+-}

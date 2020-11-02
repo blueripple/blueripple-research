@@ -95,6 +95,7 @@ library
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.Turnout_MRP
                  , BlueRipple.Model.TSNE
+                 , BlueRipple.Model.House.ElectionResult
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
                  , BlueRipple.Utilities.FramesUtils
@@ -238,7 +239,7 @@ executable mrp-model
 
 executable stan-models
   import: deps
-  ghc-options: -Wall -threaded 
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: stan
   main-is: Main.hs                                  
   build-depends: base  

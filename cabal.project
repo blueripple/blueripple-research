@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-hvega ~/DataScience/hs-cmdstan
+packages: ./ ~/DataScience/Frames-hvega ~/DataScience/hs-cmdstan ../data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
@@ -11,10 +11,10 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-h
 --  tag: 1481b2311f70a59b4a2f0c0855eb47db2e7b4c00
    
              
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: 12cbb9c693630d5a5e6f555b74bd6ac3936963eb
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: 12cbb9c693630d5a5e6f555b74bd6ac3936963eb
 
 source-repository-package
   type: git
