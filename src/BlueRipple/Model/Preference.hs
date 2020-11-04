@@ -449,7 +449,7 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
 
     -- turn long-format data into Arrays by demographic category, beginning with national turnout
     turnoutByGroupArray <-
-      knitMaybe "Missing or extra group in turnout data?" $ FL.foldM
+      K.knitMaybe "Missing or extra group in turnout data?" $ FL.foldM
         (FE.makeArrayMF (F.rgetField @(DemographicCategory b))
                         (F.rgetField @VotedPctOfAll)
                         (flip const)
@@ -468,7 +468,7 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
           )
     -- F.Frame (LocationKey V.++ (PopArray b))      
     populationsFrame <-
-      knitMaybe "Error converting long demographic data to arrays!"
+      K.knitMaybe "Error converting long demographic data to arrays!"
       $   F.toFrame
       <$> FL.foldM votersArrayMF longByDCategoryFrame
 

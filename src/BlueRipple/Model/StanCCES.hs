@@ -233,6 +233,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
   let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
+  K.logLE K.Diagnostic "Finished loading (cached) CCES data"
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
   let stancConfig = (SM.makeDefaultStancConfig $ T.unpack $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary

@@ -71,11 +71,11 @@ main= do
                                                K.mindocOptionsF
   let  knitConfig = (K.defaultKnitConfig Nothing)
         { K.outerLogPrefix = Just "stan.Main"
-        , K.logIf = K.logDiagnostic
+        , K.logIf = K.logAll
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ testHouseModel
+  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ testCCESPref
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "stan.html" htmlAsText

@@ -124,11 +124,13 @@ prepCachedData = do
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> 
      PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
   -- investigate college grad %
+{-  
   pums <- K.ignoreCacheTime pums_C
   let yrState y sa r = F.rgetField @BR.Year r == y
                        && F.rgetField @BR.StateAbbreviation r == sa     
       pumsGA2018 = FL.fold (PUMS.pumsStateRollupF (PUMS.pumsKeysToASER True)) $ F.filterFrame (yrState 2018 "GA") pums
   BR.logFrame pumsGA2018
+-}
   --
   demographicsByCD_C <- BR.retrieveOrMakeFrame "model/house/demographics.bin" pumsByCD_C $ (return . FL.fold pumsF)
   houseElections_C <- BR.houseElectionsLoader  

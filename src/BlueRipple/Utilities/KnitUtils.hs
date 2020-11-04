@@ -51,8 +51,8 @@ knitX
    . K.Member (Error K.PandocError) r
   => X.ExceptT T.Text (K.Sem r) a
   -> K.Sem r a
-knitX ma = X.runExceptT ma >>= (knitEither @r)
-
+knitX ma = X.runExceptT ma >>= (K.knitEither @r)
+{-
 knitMaybe
   :: forall r a
    . K.Member (Error K.PandocError) r
@@ -67,7 +67,7 @@ knitEither
   => Either T.Text a
   -> K.Sem r a
 knitEither = either K.knitError return
-
+-}
 copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
   sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)

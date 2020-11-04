@@ -91,40 +91,6 @@ dataPathWithCacheTime dp@(LocalData _) = do
   return $ K.withCacheTime (Just modTime) (pure dp)
 dataPathWithCacheTime dp@(DataSets _) = return $ K.withCacheTime Nothing (pure dp)
 
-{-
--- file has qs
--- Filter qs
--- transform to rs
-cachedRecStreamLoader
-  :: forall qs rs r
-   . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
-     , K.CacheEffectsD r
-     )
-  => DataPath
-  -> Maybe F.ParserOptions
-  -> Maybe (F.Record qs -> Bool)
-  -> (F.Record qs -> F.Record rs)
-  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
-  -> T.Text -- ^ cache key
-  -> K.Sem r (K.StreamWithCacheTime (F.Record rs)) -- Streamly.SerialT (K.Sem r) (F.Record rs)
-cachedRecStreamLoader dataPath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheRecList :: T.Text
-                   -> K.ActionWithCacheTime r DataPath
-                   -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
-                   -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
-      cacheRecList = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS 
-      cacheKey      = (fromMaybe "data/" cachePathM) <> key      
-  K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
-  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime dataPath 
-  cacheRecList cacheKey cachedDataPath (\dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow)
--}
-
 recStreamLoader
   :: forall qs rs t m
    . ( V.RMap rs
@@ -179,7 +145,6 @@ cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = do
   BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
     let recStream = recStreamLoader dataPath parserOptionsM filterM fixRow
     K.streamlyToKnit $ FStreamly.inCoreAoS recStream
---  (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key
 
 
 -- file has qs
@@ -245,7 +210,7 @@ maybeFrameLoader
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM filterMaybesM fixMaybes transformRow
-  = fmap F.toFrame $ K.streamlyToKnit $ Streamly.toList $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
+  = K.streamlyToKnit $ FStreamly.inCoreAoS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow
 
 -- file has fs
 -- load fs
@@ -372,14 +337,6 @@ cachedMaybeFrameLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
 cachedMaybeFrameLoader dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
-  = (fmap F.toFrame . K.streamToAction Streamly.toList) <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
+  = K.streamToAction FStreamly.inCoreAoS
+    <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
-
-{-
-fixMonadCatch :: (P.MemberWithError (P.Error Exceptions.SomeException) r)
-              => Streamly.SerialT (Exceptions.CatchT (K.Sem r)) a -> Streamly.SerialT (K.Sem r) a
-fixMonadCatch = Streamly.hoist f where
-  f :: forall r a. (P.MemberWithError (P.Error Exceptions.SomeException) r) =>  Exceptions.CatchT (K.Sem r) a -> K.Sem r a
-  f = join . fmap P.fromEither . Exceptions.runCatchT
-{-# INLINEABLE fixMonadCatch #-}
--}
