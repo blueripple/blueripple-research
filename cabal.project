@@ -36,7 +36,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: c73e1c29ebfafa8bd3fb5034e7616c6a2c622357
+  tag: d21ae594deb07eeb647b57d3fa575c8303795971
 
 --source-repository-package
 --  type: git

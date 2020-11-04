@@ -28,6 +28,7 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.Logger            as K
 import qualified Knit.Effect.Serialize            as K
 import qualified Knit.Effect.AtomicCache          as K (cacheTime)
+import qualified Knit.Report.Cache as K
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import           Control.Monad (when)
@@ -87,7 +88,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
     True
 
 modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = BR.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
+modelCacheTime config = K.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
 
 data RScripts = None | ShinyStan | Loo | Both deriving (Show, Eq, Ord)
 
@@ -122,9 +123,9 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _  = do
       b_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C      
   index_C <- manageIndex config indexType b_C
-  curJSON_C <-  BR.fileDependency $ jsonFP config
+  curJSON_C <-  K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
-  updatedJSON_C <- BR.updateIf curJSON_C newJSON_C $ \e -> do
+  updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
     jsonEncoding <- K.knitEither e
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index  
@@ -134,10 +135,10 @@ wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeTo
       b_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C      
   index_C <- manageIndex config indexType b_C
-  curJSON_C <-  BR.fileDependency $ jsonFP config
+  curJSON_C <-  K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
       jsonDeps = (,) <$> newJSON_C <*> index_C 
-  updatedJSON_C <- BR.updateIf curJSON_C jsonDeps $ \(e, b) -> do
+  updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, b) -> do
     dataEncoding <- K.knitEither e
     toPredictEncoding <- K.knitEither $ encodeToPredict b p 
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
@@ -152,7 +153,7 @@ manageIndex :: (K.KnitEffects r,  K.CacheEffectsD r)
 manageIndex config dataIndexer bFromA_C = do
   case dataIndexer of
     SC.CacheableIndex indexCacheKey -> do
-      curJSON_C <-  BR.fileDependency $ jsonFP config
+      curJSON_C <-  K.fileDependency $ jsonFP config
       when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
         K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
         K.clearIfPresent @_ @K.DefaultCacheData (indexCacheKey config)
@@ -175,7 +176,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = do
   let modelNameS = T.unpack $ SC.mrcModel config
       modelDirS = T.unpack $ SC.mrcModelDir config
 
-  curModel_C <- BR.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)    
+  curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)    
   let outputFiles = fmap (\n -> SC.outputFile (SC.mrcOutputPrefix config) n) [1..(SC.mrcNumChains config)]
   checkClangEnv
   checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!" 
@@ -184,7 +185,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = do
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   indices_C <- wrangleData config dataWrangler cachedA toPredict
   stanOutput_C <-  do
-    curStanOutputs_C <- fmap BR.oldestUnit $ traverse (BR.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
+    curStanOutputs_C <- fmap K.oldestUnit $ traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
         runOneChain chainIndex = do 
           let exeConfig = (SC.mrcStanExeConfigF config) chainIndex          
@@ -192,7 +193,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = do
           K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine exeConfig)
           K.liftKnit $ CS.stan (SC.addDirFP modelDirS modelNameS) exeConfig
           K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
-    res_C <- BR.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
+    res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ ->  do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
       K.logLE K.Info $ "Make CommandLine: " <> (T.pack $ CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)

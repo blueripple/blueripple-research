@@ -210,7 +210,7 @@ retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
-
+{-
 -- TODO: add error handling to return Nothing in time slot
 fileDependency :: (K.KnitEffects r, K.CacheEffectsD r)
   => FilePath
@@ -234,3 +234,4 @@ oldestUnit :: (Foldable f, Functor f, Applicative m) => f (K.WithCacheTime m w) 
 oldestUnit cts = K.withCacheTime t (pure ()) where
 --  w = foldMap id $ fmap KC.ignoreCacheTime cts
   t = minimum $ FL.fold FL.list $ fmap KC.cacheTime cts
+-}
