@@ -28,6 +28,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.Foldl                 as FL
+import qualified Numeric.Foldl                 as NFL
 import           Control.Lens                   ((%~))
 import qualified Control.Monad                 as M
 import qualified Control.Monad.Except          as X
@@ -179,11 +180,12 @@ pumsLoader
 pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS_Age5F.bin"
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoaderAdults = do
+pumsLoaderAdults =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS_Adults_Age5F.bin" (Just (\r -> F.rgetField @BR.PUMSAGE r >= 18))
+{-
   allPUMS_C <- pumsLoader Nothing
   BR.retrieveOrMakeFrame "data/acs1YrPUMS_Adults_Age5F.bin" allPUMS_C $ \allPUMS -> 
     return $ F.filterFrame (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18) allPUMS
-
+-}
 
 
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
@@ -209,7 +211,7 @@ sumPUMSCountedF wgtM flds =
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNoEnglish))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnemployed))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgIncome))
-      V.:& FF.toFoldRecord (FL.premap (\r -> (wgt r, F.rgetField @BR.MedianIncome (flds r))) medianIncomeF)
+      V.:& FF.toFoldRecord (NFL.weightedMedianF wgt (F.rgetField @BR.MedianIncome . flds)) --FL.premap (\r -> (wgt r, F.rgetField @BR.MedianIncome (flds r))) medianIncomeF)
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgSocSecIncome))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnderPovertyLine))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
@@ -236,18 +238,6 @@ pumsRollupF keepIf mapKeys =
       reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
-{-
-sumWeightedPeopleF :: (F.Record rs -> Double)
-                      -> (F.Record rs -> Double)
-                      -> (F.Record rs -> Int)
-                      -> (F.Record rs -> Int)
-                      -> FL.Fold (F.Record rs) (F.Record [TotalWeight, Citizens, NonCitizens])
-sumWeightedPeopleF fracOfTotalInRow fracOfRowInTotal cit nonCit =
-  let wgtCitF = FL.premap (\r -> fracOfRowInTotal r * realToFrac (cit r)) FL.sum
-      wgtNCitF = FL.premap (\r -> fracOfRowInTotal r * realToFrac (nonCit r)) FL.sum
-      totalF = FL.premap fracOfTotalInRow FL.sum
-  in (\t wc wnc -> t F.&: (round wc) F.&: (round wnc) F.&: V.RNil) <$> totalF <*> wgtCitF <*> wgtNCitF
--}
 
 type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.CongressionalDistrict] 
 type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
@@ -550,18 +540,25 @@ avgIncomeF =
        wgtIncomeF = FL.premap (\(w, i) -> w * i) FL.sum
   in (/) <$> wgtIncomeF <*> wgtF
 {-# INLINE avgIncomeF #-}
-
-weightedMedian :: Ord a => a -> [(Int, a)] -> a
+{-
+weightedMedian :: (Ord a, Fractional a) => a -> [(Int, a)] -> a
 weightedMedian dfltA l =
   let ordered = L.sortOn snd l
       middleWeight = (FL.fold (FL.premap fst FL.sum) l) `div` 2
-      ((_, res), _) = L.mapAccumL (\(sumW, aRes) (w, aNext) -> let newW = sumW + w in ((newW, if newW < middleWeight then aNext else aRes), ())) (0, dfltA) ordered
+      update (wgtSoFar, medianSoFar) (w, x) = ((wgtSoFar + w, newMedian), ()) where
+        newMedian = if wgtSoFar < middleWeight
+                    then if wgtSoFar + w >= middleWeight
+                         then (realToFrac wgtSoFar * medianSoFar +  realToFrac w * x) / realToFrac (wgtSoFar + w)
+                         else x
+                    else medianSoFar                      
+      ((_, res), _) = L.mapAccumL update (0, dfltA) ordered
   in res
 {-# INLINE weightedMedian #-}
 
 medianIncomeF :: FL.Fold (Double, Double) Double
 medianIncomeF = fmap (weightedMedian 0) $ FL.premap (\(w, i) -> (round w, i)) FL.list
 {-# INLINE medianIncomeF #-}
+-}
 
 pctUnderF :: Double -> FL.Fold (Double, Double) Double
 pctUnderF factor =
@@ -611,7 +608,7 @@ pumsRowCountF =
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.SpeaksEnglishC)) pctNoEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.EmploymentStatusC)) pctUnemploymentF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.Income)) avgIncomeF)
-     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.Income)) medianIncomeF)
+     V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . wgt) (F.rgetField @BR.Income)) --FL.premap (wgtAnd (F.rgetField @BR.Income)) medianIncomeF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.SocSecIncome)) avgIncomeF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.PctOfPovertyLine)) (pctUnderF 100))
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @BR.PctOfPovertyLine)) (pctUnderF 200))

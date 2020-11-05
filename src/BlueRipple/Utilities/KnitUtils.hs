@@ -52,22 +52,7 @@ knitX
   => X.ExceptT T.Text (K.Sem r) a
   -> K.Sem r a
 knitX ma = X.runExceptT ma >>= (K.knitEither @r)
-{-
-knitMaybe
-  :: forall r a
-   . K.Member (Error K.PandocError) r
-  => T.Text
-  -> Maybe a
-  -> K.Sem r a
-knitMaybe msg ma = maybe (K.knitError msg) return ma
 
-knitEither
-  :: forall r a
-   . K.Member (Error K.PandocError) r
-  => Either T.Text a
-  -> K.Sem r a
-knitEither = either K.knitError return
--}
 copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
   sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
@@ -123,7 +108,6 @@ brAddDates updated pubDate updateDate tMap =
         False -> M.empty
   in  tMap <> pubT <> updT
 
-
 logFrame
   :: (K.KnitEffects r, Foldable f, Show (F.Record rs))
   => f (F.Record rs)
@@ -146,7 +130,6 @@ retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
 
-
 retrieveOrMake2Frames
   :: (K.KnitEffects r
      , K.CacheEffectsD r
@@ -168,7 +151,6 @@ retrieveOrMake2Frames key cachedDeps action =
       to (s1, s2) = (toOne s1, toOne s2)
   in K.wrapPrefix ("BlueRipple.retrieveOrMake2Frames (key=" <> key <> ")")
      $ K.retrieveOrMakeTransformed from to key cachedDeps action
-
 
 retrieveOrMake3Frames
   :: (K.KnitEffects r
@@ -210,28 +192,5 @@ retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
-{-
--- TODO: add error handling to return Nothing in time slot
-fileDependency :: (K.KnitEffects r, K.CacheEffectsD r)
-  => FilePath
-  -> K.Sem r (K.ActionWithCacheTime r ())
-fileDependency fp = do
-  modTimeE <- K.liftKnit $ EX.tryJust (X.guard . SE.isDoesNotExistError) $ System.getModificationTime fp
-  let modTimeM = case modTimeE of
-        Left e -> Nothing
-        Right modTime -> Just modTime    
-  return $ K.withCacheTime modTimeM (return ())
-
-
-updateIf :: K.Member (P.Embed IO) r => K.ActionWithCacheTime r b -> K.ActionWithCacheTime r a -> (a -> K.Sem r b) -> K.Sem r (K.ActionWithCacheTime r b)
-updateIf cur deps update = if KC.cacheTime cur >= KC.cacheTime deps then return cur else updatedAWCT where
-  updatedAWCT = do
-    updatedB <- K.ignoreCacheTime deps >>= update
-    nowCT <- K.liftKnit $ Time.getCurrentTime
-    return $ KC.withCacheTime (Just nowCT) (return updatedB)
-
-oldestUnit :: (Foldable f, Functor f, Applicative m) => f (K.WithCacheTime m w) -> K.WithCacheTime m ()
-oldestUnit cts = K.withCacheTime t (pure ()) where
---  w = foldMap id $ fmap KC.ignoreCacheTime cts
-  t = minimum $ FL.fold FL.list $ fmap KC.cacheTime cts
--}
+clearIfPresentD :: (K.KnitEffects r, K.CacheEffectsD r) => T.Text -> K.Sem r ()
+clearIfPresentD = K.clearIfPresent @T.Text @_

@@ -9,6 +9,7 @@
 module Main where
 
 import qualified Control.Foldl as FL
+import qualified Numeric.Foldl as NFL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
@@ -34,6 +35,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Model.House.ElectionResult as HEM
 import qualified BlueRipple.Model.CachedModels as BRC
 import qualified BlueRipple.Model.StanCCES as BRS
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
@@ -75,7 +77,7 @@ main= do
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ testCCESPref
+  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ testHouseModel
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "stan.html" htmlAsText
@@ -85,11 +87,18 @@ main= do
 
 testHouseModel :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testHouseModel = do
-  (demographics, elex) <- K.ignoreCacheTimeM $ HEM.prepCachedData
-
-  BR.logFrame demographics
-  BR.logFrame elex
-  return ()
+  let testList :: [(Double, Int)] = [(100, 10), (100, 20), (100, 30)]
+      testMedian = FL.fold (NFL.weightedMedianF fst snd) testList
+  K.logLE K.Info $ "median=" <> (T.pack $ show testMedian)
+  let f r = F.rgetField @BR.StateAbbreviation r == "GA"
+            && F.rgetField @BR.Year r == 2018
+  pums_C <- fmap (F.filterFrame f) <$> PUMS.pumsLoaderAdults
+  K.ignoreCacheTime pums_C >>= BR.logFrame
+  
+--  (demographics, elex) <- K.ignoreCacheTimeM $ HEM.prepCachedData
+--  BR.logFrame demographics
+--  BR.logFrame elex
+--  return ()
   
 testCCESPref :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do

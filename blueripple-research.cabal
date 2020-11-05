@@ -24,6 +24,7 @@ common deps
                , cereal-text >= 0.1.0 && < 0.2
                , clock >= 0.8 && < 0.9
                , containers
+               , data-science-utils
                , discrimination
                , exceptions >= 0.10.4 && < 0.11
                , Frames >= 0.6.1 && < 0.8
@@ -185,7 +186,6 @@ executable preference-model
                , blaze-colonnade
                , cmdargs
                , colonnade
-               , data-science-utils
                , directory
                , lens
                , mtl
@@ -220,7 +220,6 @@ executable mrp-model
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , colonnade
-               , data-science-utils
                , discrimination
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10

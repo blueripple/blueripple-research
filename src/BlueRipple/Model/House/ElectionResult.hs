@@ -11,6 +11,7 @@
 module BlueRipple.Model.House.ElectionResult where
 
 import qualified Control.Foldl as FL
+import qualified Numeric.Foldl as NFL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
@@ -62,6 +63,7 @@ type DemographicsR = [ FracUnder45
                      , FracGrad
                      , FracNonWhite
                      , FracCitizen
+                     , DT.AvgIncome
                      , DT.MedianIncome
                      , DT.PopPerSqMile
                      , PUMS.Citizens
@@ -75,7 +77,7 @@ pumsF = FMR.concatFold
         (FMR.foldAndAddKey pumsDataF)
 
 pumsDataF :: FL.Fold
-             (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.MedianIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
+             (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
              (F.Record DemographicsR)
 pumsDataF =
   let cit = F.rgetField @PUMS.Citizens
@@ -89,8 +91,9 @@ pumsDataF =
      V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
      V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
      V.:& FF.toFoldRecord (fracF ((== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
-     V.:& FF.toFoldRecord (intRatio <$> citF <*> (FL.premap (F.rgetField @PUMS.NonCitizens) FL.sum))
-     V.:& FF.toFoldRecord (FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
+     V.:& FF.toFoldRecord ((\x y -> intRatio x (x + y)) <$> citF <*> (FL.premap (F.rgetField @PUMS.NonCitizens) FL.sum))
+     V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
+     V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . cit) (F.rgetField @DT.MedianIncome)) -- FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
      V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
      V.:& FF.toFoldRecord citF
      V.:& V.RNil
@@ -124,14 +127,15 @@ prepCachedData = do
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> 
      PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
   -- investigate college grad %
-{-  
+ 
   pums <- K.ignoreCacheTime pums_C
   let yrState y sa r = F.rgetField @BR.Year r == y
                        && F.rgetField @BR.StateAbbreviation r == sa     
       pumsGA2018 = FL.fold (PUMS.pumsStateRollupF (PUMS.pumsKeysToASER True)) $ F.filterFrame (yrState 2018 "GA") pums
   BR.logFrame pumsGA2018
--}
-  --
+
+    --
+  BR.clearIfPresentD "model/house/demographics.bin"
   demographicsByCD_C <- BR.retrieveOrMakeFrame "model/house/demographics.bin" pumsByCD_C $ (return . FL.fold pumsF)
   houseElections_C <- BR.houseElectionsLoader  
   elections_C <- BR.retrieveOrMakeFrame "model/house/electionResults.bin" houseElections_C $ \houseElex -> do
@@ -142,63 +146,15 @@ prepCachedData = do
 
   
   
-
+{-
      
-{-              
+              
 -- f :: (F.FrameRec (KeyR V.++ DemographicsR), F.FrameRec (KeyR V.++ ElectionR)) -> ((), Either T.Text A Series))
 houseDataWrangler :: SC.DataWrangler (F.FrameRec (KeyR V.++ DemographicsR), F.FrameRec HouseElectionCols) () ()
-houseDataWrangler = SC.Wrangle NoIndex (\x -> ((), f x)) where
-  -- house cols 
-
-                     
-
-
-
-CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
-houseDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where  
-  enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
-  enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
-  enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
-  enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
-  enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
-  enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
-  -- do outer enumeration fold for indices
-  f cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
-    enumF = (,,,,,)
-      <$> enumSexF
-      <*> enumAgeF
-      <*> enumEducationF
-      <*> enumRaceF
-      <*> enumStateF
-      <*> enumCategoryF
-    ((sexF, toSex)
-      , (ageF, toAge)
-      , (educationF, toEducation)
-      , (raceF, toRace)
-      , (stateF, toState)
-      , (categoryF, toCategory)) = FL.fold enumF cces
-    makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
-      dataF = SJ.namedF "G" FL.length
-              <> SJ.constDataF "J_state" (IM.size toState)
-              <> SJ.constDataF "J_sex" (IM.size toSex)
-              <> SJ.constDataF "J_age" (IM.size toAge)
-              <> SJ.constDataF "J_educ" (IM.size toEducation)
-              <> SJ.constDataF "J_race" (IM.size toRace)
-              <> SJ.valueToPairF "sex" sexF
-              <> SJ.valueToPairF "age" ageF
-              <> SJ.valueToPairF "education" educationF
-              <> SJ.valueToPairF "race" raceF
-              <> SJ.valueToPairF "category" categoryF
-              <> SJ.valueToPairF "state" stateF
-              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-  g (toState, toCategory) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
-    toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
-    toCategoryIndexM c = M.lookup c$ SJ.flipIntIndex (fmap FS.fromS toCategory)
-    predictF = SJ.namedF "M" FL.length
-               <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
-               <> SJ.valueToPairF "predict_Category" (SJ.jsonArrayMF (toCategoryIndexM . F.rcast @DT.CatColsASER5))
-               
+houseDataWrangler = SC.Wrangle NoIndex (\x -> ((), f x)) where  
+  -- house cols
+  cachedDeps <- prepCachedData
+  let f (demographics, elex) = makeJsonE where
 
 extractResults :: Int
                -> ET.OfficeT

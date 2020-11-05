@@ -69,6 +69,7 @@ import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
+import qualified Frames.Streamly.InCore        as FStreamly
 
 import qualified System.Directory as System
 import GHC.TypeLits (Symbol)
