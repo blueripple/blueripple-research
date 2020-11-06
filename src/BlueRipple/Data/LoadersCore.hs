@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -35,6 +36,7 @@ import qualified Control.Lens                  as Lens
 import           Control.Lens                   ((%~))
 import qualified Control.Monad.Catch.Pure      as Exceptions
 import           Control.Monad (join)
+import qualified Control.Monad.State           as ST
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
 import qualified Data.Map as M
@@ -48,6 +50,7 @@ import           GHC.Generics                   ( Generic
                                                 , Rep
                                                 )
 import qualified Data.Text                     as T
+import qualified Data.Text.IO                  as T
 import qualified Data.Text.Read                as T
 
 import qualified Data.Vinyl                    as V
@@ -60,6 +63,7 @@ import qualified Frames.TH                     as F
 
 import qualified Streamly as Streamly
 import qualified Streamly.Data.Fold as Streamly.Fold
+import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
 
@@ -72,6 +76,7 @@ import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 
 import qualified System.Directory as System
+import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
@@ -113,8 +118,24 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter = fromMaybe (const True) filterM
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
-  Streamly.map fixRow $ BR.loadToRecStream @qs csvParserOptions path filter
+  Streamly.map fixRow
+    $ Streamly.tapOffsetEvery
+    250000
+    250000
+    (runningCountF
+      ("Read (k rows, from \"" <> (T.pack path) <> "\")")
+      (\n-> " "
+            <> ("from \""
+                 <> (T.pack path)
+                 <> "\": "
+                 <> (T.pack $ show $ 250000 * n))
+      )
+      ("loading \"" <> (T.pack path) <> "\" from disk finished.")
+    )      
+    $ BR.loadToRecStream @qs csvParserOptions path filter
 
+{-
+-- This is bad.  Requires entire thing to be in mem as a list before writing. 
 cachedRecStreamLoader
   :: forall qs rs r
    . ( V.RMap rs
@@ -139,7 +160,8 @@ cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
   K.logLE K.Diagnostic $ "loading or retrieving and saving (streamly) data at key=" <> cacheKey
   K.retrieveOrMakeTransformedStream FS.toS FS.fromS cacheKey cachedDataPath
     $ \dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow
-  
+-}
+
 -- file has qs
 -- Filter qs
 -- transform to rs
@@ -365,3 +387,14 @@ cachedMaybeFrameLoader dataPath parserOptionsM filterMaybesM fixMaybes transform
   = K.streamToAction FStreamly.inCoreAoS
     <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM filterMaybesM fixMaybes transformRow cachePathM key
 
+
+-- tracing fold
+runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
+runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
+  start = ST.liftIO (T.putStr startMsg) >> return 0
+  step !n _ = ST.liftIO $ do
+    t <- System.Clock.getTime System.Clock.ProcessCPUTime
+    putStr $ show t ++ ": "
+    T.putStrLn $ countMsg n
+    return (n+1)
+  done _ = ST.liftIO $ T.putStrLn endMsg

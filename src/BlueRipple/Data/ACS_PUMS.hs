@@ -106,40 +106,40 @@ import Data.Kind (Type)
 
 typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                     => BR.DataPath
-                    -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader' dataPath =
-  BR.cachedRecStreamLoader dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.sbin"
+  BR.cachedFrameLoader dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.bin"
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)                  
-                    => K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+                    => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
 
 pumsRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                => BR.DataPath
                -> Maybe (F.Record PUMS_Typed -> Bool)
-               -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoader' dataPath filterTypedM = do
-  pumsStream_C <- typedPUMSRowsLoader' dataPath
+  pums_C <- typedPUMSRowsLoader' dataPath
   case filterTypedM of
-    Nothing -> return pumsStream_C
-    Just f -> return $ K.mapCachedStream (Streamly.filter f) pumsStream_C
+    Nothing -> return pums_C
+    Just f -> return $ fmap (FStreamly.filter f) pums_C
 
 pumsRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                => Maybe (F.Record PUMS_Typed -> Bool)
-               -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoader filterTypedM = do
-  pumsStream_C <- typedPUMSRowsLoader
+  pums_C <- typedPUMSRowsLoader
   case filterTypedM of
-    Nothing -> return pumsStream_C
-    Just f -> return $ K.mapCachedStream (Streamly.filter f) pumsStream_C
+    Nothing -> return pums_C
+    Just f -> return $ fmap (FStreamly.filter f) pums_C
 
 pumsRowsLoaderAdults' :: (K.KnitEffects r, K.CacheEffectsD r)
                      => BR.DataPath
-                     -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults' dataPath = pumsRowsLoader' dataPath (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
 pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
-                     => K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
 type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
@@ -172,10 +172,10 @@ pumsLoader'
 pumsLoader' dataPath cacheKey filterTypedM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
 --  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
-  cachedPumsStream <- pumsRowsLoader' dataPath filterTypedM
-  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> K.streamAsAction cachedPumsStream
+  cachedPums <- pumsRowsLoader' dataPath filterTypedM
+  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedPums
 --  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
-  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pumsStream) -> do
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pums) -> do
       K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
       K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
@@ -185,11 +185,11 @@ pumsLoader' dataPath cacheKey filterTypedM = do
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
             in fmap (addAbbr r) abbrM
-      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS pumsStream --fileToFixedS
-      let numRows = FL.fold FL.length allRowsF
-          numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) allRowsF
+--      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS pumsStream --fileToFixedS
+      let numRows = FL.fold FL.length pums
+          numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
       K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  " <> (T.pack $ show numYoung) <> " under 18. Counting..."
-      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF allRowsF
+      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
 --      let countedL = FL.fold pumsCountF allRowsF
       let numCounted = FL.fold FL.length countedF
       K.logLE K.Diagnostic $ "Finished counting. " <> (T.pack $ show numCounted) <> " rows of counts.  Adding state abbreviations..."
