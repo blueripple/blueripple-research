@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/data-science-utils
+packages: ./ ~/DataScience/hs-cmdstan 
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
@@ -58,10 +58,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-hvega
   tag: aa024db6591b77a83f9efa63c7bc08b263d43c23
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/data-science-utils
---  tag: e83de73ec2cddf523a97dd18904ac566a6e6ec8b
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/data-science-utils
+  tag: f5d512cec6cfc7c8022d917f79ed060a9d7454aa
 
 source-repository-package
   type: git
