@@ -115,6 +115,31 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
   Streamly.map fixRow $ BR.loadToRecStream @qs csvParserOptions path filter
 
+cachedRecStreamLoader
+  :: forall qs rs r
+   . ( V.RMap rs
+     , V.RMap qs
+     , F.ReadRec qs
+     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
+     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
+     , Generic (F.Rec FS.SElField rs)
+     , K.KnitEffects r
+     , K.CacheEffectsD r
+     )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
+  -> T.Text -- ^ cache key
+  -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
+cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
+  let cacheKey      = (fromMaybe "data/" cachePathM) <> key     
+  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
+  K.logLE K.Diagnostic $ "loading or retrieving and saving (streamly) data at key=" <> cacheKey
+  K.retrieveOrMakeTransformedStream FS.toS FS.fromS cacheKey cachedDataPath
+    $ \dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow
+  
 -- file has qs
 -- Filter qs
 -- transform to rs

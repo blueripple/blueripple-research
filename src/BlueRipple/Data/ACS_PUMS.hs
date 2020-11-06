@@ -104,17 +104,47 @@ import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
+typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
+                    => BR.DataPath
+                    -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+typedPUMSRowsLoader' dataPath =
+  BR.cachedRecStreamLoader dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.sbin"
 
-pumsRowsLoader :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> Maybe (BR.PUMS_Raw2 -> Bool) -> t K.StreamlyM (F.Record PUMS_Typed)
-pumsRowsLoader dataPath filterRawM =  BR.recStreamLoader dataPath Nothing filterRawM transformPUMSRow
+typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)                  
+                    => K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
 
-pumsRowsLoaderAdults :: (Streamly.IsStream t, Monad (t K.StreamlyM)) => BR.DataPath -> t K.StreamlyM (F.Record PUMS_Typed)
-pumsRowsLoaderAdults dataPath = pumsRowsLoader dataPath (Just ((>= 18) . F.rgetField @BR.PUMSAGE))
+pumsRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
+               => BR.DataPath
+               -> Maybe (F.Record PUMS_Typed -> Bool)
+               -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+pumsRowsLoader' dataPath filterTypedM = do
+  pumsStream_C <- typedPUMSRowsLoader' dataPath
+  case filterTypedM of
+    Nothing -> return pumsStream_C
+    Just f -> return $ K.mapCachedStream (Streamly.filter f) pumsStream_C
+
+pumsRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
+               => Maybe (F.Record PUMS_Typed -> Bool)
+               -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+pumsRowsLoader filterTypedM = do
+  pumsStream_C <- typedPUMSRowsLoader
+  case filterTypedM of
+    Nothing -> return pumsStream_C
+    Just f -> return $ K.mapCachedStream (Streamly.filter f) pumsStream_C
+
+pumsRowsLoaderAdults' :: (K.KnitEffects r, K.CacheEffectsD r)
+                     => BR.DataPath
+                     -> K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+pumsRowsLoaderAdults' dataPath = pumsRowsLoader' dataPath (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
+
+pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
+                     => K.Sem r (K.StreamWithCacheTime (F.Record PUMS_Typed))
+pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
 type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
-
 
 pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
 pumsCountF = FMR.mapReduceFold
@@ -137,14 +167,15 @@ pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => BR.DataPath
   -> T.Text
-  -> Maybe (BR.PUMS_Raw2 -> Bool) 
+  -> Maybe (F.Record PUMS_Typed -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader' dataPath cacheKey filterRawM = do
+pumsLoader' dataPath cacheKey filterTypedM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
-  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
-  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedDataPath
+--  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
+  cachedPumsStream <- pumsRowsLoader' dataPath filterTypedM
+  let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> K.streamAsAction cachedPumsStream
 --  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
-  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, dataPath') -> do
+  BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pumsStream) -> do
       K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
       K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
@@ -154,11 +185,7 @@ pumsLoader' dataPath cacheKey filterRawM = do
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
             in fmap (addAbbr r) abbrM
-
-      let fileToFixedS =
-            Streamly.tapOffsetEvery 250000 250000 (runningCountF "Read (k rows)" (\n-> " " <> (T.pack $ "pumsLoader from disk: " ++ (show $ 250000 * n))) "pumsLoader from disk finished.")
-            $ pumsRowsLoader dataPath' filterRawM
-      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS fileToFixedS
+      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS pumsStream --fileToFixedS
       let numRows = FL.fold FL.length allRowsF
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) allRowsF
       K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  " <> (T.pack $ show numYoung) <> " under 18. Counting..."
@@ -175,12 +202,15 @@ pumsLoader' dataPath cacheKey filterRawM = do
 
 pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => Maybe (BR.PUMS_Raw2 -> Bool) 
+  => Maybe (F.Record PUMS_Typed -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader = pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS_Age5F.bin"
+pumsLoader filterM =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS.bin" filterM
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoaderAdults =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS_Adults_Age5F.bin" (Just (\r -> F.rgetField @BR.PUMSAGE r >= 18))
+pumsLoaderAdults =  pumsLoader'
+                    (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
+                    "data/acs1YrPUMS_Adults.bin"
+                    (Just (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18))
 {-
   allPUMS_C <- pumsLoader Nothing
   BR.retrieveOrMakeFrame "data/acs1YrPUMS_Adults_Age5F.bin" allPUMS_C $ \allPUMS -> 
