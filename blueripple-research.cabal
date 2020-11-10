@@ -244,6 +244,8 @@ executable stan-models
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets
+               , bytestring
+               , cassava
                , polysemy-RandomFu
                , hs-cmdstan
   

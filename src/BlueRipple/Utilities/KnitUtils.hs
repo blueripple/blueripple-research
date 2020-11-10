@@ -16,6 +16,7 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown
                                                as K
 import qualified Knit.Report.Cache             as KC
 import qualified Knit.Effect.AtomicCache       as KC
+import qualified Knit.Utilities.Streamly       as KStreamly
 
 import qualified Control.Monad.Except          as X
 import qualified Control.Exception as EX
@@ -42,6 +43,10 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Frames.Serialize              as FS
 import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FStreamly
+
+import qualified Streamly as Streamly
+import qualified Streamly.Prelude as Streamly
 
 import qualified System.Directory as System
 import qualified System.IO.Error as SE
@@ -129,6 +134,23 @@ retrieveOrMakeFrame
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")")
   $ K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) key cachedDeps action
+
+retrieveOrMakeFrameS
+  :: (K.KnitEffects r
+     , K.CacheEffectsD r
+     , FS.RecSerialize rs
+     , V.RMap rs
+     , FI.RecVec rs
+     )
+  => T.Text
+  -> K.ActionWithCacheTime r b
+  -> (b -> Streamly.SerialT KStreamly.StreamlyM (F.Record rs))
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserializtion. But we may not need to, so we defer
+retrieveOrMakeFrameS key cachedDeps action =  K.wrapPrefix ("BlueRipple.retrieveOrMakeFrameS (key=" <> key <> ")") $ do
+  fmap (K.streamToAction FStreamly.inCoreAoS)
+  $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS key cachedDeps action
+
+  
 
 retrieveOrMake2Frames
   :: (K.KnitEffects r

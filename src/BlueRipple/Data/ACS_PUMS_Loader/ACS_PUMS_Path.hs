@@ -11,6 +11,9 @@ import qualified Data.Text as T
 dataDir :: T.Text
 dataDir = "../bigData/IPUMS/"
 
+testDir :: T.Text
+testDir = "../bigData/test/"
+
 pumsACS1YrCSV :: FilePath
 pumsACS1YrCSV = T.unpack $ dataDir <> "/acsSelected2006To2018.csv"
 
@@ -21,9 +24,15 @@ pumsACS1YrRowGen = (F.rowGen pumsACS1YrCSV) { F.tablePrefix = "PUMS"
                                             }
 
 
+
 pumsACS1YrCSV' :: FilePath
 pumsACS1YrCSV' = T.unpack $ dataDir <> "/acsByPUMA_2006To2018.csv"
 
+
+{-
+pumsACS1YrCSV' :: FilePath
+pumsACS1YrCSV' = T.unpack $ testDir <> "/acs1MM.csv"
+-}
 
 pumsACS1YrRowGen' = (F.rowGen pumsACS1YrCSV') { F.tablePrefix = "PUMS"
                                              , F.separator   = ","
