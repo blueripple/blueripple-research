@@ -147,6 +147,10 @@ county2010ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)
 county2010ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
 
 
+countyToPUMALoader :: (K.KnitEffects r, K.CacheEffectsD r)
+                        => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyFromPUMA))
+countyToPUMALoader = cachedFrameLoader (DataSets $ T.pack BR.county2014FromPUMA2012CSV) Nothing Nothing id Nothing "countyFromPUMA.bin"
+
 aseDemographicsLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASEDemographics))
 aseDemographicsLoader =
   cachedFrameLoader

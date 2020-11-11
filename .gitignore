@@ -27,6 +27,7 @@ bigData
 posts
 testbed/*.csv
 *.csv
+GA.html
 stan.html
 stan/*/output
 stan/*/data

@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell
+packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
@@ -11,10 +11,10 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-h
 --  tag: 1481b2311f70a59b4a2f0c0855eb47db2e7b4c00
    
              
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: 0b76d5d89c160d34217d4adfd1acc7b762c6ed17
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: 0b76d5d89c160d34217d4adfd1acc7b762c6ed17
 
 source-repository-package
   type: git

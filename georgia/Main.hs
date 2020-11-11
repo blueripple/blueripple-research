@@ -6,11 +6,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module Main where
 
 import qualified GA_DataFrames as GA
 
 import qualified Control.Foldl as FL
+import Control.Monad (when)
 import qualified Numeric.Foldl as NFL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
@@ -21,10 +23,12 @@ import qualified Data.Random.Source.PureMT     as PureMT
 import qualified Data.Text as T
 import qualified Text.Printf as Printf
 import qualified Data.Text.IO as T
+
 import qualified Frames as F
 import qualified Frames.Streamly.CSV as FS
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
+import qualified Frames.SimpleJoins as FJ
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import qualified Data.Vinyl as V
@@ -44,6 +48,7 @@ import qualified Frames.Visualization.VegaLite.Data
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.LoadersCore as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -103,7 +108,7 @@ main= do
   resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ gaPUMAs
   case resE of
     Right htmlAsText ->
-      K.writeAndMakePathLT "stan.html" htmlAsText
+      K.writeAndMakePathLT "../Georgia/GA.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
 type X = [BR.StateAbbreviation
@@ -123,16 +128,50 @@ formatPct = FS.liftFieldFormatter (T.pack . Printf.printf "%.1f")
 formatWholeNumber :: (V.KnownField t, Printf.PrintfArg (V.Snd t), Num (V.Snd t)) => V.Lift (->) V.ElField (V.Const T.Text) t
 formatWholeNumber = FS.liftFieldFormatter (T.pack . Printf.printf "%.0f")
 
+type CountyDescWA = [BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, BR.CountyFIPS, BR.CountyName] 
+type FracBlack = "FracBlack" F.:-> Double
+type FracLatinX = "FracLatinX" F.:-> Double
+type FracAsian = "FracAsian" F.:-> Double
+type FracYoung = "FracYoung" F.:-> Double
+type FracGrad = "FracGrad" F.:-> Double
+
+type CountySummary = [FracYoung, FracGrad, FracBlack, FracLatinX, FracAsian, PUMS.Citizens, DT.PopPerSqMile]
+
+countySummaryF :: FL.Fold (F.Record (DT.CatColsASER5 V.++ PUMS.PUMSCountToFields)) (F.Record CountySummary)
+countySummaryF =
+  let wgt = realToFrac . F.rgetField @PUMS.Citizens
+      wgtdFracF bf = (/) <$> FL.prefilter bf (FL.premap wgt FL.sum) <*> FL.premap wgt FL.sum
+      wgtdSumF f = (/) <$> FL.premap (\r -> f r * wgt r) FL.sum <*> FL.premap wgt FL.sum
+  in FF.sequenceRecFold
+     $ FF.toFoldRecord (wgtdFracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
+     V.:& FF.toFoldRecord (wgtdFracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
+     V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Black) . F.rgetField @DT.Race5C))
+     V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Latinx) . F.rgetField @DT.Race5C))
+     V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Asian) . F.rgetField @DT.Race5C))
+     V.:& FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
+     V.:& FF.toFoldRecord (wgtdSumF (F.rgetField @DT.PopPerSqMile))
+     V.:& V.RNil
+      
+
+
 gaPUMAs :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 gaPUMAs = do
-  let testList :: [(Double, Int)] = [(100, 10), (100, 20), (100, 30)]
-      testMedian = FL.fold (NFL.weightedMedianF fst snd) testList
-  K.logLE K.Info $ "median=" <> (T.pack $ show testMedian)
-  let f r = F.rgetField @BR.StateAbbreviation r == "GA"
-            && F.rgetField @BR.Year r == 2018
+  let f r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @BR.Year r == 2018
   gaPUMAs_C <- fmap (F.filterFrame f) <$> PUMS.pumsLoaderAdults
+--  K.clearIfPresent "georgia/gaPUMAs.bin"
   gaPUMAsRolled_C <- BR.retrieveOrMakeFrame "georgia/gaPUMAs.bin" gaPUMAs_C $ \gaPUMAs_Raw -> do
-    let rolledUp = fmap (F.rcast @X) $ FL.fold (PUMS.pumsRollupF (const True) (PUMS.pumsKeysToASER5 True)) gaPUMAs_Raw
+    let rolledUp = FL.fold (PUMS.pumsRollupF (const True) (PUMS.pumsKeysToASER5 True)) gaPUMAs_Raw
+        zeroCount :: F.Record PUMS.PUMSCountToFields
+        zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
+        addZeroCountsF =  FMR.concatFold $ FMR.mapReduceFold
+                          (FMR.noUnpack)
+                          (FMR.assignKeysAndData @PUMS.PUMADescWA)
+                          ( FMR.makeRecsWithKey id
+                            $ FMR.ReduceFold
+                            $ const
+                            $ BK.addDefaultRec @DT.CatColsASER5 zeroCount
+                          )
+        rolledUpWZ = F.toFrame $ FL.fold addZeroCountsF rolledUp
         formatRec =
           FS.formatTextAsIs
           V.:& FS.formatWithShow
@@ -144,16 +183,45 @@ gaPUMAs = do
           V.:& FS.formatWithShow
           V.:& formatWholeNumber
           V.:&  V.RNil
-    BR.logFrame rolledUp
-    K.liftKnit @IO $ FS.writeLines "gaPUMAs.csv" $ FS.streamSV' formatRec "," $ Streamly.fromFoldable rolledUp
-    return rolledUp
-  gaPUMAs <- K.ignoreCacheTime gaPUMAsRolled_C
+--    BR.logFrame $ fmap (F.rcast @X) $ rolledUpWZ
+    K.liftKnit @IO $ FS.writeLines "gaPUMAs.csv" $ FS.streamSV' formatRec "," $ Streamly.fromFoldable  $ fmap (F.rcast @X) $ rolledUpWZ
+    return rolledUpWZ
+  countyFromPUMA_C <- BR.countyToPUMALoader
+  let gaCountyDeps = (,) <$> gaPUMAsRolled_C <*> countyFromPUMA_C
+  gaCounties_C <- BR.retrieveOrMakeFrame "georgia/gaCounties.bin" gaCountyDeps $ \(gaPUMAs, countyFromPUMA') -> do
+    let countyFromPUMA = fmap (F.rcast @[BR.StateFIPS, BR.PUMA, BR.CountyFIPS, BR.CountyName, BR.FracPUMAInCounty]) countyFromPUMA'
+        (byPUMAwCountyAndWeight, missing) = FJ.leftJoinWithMissing @[BR.StateFIPS, BR.PUMA] gaPUMAs countyFromPUMA
+    when (not $ null missing) $ K.knitError $ "missing items in join: " <> (T.pack $ show missing)
+    let demoByCountyF = FMR.concatFold
+                       $ FMR.mapReduceFold
+                       FMR.noUnpack
+                       (FMR.assignKeysAndData
+                         @('[BR.Year] V.++ CountyDescWA V.++ DT.CatColsASER5)
+                         @('[BR.FracPUMAInCounty] V.++ PUMS.PUMSCountToFields))
+                       (FMR.foldAndAddKey (PUMS.sumPUMSCountedF (Just $ F.rgetField @BR.FracPUMAInCounty) F.rcast))
+    let demoByCounty = FL.fold demoByCountyF byPUMAwCountyAndWeight
+    return demoByCounty
+
+  let countiesSummaryF = FMR.concatFold
+                         $ FMR.mapReduceFold
+                         FMR.noUnpack
+                         (FMR.assignKeysAndData @[BR.CountyFIPS, BR.CountyName] @(DT.CatColsASER5 V.++ PUMS.PUMSCountToFields))
+                         (FMR.foldAndAddKey countySummaryF)
+                         
+  gaCounties <- K.ignoreCacheTime gaCounties_C
+  BR.logFrame gaCounties
+  let countiesSummary = FL.fold countiesSummaryF gaCounties
+  BR.logFrame countiesSummary
+  return ()
 {-  
   _ <- K.addHvega Nothing Nothing $ vlDensityByPUMA
     "Young & College Educated by PUMA"
     (FV.ViewConfig 600 600 10)
     gaPUMAs
 -}
+
+gaSenateAnalysis :: (K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
+gaSenateAnalysis = do
   gaSenate1_C <- gaSenate1Loader
   gaSenate2_C <- gaSenate2Loader
   gaSenate1 <- K.ignoreCacheTime gaSenate1_C
