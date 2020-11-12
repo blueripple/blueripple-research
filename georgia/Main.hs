@@ -105,7 +105,7 @@ main= do
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ gaPUMAs
+  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ gaAnalysis
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "../Georgia/GA.html" htmlAsText
@@ -151,14 +151,30 @@ countySummaryF =
      V.:& FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
      V.:& FF.toFoldRecord (wgtdSumF (F.rgetField @DT.PopPerSqMile))
      V.:& V.RNil
-      
 
+votesF :: T.Text -> FL.Fold GA.Senate (F.FrameRec [BR.CountyFIPS, GA.County, GA.Votes])
+votesF p =
+  let f r = F.rgetField @GA.Party r == p && F.rgetField @GA.Method r == "Total"
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     (FMR.unpackFilterRow f)
+     (FMR.assignKeysAndData @[BR.CountyFIPS, GA.County] @'[GA.Votes])
+     (FMR.foldAndAddKey (FF.foldAllConstrained @Num FL.sum))
+     
+gaAnalysis :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
+gaAnalysis = do
+  gaSenate1_C <- gaSenate1Loader
+  K.ignoreCacheTime gaSenate1_C >>= BR.logFrame . FL.fold (votesF "D") 
+  gaSenate2_C <- gaSenate2Loader  
+  gaCountySummaries <- gaCountyDemographics
+  
+  return ()
 
-gaPUMAs :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
-gaPUMAs = do
+gaCountyDemographics :: (K.KnitEffects r,  K.CacheEffectsD r)
+  => K.Sem r (F.FrameRec ([BR.CountyFIPS, BR.CountyName] V.++ CountySummary))
+gaCountyDemographics = do
   let f r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @BR.Year r == 2018
   gaPUMAs_C <- fmap (F.filterFrame f) <$> PUMS.pumsLoaderAdults
---  K.clearIfPresent "georgia/gaPUMAs.bin"
   gaPUMAsRolled_C <- BR.retrieveOrMakeFrame "georgia/gaPUMAs.bin" gaPUMAs_C $ \gaPUMAs_Raw -> do
     let rolledUp = FL.fold (PUMS.pumsRollupF (const True) (PUMS.pumsKeysToASER5 True)) gaPUMAs_Raw
         zeroCount :: F.Record PUMS.PUMSCountToFields
@@ -206,13 +222,14 @@ gaPUMAs = do
                          $ FMR.mapReduceFold
                          FMR.noUnpack
                          (FMR.assignKeysAndData @[BR.CountyFIPS, BR.CountyName] @(DT.CatColsASER5 V.++ PUMS.PUMSCountToFields))
-                         (FMR.foldAndAddKey countySummaryF)
-                         
+                         (FMR.foldAndAddKey countySummaryF)                         
   gaCounties <- K.ignoreCacheTime gaCounties_C
-  BR.logFrame gaCounties
+--  BR.logFrame gaCounties
   let countiesSummary = FL.fold countiesSummaryF gaCounties
-  BR.logFrame countiesSummary
-  return ()
+--  BR.logFrame countiesSummary
+  return countiesSummary
+
+  
 {-  
   _ <- K.addHvega Nothing Nothing $ vlDensityByPUMA
     "Young & College Educated by PUMA"
@@ -220,7 +237,7 @@ gaPUMAs = do
     gaPUMAs
 -}
 
-gaSenateAnalysis :: (K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
+gaSenateAnalysis :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 gaSenateAnalysis = do
   gaSenate1_C <- gaSenate1Loader
   gaSenate2_C <- gaSenate2Loader
