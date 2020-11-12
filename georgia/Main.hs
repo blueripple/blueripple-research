@@ -20,6 +20,7 @@ import qualified Data.Maybe as Maybe
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Random.Source.PureMT     as PureMT
+import qualified Data.List as L
 import qualified Data.Text as T
 import qualified Text.Printf as Printf
 import qualified Data.Text.IO as T
@@ -29,6 +30,7 @@ import qualified Frames.Streamly.CSV as FS
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins as FJ
+import qualified Frames.Transform as FT
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import qualified Data.Vinyl as V
@@ -71,6 +73,7 @@ import qualified Stan.JSON as SJ
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified System.Environment as Env
+import qualified System.Directory              as System
 
 import qualified Knit.Report as K
 import           Polysemy.RandomFu              (RandomFu, runRandomIO, runRandomIOPureMT)
@@ -105,7 +108,7 @@ main= do
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ gaAnalysis
+  resE <- K.knitHtml knitConfig $ runRandomIOPureMT pureMTseed $ fmap (const ()) gaSenateToModel
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "../Georgia/GA.html" htmlAsText
@@ -152,23 +155,55 @@ countySummaryF =
      V.:& FF.toFoldRecord (wgtdSumF (F.rgetField @DT.PopPerSqMile))
      V.:& V.RNil
 
-votesF :: T.Text -> FL.Fold GA.Senate (F.FrameRec [BR.CountyFIPS, GA.County, GA.Votes])
+
+
+votesF :: forall v t. (V.KnownField v
+                      , V.Snd v ~ Int
+                      , V.KnownField t
+                      , V.Snd t ~ Int
+                      )
+       => T.Text -> FL.Fold GA.Senate (F.FrameRec [BR.CountyFIPS, GA.County, v, t])
 votesF p =
-  let f r = F.rgetField @GA.Party r == p && F.rgetField @GA.Method r == "Total"
+  let f r = F.rgetField @GA.Method r == "Total"
+      totalF = (\v t -> v F.&: t F.&: V.RNil)
+               <$> FL.prefilter ((== p) . F.rgetField @GA.Party) (FL.premap (F.rgetField @GA.Votes) FL.sum)
+               <*> FL.premap (F.rgetField @GA.Votes) FL.sum
   in FMR.concatFold
      $ FMR.mapReduceFold
      (FMR.unpackFilterRow f)
-     (FMR.assignKeysAndData @[BR.CountyFIPS, GA.County] @'[GA.Votes])
-     (FMR.foldAndAddKey (FF.foldAllConstrained @Num FL.sum))
-     
+     (FMR.assignKeysAndData @[BR.CountyFIPS, GA.County] @[GA.Party, GA.Votes])
+     (FMR.foldAndAddKey totalF)
+
+type DVotes1 = "DVotes1" F.:-> Int
+type DVotes2 = "DVotes2" F.:-> Int
+
+type TVotes1 = "TVotes1" F.:-> Int
+type TVotes2 = "TVotes2" F.:-> Int
+
+
 gaAnalysis :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
-gaAnalysis = do
-  gaSenate1_C <- gaSenate1Loader
-  K.ignoreCacheTime gaSenate1_C >>= BR.logFrame . FL.fold (votesF "D") 
-  gaSenate2_C <- gaSenate2Loader  
-  gaCountySummaries <- gaCountyDemographics
-  
-  return ()
+gaAnalysis = return ()
+             
+gaSenateToModel :: forall r.(K.KnitOne r,  K.CacheEffectsD r, K.Member RandomFu r)
+           => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.CountyFIPS,GA.County, DVotes1, TVotes1, DVotes2, TVotes2] V.++ CountySummary)))
+gaSenateToModel = do
+  let addGAFIPS :: GA.Senate -> GA.Senate
+      addGAFIPS r = F.rputField @BR.CountyFIPS (F.rgetField @BR.CountyFIPS r + 13000) r
+  gaSenate1_C <- fmap (fmap addGAFIPS) <$> gaSenate1Loader
+  gaSenate2_C <- fmap (fmap addGAFIPS) <$> gaSenate2Loader
+  gaDemo <- fmap (F.rcast @('[BR.CountyFIPS] V.++ CountySummary)) <$> gaCountyDemographics  
+  BR.logFrame gaDemo
+  let deps = (,) <$> gaSenate1_C <*> gaSenate2_C
+  K.clearIfPresent "georgia/senateVotesAndDemo.bin"
+  toModel_C <- BR.retrieveOrMakeFrame "georgia/senateVotesAndDemo.bin" deps $ \(s1, s2) -> do
+    let senate1Votes = FL.fold (votesF @DVotes1 @TVotes1 "D") s1
+        senate2Votes = fmap (F.rcast @[BR.CountyFIPS, DVotes2, TVotes2]) $ FL.fold (votesF @DVotes2 @TVotes2 "D") s2
+        (combined, missing1, missing2) = FJ.leftJoin3WithMissing @'[BR.CountyFIPS] senate1Votes senate2Votes gaDemo
+    when (not $ null missing1) $  K.knitError $ "missing counties in votes1 and votes2 join: " <> (T.pack $ show missing1)
+    when (not $ null missing2) $  K.knitError $ "missing counties in votes1 and demo join: " <> (T.pack $ show missing2)
+    return $ F.toFrame $ L.reverse $ L.sortOn (F.rgetField @DVotes1) $ FL.fold FL.list combined
+  K.ignoreCacheTime toModel_C >>= BR.logFrame
+  return $ toModel_C
 
 gaCountyDemographics :: (K.KnitEffects r,  K.CacheEffectsD r)
   => K.Sem r (F.FrameRec ([BR.CountyFIPS, BR.CountyName] V.++ CountySummary))
@@ -237,6 +272,12 @@ gaCountyDemographics = do
     gaPUMAs
 -}
 
+gaCountyToCountyFIPS :: (K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (M.Map T.Text T.Text))
+gaCountyToCountyFIPS = do
+  gaSenate1_C <- gaSenate1Loader
+  K.retrieveOrMake "georgia/countyToFIPS.bin" gaSenate1_C $
+    return . FL.fold (FL.premap (\r -> (F.rgetField @GA.County r, T.pack $ show $ F.rgetField @GA.CountyFIPS r)) FL.map)
+
 gaSenateAnalysis :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 gaSenateAnalysis = do
   gaSenate1_C <- gaSenate1Loader
@@ -268,10 +309,15 @@ gaSenate1Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate1CSV) Not
 gaSenate2Loader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame GA.Senate))
 gaSenate2Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate2CSV) Nothing Nothing id Nothing "georgia/senate2.bin"
 
-gaProcessElex :: (K.KnitEffects r) => K.Sem r ()
-gaProcessElex = do
-  let s1CSV = "../Georgia/data/election/Senate1.csv"
-      s2CSV = "../Georgia/data/election/Senate2.csv"
+gaProcessSenate :: K.KnitEffects r => K.Sem r ()
+gaProcessSenate = do
+  gaProcessElex1 "../Georgia/data/election/Senate1.csv"
+  gaProcessElex1 "../Georgia/data/election/Senate2.csv"
+  
+  
+gaProcessElex1 :: K.KnitEffects r => FilePath -> K.Sem r ()
+gaProcessElex1 fp = do
+  let outFile = (\(d, f) -> d <> "long/" <> f) $ T.breakOnEnd "/" (T.pack fp)
       processOne :: (T.Text, T.Text) -> Maybe [T.Text]
       processOne (h, n) = 
         let hParts = T.splitOn "_" h
@@ -296,15 +342,66 @@ gaProcessElex = do
         rows <- mconcat . Vec.toList <$> traverse processLine v
         return $ T.intercalate "\n" (h : rows)
         
-  csv1 <- loadCSVToMaps s1CSV
-  res1 <- K.knitMaybe "csv loading error" $ processFile csv1
-  K.liftKnit $ T.writeFile "../Georgia/data/election/Senate1_long.csv" res1
+  csv <- loadCSVToMaps fp  
+  res <- K.knitMaybe ("csv loading error in \"" <> T.pack fp <> "\"") $ processFile csv
+  K.liftKnit $ T.writeFile (T.unpack outFile) res
 
-  csv2 <- loadCSVToMaps s2CSV
-  res2 <- K.knitMaybe "csv loading error" $ processFile csv2
-  K.liftKnit $ T.writeFile "../Georgia/data/election/Senate2_long.csv" res2
-          
+gaMeltRepo :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r ()
+gaMeltRepo = gaMeltElexData
+             $ fmap ("/Users/adam/DataScience/techiesforga/data/elections/2020_november/county_delimited_results/cleaned/" <>)
+             ["US Senate","US House","US President","State House", "District Attorney", "State Senate"]
+  
+
+gaMeltElexData :: (K.KnitEffects r, K.CacheEffectsD r) => [T.Text] -> K.Sem r ()
+gaMeltElexData dirs = do
+  fipsMap <- K.ignoreCacheTimeM gaCountyToCountyFIPS
+  let processDir d = do
+        createDirIfNecessary (d <> "/long")
+        csvFiles <- filter (T.isSuffixOf ".csv") . fmap T.pack <$> K.liftKnit (System.listDirectory $ T.unpack d)
+        traverse (gaProcessElex2 fipsMap) $ fmap (T.unpack . (\f -> d <> "/" <> f)) csvFiles
+  _ <- traverse processDir dirs
+  return ()      
+
+gaProcessElex2 :: K.KnitEffects r => M.Map T.Text T.Text -> FilePath -> K.Sem r ()
+gaProcessElex2 countyFIPSByCounty fp = do
+  let outFile = (\(d, f) -> d <> "long/" <> f) $ T.breakOnEnd "/" (T.pack fp)
+  K.logLE K.Diagnostic $ "re-formatting \"" <> (T.pack fp) <> "\". Saving as \"" <> outFile <> "\"" 
+  let processOne :: (T.Text, T.Text) -> Either T.Text [T.Text]
+      processOne (h, n) = 
+        let (x, y) = T.breakOn "_" h
+            method = T.drop 1 y -- drop the "_"
+            (cand', party') = T.breakOn "(" x
+            cand = T.dropEnd 1 cand' -- drop the space
+            party = T.drop 1 $ T.dropEnd 1 party' -- drop the surrounding ()
+        in
+          if (T.length method > 0) && (T.length cand > 0) && (T.length party > 0)
+          then Right [party, cand, method, n]
+          else Left $ "parse Error: " <> h <> "-> method=" <> method <> "; cand=" <> cand <> "; party=" <> party
+
+      processLine :: M.Map T.Text T.Text -> Either T.Text [T.Text]
+      processLine m = do
+        county <- maybe (Left "Failed to find County header") Right $ M.lookup "County" m
+        countyFIPS <- maybe (Left $ "Failed to find countyFIPS for " <> county) Right  $ M.lookup county countyFIPSByCounty
+        let common = ["13", countyFIPS, county]
+        let m' = M.delete "County" $ M.delete "Total" m
+        processed <- either (\msg -> Left $ (T.pack $ show m') <> " -> " <> msg) Right
+                     $ traverse processOne
+                     $ filter (\(h,_) -> T.length h > 0)
+                     $ M.toList m'
+        let prefixed = fmap (common <>) processed
+        return $ fmap (T.intercalate ",") prefixed
+
+      processFile :: Vec.Vector (M.Map T.Text T.Text) -> Either T.Text T.Text
+      processFile v = do
+        let h :: T.Text = "StateFIPS,CountyFIPS,County,Party,Candidate,Method,Votes"
+        rows <- mconcat . Vec.toList <$> traverse processLine v
+        return $ T.intercalate "\n" (h : rows)
         
+  csv <- loadCSVToMaps fp  
+  res <- K.knitEither $ processFile csv
+  K.liftKnit $ T.writeFile (T.unpack outFile) res
+
+    
 loadCSVToMaps :: (K.KnitEffects r) => FilePath -> K.Sem r (Vec.Vector (M.Map T.Text T.Text))
 loadCSVToMaps fp = do
   csvData <- K.liftKnit $ BL.readFile fp
@@ -371,3 +468,26 @@ vlVotingMethod title vc rows =
       enc = GV.encoding . encX . encY . encColor
       mark = GV.mark GV.Bar []
   in FV.configuredVegaLite vc [FV.title title, enc [], mark, dat]
+
+
+createDirIfNecessary
+  :: K.KnitEffects r
+  => T.Text
+  -> K.Sem r ()
+createDirIfNecessary dir = K.wrapPrefix "createDirIfNecessary" $ do
+  K.logLE K.Diagnostic $ "Checking if cache path (\"" <> dir <> "\") exists."
+  existsB <- K.liftKnit $ (System.doesDirectoryExist (T.unpack dir))
+  case existsB of
+    True -> do
+      K.logLE K.Diagnostic $ "\"" <> dir <> "\" exists."
+      return ()
+    False -> do
+      K.logLE K.Info
+        $  "Cache directory (\""
+        <> dir
+        <> "\") not found. Atttempting to create."
+      K.liftKnit
+        $ System.createDirectoryIfMissing True (T.unpack dir)
+{-# INLINEABLE createDirIfNecessary #-}
+
+

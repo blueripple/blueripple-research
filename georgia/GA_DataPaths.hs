@@ -12,8 +12,8 @@ electionDir = dataDir <> "election/"
 
 senate1CSV :: FilePath
 senate1CSV =
- electionDir ++ "Senate1_long.csv"
+ electionDir ++ "long/Senate1.csv"
 
 senate2CSV :: FilePath
 senate2CSV =
- electionDir ++ "Senate2_long.csv"
+ electionDir ++ "long/Senate2.csv"

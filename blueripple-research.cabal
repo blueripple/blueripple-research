@@ -252,12 +252,14 @@ executable ga-work
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: georgia
   main-is: Main.hs
-  other-modules: GA_DataPaths, GA_DataFrames                           
+  other-modules: GA_DataPaths, GA_DataFrames
   build-depends: base  
                , blueripple-research
                , blueripple-data-sets
                , bytestring
                , cassava
+               , directory
+               , megaparsec
                , polysemy-RandomFu
                , hs-cmdstan               
   
