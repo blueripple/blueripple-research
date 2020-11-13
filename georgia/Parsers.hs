@@ -27,6 +27,9 @@ type Text = T.Text -- strict for now but could change
 
 type Parsec a = P.Parsec Void Text a
 
+countyElexHeader :: Parsec
+
+
 svFile :: Char -> Parsec [[Text]]
 svFile s = P.endBy (svLine s) P.eol
 
