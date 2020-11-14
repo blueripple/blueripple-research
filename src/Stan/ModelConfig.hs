@@ -28,6 +28,9 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcLogSummary :: Bool
   }
 
+setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
+setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }  
+
 noLogOfSummary :: ModelRunnerConfig -> ModelRunnerConfig
 noLogOfSummary sc = sc { mrcLogSummary = False }
 

@@ -102,8 +102,10 @@ type FracLatinX = "FracLatinX" F.:-> Double
 type FracAsian = "FracAsian" F.:-> Double
 type FracYoung = "FracYoung" F.:-> Double
 type FracGrad = "FracGrad" F.:-> Double
+type FracNonWhite = "FracNonWhite" F.:-> Double
 
-type CountySummary = [FracYoung, FracGrad, FracBlack, FracLatinX, FracAsian, PUMS.Citizens, DT.PopPerSqMile]
+
+type CountySummary = [FracYoung, FracGrad, FracBlack, FracLatinX, FracAsian, FracNonWhite, PUMS.Citizens, DT.PopPerSqMile]
 
 countySummaryF :: FL.Fold (F.Record (DT.CatColsASER5 V.++ PUMS.PUMSCountToFields)) (F.Record CountySummary)
 countySummaryF =
@@ -116,6 +118,7 @@ countySummaryF =
      V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Black) . F.rgetField @DT.Race5C))
      V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Latinx) . F.rgetField @DT.Race5C))
      V.:& FF.toFoldRecord (wgtdFracF ((== DT.R5_Asian) . F.rgetField @DT.Race5C))
+     V.:& FF.toFoldRecord (wgtdFracF ((/= DT.R5_WhiteNonLatinx) . F.rgetField @DT.Race5C))
      V.:& FF.toFoldRecord (FL.premap (F.rgetField @PUMS.Citizens) FL.sum)
      V.:& FF.toFoldRecord (wgtdSumF (F.rgetField @DT.PopPerSqMile))
      V.:& V.RNil
@@ -158,7 +161,7 @@ gaSenateToModel = do
   gaDemo <- fmap (F.rcast @('[BR.CountyFIPS] V.++ CountySummary)) <$> gaCountyDemographics  
   BR.logFrame gaDemo
   let deps = (,) <$> gaSenate1_C <*> gaSenate2_C
-  K.clearIfPresent "georgia/senateVotesAndDemo.bin"
+--  K.clearIfPresent "georgia/senateVotesAndDemo.bin"
   toModel_C <- BR.retrieveOrMakeFrame "georgia/senateVotesAndDemo.bin" deps $ \(s1, s2) -> do
     let senate1Votes = FL.fold (votesF @DVotes1 @TVotes1 "D") s1
         senate2Votes = fmap (F.rcast @[BR.CountyFIPS, DVotes2, TVotes2]) $ FL.fold (votesF @DVotes2 @TVotes2 "D") s2

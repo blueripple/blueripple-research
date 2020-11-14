@@ -78,8 +78,10 @@ type VoteP = "TurnoutP" F.:-> Double
 type DVoteP = "DVoteP" F.:-> Double
 type ETVotes = "ETVotes" F.:-> Int
 type EDVotes = "EDVotes" F.:-> Int
+type EDVotes5 = "EDVotes5" F.:-> Int
+type EDVotes95 = "EDVotes95" F.:-> Int
 
-type Modeled = [VoteP, DVoteP, ETVotes, EDVotes]
+type Modeled = [VoteP, DVoteP, ETVotes, EDVotes5, EDVotes, EDVotes95]
 
 extractResults :: CS.StanSummary               
                -> F.FrameRec GA.SenateByCounty
@@ -87,15 +89,26 @@ extractResults :: CS.StanSummary
 extractResults summary senateByCounty = do
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVoteP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
-  let probList = zip (FL.fold FL.list pVotedP) (FL.fold FL.list pDVoteP)
-      makeRow (sbcR, (pV, pD)) = F.rgetField @GA.County sbcR
-                                 F.&: pV
-                                 F.&: pD
-                                 F.&: round (pV * realToFrac (F.rgetField @PUMS.Citizens sbcR))
-                                 F.&: round (pD * pV * realToFrac (F.rgetField @PUMS.Citizens sbcR))
-                                 F.&: V.RNil
-      result = F.toFrame $ fmap makeRow $ zip (FL.fold FL.list senateByCounty) probList
-  return result
+  eTVote <- fmap CS.mean <$> SP.parse1D "eTVotes" (CS.paramStats summary)
+  eDVotePcts <-  fmap CS.percents <$> SP.parse1D "eDVotes1" (CS.paramStats summary)  
+  let probList = FL.fold FL.list $ Vec.zip4 (SP.getVector pVotedP) (SP.getVector pDVoteP) (SP.getVector eTVote) (SP.getVector eDVotePcts)
+      makeRow :: (F.Record GA.SenateByCounty, (Double, Double, Double, [Double])) -> Either T.Text (F.Record ('[GA.County] V.++ Modeled))
+      makeRow (sbcR, (pV, pD, eT, dPcts)) = do
+        if length dPcts == 3
+          then
+          let [d5,d,d95] = dPcts
+          in Right
+             $ F.rgetField @GA.County sbcR
+             F.&: pV
+             F.&: pD
+             F.&: round eT
+             F.&: round d5
+             F.&: round d
+             F.&: round d95
+             F.&: V.RNil
+          else Left ("Wrong number of percentiles in stan statistic")
+  result <- traverse makeRow $ zip (FL.fold FL.list senateByCounty) probList
+  return $ F.toFrame result
       
 
 runSenateModel :: (K.KnitEffects r,  K.CacheEffectsD r)
@@ -106,16 +119,17 @@ runSenateModel :: (K.KnitEffects r,  K.CacheEffectsD r)
 runSenateModel dw (modelName, model) senateByCounty_C = do
   senateByCounty <- K.ignoreCacheTime senateByCounty_C
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ "georgia/stan/senateByCounty/" <> modelName)) { CS.useOpenCL = False }
-  stanConfig <- SC.noLogOfSummary
+  stanConfig <- SC.setSigFigs 4
+                . SC.noLogOfSummary
                 <$> SM.makeDefaultModelRunnerConfig
                 "georgia/stan/senateByCounty"
                 (modelName <> "_model")
                 (Just (SB.NoLL, model))
                 (Just $ "senateByCounty.json")
                 (Just $ "senateByCounty_" <> modelName <> "_model")
-                8
+                4
                 (Just 1000)
-                (Just 4000)
+                (Just 1000)
                 (Just stancConfig)
   let resultCacheKey = "georgia/model/stan/senateByCounty_" <> modelName <> ".bin"
   modelDep <- SM.modelCacheTime stanConfig
@@ -132,7 +146,7 @@ runSenateModel dw (modelName, model) senateByCounty_C = do
 model_v1 :: SB.StanModel
 model_v1 = SB.StanModel
            binomialDataBlock
-           Nothing
+           (Just binomialTransformedDataBlock)
            binomialParametersBlock
            Nothing
            binomialModelBlock
@@ -152,38 +166,67 @@ binomialDataBlock = [here|
   int<lower = 0> TVotes2[G];
 |]
 
+binomialTransformedDataBlock :: SB.TransformedDataBlock
+binomialTransformedDataBlock = [here|
+  matrix[G, K] Q_ast;
+  matrix[K, K] R_ast;
+  matrix[K, K] R_ast_inverse;
+  // thin and scale the QR decomposition
+  Q_ast = qr_Q(X)[, 1:K] * sqrt(G - 1);
+  R_ast = qr_R(X)[1:K,]/sqrt(G - 1);
+  R_ast_inverse = inverse(R_ast);
+  
+|]
+  
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock = [here|
   real alphaD;                             
-  vector[K] betaV;
+  vector[K] thetaV;
   real alphaV;
-  vector[K] betaD;
+  vector[K] thetaD;
 |]
 
+binomialTransformedParametersBlock :: SB.TransformedParametersBlock
+binomialTransformedParametersBlock = [here|
+                                            
+|]
+  
 binomialModelBlock :: SB.ModelBlock
 binomialModelBlock = [here|
-  alphaD ~ normal(0, 2);
-  alphaV ~ normal(0, 2);
-  betaV ~ normal(0, 1);
-  betaD ~ normal(0, 1);
-  TVotes1 ~ binomial_logit(VAP, alphaV + X * betaV);
-//  TVotes2 ~ binomial_logit(VAP, alphaV + X * betaV);
-  DVotes1 ~ binomial_logit(TVotes1, alphaD + X * betaD);
-//  DVotes2 ~ binomial_logit(TVotes2, alphaD + X * betaD);
+//  alphaD ~ normal(0, 2);
+//  alphaV ~ normal(0, 2);
+//  betaV ~ normal(0, 5);
+//  betaD ~ normal(0, 5);
+  TVotes1 ~ binomial_logit(VAP, alphaV + Q_ast * thetaV);
+  TVotes2 ~ binomial_logit(VAP, alphaV + Q_ast * thetaV);
+  DVotes1 ~ binomial_logit(TVotes1, alphaD + Q_ast * thetaD);
+  DVotes2 ~ binomial_logit(TVotes2, alphaD + Q_ast * thetaD);
 |]
 
 binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialGeneratedQuantitiesBlock = [here|
+  vector[K] betaV;
+  vector[K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
   vector<lower = 0, upper = 1>[G] pVotedP;
   vector<lower = 0, upper = 1>[G] pDVoteP;
-  pVotedP = inv_logit(alphaV + (X * betaV));
-  pDVoteP = inv_logit(alphaD + (X * betaD));
+  pVotedP = inv_logit(alphaV + (Q_ast * thetaV));
+  pDVoteP = inv_logit(alphaD + (Q_ast * thetaD));
+  vector<lower = 0>[G] eTVotes;
+  vector<lower = 0>[G] eDVotes1;
+  vector<lower = 0>[G] eDVotes2;
+  for (g in 1:G) {
+    eTVotes[g] = inv_logit(alphaV + (Q_ast[g] * thetaV)) * VAP[g];
+    eDVotes1[g] = inv_logit(alphaD + (Q_ast[g] * thetaD)) * TVotes1[g];
+    eDVotes2[g] = inv_logit(alphaD + (Q_ast[g] * thetaD)) * TVotes2[g];
+  }
 |]
 
 binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialGQLLBlock = [here|
   vector[G] log_lik;
-  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + X * betaD);
+  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
 //  for (g in 1:G) {
 //    log_lik[g] =  binomial_logit_lpmf(DVotes1[g] | TVotes1[g], alphaD + X[g] * beta + aState[state[g]]);
 //  }

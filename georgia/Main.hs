@@ -127,7 +127,17 @@ gaAnalysis = do
        (FV.ViewConfig 600 1500 10)
        (fmap F.rcast senateByCounty)
   modeled_C <- gaRunSBCModel
-  K.ignoreCacheTime modeled_C >>= BR.logFrame
+  let modelResDeps = (,) <$> senateByCounty_C <*> modeled_C
+  modelRes_C <- BR.retrieveOrMakeFrame "georgia/modeled_v1.bin" modelResDeps $ \(sbc, model) -> do    
+    K.knitEither
+      $ either (Left . T.pack . show) Right
+      $ FJ.leftJoinE @'[GA.County] sbc model
+  modelRes <- K.ignoreCacheTime modelRes_C
+  _ <- K.addHvega Nothing Nothing $ vlVotesVsModel
+       "Dem Votes vs. Model in the Ossoff Race"
+       (FV.ViewConfig 600 600 10)
+       (fmap F.rcast modelRes)
+
   return ()
 
 gaRunSBCModel :: (K.KnitOne r,  K.CacheEffectsD r)
@@ -153,6 +163,28 @@ gaSenateAnalysis = do
 --  gaProcessElex
   return ()
 
+
+
+vlVotesVsModel :: Foldable f
+               => T.Text
+               -> FV.ViewConfig
+               -> f (F.Record [GA.County, GA.DVotes1, GA.EDVotes5, GA.EDVotes, GA.EDVotes95])
+               -> GV.VegaLite
+vlVotesVsModel title vc rows=
+  let toVLDataRec = FV.textAsVLStr "County"
+                    V.:& FV.asVLNumber "D_Votes_Ossoff"
+                    V.:& FV.asVLNumber "Model_D_Votes_5"
+                    V.:& FV.asVLNumber "Model_D_Votes"
+                    V.:& FV.asVLNumber "Model_D_Votes_95"
+                    V.:& V.RNil
+      dat = FV.recordsToData toVLDataRec rows
+      encX = GV.position GV.X [GV.PName "D_Votes_Ossoff", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "Model_D_Votes", GV.PmType GV.Quantitative]
+      enc = GV.encoding . encX . encY
+      mark = GV.mark GV.Point []
+  in FV.configuredVegaLite vc [FV.title title, enc [], mark, dat]
+      
+                    
 
 gaPUMATopoJSONUrl =  "https://raw.githubusercontent.com/blueripple/Georgia/main/topojson/ga_PUMAs.json"
 gaCountyTopoJSONUrl = "https://raw.githubusercontent.com/blueripple/Georgia/main/topojson/ga-counties.json"
