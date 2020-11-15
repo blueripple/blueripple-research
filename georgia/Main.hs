@@ -168,21 +168,30 @@ gaSenateAnalysis = do
 vlVotesVsModel :: Foldable f
                => T.Text
                -> FV.ViewConfig
-               -> f (F.Record [GA.County, GA.DVotes1, GA.EDVotes5, GA.EDVotes, GA.EDVotes95])
+               -> f (F.Record [GA.County, GA.DVotes1, GA.TVotes1, GA.ETVotes, GA.EDVotes])
                -> GV.VegaLite
 vlVotesVsModel title vc rows=
   let toVLDataRec = FV.textAsVLStr "County"
                     V.:& FV.asVLNumber "D_Votes_Ossoff"
-                    V.:& FV.asVLNumber "Model_D_Votes_5"
+                    V.:& FV.asVLNumber "T_Votes_Ossoff"                    
+                    V.:& FV.asVLNumber "Model_T_Votes"
                     V.:& FV.asVLNumber "Model_D_Votes"
-                    V.:& FV.asVLNumber "Model_D_Votes_95"
                     V.:& V.RNil
       dat = FV.recordsToData toVLDataRec rows
-      encX = GV.position GV.X [GV.PName "D_Votes_Ossoff", GV.PmType GV.Quantitative]
-      encY = GV.position GV.Y [GV.PName "Model_D_Votes", GV.PmType GV.Quantitative]
-      enc = GV.encoding . encX . encY
-      mark = GV.mark GV.Point []
-  in FV.configuredVegaLite vc [FV.title title, enc [], mark, dat]
+      calcTDiff = GV.calculateAs ("datum.T_Votes_Ossoff - datum.Model_T_Votes") "Total Votes: Actual - Model"
+      calcDDiff = GV.calculateAs ("datum.D_Votes_Ossoff - datum.Model_D_Votes") "D Votes: Actual - Model"
+      transform = GV.transform . calcTDiff . calcDDiff
+      encX = GV.position GV.X [GV.PName "Total Votes: Actual - Model", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "D Votes: Actual - Model", GV.PmType GV.Quantitative]
+      encSize = GV.size [GV.MName "D_Votes_Ossoff", GV.MmType GV.Quantitative]
+      encLabelText = GV.text [GV.TName "County", GV.TmType GV.Nominal]
+      labelMark = GV.mark GV.Text
+      encLabel = GV.encoding . encX . encY . encLabelText
+      enc = GV.encoding . encX . encY . encSize
+      mark = GV.mark GV.Circle []
+      dotSpec = GV.asSpec [enc [], mark]
+      labelSpec = GV.asSpec [encLabel [], labelMark []]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, labelSpec], transform [], dat]
       
                     
 

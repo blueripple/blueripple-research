@@ -124,7 +124,7 @@ runSenateModel dw (modelName, model) senateByCounty_C = do
                 <$> SM.makeDefaultModelRunnerConfig
                 "georgia/stan/senateByCounty"
                 (modelName <> "_model")
-                (Just (SB.NoLL, model))
+                (Just (SB.All, model))
                 (Just $ "senateByCounty.json")
                 (Just $ "senateByCounty_" <> modelName <> "_model")
                 4
@@ -226,8 +226,8 @@ binomialGeneratedQuantitiesBlock = [here|
 binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialGQLLBlock = [here|
   vector[G] log_lik;
-  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
-//  for (g in 1:G) {
-//    log_lik[g] =  binomial_logit_lpmf(DVotes1[g] | TVotes1[g], alphaD + X[g] * beta + aState[state[g]]);
-//  }
+//  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(DVotes1[g] | TVotes1[g], alphaD + Q_ast[g] * thetaD);
+  }
 |]   

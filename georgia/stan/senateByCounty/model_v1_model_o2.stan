@@ -36,10 +36,10 @@ model {
 }
 generated quantities {
 vector[G] log_lik;
-//  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
-  for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(DVotes1[g] | TVotes1[g], alphaD + Q_ast[g] * thetaD);
-  }
+  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
+//  for (g in 1:G) {
+//    log_lik[g] =  binomial_logit_lpmf(DVotes1[g] | TVotes1[g], alphaD + X[g] * beta + aState[state[g]]);
+//  }
 vector[K] betaV;
   vector[K] betaD;
   betaV = R_ast_inverse * thetaV;
