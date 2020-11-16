@@ -45,6 +45,7 @@ import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelConfig as SC
+import qualified Stan.RScriptBuilder as SR
 import qualified System.Environment as Env
 
 import qualified Knit.Report as K
@@ -140,7 +141,7 @@ runSenateModel dw (modelName, model) senateByCounty_C = do
         return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep  $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. (Re)-running..."
-    SM.runModel stanConfig SM.Both dw (SC.UseSummary getResults) () senateByCounty_C
+    SM.runModel stanConfig (SM.Both [SR.UnwrapJSON "DVotes1" "DVotes1", SR.UnwrapJSON "DVotes2" "DVotes2"]) dw (SC.UseSummary getResults) () senateByCounty_C
 
 
 model_v1 :: SB.StanModel

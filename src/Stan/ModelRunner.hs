@@ -90,20 +90,20 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
 modelCacheTime :: (K.KnitEffects r,  K.CacheEffectsD r) => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
 modelCacheTime config = K.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
 
-data RScripts = None | ShinyStan | Loo | Both deriving (Show, Eq, Ord)
+data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
 writeRScripts :: RScripts -> SC.ModelRunnerConfig -> IO ()
 writeRScripts rScripts config = do
   dirBase <- T.pack <$> Dir.getCurrentDirectory
   let modelDir = SC.mrcModelDir config
       scriptPrefix = SC.mrcOutputPrefix config
-      writeShiny = SR.shinyStanScript config dirBase >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> "_shinystan.R") 
+      writeShiny ujs = SR.shinyStanScript config dirBase ujs >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> "_shinystan.R") 
       writeLoo = SR.looScript config dirBase scriptPrefix 10 >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> ".R") 
   case rScripts of
     None -> return ()
-    ShinyStan -> writeShiny
+    ShinyStan ujs -> writeShiny ujs
     Loo -> writeLoo
-    Both -> writeShiny >> writeLoo
+    Both ujs -> writeShiny ujs >> writeLoo
 
 wrangleDataWithoutPredictions :: (K.KnitEffects r,  K.CacheEffectsD r)
                               => SC.ModelRunnerConfig

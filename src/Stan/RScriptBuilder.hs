@@ -24,7 +24,7 @@ import qualified System.Directory as Dir
 import Data.String.Here (here)
 
 
-libsForShinyStan = ["rstan", "shinystan"]
+libsForShinyStan = ["rstan", "shinystan", "rjson"]
 libsForLoo = ["rstan", "shinystan", "loo"]
 
 addLibs :: [T.Text] -> T.Text
@@ -49,17 +49,32 @@ rStanModel config = "stan_model(" <> (SB.modelFile $ SC.mrcModel config) <> ")"
 rExtractLogLikelihood :: SC.ModelRunnerConfig -> T.Text -> T.Text
 rExtractLogLikelihood config fitName = "extract_log_lik(" <> fitName <> ", merge_chains = FALSE)"
 
+rReadJSON :: SC.ModelRunnerConfig -> T.Text
+rReadJSON config = "jsonData <- fromJSON(file = \"data/" <> (SC.mrcDatFile config) <> "\")" 
+
 rPrint :: T.Text -> T.Text
 rPrint t = "print(\"" <> t <> "\")"
 
-shinyStanScript :: SC.ModelRunnerConfig -> T.Text -> IO T.Text
-shinyStanScript config dirBase = do
+           
+data UnwrapJSON = UnwrapJSON { jsonName :: T.Text, rName :: T.Text } deriving (Show, Eq, Ord)
+           
+shinyStanScript :: SC.ModelRunnerConfig -> T.Text -> [UnwrapJSON] -> IO T.Text
+shinyStanScript config dirBase unwrapJSONs = do
   rSetCWD <- rSetWorkingDirectory config dirBase
+  let unwrapCode = if null unwrapJSONs
+                   then ""
+                   else
+                     let unwrap (UnwrapJSON jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
+                         unwraps = mconcat $ fmap unwrap unwrapJSONs
+                     in rReadJSON config
+                        <> "\n"
+                        <> unwraps
   let rScript = addLibs libsForShinyStan
                 <> "\n"
                 <> rSetCWD <> "\n"
                 <> rPrint "Loading csv output.  Might take a minute or two..." <> "\n"
                 <> rReadStanCSV config "stanFit" <> "\n"
+                <> unwrapCode
 --                <> "stanFit@stanModel <- " <> rStanModel config
                 <> rPrint "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanFit)\n"
