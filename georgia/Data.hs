@@ -10,6 +10,7 @@
 module Data where
 
 import qualified GA_DataFrames as GA
+import qualified Parsers as GA
 
 import qualified Control.Foldl as FL
 import Control.Monad (when)
@@ -266,6 +267,63 @@ gaProcessSenate = do
   gaProcessElex1 "../Georgia/data/election/Senate1.csv"
   gaProcessElex1 "../Georgia/data/election/Senate2.csv"
   
+
+wide2LongByCounty :: GA.Parsec [[T.Text]]
+wide2LongByCounty = GA.wideReturns
+                     ["County","RegisteredVoters"]
+                     ["Candidate","Party","Method"]
+                     GA.parseWideHeader
+
+wide2LongByPrecinct :: GA.Parsec [[T.Text]]
+wide2LongByPrecinct  = GA.wideReturns
+                     ["County","RegisteredVoters"]
+                     ["Candidate","Party","Method"]
+                     GA.parseWideHeader                     
+
+
+--type County = "County
+type RegVoters = "RegVoters" F.: -> Int
+type CandidateName = "CandidateName" F.:-> T.Text
+type PartyT = "Party" F.:-> T.Text
+type VoteMethod = "VoteMethod" F.:-> T.Text
+type Votes = "Votes" F.:-> Int
+
+type CountyReturns = [BR.CountyName, BR.CountyFIPS, CandidateName, PartyT, VoteMethod, Votes]
+
+loadReturnsByCountyFromWide ::  M.Map T.Text T.Text
+                            -> T.Text
+                            -> FilePath
+                            -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CountyReturns))
+loadReturnsByCountyFromWide gaFIPSByCounty cacheKey wideFP = do
+  wideCSVDep <- K.fileDependency wideFP
+  K.retrieveOrMakeFrame ("georgia/countyReturns/" <> cacheKey) wideCSVDep $ \_ ->
+    K.logLE K.Info $ "\"" <> wideFP <> "\" newer than cached or cached not found.  Rebuilding."
+    K.logLE K.Info $ "Parsing"
+    
+    
+  
+  
+
+type Precinct = "Precinct" F.: -> T.Text
+type PrecinctReturns = [BR.CountyName, BR.CountyFIPS, Precinct, CandidateName, PartyT, VoteMethod, Votes]
+
+loadReturnsByPrecinctFromWide ::  M.Map T.Text T.Text -> FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PrecinctReturns))
+loadReturnsByPrecinctFromWide = undefined
+
+
+meltReturnData :: (K.KnitEffects r, K.CacheEffectsD r) => GA.Parsec [[T.Text]] -> [T.Text] -> K.Sem r ()
+meltReturnData parser dirs = do
+  let processDir d = do
+        createDirIfNecessary (d <> "/long")
+        csvFiles <- filter (T.isSuffixOf ".csv") . fmap T.pack <$> K.liftKnit (System.listDirectory $ T.unpack d)
+        let inputFP fp = T.unpack $ d <> "/" <> fp
+            outputFP fp = T.unpack $  d <> "/long/" <> fp
+            meltOne fp = GA.reformatFileToCSV  (inputFP fp) parser (outputFP fp) 
+        traverse (K.liftKnit . meltOne) csvFiles
+  _ <- traverse processDir dirs
+  return ()      
+
+
   
 gaProcessElex1 :: K.KnitEffects r => FilePath -> K.Sem r ()
 gaProcessElex1 fp = do
@@ -298,21 +356,17 @@ gaProcessElex1 fp = do
   res <- K.knitMaybe ("csv loading error in \"" <> T.pack fp <> "\"") $ processFile csv
   K.liftKnit $ T.writeFile (T.unpack outFile) res
 
-gaMeltRepo :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r ()
-gaMeltRepo = gaMeltElexData
-             $ fmap ("/Users/adam/DataScience/techiesforga/data/elections/2020_november/county_delimited_results/cleaned/" <>)
-             ["US Senate","US House","US President","State House", "District Attorney", "State Senate"]
+gaMeltByCountyRepo :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r ()
+gaMeltByCountyRepo = meltReturnData wide2LongByCounty
+             $ fmap ("/Users/adam/DataScience/techiesforga/data/elections/2020_november/" <>)
+             ["all_counties_joined","all_counties_joined/other_races"]
+
+gaMeltByPrecinctRepo :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r ()
+gaMeltByPrecinctRepo = meltReturnData wide2LongByPrecinct
+                       $ fmap ("/Users/adam/DataScience/techiesforga/data/elections/2020_november/" <>)
+                       ["all_counties_joined","all_counties_joined/other_races"]
   
 
-gaMeltElexData :: (K.KnitEffects r, K.CacheEffectsD r) => [T.Text] -> K.Sem r ()
-gaMeltElexData dirs = do
-  fipsMap <- K.ignoreCacheTimeM gaCountyToCountyFIPS
-  let processDir d = do
-        createDirIfNecessary (d <> "/long")
-        csvFiles <- filter (T.isSuffixOf ".csv") . fmap T.pack <$> K.liftKnit (System.listDirectory $ T.unpack d)
-        traverse (gaProcessElex2 fipsMap) $ fmap (T.unpack . (\f -> d <> "/" <> f)) csvFiles
-  _ <- traverse processDir dirs
-  return ()      
 
 gaProcessElex2 :: K.KnitEffects r => M.Map T.Text T.Text -> FilePath -> K.Sem r ()
 gaProcessElex2 countyFIPSByCounty fp = do

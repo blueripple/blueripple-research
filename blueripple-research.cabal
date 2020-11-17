@@ -262,7 +262,8 @@ executable ga-work
                , directory
                , megaparsec
                , polysemy-RandomFu
-               , hs-cmdstan               
+               , hs-cmdstan
+               , say
   
 executable FEC-data
   import: deps
