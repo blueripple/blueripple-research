@@ -12,6 +12,7 @@ module Main where
 import qualified GA_DataFrames as GA
 import qualified Data as GA
 import qualified Models as GA
+import qualified Parsers as GA
 
 import qualified Control.Foldl as FL
 import Control.Monad (when)
@@ -111,11 +112,21 @@ main= do
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ gaAnalysis
+  resE <- K.knitHtml knitConfig $ gaTestParser
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "../Georgia/GA.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
+
+
+gaTestParser :: (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
+gaTestParser = do
+  csvAsText <- K.liftKnit $ T.readFile "/Users/adam/DataScience/techiesforga/data/elections/2020_november/all_precincts_joined/US Senate (Perdue).csv"
+  let parser = GA.wideReturns
+               ["County","Precinct","RegisteredVoters"]
+               ["Candidate","Party","Method"]
+               GA.parseWideHeader
+  K.liftKnit $ GA.parseTest parser csvAsText
 
 
 gaAnalysis :: forall r.(K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
