@@ -13,7 +13,7 @@ import qualified GA_DataFrames as GA
 import qualified Parsers as GA
 
 import qualified Control.Foldl as FL
-import Control.Monad (when)
+import Control.Monad (when, join)
 import qualified Numeric.Foldl as NFL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
@@ -28,6 +28,7 @@ import qualified Data.Text.IO as T
 
 import qualified Frames as F
 import qualified Frames.Streamly.CSV as FS
+import qualified Frames.Streamly.InCore as FS
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins as FJ
@@ -77,6 +78,7 @@ import qualified System.Environment as Env
 import qualified System.Directory              as System
 
 import qualified Knit.Report as K
+import qualified Knit.Utilities.Streamly as KS
 import           Polysemy.RandomFu              (RandomFu, runRandomIO, runRandomIOPureMT)
 import Data.String.Here (here)
 
@@ -131,16 +133,16 @@ votesF :: forall v t. (V.KnownField v
                       , V.KnownField t
                       , V.Snd t ~ Int
                       )
-       => T.Text -> FL.Fold GA.Senate (F.FrameRec [BR.CountyFIPS, GA.County, v, t])
+       => T.Text -> FL.Fold (F.Record CountyReturns) (F.FrameRec [BR.CountyFIPS, BR.CountyName, v, t])
 votesF p =
-  let f r = F.rgetField @GA.Method r == "Total"
+  let f r = F.rgetField @VoteMethod r == "Choice Total"
       totalF = (\v t -> v F.&: t F.&: V.RNil)
-               <$> FL.prefilter ((== p) . F.rgetField @GA.Party) (FL.premap (F.rgetField @GA.Votes) FL.sum)
-               <*> FL.premap (F.rgetField @GA.Votes) FL.sum
+               <$> FL.prefilter ((== p) . F.rgetField @PartyT) (FL.premap (F.rgetField @Votes) FL.sum)
+               <*> FL.premap (F.rgetField @Votes) FL.sum
   in FMR.concatFold
      $ FMR.mapReduceFold
      (FMR.unpackFilterRow f)
-     (FMR.assignKeysAndData @[BR.CountyFIPS, GA.County] @[GA.Party, GA.Votes])
+     (FMR.assignKeysAndData @[BR.CountyFIPS, BR.CountyName] @[PartyT, Votes])
      (FMR.foldAndAddKey totalF)
 
 type DVotes1 = "DVotes1" F.:-> Int
@@ -150,22 +152,23 @@ type TVotes1 = "TVotes1" F.:-> Int
 type TVotes2 = "TVotes2" F.:-> Int
 
 
-type SenateByCounty = [BR.CountyFIPS,GA.County, DVotes1, TVotes1, DVotes2, TVotes2] V.++ CountySummary
+type SenateByCounty = [BR.CountyFIPS, BR.CountyName, DVotes1, TVotes1, DVotes2, TVotes2] V.++ CountySummary
 
 gaSenateToModel :: forall r.(K.KnitOne r,  K.CacheEffectsD r)
            => K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateByCounty))
 gaSenateToModel = do
-  let addGAFIPS :: GA.Senate -> GA.Senate
+  let addGAFIPS :: F.Record CountyReturns -> F.Record CountyReturns
       addGAFIPS r = F.rputField @BR.CountyFIPS (F.rgetField @BR.CountyFIPS r + 13000) r
   gaSenate1_C <- fmap (fmap addGAFIPS) <$> gaSenate1Loader
   gaSenate2_C <- fmap (fmap addGAFIPS) <$> gaSenate2Loader
   gaDemo <- fmap (F.rcast @('[BR.CountyFIPS] V.++ CountySummary)) <$> gaCountyDemographics  
-  BR.logFrame gaDemo
+--  BR.logFrame gaDemo
+--  K.ignoreCacheTime gaSenate2_C >>= BR.logFrame
   let deps = (,) <$> gaSenate1_C <*> gaSenate2_C
---  K.clearIfPresent "georgia/senateVotesAndDemo.bin"
+  K.clearIfPresent "georgia/senateVotesAndDemo.bin"
   toModel_C <- BR.retrieveOrMakeFrame "georgia/senateVotesAndDemo.bin" deps $ \(s1, s2) -> do
-    let senate1Votes = FL.fold (votesF @DVotes1 @TVotes1 "D") s1
-        senate2Votes = fmap (F.rcast @[BR.CountyFIPS, DVotes2, TVotes2]) $ FL.fold (votesF @DVotes2 @TVotes2 "D") s2
+    let senate1Votes = FL.fold (votesF @DVotes1 @TVotes1 "Dem") s1
+        senate2Votes = fmap (F.rcast @[BR.CountyFIPS, DVotes2, TVotes2]) $ FL.fold (votesF @DVotes2 @TVotes2 "Dem") s2
         (combined, missing1, missing2) = FJ.leftJoin3WithMissing @'[BR.CountyFIPS] senate1Votes senate2Votes gaDemo
     when (not $ null missing1) $  K.knitError $ "missing counties in votes1 and votes2 join: " <> (T.pack $ show missing1)
     when (not $ null missing2) $  K.knitError $ "missing counties in votes1 and demo join: " <> (T.pack $ show missing2)
@@ -240,27 +243,34 @@ gaCountyDemographics = do
     gaPUMAs
 -}
 
-gaCountyToCountyFIPS :: (K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (M.Map T.Text T.Text))
+gaCountyToCountyFIPS :: (K.KnitEffects r,  K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (M.Map T.Text Int))
 gaCountyToCountyFIPS = do
-  gaSenate1_C <- gaSenate1Loader
+  gaSenate1_C <- gaSenate1LoaderOld
+  K.clearIfPresent "georgia/countyToFIPS.bin"
   K.retrieveOrMake "georgia/countyToFIPS.bin" gaSenate1_C $
-    return . FL.fold (FL.premap (\r -> (F.rgetField @GA.County r, T.pack $ show $ F.rgetField @GA.CountyFIPS r)) FL.map)
+    return . FL.fold (FL.premap (\r -> (F.rgetField @GA.County r, F.rgetField @GA.CountyFIPS r)) FL.map)
 
 
 
 
-votesByMethodAndPartyF :: FL.Fold GA.Senate (F.FrameRec [GA.CountyFIPS, GA.County, GA.Party, GA.Method, GA.Votes])
+votesByMethodAndPartyF :: FL.Fold (F.Record CountyReturns) (F.FrameRec [BR.CountyFIPS, BR.CountyName, PartyT, VoteMethod, Votes])
 votesByMethodAndPartyF = FMR.concatFold
                          $ FMR.mapReduceFold
                          FMR.noUnpack
-                         (FMR.assignKeysAndData @[GA.CountyFIPS, GA.County, GA.Party, GA.Method] @'[GA.Votes])
+                         (FMR.assignKeysAndData @[BR.CountyFIPS, BR.CountyName, PartyT, VoteMethod] @'[Votes])
                          (FMR.foldAndAddKey (FF.foldAllConstrained @Num FL.sum))
 
-gaSenate1Loader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame GA.Senate))
-gaSenate1Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate1CSV) Nothing Nothing id Nothing "georgia/senate1.bin"
+gaSenate1Loader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CountyReturns))
+gaSenate1Loader = loadReturnsByCountyFromWide "senate1.bin" "/Users/adam/DataScience/techiesforga/data/elections/2020_november/all_counties_joined/US Senate (Perdue).csv"
+--gaSenate1Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate1CSV) Nothing Nothing id Nothing "georgia/senate1.bin"
 
-gaSenate2Loader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame GA.Senate))
-gaSenate2Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate2CSV) Nothing Nothing id Nothing "georgia/senate2.bin"
+gaSenate2Loader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CountyReturns))
+gaSenate2Loader = loadReturnsByCountyFromWide "senate2.bin" "/Users/adam/DataScience/techiesforga/data/elections/2020_november/all_counties_joined/US Senate (Loeffler) - Special.csv"                                                                  
+--gaSenate2Loader = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate2CSV) Nothing Nothing id Nothing "georgia/senate2.bin"
+
+gaSenate1LoaderOld :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame GA.Senate))
+gaSenate1LoaderOld = BR.cachedFrameLoader (BR.LocalData $ T.pack GA.senate1CSV) Nothing Nothing id Nothing "georgia/senate1Old.bin"
+
 
 gaProcessSenate :: K.KnitEffects r => K.Sem r ()
 gaProcessSenate = do
@@ -282,29 +292,48 @@ wide2LongByPrecinct  = GA.wideReturns
 
 
 --type County = "County
-type RegVoters = "RegVoters" F.: -> Int
+type RegVoters = "RegVoters" F.:-> Int
 type CandidateName = "CandidateName" F.:-> T.Text
 type PartyT = "Party" F.:-> T.Text
 type VoteMethod = "VoteMethod" F.:-> T.Text
 type Votes = "Votes" F.:-> Int
 
-type CountyReturns = [BR.CountyName, BR.CountyFIPS, CandidateName, PartyT, VoteMethod, Votes]
+type CountyReturns = [BR.CountyFIPS, BR.CountyName, RegVoters, CandidateName, PartyT, VoteMethod, Votes]
 
-loadReturnsByCountyFromWide ::  M.Map T.Text T.Text
-                            -> T.Text
+loadReturnsByCountyFromWide :: (K.KnitEffects r,  K.CacheEffectsD r)
+                            => T.Text
                             -> FilePath
                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CountyReturns))
-loadReturnsByCountyFromWide gaFIPSByCounty cacheKey wideFP = do
+loadReturnsByCountyFromWide cacheKey wideFP = K.wrapPrefix "loadReturnsByCountyWide" $ do
+  K.logLE K.Info $ "here"
+  countyFIPSMap_C <- gaCountyToCountyFIPS 
   wideCSVDep <- K.fileDependency wideFP
-  K.retrieveOrMakeFrame ("georgia/countyReturns/" <> cacheKey) wideCSVDep $ \_ ->
-    K.logLE K.Info $ "\"" <> wideFP <> "\" newer than cached or cached not found.  Rebuilding."
-    K.logLE K.Info $ "Parsing"
+  let deps = const <$> countyFIPSMap_C <*> wideCSVDep
+      addFIPS :: M.Map T.Text Int -> F.Record [BR.CountyName, RegVoters, CandidateName, PartyT, VoteMethod, Votes] -> Either T.Text (F.Record CountyReturns)
+      addFIPS m r = do
+        let countyName = F.rgetField @BR.CountyName r
+        fips <- maybe (Left $ "failed to find " <> countyName <> " in FIPS lookup") Right $ M.lookup countyName m
+        return $ fips F.&: r
+  BR.retrieveOrMakeFrame ("georgia/countyReturns/" <> cacheKey) deps $ \fipsMap -> do
+    K.logLE K.Info $ "\"" <> T.pack wideFP <> "\" (or countyFIPS map) newer than cached or cached not found.  Rebuilding."
+    K.logLE K.Info $ "Reading \"" <> (T.pack wideFP) <> "\" from disk."
+    csv <- K.liftKnit $ T.readFile wideFP
+    K.logLE K.Info $ "Parsing \"" <> (T.pack wideFP) <> "\" into [[Text]]."
+    llText <- either (K.knitError . T.pack . show) return $ GA.parse wide2LongByCounty wideFP csv
+    K.logLE K.Info $ "Streaming [Text] (yes, we put the commas back) into frame."
+    let lineStream = Streamly.fromList $ fmap (T.intercalate ",") llText -- (IsStream t, Monad m) => t m [Text]
+        recEStream = FS.streamTableEither lineStream -- t m (F.Rec (Either T.Text .: ElField) X)
+    recEList <- KS.streamlyToKnit $ Streamly.toList $ Streamly.map (join . fmap (addFIPS fipsMap) . F.rtraverse V.getCompose) recEStream
+    recList <- K.knitEither $ either (\err -> Left $ err <> (T.pack $ show fipsMap)) Right $ sequence $ recEList -- t m (Either T.Text (F.Record X))
+--    withFIPSs <-  K.knitEither $ sequence $ Streamly.map (addFIPS fipsMap) recList
+    KS.streamlyToKnit $ FS.inCoreAoS $ Streamly.fromList recList
+    
     
     
   
   
 
-type Precinct = "Precinct" F.: -> T.Text
+type Precinct = "Precinct" F.:-> T.Text
 type PrecinctReturns = [BR.CountyName, BR.CountyFIPS, Precinct, CandidateName, PartyT, VoteMethod, Votes]
 
 loadReturnsByPrecinctFromWide ::  M.Map T.Text T.Text -> FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PrecinctReturns))

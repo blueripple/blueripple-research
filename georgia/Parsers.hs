@@ -14,7 +14,7 @@ module Parsers
 where
 
 import qualified Text.Megaparsec as P
-import Text.Megaparsec (parseTest)
+import Text.Megaparsec (parseTest, parse)
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as L
 import qualified Control.Monad as Monad

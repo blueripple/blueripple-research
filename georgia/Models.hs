@@ -12,7 +12,7 @@ module Models where
 import qualified Data as GA
 import qualified GA_DataFrames as GA
 
---import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DataFrames as BR
 --import qualified BlueRipple.Data.Loaders as BR
 --import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -56,7 +56,7 @@ type GASenateDataWrangler = SC.DataWrangler (F.FrameRec GA.SenateByCounty) () ()
 gaSenateModelDataWrangler :: GASenateDataWrangler
 gaSenateModelDataWrangler = SC.Wrangle SC.NoIndex f where
 --  dataIndex = SC.CacheableIndex $ \c -> "georgia/stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin"
-  enumCountyF = FL.premap (F.rgetField @GA.County) (SJ.enumerate 1)
+  enumCountyF = FL.premap (F.rgetField @BR.CountyName) (SJ.enumerate 1)
   f :: F.FrameRec GA.SenateByCounty -> ((), F.FrameRec GA.SenateByCounty -> Either T.Text A.Series)
   f sbc = ((), makeDataJsonE) where
     (countyM, toCounty) = FL.fold enumCountyF sbc
@@ -66,7 +66,7 @@ gaSenateModelDataWrangler = SC.Wrangle SC.NoIndex f where
       predictRow r = Vec.fromList $ F.recToList $ F.rcast @[GA.FracYoung, GA.FracGrad, GA.FracBlack, GA.FracLatinX, GA.FracAsian, DT.PopPerSqMile] r 
       dataF = SJ.namedF "G" FL.length -- number of counties
               <> SJ.constDataF "K" (6 :: Int) -- number of predictors, not including intercept
-              <> SJ.valueToPairF "county" (SJ.jsonArrayMF (countyM . F.rgetField @GA.County))
+              <> SJ.valueToPairF "county" (SJ.jsonArrayMF (countyM . F.rgetField @BR.CountyName))
               <> SJ.valueToPairF "X" (SJ.jsonArrayF predictRow)
               <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
               <> SJ.valueToPairF "DVotes1" (SJ.jsonArrayF (F.rgetField @GA.DVotes1))
@@ -86,20 +86,20 @@ type Modeled = [VoteP, DVoteP, ETVotes, EDVotes5, EDVotes, EDVotes95]
 
 extractResults :: CS.StanSummary               
                -> F.FrameRec GA.SenateByCounty
-               -> Either T.Text (F.FrameRec ('[GA.County] V.++ Modeled))
+               -> Either T.Text (F.FrameRec ('[BR.CountyName] V.++ Modeled))
 extractResults summary senateByCounty = do
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVoteP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
   eTVote <- fmap CS.mean <$> SP.parse1D "eTVotes" (CS.paramStats summary)
   eDVotePcts <-  fmap CS.percents <$> SP.parse1D "eDVotes1" (CS.paramStats summary)  
   let probList = FL.fold FL.list $ Vec.zip4 (SP.getVector pVotedP) (SP.getVector pDVoteP) (SP.getVector eTVote) (SP.getVector eDVotePcts)
-      makeRow :: (F.Record GA.SenateByCounty, (Double, Double, Double, [Double])) -> Either T.Text (F.Record ('[GA.County] V.++ Modeled))
+      makeRow :: (F.Record GA.SenateByCounty, (Double, Double, Double, [Double])) -> Either T.Text (F.Record ('[BR.CountyName] V.++ Modeled))
       makeRow (sbcR, (pV, pD, eT, dPcts)) = do
         if length dPcts == 3
           then
           let [d5,d,d95] = dPcts
           in Right
-             $ F.rgetField @GA.County sbcR
+             $ F.rgetField @BR.CountyName sbcR
              F.&: pV
              F.&: pD
              F.&: round eT
@@ -116,7 +116,7 @@ runSenateModel :: (K.KnitEffects r,  K.CacheEffectsD r)
                => GASenateDataWrangler
                -> (T.Text, SB.StanModel)
                -> K.ActionWithCacheTime r (F.FrameRec GA.SenateByCounty)
-               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ('[GA.County] V.++ Modeled)))
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ('[BR.CountyName] V.++ Modeled)))
 runSenateModel dw (modelName, model) senateByCounty_C = do
   senateByCounty <- K.ignoreCacheTime senateByCounty_C
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ "georgia/stan/senateByCounty/" <> modelName)) { CS.useOpenCL = False }

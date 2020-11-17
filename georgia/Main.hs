@@ -9,7 +9,7 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module Main where
 
-import qualified GA_DataFrames as GA
+--import qualified GA_DataFrames as GA
 import qualified Data as GA
 import qualified Models as GA
 import qualified Parsers as GA
@@ -112,7 +112,7 @@ main= do
         , K.pandocWriterConfig = pandocWriterConfig
         }
   let pureMTseed = PureMT.pureMT 1
-  resE <- K.knitHtml knitConfig $ gaTestParser
+  resE <- K.knitHtml knitConfig $ gaAnalysis  
   case resE of
     Right htmlAsText ->
       K.writeAndMakePathLT "../Georgia/GA.html" htmlAsText
@@ -142,7 +142,7 @@ gaAnalysis = do
   modelRes_C <- BR.retrieveOrMakeFrame "georgia/modeled_v1.bin" modelResDeps $ \(sbc, model) -> do    
     K.knitEither
       $ either (Left . T.pack . show) Right
-      $ FJ.leftJoinE @'[GA.County] sbc model
+      $ FJ.leftJoinE @'[BR.CountyName] sbc model
   modelRes <- K.ignoreCacheTime modelRes_C
   _ <- K.addHvega Nothing Nothing $ vlVotesVsModel
        "Dem Votes vs. Model in the Ossoff Race"
@@ -152,7 +152,7 @@ gaAnalysis = do
   return ()
 
 gaRunSBCModel :: (K.KnitOne r,  K.CacheEffectsD r)
-              => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ('[GA.County] V.++ GA.Modeled)))
+              => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ('[BR.CountyName] V.++ GA.Modeled)))
 gaRunSBCModel = do
   sbc_C <- GA.gaSenateToModel 
   GA.runSenateModel GA.gaSenateModelDataWrangler ("model_v1", GA.model_v1) sbc_C
@@ -162,15 +162,15 @@ gaSenateAnalysis = do
   gaSenate1_C <- GA.gaSenate1Loader
   gaSenate2_C <- GA.gaSenate2Loader
   gaSenate1 <- K.ignoreCacheTime gaSenate1_C
-  let senate1PM = FL.fold GA.votesByMethodAndPartyF $ F.filterFrame ((/= "Total") . F.rgetField @GA.Method) gaSenate1
+  let senate1PM = FL.fold GA.votesByMethodAndPartyF $ F.filterFrame ((/= "Total") . F.rgetField @GA.VoteMethod) gaSenate1
   _ <- K.addHvega Nothing Nothing $ vlVotingMethod
     "Voting Method by County for Democratic votes in the Ossoff/Perdue race"
     (FV.ViewConfig 600 1500 10)
-    (fmap F.rcast $ F.filterFrame ((== "D") . F.rgetField @GA.Party) senate1PM)
+    (fmap F.rcast $ F.filterFrame ((== "D") . F.rgetField @GA.PartyT) senate1PM)
   _ <- K.addHvega Nothing Nothing $ vlVotingMethod
     "Voting Method by County for Republican votes in the Ossoff/Perdue race"
     (FV.ViewConfig 600 1500 10)
-    (fmap F.rcast $ F.filterFrame ((== "R") . F.rgetField @GA.Party) senate1PM)    
+    (fmap F.rcast $ F.filterFrame ((== "R") . F.rgetField @GA.PartyT) senate1PM)    
 --  gaProcessElex
   return ()
 
@@ -179,7 +179,7 @@ gaSenateAnalysis = do
 vlVotesVsModel :: Foldable f
                => T.Text
                -> FV.ViewConfig
-               -> f (F.Record [GA.County, GA.DVotes1, GA.TVotes1, GA.ETVotes, GA.EDVotes])
+               -> f (F.Record [BR.CountyName, GA.DVotes1, GA.TVotes1, GA.ETVotes, GA.EDVotes])
                -> GV.VegaLite
 vlVotesVsModel title vc rows=
   let toVLDataRec = FV.textAsVLStr "County"
@@ -246,7 +246,7 @@ vlDensityByPUMA title vc rows =
 vlSenate1 :: Foldable f
           => T.Text
           -> FV.ViewConfig
-          -> f (F.Record [GA.County, GA.DVotes1, GA.TVotes1, GA.DVotes2, GA.TVotes2, PUMS.Citizens])
+          -> f (F.Record [BR.CountyName, GA.DVotes1, GA.TVotes1, GA.DVotes2, GA.TVotes2, PUMS.Citizens])
           -> GV.VegaLite
 vlSenate1 title vc rows =
   let toVLDataRec = FV.useColName FV.textAsVLStr
@@ -270,7 +270,7 @@ vlSenate1 title vc rows =
 vlVotingMethod :: Foldable f
                => T.Text
                -> FV.ViewConfig
-               -> f (F.Record [GA.County, GA.Party, GA.Method, GA.Votes])
+               -> f (F.Record [BR.CountyName, GA.PartyT, GA.VoteMethod, GA.Votes])
                -> GV.VegaLite
 vlVotingMethod title vc rows =
   let toVLDataRec = FV.useColName FV.textAsVLStr
