@@ -1,0 +1,4 @@
+set CMDSTAN_DIR /Users/adam/DataScience/cmdstan-2.24.1/
+export CMDSTAN_DIR
+set CLANG_BINDIR /usr/local/opt/llvm/bin   
+export CLANG_BINDIR

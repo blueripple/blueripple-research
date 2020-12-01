@@ -171,10 +171,10 @@ runModel ::
   p ->
   K.ActionWithCacheTime r a ->
   K.Sem r c
-runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = do
+runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wrapPrefix "Stan.ModelRunner.runModel" $ do
   let modelNameS = T.unpack $ SC.mrcModel config
       modelDirS = T.unpack $ SC.mrcModelDir config
-
+  K.logLE K.Info "running Model"
   curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)
   let outputFiles = fmap (\n -> SC.outputFile (SC.mrcOutputPrefix config) n) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
