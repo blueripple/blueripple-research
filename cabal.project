@@ -1,7 +1,7 @@
 packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets
 jobs: 4
 with-compiler: ghc
-allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl
+allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl, knit-haskell
 -- hashable because of foldl-statistics
 -- random because of polysemy-zoo
 
@@ -46,12 +46,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 6735d38d026cae8a661c86633e5d9bb445bd58d7
+  tag: 04f5e697b6857172e6f25e671998ae25d935aa70
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 8c5c0a346c379c24255fd8eeee848662278f7a05
+  tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
     
 source-repository-package
   type: git

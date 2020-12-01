@@ -26,54 +26,20 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report                   as K
-import qualified Knit.Report.Cache             as K
-import qualified Knit.Utilities.Streamly       as K
 
-import qualified Polysemy                      as P
-import qualified Polysemy.Error                      as P
-import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Control.Lens                  as Lens      
 import           Control.Lens                   ((%~))
-import qualified Control.Monad.Catch.Pure      as Exceptions
-import           Control.Monad (join)
 import qualified Control.Foldl                 as FL
-import qualified Data.List                     as L
-import qualified Data.Map as M
-import           Data.Maybe                     ( catMaybes
-                                                , fromMaybe
-                                                )
-import qualified Data.Set                      as Set                 
-import qualified Data.Serialize                as S
 import           Data.Serialize.Text            ( )
-import           GHC.Generics                   ( Generic
-                                                , Rep
-                                                )
 import qualified Data.Text                     as T
-import qualified Data.Text.Read                as T
 
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Curry              as V
 import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
 
-import qualified Streamly as Streamly
-import qualified Streamly.Prelude as Streamly
-import qualified Streamly.Internal.Prelude as Streamly
-
-
-import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
 import qualified Frames.Serialize              as FS
-import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Streamly.InCore        as FStreamly
 
-import qualified System.Directory as System
-import GHC.TypeLits (Symbol)
-import Data.Kind (Type)
 
 electoralCollegeFrame :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ElectoralCollege))

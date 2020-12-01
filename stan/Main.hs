@@ -9,61 +9,22 @@
 module Main where
 
 import qualified Control.Foldl as FL
-import qualified Numeric.Foldl as NFL
-import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as M
-import qualified Data.Maybe as Maybe
 
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.Random.Source.PureMT     as PureMT
 import qualified Data.Text as T
-import qualified Text.Printf as Printf
-import qualified Data.Text.IO as T
 import qualified Frames as F
-import qualified Frames.Streamly.CSV as FS
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Encoding.Error as TE
-import qualified Data.Vinyl as V
-import qualified Data.Vinyl.TypeLevel as V
-import qualified Data.Vinyl.Functor            as V
-import qualified Data.Vector as Vec
 
-import qualified Data.Csv as CSV
+import Graphics.Vega.VegaLite.Configuration as FV ()
 
-import qualified Frames.MapReduce as FMR
-
-import qualified Graphics.Vega.VegaLite        as GV
-import           Graphics.Vega.VegaLite.Configuration as FV
-import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
-
-import qualified BlueRipple.Data.DataFrames as BR
-import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP as BR
-import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Model.CCES_MRP_Analysis as CCES
-import qualified BlueRipple.Data.Keyed as BK
-import qualified BlueRipple.Utilities.KnitUtils as BR
 
-import qualified BlueRipple.Model.House.ElectionResult as HEM
-import qualified BlueRipple.Model.CachedModels as BRC
 import qualified BlueRipple.Model.StanCCES as BRS
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
 
-import qualified Streamly.Prelude as Streamly
 
-import qualified CmdStan as CS
-import qualified CmdStan.Types as CS
-import qualified Stan.JSON as SJ
-import qualified Stan.Parameters as SP
-import qualified Stan.ModelRunner as SM
-import qualified System.Environment as Env
 
 import qualified Knit.Report as K
-import           Polysemy.RandomFu              (RandomFu, runRandomIO, runRandomIOPureMT)
+import           Polysemy.RandomFu              (RandomFu, runRandomIOPureMT)
 import Data.String.Here (here)
 
 
@@ -73,6 +34,7 @@ yamlAuthor = [here|
 - name: Frank David
 |]
 
+templateVars :: M.Map String String
 templateVars =
   M.fromList [("lang", "English")
              , ("site-title", "Blue Ripple Politics")
