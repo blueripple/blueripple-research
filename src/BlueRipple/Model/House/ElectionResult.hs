@@ -161,8 +161,8 @@ prepCachedData = do
 
 type HouseDataWrangler = SC.DataWrangler HouseData () ()
 
-houseDataWrangler :: Int -> HouseDataWrangler
-houseDataWrangler year = SC.Wrangle SC.NoIndex f
+houseDataWrangler :: HouseDataWrangler
+houseDataWrangler = SC.Wrangle SC.NoIndex f
   where
     -- house cols
     district r = F.rgetField @BR.StateAbbreviation r <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
@@ -217,13 +217,12 @@ type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 type HouseModelResults = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
 
 extractResults ::
-  Int ->
   CS.StanSummary ->
   HouseData ->
   Either T.Text (F.FrameRec HouseModelResults)
-extractResults year summary demographicsByDistrict = do
+extractResults summary demographicsByDistrict = do
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
-  pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVotedP" (CS.paramStats summary)
+  pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
   eTVote <- fmap CS.mean <$> SP.parse1D "eTVotes" (CS.paramStats summary)
   eDVotePcts <- fmap CS.percents <$> SP.parse1D "eDVotes" (CS.paramStats summary)
   let modeledL =
@@ -253,21 +252,19 @@ extractResults year summary demographicsByDistrict = do
           else Left ("Wrong number of percentiles in stan statistic")
   result <-
     traverse makeRow $
-      zip (FL.fold (FL.prefilter ((== year) . F.rgetField @BR.Year) FL.list) demographicsByDistrict) modeledL
+      zip (FL.fold FL.list demographicsByDistrict) modeledL
   return $ F.toFrame result
 
 runHouseModel ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
-  (Int -> HouseDataWrangler) ->
+  HouseDataWrangler ->
   (T.Text, SB.StanModel) ->
   K.ActionWithCacheTime r HouseData ->
-  Int ->
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults))
-runHouseModel hdwForYear (modelName, model) houseData_C year = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
-  --houseData <- K.ignoreCacheTime houseData_C
-  let workDir = "stan/house/election/"
-  let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> modelName)) {CS.useOpenCL = False}
+  let workDir = "stan/house/election"
+  let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
     SC.setSigFigs 4
       . SC.noLogOfSummary
@@ -288,13 +285,13 @@ runHouseModel hdwForYear (modelName, model) houseData_C year = K.wrapPrefix "Blu
   let dataModelDep = const <$> modelDep <*> houseData_C
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C
-        K.knitEither $ (extractResults year) s houseData
+        K.knitEither $ extractResults s houseData
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig
       (SM.Both [SR.UnwrapJSON "DVotes" "DVotes", SR.UnwrapJSON "TVotes" "TVotes"])
-      (hdwForYear year)
+      hdw
       (SC.UseSummary getResults)
       ()
       houseData_C

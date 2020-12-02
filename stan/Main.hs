@@ -9,6 +9,7 @@
 
 module Main where
 
+import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
@@ -72,14 +73,14 @@ testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
+    let filterToYear year = F.filterFrame ((== year) . F.rgetField @BR.Year)
     K.logLE K.Info "run model"
     stan_model2018 <-
       K.ignoreCacheTimeM $
         BRE.runHouseModel
           BRE.houseDataWrangler
           ("v1", BRE.model_v1)
-          houseData_C
-          2018
+          (fmap (filterToYear 2018) houseData_C)
     BR.logFrame stan_model2018
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
