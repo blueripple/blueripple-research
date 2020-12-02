@@ -175,7 +175,6 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
   let modelNameS = T.unpack $ SC.mrcModel config
       modelDirS = T.unpack $ SC.mrcModelDir config
   K.logLE K.Info "running Model"
-  curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)
   let outputFiles = fmap (\n -> SC.outputFile (SC.mrcOutputPrefix config) n) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
   checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!"
@@ -183,6 +182,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   indices_C <- wrangleData config dataWrangler cachedA toPredict
+  curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)
   stanOutput_C <- do
     curStanOutputs_C <- fmap K.oldestUnit $ traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time

@@ -263,7 +263,8 @@ runHouseModel ::
   K.ActionWithCacheTime r HouseData ->
   Int ->
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults))
-runHouseModel hdwForYear (modelName, model) houseData_C year = do
+runHouseModel hdwForYear (modelName, model) houseData_C year = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+  K.logLE K.Info "Running..."
   --houseData <- K.ignoreCacheTime houseData_C
   let workDir = "stan/house/election/"
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> modelName)) {CS.useOpenCL = False}
@@ -281,7 +282,9 @@ runHouseModel hdwForYear (modelName, model) houseData_C year = do
         (Just 1000)
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> modelName <> ".bin"
+  K.logLE K.Info "Model Cache Time"
   modelDep <- SM.modelCacheTime stanConfig
+  K.logLE K.Info "after Model Cache Time"
   let dataModelDep = const <$> modelDep <*> houseData_C
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C

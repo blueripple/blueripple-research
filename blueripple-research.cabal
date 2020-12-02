@@ -52,6 +52,7 @@ common deps
                , random-fu >= 0.2.7.3
                , random-source
                , semirings >= 0.5 && < 0.6
+               , say >= 0.1.0.1 && < 0.2
                , statistics
                , streamly >= 0.7.2 && < 0.8
                , text
