@@ -19,6 +19,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
+import Data.Maybe (fromMaybe)
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
@@ -169,13 +170,23 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
     tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
     enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
     enumDistrictF = FL.premap district (SJ.enumerate 1)
-    f houseData = ((), makeDataJsonE)
+    maxAvgIncomeF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
+    maxDensityF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
+    f _ = ((), makeDataJsonE)
       where
-        (stateM, toState) = FL.fold enumStateF houseData
-        (cdM, toCD) = FL.fold enumDistrictF houseData
         makeDataJsonE :: HouseData -> Either T.Text A.Series
         makeDataJsonE houseData = do
-          let predictRow :: F.Record DemographicsR -> Vec.Vector Double
+          let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
+                FL.fold
+                  ( (,,,)
+                      <$> enumStateF
+                      <*> enumDistrictF
+                      <*> maxAvgIncomeF
+                      <*> maxDensityF
+                  )
+                  houseData
+
+              predictRow :: F.Record DemographicsR -> Vec.Vector Double
               predictRow r =
                 Vec.fromList $
                   F.recToList $
@@ -321,7 +332,7 @@ betaBinomial_v1 =
 binomialDataBlock :: SB.DataBlock
 binomialDataBlock =
   [here|  
-  int<lower = 1> G; // number of counties
+  int<lower = 1> G; // number of districts 
   int<lower = 1> K; // number of predictors
   int<lower = 1, upper = G> district[G]; // do we need this?
   matrix[G, K] X;
@@ -333,12 +344,17 @@ binomialDataBlock =
 binomialTransformedDataBlock :: SB.TransformedDataBlock
 binomialTransformedDataBlock =
   [here|
+  matrix[G, K] X_centered;
+  for (k in 1:K) {
+    real col_mean = mean(X[,k]);
+    X_centered[,k] = X[,k] - col_mean;
+  } 
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
   // thin and scale the QR decomposition
-  Q_ast = qr_Q(X)[, 1:K] * sqrt(G - 1);
-  R_ast = qr_R(X)[1:K,]/sqrt(G - 1);
+  Q_ast = qr_Q(X_centered)[, 1:K] * sqrt(G - 1);
+  R_ast = qr_R(X_centered)[1:K,]/sqrt(G - 1);
   R_ast_inverse = inverse(R_ast);
 |]
 
