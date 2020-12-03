@@ -296,16 +296,27 @@ runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Mode
       ()
       houseData_C
 
-model_v1 :: SB.StanModel
-model_v1 =
+binomial_v1 :: SB.StanModel
+binomial_v1 =
   SB.StanModel
     binomialDataBlock
     (Just binomialTransformedDataBlock)
     binomialParametersBlock
-    Nothing
+    (Just binomialTransformedParametersBlock)
     binomialModelBlock
     (Just binomialGeneratedQuantitiesBlock)
     binomialGQLLBlock
+
+betaBinomial_v1 :: SB.StanModel
+betaBinomial_v1 =
+  SB.StanModel
+    binomialDataBlock
+    (Just binomialTransformedDataBlock)
+    betaBinomialParametersBlock
+    (Just betaBinomialTransformedParametersBlock)
+    betaBinomialModelBlock
+    (Just betaBinomialGeneratedQuantitiesBlock)
+    betaBinomialGQLLBlock
 
 binomialDataBlock :: SB.DataBlock
 binomialDataBlock =
@@ -343,16 +354,19 @@ binomialParametersBlock =
 binomialTransformedParametersBlock :: SB.TransformedParametersBlock
 binomialTransformedParametersBlock =
   [here|
-                                            
+  vector [K] betaV;
+  vector [K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
 |]
 
 binomialModelBlock :: SB.ModelBlock
 binomialModelBlock =
   [here|
-//  alphaD ~ normal(0, 2);
-//  alphaV ~ normal(0, 2);
-//  betaV ~ normal(0, 5);
-//  betaD ~ normal(0, 5);
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaD ~ cauchy(0, 2.5);
+  betaV ~ cauchy(0,2.5);
   TVotes ~ binomial_logit(VAP, alphaV + Q_ast * thetaV);
   DVotes ~ binomial_logit(TVotes, alphaD + Q_ast * thetaD);
 |]
@@ -360,10 +374,6 @@ binomialModelBlock =
 binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialGeneratedQuantitiesBlock =
   [here|
-  vector[K] betaV;
-  vector[K] betaD;
-  betaV = R_ast_inverse * thetaV;
-  betaD = R_ast_inverse * thetaD;
   vector<lower = 0, upper = 1>[G] pVotedP;
   vector<lower = 0, upper = 1>[G] pDVoteP;
   pVotedP = inv_logit(alphaV + (Q_ast * thetaV));
@@ -383,5 +393,61 @@ binomialGQLLBlock =
 //  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD + Q_ast[g] * thetaD);
+  }
+|]
+
+betaBinomialParametersBlock :: SB.ParametersBlock
+betaBinomialParametersBlock =
+  [here|
+  real alphaD;
+  real <lower=0, upper=1> dispD;                             
+  vector[K] thetaV;
+  real alphaV;
+  real <lower=0, upper=1> dispV;
+  vector[K] thetaD;
+|]
+
+betaBinomialTransformedParametersBlock :: SB.TransformedParametersBlock
+betaBinomialTransformedParametersBlock =
+  [here|
+  real <lower=0> phiD = (1-dispD)/dispD;
+  real <lower=0> phiV = (1-dispV)/dispV;
+  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD);
+  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector [K] betaV;
+  vector [K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
+|]
+
+betaBinomialModelBlock :: SB.ModelBlock
+betaBinomialModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaV ~ cauchy(0, 2.5);
+  betaD ~ cauchy(0, 2.5);
+
+  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
+|]
+
+betaBinomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialGeneratedQuantitiesBlock =
+  [here|
+  vector<lower = 0>[G] eTVotes;
+  vector<lower = 0>[G] eDVotes;
+  for (g in 1:G) {
+    eTVotes[g] = pVotedP[g] * VAP[g];
+    eDVotes[g] = pDVoteP[g] * TVotes[g];
+  }
+|]
+
+betaBinomialGQLLBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialGQLLBlock =
+  [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
   }
 |]

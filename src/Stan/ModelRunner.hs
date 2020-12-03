@@ -54,6 +54,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
   case modelM of
     Nothing -> return ()
     Just (gq, m) -> do
+      createDirIfNecessary modelDirT
       modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDirT modelNameT
       case modelState of
         SB.New -> K.logLE K.Info $ "Given model was new."

@@ -16,6 +16,7 @@ import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
+import qualified Data.Monoid as Monoid
 import qualified Data.Random.Source.PureMT as PureMT
 import Data.String.Here (here)
 import qualified Data.Text as T
@@ -73,15 +74,20 @@ testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
-    let filterToYear year = F.filterFrame ((== year) . F.rgetField @BR.Year)
-    K.logLE K.Info "run model"
-    stan_model2018 <-
-      K.ignoreCacheTimeM $
-        BRE.runHouseModel
-          BRE.houseDataWrangler
-          ("v1", BRE.model_v1)
-          (fmap (filterToYear 2018) houseData_C)
-    BR.logFrame stan_model2018
+    let isYear year = (== year) . F.rgetField @BR.Year
+        dVotes = F.rgetField @BRE.DVotes
+        rVotes = F.rgetField @BRE.RVotes
+        competitive r = dVotes r > 0 && rVotes r > 0
+        competitiveIn y r = isYear y r && competitive r
+    K.logLE K.Info "run model(s)"
+    let models = [("binomial_v1", BRE.binomial_v1), ("betaBinomial_v1", BRE.betaBinomial_v1)]
+        runOne x =
+          BRE.runHouseModel
+            BRE.houseDataWrangler
+            x
+            (fmap (F.filterFrame (competitiveIn 2018)) houseData_C)
+    results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
+    BR.logFrame (results !! 1)
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
