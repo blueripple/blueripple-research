@@ -29,6 +29,7 @@ import qualified Frames as F
 import qualified Frames.Folds as FF
 import qualified Frames.MapReduce as FMR
 import qualified Frames.SimpleJoins as FJ
+import qualified Frames.Transform as FT
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
 import qualified Stan.JSON as SJ
@@ -170,8 +171,8 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
     tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
     enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
     enumDistrictF = FL.premap district (SJ.enumerate 1)
-    maxAvgIncomeF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
-    maxDensityF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
+    maxAvgIncomeF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
+    maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
     f _ = ((), makeDataJsonE)
       where
         makeDataJsonE :: HouseData -> Either T.Text A.Series
@@ -190,16 +191,18 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
               predictRow r =
                 Vec.fromList $
                   F.recToList $
-                    F.rcast
-                      @[ FracUnder45,
-                         FracFemale,
-                         FracGrad,
-                         FracNonWhite,
-                         FracCitizen,
-                         DT.AvgIncome,
-                         DT.PopPerSqMile
-                       ]
-                      r
+                    FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) $
+                      FT.fieldEndo @DT.PopPerSqMile (/ maxDensity) $
+                        F.rcast
+                          @[ FracUnder45,
+                             FracFemale,
+                             FracGrad,
+                             FracNonWhite,
+                             FracCitizen,
+                             DT.AvgIncome,
+                             DT.PopPerSqMile
+                           ]
+                          r
               dataF =
                 SJ.namedF "G" FL.length
                   <> SJ.constDataF "K" (7 :: Int)
@@ -290,9 +293,7 @@ runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Mode
         (Just 1000)
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> modelName <> ".bin"
-  K.logLE K.Info "Model Cache Time"
   modelDep <- SM.modelCacheTime stanConfig
-  K.logLE K.Info "after Model Cache Time"
   let dataModelDep = const <$> modelDep <*> houseData_C
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C
@@ -326,6 +327,17 @@ betaBinomial_v1 =
     betaBinomialParametersBlock
     (Just betaBinomialTransformedParametersBlock)
     betaBinomialModelBlock
+    (Just betaBinomialGeneratedQuantitiesBlock)
+    betaBinomialGQLLBlock
+
+betaBinomialHS :: SB.StanModel
+betaBinomialHS =
+  SB.StanModel
+    binomialDataBlock
+    (Just binomialTransformedDataBlock)
+    betaBinomialHSParametersBlock
+    (Just betaBinomialTransformedParametersBlock)
+    betaBinomialHSModelBlock
     (Just betaBinomialGeneratedQuantitiesBlock)
     betaBinomialGQLLBlock
 
@@ -466,4 +478,36 @@ betaBinomialGQLLBlock =
   for (g in 1:G) {
     log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
   }
+|]
+
+betaBinomialHSParametersBlock :: SB.ParametersBlock
+betaBinomialHSParametersBlock =
+  [here|
+  real alphaD;
+  real <lower=0, upper=1> dispD;                             
+  vector[K] thetaV;
+  vector<lower=0>[K] lambdaV;
+  real<lower=0> tauV;
+  real alphaV;
+  real <lower=0, upper=1> dispV;
+  vector[K] thetaD;
+  vector<lower=0>[K] lambdaD;
+  real<lower=0> tauD;
+|]
+
+betaBinomialHSModelBlock :: SB.ModelBlock
+betaBinomialHSModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  lambdaD ~ cauchy(0, 1);
+  tauD ~ cauchy (0, 2.5);
+  alphaV ~ cauchy(0, 10);
+  lambdaV ~ cauchy(0, 2.5);
+  tauV ~ cauchy (0,1);
+  for (k in 1:K) {
+    thetaV[k] ~ cauchy(0, lambdaV[k] * tauV);
+    thetaD[k] ~ cauchy(0, lambdaD[k] * tauD);
+  }
+  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]

@@ -87,7 +87,10 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       True
 
 modelCacheTime :: (K.KnitEffects r, K.CacheEffectsD r) => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = K.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
+modelCacheTime config = do
+  modelFileDep <- K.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
+  jsonDataDep <- K.fileDependency (T.unpack $ SC.mrcModelDir config <> "/data/" <> (SC.mrcDatFile config))
+  return $ (\_ _ -> ()) <$> modelFileDep <*> jsonDataDep
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
