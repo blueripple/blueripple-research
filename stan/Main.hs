@@ -10,18 +10,21 @@
 module Main where
 
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
-import qualified Data.Monoid as Monoid
 import qualified Data.Random.Source.PureMT as PureMT
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Frames as F
-import Graphics.Vega.VegaLite.Configuration as FV ()
+import Frames.Visualization.VegaLite.Data as FV
+import Frames.Visualization.VegaLite.Histogram as FV
+--import Graphics.Vega.VegaLite as GV
+import Graphics.Vega.VegaLite.Configuration as FV
 import qualified Knit.Report as K
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
@@ -74,6 +77,14 @@ testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
+    houseData <- K.ignoreCacheTime houseData_C
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes
         rVotes = F.rgetField @BRE.RVotes

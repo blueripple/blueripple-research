@@ -29,7 +29,7 @@ common deps
                , exceptions >= 0.10.4 && < 0.11
                , Frames >= 0.6.1 && < 0.8
                , Frames-map-reduce >= 0.3.0.0
-               , Frames-hvega
+               , Frames-hvega >= 0.3
                , Frames-utils >= 0.3.1
                , Frames-streamly >= 0.1.0
                , foldl >= 1.4 && < 1.5

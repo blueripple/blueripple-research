@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets
+packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-hvega
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl, knit-haskell
@@ -53,10 +53,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-streamly
   tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
     
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-hvega
-  tag: aa024db6591b77a83f9efa63c7bc08b263d43c23
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-hvega
+--  tag: aa024db6591b77a83f9efa63c7bc08b263d43c23
 
 source-repository-package
   type: git
