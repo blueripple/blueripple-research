@@ -1,4 +1,4 @@
-cabal-version:       2.2.0
+cabal-version:       3.0
 name:                blueripple-research
 
 version:             0.3.0.0
@@ -61,7 +61,36 @@ common deps
                , vector >= 0.11 && < 0.13
                , vector-builder >= 0.3.7 && < 0.4
                , vinyl >= 0.13 && < 0.14
-                     
+
+library  haskell-stan
+  build-depends: base >= 4.13 && < 4.16
+                 , aeson >= 1.4 && < 1.6
+                 , bytestring >= 0.10 && < 0.12 
+                 , cereal-vector >= 0.2 && < 0.3
+                 , containers
+                 , directory >= 1.3.3 && < 1.4
+                 , foldl >= 1.4 && < 1.5
+                 , Frames >= 0.6.1 && < 0.8
+                 , hs-cmdstan >= 0.1 && < 0.2
+                 , here
+                 , knit-haskell >= 0.9 && < 0.11
+                 , polysemy
+                 , say >= 0.1.0.1 && < 0.2
+                 , text 
+                 , time
+                 , vector 
+                 , vector-builder >= 0.3.7 && < 0.4
+                 , vinyl >= 0.13 && < 0.14
+  exposed-modules: Stan.JSON
+                  , Stan.Parameters
+                  , Stan.ModelConfig
+                  , Stan.ModelRunner
+                  , Stan.ModelBuilder
+                  , Stan.RScriptBuilder
+                  , Stan.Frames
+  hs-source-dirs:   haskell-stan/src
+  default-language: Haskell2010
+
 library
   import: deps
   ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16 -fprint-potential-instances
@@ -100,14 +129,7 @@ library
                  , BlueRipple.Model.House.ElectionResult
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
-                 , BlueRipple.Utilities.FramesUtils
-                 , Stan.JSON
-                 , Stan.Parameters
-                 , Stan.ModelConfig
-                 , Stan.ModelRunner
-                 , Stan.ModelBuilder
-                 , Stan.RScriptBuilder
-                 , Stan.Frames
+                 , BlueRipple.Utilities.FramesUtils               
                  , Paths_blueripple_research
   build-depends:       base >=4.11
                      , ad >= 3.4 && < 4.4
@@ -125,6 +147,7 @@ library
                      , hs-cmdstan
                      , hashable
                      , hashtables >= 1.2.3.4 && < 1.3
+                     , haskell-stan
                      , hmatrix
                      , lens                    
                      , math-functions
@@ -248,6 +271,7 @@ executable stan-models
                , bytestring
                , cassava
                , polysemy-RandomFu
+               , haskell-stan
                , hs-cmdstan
 
 executable ga-work
