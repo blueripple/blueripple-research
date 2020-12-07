@@ -12,6 +12,7 @@ module Main where
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -25,6 +26,9 @@ import Frames.Visualization.VegaLite.Data as FV
 import Frames.Visualization.VegaLite.Histogram as FV
 --import Graphics.Vega.VegaLite as GV
 import Graphics.Vega.VegaLite.Configuration as FV
+  ( AxisBounds (DataMinMax),
+    ViewConfig (ViewConfig),
+  )
 import qualified Knit.Report as K
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
@@ -76,6 +80,9 @@ testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
+    houseWithIncumbents_C <- BR.houseElectionsWithIncumbency
+    houseWithIncumbents <- K.ignoreCacheTime houseWithIncumbents_C
+    BR.logFrame $ F.filterFrame ((>= 2012) . F.rgetField @BR.Year) houseWithIncumbents
     houseData_C <- BRE.prepCachedData
     houseData <- K.ignoreCacheTime houseData_C
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData

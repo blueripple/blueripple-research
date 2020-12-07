@@ -19,6 +19,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
+import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import Data.String.Here (here)
 import qualified Data.Text as T
