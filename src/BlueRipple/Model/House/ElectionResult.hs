@@ -107,21 +107,47 @@ pumsDataF =
           V.:& FF.toFoldRecord citF
           V.:& V.RNil
 
-electionF :: FL.Fold (F.Record BR.HouseElectionCols) (F.FrameRec (KeyR V.++ ElectionR))
+electionF :: FL.FoldM (Either T.Text) (F.Record BR.HouseElectionCols) (F.FrameRec (KeyR V.++ ElectionR))
 electionF =
-  FMR.concatFold $
-    FMR.mapReduceFold
-      FMR.noUnpack
-      (FMR.assignKeysAndData @KeyR)
-      (FMR.foldAndAddKey flattenVotesF)
+  FMR.concatFoldM $
+    FMR.mapReduceFoldM
+      (FMR.generalizeUnpack FMR.noUnpack)
+      (FMR.generalizeAssign $ FMR.assignKeysAndData @KeyR)
+      (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
 
-flattenVotesF :: FL.Fold (F.Record [ET.Party, ET.Votes]) (F.Record ElectionR)
-flattenVotesF =
-  let party = F.rgetField @ET.Party
-      votes = F.rgetField @ET.Votes
-      demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
-      repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
-   in (\dv rv -> dv F.&: rv F.&: V.RNil) <$> demVotesF <*> repVotesF
+flattenVotesF :: FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Party, ET.Votes]) (F.Record ElectionR)
+flattenVotesF = fmap (FL.fold flattenF) aggregatePartiesF
+  where
+    party = F.rgetField @ET.Party
+    votes = F.rgetField @ET.Votes
+    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
+    flattenF = (\dv rv -> dv F.&: rv F.&: V.RNil) <$> demVotesF <*> repVotesF
+
+aggregatePartiesF ::
+  FL.FoldM
+    (Either T.Text)
+    (F.Record [BR.Candidate, ET.Party, ET.Votes])
+    (F.FrameRec [BR.Candidate, ET.Party, ET.Votes])
+aggregatePartiesF =
+  let apF :: FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
+      apF = FMR.postMapM ap (FL.generalize $ FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
+        where
+          ap pvs =
+            let demvM = M.lookup ET.Democratic pvs
+                repvM = M.lookup ET.Republican pvs
+                votes = FL.fold FL.sum $ M.elems pvs
+                partyE = case (demvM, repvM) of
+                  (Nothing, Nothing) -> Right ET.Other
+                  (Just _, Nothing) -> Right ET.Democratic
+                  (Nothing, Just _) -> Right ET.Republican
+                  (Just dv, Just rv) -> Left "Votes on both D and R lines"
+             in fmap (\p -> p F.&: votes F.&: V.RNil) partyE
+   in FMR.concatFoldM $
+        FMR.mapReduceFoldM
+          (FMR.generalizeUnpack FMR.noUnpack)
+          (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.Candidate] @[ET.Party, ET.Votes])
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
 prepCachedData ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -144,12 +170,12 @@ prepCachedData = do
   --
   houseElections_C <- BR.houseElectionsLoader
   let houseDataDeps = (,) <$> pumsByCD_C <*> houseElections_C
-  --  BR.clearIfPresentD "model/house/demographicsAndElections.bin"
+  --BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeFrame "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex) -> do
     K.logLE K.Info "HouseData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
-        electionResults = FL.fold electionF (F.filterFrame ((>= 2012) . F.rgetField @BR.Year) elex)
-        (demoAndElex, missing) = FJ.leftJoinWithMissing @KeyR demographics electionResults
+    electionResults <- K.knitEither $ FL.foldM electionF (F.filterFrame ((>= 2012) . F.rgetField @BR.Year) elex)
+    let (demoAndElex, missing) = FJ.leftJoinWithMissing @KeyR demographics electionResults
     K.knitEither
       ( if null missing
           then Right ()

@@ -273,7 +273,9 @@ houseElectionsWithIncumbency ::
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec (HouseElectionCols V.++ '[ET.Incumbent])))
 houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
+  --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
   let g elex = fmap (addIncumbency $ winnerMap elex) elex
+  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/houseWithIncumbency.bin" houseElex_C (return . g)
 
 type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
@@ -288,7 +290,7 @@ winnerMap rows = FL.fold f rows
     f = FL.Fold (\m r -> M.insertWith chooseWinner (key r) r m) M.empty id
 
 prevElectionKey :: F.Record KeyR -> F.Record KeyR
-prevElectionKey = FT.fieldEndo @BR.Year ((-) 2)
+prevElectionKey = FT.fieldEndo @BR.Year (\x -> x - 2)
 
 addIncumbency ::
   M.Map (F.Record KeyR) (F.Record HouseElectionCols) ->
@@ -297,5 +299,5 @@ addIncumbency ::
 addIncumbency wm r =
   let incumbent = case M.lookup (prevElectionKey $ F.rcast @KeyR r) wm of
         Nothing -> False
-        Just pr -> (F.rgetField @BR.Candidate pr == F.rgetField @BR.Candidate r)
+        Just pr -> F.rgetField @BR.Candidate pr == F.rgetField @BR.Candidate r
    in r V.<+> (incumbent F.&: V.RNil)
