@@ -23,13 +23,20 @@ matrix[G, K] X_centered;
   R_ast_inverse = inverse(R_ast);
 }
 parameters {
-real alphaD;                             
+real alphaD;
+  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
+  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
+  real incBetaD;
 }
 transformed parameters {
-vector [K] betaV;
+real <lower=0> phiD = (1-dispD)/dispD;
+  real <lower=0> phiV = (1-dispV)/dispV;
+  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector [K] betaV;
   vector [K] betaD;
   betaV = R_ast_inverse * thetaV;
   betaD = R_ast_inverse * thetaD;
@@ -37,25 +44,21 @@ vector [K] betaV;
 model {
 alphaD ~ cauchy(0, 10);
   alphaV ~ cauchy(0, 10);
+  betaV ~ cauchy(0, 2.5);
   betaD ~ cauchy(0, 2.5);
-  betaV ~ cauchy(0,2.5);
-  TVotes ~ binomial_logit(VAP, alphaV + Q_ast * thetaV);
-  DVotes ~ binomial_logit(TVotes, alphaD + Q_ast * thetaD);
+  incBetaD ~ cauchy(0, 2.5);
+  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 }
 generated quantities {
 vector[G] log_lik;
-//  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
   for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD + Q_ast[g] * thetaD);
+    log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
   }
-vector<lower = 0, upper = 1>[G] pVotedP;
-  vector<lower = 0, upper = 1>[G] pDVoteP;
-  pVotedP = inv_logit(alphaV + (Q_ast * thetaV));
-  pDVoteP = inv_logit(alphaD + (Q_ast * thetaD));
-  vector<lower = 0>[G] eTVotes;
+vector<lower = 0>[G] eTVotes;
   vector<lower = 0>[G] eDVotes;
   for (g in 1:G) {
-    eTVotes[g] = inv_logit(alphaV + (Q_ast[g] * thetaV)) * VAP[g];
-    eDVotes[g] = inv_logit(alphaD + (Q_ast[g] * thetaD)) * TVotes[g];
+    eTVotes[g] = pVotedP[g] * VAP[g];
+    eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
 }

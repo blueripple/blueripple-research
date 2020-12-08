@@ -70,7 +70,10 @@ type RVotes = "RVotes" F.:-> Int
 
 type TVotes = "TVotes" F.:-> Int
 
-type ElectionR = [DVotes, RVotes]
+-- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
+type Incumbency = "Incumbency" F.:-> Int
+
+type ElectionR = [Incumbency, DVotes, RVotes]
 
 type HouseDataR = KeyR V.++ DemographicsR V.++ ElectionR
 
@@ -107,7 +110,7 @@ pumsDataF =
           V.:& FF.toFoldRecord citF
           V.:& V.RNil
 
-electionF :: FL.FoldM (Either T.Text) (F.Record BR.HouseElectionCols) (F.FrameRec (KeyR V.++ ElectionR))
+electionF :: FL.FoldM (Either T.Text) (F.Record (BR.HouseElectionCols V.++ '[ET.Incumbent])) (F.FrameRec (KeyR V.++ ElectionR))
 electionF =
   FMR.concatFoldM $
     FMR.mapReduceFoldM
@@ -115,20 +118,39 @@ electionF =
       (FMR.generalizeAssign $ FMR.assignKeysAndData @KeyR)
       (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
 
-flattenVotesF :: FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Party, ET.Votes]) (F.Record ElectionR)
-flattenVotesF = fmap (FL.fold flattenF) aggregatePartiesF
+data IncParty = None | Inc ET.PartyT | Multi
+
+updateIncParty :: IncParty -> ET.PartyT -> IncParty
+updateIncParty Multi _ = Multi
+updateIncParty (Inc _) _ = Multi
+updateIncParty None p = Inc p
+
+incPartyToInt :: IncParty -> Either T.Text Int
+incPartyToInt None = Right 0
+incPartyToInt (Inc ET.Democratic) = Right 1
+incPartyToInt (Inc ET.Republican) = Right (negate 1)
+incPartyToInt (Inc _) = Right 0
+incPartyToInt Multi = Left "Error: Multiple incumbents!"
+
+flattenVotesF :: FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
+flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
   where
     party = F.rgetField @ET.Party
     votes = F.rgetField @ET.Votes
-    demVotesF = FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
-    repVotesF = FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
-    flattenF = (\dv rv -> dv F.&: rv F.&: V.RNil) <$> demVotesF <*> repVotesF
+    incumbentPartyF =
+      FMR.postMapM incPartyToInt $
+        FL.generalize $
+          FL.prefilter (F.rgetField @ET.Incumbent) $
+            FL.premap (F.rgetField @ET.Party) (FL.Fold updateIncParty None id)
+    demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
+    repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
+    flattenF = (\ii dv rv -> ii F.&: dv F.&: rv F.&: V.RNil) <$> incumbentPartyF <*> demVotesF <*> repVotesF
 
 aggregatePartiesF ::
   FL.FoldM
     (Either T.Text)
-    (F.Record [BR.Candidate, ET.Party, ET.Votes])
-    (F.FrameRec [BR.Candidate, ET.Party, ET.Votes])
+    (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
+    (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
 aggregatePartiesF =
   let apF :: FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
       apF = FMR.postMapM ap (FL.generalize $ FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
@@ -146,7 +168,7 @@ aggregatePartiesF =
    in FMR.concatFoldM $
         FMR.mapReduceFoldM
           (FMR.generalizeUnpack FMR.noUnpack)
-          (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.Candidate] @[ET.Party, ET.Votes])
+          (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
 prepCachedData ::
@@ -158,17 +180,7 @@ prepCachedData = do
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) ->
     PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
-  -- investigate college grad %
-  {-}
-  pums <- K.ignoreCacheTime pums_C
-  let yrState y sa r =
-        F.rgetField @BR.Year r == y
-          && F.rgetField @BR.StateAbbreviation r == sa
-      pumsGA2018 = FL.fold (PUMS.pumsStateRollupF (PUMS.pumsKeysToASER True)) $ F.filterFrame (yrState 2018 "GA") pums
-  BR.logFrame pumsGA2018
-  -}
-  --
-  houseElections_C <- BR.houseElectionsLoader
+  houseElections_C <- BR.houseElectionsWithIncumbency
   let houseDataDeps = (,) <$> pumsByCD_C <*> houseElections_C
   --BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeFrame "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex) -> do
@@ -214,8 +226,8 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
                   )
                   houseData
 
-              predictRow :: F.Record DemographicsR -> Vec.Vector Double
-              predictRow r =
+              predictRowV :: F.Record DemographicsR -> Vec.Vector Double
+              predictRowV r =
                 Vec.fromList $
                   F.recToList $
                     FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) $
@@ -235,7 +247,8 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
                   <> SJ.constDataF "K" (7 :: Int)
                   <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
                   <> SJ.valueToPairF "district" (SJ.jsonArrayMF (cdM . district))
-                  <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRow . F.rcast))
+                  <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRowV . F.rcast))
+                  <> SJ.valueToPairF "Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
                   <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
                   <> SJ.valueToPairF "TVotes" (SJ.jsonArrayF tVotes)
                   <> SJ.valueToPairF "DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
@@ -357,6 +370,17 @@ betaBinomial_v1 =
     (Just betaBinomialGeneratedQuantitiesBlock)
     betaBinomialGQLLBlock
 
+betaBinomialInc :: SB.StanModel
+betaBinomialInc =
+  SB.StanModel
+    binomialDataBlock
+    (Just binomialTransformedDataBlock)
+    betaBinomialIncParametersBlock
+    (Just betaBinomialIncTransformedParametersBlock)
+    betaBinomialIncModelBlock
+    (Just betaBinomialGeneratedQuantitiesBlock)
+    betaBinomialGQLLBlock
+
 betaBinomialHS :: SB.StanModel
 betaBinomialHS =
   SB.StanModel
@@ -375,6 +399,7 @@ binomialDataBlock =
   int<lower = 1> K; // number of predictors
   int<lower = 1, upper = G> district[G]; // do we need this?
   matrix[G, K] X;
+  int<lower=-1, upper=1> Inc[G];
   int<lower = 0> VAP[G];
   int<lower = 0> TVotes[G];
   int<lower = 0> DVotes[G];
@@ -505,6 +530,43 @@ betaBinomialGQLLBlock =
   for (g in 1:G) {
     log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
   }
+|]
+
+betaBinomialIncParametersBlock :: SB.ParametersBlock
+betaBinomialIncParametersBlock =
+  [here|
+  real alphaD;
+  real <lower=0, upper=1> dispD;                             
+  vector[K] thetaV;
+  real alphaV;
+  real <lower=0, upper=1> dispV;
+  vector[K] thetaD;
+  real incBetaD;
+|]
+
+betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
+betaBinomialIncTransformedParametersBlock =
+  [here|
+  real <lower=0> phiD = (1-dispD)/dispD;
+  real <lower=0> phiV = (1-dispV)/dispV;
+  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector [K] betaV;
+  vector [K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
+|]
+
+betaBinomialIncModelBlock :: SB.ModelBlock
+betaBinomialIncModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaV ~ cauchy(0, 2.5);
+  betaD ~ cauchy(0, 2.5);
+  incBetaD ~ cauchy(0, 2.5);
+  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock

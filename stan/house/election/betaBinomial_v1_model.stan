@@ -3,6 +3,7 @@ int<lower = 1> G; // number of districts
   int<lower = 1> K; // number of predictors
   int<lower = 1, upper = G> district[G]; // do we need this?
   matrix[G, K] X;
+  int<lower=-1, upper=1> Inc[G];
   int<lower = 0> VAP[G];
   int<lower = 0> TVotes[G];
   int<lower = 0> DVotes[G];

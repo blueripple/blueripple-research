@@ -81,21 +81,9 @@ testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
-    {-
-        houseWithIncumbents_C <- BR.houseElectionsWithIncumbency
-        houseWithIncumbents2018 <- F.filterFrame ((== 2018) . F.rgetField @BR.Year) <$> K.ignoreCacheTime houseWithIncumbents_C
-        BR.logFrame $ houseWithIncumbents2018
-        let apF =
-              FMR.concatFoldM $
-                FMR.mapReduceFoldM
-                  (FMR.generalizeUnpack FMR.noUnpack)
-                  (FMR.generalizeAssign FMR.splitOnData)
-                  (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const BRE.aggregatePartiesF)
-        houseWI2018_AP <- K.knitEither $ FL.foldM apF houseWithIncumbents2018
-        BR.logFrame houseWI2018_AP
-        -}
     houseData_C <- BRE.prepCachedData
     houseData <- K.ignoreCacheTime houseData_C
+    BR.logFrame $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
@@ -109,7 +97,12 @@ testHouseModel =
         competitive r = dVotes r > 0 && rVotes r > 0
         competitiveIn y r = isYear y r && competitive r
     K.logLE K.Info "run model(s)"
-    let models = [("binomial_v1", BRE.binomial_v1), ("betaBinomial_v1", BRE.betaBinomial_v1), ("betaBinomialHS", BRE.betaBinomialHS)]
+    let models =
+          [ ("binomial_v1", BRE.binomial_v1),
+            ("betaBinomial_v1", BRE.betaBinomial_v1),
+            ("betaBinomialInc", BRE.betaBinomialInc),
+            ("betaBinomialHS", BRE.betaBinomialHS)
+          ]
         runOne x =
           BRE.runHouseModel
             BRE.houseDataWrangler
