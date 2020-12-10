@@ -30,7 +30,9 @@ withNames names values = fmap Map.fromList namedValues
                 <> ") have different lengths in nameRow."
             )
 
-toVLDataFields :: (a -> GV.DataValue) -> MapRow a -> [(GV.FieldName, GV.DataValue)]
+type VLDataField = (GV.FieldName, GV.DataValue)
+
+toVLDataFields :: (a -> GV.DataValue) -> MapRow a -> [VLDataField]
 toVLDataFields vlDataVal = Map.toList . fmap vlDataVal
 
 toVLData :: (Functor f, Foldable f) => (MapRow a -> [(GV.FieldName, GV.DataValue)]) -> [GV.Format] -> f (MapRow a) -> GV.Data
@@ -43,3 +45,10 @@ toVLData vlFields fmt mapRows =
     []
   where
     dataRowF = Foldl.Fold (\rows tupleList -> rows . GV.dataRow tupleList) id id
+
+dataValueText :: GV.DataValue -> Text.Text
+dataValueText (GV.Boolean b) = "Boolean: " <> Text.pack (show b)
+dataValueText (GV.DateTime ds) = "DateTime"
+dataValueText (GV.Number n) = "Number: " <> Text.pack (show n)
+dataValueText (GV.Str s) = "Str: " <> s
+dataValueText GV.NullValue = "NullValue"

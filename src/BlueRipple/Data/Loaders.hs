@@ -275,7 +275,7 @@ houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
   let g elex = fmap (addIncumbency $ winnerMap elex) elex
-  K.clearIfPresent "data/houseWithIncumbency.bin"
+  --  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/houseWithIncumbency.bin" houseElex_C (return . g)
 
 type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]

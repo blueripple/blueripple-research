@@ -87,9 +87,12 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       True
 
 modelCacheTime :: (K.KnitEffects r, K.CacheEffectsD r) => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = do
-  modelFileDep <- K.fileDependency (T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config)
-  jsonDataDep <- K.fileDependency (T.unpack $ SC.mrcModelDir config <> "/data/" <> (SC.mrcDatFile config))
+modelCacheTime config = K.wrapPrefix "modelCacheTime" $ do
+  let modelFile = T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config
+      dataFile = jsonFP config
+  K.logLE K.Diagnostic $ "Building dependency info for model (" <> T.pack modelFile <> ") and data (" <> T.pack dataFile <> ")"
+  modelFileDep <- K.fileDependency modelFile
+  jsonDataDep <- K.fileDependency dataFile
   return $ (\_ _ -> ()) <$> modelFileDep <*> jsonDataDep
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
@@ -130,6 +133,7 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _ = do
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
   updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
+    K.logLE K.Diagnostic $ "existing json (" <> (T.pack $ jsonFP config) <> ") appears older than cached data."
     jsonEncoding <- K.knitEither e
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
@@ -142,6 +146,7 @@ wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeTo
   let newJSON_C = encoder_C <*> cachedA
       jsonDeps = (,) <$> newJSON_C <*> index_C
   updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, b) -> do
+    K.logLE K.Diagnostic $ "existing json (" <> (T.pack $ jsonFP config) <> ") appears older than cached data."
     dataEncoding <- K.knitEither e
     toPredictEncoding <- K.knitEither $ encodeToPredict b p
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)

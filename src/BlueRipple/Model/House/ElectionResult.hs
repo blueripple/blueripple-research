@@ -33,6 +33,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
 import qualified Graphics.Vega.VegaLite.MapRow as MapRow
+import qualified Knit.Effect.AtomicCache as K
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
 import qualified Stan.JSON as SJ
@@ -373,6 +374,8 @@ runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple
   let resultCacheKey = "house/model/stan/election_" <> modelName <> "_" <> (T.pack $ show year) <> ".bin"
       houseDataForYear_C = fmap (F.filterFrame ((== year) . F.rgetField @BR.Year)) houseData_C
   modelDep <- SM.modelCacheTime stanConfig
+  K.logLE K.Diagnostic $ "modelDep: " <> (T.pack $ show $ K.cacheTime modelDep)
+  K.logLE K.Diagnostic $ "houseDataDep: " <> (T.pack $ show $ K.cacheTime houseData_C)
   let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C

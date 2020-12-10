@@ -23,13 +23,16 @@ import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Frames as F
 import qualified Frames.MapReduce as FMR
-import Frames.Visualization.VegaLite.Data as FV
-import Frames.Visualization.VegaLite.Histogram as FV
---import Graphics.Vega.VegaLite as GV
+import qualified Frames.Visualization.VegaLite.Data as FV
+import qualified Frames.Visualization.VegaLite.Histogram as FV
+import qualified Graphics.Vega.VegaLite as GV
+import qualified Graphics.Vega.VegaLite.Compat as FV
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
     ViewConfig (ViewConfig),
   )
+import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.MapRow as MapRow
 import qualified Knit.Report as K
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
@@ -118,13 +121,27 @@ testHouseModel =
             (fmap (F.filterFrame (competitiveIn y)) houseData_C)
 
     results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
-    let expandInterval :: (T.Text, [Double]) -> Either T.Text [(T.Text, Double)]
+    let expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
         expandInterval (l, vals) = case vals of
-          [lo, mid, hi] -> Right [(l <> "_lo", lo), (l, mid), (l <> "_hi", hi)]
+          [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str l), ("lo", GV.Number $ lo - mid), ("mid", GV.Number mid), ("hi", GV.Number $ hi - mid)]
           _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
-        expandMapRow (y, (_, mr)) = M.insert "Year" (realToFrac y) . M.fromList . concat <$> traverse expandInterval (M.toList mr)
+        expandMapRow (y, (_, mr)) = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList mr)
     mapRows <- K.knitEither $ traverse expandMapRow results
-    K.logLE K.Info $ T.pack $ show mapRows
+    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
+    _ <- K.addHvega Nothing Nothing $ modelChart "test" (FV.ViewConfig 600 600 10) $ concat mapRows
+    return ()
+
+modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
+modelChart title vc rows =
+  let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+      encX = GV.position GV.X [GV.PName "Year", GV.PmType GV.Temporal]
+      encY = GV.position GV.Y [GV.PName "mid", GV.PmType GV.Quantitative]
+      encYLo = GV.position GV.YError [GV.PName "lo", GV.PmType GV.Quantitative]
+      encYHi = GV.position GV.YError2 [GV.PName "hi", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "Name", GV.MmType GV.Nominal]
+      enc = GV.encoding . encX . encYLo . encY . encYHi . encColor
+      mark = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
+   in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
