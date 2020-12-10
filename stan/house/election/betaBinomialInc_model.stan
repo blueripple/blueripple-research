@@ -9,11 +9,14 @@ int<lower = 1> G; // number of districts
   int<lower = 0> DVotes[G];
 }
 transformed data {
-matrix[G, K] X_centered;
+vector<lower=0>[K] sigma;
+  matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
     X_centered[,k] = X[,k] - col_mean;
+    sigma[k] = sd(X_centered[,k]);
   } 
+  
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
@@ -61,4 +64,13 @@ vector<lower = 0>[G] eTVotes;
     eTVotes[g] = pVotedP[g] * VAP[g];
     eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
+  real avgPVoted = inv_logit (alphaV);
+  real avgPDVote = inv_logit (alphaD);
+  vector[K] deltaV;
+  vector[K] deltaD;
+  for (k in 1:K) {
+    deltaV [k] = inv_logit (alphaV + sigma [k] * betaV [k]) - avgPVoted;
+    deltaD [k] = inv_logit (alphaD + sigma [k] * betaD [k]) - avgPDVote;
+  }
+  real deltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
 }

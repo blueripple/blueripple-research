@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# OPTIONS_GHC -O0 #-}
 
 module BlueRipple.Model.House.ElectionResult where
@@ -270,15 +271,43 @@ type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
 type HouseModelResults = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
 
+type MapRow a = M.Map T.Text a
+
+nameRowFromList :: [T.Text] -> MapRow ()
+nameRowFromList = M.fromList . fmap (\n -> (n, ()))
+
+nameRow :: (Foldable f, Foldable g, Show a) => f T.Text -> g a -> Either T.Text (MapRow a)
+nameRow names values = fmap M.fromList namedValues
+  where
+    toList = FL.fold FL.list
+    namedValues =
+      if FL.fold FL.length names == FL.fold FL.length values
+        then Right $ zip (toList names) (toList values)
+        else
+          Left
+            ( "Names ("
+                <> T.pack (show $ toList names)
+                <> ") and values ("
+                <> T.pack (show $ toList values)
+                <> ") have different lengths in nameRow."
+            )
+
+{-
+--getParameters :: (CS.StanSummary -> T.Text -> Either T.Text a) -> MapRow () -> CS.StanSummary -> Either T.Text (MapRow a)
+--getParameters getP nameRow s = sequenceA $ M.mapWithKey (\k _ -> getP s k) nameRow
+-}
 extractResults ::
   CS.StanSummary ->
   HouseData ->
-  Either T.Text (F.FrameRec HouseModelResults)
+  Either T.Text (F.FrameRec HouseModelResults, MapRow [Double])
 extractResults summary demographicsByDistrict = do
+  -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
   eTVote <- fmap CS.mean <$> SP.parse1D "eTVotes" (CS.paramStats summary)
   eDVotePcts <- fmap CS.percents <$> SP.parse1D "eDVotes" (CS.paramStats summary)
+  --deltaVs = fmap (\x -> "deltaV[")
+  --deltaNameRow = nameRowFromList ["deltaV[1]", "deltaV[2]"]
   let modeledL =
         FL.fold FL.list $
           Vec.zip4
@@ -304,17 +333,45 @@ extractResults summary demographicsByDistrict = do
                     F.&: round d95
                     F.&: V.RNil
           else Left ("Wrong number of percentiles in stan statistic")
-  result <-
+  predictions <-
     traverse makeRow $
       zip (FL.fold FL.list demographicsByDistrict) modeledL
-  return $ F.toFrame result
+  -- deltas
+  deltaIncD <- fmap CS.percents <$> SP.parseScalar "deltaIncD" (CS.paramStats summary)
+  deltaD <- fmap CS.percents <$> SP.parse1D "deltaD" (CS.paramStats summary)
+  deltaV <- fmap CS.percents <$> SP.parse1D "deltaV" (CS.paramStats summary)
+  deltaDMR <-
+    nameRow
+      [ "PctUnder45D",
+        "PctFemaleD",
+        "PctGradD",
+        "PctNonWhiteD",
+        "PctCitizenD",
+        "AvgIncomeD",
+        "PopPerSqMileD"
+      ]
+      (SP.getVector deltaD)
+  deltaVMR <-
+    nameRow
+      [ "PctUnder45V",
+        "PctFemaleV",
+        "PctGradV",
+        "PctNonWhiteV",
+        "PctCitizenV",
+        "AvgIncomeV",
+        "PopPerSqMileV"
+      ]
+      (SP.getVector deltaV)
+  let deltas = deltaDMR <> deltaVMR <> M.singleton "Incumbency" (SP.getScalar deltaIncD)
+  return $ (F.toFrame predictions, deltas)
 
 runHouseModel ::
+  forall r.
   (K.KnitEffects r, K.CacheEffectsD r) =>
   HouseDataWrangler ->
   (T.Text, SB.StanModel) ->
   K.ActionWithCacheTime r HouseData ->
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults, MapRow [Double]))
 runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
@@ -335,16 +392,19 @@ runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Mode
   let resultCacheKey = "house/model/stan/election_" <> modelName <> ".bin"
   modelDep <- SM.modelCacheTime stanConfig
   let dataModelDep = const <$> modelDep <*> houseData_C
+      getResults :: SM.StanSummary -> () -> K.ActionWithCacheTime r (HouseData, ()) -> K.Sem r (F.FrameRec HouseModelResults, MapRow [Double])
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults s houseData
-  BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
+      ra :: SC.ResultAction r HouseData () () (F.FrameRec HouseModelResults, MapRow [Double]) =
+        SC.UseSummary getResults
+  BR.retrieveOrMakeFrameAnd resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig
       (SM.Both [SR.UnwrapJSON "DVotes" "DVotes", SR.UnwrapJSON "TVotes" "TVotes"])
       hdw
-      (SC.UseSummary getResults)
+      ra
       ()
       houseData_C
 
@@ -378,7 +438,7 @@ betaBinomialInc =
     betaBinomialIncParametersBlock
     (Just betaBinomialIncTransformedParametersBlock)
     betaBinomialIncModelBlock
-    (Just betaBinomialGeneratedQuantitiesBlock)
+    (Just betaBinomialIncGeneratedQuantitiesBlock)
     betaBinomialGQLLBlock
 
 betaBinomialHS :: SB.StanModel
@@ -408,11 +468,14 @@ binomialDataBlock =
 binomialTransformedDataBlock :: SB.TransformedDataBlock
 binomialTransformedDataBlock =
   [here|
+  vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
     X_centered[,k] = X[,k] - col_mean;
+    sigma[k] = sd(X_centered[,k]);
   } 
+  
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
@@ -567,6 +630,26 @@ betaBinomialIncModelBlock =
   incBetaD ~ cauchy(0, 2.5);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
+|]
+
+betaBinomialIncGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialIncGeneratedQuantitiesBlock =
+  [here|
+  vector<lower = 0>[G] eTVotes;
+  vector<lower = 0>[G] eDVotes;
+  for (g in 1:G) {
+    eTVotes[g] = pVotedP[g] * VAP[g];
+    eDVotes[g] = pDVoteP[g] * TVotes[g];
+  }
+  real avgPVoted = inv_logit (alphaV);
+  real avgPDVote = inv_logit (alphaD);
+  vector[K] deltaV;
+  vector[K] deltaD;
+  for (k in 1:K) {
+    deltaV [k] = inv_logit (alphaV + sigma [k] * betaV [k]) - avgPVoted;
+    deltaD [k] = inv_logit (alphaD + sigma [k] * betaD [k]) - avgPDVote;
+  }
+  real deltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock

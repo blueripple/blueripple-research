@@ -98,10 +98,10 @@ testHouseModel =
         competitiveIn y r = isYear y r && competitive r
     K.logLE K.Info "run model(s)"
     let models =
-          [ ("binomial_v1", BRE.binomial_v1),
-            ("betaBinomial_v1", BRE.betaBinomial_v1),
-            ("betaBinomialInc", BRE.betaBinomialInc),
-            ("betaBinomialHS", BRE.betaBinomialHS)
+          [ ("betaBinomialInc", BRE.betaBinomialInc {-},
+                                                    ("binomial_v1", BRE.binomial_v1),
+                                                    ("betaBinomial_v1", BRE.betaBinomial_v1),
+                                                    ("betaBinomialHS", BRE.betaBinomialHS)-})
           ]
         runOne x =
           BRE.runHouseModel
@@ -109,7 +109,9 @@ testHouseModel =
             x
             (fmap (F.filterFrame (competitiveIn 2018)) houseData_C)
     results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
-    BR.logFrame (results !! 2)
+    let (resultPredictions, resultDeltas) = results !! 0
+    BR.logFrame resultPredictions
+    K.logLE K.Info $ "Deltas :" <> (T.pack $ show resultDeltas)
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
