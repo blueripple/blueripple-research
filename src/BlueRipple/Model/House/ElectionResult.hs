@@ -32,6 +32,7 @@ import qualified Frames.Folds as FF
 import qualified Frames.MapReduce as FMR
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
+import qualified Graphics.Vega.VegaLite.MapRow as MapRow
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
 import qualified Stan.JSON as SJ
@@ -271,27 +272,6 @@ type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
 type HouseModelResults = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
 
-type MapRow a = M.Map T.Text a
-
-nameRowFromList :: [T.Text] -> MapRow ()
-nameRowFromList = M.fromList . fmap (\n -> (n, ()))
-
-nameRow :: (Foldable f, Foldable g, Show a) => f T.Text -> g a -> Either T.Text (MapRow a)
-nameRow names values = fmap M.fromList namedValues
-  where
-    toList = FL.fold FL.list
-    namedValues =
-      if FL.fold FL.length names == FL.fold FL.length values
-        then Right $ zip (toList names) (toList values)
-        else
-          Left
-            ( "Names ("
-                <> T.pack (show $ toList names)
-                <> ") and values ("
-                <> T.pack (show $ toList values)
-                <> ") have different lengths in nameRow."
-            )
-
 {-
 --getParameters :: (CS.StanSummary -> T.Text -> Either T.Text a) -> MapRow () -> CS.StanSummary -> Either T.Text (MapRow a)
 --getParameters getP nameRow s = sequenceA $ M.mapWithKey (\k _ -> getP s k) nameRow
@@ -299,7 +279,7 @@ nameRow names values = fmap M.fromList namedValues
 extractResults ::
   CS.StanSummary ->
   HouseData ->
-  Either T.Text (F.FrameRec HouseModelResults, MapRow [Double])
+  Either T.Text (F.FrameRec HouseModelResults, MapRow.MapRow [Double])
 extractResults summary demographicsByDistrict = do
   -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
@@ -341,7 +321,7 @@ extractResults summary demographicsByDistrict = do
   deltaD <- fmap CS.percents <$> SP.parse1D "deltaD" (CS.paramStats summary)
   deltaV <- fmap CS.percents <$> SP.parse1D "deltaV" (CS.paramStats summary)
   deltaDMR <-
-    nameRow
+    MapRow.withNames
       [ "PctUnder45D",
         "PctFemaleD",
         "PctGradD",
@@ -352,7 +332,7 @@ extractResults summary demographicsByDistrict = do
       ]
       (SP.getVector deltaD)
   deltaVMR <-
-    nameRow
+    MapRow.withNames
       [ "PctUnder45V",
         "PctFemaleV",
         "PctGradV",
@@ -370,9 +350,10 @@ runHouseModel ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   HouseDataWrangler ->
   (T.Text, SB.StanModel) ->
+  Int ->
   K.ActionWithCacheTime r HouseData ->
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults, MapRow [Double]))
-runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults, MapRow.MapRow [Double]))
+runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
@@ -383,30 +364,28 @@ runHouseModel hdw (modelName, model) houseData_C = K.wrapPrefix "BlueRipple.Mode
         workDir
         (modelName <> "_model")
         (Just (SB.All, model))
-        (Just $ "election.json")
-        (Just $ "election_" <> modelName <> "_model")
+        (Just $ "election_" <> (T.pack $ show year) <> ".json")
+        (Just $ "election_" <> modelName <> "_" <> (T.pack $ show year))
         4
         (Just 1000)
         (Just 1000)
         (Just stancConfig)
-  let resultCacheKey = "house/model/stan/election_" <> modelName <> ".bin"
+  let resultCacheKey = "house/model/stan/election_" <> modelName <> "_" <> (T.pack $ show year) <> ".bin"
+      houseDataForYear_C = fmap (F.filterFrame ((== year) . F.rgetField @BR.Year)) houseData_C
   modelDep <- SM.modelCacheTime stanConfig
-  let dataModelDep = const <$> modelDep <*> houseData_C
-      getResults :: SM.StanSummary -> () -> K.ActionWithCacheTime r (HouseData, ()) -> K.Sem r (F.FrameRec HouseModelResults, MapRow [Double])
+  let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
         (houseData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults s houseData
-      ra :: SC.ResultAction r HouseData () () (F.FrameRec HouseModelResults, MapRow [Double]) =
-        SC.UseSummary getResults
   BR.retrieveOrMakeFrameAnd resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig
       (SM.Both [SR.UnwrapJSON "DVotes" "DVotes", SR.UnwrapJSON "TVotes" "TVotes"])
       hdw
-      ra
+      (SC.UseSummary getResults)
       ()
-      houseData_C
+      houseDataForYear_C
 
 binomial_v1 :: SB.StanModel
 binomial_v1 =

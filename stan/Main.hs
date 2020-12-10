@@ -107,11 +107,24 @@ testHouseModel =
           BRE.runHouseModel
             BRE.houseDataWrangler
             x
+            2018
             (fmap (F.filterFrame (competitiveIn 2018)) houseData_C)
-    results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
-    let (resultPredictions, resultDeltas) = results !! 0
-    BR.logFrame resultPredictions
-    K.logLE K.Info $ "Deltas :" <> (T.pack $ show resultDeltas)
+        years = [2012, 2014, 2016, 2018]
+        runYear y =
+          BRE.runHouseModel
+            BRE.houseDataWrangler
+            ("betaBinomialInc", BRE.betaBinomialInc)
+            y
+            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
+
+    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
+    let expandInterval :: (T.Text, [Double]) -> Either T.Text [(T.Text, Double)]
+        expandInterval (l, vals) = case vals of
+          [lo, mid, hi] -> Right [(l <> "_lo", lo), (l, mid), (l <> "_hi", hi)]
+          _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
+        expandMapRow (y, (_, mr)) = M.insert "Year" (realToFrac y) . M.fromList . concat <$> traverse expandInterval (M.toList mr)
+    mapRows <- K.knitEither $ traverse expandMapRow results
+    K.logLE K.Info $ T.pack $ show mapRows
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
