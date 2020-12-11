@@ -121,27 +121,44 @@ testHouseModel =
             (fmap (F.filterFrame (competitiveIn y)) houseData_C)
 
     results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
-    let expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
-        expandInterval (l, vals) = case vals of
-          [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str l), ("lo", GV.Number $ lo - mid), ("mid", GV.Number mid), ("hi", GV.Number $ hi - mid)]
-          _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
+    let nameType l =
+          let (name, t) = T.splitAt (T.length l - 1) l
+           in case t of
+                "D" -> Right (name, "D Pref")
+                "y" -> Right (l, "D Pref")
+                "V" -> Right (name, "Turnout")
+                _ -> Left $ "Bad last character in delta label (" <> l <> ")."
+        expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
+        expandInterval (l, vals) = do
+          (name, t) <- nameType l
+          case vals of
+            [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
+            _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow (y, (_, mr)) = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList mr)
     mapRows <- K.knitEither $ traverse expandMapRow results
     K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
-    _ <- K.addHvega Nothing Nothing $ modelChart "test" (FV.ViewConfig 600 600 10) $ concat mapRows
+    _ <- K.addHvega Nothing Nothing $ modelChart "% Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
     return ()
 
-modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
-modelChart title vc rows =
+modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
+modelChart title vc t rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encX = GV.position GV.X [GV.PName "Year", GV.PmType GV.Temporal]
-      encY = GV.position GV.Y [GV.PName "mid", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "mid", GV.PmType GV.Quantitative, axis, scale]
+      axis = GV.PAxis [GV.AxTitle "% Change" {-, GV.AxValues (GV.Numbers [-15, -10, -5, 0, 5, 10, 15])-}]
+      scale = GV.PScale [GV.SDomain $ GV.DNumbers [-12, 12]]
       encYLo = GV.position GV.YError [GV.PName "lo", GV.PmType GV.Quantitative]
       encYHi = GV.position GV.YError2 [GV.PName "hi", GV.PmType GV.Quantitative]
-      encColor = GV.color [GV.MName "Name", GV.MmType GV.Nominal]
+      encColor = GV.color [GV.MName "Type", GV.MmType GV.Nominal]
       enc = GV.encoding . encX . encYLo . encY . encYHi . encColor
-      mark = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
-   in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
+      markBand = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
+      markLine = GV.mark GV.Line [GV.MInterpolate GV.Basis]
+      transform = GV.transform . GV.filter (GV.FEqual "Type" (GV.Str t))
+      specBand = GV.asSpec [enc [], markBand]
+      specLine = GV.asSpec [enc [], markLine]
+      spec = GV.asSpec [GV.layer [specBand, specLine]]
+      facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle ""]
+   in FV.configuredVegaLite vc [FV.title title, GV.columns 4, facet, GV.specification spec, vlData]
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
