@@ -12,18 +12,21 @@ module Main where
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Data.Loaders as BR
+--import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
 import qualified Data.Random.Source.PureMT as PureMT
+import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import qualified Frames as F
-import qualified Frames.MapReduce as FMR
-import qualified Frames.Visualization.VegaLite.Data as FV
+--import qualified Frames.MapReduce as FMR
+import qualified Frames.Visualization.VegaLite.Correlation as FV
+--import qualified Frames.Visualization.VegaLite.Data as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
@@ -86,7 +89,7 @@ testHouseModel =
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
     houseData <- K.ignoreCacheTime houseData_C
-    BR.logFrame $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) houseData
+--    BR.logFrame $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
@@ -94,6 +97,16 @@ testHouseModel =
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    let corrSet = S.fromList $ [("% Under 45", FL.fold (FL.premap (F.rgetField @BRE.FracUnder45) FL.vector) houseData)
+                               ,("% Female", FL.fold (FL.premap (F.rgetField @BRE.FracFemale) FL.vector) houseData)
+                               ,("% Grad", FL.fold (FL.premap (F.rgetField @BRE.FracGrad) FL.vector) houseData)
+                               ,("% NonWhite", FL.fold (FL.premap (F.rgetField @BRE.FracNonWhite) FL.vector) houseData)
+                               ,("% Citizen", FL.fold (FL.premap (F.rgetField @BRE.FracCitizen) FL.vector) houseData)
+                               ,("Avg. Income", FL.fold (FL.premap (F.rgetField @DT.AvgIncome) FL.vector) houseData)
+                               ,("Density", FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.vector) houseData)
+                               ]
+    corrChart <- K.knitEither $ FV.correlationCircles fst corrSet getCorrelation False "Correlations among predictors" (FV.ViewConfig 500 500 10)              
+    _ <- K.addHvega Nothing Nothing corrChart 
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes
         rVotes = F.rgetField @BRE.RVotes
@@ -136,8 +149,9 @@ testHouseModel =
             _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow (y, (_, mr)) = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList mr)
     mapRows <- K.knitEither $ traverse expandMapRow results
-    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
-    _ <- K.addHvega Nothing Nothing $ modelChart "% Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
+    --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
+    _ <- K.addHvega Nothing Nothing $ modelChart "Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
+
     return ()
 
 modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
@@ -159,6 +173,21 @@ modelChart title vc t rows =
       spec = GV.asSpec [GV.layer [specBand, specLine]]
       facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle ""]
    in FV.configuredVegaLite vc [FV.title title, GV.columns 4, facet, GV.specification spec, vlData]
+
+getCorrelation :: (T.Text, V.Vector Double) -> (T.Text, V.Vector Double) -> Double
+getCorrelation (_, v1) (_, v2) =
+  let v12 = V.zip v1 v2
+      (m1, var1, m2, var2) = FL.fold ((,,,)
+                                      <$> FL.premap fst FL.mean
+                                      <*> FL.premap fst FL.variance
+                                      <*> FL.premap snd FL.mean
+                                      <*> FL.premap snd FL.variance
+                                     )
+                             v12
+      
+      covF = (/) <$> (FL.Fold (\s (x1, x2) -> (s + (x1 - m1) * (x2 - m2))) 0 id) <*> fmap realToFrac FL.length
+--      corrF = (\var1 var2 cov -> cov / sqrt (var1 * var2)) <$> var1F <*> var2F <*> covF
+   in (FL.fold covF v12) / sqrt (var1 * var2)
 
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
