@@ -9,6 +9,7 @@
 
 module Main where
 
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -97,15 +98,21 @@ testHouseModel =
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
     _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    let corrSet = S.fromList $ [("% Under 45", FL.fold (FL.premap (F.rgetField @BRE.FracUnder45) FL.vector) houseData)
-                               ,("% Female", FL.fold (FL.premap (F.rgetField @BRE.FracFemale) FL.vector) houseData)
-                               ,("% Grad", FL.fold (FL.premap (F.rgetField @BRE.FracGrad) FL.vector) houseData)
-                               ,("% NonWhite", FL.fold (FL.premap (F.rgetField @BRE.FracNonWhite) FL.vector) houseData)
-                               ,("% Citizen", FL.fold (FL.premap (F.rgetField @BRE.FracCitizen) FL.vector) houseData)
-                               ,("Avg. Income", FL.fold (FL.premap (F.rgetField @DT.AvgIncome) FL.vector) houseData)
-                               ,("Density", FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.vector) houseData)
-                               ]
-    corrChart <- K.knitEither $ FV.correlationCircles fst corrSet getCorrelation False "Correlations among predictors" (FV.ViewConfig 500 500 10)              
+    let votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
+        turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
+        dShare r = if (votes r > 0) then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
+    let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
+                             ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
+                             ,FV.LabeledCol "% Grad" (F.rgetField @BRE.FracGrad)
+                             ,FV.LabeledCol "% NonWhite" (F.rgetField @BRE.FracNonWhite)
+                             ,FV.LabeledCol "% Citizen" (F.rgetField @BRE.FracCitizen)
+                             ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
+                             ,FV.LabeledCol "Density" (F.rgetField @DT.PopPerSqMile)
+                             ,FV.LabeledCol "Incumbency" (realToFrac . F.rgetField @BRE.Incumbency)
+                             ,FV.LabeledCol "Turnout" turnout
+                             ,FV.LabeledCol "D Share" dShare
+                             ]
+    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet houseData
     _ <- K.addHvega Nothing Nothing corrChart 
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes
@@ -174,6 +181,7 @@ modelChart title vc t rows =
       facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle ""]
    in FV.configuredVegaLite vc [FV.title title, GV.columns 4, facet, GV.specification spec, vlData]
 
+{-
 getCorrelation :: (T.Text, V.Vector Double) -> (T.Text, V.Vector Double) -> Double
 getCorrelation (_, v1) (_, v2) =
   let v12 = V.zip v1 v2
@@ -189,6 +197,7 @@ getCorrelation (_, v1) (_, v2) =
 --      corrF = (\var1 var2 cov -> cov / sqrt (var1 * var2)) <$> var1F <*> var2F <*> covF
    in (FL.fold covF v12) / sqrt (var1 * var2)
 
+-}
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
