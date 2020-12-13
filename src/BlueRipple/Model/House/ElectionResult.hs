@@ -12,6 +12,8 @@
 module BlueRipple.Model.House.ElectionResult where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.CCES as CCES
+import qualified BlueRipple.Model.MRP as MRP
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -68,18 +70,13 @@ type DemographicsR =
   ]
 
 type DVotes = "DVotes" F.:-> Int
-
 type RVotes = "RVotes" F.:-> Int
-
 type TVotes = "TVotes" F.:-> Int
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
-
 type ElectionR = [Incumbency, DVotes, RVotes]
-
 type HouseDataR = KeyR V.++ DemographicsR V.++ ElectionR
-
 type HouseData = F.FrameRec HouseDataR
 
 pumsF :: FL.Fold (F.Record (PUMS.CDCounts DT.CatColsASER)) (F.FrameRec (KeyR V.++ DemographicsR))
@@ -174,6 +171,30 @@ aggregatePartiesF =
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
+-- CCES data
+type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
+type CCESByCD = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
+
+countCCESVotesF :: FL.Fold (F.Record [CCES.Turnout, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
+countCCESVotesF =
+  let surveyedF = FL.length
+      votedF = FL.prefilter ((== CCES.T_Voted) . F.rgetField @CCES.Turnout) FL.length
+      dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) FL.length -- or votedF?
+  in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
+
+ccesF :: Int -> FL.Fold (F.Record CCES.CCES_MRP) (F.FrameRec CCESByCD)
+ccesF earliestYear = FMR.concatFold
+        $ FMR.mapReduceFold
+        (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC])
+        (FMR.foldAndAddKey countCCESVotesF)
+
+ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
+ccesCountedDemHouseVotesByCD = do
+  cces_C <- CCES.ccesDataLoader 
+  BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ return . FL.fold (ccesF 2012)
+    
+
 prepCachedData ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r HouseData)
@@ -184,6 +205,8 @@ prepCachedData = do
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) ->
     PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
   houseElections_C <- BR.houseElectionsWithIncumbency
+  countedCCES_C <- ccesCountedDemHouseVotesByCD
+  K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,) <$> pumsByCD_C <*> houseElections_C
   --BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeFrame "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex) -> do
