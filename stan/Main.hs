@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -38,6 +40,7 @@ import Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.MapRow as MapRow
 import qualified Knit.Report as K
+import qualified Optics
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 yamlAuthor :: T.Text
@@ -89,15 +92,15 @@ testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
-    (electionData, ccesData) <- K.ignoreCacheTime houseData_C
-    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) ccesData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    hmd <- K.ignoreCacheTime houseData_C
+    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) (Optics.view #ccesData hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionResults hmd)
     let votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if (votes r > 0) then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
@@ -112,7 +115,7 @@ testHouseModel =
                              ,FV.LabeledCol "Turnout" turnout
                              ,FV.LabeledCol "D Share" dShare
                              ]
-    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet electionData
+    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet (Optics.view #electionResults hmd)
     _ <- K.addHvega Nothing Nothing corrChart 
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes
@@ -131,15 +134,21 @@ testHouseModel =
             BRE.houseDataWrangler
             x
             2018
-            (fmap (F.filterFrame (competitiveIn 2018)) houseData_C)
+            (fmap (Optics.over #electionResults (F.filterFrame (competitiveIn 2018))
+                   . Optics.over #ccesData (F.filterFrame (isYear 2018)))
+              houseData_C
+            )
         years = [2012, 2014, 2016, 2018]
         runYear y =
           BRE.runHouseModel
             BRE.houseDataWrangler
             ("betaBinomialInc", BRE.betaBinomialInc)
             y
-            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
-
+            (fmap (Optics.over #electionResults (F.filterFrame (competitiveIn y))
+              . Optics.over #ccesData (F.filterFrame (isYear y)))
+              houseData_C
+            )
+--            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
     results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
     let nameType l =
           let (name, t) = T.splitAt (T.length l - 1) l

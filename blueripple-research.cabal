@@ -44,6 +44,7 @@ common deps
                , lucid
                , massiv >= 0.5.4 && < 0.6
                , map-reduce-folds >= 0.1.0.1
+               , optics >= 0.3 && < 0.4
                , pipes
                , polysemy >= 0.2.1.0 && < 1.4
                , polysemy-plugin

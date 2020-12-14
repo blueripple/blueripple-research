@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-hvega
+packages: ./ ~/DataScience/hs-cmdstan ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-hvega ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl, knit-haskell

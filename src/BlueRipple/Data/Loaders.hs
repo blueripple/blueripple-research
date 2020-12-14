@@ -31,6 +31,7 @@ import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
+import qualified Frames.Melt as F
 import qualified Frames.MaybeUtils as FM
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
@@ -301,3 +302,10 @@ addIncumbency wm r =
         Nothing -> False
         Just pr -> F.rgetField @BR.Candidate pr == F.rgetField @BR.Candidate r
    in r V.<+> (incumbent F.&: V.RNil)
+
+
+fixAtLargeDistricts :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs BR.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
+fixAtLargeDistricts n = fmap fixOne where
+  statesWithAtLargeCDs = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
+  fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
+  
