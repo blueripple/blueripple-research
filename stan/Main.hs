@@ -89,15 +89,15 @@ testHouseModel =
   do
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
-    houseData <- K.ignoreCacheTime houseData_C
---    BR.logFrame $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) houseData
+    (electionData, ccesData) <- K.ignoreCacheTime houseData_C
+    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) ccesData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) electionData
     let votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if (votes r > 0) then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
@@ -112,7 +112,7 @@ testHouseModel =
                              ,FV.LabeledCol "Turnout" turnout
                              ,FV.LabeledCol "D Share" dShare
                              ]
-    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet houseData
+    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet electionData
     _ <- K.addHvega Nothing Nothing corrChart 
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes

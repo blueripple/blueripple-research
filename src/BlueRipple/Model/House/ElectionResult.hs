@@ -1,12 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+
 {-# OPTIONS_GHC -O0 #-}
 
 module BlueRipple.Model.House.ElectionResult where
@@ -25,6 +28,7 @@ import qualified Data.Aeson as A
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import Data.String.Here (here)
+import qualified Data.Serialize                as S
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
@@ -32,10 +36,11 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Folds as FF
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Serialize as FS
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
 import qualified Graphics.Vega.VegaLite.MapRow as MapRow
-import qualified Knit.Effect.AtomicCache as K
+import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
 import qualified Stan.JSON as SJ
@@ -76,8 +81,33 @@ type TVotes = "TVotes" F.:-> Int
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes]
-type HouseDataR = KeyR V.++ DemographicsR V.++ ElectionR
-type HouseData = F.FrameRec HouseDataR
+type ElectionDataR = KeyR V.++ DemographicsR V.++ ElectionR
+type ElectionData = F.FrameRec ElectionDataR
+
+
+-- CCES data
+type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
+type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
+type CCESDataR = CCESByCD V.++ [Incumbency, FracCitizen, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile]
+type CCESData = F.FrameRec CCESDataR
+
+data HouseModelDataG g f  = HouseModelData { electionResults :: g (f ElectionDataR), ccesData :: g (f CCESDataR) }
+type HouseModelData = HouseModelDataG F.Frame F.Record
+type HouseModelDataS = HouseModelDataG [] (F.Rec FS.SElField)
+
+instance S.Serialize HouseModelDataS where
+  put (HouseModelData a b) = S.put (a, b)
+  get = fmap (\(a, b) -> HouseModelData a b) S.get
+
+houseModelDataToS :: HouseModelData -> HouseModelDataS
+houseModelDataToS (HouseModelData er cd) = let f = fmap FS.toS . FL.fold FL.list in HouseModelData (f er) (f cd)
+
+houseModelDataFromS :: HouseModelDataS -> HouseModelData
+houseModelDataFromS (HouseModelData er' cd') = let f = F.toFrame . fmap FS.fromS in HouseModelData (f er') (f cd')
+
+instance S.Serialize HouseModelData where
+  put = S.put . houseModelDataToS
+  get = houseModelDataFromS <$> S.get
 
 pumsF :: FL.Fold (F.Record (PUMS.CDCounts DT.CatColsASER)) (F.FrameRec (KeyR V.++ DemographicsR))
 pumsF =
@@ -171,9 +201,6 @@ aggregatePartiesF =
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
--- CCES data
-type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
-type CCESByCD = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
 
 countCCESVotesF :: FL.Fold (F.Record [CCES.Turnout, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
 countCCESVotesF =
@@ -197,7 +224,7 @@ ccesCountedDemHouseVotesByCD = do
 
 prepCachedData ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
-  K.Sem r (K.ActionWithCacheTime r HouseData)
+  K.Sem r (K.ActionWithCacheTime r HouseModelData)
 prepCachedData = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
@@ -207,26 +234,28 @@ prepCachedData = do
   houseElections_C <- BR.houseElectionsWithIncumbency
   countedCCES_C <- ccesCountedDemHouseVotesByCD
   K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation)
-  let houseDataDeps = (,) <$> pumsByCD_C <*> houseElections_C
+  let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
   --BR.clearIfPresentD "model/house/houseData.bin"
-  BR.retrieveOrMakeFrame "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex) -> do
-    K.logLE K.Info "HouseData for election model out of date/unbuilt.  Loading demographic and election data and joining."
+  K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData @T.Text "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
+    K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
     electionResults <- K.knitEither $ FL.foldM electionF (F.filterFrame ((>= 2012) . F.rgetField @BR.Year) elex)
-    let (demoAndElex, missing) = FJ.leftJoinWithMissing @KeyR demographics electionResults
-    K.knitEither
-      ( if null missing
-          then Right ()
-          else
-            ( Left $
-                "Missing keys in left-join of demographics and election data in house model prep:"
-                  <> T.pack
-                    (show missing)
-            )
-      )
-    return demoAndElex
+    let (demoAndElex, missingElex) = FJ.leftJoinWithMissing @KeyR demographics electionResults
+    K.knitEither $ if null missingElex
+                   then Right ()
+                   else Left $ "Missing keys in left-join of demographics and election data in house model prep:"
+                        <> T.pack
+                        (show missingElex)
+    let toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency,FracCitizen, DT.AvgIncome, DT.MedianIncome,DT.PopPerSqMile])) demoAndElex
+        (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @KeyR countedCCES toJoinWithCCES
+    K.knitEither $ if null missingDemo
+                   then Right ()
+                   else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
+                        <> T.pack
+                        (show missingDemo)
+    return $ HouseModelData demoAndElex ccesWithDD
 
-type HouseDataWrangler = SC.DataWrangler HouseData () ()
+type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
 houseDataWrangler :: HouseDataWrangler
 houseDataWrangler = SC.Wrangle SC.NoIndex f
@@ -240,8 +269,8 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
     maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
     f _ = ((), makeDataJsonE)
       where
-        makeDataJsonE :: HouseData -> Either T.Text A.Series
-        makeDataJsonE houseData = do
+        makeDataJsonE :: HouseModelData -> Either T.Text A.Series
+        makeDataJsonE (HouseModelData electionData _) = do
           let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
                 FL.fold
                   ( (,,,)
@@ -250,10 +279,10 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
                       <*> maxAvgIncomeF
                       <*> maxDensityF
                   )
-                  houseData
+                  electionData
 
-              predictRowV :: F.Record DemographicsR -> Vec.Vector Double
-              predictRowV r =
+              predictRow :: F.Record DemographicsR -> Vec.Vector Double
+              predictRow r =
                 Vec.fromList $
                   F.recToList $
                     FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) $
@@ -273,23 +302,18 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
                   <> SJ.constDataF "K" (7 :: Int)
                   <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
                   <> SJ.valueToPairF "district" (SJ.jsonArrayMF (cdM . district))
-                  <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRowV . F.rcast))
+                  <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRow . F.rcast))
                   <> SJ.valueToPairF "Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
                   <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
                   <> SJ.valueToPairF "TVotes" (SJ.jsonArrayF tVotes)
                   <> SJ.valueToPairF "DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
-          SJ.frameToStanJSONSeries dataF houseData
+          SJ.frameToStanJSONSeries dataF electionData
 
 type VoteP = "VoteProb" F.:-> Double
-
 type DVoteP = "DVoteProb" F.:-> Double
-
 type EVotes = "EstVotes" F.:-> Int
-
 type EDVotes = "EstDVotes" F.:-> Int
-
 type EDVotes5 = "EstDVotes5" F.:-> Int
-
 type EDVotes95 = "EstDVotes95" F.:-> Int
 
 type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
@@ -302,9 +326,9 @@ type HouseModelResults = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.C
 -}
 extractResults ::
   CS.StanSummary ->
-  HouseData ->
+  HouseModelData ->
   Either T.Text (F.FrameRec HouseModelResults, MapRow.MapRow [Double])
-extractResults summary demographicsByDistrict = do
+extractResults summary (HouseModelData electionData _) = do
   -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
@@ -339,7 +363,7 @@ extractResults summary demographicsByDistrict = do
           else Left ("Wrong number of percentiles in stan statistic")
   predictions <-
     traverse makeRow $
-      zip (FL.fold FL.list demographicsByDistrict) modeledL
+      zip (FL.fold FL.list electionData) modeledL
   -- deltas
   deltaIncD <- fmap CS.percents <$> SP.parseScalar "deltaIncD" (CS.paramStats summary)
   deltaD <- fmap CS.percents <$> SP.parse1D "deltaD" (CS.paramStats summary)
@@ -375,7 +399,7 @@ runHouseModel ::
   HouseDataWrangler ->
   (T.Text, SB.StanModel) ->
   Int ->
-  K.ActionWithCacheTime r HouseData ->
+  K.ActionWithCacheTime r HouseModelData ->
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults, MapRow.MapRow [Double]))
 runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
@@ -395,14 +419,16 @@ runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple
         (Just 1000)
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> modelName <> "_" <> (T.pack $ show year) <> ".bin"
-      houseDataForYear_C = fmap (F.filterFrame ((== year) . F.rgetField @BR.Year)) houseData_C
+      electionDataForYear_C = fmap (F.filterFrame ((== year) . F.rgetField @BR.Year) . electionResults) houseData_C
+      ccesDataForYear_C = fmap (F.filterFrame ((== year) . F.rgetField @BR.Year) . ccesData) houseData_C
+      houseDataForYear_C = HouseModelData <$> electionDataForYear_C <*> ccesDataForYear_C
   modelDep <- SM.modelCacheTime stanConfig
   K.logLE K.Diagnostic $ "modelDep: " <> (T.pack $ show $ K.cacheTime modelDep)
   K.logLE K.Diagnostic $ "houseDataDep: " <> (T.pack $ show $ K.cacheTime houseData_C)
   let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
-        (houseData, _) <- K.ignoreCacheTime inputAndIndex_C
-        K.knitEither $ extractResults s houseData
+        (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
+        K.knitEither $ extractResults s houseModelData
   BR.retrieveOrMakeFrameAnd resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
