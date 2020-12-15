@@ -38,6 +38,7 @@ import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
+import qualified Frames.Conversion as FC
 import qualified Frames.Melt as F
 import qualified Frames.InCore as FI
 import qualified Frames.Folds as FF
@@ -90,6 +91,7 @@ type TVotes = "TVotes" F.:-> Int
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes]
 type ElectionDataR = KeyR V.++ DemographicsR V.++ ElectionR
+type ElectionPredictor = [FracUnder45, FracFemale, FracGrad, FracNonWhite, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
 type ElectionData = F.FrameRec ElectionDataR
 
 
@@ -97,9 +99,10 @@ type ElectionData = F.FrameRec ElectionDataR
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
 type CCESDataR = CCESByCD V.++ [Incumbency, FracCitizen, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile]
+type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
-data HouseModelDataG g f  = HouseModelData { electionResults :: g (f ElectionDataR), ccesData :: g (f CCESDataR) }
+data HouseModelDataG g f  = HouseModelData { electionData :: g (f ElectionDataR), ccesData :: g (f CCESDataR) }
 
 Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelDataG
 
@@ -268,76 +271,79 @@ prepCachedData = do
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
+district r = F.rgetField @BR.StateAbbreviation r <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
+tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
+enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
+enumDistrictF = FL.premap district (SJ.enumerate 1)
+maxAvgIncomeF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
+maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
+
+makeElectionResultJSON :: ElectionData -> Either T.Text A.Series
+makeElectionResultJSON er = do
+  let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
+        FL.fold
+        ( (,,,)
+          <$> enumStateF
+          <*> enumDistrictF
+          <*> maxAvgIncomeF
+          <*> maxDensityF
+        )
+        er
+      predictRow :: F.Record DemographicsR -> Vec.Vector Double
+      predictRow r =
+        Vec.fromList
+        $ F.recToList 
+        $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
+        $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity) 
+        $ F.rcast @ElectionPredictor r
+      dataF =
+        SJ.namedF "G" FL.length
+        <> SJ.constDataF "K" (7 :: Int)
+        <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
+        <> SJ.valueToPairF "district" (SJ.jsonArrayMF (cdM . district))
+        <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRow . F.rcast))
+        <> SJ.valueToPairF "Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
+        <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
+        <> SJ.valueToPairF "TVotes" (SJ.jsonArrayF tVotes)
+        <> SJ.valueToPairF "DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
+  SJ.frameToStanJSONSeries dataF er
+
+makeCCESDataJSON :: CCESData ->  Either T.Text A.Series
+makeCCESDataJSON cd = do
+  let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
+        FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) cd
+      boolToNumber b = if b then 1 else 0
+      predictRowC = FC.mkConverter (boolToNumber . (== DT.Under))
+                    V.:& FC.mkConverter (boolToNumber . (== DT.Female))
+                    V.:& FC.mkConverter (boolToNumber . (== DT.Grad))
+                    V.:& FC.mkConverter (boolToNumber . (== DT.NonWhite))
+                    V.:& FC.mkConverter id
+                    V.:& FC.mkConverter id
+                    V.:& FC.mkConverter id
+                    V.:& V.RNil
+      predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
+      predictRow r = Vec.fromList $ FC.toListVia predictRowC r
+      dataF = SJ.namedF "N" FL.length
+              <> SJ.constDataF "L" (7 :: Int)
+--              <> SJ.valueToPairF "state_c" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
+--              <> SJ.valueToPairF "district_c" (SJ.jsonArrayMF (cdM . district))
+              <> SJ.valueToPairF "Y" (SJ.jsonArrayF (predictRow . F.rcast))
+              <> SJ.valueToPairF "CCES_Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
+              <> SJ.valueToPairF "Surveyed" (SJ.jsonArrayF (F.rgetField @Surveyed))
+              <> SJ.valueToPairF "CCES_Votes" (SJ.jsonArrayF (F.rgetField @TVotes))
+              <> SJ.valueToPairF "CCES_DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
+  SJ.frameToStanJSONSeries dataF cd
+  
 houseDataWrangler :: HouseDataWrangler
 houseDataWrangler = SC.Wrangle SC.NoIndex f
   where
-    -- house cols
-    district r = F.rgetField @BR.StateAbbreviation r <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
-    tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
-    enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
-    enumDistrictF = FL.premap district (SJ.enumerate 1)
-    maxAvgIncomeF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
-    maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
     f _ = ((), makeDataJsonE)
       where
-        makeDataJsonE :: HouseModelData -> Either T.Text A.Series
         makeDataJsonE hmd = do
-          -- first electionResults
-          let electionResultJSONE =
-                let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
-                      FL.fold
-                      ( (,,,)
-                        <$> enumStateF
-                        <*> enumDistrictF
-                        <*> maxAvgIncomeF
-                        <*> maxDensityF
-                      )
-                      (electionResults hmd)
-
-                    predictRow :: F.Record DemographicsR -> Vec.Vector Double
-                    predictRow r =
-                      Vec.fromList
-                      $ F.recToList 
-                      $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
-                      $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity) 
-                      $ F.rcast
-                      @[ FracUnder45,
-                         FracFemale,
-                         FracGrad,
-                         FracNonWhite,
-                         FracCitizen,
-                         DT.AvgIncome,
-                         DT.PopPerSqMile
-                       ]
-                      r
-                    dataF =
-                      SJ.namedF "G" FL.length
-                      <> SJ.constDataF "K" (7 :: Int)
-                      <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
-                      <> SJ.valueToPairF "district" (SJ.jsonArrayMF (cdM . district))
-                      <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRow . F.rcast))
-                      <> SJ.valueToPairF "Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
-                      <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
-                      <> SJ.valueToPairF "TVotes" (SJ.jsonArrayF tVotes)
-                      <> SJ.valueToPairF "DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
-                in  SJ.frameToStanJSONSeries dataF (electionResults hmd)
-{-              ccesDataJSONE =
-                let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
-                      FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) (ccesData hmd)
-                    boolToNumber b = if b then 1 else 0
-                    predictRow :: F.Record CCESDataR -> Vec.Vector Double
-                    predictRow r =
-                      Vec.fromList
-                      [
-                      $ F.recToList
-                      $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
-                      $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
-                      
--}
-                    
-                
-          electionResultJSONE
-
+          electionResultJsonE <- makeElectionResultJSON $ electionData hmd
+          ccesDataJSONE <- makeCCESDataJSON $ ccesData hmd
+          return $ electionResultJsonE <> ccesDataJSONE
+        
 type VoteP = "VoteProb" F.:-> Double
 type DVoteP = "DVoteProb" F.:-> Double
 type EVotes = "EstVotes" F.:-> Int
@@ -392,7 +398,7 @@ extractResults summary hmd = do
           else Left ("Wrong number of percentiles in stan statistic")
   predictions <-
     traverse makeRow $
-      zip (FL.fold FL.list $ electionResults hmd) modeledL
+      zip (FL.fold FL.list $ electionData hmd) modeledL
   -- deltas
   deltaIncD <- fmap CS.percents <$> SP.parseScalar "deltaIncD" (CS.paramStats summary)
   deltaD <- fmap CS.percents <$> SP.parse1D "deltaD" (CS.paramStats summary)
@@ -450,7 +456,7 @@ runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple
   let resultCacheKey = "house/model/stan/election_" <> modelName <> "_" <> (T.pack $ show year) <> ".bin"
       filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
       filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
-      houseDataForYear_C = fmap (Optics.over #electionResults filterToYear . Optics.over #ccesData filterToYear) houseData_C
+      houseDataForYear_C = fmap (Optics.over #electionData filterToYear . Optics.over #ccesData filterToYear) houseData_C
   modelDep <- SM.modelCacheTime stanConfig
   K.logLE K.Diagnostic $ "modelDep: " <> (T.pack $ show $ K.cacheTime modelDep)
   K.logLE K.Diagnostic $ "houseDataDep: " <> (T.pack $ show $ K.cacheTime houseData_C)
