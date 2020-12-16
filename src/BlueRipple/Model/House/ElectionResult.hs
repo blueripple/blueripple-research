@@ -102,26 +102,14 @@ type CCESDataR = CCESByCD V.++ [Incumbency, FracCitizen, DT.AvgIncome, DT.Median
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
-data HouseModelDataG g f  = HouseModelData { electionData :: g (f ElectionDataR), ccesData :: g (f CCESDataR) }
+data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData } 
+Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelData
 
-Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelDataG
-
-type HouseModelData = HouseModelDataG F.Frame F.Record
-type HouseModelDataS = HouseModelDataG [] (F.Rec FS.SElField)
-
-instance S.Serialize HouseModelDataS where
-  put (HouseModelData a b) = S.put (a, b)
-  get = fmap (\(a, b) -> HouseModelData a b) S.get
-
-houseModelDataToS :: HouseModelData -> HouseModelDataS
-houseModelDataToS (HouseModelData er cd) = let f = fmap FS.toS . FL.fold FL.list in HouseModelData (f er) (f cd)
-
-houseModelDataFromS :: HouseModelDataS -> HouseModelData
-houseModelDataFromS (HouseModelData er' cd') = let f = F.toFrame . fmap FS.fromS in HouseModelData (f er') (f cd')
-
+-- frames are not directly serializable so we have to do...shenanigans
 instance S.Serialize HouseModelData where
-  put = S.put . houseModelDataToS
-  get = houseModelDataFromS <$> S.get
+  put (HouseModelData a b) = S.put (FS.SFrame a, FS.SFrame b)
+  get = (\(a, b) -> HouseModelData (FS.unSFrame a) (FS.unSFrame b)) <$> S.get
+
 
 pumsF :: FL.Fold (F.Record (PUMS.CDCounts DT.CatColsASER)) (F.FrameRec (KeyR V.++ DemographicsR))
 pumsF =
@@ -250,7 +238,7 @@ prepCachedData = do
   K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "MT") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
   --BR.clearIfPresentD "model/house/houseData.bin"
-  K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData @T.Text "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
+  BR.retrieveOrMakeD {-@K.DefaultSerializer @K.DefaultCacheData @T.Text -} "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
     electionResults <- K.knitEither $ FL.foldM electionF (F.filterFrame ((>= 2012) . F.rgetField @BR.Year) elex)
@@ -323,15 +311,15 @@ makeCCESDataJSON cd = do
                     V.:& V.RNil
       predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
       predictRow r = Vec.fromList $ FC.toListVia predictRowC r
-      dataF = SJ.namedF "N" FL.length
-              <> SJ.constDataF "L" (7 :: Int)
---              <> SJ.valueToPairF "state_c" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
---              <> SJ.valueToPairF "district_c" (SJ.jsonArrayMF (cdM . district))
-              <> SJ.valueToPairF "Y" (SJ.jsonArrayF (predictRow . F.rcast))
-              <> SJ.valueToPairF "CCES_Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
-              <> SJ.valueToPairF "Surveyed" (SJ.jsonArrayF (F.rgetField @Surveyed))
-              <> SJ.valueToPairF "CCES_Votes" (SJ.jsonArrayF (F.rgetField @TVotes))
-              <> SJ.valueToPairF "CCES_DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
+      dataF = SJ.namedF "G" FL.length
+              <> SJ.constDataF "K" (7 :: Int)
+              <> SJ.valueToPairF "state_c" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
+              <> SJ.valueToPairF "district_c" (SJ.jsonArrayMF (cdM . district))
+              <> SJ.valueToPairF "X" (SJ.jsonArrayF (predictRow . F.rcast))
+              <> SJ.valueToPairF "Inc" (SJ.jsonArrayF (F.rgetField @Incumbency))
+              <> SJ.valueToPairF "VAP" (SJ.jsonArrayF (F.rgetField @Surveyed))
+              <> SJ.valueToPairF "Votes" (SJ.jsonArrayF (F.rgetField @TVotes))
+              <> SJ.valueToPairF "DVotes" (SJ.jsonArrayF (F.rgetField @DVotes))
   SJ.frameToStanJSONSeries dataF cd
   
 houseDataWrangler :: HouseDataWrangler
@@ -342,7 +330,7 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
         makeDataJsonE hmd = do
           electionResultJsonE <- makeElectionResultJSON $ electionData hmd
           ccesDataJSONE <- makeCCESDataJSON $ ccesData hmd
-          return $ electionResultJsonE <> ccesDataJSONE
+          return $ electionResultJsonE {- <> ccesDataJSONE -}
         
 type VoteP = "VoteProb" F.:-> Double
 type DVoteP = "DVoteProb" F.:-> Double
@@ -353,16 +341,25 @@ type EDVotes95 = "EstDVotes95" F.:-> Int
 
 type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
-type HouseModelResults = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
+type HouseModelFit = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
 
 {-
 --getParameters :: (CS.StanSummary -> T.Text -> Either T.Text a) -> MapRow () -> CS.StanSummary -> Either T.Text (MapRow a)
 --getParameters getP nameRow s = sequenceA $ M.mapWithKey (\k _ -> getP s k) nameRow
 -}
+
+data HouseModelResults = HouseModelResults { districtFit :: F.FrameRec HouseModelFit, parameterDeltas :: MapRow.MapRow [Double] }
+Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelResults
+
+-- frames are not directly serializable so we have to do...shenanigans
+instance S.Serialize HouseModelResults where
+  put (HouseModelResults df fp) = S.put (FS.SFrame df, fp)
+  get = (\(df, fp) -> HouseModelResults (FS.unSFrame df) fp) <$> S.get
+
 extractResults ::
   CS.StanSummary ->
   HouseModelData ->
-  Either T.Text (F.FrameRec HouseModelResults, MapRow.MapRow [Double])
+  Either T.Text HouseModelResults
 extractResults summary hmd = do
   -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
@@ -426,7 +423,7 @@ extractResults summary hmd = do
       ]
       (SP.getVector deltaV)
   let deltas = deltaDMR <> deltaVMR <> M.singleton "Incumbency" (SP.getScalar deltaIncD)
-  return $ (F.toFrame predictions, deltas)
+  return $ HouseModelResults (F.toFrame predictions) deltas
 
 runHouseModel ::
   forall r.
@@ -435,7 +432,7 @@ runHouseModel ::
   (T.Text, SB.StanModel) ->
   Int ->
   K.ActionWithCacheTime r HouseModelData ->
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseModelResults, MapRow.MapRow [Double]))
+  K.Sem r (K.ActionWithCacheTime r HouseModelResults)
 runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
@@ -464,7 +461,7 @@ runHouseModel hdw (modelName, model) year houseData_C = K.wrapPrefix "BlueRipple
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults s houseModelData
-  BR.retrieveOrMakeFrameAnd resultCacheKey dataModelDep $ \() -> do
+  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig

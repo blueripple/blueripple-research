@@ -41,6 +41,7 @@ import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.MapRow as MapRow
 import qualified Knit.Report as K
 import qualified Optics
+import Optics.Operators
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 yamlAuthor :: T.Text
@@ -93,14 +94,14 @@ testHouseModel =
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData
     hmd <- K.ignoreCacheTime houseData_C
-    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) (Optics.view #ccesData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (Optics.view #electionData hmd)
+    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) (hmd ^. #ccesData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracCitizen "% Citizen" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
     let votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if (votes r > 0) then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
@@ -115,7 +116,7 @@ testHouseModel =
                              ,FV.LabeledCol "Turnout" turnout
                              ,FV.LabeledCol "D Share" dShare
                              ]
-    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet (Optics.view #electionData hmd)
+    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart 
     let isYear year = (== year) . F.rgetField @BR.Year
         dVotes = F.rgetField @BRE.DVotes
@@ -163,7 +164,8 @@ testHouseModel =
           case vals of
             [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
             _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
-        expandMapRow (y, (_, mr)) = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList mr)
+        expandMapRow (y, modelResults)
+          = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList $ modelResults ^. #parameterDeltas)
     mapRows <- K.knitEither $ traverse expandMapRow results
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
     _ <- K.addHvega Nothing Nothing $ modelChart "Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
