@@ -117,28 +117,38 @@ testHouseModel =
                              ,FV.LabeledCol "D Share" dShare
                              ]
     corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing corrChart 
+    _ <- K.addHvega Nothing Nothing corrChart
     let isYear year = (== year) . F.rgetField @BR.Year
-        dVotes = F.rgetField @BRE.DVotes
+        {-dVotes = F.rgetField @BRE.DVotes
         rVotes = F.rgetField @BRE.RVotes
         competitive r = dVotes r > 0 && rVotes r > 0
-        competitiveIn y r = isYear y r && competitive r
+        competitiveIn y r = isYear y r && competitive r-}
+    
     K.logLE K.Info "run model(s)"
     let models =
-          [ ("betaBinomialInc", BRE.betaBinomialInc {-},
-                                                    ("binomial_v1", BRE.binomial_v1),
-                                                    ("betaBinomial_v1", BRE.betaBinomial_v1),
-                                                    ("betaBinomialHS", BRE.betaBinomialHS)-})
+          [ ("betaBinomialInc", BRE.UseElectionResults, BRE.betaBinomialInc)
+          , ("betaBinomialInc", BRE.UseCCES, BRE.betaBinomialInc)
+          , ("betaBinomialInc", BRE.UseBoth, BRE.betaBinomialInc)
           ]
         runOne x =
           BRE.runHouseModel
             BRE.houseDataWrangler
             x
             2018
-            (fmap (Optics.over #electionData (F.filterFrame (competitiveIn 2018))
+            (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
                    . Optics.over #ccesData (F.filterFrame (isYear 2018)))
               houseData_C
             )
+    results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
+    let printResult hmr = do
+          K.logLE K.Info "electionFit:"
+          BR.logFrame (hmr ^. #electionFit)
+          K.logLE K.Info "ccesFit:"
+          BR.logFrame (hmr ^. #ccesFit)
+          
+    traverse printResult results
+    
+{-
         years = [2012, 2014, 2016, 2018]
         runYear y =
           BRE.runHouseModel
@@ -150,7 +160,7 @@ testHouseModel =
               houseData_C
             )
 --            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
-    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
+    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models)
     let nameType l =
           let (name, t) = T.splitAt (T.length l - 1) l
            in case t of
@@ -169,7 +179,7 @@ testHouseModel =
     mapRows <- K.knitEither $ traverse expandMapRow results
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
     _ <- K.addHvega Nothing Nothing $ modelChart "Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
-
+-}
     return ()
 
 modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite

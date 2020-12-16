@@ -13,7 +13,7 @@ int<lower=0> G = N;
   matrix[G, K] X = Xe;
   vector<lower=0>[G] VAP = VAPe;
   vector[G] TVotes = TVotesE;
-  vector[G} DVotes = DVotesE;vector<lower=0>[K] sigma;
+  vector[G] DVotes = DVotesE;vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);

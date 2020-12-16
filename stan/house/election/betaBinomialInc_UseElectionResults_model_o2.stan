@@ -1,19 +1,26 @@
 data {
-int<lower = 1> G; // number of districts 
+int<lower = 1> N; // number of districts
+  int<lower = 1> M; // number of cces rows
   int<lower = 1> K; // number of predictors
-  int<lower = 1, upper = G> district[G]; // do we need this?
-  matrix[G, K] X;
-  int<lower=-1, upper=1> Inc[G];
-  int<lower = 0> VAP[G];
-  int<lower = 0> TVotes[G];
-  int<lower = 0> DVotes[G];
+  int<lower = 1, upper = N> districtE[G]; // do we need this?
+  int<lower = 1, upper = M> districtC[G]; // do we need this?
+  matrix[N, K] Xe;
+  matrix[M, K] Xc;
+  int<lower=-1, upper=1> IncE[N];
+  int<lower=-1, upper=1> IncC[M];
+  int<lower = 0> VAPe[N];
+  int<lower = 0> VAPc[M];
+  int<lower = 0> TVotesE[N];
+  int<lower = 0> DVotesE[N];
+  int<lower = 0> TVotesC[M];
+  int<lower = 0> DVotesC[M];
 }
 transformed data {
 int<lower=0> G = N;
   matrix[G, K] X = Xe;
   vector<lower=0>[G] VAP = VAPe;
   vector[G] TVotes = TVotesE;
-  vector[G} DVotes = DVotesE;vector<lower=0>[K] sigma;
+  vector[G] DVotes = DVotesE;vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
