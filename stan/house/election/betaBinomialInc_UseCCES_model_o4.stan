@@ -39,17 +39,19 @@ int<lower=0> G = M;
 }
 parameters {
 real alphaD;
-//  real <lower=0, upper=1> dispD;                             
+  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-//  real <lower=0, upper=1> dispV;
+  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
   real <lower=0> phiD;
   real <lower=0> phiV;
 }
 transformed parameters {
-vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+phiD = (1-dispD)/dispD;
+  phiV = (1-dispV)/dispV;  
+  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
   vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;
   vector [K] betaD;

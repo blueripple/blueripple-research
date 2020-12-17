@@ -126,8 +126,9 @@ testHouseModel =
     
     K.logLE K.Info "run model(s)"
     let models =
-          [ ("betaBinomialInc", BRE.UseElectionResults, BRE.betaBinomialInc)
-          , ("betaBinomialInc", BRE.UseCCES, BRE.betaBinomialInc)
+
+          [ ("betaBinomialInc", BRE.UseCCES, BRE.betaBinomialInc)
+          , ("betaBinomialInc", BRE.UseElectionResults, BRE.betaBinomialInc)
           , ("betaBinomialInc", BRE.UseBoth, BRE.betaBinomialInc)
           ]
         runOne x =

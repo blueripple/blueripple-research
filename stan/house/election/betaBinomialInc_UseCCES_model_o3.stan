@@ -39,14 +39,14 @@ int<lower=0> G = M;
 }
 parameters {
 real alphaD;
-//  real <lower=0, upper=1> dispD;                             
+  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-//  real <lower=0, upper=1> dispV;
+  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=0> phiD;
-  real <lower=0> phiV;
+  real <lower=0> phiD = (1-dispD)/dispD;
+  real <lower=0> phiV = (1-dispV)/dispV;
 }
 transformed parameters {
 vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);

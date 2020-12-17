@@ -238,7 +238,7 @@ prepCachedData = do
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "MT") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
-  BR.clearIfPresentD "model/house/houseData.bin"
+--  BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeD {-@K.DefaultSerializer @K.DefaultCacheData @T.Text -} "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
@@ -270,7 +270,7 @@ prepCachedData = do
                         <> T.pack
                         (show missingDemo)
     let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
-    BR.logFrame ccesWithoutNullVotes
+    --BR.logFrame ccesWithoutNullVotes
     return $ HouseModelData competitiveElectionResults (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
@@ -326,7 +326,11 @@ makeCCESDataJSON cd = do
                     V.:& FC.mkConverter id
                     V.:& V.RNil
       predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
-      predictRow r = Vec.fromList $ FC.toListVia predictRowC r
+      predictRow r = Vec.fromList
+                     $ FC.toListVia predictRowC
+                     $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
+                     $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
+                     $ r
       dataF = SJ.namedF "M" FL.length
 --              <> SJ.constDataF "K" (7 :: Int)
               <> SJ.valueToPairF "stateC" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
@@ -580,7 +584,8 @@ binomialDataBlock =
 
 transformedDataBlockCommon :: T.Text
 transformedDataBlockCommon = [here|
- vector<lower=0>[K] sigma;
+
+  vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
@@ -744,19 +749,19 @@ betaBinomialIncParametersBlock :: SB.ParametersBlock
 betaBinomialIncParametersBlock =
   [here|
   real alphaD;
-  real <lower=0, upper=1> dispD;                             
+//  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-  real <lower=0, upper=1> dispV;
+//  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
+  real <lower=0> phiD;
+  real <lower=0> phiV;
 |]
 
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
 betaBinomialIncTransformedParametersBlock =
   [here|
-  real <lower=0> phiD = (1-dispD)/dispD;
-  real <lower=0> phiV = (1-dispV)/dispV;
   vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
   vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;
@@ -773,6 +778,8 @@ betaBinomialIncModelBlock =
   betaV ~ cauchy(0, 2.5);
   betaD ~ cauchy(0, 2.5);
   incBetaD ~ cauchy(0, 2.5);
+  phiD ~ cauchy(0,2);
+  phiV ~ cauchy(0,2);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
