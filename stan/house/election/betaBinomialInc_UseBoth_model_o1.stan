@@ -16,12 +16,12 @@ int<lower = 1> N; // number of districts
   int<lower = 0> DVotesC[M];
 }
 transformed data {
-int<lower=0> G = M;
-  matrix[G, K] X = Xc;
-  int<lower=-1, upper=1> Inc[G] = IncC;
-  int<lower=0> VAP[G] = VAPc;
-  int<lower=0> TVotes[G] = TVotesC;
-  int<lower=0> DVotes[G] = DVotesC;vector<lower=0>[K] sigma;
+int<lower=0> G = M + N;
+  matrix[G, K] X = append_row (Xe, Xc);
+  int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncE);
+  int<lower=0> VAP[G] = append_array(VAPe, VAPc);
+  int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
+  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);

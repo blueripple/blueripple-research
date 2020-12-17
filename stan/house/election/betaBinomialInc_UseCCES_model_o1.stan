@@ -39,17 +39,17 @@ int<lower=0> G = M;
 }
 parameters {
 real alphaD;
-  real <lower=0, upper=1> dispD;                             
+//  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-  real <lower=0, upper=1> dispV;
+//  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
+  real <lower=0> phiD;
+  real <lower=0> phiV;
 }
 transformed parameters {
-real <lower=0> phiD = (1-dispD)/dispD;
-  real <lower=0> phiV = (1-dispV)/dispV;
-  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
   vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;
   vector [K] betaD;
@@ -62,6 +62,8 @@ alphaD ~ cauchy(0, 10);
   betaV ~ cauchy(0, 2.5);
   betaD ~ cauchy(0, 2.5);
   incBetaD ~ cauchy(0, 2.5);
+  phiD ~ cauchy(0,2);
+  phiV ~ cauchy(0,2);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 }

@@ -16,12 +16,12 @@ int<lower = 1> N; // number of districts
   int<lower = 0> DVotesC[M];
 }
 transformed data {
-int<lower=0> G = M;
-  matrix[G, K] X = Xc;
-  int<lower=-1, upper=1> Inc[G] = IncC;
-  int<lower=0> VAP[G] = VAPc;
-  int<lower=0> TVotes[G] = TVotesC;
-  int<lower=0> DVotes[G] = DVotesC;vector<lower=0>[K] sigma;
+int<lower=0> G = M + N;
+  matrix[G, K] X = append_row (Xe, Xc);
+  int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
+  int<lower=0> VAP[G] = append_array(VAPe, VAPc);
+  int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
+  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);vector<lower=0>[K] sigma;
   matrix[G, K] X_centered;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
@@ -39,18 +39,16 @@ int<lower=0> G = M;
 }
 parameters {
 real alphaD;
-  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
+  real <lower=0> phiD;  
+  real <lower=0> phiV;
 }
 transformed parameters {
-real <lower=0> phiD = (1-dispD)/dispD;
-  real <lower=0> phiV = (1-dispV)/dispV;
-  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
-  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;
   vector [K] betaD;
   betaV = R_ast_inverse * thetaV;

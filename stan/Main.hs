@@ -125,6 +125,7 @@ testHouseModel =
         competitiveIn y r = isYear y r && competitive r-}
     
     K.logLE K.Info "run model(s)"
+{-
     let models =
 
           [ ("betaBinomialInc", BRE.UseCCES, BRE.betaBinomialInc)
@@ -148,20 +149,19 @@ testHouseModel =
           BR.logFrame (hmr ^. #ccesFit)
           
     traverse printResult results
-    
-{-
-        years = [2012, 2014, 2016, 2018]
+-}  
+    let years = [2012, 2014, 2016, 2018]
         runYear y =
           BRE.runHouseModel
             BRE.houseDataWrangler
-            ("betaBinomialInc", BRE.betaBinomialInc)
+            ("betaBinomialInc", BRE.UseBoth, BRE.betaBinomialInc)
             y
-            (fmap (Optics.over #electionData (F.filterFrame (competitiveIn y))
+            (fmap (Optics.over #electionData (F.filterFrame (isYear y))
               . Optics.over #ccesData (F.filterFrame (isYear y)))
               houseData_C
             )
 --            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
-    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models)
+    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
     let nameType l =
           let (name, t) = T.splitAt (T.length l - 1) l
            in case t of
@@ -180,7 +180,6 @@ testHouseModel =
     mapRows <- K.knitEither $ traverse expandMapRow results
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
     _ <- K.addHvega Nothing Nothing $ modelChart "Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
--}
     return ()
 
 modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite

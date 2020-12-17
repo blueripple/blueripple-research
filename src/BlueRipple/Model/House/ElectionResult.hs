@@ -209,7 +209,7 @@ countCCESVotesF :: FL.Fold (F.Record [CCES.Turnout, CCES.HouseVoteParty]) (F.Rec
 countCCESVotesF =
   let surveyedF = FL.length
       votedF = FL.prefilter ((== CCES.T_Voted) . F.rgetField @CCES.Turnout) FL.length
-      dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) FL.length -- or votedF?
+      dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) votedF
   in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
 
 ccesF :: Int -> FL.Fold (F.Record CCES.CCES_MRP) (F.FrameRec CCESByCD)
@@ -221,7 +221,8 @@ ccesF earliestYear = FMR.concatFold
 
 ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
 ccesCountedDemHouseVotesByCD = do
-  cces_C <- CCES.ccesDataLoader 
+  cces_C <- CCES.ccesDataLoader
+--  BR.clearIfPresentD "model/house/ccesByCD.bin"
   BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ return . FL.fold (ccesF 2012)
     
 
@@ -239,7 +240,7 @@ prepCachedData = do
   K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "MT") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
 --  BR.clearIfPresentD "model/house/houseData.bin"
-  BR.retrieveOrMakeD {-@K.DefaultSerializer @K.DefaultCacheData @T.Text -} "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
+  BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
         isYear year = (== year) . F.rgetField @BR.Year
@@ -251,6 +252,7 @@ prepCachedData = do
         competitiveAfter y r = afterYear y r && competitive r
         hasVoters r = F.rgetField @Surveyed r > 0
         hasVotes r = F.rgetField @TVotes r > 0
+        hasDVotes r = F.rgetField @DVotes r > 0
     electionResults <- K.knitEither $ FL.foldM electionF (F.filterFrame (afterYear 2012) elex)
 
     let (demoAndElex, missingElex) = FJ.leftJoinWithMissing @KeyR demographics electionResults
@@ -269,14 +271,14 @@ prepCachedData = do
                    else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
                         <> T.pack
                         (show missingDemo)
-    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
-    --BR.logFrame ccesWithoutNullVotes
+    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r) ccesWithDD -- ICK.  This will bias our turnout model
+--    BR.logFrame $ F.filterFrame (\r -> F.rgetField @DVotes r > F.rgetField @TVotes r) ccesWithoutNullVotes
     return $ HouseModelData competitiveElectionResults (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
 district r = F.rgetField @BR.StateAbbreviation r <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
-tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
+
 enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
 enumDistrictF = FL.premap district (SJ.enumerate 1)
 maxAvgIncomeF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
@@ -284,7 +286,8 @@ maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.m
 
 makeElectionResultJSON :: ElectionData -> Either T.Text A.Series
 makeElectionResultJSON er = do
-  let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
+  let tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
+      ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =        
         FL.fold
         ( (,,,)
           <$> enumStateF
@@ -363,7 +366,7 @@ type EDVotes95 = "EstDVotes95" F.:-> Int
 
 type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
-type ElectionFit = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, DVotes, TVotes] V.++ Modeled
+type ElectionFit = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, TVotes, DVotes] V.++ Modeled
 type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes, DVotes] V.++ Modeled
                 
 data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionFit
@@ -404,8 +407,8 @@ extractResults modelWith summary hmd = do
                   F.rgetField @BR.StateAbbreviation edRow
                     F.&: F.rgetField @BR.CongressionalDistrict edRow
                     F.&: F.rgetField @PUMS.Citizens edRow
-                    F.&: F.rgetField @DVotes edRow
                     F.&: (F.rgetField @DVotes edRow + F.rgetField @RVotes edRow)
+                    F.&: F.rgetField @DVotes edRow
                     F.&: pV
                     F.&: pD
                     F.&: round etVotes
@@ -422,8 +425,8 @@ extractResults modelWith summary hmd = do
                   F.rgetField @BR.StateAbbreviation cdRow
                     F.&: F.rgetField @BR.CongressionalDistrict cdRow
                     F.&: F.rgetField @Surveyed cdRow
-                    F.&: F.rgetField @DVotes cdRow
                     F.&: F.rgetField @TVotes cdRow
+                    F.&: F.rgetField @DVotes cdRow
                     F.&: pV
                     F.&: pD
                     F.&: round etVotes
@@ -503,11 +506,16 @@ runHouseModel hdw (modelName, modelWith, model) year houseData_C = K.wrapPrefix 
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults modelWith s houseModelData
+      unwraps = case modelWith of
+        UseElectionResults -> [SR.UnwrapNamed "DVotesE" "DVotes", SR.UnwrapNamed "TVotesE" "TVotes"]
+        UseCCES -> [SR.UnwrapNamed "DVotesC" "DVotes", SR.UnwrapNamed "TVotesC" "TVotes"]
+        UseBoth -> [SR.UnwrapExpr "append (jsonData $ DVotesE, jsonData $ DVotesC" "DVotes"
+                   , SR.UnwrapExpr "append (jsonData $ TVotesE, jsonData $ TVotesC" "TVotes"]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig
-      (SM.Both [SR.UnwrapJSON "DVotes" "DVotes", SR.UnwrapJSON "TVotes" "TVotes"])
+      (SM.Both unwraps)
       hdw
       (SC.UseSummary getResults)
       ()
@@ -550,6 +558,17 @@ betaBinomialInc modelWith =
   betaBinomialIncModelBlock
   (Just betaBinomialIncGeneratedQuantitiesBlock)
   betaBinomialGQLLBlock
+
+betaBinomialInc2 :: ModelWith -> SB.StanModel
+betaBinomialInc2 modelWith =
+  SB.StanModel
+  binomialDataBlock
+  (Just $ tdb modelWith)
+  betaBinomialInc2ParametersBlock
+  (Just betaBinomialIncTransformedParametersBlock)
+  betaBinomialInc2ModelBlock
+  (Just betaBinomialIncGeneratedQuantitiesBlock)
+  betaBinomialGQLLBlock  
 
 betaBinomialHS :: ModelWith -> SB.StanModel
 betaBinomialHS modelWith =
@@ -629,7 +648,7 @@ binomialTransformedDataBlock_Both =
   [here|
   int<lower=0> G = M + N;
   matrix[G, K] X = append_row (Xe, Xc);
-  int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncE);
+  int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
   int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);  
@@ -749,21 +768,20 @@ betaBinomialIncParametersBlock :: SB.ParametersBlock
 betaBinomialIncParametersBlock =
   [here|
   real alphaD;
-//  real <lower=0, upper=1> dispD;                             
   vector[K] thetaV;
   real alphaV;
-//  real <lower=0, upper=1> dispV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=0> phiD;
+  real <lower=0> phiD;  
   real <lower=0> phiV;
 |]
 
+    
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
 betaBinomialIncTransformedParametersBlock =
   [here|
-  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
-  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;
   vector [K] betaD;
   betaV = R_ast_inverse * thetaV;
@@ -783,6 +801,36 @@ betaBinomialIncModelBlock =
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
+
+betaBinomialInc2ParametersBlock :: SB.ParametersBlock
+betaBinomialInc2ParametersBlock =
+  [here|
+  real alphaD;
+  vector[K] thetaV;
+  real alphaV;
+  vector[K] thetaD;
+  real incBetaD;
+  real <lower=0> phiD;  
+  real <lower=0> phiV;
+  vector <lower=0, upper=1>[G] pV;
+  vector <lower=0, upper=1>[G] pD; 
+|]
+    
+betaBinomialInc2ModelBlock :: SB.ModelBlock
+betaBinomialInc2ModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaV ~ cauchy(0, 2.5);
+  betaD ~ cauchy(0, 2.5);
+  incBetaD ~ cauchy(0, 2.5);
+  phiD ~ cauchy(0,2);
+  phiV ~ cauchy(0,2);
+  pV ~ beta (phiV * pVotedP, (1 - pVotedP) * phiV);
+  TVotes ~ binomial(VAP, pV);
+  pD ~ beta (phiD * pDVoteP, (1 - pDVoteP) * phiD);
+  DVotes ~ binomial(TVotes, pD);
+|]    
 
 betaBinomialIncGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 betaBinomialIncGeneratedQuantitiesBlock =

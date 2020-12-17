@@ -55,17 +55,21 @@ rReadJSON config = "jsonData <- fromJSON(file = \"data/" <> (SC.mrcDatFile confi
 rPrint :: T.Text -> T.Text
 rPrint t = "print(\"" <> t <> "\")"
 
-           
-data UnwrapJSON = UnwrapJSON { jsonName :: T.Text, rName :: T.Text } deriving (Show, Eq, Ord)
-           
+-- Named version is simpler if you just need to copy a value from jsonData into global namespace
+-- Expr version lets you run R code to build the value to put in global namespace
+data UnwrapJSON = UnwrapNamed T.Text T.Text | UnwrapExpr T.Text T.Text deriving (Show, Eq, Ord)
+
+unwrap :: UnwrapJSON -> T.Text
+unwrap (UnwrapNamed jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
+unwrap (UnwrapExpr je rn) = rn <> " <- " <> je <> "\n"
+
 shinyStanScript :: SC.ModelRunnerConfig -> T.Text -> [UnwrapJSON] -> IO T.Text
 shinyStanScript config dirBase unwrapJSONs = do
   rSetCWD <- rSetWorkingDirectory config dirBase
   let unwrapCode = if null unwrapJSONs
                    then ""
                    else
-                     let unwrap (UnwrapJSON jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
-                         unwraps = mconcat $ fmap unwrap unwrapJSONs
+                     let unwraps = mconcat $ fmap unwrap unwrapJSONs
                      in rReadJSON config
                         <> "\n"
                         <> unwraps

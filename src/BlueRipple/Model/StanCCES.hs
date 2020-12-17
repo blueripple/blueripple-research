@@ -220,7 +220,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
         return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig (SM.ShinyStan [SR.UnwrapJSON "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
+    SM.runModel stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
 
 
 prefASER5_MR_Loo :: (K.KnitEffects r,  K.CacheEffectsD r)
