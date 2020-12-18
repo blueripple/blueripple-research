@@ -148,27 +148,25 @@ testHouseModel =
           K.logLE K.Info "ccesFit:"
           BR.logFrame (hmr ^. #ccesFit)
           
-    traverse printResult results
--}  
-    let years = [2012, 2014, 2016, 2018]
-        runYear y =
+    traverse printResult results -}
+    let modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
+        years = [2012, 2014, 2016, 2018]
+        runYear mw y =
           BRE.runHouseModel
-            BRE.houseDataWrangler
-            ("betaBinomialInc", BRE.UseBoth, BRE.betaBinomialInc)
-            y
-            (fmap (Optics.over #electionData (F.filterFrame (isYear y))
-              . Optics.over #ccesData (F.filterFrame (isYear y)))
-              houseData_C
-            )
---            (fmap (F.filterFrame (competitiveIn y)) houseData_C)
-    results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse runYear years)
+          BRE.houseDataWrangler
+          ("betaBinomialInc", mw, BRE.betaBinomialInc, 100)
+          y
+          (fmap (Optics.over #electionData (F.filterFrame (isYear y))
+                 . Optics.over #ccesData (F.filterFrame (isYear y)))
+            houseData_C
+          )
     let nameType l =
           let (name, t) = T.splitAt (T.length l - 1) l
-           in case t of
-                "D" -> Right (name, "D Pref")
-                "y" -> Right (l, "D Pref")
-                "V" -> Right (name, "Turnout")
-                _ -> Left $ "Bad last character in delta label (" <> l <> ")."
+          in case t of
+               "D" -> Right (name, "D Pref")
+               "y" -> Right (l, "D Pref")
+               "V" -> Right (name, "Turnout")
+               _ -> Left $ "Bad last character in delta label (" <> l <> ")."
         expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
         expandInterval (l, vals) = do
           (name, t) <- nameType l
@@ -177,9 +175,19 @@ testHouseModel =
             _ -> Left $ "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow (y, modelResults)
           = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList $ modelResults ^. #parameterDeltas)
-    mapRows <- K.knitEither $ traverse expandMapRow results
+          
+        runModelWith mw = do
+          results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse (runYear mw) years)
+          mapRows <- K.knitEither $ traverse expandMapRow results
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
-    _ <- K.addHvega Nothing Nothing $ modelChart "Change in Probability for 1 std dev change in predictor (with 90% confidence bands)" (FV.ViewConfig 200 200 5) "D Pref" $ concat mapRows
+          _ <- K.addHvega Nothing Nothing
+            $ modelChart
+            ("Change in Probability for 1 std dev change in predictor (with 90% confidence bands): " <> (T.pack $ show mw))
+            (FV.ViewConfig 200 200 5)
+            "D Pref"
+            $ concat mapRows
+          return ()
+    _ <- traverse runModelWith modelWiths
     return ()
 
 modelChart :: (Functor f, Foldable f) => T.Text -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite

@@ -473,11 +473,11 @@ runHouseModel ::
   forall r.
   (K.KnitEffects r, K.CacheEffectsD r) =>
   HouseDataWrangler ->
-  (T.Text, ModelWith, ModelWith -> SB.StanModel) ->
+  (T.Text, ModelWith, ModelWith -> SB.StanModel, Int) ->
   Int ->
   K.ActionWithCacheTime r HouseModelData ->
   K.Sem r (K.ActionWithCacheTime r HouseModelResults)
-runHouseModel hdw (modelName, modelWith, model) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+runHouseModel hdw (modelName, modelWith, model, nSamples) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
       modelNameSuffix = modelName <> "_" <> (T.pack $ show modelWith) <> "_" <> (T.pack $ show year) 
@@ -492,8 +492,8 @@ runHouseModel hdw (modelName, modelWith, model) year houseData_C = K.wrapPrefix 
         (Just $ "election_" <> (T.pack $ show year) <> ".json")
         (Just $ "election_" <> modelNameSuffix)
         4
-        (Just 1000)
-        (Just 1000)
+        (Just nSamples)
+        (Just nSamples)
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> modelNameSuffix <> ".bin"
       filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
@@ -509,8 +509,8 @@ runHouseModel hdw (modelName, modelWith, model) year houseData_C = K.wrapPrefix 
       unwraps = case modelWith of
         UseElectionResults -> [SR.UnwrapNamed "DVotesE" "DVotes", SR.UnwrapNamed "TVotesE" "TVotes"]
         UseCCES -> [SR.UnwrapNamed "DVotesC" "DVotes", SR.UnwrapNamed "TVotesC" "TVotes"]
-        UseBoth -> [SR.UnwrapExpr "append (jsonData $ DVotesE, jsonData $ DVotesC" "DVotes"
-                   , SR.UnwrapExpr "append (jsonData $ TVotesE, jsonData $ TVotesC" "TVotes"]
+        UseBoth -> [SR.UnwrapExpr "append (jsonData $ DVotesE, jsonData $ DVotesC)" "DVotes"
+                   , SR.UnwrapExpr "append (jsonData $ TVotesE, jsonData $ TVotesC)" "TVotes"]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
@@ -609,7 +609,7 @@ transformedDataBlockCommon = [here|
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
     X_centered[,k] = X[,k] - col_mean;
-    sigma[k] = sd(X_centered[,k]);
+    sigma[k] = sd(Xe[,k]);
   } 
   
   matrix[G, K] Q_ast;

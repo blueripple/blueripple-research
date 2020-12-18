@@ -26,7 +26,7 @@ int<lower=0> G = M;
   for (k in 1:K) {
     real col_mean = mean(X[,k]);
     X_centered[,k] = X[,k] - col_mean;
-    sigma[k] = sd(Xe[,k]);
+    sigma[k] = sd(X_centered[,k]);
   } 
   
   matrix[G, K] Q_ast;
