@@ -108,7 +108,7 @@ typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                     => BR.DataPath
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader' dataPath =
-  BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "test/acs1YR_All_Typed.sbin"
+  BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.sbin"
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)                  
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
@@ -204,12 +204,12 @@ pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => Maybe (F.Record PUMS_Typed -> Bool) 
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader filterM =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/test/acs1YrPUMS.bin" filterM
+pumsLoader filterM =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS.bin" filterM
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults =  pumsLoader'
                     (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
-                    "data/test/acs1YrPUMS_Adults.bin"
+                    "data/acs1YrPUMS_Adults.bin"
                     (Just (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18))
 {-
   allPUMS_C <- pumsLoader Nothing

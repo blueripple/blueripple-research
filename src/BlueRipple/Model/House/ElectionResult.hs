@@ -772,14 +772,16 @@ betaBinomialIncParametersBlock =
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=0> phiD;  
-  real <lower=0> phiV;
+  real <lower=1e-5, upper=(1-1e-5)> dispD;  
+  real <lower=1e-5, upper=(1-1e-5)> dispV;
 |]
 
     
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
 betaBinomialIncTransformedParametersBlock =
   [here|
+  real<lower=0> phiV = dispV/(1-dispV);
+  real<lower=0> phiD = dispD/(1-dispD);
   vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
   vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
   vector [K] betaV;

@@ -150,7 +150,7 @@ testHouseModel =
           
     traverse printResult results -}
     let modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
-        years = [2012, 2014, 2016, 2018]
+        years = [{-2012, 2014, 2016,-} 2018]
         runYear mw y =
           BRE.runHouseModel
           BRE.houseDataWrangler
