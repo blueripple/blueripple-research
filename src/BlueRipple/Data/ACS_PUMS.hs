@@ -108,7 +108,7 @@ typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                     => BR.DataPath
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader' dataPath =
-  BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.sbin"
+  BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.bin"
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)                  
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
