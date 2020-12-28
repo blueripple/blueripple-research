@@ -23,7 +23,7 @@ import qualified BlueRipple.Data.DemographicTypes
                                                as BR
 import qualified BlueRipple.Data.ElectionTypes
                                                as BR
-                                               
+
 
 import qualified Knit.Report                   as K
 
@@ -42,6 +42,7 @@ import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CG
+import Numeric (Floating(log))
 
 
 logit :: Floating a => a -> a
@@ -53,7 +54,7 @@ invLogit x = 1 / (1 + exp (-x))
 adjSumA :: (Floating a, A.Ix b) => a -> A.Array b Int -> A.Array b a -> a
 adjSumA x population unadjTurnoutP =
   let popAndUT =
-        zip (fmap realToFrac $ A.elems population) (A.elems unadjTurnoutP)
+        zip (realToFrac <$> A.elems population) (A.elems unadjTurnoutP)
       f delta (n, sigma) = n * invLogit (logit sigma + delta)
   in  FL.fold (FL.premap (f x) FL.sum) popAndUT
 
@@ -71,7 +72,7 @@ findDeltaA
 findDeltaA totalVotes population unadjTurnoutP = do
   let cost :: Floating a => [a] -> a
       cost [x] =
-        votesErrorA (totalVotes) (population) (fmap realToFrac unadjTurnoutP) x
+        votesErrorA totalVotes population (fmap realToFrac unadjTurnoutP) x
       params = CG.defaultParameters { CG.printFinal  = False
                                     , CG.printParams = False
                                     , CG.verbose     = CG.Quiet
@@ -95,7 +96,7 @@ adjSumF delta =
 
 votesErrorF :: Floating a => Int -> a -> FL.Fold (Pair Int a) a
 votesErrorF totalVotes delta =
-  let x = realToFrac totalVotes in fmap (abs . ((-) x)) (adjSumF delta)
+  let x = realToFrac totalVotes in fmap (abs . (x -)) (adjSumF delta)
 
 
 findDelta
@@ -155,7 +156,7 @@ adjTurnoutFold
      , F.ElemOf rs t
      , F.ElemOf (WithYS rs) BR.StateAbbreviation
      , F.ElemOf (WithYS rs) BR.Year
-     , rs F.⊆ (WithYS rs)
+     , rs F.⊆ WithYS rs
      , V.KnownField p
      , V.KnownField t
      , V.Snd p ~ Int
@@ -187,7 +188,7 @@ adjTurnoutFold stateTurnoutFrame =
           f x = case vtM of
             Nothing ->
               K.knitError
-                ("Failed to find " <> (T.pack $ show ks) <> " in state turnout."
+                ("Failed to find " <> show ks <> " in state turnout."
                 )
             Just vts -> K.liftKnit $ adjTurnoutLong @p @t @rs vts x
         in

@@ -27,7 +27,8 @@ import qualified Streamly.Internal.Data.Strict as Streamly
 
 import qualified Data.Algorithm.TSNE as TSNE
 import qualified Data.Algorithm.TSNE.Types as TSNE
-import Data.Algorithm.TSNE.Types 
+import Data.Algorithm.TSNE.Types
+import qualified Data.Semigroup as Semigroup
 
 
 
@@ -42,19 +43,19 @@ fromPipes = Streamly.unfoldrM unconsP
 
 tsne3D_S :: forall m.(Monad m, Pipes.MonadIO m)
        => TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT m TSNE.TSNEOutput3D_M
-tsne3D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne3D_M opt seedM input       
+tsne3D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne3D_M opt seedM input
 
 
 tsne2D_S :: forall m.(Monad m, Pipes.MonadIO m)
        => TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT m TSNE.TSNEOutput2D_M
-tsne2D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2D_M opt seedM input       
+tsne2D_S opt seedM input = Streamly.hoist Pipes.liftIO $ fromPipes @_ @IO $ TSNE.tsne2D_M opt seedM input
 
 data TSNEParams = TSNEParams { perplexity :: Int
                              , learningRate :: Double
                              , iters :: Int
                              }
 
-                    
+
 
 runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
         => Maybe Int -- ^ random seed.  Nothing for system seed.
@@ -62,7 +63,7 @@ runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
         -> (a -> [Double])
         -> [Int] -- ^ perplexities
         -> [Double] -- ^ learning rates
-        -> [Int] -- ^ iters        
+        -> [Int] -- ^ iters
         -> (b -> (Int, Double, [c])) -- ^ get iter, cost, solutions
         -> (TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT IO b)
         -> f a
@@ -70,21 +71,26 @@ runTSNE :: (K.KnitEffects r, Foldable f, Ord k)
 runTSNE seedM key dat perplexities learningRates iters solutionInfo tsneS as = do
   let asList = FL.fold (FL.premap (\a -> (key a, dat a)) FL.list) as
       (keyList, inputList) = unzip asList
-      printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ (show iter) ++ "; cost=" ++ show cost
+      printIter b = let (iter, cost, _) = solutionInfo b in putStrLn $ "iter=" ++ show iter ++ "; cost=" ++ show cost
       getSols x = let (_, _, ys) = solutionInfo x in ys
-      allIters p lr = do        
+      allIters p lr = do
         let solS = tsneS (TSNE.TSNEOptions p lr) seedM (listToInput inputList)
         sols <- K.liftKnit
                 $ Streamly.toList
-                $ Streamly.mapM (\b -> printIter b >> return b) 
+                $ Streamly.mapM (\b -> printIter b >> return b)
                 $ Streamly.map snd
                 $ Streamly.filter ((`elem` iters) . fst)
-                $ Streamly.indexed 
-                $ Streamly.take (maximum iters + 1) solS
-                
+                $ Streamly.indexed
+                $ Streamly.take (safeMaximum 0 iters + 1) solS
+
         let maps = fmap (M.fromList . zip keyList . getSols) sols
-            params = fmap (\n -> TSNEParams p lr n) iters
+            params = fmap (TSNEParams p lr) iters
         return $ zip params maps
       optionsToRun = [(p, lr) | p <- perplexities, lr <- learningRates]
-  resultsM <- K.sequenceConcurrently $ fmap (\(p, lr) -> allIters p lr) optionsToRun
-  concat <$> (K.knitMaybe "Some tSNE runs failed!" $ sequence resultsM)
+  resultsM <- K.sequenceConcurrently $ fmap (uncurry allIters) optionsToRun
+  concat <$> K.knitMaybe "Some tSNE runs failed!" (sequence resultsM)
+
+
+safeMaximum :: Ord a => a -> [a] -> a
+safeMaximum d = maybe d neMaximum . nonEmpty where
+  neMaximum = Semigroup.getMax . sconcat . fmap Semigroup.Max

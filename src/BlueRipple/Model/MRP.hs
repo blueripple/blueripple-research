@@ -34,7 +34,6 @@ import qualified Data.IntMap                   as IM
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
                                                 , catMaybes
-                                                , fromMaybe
                                                 , fromJust
                                                 )
 import qualified Data.Text                     as T
@@ -67,6 +66,7 @@ import qualified Polysemy                      as P
                                                 ( raise )
 import           Text.Pandoc.Error             as PE
 import qualified Text.Blaze.Colonnade          as BC
+import qualified Text.Show
 
 import qualified Numeric.LinearAlgebra         as LA
 
@@ -81,6 +81,8 @@ import qualified Numeric.GLM.Predict           as GLM
 import qualified Numeric.GLM.Confidence        as GLM
 import qualified Numeric.SparseDenseConversions
                                                as SD
+
+import qualified Relude.Extra as Relude
 
 import qualified Statistics.Types              as ST
 import           GHC.Generics                   ( Generic, Rep )
@@ -128,8 +130,8 @@ weightedBinomialFold testRow weightRow =
       successesF  = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
       meanWeightF = FL.premap weightRow FL.mean
       varWeightF  = FL.premap weightRow FL.variance
-      f s ws mw = if mw < 1e-6 then realToFrac s else ws / mw -- if meanweight is 0 but 
-  in  (\n s ws mw vw -> n F.&: s F.&: (f s ws mw) F.&: mw F.&: vw F.&: V.RNil)
+      f s ws mw = if mw < 1e-6 then realToFrac s else ws / mw -- if meanweight is 0 but
+  in  (\n s ws mw vw -> n F.&: s F.&: f s ws mw F.&: mw F.&: vw F.&: V.RNil)
       <$> FL.length
       <*> successesF
       <*> wSuccessesF
@@ -173,17 +175,17 @@ weightedCountFoldGeneral getKey filterData testData weightData =
     (FMR.assignKeysAndData @k @d)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
 
-  
+
 
 getFraction r =
   let n = F.rgetField @Count r
   in  if n == 0
         then 0
-        else (realToFrac $ F.rgetField @Successes r) / (realToFrac n)
+        else realToFrac (F.rgetField @Successes r) / realToFrac n
 
 getFractionWeighted r =
   let n = F.rgetField @Count r
-  in  if n == 0 then 0 else (F.rgetField @WeightedSuccesses r) / (realToFrac n)
+  in  if n == 0 then 0 else F.rgetField @WeightedSuccesses r / realToFrac n
 
 data RecordColsProxy k = RecordColsProxy deriving (Show, Enum, Bounded, A.Ix, Eq, Ord)
 type instance GLM.GroupKey (RecordColsProxy k) = F.Record k
@@ -195,11 +197,11 @@ recordToGroupKey
 recordToGroupKey r _ = F.rcast @k r
 
 glmErrorToPandocError :: GLM.GLMError -> PE.PandocError
-glmErrorToPandocError x = PE.PandocSomeError $ T.pack $ show x
+glmErrorToPandocError x = PE.PandocSomeError $ show x
 
 
 type GroupCols gs cs = gs V.++ cs
-type CountedCols gs cs = (GroupCols gs cs) V.++ CountCols
+type CountedCols gs cs = GroupCols gs cs V.++ CountCols
 
 
 
@@ -207,29 +209,29 @@ type CountedCols gs cs = (GroupCols gs cs) V.++ CountCols
 newtype  SimplePredictor ps = SimplePredictor { unSimplePredictor :: F.Record ps }
 
 instance (Show (F.Record ps)) => Show (SimplePredictor ps) where
-  show (SimplePredictor x) = "SimplePredictor " ++ (show x)
-  
+  show (SimplePredictor x) = "SimplePredictor " ++ show @String x
+
 instance (Eq (F.Record ps)) => Eq (SimplePredictor ps) where
   (SimplePredictor x) == (SimplePredictor y) = x == y
-  
+
 instance (Ord (F.Record ps)) => Ord (SimplePredictor ps) where
   compare (SimplePredictor x) (SimplePredictor y) = compare x y
 
 instance (Ord (F.Record ps), K.FiniteSet (F.Record ps)) => Enum (SimplePredictor ps) where
   toEnum n =
-    let im = IM.fromList $ zip [0..] $ fmap SimplePredictor $ S.toAscList K.elements
-    in fromJust $ IM.lookup n im
+    let im = IM.fromList $ zip [0..] $ SimplePredictor <$> S.toAscList K.elements
+    in fromMaybe (error "Bad n given to toEnum :: Int -> SimplePredictor") $ IM.lookup n im
   fromEnum a =
-    let m = M.fromList $ zip (fmap SimplePredictor $ S.toAscList K.elements) [0..]
-    in fromJust $ M.lookup a m
+    let m = M.fromList $ zip (SimplePredictor <$> S.toAscList K.elements) [0..]
+    in fromMaybe (error "Bad SimplePredictor given to fromEnum :: SimplePredictor -> Int.  This means something is very bad.") $ M.lookup a m
 
 instance (K.FiniteSet (F.Record ps)) => Bounded (SimplePredictor ps) where
-  minBound = head $ fmap SimplePredictor $ S.toList $ K.elements
-  maxBound = last $ fmap SimplePredictor $ S.toList $ K.elements
+  minBound = fromMaybe (error "Empty Set of Records used as predictor") $ viaNonEmpty head $ SimplePredictor <$> S.toList K.elements
+  maxBound = fromMaybe (error "Empty Set of Records used as predictor") $ viaNonEmpty last $ SimplePredictor <$> S.toList K.elements
 
 
 allSimplePredictors :: K.FiniteSet (F.Record ps) => [SimplePredictor ps]
-allSimplePredictors = fmap SimplePredictor $ S.toList K.elements 
+allSimplePredictors = SimplePredictor <$> S.toList K.elements
 
 type SimpleEffect ps = GLM.WithIntercept (SimplePredictor ps)
 
@@ -237,15 +239,15 @@ simplePredictor :: forall ps rs. (ps F.⊆ rs
                                      , Eq (F.Record ps)
                                      )
                     => F.Record rs -> SimplePredictor ps -> Double
-simplePredictor r p = if (F.rcast @ps r == unSimplePredictor p) then 1 else 0
+simplePredictor r p = if F.rcast @ps r == unSimplePredictor p then 1 else 0
 
 predMap :: forall cs. (K.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
   => F.Record cs -> M.Map (SimplePredictor cs) Double
-predMap r =  M.fromList $ fmap (\p -> (p, simplePredictor r p)) allSimplePredictors
+predMap r =  M.fromList $ Relude.fmapToSnd (simplePredictor r) allSimplePredictors
 
 catPredMaps :: forall cs.  (K.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
   => M.Map (F.Record cs) (M.Map (SimplePredictor cs) Double)
-catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors  
+catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors
 
 data  LocationHolder c f a =  LocationHolder { locName :: T.Text
                                              , locKey :: Maybe (F.Rec f LocationCols)
@@ -256,7 +258,7 @@ deriving instance (V.RMap c
                   , V.ReifyConstraint Show F.ElField c
                   , V.RecordToList c
                   , Show a) => Show (LocationHolder c F.ElField a)
-                  
+
 instance (SE.Serialize a
          , Ord (F.Rec FS.SElField c)
          , SE.GSerializePut
@@ -288,7 +290,7 @@ predictionsByLocation ::
                   , V.ReifyConstraint Show V.ElField ps
                   , V.RecordToList ps
                   , Ord (F.Record ps)
-                  , Ord (SimplePredictor ps)               
+                  , Ord (SimplePredictor ps)
                   , FI.RecVec (ps V.++ CountCols)
                   , F.ElemOf (ps V.++ CountCols) Count
                   , F.ElemOf (ps V.++ CountCols) MeanWeight
@@ -308,30 +310,30 @@ predictionsByLocation ::
                )
   => GLM.MinimizeDevianceVerbosity
   -> F.FrameRec rs
-  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ CountCols))  
+  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ CountCols))
   -> [SimpleEffect ps]
   -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
 predictionsByLocation verbosity ccesFrame countFold predictors catPredMap =
   P.mapError glmErrorToPandocError  $ K.wrapPrefix "predictionsByLocation" $ do
-    K.logLE K.Diagnostic ("Inferring")
+    K.logLE K.Diagnostic "Inferring"
     (mm, rc, ebg, bu, vb, bs) <- inferMR @LocationCols @ps @ps
                                  verbosity
                                  countFold
-                                 predictors                                                     
+                                 predictors
                                  simplePredictor
                                  ccesFrame
-  
+
     let states = FL.fold FL.set $ fmap (F.rgetField @BR.StateAbbreviation) ccesFrame
-        allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
+        allStateKeys = (F.&: V.RNil) <$> FL.fold FL.list states
         predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-        toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+        toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys
         predict (LocationHolder n lkM cpms) = P.mapError glmErrorToPandocError $ do
           let predictFrom catKey predMap =
                 let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
                     emptyAsNationalGKM = case groupKeyM of
                                            Nothing -> Nothing
-                                           Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
+                                           Just k -> k <$ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
                 in (fmap snd . GLM.runLogOnGLMException Nothing)
                    $ GLM.predictFromBetaB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
           cpreds <- M.traverseWithKey predictFrom cpms
@@ -398,11 +400,11 @@ inferMR
 inferMR verbosity cf fixedEffectList getFixedEffect rows =
   P.mapError glmErrorToPandocError
   $ (fmap snd . GLM.runLogOnGLMException Nothing)
-  $ K.wrapPrefix ("inferMR")
+  $ K.wrapPrefix "inferMR"
   $ do
     let
       addZeroCountsF = FMR.concatFold $ FMR.mapReduceFold
-                       (FMR.noUnpack)
+                       FMR.noUnpack
                        (FMR.splitOnKeys @ls)
                        ( FMR.makeRecsWithKey id
                          $ FMR.ReduceFold
@@ -424,7 +426,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
               _ -> 1/sqrt (designEffect mw vw)
         )
         counted -- VS.replicate (VS.length vCounts) 1.0
-            
+
       fixedEffects = GLM.FixedEffects $ IS.fromList fixedEffectList
       groups       = IS.fromList [RecordColsProxy]
       (observations, fixedEffectsModelMatrix, rcM) = FL.fold
@@ -446,7 +448,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
     rowClassifier <- case rcM of
       Left  msg -> K.knitError msg
       Right x   -> return x
---        K.logLE K.Diagnostic $ "rc=" <> (T.pack $ show rowClassifier)          
+--        K.logLE K.Diagnostic $ "rc=" <> (T.pack $ show rowClassifier)
     let effectsByGroup =
           M.fromList [(RecordColsProxy, IS.fromList [GLM.Intercept])]
     fitSpecByGroup <- GLM.fitSpecByGroup @b @g fixedEffects
@@ -467,7 +469,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
     randomEffectsModelMatrix <- GLM.makeZ fixedEffectsModelMatrix
                                 fitSpecByGroup
                                 rowClassifier
---        K.logLE K.Diagnostic $ "smZ=" <> (T.pack $ show randomEffectsModelMatrix) 
+--        K.logLE K.Diagnostic $ "smZ=" <> (T.pack $ show randomEffectsModelMatrix)
     let randomEffectCalc = GLM.RandomEffectCalculated
           randomEffectsModelMatrix
           (GLM.makeLambda fitSpecByGroup)
@@ -487,7 +489,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
       beta
       (SD.toSparseVector vb)
     let fes = GLM.fixedEffectStatistics mixedModel sigma2 cs beta
-    K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> (T.pack $ show fes)
+    K.logLE K.Diagnostic $ "FixedEffectStatistics: " <> show fes
     epg <- GLM.effectParametersByGroup @g @b rowClassifier effectsByGroup vb
 --        K.logLE K.Diagnostic
 --          $  "EffectParametersByGroup: "
@@ -495,7 +497,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
     gec <- GLM.effectCovariancesByGroup effectsByGroup mixedModel sigma2 th
     K.logLE K.Diagnostic
       $  "EffectCovariancesByGroup: "
-      <> (T.pack $ show gec)
+      <> show gec
     rebl <- GLM.randomEffectsByLabel epg rowClassifier
     K.logLE K.Diagnostic
       $  "Random Effects:\n"
@@ -524,7 +526,7 @@ inferMR verbosity cf fixedEffectList getFixedEffect rows =
     fitted <- traverse f (FL.fold FL.list counted)
     K.logLE K.Diagnostic
       $  "Fitted:\n"
-      <> (T.intercalate "\n" $ fmap (T.pack . show) fitted)
+      <> (T.intercalate "\n" $ fmap show fitted)
     fixedEffectTable <- GLM.printFixedEffects fes
     K.logLE K.Diagnostic $ "FixedEffects:\n" <> fixedEffectTable
     let GLM.FixedEffectStatistics fep _ = fes
@@ -556,7 +558,7 @@ lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
           g (grp, groupKey) =
             GLM.ItemInfo
               <$> (   maybe
-                      (Left $ "Failed on " <> (T.pack $ show (grp, groupKey)))
+                      (Left $ "Failed on " <> show (grp, groupKey))
                       Right
                   $   M.lookup grp indexMaps
                   >>= M.lookup groupKey
@@ -579,14 +581,13 @@ lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
       getPredictorF' row (GLM.Predictor x) = getPredictorF row x
       predictorF row = LA.fromList $ case fe of
         GLM.FixedEffects indexedFixedEffects ->
-          fmap (getPredictorF' row) $ IS.members indexedFixedEffects
+          getPredictorF' row <$> IS.members indexedFixedEffects
         GLM.InterceptOnly -> [1]
       getClassifierLabels :: F.Record rs -> M.Map g (GLM.GroupKey g)
       getClassifierLabels r =
-        M.fromList $ fmap (\g -> (g, classifierLabelF r g)) $ IS.members
-          groupIndices
-      foldObs   = fmap LA.fromList $ FL.premap observationF FL.list
-      foldPred  = fmap LA.fromRows $ FL.premap predictorF FL.list
+        M.fromList $ Relude.fmapToSnd (classifierLabelF r) $ IS.members groupIndices
+      foldObs   = LA.fromList <$> FL.premap observationF FL.list
+      foldPred  = LA.fromRows <$> FL.premap predictorF FL.list
       foldClass = FL.premap getClassifierLabels FL.list
       g (vY, mX, ls) =
         ( vY
@@ -596,7 +597,7 @@ lmePrepFrame observationF fe groupIndices getPredictorF classifierLabelF
           ls
         )
     in
-      fmap g $ ((,,) <$> foldObs <*> foldPred <*> foldClass)
+      g <$> ((,,) <$> foldObs <*> foldPred <*> foldClass)
 
 
 
@@ -621,13 +622,13 @@ addMany
   :: (GLM.GroupC g, Traversable h)
   => h (g, GLM.GroupKey g)
   -> State.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
-addMany x = traverse addOne x >> return ()
+addMany = traverse_ addOne
 
 addAll
   :: GLM.GroupC g
   => [M.Map g (GLM.GroupKey g)]
   -> State.State (M.Map g Int, M.Map g (M.Map (GLM.GroupKey g) Int)) ()
-addAll x = traverse (addMany . M.toList) x >> return ()
+addAll = traverse_ (addMany . M.toList)
 
 -- useful data folds
 weightedSumF :: (Real w, Real v, Fractional y) => FL.Fold (w, v) y
@@ -666,5 +667,5 @@ sumProdIfRecF
   => (V.Snd t -> Bool)
   -> FL.Fold (F.Record rs) y
 sumProdIfRecF test = FL.prefilter (test . F.rgetField @t) $ FL.premap
-  (\r -> (realToFrac (F.rgetField @w r) * realToFrac (F.rgetField @v r)))
+  (\r -> realToFrac (F.rgetField @w r) * realToFrac (F.rgetField @v r))
   FL.sum

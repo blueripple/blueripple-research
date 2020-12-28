@@ -41,7 +41,7 @@ import           Numeric.LinearAlgebra          ( dispf
 import           Numeric.MathFunctions.Constants
                                                 ( m_ln_sqrt_2_pi )
 import qualified Numeric.MCMC                  as MC
-
+import Numeric (log)
 
 import           Math.Gamma                     ( gamma
                                                 , Gamma
@@ -284,7 +284,7 @@ sequenceConcurrently actions = do
         threadId <- forkIO $ (action >>= CC.putMVar mvar)
         return (mvar, threadId)
       g :: (CC.MVar a, CC.ThreadId) -> IO a
-      g (mvar, _) = takeMVar mvar
+      g (mvar, _) = CC.takeMVar mvar
   forked <- traverse f actions -- IO (t (MVar a, ThreadId))
   traverse g forked
 
@@ -312,7 +312,7 @@ data Normal = Normal { m :: Double, v :: Double } deriving (Show)
 
 instance Semigroup Normal where
   (Normal m1 v1) <> (Normal m2 v2) = Normal (m1 + m2) (v1 + v2)
-  
+
 logNormalObservedVote :: [Normal] -> (Int, [Int]) -> Double
 logNormalObservedVote demProbs (demVote, turnoutCounts) =
   let Normal m' v' = mconcat $ fmap (\(t,Normal m v) -> Normal (t*m) (v*m))$ zip turnoutCounts demProbs

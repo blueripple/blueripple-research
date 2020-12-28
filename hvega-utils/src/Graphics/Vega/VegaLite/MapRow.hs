@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
@@ -12,7 +13,7 @@ import qualified Graphics.Vega.VegaLite as GV
 type MapRow a = Map.Map Text.Text a
 
 fromList :: [Text.Text] -> MapRow ()
-fromList = Map.fromList . fmap (\n -> (n, ()))
+fromList = Map.fromList . fmap (, ())
 
 withNames :: (Foldable f, Foldable g, Show a) => f Text.Text -> g a -> Either Text.Text (MapRow a)
 withNames names values = fmap Map.fromList namedValues
@@ -24,9 +25,9 @@ withNames names values = fmap Map.fromList namedValues
         else
           Left
             ( "Names ("
-                <> Text.pack (show $ toList names)
+                <> show (toList names)
                 <> ") and values ("
-                <> Text.pack (show $ toList values)
+                <> show (toList values)
                 <> ") have different lengths in nameRow."
             )
 
@@ -38,17 +39,16 @@ toVLDataFields vlDataVal = Map.toList . fmap vlDataVal
 toVLData :: (Functor f, Foldable f) => (MapRow a -> [(GV.FieldName, GV.DataValue)]) -> [GV.Format] -> f (MapRow a) -> GV.Data
 toVLData vlFields fmt mapRows =
   ( GV.dataFromRows fmt
-      . ( Foldl.fold dataRowF $
-            fmap vlFields mapRows
-        )
+      . Foldl.fold dataRowF (
+            fmap vlFields mapRows)
   )
     []
   where
     dataRowF = Foldl.Fold (\rows tupleList -> rows . GV.dataRow tupleList) id id
 
 dataValueText :: GV.DataValue -> Text.Text
-dataValueText (GV.Boolean b) = "Boolean: " <> Text.pack (show b)
+dataValueText (GV.Boolean b) = "Boolean: " <> show b
 dataValueText (GV.DateTime ds) = "DateTime"
-dataValueText (GV.Number n) = "Number: " <> Text.pack (show n)
+dataValueText (GV.Number n) = "Number: " <> show n
 dataValueText (GV.Str s) = "Str: " <> s
 dataValueText GV.NullValue = "NullValue"

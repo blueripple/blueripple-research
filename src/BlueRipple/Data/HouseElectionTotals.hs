@@ -16,6 +16,7 @@
 {-# OPTIONS_GHC  -O0             #-}
 module BlueRipple.Data.HouseElectionTotals where
 
+import Prelude hiding (State)
 import           BlueRipple.Data.DataFrames
 import qualified Knit.Report                   as K
 

@@ -68,7 +68,7 @@ import qualified Frames.MapReduce              as FMR
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
-import qualified Frames.Misc                   as Frames.Misc
+import qualified Frames.Misc
 import qualified Frames.MapReduce              as MR
 import qualified Frames.Enumerations           as FE
 import qualified Frames.Serialize              as FS
@@ -87,7 +87,6 @@ import qualified Numeric.LinearAlgebra         as LA
 
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
---import qualified Data.Vector.Boxed             as VB
 import           GHC.Generics                   ( Generic, Rep )
 
 import qualified Knit.Report as K
@@ -110,7 +109,7 @@ typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
 typedPUMSRowsLoader' dataPath =
   BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.bin"
 
-typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)                  
+typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
 
@@ -167,7 +166,7 @@ pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => BR.DataPath
   -> T.Text
-  -> Maybe (F.Record PUMS_Typed -> Bool) 
+  -> Maybe (F.Record PUMS_Typed -> Bool)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader' dataPath cacheKey filterTypedM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
@@ -176,9 +175,9 @@ pumsLoader' dataPath cacheKey filterTypedM = do
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedPums
 --  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
   BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pums) -> do
-      K.logLE K.Diagnostic $ "Loading state abbreviation crosswalk."
+      K.logLE K.Diagnostic "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
-      K.logLE K.Diagnostic $ "Now loading and counting raw PUMS data from disk..."
+      K.logLE K.Diagnostic "Now loading and counting raw PUMS data from disk..."
       let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
@@ -188,32 +187,32 @@ pumsLoader' dataPath cacheKey filterTypedM = do
 --      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS pumsStream --fileToFixedS
       let numRows = FL.fold FL.length pums
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
-      K.logLE K.Diagnostic $ "Finished loading " <> (T.pack $ show numRows) <> " rows to Frame.  " <> (T.pack $ show numYoung) <> " under 18. Counting..."
+      K.logLE K.Diagnostic $ "Finished loading " <> show numRows <> " rows to Frame.  " <> show numYoung <> " under 18. Counting..."
       countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
 --      let countedL = FL.fold pumsCountF allRowsF
       let numCounted = FL.fold FL.length countedF
-      K.logLE K.Diagnostic $ "Finished counting. " <> (T.pack $ show numCounted) <> " rows of counts.  Adding state abbreviations..."
+      K.logLE K.Diagnostic $ "Finished counting. " <> show numCounted <> " rows of counts.  Adding state abbreviations..."
 --      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
-      let withAbbrevsF = fmap (F.rcast @PUMS) $ FStreamly.mapMaybe addStateAbbreviation countedF
+      let withAbbrevsF = F.rcast @PUMS <$> FStreamly.mapMaybe addStateAbbreviation countedF
           numFinal = FL.fold FL.length withAbbrevsF
-      K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> (T.pack $ show $ numCounted - numFinal) <> " rows due to unrecognized state FIPS."
+      K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> show (numCounted - numFinal) <> " rows due to unrecognized state FIPS."
       return withAbbrevsF
-      
+
 
 pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
-  => Maybe (F.Record PUMS_Typed -> Bool) 
+  => Maybe (F.Record PUMS_Typed -> Bool)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader filterM =  pumsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') "data/acs1YrPUMS.bin" filterM
+pumsLoader =  pumsLoader' (BR.LocalData $ toText BR.pumsACS1YrCSV') "data/acs1YrPUMS.bin"
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults =  pumsLoader'
-                    (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
+                    (BR.LocalData $ toText BR.pumsACS1YrCSV')
                     "data/acs1YrPUMS_Adults.bin"
                     (Just (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18))
 {-
   allPUMS_C <- pumsLoader Nothing
-  BR.retrieveOrMakeFrame "data/acs1YrPUMS_Adults_Age5F.bin" allPUMS_C $ \allPUMS -> 
+  BR.retrieveOrMakeFrame "data/acs1YrPUMS_Adults_Age5F.bin" allPUMS_C $ \allPUMS ->
     return $ F.filterFrame (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18) allPUMS
 -}
 
@@ -232,8 +231,8 @@ sumPUMSCountedF wgtM flds =
         Nothing -> (FL.premap (F.rgetField @Citizens . flds) FL.sum
                    ,  FL.premap (F.rgetField @NonCitizens . flds) FL.sum
                    )
-        Just wgt -> (fmap round $ wgtdSumF (realToFrac . F.rgetField @Citizens)
-                    , fmap round $ wgtdSumF (realToFrac . F.rgetField @NonCitizens))        
+        Just wgt -> (round <$> wgtdSumF (realToFrac . F.rgetField @Citizens)
+                    , round <$> wgtdSumF (realToFrac . F.rgetField @NonCitizens))
   in  FF.sequenceRecFold
       $ FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PopPerSqMile))
@@ -247,8 +246,8 @@ sumPUMSCountedF wgtM flds =
       V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
       V.:& FF.toFoldRecord citF
       V.:& FF.toFoldRecord nonCitF
-      V.:& V.RNil                         
-      
+      V.:& V.RNil
+
 
 type PUMACounts ks = PUMADescWA ++ ks ++ PUMSCountToFields
 
@@ -269,7 +268,7 @@ pumsRollupF keepIf mapKeys =
   in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 
-type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.CongressionalDistrict] 
+type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.CongressionalDistrict]
 type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
 pumsCDRollup
  :: forall ks r
@@ -321,10 +320,10 @@ pumsCDRollup
 pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   -- roll up to PUMA
   let totalPeople :: (Foldable f, F.ElemOf rs Citizens, F.ElemOf rs NonCitizens) => f (F.Record rs) -> Int
-      totalPeople = FL.fold (FL.premap  (\r -> F.rgetField @Citizens r + F.rgetField @NonCitizens r) FL.sum) 
-  K.logLE K.Diagnostic $ "Total cit+non-cit pre rollup=" <> (T.pack $ show $ totalPeople pums)
+      totalPeople = FL.fold (FL.premap  (\r -> F.rgetField @Citizens r + F.rgetField @NonCitizens r) FL.sum)
+  K.logLE K.Diagnostic $ "Total cit+non-cit pre rollup=" <> show (totalPeople pums)
   let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF keepIf $ mapKeys . F.rcast) pums
-  K.logLE K.Diagnostic $ "Total cit+non-cit post rollup=" <> (T.pack $ show $ totalPeople rolledUpToPUMA')
+  K.logLE K.Diagnostic $ "Total cit+non-cit post rollup=" <> show (totalPeople rolledUpToPUMA')
       -- add zero rows
   let zeroCount :: F.Record PUMSCountToFields
       zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
@@ -334,17 +333,17 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
                         ( FMR.makeRecsWithKey id
                           $ FMR.ReduceFold
                           $ const
-                          $ BR.addDefaultRec @ks zeroCount                          
+                          $ BR.addDefaultRec @ks zeroCount
                         )
       rolledUpToPUMA :: F.FrameRec (PUMACounts ks) = F.toFrame $ FL.fold addZeroCountsF rolledUpToPUMA'
-  K.logLE K.Diagnostic $ "Total cit+non-cit post addZeros=" <> (T.pack $ show $ totalPeople rolledUpToPUMA)                                                     
+  K.logLE K.Diagnostic $ "Total cit+non-cit post addZeros=" <> show (totalPeople rolledUpToPUMA)
   -- add the CD information on the appropriate PUMAs
   let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
-  M.when (not $ null missing) $ K.knitError $ "missing items in join: " <> (T.pack . show $ missing)
+  unless (null missing) $ K.knitError $ "missing items in join: " <> show missing
   -- roll it up to the CD level
   let demoByCDF  =  FMR.concatFold
                     $ FMR.mapReduceFold
-                    (FMR.noUnpack)
+                    FMR.noUnpack
                     (FMR.assignKeysAndData
                       @('[BR.Year] ++ CDDescWA ++ ks)
                       @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
@@ -356,7 +355,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
       demoByCD = FL.fold demoByCDF byPUMAWithCDAndWeight
       rows = FL.fold FL.length demoByCD
 --  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
-  K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> (T.pack $ show $ totalPeople demoByCD)
+  K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> show (totalPeople demoByCD)
   return demoByCD
 
 
@@ -382,8 +381,8 @@ pumsKeysToASER5 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.SexC r
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
      F.&: F.rgetField @BR.Race5C r
      F.&: V.RNil
 
@@ -393,8 +392,8 @@ pumsKeysToASER4 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.SexC r
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
      F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
@@ -404,8 +403,8 @@ pumsKeysToASER addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.SexC r
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
      F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
      F.&: V.RNil
 
@@ -417,14 +416,14 @@ pumsKeysToASE addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if (cg == BR.Grad || ic) then BR.Grad else BR.NonGrad)
-     F.&: V.RNil     
+     F.&: F.rgetField @BR.SexC r
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
+     F.&: V.RNil
 
 pumsKeysToASR :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASR
 pumsKeysToASR r =
   (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
-  F.&: (F.rgetField @BR.SexC r)
+  F.&: F.rgetField @BR.SexC r
   F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
   F.&: V.RNil
 
@@ -463,7 +462,7 @@ type PUMS_Typed = '[ BR.Year
                    , BR.CollegeGradC
                    , BR.InCollege
                    , BR.SexC
-                   , BR.Race5C                   
+                   , BR.Race5C
                    , BR.LanguageC
                    , BR.SpeaksEnglishC
                    , BR.EmploymentStatusC
@@ -475,7 +474,7 @@ type PUMS_Typed = '[ BR.Year
 
 type PUMS_Counted = '[BR.Year
                      , BR.StateFIPS
-                     , BR.CensusRegionC                   
+                     , BR.CensusRegionC
                      , BR.PUMA
                      , BR.Age5FC
                      , BR.SexC
@@ -485,7 +484,7 @@ type PUMS_Counted = '[BR.Year
                      , BR.PctInMetro
                      , BR.PopPerSqMile
                      , BR.PctNativeEnglish
-                     , BR.PctNoEnglish                   
+                     , BR.PctNoEnglish
                      , BR.PctUnemployed
                      , BR.AvgIncome
                      , BR.MedianIncome
@@ -539,8 +538,8 @@ metroF =
 densityF :: FL.Fold (Double, Double) Double
 densityF =
   let wgtF = FL.premap fst FL.sum
-      wgtSumF = FL.premap (\(w, d) -> w * d) FL.sum
-  in (/) <$> wgtSumF <*> wgtF 
+      wgtSumF = FL.premap (uncurry (*)) FL.sum
+  in (/) <$> wgtSumF <*> wgtF
 {-# INLINE densityF #-}
 
 pctNativeEnglishF :: FL.Fold (Double, BR.Language) Double
@@ -554,9 +553,9 @@ pctNoEnglishF :: FL.Fold (Double, BR.SpeaksEnglish) Double
 pctNoEnglishF =
   let wgtF = FL.premap fst FL.sum
       wgtNoEnglishF = FL.prefilter ((== BR.SE_No) . snd) wgtF
-  in asPct <$> wgtNoEnglishF <*> wgtF  
+  in asPct <$> wgtNoEnglishF <*> wgtF
 {-# INLINE pctNoEnglishF #-}
-     
+
 pctUnemploymentF :: FL.Fold (Double, BR.EmploymentStatus) Double
 pctUnemploymentF =
    let wgtF = FL.premap fst FL.sum
@@ -567,7 +566,7 @@ pctUnemploymentF =
 avgIncomeF :: FL.Fold (Double, Double) Double
 avgIncomeF =
    let wgtF = FL.premap fst FL.sum
-       wgtIncomeF = FL.premap (\(w, i) -> w * i) FL.sum
+       wgtIncomeF = FL.premap (uncurry (*)) FL.sum
   in (/) <$> wgtIncomeF <*> wgtF
 {-# INLINE avgIncomeF #-}
 {-
@@ -580,7 +579,7 @@ weightedMedian dfltA l =
                     then if wgtSoFar + w >= middleWeight
                          then (realToFrac wgtSoFar * medianSoFar +  realToFrac w * x) / realToFrac (wgtSoFar + w)
                          else x
-                    else medianSoFar                      
+                    else medianSoFar
       ((_, res), _) = L.mapAccumL update (0, dfltA) ordered
   in res
 {-# INLINE weightedMedian #-}
@@ -607,7 +606,7 @@ type PUMSCountFromFields = [PUMSWeight
                            , BR.SocSecIncome
                            , BR.PctOfPovertyLine
                            , Citizen]
-                           
+
 type PUMSCountToFields = [BR.PctInMetro
                          , BR.PopPerSqMile
                          , BR.PctNativeEnglish
@@ -619,15 +618,15 @@ type PUMSCountToFields = [BR.PctInMetro
                          , BR.PctUnderPovertyLine
                          , BR.PctUnder2xPovertyLine
                          , Citizens
-                         , NonCitizens]                          
-                       
+                         , NonCitizens]
+
 
 pumsRowCountF :: FL.Fold
                (F.Record PUMSCountFromFields)
                (F.Record PUMSCountToFields)
 pumsRowCountF =
   let wgt = F.rgetField @PUMSWeight
-      wgtAnd f r = (realToFrac @_ @Double (wgt r), f r)      
+      wgtAnd f r = (realToFrac @_ @Double (wgt r), f r)
       citizen = F.rgetField @Citizen
       citF = FL.prefilter citizen $ FL.premap wgt FL.sum
       nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
@@ -645,8 +644,8 @@ pumsRowCountF =
      V.:& FF.toFoldRecord citF
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
-{-# INLINE pumsRowCountF #-}            
-             
+{-# INLINE pumsRowCountF #-}
+
 -- we have to drop all records with age < 18
 -- PUMSAGE
 intToAge5F :: Int -> BR.Age5F
@@ -675,7 +674,7 @@ intToSex n = if n == 1 then BR.Male else BR.Female
 
 -- PUMSHISPANIC PUMSRACE
 intsToRace5 :: Int -> Int -> BR.Race5
-intsToRace5 hN rN 
+intsToRace5 hN rN
   | (hN > 1) && (hN < 9) = BR.R5_Latinx
   | rN == 1 = BR.R5_WhiteNonLatinx
   | rN == 2 = BR.R5_Black
@@ -685,7 +684,7 @@ intsToRace5 hN rN
 -- NB these codes are only right for (unharmonized) ACS PUMS data from 2018.
 -- PUMSLANGUAGE PUMSLANGUAGED
 intsToLanguage :: Int -> Int -> BR.Language
-intsToLanguage l ld 
+intsToLanguage l ld
   | l == 0 && l == 1 = BR.English
   | l == 2           = BR.German
   | l == 12          = BR.Spanish
@@ -698,7 +697,7 @@ intsToLanguage l ld
   | l == 18          = BR.Russian
   | ld == 1140       = BR.FrenchCreole
   | otherwise        = BR.LangOther
-  
+
 -- PUMSSPEAKENG
 intToSpeaksEnglish :: Int -> BR.SpeaksEnglish
 intToSpeaksEnglish n
@@ -719,7 +718,7 @@ intToCensusRegion n
   | n == 41 = BR.Mountain
   | n == 42 = BR.Pacific
   | otherwise = BR.UnknownRegion
-  
+
 intToCensusMetro :: Int -> BR.CensusMetro
 intToCensusMetro n
   | n == 1 = BR.NonMetro
@@ -735,7 +734,7 @@ intToEmploymentStatus n
   | n == 3 = BR.NotInLaborForce
   | otherwise = BR.EmploymentUnknown
 
-  
+
 
 transformPUMSRow :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
 transformPUMSRow = F.rcast . addCols where
@@ -759,18 +758,16 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
             . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
 
-
-
 -- tracing fold
 runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
 runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
-  start = ST.liftIO (T.putStr startMsg) >> return 0
+  start = ST.liftIO (putText startMsg) >> return 0
   step !n _ = ST.liftIO $ do
     t <- System.Clock.getTime System.Clock.ProcessCPUTime
-    putStr $ show t ++ ": "
-    T.putStrLn $ countMsg n
+    putText $ show t <> ": "
+    putTextLn $ countMsg n
     return (n+1)
-  done _ = ST.liftIO $ T.putStrLn endMsg
+  done _ = ST.liftIO $ putTextLn endMsg
 
 
 {-
@@ -806,7 +803,7 @@ transformPUMSRow2 r = F.rcast @PUMS_Typed (mutate r) where
   addSpeaksEnglish = FT.recordSingleton @BR.SpeaksEnglishC . intToSpeaksEnglish . F.rgetField @BR.PUMSSPEAKENG
   hN = F.rgetField @BR.PUMSHISPAN
   rN = F.rgetField @BR.PUMSRACE
-  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))  
+  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
   mutate = FT.retypeColumn @BR.PUMSSTATEFIP @BR.StateFIPS
            . FT.retypeColumn @BR.PUMSPUMA @BR.PUMA
            . FT.retypeColumn @BR.PUMSYEAR @BR.Year
@@ -845,7 +842,7 @@ deriving instance (V.RMap c
                   , V.ReifyConstraint Show F.ElField c
                   , V.RecordToList c
                   , Show a) => Show (LocationHolder c F.ElField a)
-                  
+
 instance (S.Serialize a
          , Ord (F.Rec FS.SElField c)
          , S.GSerializePut
@@ -882,7 +879,7 @@ predictionsByLocation ::
                , K.KnitEffects r
              )
   => K.Sem r (F.FrameRec CCES_MRP)
-  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols ++ ASER ++ BR.CountCols))  
+  -> FL.Fold (F.Record CCES_MRP) (F.FrameRec (LocationCols ++ ASER ++ BR.CountCols))
   -> [GLM.WithIntercept CCESPredictor]
   -> M.Map (F.Record cc) (M.Map CCESPredictor Double)
   -> K.Sem r [LocationHolder cc V.ElField Double]
@@ -893,14 +890,14 @@ predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapErr
                                                              ,BR.CollegeGradC
                                                              ,BR.SimpleRaceC]
                                                              countFold
-                                                             predictors                                                     
+                                                             predictors
                                                              ccesPredictor
                                                              ccesFrame
-  
+
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
       allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
       predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys
       predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
         let predictFrom catKey predMap =
               let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey

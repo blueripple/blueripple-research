@@ -46,7 +46,7 @@ import           Data.Maybe                     ( fromJust)
 import qualified Data.Set as Set
 import qualified Data.Text                     as T
 import qualified Data.Text.Read as Text.Read
-  
+
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
@@ -84,7 +84,7 @@ ccesDataLoader = K.wrapPrefix "ccesDataLoader"
                  transformCCESRow
                  Nothing
                  "ccesMRP.sbin"
-                          
+
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId
                      , CCESWeight
@@ -106,7 +106,7 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESVotedPres12
                      , CCESVotedPres08
                      ]
-                    
+
 type CCES_MRP = '[ Year
                  , CCESCaseId
                  , CCESWeight
@@ -129,7 +129,7 @@ type CCES_MRP = '[ Year
                  , Pres2016VoteParty
                  , Pres2012VoteParty
                  , Pres2008VoteParty
-                 ]                
+                 ]
 
 
 -- first try, order these consistently with the data and use (toEnum . (-1)) when possible
@@ -140,7 +140,7 @@ intToSex :: Int -> DT.Sex
 intToSex n = case n of
   1 -> DT.Male
   2 -> DT.Female
-  _ -> undefined
+  _ -> error "Int other 1 or 2 in \"intToSex\""
 
 intToEducation :: Int -> DT.Education
 intToEducation 1 = DT.L9
@@ -178,7 +178,7 @@ raceToRace5 _ = DT.R5_Other
 
 
 intToAgeT :: Real a => a -> DT.Age5
-intToAgeT x 
+intToAgeT x
   | x < 25 = DT.A5_18To24
   | x < 45 = DT.A5_25To44
   | x < 65 = DT.A5_45To64
@@ -334,14 +334,14 @@ parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
                                 then ET.Republican
                                      else ET.Other
 
-{-                                          
+{-
 parsePres2008VoteParty "Barack Obama" = VP_Democratic
 parsePres2008VoteParty "John McCain" = VP_Republican
 parsePres2008VoteParty _ = VP_Other
 -}
 
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
-type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT 
+type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT
 type Pres2008VoteParty = "Pres2008VoteParty" F.:-> ET.PartyT
 
 {-
@@ -375,8 +375,8 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
   missingEducation = FM.fromMaybeMono 5
 
 --textToInt :: T.Text -> Int
---textToInt = either (const 0) fst . Text.Read.decimal  
-  
+--textToInt = either (const 0) fst . Text.Read.decimal
+
 -- fmap over Frame after load and throwing out bad rows
 
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
@@ -432,16 +432,16 @@ ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad th
 ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
 ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
 -}
-{-    
+{-
 -- we newtype this so we can derive instances for all the things
 newtype  SimplePredictor ps = CCESSimplePredictor { unSimplePredictor :: F.Record ps }
 
 instance (Show (F.Record ps)) => Show (SimplePredictor ps) where
   show (SimplePredictor x) = "SimplePredictor " ++ (show x)
-  
+
 instance (Eq (F.Record ps)) => Eq (SimplePredictor ps) where
   (SimplePredictor x) == (SimplePredictor y) = x == y
-  
+
 instance (Ord (F.Record ps)) => Ord (SimplePredictor ps) where
   compare (SimplePredictor x) (SimplePredictor y) = compare x y
 
@@ -459,7 +459,7 @@ instance (Keyed.FiniteSet (F.Record ps)) => Bounded (SimplePredictor ps) where
 
 
 allSimplePredictors :: Keyed.FiniteSet (F.Record ps) => [SimplePredictor ps]
-allSimplePredictors = fmap SimplePredictor $ Set.toList Keyed.elements 
+allSimplePredictors = fmap SimplePredictor $ Set.toList Keyed.elements
 
 type SimpleEffect ps = GLM.WithIntercept (SimplePredictor ps)
 
@@ -475,7 +475,7 @@ predMap r =  M.fromList $ fmap (\p -> (p, simplePredictor r p)) allSimplePredict
 
 catPredMaps :: forall cs.  (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
   => M.Map (F.Record cs) (M.Map (SimplePredictor cs) Double)
-catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors  
+catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors
 
 data  LocationHolder c f a =  LocationHolder { locName :: T.Text
                                              , locKey :: Maybe (F.Rec f LocationCols)
@@ -486,7 +486,7 @@ deriving instance (V.RMap c
                   , V.ReifyConstraint Show F.ElField c
                   , V.RecordToList c
                   , Show a) => Show (LocationHolder c F.ElField a)
-                  
+
 instance (S.Serialize a
          , Ord (F.Rec FS.SElField c)
          , S.GSerializePut
@@ -518,7 +518,7 @@ predictionsByLocation ::
                   , V.ReifyConstraint Show V.ElField ps
                   , V.RecordToList ps
                   , Ord (F.Record ps)
-                  , Ord (SimplePredictor ps)               
+                  , Ord (SimplePredictor ps)
                   , FI.RecVec (ps V.++ BR.CountCols)
                   , F.ElemOf (ps V.++ BR.CountCols) BR.Count
                   , F.ElemOf (ps V.++ BR.CountCols) BR.MeanWeight
@@ -536,7 +536,7 @@ predictionsByLocation ::
                   , K.KnitEffects r
                )
   => K.Sem r (F.FrameRec rs)
-  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))  
+  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))
   -> [SimpleEffect ps]
   -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
   -> K.Sem r [LocationHolder ps V.ElField Double]
@@ -546,14 +546,14 @@ predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapErr
   K.logLE K.Diagnostic ("Inferring")
   (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @ps @ps
                                countFold
-                               predictors                                                     
+                               predictors
                                simplePredictor
                                ccesFrame
-  
+
   let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
       allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
       predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys                           
+      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys
       predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
         let predictFrom catKey predMap =
               let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
