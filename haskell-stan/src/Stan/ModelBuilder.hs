@@ -6,17 +6,7 @@
 
 module Stan.ModelBuilder where
 
-{-
-import qualified Knit.Report as K
-import qualified Knit.Effect.Logger            as K
-import qualified BlueRipple.Utilities.KnitUtils as BR
-
-import qualified Data.Aeson.Encoding as A
-import qualified Data.ByteString.Lazy as BL
-import qualified Polysemy as P
--}
-import Control.Monad (when)
-import Data.Maybe (fromMaybe)
+import Prelude hiding (All)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Clock as Time
@@ -79,23 +69,19 @@ renameAndWriteIfNotSame gq m modelDir modelName = do
   let fileName d n = T.unpack $ d <> "/" <> n <> ".stan"
       curFile = fileName modelDir modelName
       findAvailableName modelDir modelName n = do
-        let newName = fileName modelDir (modelName <> "_o" <> (T.pack $ show n))
+        let newName = fileName modelDir (modelName <> "_o" <> T.pack (show n))
         newExists <- Dir.doesFileExist newName
         if newExists then findAvailableName modelDir modelName (n + 1) else return $ T.pack newName
       newModel = stanModelAsText gq m
   exists <- Dir.doesFileExist curFile
-  case exists of
-    False -> do
-      Say.say $ "model file:" <> (T.pack curFile) <> " doesn't exist.  Writing new."
+  if exists then (do
+    extant <- T.readFile curFile
+    if extant == newModel then Say.say ("model file:" <> toText curFile <> " exists and is identical to model.") >> return Same else (do
+      Say.say $ "model file:" <> T.pack curFile <> " exists and is different. Renaming and writing new model to file."
+      newName <- findAvailableName modelDir modelName 1
+      Dir.renameFile (fileName modelDir modelName) (T.unpack newName)
       T.writeFile (fileName modelDir modelName) newModel
-      return New
-    True -> do
-      extant <- T.readFile curFile
-      case extant == newModel of
-        True -> (Say.say $ "model file:" <> (T.pack curFile) <> " exists and is identical to model.") >> return Same
-        False -> do
-          Say.say $ "model file:" <> (T.pack curFile) <> " exists and is different. Renaming and writing new model to file."
-          newName <- findAvailableName modelDir modelName 1
-          Dir.renameFile (fileName modelDir modelName) (T.unpack newName)
-          T.writeFile (fileName modelDir modelName) newModel
-          return $ Updated newName
+      return $ Updated newName)) else (do
+    Say.say $ "model file:" <> T.pack curFile <> " doesn't exist.  Writing new."
+    T.writeFile (fileName modelDir modelName) newModel
+    return New)

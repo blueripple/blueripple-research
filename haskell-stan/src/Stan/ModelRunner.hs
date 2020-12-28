@@ -50,27 +50,27 @@ makeDefaultModelRunnerConfig ::
   K.Sem r SC.ModelRunnerConfig
 makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
   let modelDirS = T.unpack modelDirT
-      outputFilePrefix = maybe modelNameT id outputFilePrefixM
+      outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
   case modelM of
     Nothing -> return ()
     Just (gq, m) -> do
       createDirIfNecessary modelDirT
       modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDirT modelNameT
       case modelState of
-        SB.New -> K.logLE K.Info $ "Given model was new."
-        SB.Same -> K.logLE K.Info $ "Given model was the same as existing model file."
+        SB.New -> K.logLE K.Info "Given model was new."
+        SB.Same -> K.logLE K.Info "Given model was the same as existing model file."
         SB.Updated newName -> K.logLE K.Info $ "Given model was different from exisiting.  Old one was moved to \"" <> newName <> "\"."
   let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDirT modelNameT)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
       stanExeConfigF chainIndex =
         (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
-          { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") $ datFileS),
+          { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS),
             CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix chainIndex),
             CS.numSamples = numSamplesM,
             CS.numWarmup = numWarmupM
           }
-  let stanOutputFiles = fmap (\n -> SC.outputFile outputFilePrefix n) [1 .. numChains]
+  let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) [1 .. numChains]
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (SC.addDirFP (modelDirS ++ "/output")) stanOutputFiles)
@@ -133,7 +133,7 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _ = do
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
   updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
-    K.logLE K.Diagnostic $ "existing json (" <> (T.pack $ jsonFP config) <> ") appears older than cached data."
+    K.logLE K.Diagnostic $ "existing json (" <> T.pack (jsonFP config) <> ") appears older than cached data."
     jsonEncoding <- K.knitEither e
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
@@ -146,7 +146,7 @@ wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeTo
   let newJSON_C = encoder_C <*> cachedA
       jsonDeps = (,) <$> newJSON_C <*> index_C
   updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, b) -> do
-    K.logLE K.Diagnostic $ "existing json (" <> (T.pack $ jsonFP config) <> ") appears older than cached data."
+    K.logLE K.Diagnostic $ "existing json (" <> show (jsonFP config) <> ") appears older than cached data."
     dataEncoding <- K.knitEither e
     toPredictEncoding <- K.knitEither $ encodeToPredict b p
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
@@ -165,7 +165,7 @@ manageIndex config dataIndexer bFromA_C = do
       when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
         K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
         K.clearIfPresent @_ @K.DefaultCacheData (indexCacheKey config)
-      K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData (indexCacheKey config) bFromA_C (return . id)
+      K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData (indexCacheKey config) bFromA_C return
     _ -> return bFromA_C
 
 jsonFP :: SC.ModelRunnerConfig -> FilePath
@@ -184,7 +184,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
   let modelNameS = T.unpack $ SC.mrcModel config
       modelDirS = T.unpack $ SC.mrcModelDir config
   K.logLE K.Info "running Model"
-  let outputFiles = fmap (\n -> SC.outputFile (SC.mrcOutputPrefix config) n) [1 .. (SC.mrcNumChains config)]
+  let outputFiles = fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
   checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!"
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
@@ -193,19 +193,19 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
   indices_C <- wrangleData config dataWrangler cachedA toPredict
   curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)
   stanOutput_C <- do
-    curStanOutputs_C <- fmap K.oldestUnit $ traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
+    curStanOutputs_C <- K.oldestUnit <$> traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
         runOneChain chainIndex = do
-          let exeConfig = (SC.mrcStanExeConfigF config) chainIndex
-          K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> (T.pack $ show chainIndex)
+          let exeConfig = SC.mrcStanExeConfigF config chainIndex
+          K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> show chainIndex
           K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine exeConfig)
           K.liftKnit $ CS.stan (SC.addDirFP modelDirS modelNameS) exeConfig
-          K.logLE K.Info $ "Finished chain " <> (T.pack $ show chainIndex)
+          K.logLE K.Info $ "Finished chain " <> show chainIndex
     res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ -> do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
-      K.logLE K.Info $ "Make CommandLine: " <> (T.pack $ CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
+      K.logLE K.Info $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
-      maybe Nothing (const $ Just ()) . sequence <$> (K.sequenceConcurrently $ fmap runOneChain [1 .. (SC.mrcNumChains config)])
+      maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneChain [1 .. (SC.mrcNumChains config)])
     K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."
     K.logLE K.Info "writing R scripts"
     K.liftKnit $ writeRScripts rScriptsToWrite config
@@ -215,11 +215,11 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
     SC.UseSummary f -> do
       K.logLE K.Diagnostic $
         "Summary command: "
-          <> (T.pack $ (CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+          <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
           <> " "
           <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
       summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
-      when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> (T.pack $ CS.unparsed summary)
+      when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> show (CS.unparsed summary)
       f summary toPredict resultDeps
     SC.SkipSummary f -> f toPredict resultDeps
     SC.DoNothing -> return ()
@@ -231,7 +231,7 @@ checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
     Nothing -> K.logLE K.Info "CLANG_BINDIR not set. Using existing path for clang."
     Just clangBinDir -> do
       curPath <- K.liftKnit $ Env.getEnv "PATH"
-      K.logLE K.Info $ "Current path: " <> (T.pack $ show curPath) <> ".  Adding " <> (T.pack $ show clangBinDir) <> " for llvm clang."
+      K.logLE K.Info $ "Current path: " <> show curPath <> ".  Adding " <> show clangBinDir <> " for llvm clang."
       K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
 
 createDirIfNecessary ::
@@ -240,18 +240,18 @@ createDirIfNecessary ::
   K.Sem r ()
 createDirIfNecessary dir = K.wrapPrefix "createDirIfNecessary" $ do
   K.logLE K.Diagnostic $ "Checking if cache path (\"" <> dir <> "\") exists."
-  existsB <- P.embed $ (Dir.doesDirectoryExist (T.unpack dir))
-  case existsB of
-    True -> do
-      K.logLE K.Diagnostic $ "\"" <> dir <> "\" exists."
-      return ()
-    False -> do
-      K.logLE K.Info $
-        "Cache directory (\""
-          <> dir
-          <> "\") not found. Atttempting to create."
-      P.embed $
-        Dir.createDirectoryIfMissing True (T.unpack dir)
+  existsB <- P.embed $ Dir.doesDirectoryExist (toString dir)
+  if existsB
+    then (do
+             K.logLE K.Diagnostic $ "\"" <> dir <> "\" exists."
+             return ())
+    else (do
+             K.logLE K.Info $
+               "Cache directory (\""
+               <> dir
+               <> "\") not found. Atttempting to create."
+             P.embed $
+               Dir.createDirectoryIfMissing True (T.unpack dir))
 {-# INLINEABLE createDirIfNecessary #-}
 
 checkDir ::
@@ -259,12 +259,16 @@ checkDir ::
   T.Text ->
   P.Sem r (Maybe ())
 checkDir dir = K.wrapPrefix "checkDir" $ do
+  cwd <- P.embed Dir.getCurrentDirectory
+  K.logLE K.Diagnostic $ "CWD = \"" <> show cwd <> "\""
   K.logLE K.Diagnostic $ "Checking if cache path (\"" <> dir <> "\") exists."
-  existsB <- P.embed $ (Dir.doesDirectoryExist (T.unpack dir))
-  case existsB of
-    True -> do
-      K.logLE K.Diagnostic $ "\"" <> dir <> "\" exists."
-      return $ Just ()
-    False -> do
-      K.logLE K.Diagnostic $ "\"" <> dir <> "\" is missing."
-      return Nothing
+  existsB <- P.embed $ Dir.doesDirectoryExist (toString dir)
+  if existsB
+    then (do
+             K.logLE K.Diagnostic $ "\"" <> dir <> "\" exists."
+             return $ Just ()
+         )
+    else (do
+             K.logLE K.Diagnostic $ "\"" <> dir <> "\" is missing."
+             return Nothing
+         )

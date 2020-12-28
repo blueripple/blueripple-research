@@ -150,7 +150,7 @@ testHouseModel =
           
     traverse printResult results -}
     let modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
-        years = [{-2012, 2014, 2016,-} 2018]
+        years = [2012, 2014, 2016, 2018]
         runYear mw y =
           BRE.runHouseModel
           BRE.houseDataWrangler
@@ -177,7 +177,8 @@ testHouseModel =
           = fmap (M.insert "Year" (GV.Str $ T.pack $ show y)) <$> traverse expandInterval (M.toList $ modelResults ^. #parameterDeltas)
           
         runModelWith mw = do
-          results <- zip years <$> (K.ignoreCacheTimeM $ fmap sequenceA $ traverse (runYear mw) years)
+          results_C <- fmap sequenceA $ traverse (runYear mw) years
+          results <- fmap (zip years) $ K.ignoreCacheTime results_C
           mapRows <- K.knitEither $ traverse expandMapRow results
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
           _ <- K.addHvega Nothing Nothing

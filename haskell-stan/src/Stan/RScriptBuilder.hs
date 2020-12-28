@@ -36,21 +36,21 @@ rArray toText as = "c(" <> T.intercalate "," (fmap toText as) <> ")"
 
 rSetWorkingDirectory :: SC.ModelRunnerConfig -> T.Text -> IO T.Text
 rSetWorkingDirectory config dirBase = do
-  let wd = dirBase <> "/" <> (SC.mrcModelDir config)
+  let wd = dirBase <> "/" <> SC.mrcModelDir config
   cwd <- T.pack <$> Dir.canonicalizePath (T.unpack wd)
   return $ "setwd(\"" <> cwd <> "\")"
 
 rReadStanCSV :: SC.ModelRunnerConfig -> T.Text -> T.Text
 rReadStanCSV config fitName = fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"output/" <> x <> "\"") (SC.stanOutputFiles config) <> ")"
-  
+
 rStanModel :: SC.ModelRunnerConfig -> T.Text
-rStanModel config = "stan_model(" <> (SB.modelFile $ SC.mrcModel config) <> ")"
+rStanModel config = "stan_model(" <> SB.modelFile (SC.mrcModel config) <> ")"
 
 rExtractLogLikelihood :: SC.ModelRunnerConfig -> T.Text -> T.Text
 rExtractLogLikelihood config fitName = "extract_log_lik(" <> fitName <> ", merge_chains = FALSE)"
 
 rReadJSON :: SC.ModelRunnerConfig -> T.Text
-rReadJSON config = "jsonData <- fromJSON(file = \"data/" <> (SC.mrcDatFile config) <> "\")" 
+rReadJSON config = "jsonData <- fromJSON(file = \"data/" <> SC.mrcDatFile config <> "\")"
 
 rPrint :: T.Text -> T.Text
 rPrint t = "print(\"" <> t <> "\")"
@@ -83,7 +83,7 @@ shinyStanScript config dirBase unwrapJSONs = do
                 <> rPrint "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanFit)\n"
   return rScript
-                               
+
 looScript :: SC.ModelRunnerConfig -> T.Text -> T.Text-> Int -> IO T.Text
 looScript config dirBase looName nCores = do
   rSetCWD <- rSetWorkingDirectory config dirBase
@@ -94,12 +94,12 @@ looScript config dirBase looName nCores = do
                 <> rPrint "Extracting log likelihood for loo..." <> "\n"
                 <> "log_lik <-" <> rExtractLogLikelihood config "stanFit" <> "\n"
                 <> rPrint "Computing r_eff for loo..." <> "\n"
-                <> "rel_eff <- relative_eff(exp(log_lik), cores = " <> (T.pack $ show nCores) <> ")\n"
+                <> "rel_eff <- relative_eff(exp(log_lik), cores = " <> show nCores <> ")\n"
                 <> rPrint "Computing loo.." <> "\n"
-                <> looName <> " <- loo(log_lik, r_eff = rel_eff, cores = " <> (T.pack $ show nCores) <> ")\n"
+                <> looName <> " <- loo(log_lik, r_eff = rel_eff, cores = " <> show nCores <> ")\n"
                 <> "print(" <> looName <> ")\n"
   return rScript
 
 
-  
-                
+
+

@@ -12,7 +12,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0 #-}
 
@@ -271,7 +270,7 @@ prepCachedData = do
                    else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
                         <> T.pack
                         (show missingDemo)
-    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r) ccesWithDD -- ICK.  This will bias our turnout model
+    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
 --    BR.logFrame $ F.filterFrame (\r -> F.rgetField @DVotes r > F.rgetField @TVotes r) ccesWithoutNullVotes
     return $ HouseModelData competitiveElectionResults (fmap F.rcast ccesWithoutNullVotes)
 

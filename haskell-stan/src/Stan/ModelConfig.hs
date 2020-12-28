@@ -29,7 +29,7 @@ data ModelRunnerConfig = ModelRunnerConfig
   }
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
-setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }  
+setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }
 
 noLogOfSummary :: ModelRunnerConfig -> ModelRunnerConfig
 noLogOfSummary sc = sc { mrcLogSummary = False }
@@ -65,7 +65,7 @@ data ResultAction r a b p c where
   UseSummary :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (a, b) -> K.Sem r c) -> ResultAction r a b p c
   SkipSummary :: (p -> K.ActionWithCacheTime r (a, b) -> K.Sem r c) -> ResultAction r a b p c
   DoNothing :: ResultAction r a b c ()
-  
+
 
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp
@@ -74,10 +74,10 @@ addDirFP :: FilePath -> FilePath -> FilePath
 addDirFP dir fp = dir ++ "/" ++ fp
 
 defaultDatFile :: T.Text -> FilePath
-defaultDatFile modelNameT = (T.unpack modelNameT) ++ ".json"      
+defaultDatFile modelNameT = T.unpack modelNameT ++ ".json"
 
 outputFile :: T.Text -> Int -> FilePath
-outputFile outputFilePrefix chainIndex = (T.unpack outputFilePrefix ++ "_" ++ show chainIndex ++ ".csv")
+outputFile outputFilePrefix chainIndex = toString outputFilePrefix <> "_" <> show chainIndex <> ".csv"
 
 stanOutputFiles :: ModelRunnerConfig -> [T.Text]
-stanOutputFiles config = fmap (\n -> T.pack $ outputFile (mrcOutputPrefix config) n) [1..(mrcNumChains config)]
+stanOutputFiles config = fmap (T.pack . outputFile (mrcOutputPrefix config)) [1..(mrcNumChains config)]

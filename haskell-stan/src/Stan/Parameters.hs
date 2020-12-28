@@ -38,13 +38,13 @@ class IndexFunction (n :: Dim) where
 instance IndexFunction D0 where
   tupleToIndex offset _ _ = 0
   indexToTuple _ _ _ = ()
-  
+
 instance IndexFunction D1 where
-  tupleToIndex offset _ i = (i - offset)
-  indexToTuple offset _ i = (i + offset)
+  tupleToIndex offset _ i = i - offset
+  indexToTuple offset _ i = i + offset
 
 instance IndexFunction D2 where
-  tupleToIndex offset (_, nj) (i, j) = (i - offset) * nj + (j - offset)  
+  tupleToIndex offset (_, nj) (i, j) = (i - offset) * nj + (j - offset)
   indexToTuple offset (_, nj) n = let j = n `mod` nj in (((n - j) `div` nj) + offset, j + offset)
 
 instance IndexFunction D3 where
@@ -83,7 +83,7 @@ getVector :: ParameterStatistics dim a -> V.Vector a
 getVector (ParameterStatistics _ _ vec) = vec
 
 getIndexed :: forall dim a. IndexFunction dim => ParameterStatistics dim a -> NTuple dim -> a
-getIndexed (ParameterStatistics offset dims vec) index = vec V.! tupleToIndex @dim offset dims index 
+getIndexed (ParameterStatistics offset dims vec) index = vec V.! tupleToIndex @dim offset dims index
 
 getScalar :: ParameterStatistics D0 a -> a
 getScalar p@(ParameterStatistics offset _ v) = getIndexed p ()
@@ -93,29 +93,29 @@ class ParseIndex (n :: Dim) where
   parseIndex :: T.Text -> Either T.Text (NTuple n)
 
 instance ParseIndex D0 where
-  parseIndex t = Right $ ()
+  parseIndex t = Right ()
 
 instance ParseIndex D1 where
-  parseIndex t = fmap (\[i] -> i) $ parseIndex' 1 t
+  parseIndex t = (\[i] -> i) <$> parseIndex' 1 t
 
 instance ParseIndex D2 where
-  parseIndex t = fmap (\[i, j] -> (i, j)) $ parseIndex' 2 t
+  parseIndex t = (\[i, j] -> (i, j)) <$> parseIndex' 2 t
 
 instance ParseIndex D3 where
-  parseIndex t = fmap (\[i, j, k] -> (i, j, k)) $ parseIndex' 3 t
+  parseIndex t = (\[i, j, k] -> (i, j, k)) <$> parseIndex' 3 t
 
-instance ParseIndex D4 where  
-  parseIndex t = fmap (\[i, j, k, l] -> (i, j, k, l)) $ parseIndex' 4 t 
+instance ParseIndex D4 where
+  parseIndex t = (\[i, j, k, l] -> (i, j, k, l)) <$> parseIndex' 4 t
 
 parseIndex' :: Int -> T.Text -> Either T.Text [Int]
 parseIndex' n t = do
   let (_ , indices') = T.breakOn "[" t
       indicesL = T.splitOn "," $ T.drop 1 . T.dropEnd 1 $ indices'
 --      indsT = fmap (T.dropEnd 1) indsT' -- drop the "]"
-  inds <- traverse (either (Left . (<> ": " <> (T.pack $ show indicesL)) . T.pack) Right . R.readEither . T.unpack) indicesL
+  inds <- traverse (either (Left . (<> ": " <> T.pack (show indicesL)) . T.pack) Right . R.readEither . T.unpack) indicesL
   _ <- if length inds == n
        then Right ()
-       else Left ("Expecting index with " <> (T.pack $ show n) <> " components, but found " <> (T.pack . show $ length inds) <> ".")
+       else Left ("Expecting index with " <> T.pack (show n) <> " components, but found " <> show (length inds) <> ".")
   return inds
 
 {-
@@ -134,8 +134,9 @@ paramsByName :: T.Text -> M.Map String CS.StanStatistic -> [(String, CS.StanStat
 paramsByName name = M.toList . M.filterWithKey (\k _ -> T.isPrefixOf name (T.pack k))
 
 parseScalar :: T.Text -> M.Map String CS.StanStatistic -> Either T.Text (ParameterStatistics D0 CS.StanStatistic)
-parseScalar name = maybe (Left $ "Failed to find scaler \"" <> name <> "\" in parameters") Right
-                   . fmap (\s -> ParameterStatistics 1 () (V.singleton s)) . M.lookup (T.unpack name)
+parseScalar name = maybe
+                   (Left $ "Failed to find scaler \"" <> name <> "\" in parameters")
+                   (Right . (ParameterStatistics 1 () . V.singleton)) . M.lookup (toString name)
 
 -- 1D: Stan is 1 indexed 
 parse1D :: T.Text -> M.Map String CS.StanStatistic -> Either T.Text (ParameterStatistics D1 CS.StanStatistic)
@@ -143,9 +144,9 @@ parse1D name m = do
   let parseOneE (t, s) = do
         inds <- parseIndex @D1 (T.pack t)
         return (inds, s)
-  indexed <- traverse parseOneE $ paramsByName name m 
+  indexed <- traverse parseOneE $ paramsByName name m
   ni <- maybe (Left $ "No parameters with name " <> name <> " in parse1D?") Right $ FL.fold (FL.premap fst FL.maximum) indexed
-  let ordered = fmap snd $ L.sortOn (tupleToIndex @D1 1 (ni - 1) . fst) indexed
+  let ordered = snd <$> L.sortOn (tupleToIndex @D1 1 (ni - 1) . fst) indexed
   return $ ParameterStatistics 1 ni (V.fromList ordered)
 
 parse2D :: T.Text -> M.Map String CS.StanStatistic -> Either T.Text (ParameterStatistics D2 CS.StanStatistic)
@@ -158,7 +159,7 @@ parse2D name m = do
       getJ (_, j) = j
   ni <- maybe (Left $ "No parameters with name " <> name <> " in parse2D?") Right $ FL.fold (FL.premap (getI . fst) FL.maximum) indexed
   nj <- maybe (Left $ "No parameters with name " <> name <> " in parse2D?") Right $ FL.fold (FL.premap (getJ . fst) FL.maximum) indexed
-  let ordered = fmap snd $ L.sortOn (tupleToIndex @D2 1 (ni, nj) . fst) indexed
+  let ordered = snd <$> L.sortOn (tupleToIndex @D2 1 (ni, nj) . fst) indexed
   return $ ParameterStatistics 1 (ni, nj) (V.fromList ordered)
 
 
@@ -174,7 +175,7 @@ parse3D name m = do
   ni <- maybe (Left $ "No parameters with name " <> name <> " in parse3D?") Right $ FL.fold (FL.premap (getI . fst) FL.maximum) indexed
   nj <- maybe (Left $ "No parameters with name " <> name <> " in parse3D?") Right $ FL.fold (FL.premap (getJ . fst) FL.maximum) indexed
   nk <- maybe (Left $ "No parameters with name " <> name <> " in parse3D?") Right $ FL.fold (FL.premap (getK . fst) FL.maximum) indexed
-  let ordered = fmap snd $ L.sortOn (tupleToIndex @D3 1 (ni, nj, nk) . fst) indexed
+  let ordered = snd <$> L.sortOn (tupleToIndex @D3 1 (ni, nj, nk) . fst) indexed
   return $ ParameterStatistics 1 (ni, nj, nk) (V.fromList ordered)
 
 
@@ -192,7 +193,7 @@ parse4D name m = do
   nj <- maybe (Left $ "No parameters with name " <> name <> " in parse4D?") Right $ FL.fold (FL.premap (getJ . fst) FL.maximum) indexed
   nk <- maybe (Left $ "No parameters with name " <> name <> " in parse4D?") Right $ FL.fold (FL.premap (getK . fst) FL.maximum) indexed
   nl <- maybe (Left $ "No parameters with name " <> name <> " in parse4D?") Right $ FL.fold (FL.premap (getL . fst) FL.maximum) indexed
-  let ordered = fmap snd $ L.sortOn (tupleToIndex @D4 1 (ni, nj, nk, nl) . fst) indexed
+  let ordered = snd <$> L.sortOn (tupleToIndex @D4 1 (ni, nj, nk, nl) . fst) indexed
   return $ ParameterStatistics 1 (ni, nj, nk, nl) (V.fromList ordered)
 
 
