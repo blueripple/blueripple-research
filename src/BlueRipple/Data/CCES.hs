@@ -8,16 +8,11 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0              #-}
 module BlueRipple.Data.CCES
@@ -72,12 +67,13 @@ import           GHC.Generics                   ( Generic, Rep )
 import qualified Knit.Report as K
 import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                as P (raise)
+import qualified Relude.Extra as Relude
 
 
 ccesDataLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
 ccesDataLoader = K.wrapPrefix "ccesDataLoader"
                  $ BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
-                 (BR.LocalData $ T.pack ccesCSV)
+                 (BR.LocalData $ toText ccesCSV)
                  Nothing
                  Nothing
                  fixCCESRow
@@ -158,11 +154,11 @@ type instance FI.VectorFor RaceT = V.Vector
 instance S.Serialize RaceT
 
 intToRaceT :: Int -> RaceT
-intToRaceT = toEnum . minus1
+intToRaceT = fromMaybe Other . Relude.safeToEnum . minus1
 
 type Race = "Race" F.:-> RaceT
 instance FV.ToVLDataValue (F.ElField Race) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 raceToSimpleRace :: RaceT -> DT.SimpleRace
 raceToSimpleRace White = DT.White
@@ -211,7 +207,7 @@ parseRegistration _ = R_Missing
 
 type Registration = "Registration" F.:-> RegistrationT
 instance FV.ToVLDataValue (F.ElField Registration) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data RegPartyT = RP_NoRecord
                | RP_Unknown
@@ -249,7 +245,7 @@ parseTurnout _ = T_Missing
 
 type Turnout = "Turnout" F.:-> TurnoutT
 instance FV.ToVLDataValue (F.ElField Turnout) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
 data PartisanIdentity3 = PI3_Democrat
@@ -262,11 +258,11 @@ type instance FI.VectorFor PartisanIdentity3 = V.Vector
 instance S.Serialize PartisanIdentity3
 
 parsePartisanIdentity3 :: Int -> PartisanIdentity3
-parsePartisanIdentity3 = toEnum . minus1 . min 6
+parsePartisanIdentity3 = fromMaybe PI3_Missing . Relude.safeToEnum . minus1 . min 6
 
 type PartisanId3 = "PartisanId3" F.:-> PartisanIdentity3
 instance FV.ToVLDataValue (F.ElField PartisanId3) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
 data PartisanIdentity7 = PI7_StrongDem
@@ -282,11 +278,11 @@ type instance FI.VectorFor PartisanIdentity7 = V.Vector
 instance S.Serialize PartisanIdentity7
 
 parsePartisanIdentity7 :: Int -> PartisanIdentity7
-parsePartisanIdentity7 = toEnum . minus1 . min 9
+parsePartisanIdentity7 = fromMaybe PI7_Missing . Relude.safeToEnum . minus1 . min 9
 
 type PartisanId7 = "PartisanId7" F.:-> PartisanIdentity7
 instance FV.ToVLDataValue (F.ElField PartisanId7) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
 data PartisanIdentityLeaner = PIL_Democrat
@@ -298,11 +294,11 @@ type instance FI.VectorFor PartisanIdentityLeaner = V.Vector
 instance S.Serialize PartisanIdentityLeaner
 
 parsePartisanIdentityLeaner :: Int -> PartisanIdentityLeaner
-parsePartisanIdentityLeaner = toEnum . minus1 . min 5
+parsePartisanIdentityLeaner = fromMaybe PIL_Missing . Relude.safeToEnum . minus1 . min 5
 
 type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
 instance FV.ToVLDataValue (F.ElField PartisanIdLeaner) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 {-
 data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
@@ -344,17 +340,6 @@ type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT
 type Pres2008VoteParty = "Pres2008VoteParty" F.:-> ET.PartyT
 
-{-
-data OfficeT = House | Senate | President deriving (Show,  Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor OfficeT = V.Vector
-instance S.Serialize OfficeT
-
-
-type Office = "Office" F.:-> OfficeT
-instance FV.ToVLDataValue (F.ElField MRP.CCES.Office) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
--}
-
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
 fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
@@ -362,7 +347,7 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
                $ (F.rsubset %~ missingPID7)
                $ (F.rsubset %~ missingPIDLeaner)
                $ (F.rsubset %~ missingEducation)
-               $ r where
+               r where
   missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
   missingHispanicToNo = FM.fromMaybeMono 2
   missingPID3 :: F.Rec (Maybe :. F.ElField) '[CCESPid3] -> F.Rec (Maybe :. F.ElField) '[CCESPid3]
@@ -381,7 +366,7 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
 
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
 transformCCESRow = F.rcast . addCols where
-  intsToRace h r = if (h == 1) then Hispanic else intToRaceT r
+  intsToRace h r = if h == 1 then Hispanic else intToRaceT r
   addCols = (FT.addName  @CCESYear @Year)
             . (FT.addName @CCESSt @StateAbbreviation)
             . (FT.addName @CCESDistUp @CongressionalDistrict)
@@ -408,160 +393,3 @@ transformCCESRow = F.rcast . addCols where
 
 -- some keys for aggregation
 type ByCCESPredictors = '[StateAbbreviation, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC]
-{-
-type ByStateSex = '[StateAbbreviation, BR.SexC]
-type ByStateSexRace = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC]
-type ByStateSexRaceAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.SimpleAgeC]
-type ByStateSexEducationAge = '[StateAbbreviation, BR.SexC, BR.CollegeGradC, BR.SimpleAgeC]
-type ByStateSexRaceEducation = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC]
-type ByStateSexRaceEducationAge = '[StateAbbreviation, BR.SexC, BR.SimpleRaceC, BR.CollegeGradC, BR.SimpleAgeC]
-type ByStateRaceEducation = '[StateAbbreviation, BR.SimpleRaceC, BR.CollegeGradC]
-
-
-
-data CCESPredictor = P_Sex | P_WWC | P_Race | P_Education | P_Age deriving (Show, Eq, Ord, Enum, Bounded)
-type CCESEffect = GLM.WithIntercept CCESPredictor
-
-ccesPredictor :: forall r. (F.ElemOf r BR.SexC
-                           , F.ElemOf r BR.SimpleRaceC
-                           , F.ElemOf r BR.CollegeGradC
-                           , F.ElemOf r BR.SimpleAgeC) => F.Record r -> CCESPredictor -> Double
-ccesPredictor r P_Sex       = if F.rgetField @BR.SexC r == BR.Female then 0 else 1
-ccesPredictor r P_Race      = if F.rgetField @BR.SimpleRaceC r == BR.NonWhite then 0 else 1 -- non-white is baseline
-ccesPredictor r P_Education = if F.rgetField @BR.CollegeGradC r == BR.NonGrad then 0 else 1 -- non-college is baseline
-ccesPredictor r P_Age       = if F.rgetField @BR.SimpleAgeC r == BR.EqualOrOver then 0 else 1 -- >= 45  is baseline
-ccesPredictor r P_WWC       = if (F.rgetField @BR.SimpleRaceC r == BR.White) && (F.rgetField @BR.CollegeGradC r == BR.NonGrad) then 1 else 0
--}
-{-
--- we newtype this so we can derive instances for all the things
-newtype  SimplePredictor ps = CCESSimplePredictor { unSimplePredictor :: F.Record ps }
-
-instance (Show (F.Record ps)) => Show (SimplePredictor ps) where
-  show (SimplePredictor x) = "SimplePredictor " ++ (show x)
-
-instance (Eq (F.Record ps)) => Eq (SimplePredictor ps) where
-  (SimplePredictor x) == (SimplePredictor y) = x == y
-
-instance (Ord (F.Record ps)) => Ord (SimplePredictor ps) where
-  compare (SimplePredictor x) (SimplePredictor y) = compare x y
-
-instance (Ord (F.Record ps), Keyed.FiniteSet (F.Record ps)) => Enum (SimplePredictor ps) where
-  toEnum n =
-    let im = IM.fromList $ zip [0..] $ fmap SimplePredictor $ Set.toAscList Keyed.elements
-    in fromJust $ IM.lookup n im
-  fromEnum a =
-    let m = M.fromList $ zip (fmap SimplePredictor $ Set.toAscList Keyed.elements) [0..]
-    in fromJust $ M.lookup a m
-
-instance (Keyed.FiniteSet (F.Record ps)) => Bounded (SimplePredictor ps) where
-  minBound = head $ fmap SimplePredictor $ Set.toList $ Keyed.elements
-  maxBound = last $ fmap SimplePredictor $ Set.toList $ Keyed.elements
-
-
-allSimplePredictors :: Keyed.FiniteSet (F.Record ps) => [SimplePredictor ps]
-allSimplePredictors = fmap SimplePredictor $ Set.toList Keyed.elements
-
-type SimpleEffect ps = GLM.WithIntercept (SimplePredictor ps)
-
-simplePredictor :: forall ps rs. (ps F.⊆ rs
-                                     , Eq (F.Record ps)
-                                     )
-                    => F.Record rs -> SimplePredictor ps -> Double
-simplePredictor r p = if (F.rcast @ps r == unCCESSimplePredictor p) then 1 else 0
-
-predMap :: forall cs. (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
-  => F.Record cs -> M.Map (SimplePredictor cs) Double
-predMap r =  M.fromList $ fmap (\p -> (p, simplePredictor r p)) allSimplePredictors
-
-catPredMaps :: forall cs.  (Keyed.FiniteSet (F.Record cs), Ord (F.Record cs), cs F.⊆ cs)
-  => M.Map (F.Record cs) (M.Map (SimplePredictor cs) Double)
-catPredMaps = M.fromList $ fmap (\k -> (unSimplePredictor k,predMap (unSimplePredictor k))) allSimplePredictors
-
-data  LocationHolder c f a =  LocationHolder { locName :: T.Text
-                                             , locKey :: Maybe (F.Rec f LocationCols)
-                                             , catData :: M.Map (F.Rec f c) a
-                                             } deriving (Generic)
-
-deriving instance (V.RMap c
-                  , V.ReifyConstraint Show F.ElField c
-                  , V.RecordToList c
-                  , Show a) => Show (LocationHolder c F.ElField a)
-
-instance (S.Serialize a
-         , Ord (F.Rec FS.SElField c)
-         , S.GSerializePut
-           (Rep (F.Rec FS.SElField c))
-         , S.GSerializeGet (Rep (F.Rec FS.SElField c))
-         , (Generic (F.Rec FS.SElField c))
-         ) => S.Serialize (LocationHolder c FS.SElField a)
-
-lhToS :: (Ord (F.Rec FS.SElField c)
-         , V.RMap c
-         )
-      => LocationHolder c F.ElField a -> LocationHolder c FS.SElField a
-lhToS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.toS lkM) (M.mapKeys FS.toS cdm)
-
-lhFromS :: (Ord (F.Rec F.ElField c)
-           , V.RMap c
-         ) => LocationHolder c FS.SElField a -> LocationHolder c F.ElField a
-lhFromS (LocationHolder n lkM cdm) = LocationHolder n (fmap FS.fromS lkM) (M.mapKeys FS.fromS cdm)
-
-type LocationCols = '[StateAbbreviation]
-locKeyPretty :: F.Record LocationCols -> T.Text
-locKeyPretty r =
-  let stateAbbr = F.rgetField @StateAbbreviation r
-  in stateAbbr
-
---type ASER = '[BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.SimpleRaceC]
-predictionsByLocation ::
-  forall ps r rs. ( V.RMap ps
-                  , V.ReifyConstraint Show V.ElField ps
-                  , V.RecordToList ps
-                  , Ord (F.Record ps)
-                  , Ord (SimplePredictor ps)
-                  , FI.RecVec (ps V.++ BR.CountCols)
-                  , F.ElemOf (ps V.++ BR.CountCols) BR.Count
-                  , F.ElemOf (ps V.++ BR.CountCols) BR.MeanWeight
-                  , F.ElemOf (ps V.++ BR.CountCols) BR.UnweightedSuccesses
-                  , F.ElemOf (ps V.++ BR.CountCols) BR.VarWeight
-                  , F.ElemOf (ps V.++ BR.CountCols) BR.WeightedSuccesses
-                  , Keyed.FiniteSet (F.Record ps)
-                  , Show (F.Record (LocationCols V.++ ps V.++ BR.CountCols))
-                  , Show (F.Record ps)
-                  , Enum (SimplePredictor ps)
-                  , Bounded (SimplePredictor ps)
-                  , (ps V.++ BR.CountCols) F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
-                  , ps F.⊆ (ps V.++ BR.CountCols)
-                  , ps F.⊆ (LocationCols V.++ ps V.++ BR.CountCols)
-                  , K.KnitEffects r
-               )
-  => K.Sem r (F.FrameRec rs)
-  -> FL.Fold (F.Record rs) (F.FrameRec (LocationCols V.++ ps V.++ BR.CountCols))
-  -> [SimpleEffect ps]
-  -> M.Map (F.Record ps) (M.Map (SimplePredictor ps) Double)
-  -> K.Sem r [LocationHolder ps V.ElField Double]
-predictionsByLocation ccesFrameAction countFold predictors catPredMap = P.mapError BR.glmErrorToPandocError $ K.wrapPrefix "predictionsByLocation" $ do
-  K.logLE K.Diagnostic "Starting (getting CCES data)"
-  ccesFrame <- P.raise ccesFrameAction --F.toFrame <$> P.raise (K.useCached ccesRecordListAllCA)
-  K.logLE K.Diagnostic ("Inferring")
-  (mm, rc, ebg, bu, vb, bs) <- BR.inferMR @LocationCols @ps @ps
-                               countFold
-                               predictors
-                               simplePredictor
-                               ccesFrame
-
-  let states = FL.fold FL.set $ fmap (F.rgetField @StateAbbreviation) ccesFrame
-      allStateKeys = fmap (\s -> s F.&: V.RNil) $ FL.fold FL.list states
-      predictLoc l = LocationHolder (locKeyPretty l) (Just l) catPredMap
-      toPredict = [LocationHolder "National" Nothing catPredMap] <> fmap predictLoc allStateKeys
-      predict (LocationHolder n lkM cpms) = P.mapError BR.glmErrorToPandocError $ do
-        let predictFrom catKey predMap =
-              let groupKeyM = fmap (`V.rappend` catKey) lkM --lkM >>= \lk -> return $ lk `V.rappend` catKey
-                  emptyAsNationalGKM = case groupKeyM of
-                                         Nothing -> Nothing
-                                         Just k -> fmap (const k) $ GLM.categoryNumberFromKey rc k (BR.RecordColsProxy @(LocationCols V.++ ps))
-              in GLM.predictFromBetaUB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
-        cpreds <- M.traverseWithKey predictFrom cpms
-        return $ LocationHolder n lkM cpreds
-  traverse predict toPredict
--}

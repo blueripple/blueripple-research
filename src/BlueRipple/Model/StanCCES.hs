@@ -61,13 +61,13 @@ type CCESDataWrangler cc b = SC.DataWrangler
                              (F.FrameRec (CCES_KeyRow cc))
 
 ccesDataWrangler :: CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where  
-  enumSexF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SexC)
-  enumAgeF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
-  enumEducationF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
-  enumRaceF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rgetField @DT.Race5C)
+ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
+  enumSexF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SexC)
+  enumAgeF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
+  enumEducationF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
+  enumRaceF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.Race5C)
   enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
-  enumCategoryF = SJ.enumerateField (T.pack . show) (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
+  enumCategoryF = SJ.enumerateField show (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
   -- do outer enumeration fold for indices
   f cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
     enumF = (,,,,,)
@@ -96,7 +96,7 @@ ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/in
               <> SJ.valueToPairF "race" raceF
               <> SJ.valueToPairF "category" categoryF
               <> SJ.valueToPairF "state" stateF
-              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF $ (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
+              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
               <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
   g (toState, toCategory) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
     toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
@@ -104,20 +104,20 @@ ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/in
     predictF = SJ.namedF "M" FL.length
                <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
                <> SJ.valueToPairF "predict_Category" (SJ.jsonArrayMF (toCategoryIndexM . F.rcast @DT.CatColsASER5))
-               
+
 
 extractResults :: Int
                -> ET.OfficeT
                -> CS.StanSummary
                -> F.FrameRec (CCES_KeyRow DT.CatColsASER5)
-               -> Either T.Text (F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]))               
+               -> Either T.Text (F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]))
 extractResults year office summary toPredict = do
    predictProbs <- fmap CS.mean <$> SP.parse1D "predicted" (CS.paramStats summary)
    let yoRec :: F.Record '[BR.Year, ET.Office] = year F.&: office F.&: V.RNil
        probRec :: Double -> F.Record [ET.DemVPV, BR.DemPref]
        probRec x = (2*x -1 ) F.&: x F.&: V.RNil
-       makeRow key prob = key F.<+> yoRec F.<+> probRec prob        
-   return $ F.toFrame $ fmap (uncurry makeRow) $ zip (FL.fold FL.list toPredict) (FL.fold FL.list predictProbs)
+       makeRow key prob = key F.<+> yoRec F.<+> probRec prob
+   return $ F.toFrame $ uncurry makeRow <$> zip (FL.fold FL.list toPredict) (FL.fold FL.list predictProbs)
 
 comparePredictions ::  K.KnitEffects r
                    => F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
@@ -125,38 +125,38 @@ comparePredictions ::  K.KnitEffects r
                    -> K.Sem r ()
 comparePredictions predictions input = do
   joined <- K.knitEither
-            $ either (Left. T.pack . show) Right
+            $ either (Left. show) Right
             $ FJ.leftJoinE @(CCES_KeyRow DT.CatColsASER5) input predictions
   let p = F.rgetField @ET.DemPref
       n = F.rgetField @BR.Count
-      s = realToFrac . round @_ @Int . F.rgetField @BR.WeightedSuccesses 
-      rowCountError r = abs (p r * realToFrac (n r) - s r) 
+      s = realToFrac . round @_ @Int . F.rgetField @BR.WeightedSuccesses
+      rowCountError r = abs (p r * realToFrac (n r) - s r)
       countErrorOfVotersF = (\x y -> x / realToFrac y) <$> FL.premap rowCountError FL.sum <*> FL.premap n FL.sum
-      countErrorOfDemsF = (\x y -> x / realToFrac y) <$> FL.premap rowCountError FL.sum <*> FL.premap s FL.sum             
+      countErrorOfDemsF = (\x y -> x / realToFrac y) <$> FL.premap rowCountError FL.sum <*> FL.premap s FL.sum
       (countErrorV, countErrorD) = FL.fold ((,) <$> countErrorOfVotersF <*> countErrorOfDemsF) joined
-  K.logLE K.Info $ "absolute count error (fraction of all votes): " <> (T.pack $ show countErrorV)
-  K.logLE K.Info $ "absolute count error (fraction of D votes): " <> (T.pack $ show countErrorD) 
+  K.logLE K.Info $ "absolute count error (fraction of all votes): " <> show countErrorV
+  K.logLE K.Info $ "absolute count error (fraction of D votes): " <> show countErrorD
 
 ccesDataWrangler2 :: CCESDataWrangler DT.CatColsASER5 (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> (SC.mrcOutputPrefix c) <> ".bin") f g where
-  enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1) 
+ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
+  enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
   encodeEducation = SF.toRecEncoding @DT.CollegeGradC $ SJ.dummyEncodeEnum @DT.CollegeGrad
   encodeRace = SF.toRecEncoding @DT.Race5C $ SJ.dummyEncodeEnum @DT.Race5
   encodeCatCols :: SJ.Encoding SJ.IntVec (F.Record DT.CatColsASER5)
-  encodeCatCols = SF.composeIntVecRecEncodings encodeAge 
+  encodeCatCols = SF.composeIntVecRecEncodings encodeAge
                   $ SF.composeIntVecRecEncodings encodeSex
                   $ SF.composeIntVecRecEncodings encodeEducation encodeRace
   (catColsIndexer, toCatCols) = encodeCatCols
   f cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
     (stateM, toState) = FL.fold enumStateF cces
-    k = SJ.vecEncodingLength encodeCatCols 
+    k = SJ.vecEncodingLength encodeCatCols
     makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
       dataF = SJ.namedF "G" FL.length
               <> SJ.constDataF "J_state" (IM.size toState)
               <> SJ.constDataF "K" k
-              <> SJ.valueToPairF "X" (SJ.jsonArrayMF (\r -> catColsIndexer $ F.rcast @DT.CatColsASER5 r))
+              <> SJ.valueToPairF "X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5))
               <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
               <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
               <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF (F.rgetField @BR.Count))
@@ -164,7 +164,7 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
     toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
     predictF = SJ.namedF "M" FL.length
                <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
-               <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5)) 
+               <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5))
 
 countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec (CCES_CountRow DT.CatColsASER5))
 countCCESASER5 office year ccesMRP = do
@@ -173,7 +173,7 @@ countCCESASER5 office year ccesMRP = do
     (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
     (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
     (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
-    _ -> Left $ T.pack (show office) <> "/" <> (T.pack $ show year) <> " not available."
+    _ -> Left $ show office <> "/" <> show year <> " not available."
   let counted = FL.fold countFold ccesMRP
   return counted
 
@@ -189,16 +189,16 @@ prefASER5_MR :: (K.KnitEffects r,  K.CacheEffectsD r)
                                                   )))
 prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   -- count data
-  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+  let officeYearT = show office <> "_" <> show year
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   allStatesL <- do
-    stateXWalk <- K.ignoreCacheTimeM $ BR.stateAbbrCrosswalkLoader
-    return $ fmap (F.rgetField @BR.StateAbbreviation) .  FL.fold FL.list . F.filterFrame ((<60) . F.rgetField @BR.StateFIPS) $ stateXWalk 
+    stateXWalk <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
+    return $ fmap (F.rgetField @BR.StateAbbreviation) .  FL.fold FL.list . F.filterFrame ((<60) . F.rgetField @BR.StateFIPS) $ stateXWalk
   let toPredict :: F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5)
       toPredict = F.toFrame [ s F.&: cat | s <- allStatesL, cat <- DT.allCatKeysASER5]
   cces_C <- CCES.ccesDataLoader
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
+  let stancConfig = (SM.makeDefaultStancConfig (toString $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
                 <$> SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -231,12 +231,12 @@ prefASER5_MR_Loo :: (K.KnitEffects r,  K.CacheEffectsD r)
                  -> K.Sem r ()
 prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   -- count data
-  let officeYearT = (T.pack $ show office) <> "_" <> (T.pack $ show year)
+  let officeYearT = show office <> "_" <> show year
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
   K.logLE K.Diagnostic "Finished loading (cached) CCES data"
   ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
-  let stancConfig = (SM.makeDefaultStancConfig $ T.unpack $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
+  let stancConfig = (SM.makeDefaultStancConfig $ toString $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
                 <$> SM.makeDefaultModelRunnerConfig
                 "stan/voterPref"
@@ -248,7 +248,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C 
+  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
 
 
 model_BinomialAllBuckets :: SB.StanModel
@@ -331,7 +331,7 @@ binomialASER5_StateDataBlock = [here|
   int<lower = 1> J_sex; // number of sex categories
   int<lower = 1> J_age; // number of age categories
   int<lower = 1> J_educ; // number of education categories
-  int<lower = 1> J_race; // number of race categories  
+  int<lower = 1> J_race; // number of race categories
   int<lower = 1, upper = J_state> state[G];
   int<lower = 1, upper = J_age * J_sex * J_educ * J_race> category[G];
   int<lower = 0> D_votes[G];
@@ -373,11 +373,11 @@ binomialASER5_StateGeneratedQuantitiesBlock = [here|
 
 binomialASER5_StateGQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_StateGQLLBlock = [here|
-  vector[G] log_lik;  
+  vector[G] log_lik;
   for (g in 1:G) {
       log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g], category[g]]);
   }
-|]    
+|]
 
 
 binomialASER5_v2_StateParametersBlock :: SB.ParametersBlock
@@ -391,7 +391,7 @@ binomialASER5_v2_StateModelBlock :: SB.ModelBlock
 binomialASER5_v2_StateModelBlock = [here|
   sigma_alpha ~ normal (0, 10);
   alpha ~ normal (0, sigma_alpha);
-  D_votes ~ binomial_logit(Total_votes, beta[category] + alpha[state]);  
+  D_votes ~ binomial_logit(Total_votes, beta[category] + alpha[state]);
 |]
 
 binomialASER5_v2_StateGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
@@ -408,7 +408,7 @@ binomialASER5_v2_StateGQLLBlock = [here|
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], beta[category[g]] + alpha[state[g]]);
   }
-|]      
+|]
 
 
 binomialASER5_v3_ParametersBlock :: SB.ParametersBlock
@@ -418,7 +418,7 @@ binomialASER5_v3_ParametersBlock = [here|
 
 binomialASER5_v3_ModelBlock :: SB.ModelBlock
 binomialASER5_v3_ModelBlock = [here|
-  D_votes ~ binomial_logit(Total_votes, beta[category]);  
+  D_votes ~ binomial_logit(Total_votes, beta[category]);
 |]
 
 binomialASER5_v3_GeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
@@ -447,10 +447,10 @@ binomialASER5_v4_DataBlock = [here|
   int<lower = 0> M;
   int<lower = 0> predict_State[M];
   matrix[M, K] predict_X;
-  
+
 |]
 
-  
+
 
 binomialASER5_v4_ParametersBlock :: SB.ParametersBlock
 binomialASER5_v4_ParametersBlock = [here|
@@ -476,14 +476,14 @@ binomialASER5_v4_GeneratedQuantitiesBlock = [here|
   }
 |]
 
-  
+
 binomialASER5_v4_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v4_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta);
   }
-|]       
+|]
 
 
 binomialASER5_v5_ParametersBlock :: SB.ParametersBlock
@@ -510,14 +510,14 @@ binomialASER5_v5_GeneratedQuantitiesBlock = [here|
   predicted = inv_logit(alpha + (predict_X * beta) + aState[predict_State]);
 |]
 
-  
+
 binomialASER5_v5_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v5_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + aState[state[g]]);
   }
-|]       
+|]
 
 binomialASER5_v6_TransformedDataBlock :: SB.TransformedDataBlock
 binomialASER5_v6_TransformedDataBlock = [here|
@@ -538,7 +538,7 @@ binomialASER5_v6_ParametersBlock = [here|
   real alpha; // overall intercept
   vector[K] beta; // fixed effects
   vector<lower=0> [K+1] sigma;
-  vector[K+1] betaState[J_state]; // state-level coefficients  
+  vector[K+1] betaState[J_state]; // state-level coefficients
 |]
 
 binomialASER5_v6_ModelBlock :: SB.ModelBlock
@@ -564,14 +564,14 @@ binomialASER5_v6_GeneratedQuantitiesBlock = [here|
     predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + (predict_XI[m] * betaState[predict_State[m]]));
 |]
 
-  
+
 binomialASER5_v6_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v6_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + XI[g] * betaState[state[g]]);
   }
-|]       
+|]
 
 
 binomialASER5_v7_ParametersBlock :: SB.ParametersBlock
@@ -591,9 +591,9 @@ binomialASER5_v7_TransformedParametersBlock = [here|
     tau[k] = 2.5 * tan(tau_unif[k]);
   betaState = (diag_pre_multiply(tau, L_Omega) * z)';
 |]
-  
 
-  
+
+
 binomialASER5_v7_ModelBlock :: SB.ModelBlock
 binomialASER5_v7_ModelBlock = [here|
   alpha ~ normal(0,2); // weak prior around 50%
@@ -611,14 +611,11 @@ binomialASER5_v7_GeneratedQuantitiesBlock = [here|
     predicted[m] = inv_logit(alpha + (predict_X[m] * beta) + dot_product(predict_XI[m], betaState[predict_State[m]]));
 |]
 
-  
+
 binomialASER5_v7_GQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialASER5_v7_GQLLBlock = [here|
   vector[G] log_lik;
   for (g in 1:G) {
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + dot_product(XI[g], betaState[state[g]]));
   }
-|]       
-
-
-  
+|]

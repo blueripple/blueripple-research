@@ -81,7 +81,7 @@ type instance FI.VectorFor PartyT = UVec.Vector
 type Party = "Party" F.:-> PartyT
 
 instance FV.ToVLDataValue (F.ElField Party) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data OfficeT = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
@@ -102,17 +102,17 @@ type instance FI.VectorFor OfficeT = UVec.Vector
 type Office = "Office" F.:-> OfficeT
 
 instance FV.ToVLDataValue (F.ElField Office) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type Votes = "Votes" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField Votes) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type TotalVotes = "TotalVotes" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
@@ -133,12 +133,12 @@ derivingUnbox
 type instance FI.VectorFor PrefTypeT = UVec.Vector
 
 instance FV.ToVLDataValue (F.ElField PrefType) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type ElectoralWeight = "ElectoralWeight" F.:-> Double
 
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
@@ -159,7 +159,7 @@ derivingUnbox
 type instance FI.VectorFor ElectoralWeightSourceT = UVec.Vector
 
 instance FV.ToVLDataValue (F.ElField ElectoralWeightSource) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data ElectoralWeightOfT
   = -- | Voting Eligible Population
@@ -194,7 +194,7 @@ ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 type CVAP = "CVAP" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField CVAP) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data VoteWhyNot
   = VWN_PhysicallyUnable

@@ -1,7 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -12,9 +10,6 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
 {-# OPTIONS_GHC  -O0 -fplugin=Polysemy.Plugin  #-}
 
 module BlueRipple.Model.CachedModels where
@@ -50,8 +45,8 @@ import qualified Polysemy                      as P (raise)
 
 import           Data.String.Here               ( i )
 
-import           BlueRipple.Configuration 
-import           BlueRipple.Utilities.KnitUtils 
+import           BlueRipple.Configuration
+import           BlueRipple.Utilities.KnitUtils
 
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.Bootstrap            as GLM
@@ -104,35 +99,35 @@ statesAfter y r = F.rgetField @BR.Year r > y && F.rgetField @BR.StateAbbreviatio
 
 pumsByStateASER :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
-pumsByStateASER = do  
+pumsByStateASER = do
   cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
-    let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
+    let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
                            (F.FrameRec (DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
-        addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @DT.CatColsASER (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
+        addDefaultsOneF = F.toFrame <$> Keyed.addDefaultRec @DT.CatColsASER (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
         addDefaultsF = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                       (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS])
                        (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
     return $ FL.fold addDefaultsF $ F.filterFrame (\r -> F.rgetField @BR.StateFIPS r < 60) rollup
 
 pumsByStateASER5 :: (K.KnitEffects r, K.CacheEffectsD r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ([BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens])))
-pumsByStateASER5 = do  
+pumsByStateASER5 = do
   cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER5/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
-    let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)                         
+    let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)
                  $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
                            (F.FrameRec (DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
-        addDefaultsOneF = fmap F.toFrame $ Keyed.addDefaultRec @DT.CatColsASER5 (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
+        addDefaultsOneF = F.toFrame <$> Keyed.addDefaultRec @DT.CatColsASER5 (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
         addDefaultsF = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) 
+                       (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.StateFIPS])
                        (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const addDefaultsOneF)
     return $ FL.fold addDefaultsF $ F.filterFrame (\r -> F.rgetField @BR.StateFIPS r < 60) rollup
 
@@ -141,7 +136,7 @@ censusElectoralWeightsASER_MRP :: (K.KnitEffects r, K.CacheEffectsD r, K.Member 
                       => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER V.++ (BR.Year ': ET.EWCols)))))
 censusElectoralWeightsASER_MRP = do
   cachedCPS_VoterPUMS_Data <- CPS.cpsVoterPUMSLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER/Census_ElectoralWeights.bin" cachedCPS_VoterPUMS_Data $ const $                                
+  BR.retrieveOrMakeFrame "model/MRP_ASER/Census_ElectoralWeights.bin" cachedCPS_VoterPUMS_Data $ const $
     BR.mrpTurnout @DT.CatColsASER
     GLM.MDVNone
     (Just "T_CensusASER")
@@ -156,7 +151,7 @@ censusElectoralWeightsASER5_MRP :: (K.KnitEffects r, K.CacheEffectsD r, K.Member
                       => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ (BR.Year ': ET.EWCols)))))
 censusElectoralWeightsASER5_MRP = do
   cachedCPS_VoterPUMS_Data <- CPS.cpsVoterPUMSLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER5/Census_ElectoralWeights.bin" cachedCPS_VoterPUMS_Data $ const $                                
+  BR.retrieveOrMakeFrame "model/MRP_ASER5/Census_ElectoralWeights.bin" cachedCPS_VoterPUMS_Data $ const $
     BR.mrpTurnout @DT.CatColsASER5
     GLM.MDVNone
     (Just "T_CensusASER5")
@@ -196,7 +191,7 @@ ccesElectoralWeightsASER5_MRP = do
         cachedCCES_Data
         (BR.countVotersOfAllF @DT.CatColsASER5)
         predictorsASER5
-        BR.catPredMaps        
+        BR.catPredMaps
 
 -- adjusted turnout
 type AdjCols cc = [BR.Year, BR.StateAbbreviation, PUMS.NonCitizens, DT.PopCountOf, BR.StateFIPS] V.++ cc V.++ [DT.PopCountOf, PUMS.Citizens] V.++ ET.EWCols
@@ -206,9 +201,9 @@ adjCensusElectoralWeightsMRP_ASER :: (K.KnitEffects r, K.CacheEffectsD r, K.Memb
 adjCensusElectoralWeightsMRP_ASER = do
     stateTurnout_C <- BR.stateTurnoutLoader
     pumsByState_C <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER
-    censusEW_MRP_C <- censusElectoralWeightsASER_MRP    
+    censusEW_MRP_C <- censusElectoralWeightsASER_MRP
     let cachedDeps = (,,) <$> stateTurnout_C <*> pumsByState_C <*> censusEW_MRP_C
-    BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) -> 
+    BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) ->
       BR.demographicsWithAdjTurnoutByState
         @DT.CatColsASER
         @PUMS.Citizens
@@ -223,9 +218,9 @@ adjCensusElectoralWeightsMRP_ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Mem
 adjCensusElectoralWeightsMRP_ASER5 = do
     stateTurnoutC <- BR.stateTurnoutLoader
     pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER5
-    censusEW_MRP_C <- censusElectoralWeightsASER5_MRP    
+    censusEW_MRP_C <- censusElectoralWeightsASER5_MRP
     let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> censusEW_MRP_C
-    BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) -> 
+    BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_Census_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, inferredCensusTurnout) ->
       BR.demographicsWithAdjTurnoutByState
         @DT.CatColsASER5
         @PUMS.Citizens
@@ -242,7 +237,7 @@ adjCCES_ElectoralWeightsMRP_ASER =   do
     pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER
     ccesEW_MRP_C <- ccesElectoralWeightsASER_MRP
     let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> ccesEW_MRP_C
-    BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) -> 
+    BR.retrieveOrMakeFrame "model/MRP_ASER/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) ->
       BR.demographicsWithAdjTurnoutByState
         @DT.CatColsASER
         @PUMS.Citizens
@@ -257,31 +252,31 @@ adjCCES_ElectoralWeightsMRP_ASER5 =   do
     pumsByStateC <- fmap (F.filterFrame (statesAfter 2007)) <$> pumsByStateASER5
     ccesEW_MRP_C <- ccesElectoralWeightsASER5_MRP
     let cachedDeps = (,,) <$> stateTurnoutC <*> pumsByStateC <*> ccesEW_MRP_C
-    BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) -> 
+    BR.retrieveOrMakeFrame "model/MRP_ASER5/PUMS_CCES_adjElectoralWeights.bin" cachedDeps $ \(stateTurnout, pumsByState, prefs) ->
       BR.demographicsWithAdjTurnoutByState
         @DT.CatColsASER5
         @PUMS.Citizens
         @'[PUMS.NonCitizens, DT.PopCountOf, BR.StateFIPS]
         @'[BR.Year, BR.StateAbbreviation] stateTurnout (fmap F.rcast pumsByState) (fmap F.rcast prefs)
 
-      
+
 -- preferences
 ccesPreferencesASER_MRP ::  (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER V.++ [BR.Year, ET.Office, ET.DemVPV, ET.DemPref]))))
 ccesPreferencesASER_MRP = do
   cachedCCES_Data <- CCES.ccesDataLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER/CCES_Preferences.bin" cachedCCES_Data $ const $ 
+  BR.retrieveOrMakeFrame "model/MRP_ASER/CCES_Preferences.bin" cachedCCES_Data $ const $
       BR.mrpPrefs @DT.CatColsASER GLM.MDVNone (Just "ASER") cachedCCES_Data predictorsASER BR.catPredMaps
 
 ccesPreferencesASER5_MRP ::  (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
                         => K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.StateAbbreviation ': (DT.CatColsASER5 V.++ [BR.Year, ET.Office, ET.DemVPV, ET.DemPref]))))
 ccesPreferencesASER5_MRP = do
   cachedCCES_Data <- CCES.ccesDataLoader
-  BR.retrieveOrMakeFrame "model/MRP_ASER5/CCES_Preferences.bin" cachedCCES_Data $ const $ 
-      BR.mrpPrefs @DT.CatColsASER5 GLM.MDVNone (Just "ASER5") cachedCCES_Data predictorsASER5 BR.catPredMaps      
+  BR.retrieveOrMakeFrame "model/MRP_ASER5/CCES_Preferences.bin" cachedCCES_Data $ const $
+      BR.mrpPrefs @DT.CatColsASER5 GLM.MDVNone (Just "ASER5") cachedCCES_Data predictorsASER5 BR.catPredMaps
 
 
-type PumsByCDASER5Row = PUMS.CDCounts DT.CatColsASER5 
+type PumsByCDASER5Row = PUMS.CDCounts DT.CatColsASER5
 
 pumsByCD2018ASER5 :: (K.KnitEffects r, K.CacheEffectsD r, K.Member GLM.RandomFu r)
                   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PumsByCDASER5Row))
@@ -297,7 +292,7 @@ pumsByCD2018ASER5 = do
     let pums2018WeightTotal =
           FL.fold (FL.prefilter g
                     $ FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) pums
-    K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)
+    K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> show pums2018WeightTotal
     PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
 
 
@@ -311,10 +306,10 @@ postStratOneF =
       ew = F.rgetField @ET.ElectoralWeight
       dPref = F.rgetField @ET.DemPref
       citF = FL.premap cit FL.sum
-      citWgtdF g = (/) <$> (FL.premap (\r -> realToFrac (cit r) * g r) FL.sum) <*> (fmap realToFrac citF)
+      citWgtdF g = (/) <$> FL.premap (\r -> realToFrac (cit r) * g r) FL.sum <*> fmap realToFrac citF
       wgtdDPrefF = citWgtdF dPref
       wgtdEWF = citWgtdF ew
-      voteWgtd g = (/) <$> (FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum) <*> (FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum)
+      voteWgtd g = (/) <$> FL.premap (\r ->  realToFrac (cit r) * ew r * g r) FL.sum <*> FL.premap (\r -> realToFrac (cit r) * ew r) FL.sum
       wgtdDShareF = voteWgtd dPref --citWgtdF (\r -> F.rgetField @ET.DemPref r * F.rgetField @ET.ElectoralWeight r)
   in (\vap prefPS ewPS sharePS -> DT.PC_VAP F.&: vap F.&: ET.PSByVAP F.&: prefPS F.&: ewPS F.&: sharePS F.&: V.RNil)
      <$> citF
@@ -337,11 +332,11 @@ house2020ModeledCCESPrefsASER5 = do
     $ \(cdASER5, ccesMR_Prefs, censusBasedAdjEWs) -> do
     let pums2018WeightTotal =
           FL.fold (FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) cdASER5
-    K.logLE K.Diagnostic $ "(cdASER5) Sum of all Citizens + NonCitizens in 2018=" <> (T.pack $ show pums2018WeightTotal)          
+    K.logLE K.Diagnostic $ "(cdASER5) Sum of all Citizens + NonCitizens in 2018=" <> show pums2018WeightTotal
     let prefs2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) ccesMR_Prefs
         ew2018 = F.filterFrame (\r -> F.rgetField @BR.Year r == 2018) censusBasedAdjEWs
     cdWithPrefsAndEWs <- K.knitEither
-                         $ either (Left . T.pack . show) Right
+                         $ either (Left . show) Right
                          $ FJ.leftJoinE3 @('[BR.StateAbbreviation] V.++ DT.CatColsASER5) cdASER5 prefs2018 ew2018
     let postStratF = FMR.concatFold
                      $ FMR.mapReduceFold

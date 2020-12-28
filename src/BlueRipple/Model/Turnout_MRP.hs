@@ -23,9 +23,7 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
                                                 , catMaybes
-                                                , fromMaybe
                                                 )
-
 import qualified Data.Text                     as T
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
@@ -81,7 +79,7 @@ mrpTurnout
      , Show (F.Record (cc V.++ BR.CountCols))
      , V.RMap (cc V.++ BR.CountCols)
      , V.ReifyConstraint Show F.ElField (cc V.++ BR.CountCols)
-     , V.RecordToList (cc V.++ BR.CountCols) 
+     , V.RecordToList (cc V.++ BR.CountCols)
      , V.RMap cc
      , V.ReifyConstraint Show V.ElField cc
      , V.RecordToList cc
@@ -100,29 +98,29 @@ mrpTurnout
 mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catPredMap = do
   let lhToRecs year (BR.LocationHolder lp lkM predMap) =
         let recToAdd :: Double -> F.Record [BR.Year, ET.ElectoralWeightSource, ET.ElectoralWeightOf, ET.ElectoralWeight]
-            recToAdd w = year F.&: (ET.ewRec ewSource ewOf w)
-            addCols w r = r `V.rappend` (recToAdd w)
+            recToAdd w = year F.&: ET.ewRec ewSource ewOf w
+            addCols w r = r `V.rappend` recToAdd w
             g x =
               let lk = fromMaybe (lp F.&: V.RNil) x
-              in  fmap (\(ck, p) -> addCols p (lk `V.rappend` ck))
-                  $ M.toList predMap
+              in  (\(ck, p) -> addCols p (lk `V.rappend` ck))
+                  <$> M.toList predMap
         in  g lkM
-      lhsToFrame y = F.toFrame . concat . fmap (lhToRecs y)
+      lhsToFrame y = F.toFrame . concatMap (lhToRecs y)
   K.logLE K.Info "(Turnout) Doing MR..."
-  let cacheIt cn fa = -- fa :: F.FrameRec rs -> 
+  let cacheIt cn fa = -- fa :: F.FrameRec rs ->
         case cacheTmpDirM of
-          Nothing -> K.ignoreCacheTime cachedDat >>= fa 
-          Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data 
+          Nothing -> K.ignoreCacheTime cachedDat >>= fa
+          Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data
                          $ K.retrieveOrMakeTransformed @KS.DefaultSerializer @KS.DefaultCacheData
                          (fmap FS.toS . FL.fold FL.list)
-                         (F.toFrame . fmap FS.fromS)                         
+                         (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
                          cachedDat
                          fa
       wYearActions = fmap
                      (\y -> cacheIt
-                       ("turnout" <> T.pack (show y))
-                       (\datFrame -> lhsToFrame y 
+                       ("turnout" <> show y)
+                       (\datFrame -> lhsToFrame y
                          <$> (BR.predictionsByLocation verbosity
                               datFrame
                               (votersF y)
@@ -131,7 +129,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
                              )
                        )
                      )
-                     [2008, 2010, 2012, 2014, 2016, 2018]      
+                     [2008, 2010, 2012, 2014, 2016, 2018]
 {-
   allResults <- sequence wYearActions
   return $ mconcat allResults
@@ -141,4 +139,3 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."
     Just allResults -> return $ mconcat allResults
-

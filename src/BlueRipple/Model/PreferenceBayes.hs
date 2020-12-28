@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -47,8 +46,8 @@ import           Math.Gamma                     ( gamma
                                                 , Gamma
                                                 )
 import           System.Random                  ( randomRIO )
-import           Control.Concurrent            as CC
-import           Control.Concurrent.MVar       as CC
+import qualified Control.Concurrent            as CC
+import qualified Control.Concurrent.MVar       as CC
 import qualified Data.Vector.Unboxed           as VU
 import qualified Data.Vector.Storable          as VS
 import qualified Data.Vector.Generic           as VG
@@ -60,7 +59,7 @@ import qualified Numeric.Optimization.Algorithms.HagerZhang05
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CGAD
 
-data ObservedVote = ObservedVote { dem :: Int}
+newtype ObservedVote = ObservedVote { dem :: Int}
 
 data Pair a b = Pair !a !b
 
@@ -69,7 +68,7 @@ binomialNormalParams turnoutCounts demProbs =
   let np = VB.zip turnoutCounts demProbs
       meanVarUpdate :: RealFrac a => Pair a a -> (Int, a) -> Pair a a
       meanVarUpdate (Pair m v) (n, p) =
-        let m' = (realToFrac n) * p in (Pair (m + m') (v + m' * (1 - p)))
+        let m' = realToFrac n * p in Pair (m + m') (v + m' * (1 - p))
       foldMeanVar = FL.Fold meanVarUpdate (Pair 0 0) id
       Pair m v    = FL.fold foldMeanVar np
   in  (m, v)
@@ -115,7 +114,7 @@ gradLogBinomialObservedVotes votesAndTurnout demProbs =
     n           = VG.length demProbs
     indexVector = VG.generate n id
     sumEach =
-      sequenceA $ fmap (\n -> FL.premap (VG.! n) (FL.sum @Double)) $ indexVector
+      sequenceA $ (\n -> FL.premap (VG.! n) (FL.sum @Double)) <$> indexVector
   in
     FL.fold sumEach
       $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
@@ -186,7 +185,7 @@ covar
   => f (Int, VB.Vector Int)
   -> VB.Vector Double
   -> LA.Matrix Double
-covar votesAndVoters x = invFisher votesAndVoters x
+covar = invFisher
 
 correlFromCov :: LA.Matrix Double -> LA.Matrix Double
 correlFromCov cov =
@@ -280,11 +279,11 @@ sequenceConcurrently :: Traversable t => t (IO a) -> IO (t a)
 sequenceConcurrently actions = do
   let f :: IO a -> IO (CC.MVar a, CC.ThreadId)
       f action = do
-        mvar     <- CC.newEmptyMVar
-        threadId <- forkIO $ (action >>= CC.putMVar mvar)
+        mvar     <- newEmptyMVar
+        threadId <- CC.forkIO (action >>= putMVar mvar)
         return (mvar, threadId)
       g :: (CC.MVar a, CC.ThreadId) -> IO a
-      g (mvar, _) = CC.takeMVar mvar
+      g (mvar, _) = takeMVar mvar
   forked <- traverse f actions -- IO (t (MVar a, ThreadId))
   traverse g forked
 
@@ -299,9 +298,9 @@ runMany
 runMany votesAndTurnout nParams nChains nSamplesPerChain nBurnPerChain = do
   let
     randomStart :: Int -> IO Sample
-    randomStart n = VG.fromList <$> (sequence $ replicate n (randomRIO (0, 1)))
+    randomStart n = VG.fromList <$> replicateM n (randomRIO (0, 1))
     randomStarts :: Int -> Int -> IO [Sample]
-    randomStarts n m = sequence $ replicate m (randomStart n)
+    randomStarts n m = replicateM m (randomStart n)
     doEach =
       fmap (drop nBurnPerChain) . runMCMC votesAndTurnout nSamplesPerChain
   starts <- randomStarts nParams nChains

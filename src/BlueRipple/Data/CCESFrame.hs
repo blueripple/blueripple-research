@@ -50,14 +50,6 @@ F.declareColumn "Date" ''FP.FrameDay
 
 
 --these columns are parsed wrong so we fix them before parsing
---F.declareColumn "CCESVvRegstatus" ''Text
 F.declareColumn "CCESHispanic"    ''Int
---F.declareColumn "CCESDistUp" ''Text
---F.declareColumn "CCESGender" ''Text
 
-
---F.declareColumn "CCESVvTurnoutGvm" ''Int
---F.declareColumn "CCESVotedRepParty" ''Int
 F.tableTypes' ccesRowGen
---deriving instance Generic CCES
-

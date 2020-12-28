@@ -1,7 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -9,13 +7,10 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuantifiedConstraints     #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
 
 {-# OPTIONS_GHC  -O0 #-}
 
@@ -28,9 +23,7 @@ import           Data.Function                  ( on )
 import qualified Data.List                     as L
 import qualified Data.Set                      as S
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( isJust
-                                                , catMaybes
-                                                )
+import           Data.Maybe                     ( isJust )
 
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as SE
@@ -62,7 +55,7 @@ import           GHC.Generics                   ( Generic )
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
-                                               
+
 import qualified BlueRipple.Data.ElectionTypes
                                                as BR
 
@@ -72,7 +65,7 @@ import qualified BlueRipple.Model.TurnoutAdjustment
 
 import qualified BlueRipple.Utilities.KnitUtils
                                                as BR
-import qualified BlueRipple.Data.Keyed as Keyed                                               
+import qualified BlueRipple.Data.Keyed as Keyed
 
 
 
@@ -93,8 +86,8 @@ rollupSumF :: forall as bs ds. (Ord (F.Record bs)
                                , FI.RecVec (bs V.++ ds)
                                , FF.ConstrainedFoldable Num ds
                                )
-        => FL.Fold (F.Record (as V.++ bs V.++ ds)) (F.FrameRec (bs V.++ ds))      
-rollupSumF = rollupF @as @bs @ds (FF.foldAllConstrained @Num FL.sum)                      
+        => FL.Fold (F.Record (as V.++ bs V.++ ds)) (F.FrameRec (bs V.++ ds))
+rollupSumF = rollupF @as @bs @ds (FF.foldAllConstrained @Num FL.sum)
 
 addElectoralWeight ::
   BR.ElectoralWeightSourceT
@@ -121,7 +114,7 @@ joinDemoAndWeights
     , js F.⊆  (ks V.++ PCols p)
     , js F.⊆  (js V.++ BR.EWCols)
     , (ks V.++ PCols p) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
-    , (F.RDeleteAll js (js V.++ BR.EWCols)) F.⊆  (js V.++ BR.EWCols)
+    , F.RDeleteAll js (js V.++ BR.EWCols) F.⊆  (js V.++ BR.EWCols)
     , V.RMap (ks V.++ PCols p)
     , V.RMap  ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
     , V.RecApplicative  (F.RDeleteAll js (js V.++ BR.EWCols))
@@ -145,7 +138,7 @@ joinDemoAndWeights d w = FJ.leftJoinE @js d w
 --defaultPopRec :: BR.PopCountOfT -> V.Snd p -> F.Record (PCols p)
 --defaultPopRec pco x = pco F.&: x F.&: V.RNil
 
-  
+
 joinDemoAndWeightsWithDefaults
   :: forall js ks p
   . (js F.⊆ ks
@@ -199,15 +192,15 @@ adjustWeightsForStateTotals
     , V.Snd p ~ Int
     , F.ElemOf (BR.WithYS ks) BR.Year
     , F.ElemOf (BR.WithYS ks) BR.StateAbbreviation
-    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ (BR.WithYS (ks V.++ PCols p V.++ BR.EWCols))
+    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ BR.WithYS (ks V.++ PCols p V.++ BR.EWCols)
     , F.ElemOf (ks V.++ PCols p V.++ BR.EWCols) p
     , F.ElemOf (ks V.++ PCols p V.++ BR.EWCols) BR.ElectoralWeight
     , FI.RecVec (ks V.++ PCols p V.++ BR.EWCols)
     )
   => F.Frame BR.StateTurnout
-  -> F.FrameRec ((BR.WithYS ks) V.++ PCols p V.++ BR.EWCols)
-  -> K.Sem r (F.FrameRec ((BR.WithYS ks) V.++ PCols p  V.++ BR.EWCols))
-adjustWeightsForStateTotals stateTurnout unadj = 
+  -> F.FrameRec (BR.WithYS ks V.++ PCols p V.++ BR.EWCols)
+  -> K.Sem r (F.FrameRec (BR.WithYS ks V.++ PCols p  V.++ BR.EWCols))
+adjustWeightsForStateTotals stateTurnout unadj =
   FL.foldM
     (BR.adjTurnoutFold @p @BR.ElectoralWeight stateTurnout)
     unadj
@@ -250,7 +243,7 @@ demographicsWithAdjTurnoutByState stateTurnout demos ews = do
   let joinedE :: Either [F.Record (js V.++ catCols)] (F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PEWCols p)))
       joinedE = joinDemoAndWeights @(js V.++ catCols) @((BR.WithYS ks) V.++ catCols) @p demos ews
   joined <- K.knitEither
-            $ either (\missingKeys -> Left $ "missing keys in electoral weights in demographicsWithAdjTurnoutByState: " <> (T.pack $ show missingKeys)) Right
+            $ either (\missingKeys -> Left $ "missing keys in electoral weights in demographicsWithAdjTurnoutByState: " <> show missingKeys) Right
             $ joinedE
   adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout joined
 
@@ -291,7 +284,7 @@ demographicsWithDefaultsWithAdjTurnoutByState pco x stateTurnout demos ews = do
   adjustWeightsForStateTotals @(ks V.++ catCols) @p stateTurnout joined
 
 -}
-  
+
 -- This is monstrous
 rollupAdjustAndJoin
   :: forall as catCols p ks js effs
@@ -406,7 +399,7 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , (F.RDeleteAll catCols (catCols V.++ BR.EWCols))  F.⊆ (BR.Year ': (catCols V.++ BR.EWCols))
     , (F.RDeleteAll catCols (catCols V.++ BR.EWCols))  F.⊆ (ACSCols V.++ (catCols V.++ BR.EWCols))
     , (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]) F.⊆ (ACSColsCD V.++ (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) V.++ '[BR.VotedPctOfAll])
-    , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount) 
+    , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount)
     )
   => T.Text
   -> K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
@@ -432,7 +425,7 @@ cachedASEDemographicsWithAdjTurnoutByCD
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin" 
+cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin"
 
 cachedASRDemographicsWithAdjTurnoutByCD
   :: (K.KnitEffects r
@@ -442,4 +435,4 @@ cachedASRDemographicsWithAdjTurnoutByCD
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
   -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
-cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin" 
+cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @BR.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin"

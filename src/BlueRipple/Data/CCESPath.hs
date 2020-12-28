@@ -14,12 +14,3 @@ ccesRowGen = (F.rowGen ccesCSV) { F.tablePrefix = "CCES"
                                 , F.separator   = ","
                                 , F.rowTypeName = "CCES"
                                 }
-
-{- From DataFrames, for later -}
-{-
-
--- these columns are parsed wrong so we fix them before parsing
---F.declareColumn "CCESVvRegstatus" ''Int  
---F.declareColumn "CCESHispanic"    ''Int
-F.tableTypes' ccesRowGen
--}

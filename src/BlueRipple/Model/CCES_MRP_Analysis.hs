@@ -1,7 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -12,9 +10,6 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
 --{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 module BlueRipple.Model.CCES_MRP_Analysis where
 
@@ -22,7 +17,6 @@ import qualified Control.Foldl                 as FL
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
                                                 , catMaybes
-                                                , fromMaybe
                                                 )
 
 import qualified Data.Text                     as T
@@ -182,7 +176,7 @@ mrpPrefs
      , Show (F.Record (cc V.++ BR.CountCols))
      , V.RMap (cc V.++ BR.CountCols)
      , V.ReifyConstraint Show F.ElField (cc V.++ BR.CountCols)
-     , V.RecordToList (cc V.++ BR.CountCols) 
+     , V.RecordToList (cc V.++ BR.CountCols)
      , V.RMap cc
      , V.ReifyConstraint Show V.ElField cc
      , V.RecordToList cc
@@ -217,9 +211,9 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
               in  fmap (\(ck, p) -> addCols p (lk `V.rappend` ck))
                     $ M.toList predMap
         in  g lkM
-      lhsToFrame y o = F.toFrame . concat . fmap (lhToRecs y o)
+      lhsToFrame y o = F.toFrame . concatMap (lhToRecs y o)
   K.logLE K.Info "Doing ASER MR..."
-  let cacheIt cn fa = 
+  let cacheIt cn fa =
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedCCES_Data >>= fa
           Just tmpDir -> K.ignoreCacheTimeM
@@ -258,7 +252,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
               )
       pHouse = fmap
                (\y -> cacheIt
-                 ("house" <> T.pack (show y))
+                 ("house" <> show y)
                  (\ccesData -> lhsToFrame y ET.House
                    <$> (BR.predictionsByLocation mdv ccesData
                          (countDemHouseVotesF @cc y)
@@ -269,7 +263,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
                 )
                 [2008, 2010, 2012, 2014, 2016, 2018]
       allActions = [p2008, p2012, p2016] ++ pHouse
-{-      
+{-
   allResults <- sequence allActions
   return $ mconcat allResults
 -}
@@ -306,7 +300,7 @@ countVotersOfValidatedF year =
   let isYear y r = F.rgetField @BR.Year r == y
       inVoterFile r = isYear year r &&  (F.rgetField @Turnout r `elem` [T_Voted, T_NoRecord])
       voted r = isYear year r && (F.rgetField @Turnout r == T_Voted)
-      wgt = F.rgetField @CCESWeightCumulative 
+      wgt = F.rgetField @CCESWeightCumulative
   in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] inVoterFile voted wgt
 
 
@@ -328,7 +322,7 @@ countVotersOfAllF year =
   let isYear y r = F.rgetField @BR.Year r == y
 --      inVoterFile r = isYear year r &&  (F.rgetField @Turnout r `elem` [T_Voted, T_NoRecord])
       voted r = isYear year r && (F.rgetField @Turnout r == T_Voted)
-      wgt = F.rgetField @CCESWeightCumulative 
+      wgt = F.rgetField @CCESWeightCumulative
   in BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP @'[Turnout, BR.Year, CCESWeightCumulative] (isYear year) voted wgt
 
 {-
@@ -360,7 +354,7 @@ mrpTurnout
      , Show (F.Record (cc V.++ BR.CountCols))
      , V.RMap (cc V.++ BR.CountCols)
      , V.ReifyConstraint Show F.ElField (cc V.++ BR.CountCols)
-     , V.RecordToList (cc V.++ BR.CountCols) 
+     , V.RecordToList (cc V.++ BR.CountCols)
      , V.RMap cc
      , V.ReifyConstraint Show V.ElField cc
      , V.RecordToList cc
@@ -393,7 +387,7 @@ mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
         in  g lkM
       lhsToFrame y = F.toFrame . concat . fmap (lhToRecs y)
   K.logLE K.Info "(Turnout) Doing MR..."
-  let cacheIt cn fa = 
+  let cacheIt cn fa =
         case cacheTmpDirM of
           Nothing -> fa
           Just tmpDir -> K.retrieveOrMakeTransformed
@@ -404,7 +398,7 @@ mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
       wYearActions = fmap
                      (\y -> cacheIt
                        ("turnout" <> T.pack (show y))
-                       (   lhsToFrame y 
+                       (   lhsToFrame y
                          <$> (BR.predictionsByLocation ccesDataAction
                               (countVotersF @cc y)
                               predictor
@@ -413,11 +407,11 @@ mrpTurnout cacheTmpDirM ccesDataAction predictor catPredMap = do
                        )
                      )
                      [2008, 2010, 2012, 2014, 2016, 2018]
-{-      
+{-
   allResults <- sequence allActions
   return $ mconcat allResults
 -}
-      
+
   allResultsM <- sequence <$> K.sequenceConcurrently wYearActions
   case allResultsM of
     Nothing -> K.knitError "Error in MR run (mrpPrefs)."

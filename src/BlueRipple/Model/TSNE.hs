@@ -39,7 +39,7 @@ fromPipes :: (Streamly.IsStream t, Monad m, Streamly.MonadAsync m) => Pipes.Prod
 fromPipes = Streamly.unfoldrM unconsP
     where
     -- Adapt P.next to return a Maybe instead of Either
-      unconsP p = Pipes.next p >>= either (\_ -> return Nothing) (return . Just)
+      unconsP p = whenRightM Nothing (Pipes.next p) (return . Just)
 
 tsne3D_S :: forall m.(Monad m, Pipes.MonadIO m)
        => TSNE.TSNEOptions -> Maybe Int -> TSNE.TSNEInputM -> Streamly.SerialT m TSNE.TSNEOutput3D_M

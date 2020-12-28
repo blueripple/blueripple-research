@@ -68,7 +68,7 @@ presidentialByStateFrame ::
   (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionCols))
 presidentialByStateFrame =
   cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PresidentialElectionCols
-    (DataSets $ T.pack BR.presidentialByStateCSV)
+    (DataSets $ toText BR.presidentialByStateCSV)
     Nothing
     Nothing
     id
@@ -82,15 +82,15 @@ cdFromPUMA2012Loader ::
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CDFromPUMA2012))
 cdFromPUMA2012Loader congress = do
   (csvPath, cacheKey) <- case congress of
-    113 -> return $ (BR.cd113FromPUMA2012CSV, "data/cd113FromPUMA2012.bin")
-    114 -> return $ (BR.cd114FromPUMA2012CSV, "data/cd114FromPUMA2012.bin")
-    115 -> return $ (BR.cd115FromPUMA2012CSV, "data/cd115FromPUMA2012.bin")
-    116 -> return $ (BR.cd116FromPUMA2012CSV, "data/cd116FromPUMA2012.bin")
+    113 -> return (BR.cd113FromPUMA2012CSV, "data/cd113FromPUMA2012.bin")
+    114 -> return (BR.cd114FromPUMA2012CSV, "data/cd114FromPUMA2012.bin")
+    115 -> return (BR.cd115FromPUMA2012CSV, "data/cd115FromPUMA2012.bin")
+    116 -> return (BR.cd116FromPUMA2012CSV, "data/cd116FromPUMA2012.bin")
     _ -> K.knitError "PUMA for congressional district crosswalk only available for 113th, 114th, 115th and 116th congress"
-  cachedFrameLoader (DataSets $ T.pack csvPath) Nothing Nothing id Nothing cacheKey --"cd116FromPUMA2012.bin"
-  where
+  cachedFrameLoader (DataSets $ toText csvPath) Nothing Nothing id Nothing cacheKey --"cd116FromPUMA2012.bin"
 
-type DatedCDFromPUMA2012 = '[BR.Year] V.++ (F.RecordColumns BR.CDFromPUMA2012)
+
+type DatedCDFromPUMA2012 = '[BR.Year] V.++ F.RecordColumns BR.CDFromPUMA2012
 
 allCDFromPUMA2012Loader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -111,17 +111,17 @@ puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116C
 county2010ToCD116Loader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyToCD116))
-county2010ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
+county2010ToCD116Loader = cachedFrameLoader (DataSets $ toText BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
 
 countyToPUMALoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyFromPUMA))
-countyToPUMALoader = cachedFrameLoader (DataSets $ T.pack BR.county2014FromPUMA2012CSV) Nothing Nothing id Nothing "countyFromPUMA.bin"
+countyToPUMALoader = cachedFrameLoader (DataSets $ toText BR.county2014FromPUMA2012CSV) Nothing Nothing id Nothing "countyFromPUMA.bin"
 
 aseDemographicsLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASEDemographics))
 aseDemographicsLoader =
   cachedFrameLoader
-    (DataSets $ T.pack BR.ageSexEducationDemographicsLongCSV)
+    (DataSets $ toText BR.ageSexEducationDemographicsLongCSV)
     Nothing
     Nothing
     id
@@ -141,7 +141,7 @@ asrDemographicsLoader ::
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASRDemographics))
 asrDemographicsLoader =
   cachedFrameLoader
-    (DataSets $ T.pack BR.ageSexRaceDemographicsLongCSV)
+    (DataSets $ toText BR.ageSexRaceDemographicsLongCSV)
     Nothing
     Nothing
     id
@@ -164,7 +164,7 @@ simpleASRDemographicsLoader = do
 aseTurnoutLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASE))
 aseTurnoutLoader =
   cachedFrameLoader
-    (DataSets $ T.pack BR.detailedASETurnoutCSV)
+    (DataSets $ toText BR.detailedASETurnoutCSV)
     Nothing
     Nothing
     id
@@ -187,7 +187,7 @@ simpleASETurnoutLoader = do
 asrTurnoutLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASR))
 asrTurnoutLoader =
   cachedFrameLoader
-    (DataSets $ T.pack BR.detailedASRTurnoutCSV)
+    (DataSets $ toText BR.detailedASRTurnoutCSV)
     Nothing
     Nothing
     id
@@ -210,7 +210,7 @@ simpleASRTurnoutLoader = do
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
-stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ T.pack BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
+stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
@@ -219,7 +219,7 @@ stateTurnoutLoader ::
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.StateTurnout))
 stateTurnoutLoader =
   cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
-    (DataSets $ T.pack BR.stateTurnoutCSV)
+    (DataSets $ toText BR.stateTurnoutCSV)
     Nothing
     Nothing
     fixMaybes
@@ -267,7 +267,7 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
 houseElectionsLoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
-houseElectionsLoader = cachedFrameLoader (DataSets $ T.pack BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.sbin"
+houseElectionsLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.sbin"
 
 houseElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -282,10 +282,10 @@ houseElectionsWithIncumbency = do
 type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
 
 winnerMap :: Foldable f => f (F.Record HouseElectionCols) -> M.Map (F.Record KeyR) (F.Record HouseElectionCols)
-winnerMap rows = FL.fold f rows
+winnerMap = FL.fold f
   where
     chooseWinner :: F.Record HouseElectionCols -> F.Record HouseElectionCols -> F.Record HouseElectionCols
-    chooseWinner a b = if (F.rgetField @ET.Votes a) > (F.rgetField @ET.Votes b) then a else b
+    chooseWinner a b = if F.rgetField @ET.Votes a > F.rgetField @ET.Votes b then a else b
     key = F.rcast @KeyR
     --f :: FL.Fold (F.Record BR.HouseElectionCols) (M.Map (F.Record KeyR) T
     f = FL.Fold (\m r -> M.insertWith chooseWinner (key r) r m) M.empty id
@@ -308,4 +308,3 @@ fixAtLargeDistricts :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs BR.Congres
 fixAtLargeDistricts n = fmap fixOne where
   statesWithAtLargeCDs = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
   fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
-  

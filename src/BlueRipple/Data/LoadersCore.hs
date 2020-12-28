@@ -32,7 +32,7 @@ import qualified Knit.Utilities.Streamly       as K
 import qualified Polysemy                      as P
 import qualified Polysemy.Error                      as P
 import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Control.Lens                  as Lens      
+import qualified Control.Lens                  as Lens
 import           Control.Lens                   ((%~))
 import qualified Control.Monad.Catch.Pure      as Exceptions
 import           Control.Monad (join)
@@ -40,10 +40,8 @@ import qualified Control.Monad.State           as ST
 import qualified Control.Foldl                 as FL
 import qualified Data.List                     as L
 import qualified Data.Map as M
-import           Data.Maybe                     ( catMaybes
-                                                , fromMaybe
-                                                )
-import qualified Data.Set                      as Set                 
+import           Data.Maybe                     ( catMaybes )
+import qualified Data.Set                      as Set
 import qualified Data.Serialize                as S
 import           Data.Serialize.Text            ( )
 import           GHC.Generics                   ( Generic
@@ -61,7 +59,7 @@ import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 
-import qualified Streamly as Streamly
+import qualified Streamly
 import qualified Streamly.Data.Fold as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Streamly.Prelude as Streamly
@@ -84,8 +82,8 @@ data DataPath = DataSets T.Text | LocalData T.Text
 
 getPath :: DataPath -> IO FilePath
 getPath dataPath = case dataPath of
-  DataSets fp -> liftIO $ BR.usePath (T.unpack fp)
-  LocalData fp -> return (T.unpack fp)
+  DataSets fp -> liftIO $ BR.usePath (toString fp)
+  LocalData fp -> return (toString fp)
 
 -- if the file is local, use modTime
 -- if the file is from the data-set library, assume the cached version is good since the modtime
@@ -123,19 +121,19 @@ recStreamLoader dataPath parserOptionsM filterM fixRow = do
     250000
     250000
     (runningCountF
-      ("Read (k rows, from \"" <> (T.pack path) <> "\")")
+      ("Read (k rows, from \"" <> toText path <> "\")")
       (\n-> " "
             <> ("from \""
-                 <> (T.pack path)
+                 <> toText path
                  <> "\": "
-                 <> (T.pack $ show $ 250000 * n))
+                 <> (show $ 250000 * n))
       )
-      ("loading \"" <> (T.pack path) <> "\" from disk finished.")
-    )      
+      ("loading \"" <> toText path <> "\" from disk finished.")
+    )
     $ BR.loadToRecStream @qs csvParserOptions path filter
 
 {-
--- This is bad.  Requires entire thing to be in mem as a list before writing. 
+-- This is bad.  Requires entire thing to be in mem as a list before writing.
 cachedRecStreamLoader
   :: forall qs rs r
    . ( V.RMap rs
@@ -155,7 +153,7 @@ cachedRecStreamLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
 cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheKey      = (fromMaybe "data/" cachePathM) <> key     
+  let cacheKey      = (fromMaybe "data/" cachePathM) <> key
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE K.Diagnostic $ "loading or retrieving and saving (streamly) data at key=" <> cacheKey
   K.retrieveOrMakeTransformedStream FS.toS FS.fromS cacheKey cachedDataPath
@@ -186,7 +184,7 @@ cachedFrameLoader
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
 cachedFrameLoader filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheKey      = (fromMaybe "data/" cachePathM) <> key     
+  let cacheKey      = fromMaybe "data/" cachePathM <> key
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
@@ -217,7 +215,7 @@ cachedFrameLoaderS
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
 cachedFrameLoaderS filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheKey      = (fromMaybe "data/" cachePathM) <> key     
+  let cacheKey      = fromMaybe "data/" cachePathM <> key
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrameS cacheKey cachedDataPath $ \dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow
@@ -243,10 +241,10 @@ frameLoader
 frameLoader filePath parserOptionsM filterM fixRow = do
   let csvParserOptions =
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      parserOptions = fromMaybe csvParserOptions parserOptionsM
       filter = fromMaybe (const True) filterM
   path <- liftIO $ getPath filePath
-  K.logLE K.Diagnostic ("Attempting to load data from " <> (T.pack path) <> " into a frame.")
+  K.logLE K.Diagnostic ("Attempting to load data from " <> toText path <> " into a frame.")
   fmap fixRow <$> BR.loadToFrame parserOptions path filter
 
 -- file has fs
@@ -281,7 +279,7 @@ maybeFrameLoader
   => DataPath
   -> Maybe F.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM filterMaybesM fixMaybes transformRow
@@ -318,7 +316,7 @@ cachedMaybeRecStreamLoader
   => DataPath
   -> Maybe F.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
@@ -328,8 +326,8 @@ cachedMaybeRecStreamLoader dataPath parserOptionsM filterMaybesM fixMaybes trans
                      -> K.ActionWithCacheTime r DataPath
                      -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
                      -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
-      cacheRecStream = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS 
-      cacheKey      = (fromMaybe "data/" cachePathM) <> key
+      cacheRecStream = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS
+      cacheKey      = fromMaybe "data/" cachePathM <> key
   K.logLE K.Diagnostic
     $  "loading or retrieving and saving data at key="
     <> cacheKey
@@ -361,13 +359,13 @@ maybeRecStreamLoader
   => DataPath
   -> Maybe F.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
   -> Streamly.SerialT K.StreamlyM (F.Record rs)
 maybeRecStreamLoader dataPath parserOptionsM filterMaybesM fixMaybes transformRow = do
   let csvParserOptions =
         F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
-      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      parserOptions = fromMaybe csvParserOptions parserOptionsM
       filterMaybes = fromMaybe (const True) filterMaybesM
   path <- liftIO $ getPath dataPath
   Streamly.map transformRow
@@ -406,7 +404,7 @@ cachedMaybeFrameLoader
   => DataPath
   -> Maybe F.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> (F.Rec (Maybe F.:. F.ElField) qs))
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
@@ -419,10 +417,10 @@ cachedMaybeFrameLoader dataPath parserOptionsM filterMaybesM fixMaybes transform
 -- tracing fold
 runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
 runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
-  start = ST.liftIO (T.putStr startMsg) >> return 0
+  start = ST.liftIO (putText startMsg) >> return 0
   step !n _ = ST.liftIO $ do
     t <- System.Clock.getTime System.Clock.ProcessCPUTime
     putStr $ show t ++ ": "
-    T.putStrLn $ countMsg n
+    putTextLn $ countMsg n
     return (n+1)
-  done _ = ST.liftIO $ T.putStrLn endMsg
+  done _ = ST.liftIO $ putTextLn endMsg

@@ -1,6 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -8,14 +7,11 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances        #-}
 
 module BlueRipple.Model.MRP where
@@ -33,7 +29,6 @@ import qualified Data.Set                      as S
 import qualified Data.IntMap                   as IM
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust
-                                                , catMaybes
                                                 , fromJust
                                                 )
 import qualified Data.Text                     as T
@@ -335,7 +330,7 @@ predictionsByLocation verbosity ccesFrame countFold predictors catPredMap =
                                            Nothing -> Nothing
                                            Just k -> k <$ GLM.categoryNumberFromKey rc k (RecordColsProxy @(LocationCols V.++ ps))
                 in (fmap snd . GLM.runLogOnGLMException Nothing)
-                   $ GLM.predictFromBetaB mm (flip M.lookup predMap) (const emptyAsNationalGKM) rc ebg bu vb
+                   $ GLM.predictFromBetaB mm (`M.lookup` predMap) (const emptyAsNationalGKM) rc ebg bu vb
           cpreds <- M.traverseWithKey predictFrom cpms
           return $ LocationHolder n lkM cpreds
     traverse predict toPredict

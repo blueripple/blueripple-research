@@ -4,9 +4,7 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE PolyKinds                 #-}
-{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
@@ -24,10 +22,8 @@ import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Array                    as A
-import           Data.Maybe                     ( catMaybes
-                                                )
 import qualified Data.Vector                   as VB
-import qualified Data.Vector.Storable          as VS                 
+import qualified Data.Vector.Storable          as VS
 
 import qualified Text.Pandoc.Error             as PA
 
@@ -63,11 +59,11 @@ import qualified Frames.Visualization.VegaLite.StackedArea
 import qualified Frames.Visualization.VegaLite.LineVsTime
                                                as FV
 import qualified Frames.Visualization.VegaLite.ParameterPlots
-                                               as FV                                               
+                                               as FV
 
 import qualified Frames.Visualization.VegaLite.Correlation
-                                               as FV                                               
-                                               
+                                               as FV
+
 import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as MR
@@ -79,7 +75,7 @@ import           Polysemy.Error                 (Error)
 import qualified Text.Pandoc.Options           as PA
 
 import           Data.String.Here               ( here, i )
-
+import qualified Relude.Extra as Relude
 import           BlueRipple.Configuration
 import           BlueRipple.Utilities.KnitUtils
 import           BlueRipple.Utilities.TableUtils
@@ -90,7 +86,7 @@ import           BlueRipple.Data.PrefModel.SimpleAgeSexEducation
 import qualified BlueRipple.Model.PreferenceBayes as PB
 import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
-            
+
 modeledResults :: ( MonadIO (K.Sem r)
                   , K.KnitEffects r
                   , Show tr
@@ -103,11 +99,11 @@ modeledResults :: ( MonadIO (K.Sem r)
                -> (F.Record LocationKey -> Bool)
                -> F.Frame dr
                -> F.Frame tr
-               -> F.Frame HouseElections 
+               -> F.Frame HouseElections
                -> M.Map Int Int
                -> K.Sem r (M.Map Int (PreferenceResults b FV.ParameterEstimate))
 modeledResults ds locFilter dFrame tFrame eFrame years = flip traverse years $ \y -> do
-  K.logLE K.Info $ "inferring " <> T.pack (show $ dsCategories ds) <> " for " <> (T.pack $ show y)
+  K.logLE K.Info $ "inferring " <> show (dsCategories ds) <> " for " <> show y
   preferenceModel ds locFilter y dFrame eFrame tFrame
 
 -- PreferenceResults to list of group names and predicted D votes
@@ -120,7 +116,7 @@ modeledDVotes vs pr =
   let
     summed = FL.fold
              (votesAndPopByDistrictF @b)
-             (fmap F.rcast $ votesAndPopByDistrict pr)
+             (F.rcast <$> votesAndPopByDistrict pr)
     popArray =
       F.rgetField @(PopArray b) summed
     turnoutArray =
@@ -132,12 +128,12 @@ modeledDVotes vs pr =
       realToFrac (popArray A.! b)
       * (turnoutArray A.! b)
       * (modeled pr A.! b)
-    allPredictedD = FL.fold FL.sum $ fmap dVotes [minBound..maxBound]
+    allPredictedD = FL.fold FL.sum $ fmap dVotes Relude.universe --[minBound..maxBound]
     scale = case vs of
       ShareOfAll -> (realToFrac allDVotes/realToFrac (allDVotes + allRVotes))/allPredictedD
       ShareOfD -> 1/allPredictedD
   in
-    fmap (\b -> (T.pack $ show b, scale * dVotes b))
+    fmap (\b -> (show b, scale * dVotes b))
     [(minBound :: b) .. maxBound]
 
 
@@ -171,13 +167,13 @@ deltaTable
   -> K.Sem r ([DeltaTableRow], (Int, Int), (Int, Int))
 deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
   let
-    groupNames = fmap (T.pack . show) $ dsCategories ds
+    groupNames = show <$> dsCategories ds
     getPopAndTurnout
       :: Int -> PreferenceResults b FV.ParameterEstimate -> K.Sem r (A.Array b Int, A.Array b Double)
     getPopAndTurnout y tr = do
-      resultsFrame <- knitX $ (dsPreprocessElectionData ds) y electionResultsFrame
+      resultsFrame <- knitX $ dsPreprocessElectionData ds y electionResultsFrame
       let
-        totalDRVotes =             
+        totalDRVotes =
           let filteredResultsF = F.filterFrame (locFilter . F.rcast) resultsFrame
           in FL.fold (FL.premap (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r) FL.sum) filteredResultsF
         totalRec = FL.fold
@@ -193,12 +189,12 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
         totalCounts = F.rgetField @(PopArray b) totalRec
         unAdjTurnout = nationalTurnout tr
       tDelta <- liftIO $ TA.findDeltaA totalDRVotes totalCounts unAdjTurnout
-      let adjTurnout = TA.adjTurnoutP tDelta unAdjTurnout        
+      let adjTurnout = TA.adjTurnoutP tDelta unAdjTurnout
       return (totalCounts, adjTurnout)
-      
+
   (popA, turnoutA) <- getPopAndTurnout yA trA
   (popB, turnoutB) <- getPopAndTurnout yB trB
-{-  K.logLE K.Info $ (T.pack $ show yA) <> "->" <> (T.pack $ show yB) 
+{-  K.logLE K.Info $ (T.pack $ show yA) <> "->" <> (T.pack $ show yB)
   K.logLE K.Info $ T.pack $ show turnoutA
   K.logLE K.Info $ T.pack $ show turnoutB -}
   let
@@ -218,14 +214,13 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
                 * (turnoutArray A.! b)
                 * (1.0 - probArray A.! b)
       in  FL.fold
-            ((,) <$> FL.premap dVotes FL.sum <*> FL.premap rVotes FL.sum)
-            [minBound .. maxBound]
+            ((,) <$> FL.premap dVotes FL.sum <*> FL.premap rVotes FL.sum) Relude.universe
     makeDTR b =
       let pop0     = realToFrac $ popA A.! b
           dPop     = realToFrac $ (popB A.! b) - (popA A.! b)
           turnout0 = realToFrac $ turnoutA A.! b
           dTurnout = realToFrac $ (turnoutB A.! b) - (turnoutA A.! b)
-          prob0    = realToFrac $ (probA A.! b)
+          prob0    = realToFrac (probA A.! b)
           dProb    = realToFrac $ (probB A.! b) - (probA A.! b)
           dtrCombo = dPop * dTurnout * (2 * dProb) / 4 -- the rest is accounted for in other terms, we spread this among them
           dtrN =
@@ -247,7 +242,7 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
                 * (2 * dProb)
                 + (dtrCombo / 3)
           dtrTotal = dtrN + dtrT + dtrO
-      in  DeltaTableRow (T.pack $ show b)
+      in  DeltaTableRow (show b)
                         (popB A.! b)
                         dtrN
                         dtrT
@@ -273,20 +268,20 @@ deltaTable ds locFilter electionResultsFrame yA yB trA trB = do
 deltaTableColonnade :: C.Colonnade C.Headed DeltaTableRow T.Text
 deltaTableColonnade =
   C.headed "Group" dtrGroup
-    <> C.headed "Population (k)" (T.pack . show . (`div` 1000) . dtrPop)
+    <> C.headed "Population (k)" (show . (`div` 1000) . dtrPop)
     <> C.headed "+/- From Population (k)"
-                (T.pack . show . (`div` 1000) . dtrFromPop)
+                (show . (`div` 1000) . dtrFromPop)
     <> C.headed "+/- From Turnout (k)"
-                (T.pack . show . (`div` 1000) . dtrFromTurnout)
+                (show . (`div` 1000) . dtrFromTurnout)
     <> C.headed "+/- From Opinion (k)"
-                (T.pack . show . (`div` 1000) . dtrFromOpinion)
-    <> C.headed "+/- Total (k)" (T.pack . show . (`div` 1000) . dtrTotal)
-    <> C.headed "+/- %Vote" (T.pack . PF.printf "%2.2f" . (* 100) . dtrPct)
+                (show . (`div` 1000) . dtrFromOpinion)
+    <> C.headed "+/- Total (k)" (show . (`div` 1000) . dtrTotal)
+    <> C.headed "+/- %Vote" (toText @String . PF.printf "%2.2f" . (* 100) . dtrPct)
 
 deltaTableColonnadeBlaze :: CellStyle DeltaTableRow T.Text -> C.Colonnade C.Headed DeltaTableRow BC.Cell
 deltaTableColonnadeBlaze cas =
   C.headed "Group" (toCell cas "Group" "" (textToStyledHtml . dtrGroup))
-  <> C.headed "Population (k)" (toCell cas "Population" "Population" (textToStyledHtml . T.pack . show . (`div` 1000) . dtrPop))
+  <> C.headed "Population (k)" (toCell cas "Population" "Population" (textToStyledHtml . show . (`div` 1000) . dtrPop))
   <>  C.headed "+/- From Population (k)"
   (toCell cas "FromPop" "+/- From Population" (numberToStyledHtml "%d" . (`div` 1000) . dtrFromPop))
   <> C.headed "+/- From Turnout (k)"
@@ -296,7 +291,7 @@ deltaTableColonnadeBlaze cas =
 --     (\tr -> (numberCell "%.0d" (opinionHighlight (dtrGroup tr)) . (`div` 1000) $ dtrFromOpinion tr))
   <> C.headed "+/- Total (k)" (toCell cas "Total" "Total" (numberToStyledHtml "%d" . (`div` 1000) . dtrTotal))
   <> C.headed "+/- %Vote" (toCell cas "PctVote" "% Vote" (numberToStyledHtml "%2.2f" . (* 100) . dtrPct))
-     
+
 type X = "X" F.:-> Double
 type ScaledDVotes = "ScaledDVotes" F.:-> Int
 type ScaledRVotes = "ScaledRVotes" F.:-> Int
@@ -314,7 +309,7 @@ votesAndPopByDistrictF =
                  $ zipWith (*) (A.elems $ F.rgetField @(TurnoutArray b) r) (fmap realToFrac $ A.elems $ F.rgetField @(PopArray b) r)
       g r = A.listArray (minBound, maxBound)
             $ zipWith (/) (A.elems $ F.rgetField @(TurnoutArray b) r) (fmap realToFrac $ A.elems $ F.rgetField @(PopArray b) r)
-      recomputeTurnout r = F.rputField @(TurnoutArray b) (g r) r                            
+      recomputeTurnout r = F.rputField @(TurnoutArray b) (g r) r
   in PF.dimap (F.rcast @'[PopArray b, TurnoutArray b, DVotes, RVotes]) recomputeTurnout
     $    FF.sequenceRecFold
     $    FF.FoldRecord (PF.dimap (F.rgetField @(PopArray b)) V.Field FE.sumTotalNumArray)
@@ -327,28 +322,28 @@ votesAndPopByDistrictF =
 data Aggregation c b where
   Aggregation :: (Enum b, Bounded b, Eq b, Ord b, A.Ix b,
                   Enum c, Bounded c, Eq c, Ord c, A.Ix c) => (c -> [b]) -> Aggregation c b
-  
 
-aggregateFold :: forall c b a x. Aggregation c b -> (FL.Fold a x) -> A.Array b a -> A.Array c x
+
+aggregateFold :: forall c b a x. Aggregation c b -> FL.Fold a x -> A.Array b a -> A.Array c x
 aggregateFold (Aggregation children) fld arr =
-  let cs = [minBound ..maxBound]
+  let cs = Relude.universe
       expanded :: [[a]]
-      expanded = fmap (fmap (arr A.!) . children) cs     
+      expanded = fmap (fmap (arr A.!) . children) cs
       folded = fmap (FL.fold fld) expanded
   in A.listArray (minBound,maxBound) folded
 
-aggregateFold2 :: Aggregation c b -> (FL.Fold (a,w) x) -> A.Array b a -> A.Array b w -> A.Array c x
+aggregateFold2 :: Aggregation c b -> FL.Fold (a,w) x -> A.Array b a -> A.Array b w -> A.Array c x
 aggregateFold2 (Aggregation children) fld arrA arrW =
-  let cs = [minBound..maxBound]
+  let cs = Relude.universe
       as = fmap (fmap (arrA A.!) . children) cs
       ws = fmap (fmap (arrW A.!) . children) cs
-      folded = fmap (FL.fold fld . uncurry zip) $ zip as ws
+      folded = FL.fold fld . uncurry zip <$> zip as ws
   in A.listArray (minBound, maxBound) folded
-      
+
 weightedFold :: (Num a, Fractional a) => FL.Fold (a,a) a
 weightedFold =
-  let sumWeightsF = FL.premap snd $ FL.sum
-      weightedSumF = FL.premap (uncurry (*)) $ FL.sum
+  let sumWeightsF = FL.premap snd FL.sum
+      weightedSumF = FL.premap (uncurry (*)) FL.sum
   in fmap (uncurry (/)) $ (,) <$> weightedSumF <*> sumWeightsF
 
 popWeightedAggregate :: (Num d, Fractional d) => Aggregation c b -> A.Array b Int -> A.Array b d -> A.Array c d
@@ -371,20 +366,20 @@ aggregateRecord
               , RVotes
               ]
 aggregateRecord agg r =
-  let 
+  let
     f :: F.Record [PopArray b, TurnoutArray b] -> F.Record [PopArray c, TurnoutArray c]
     f x =
       let popB = F.rgetField @(PopArray b) x
           turnoutB = F.rgetField @(TurnoutArray b) x
-      in (aggregateFold agg FL.sum popB) F.&: (popWeightedAggregate agg popB turnoutB) F.&: V.RNil
+      in aggregateFold agg FL.sum popB F.&: popWeightedAggregate agg popB turnoutB F.&: V.RNil
   in F.rcast $ FT.transform f r
 
 cByB :: Aggregation c b -> LA.Matrix Double
 cByB (Aggregation children) =
-  let allBs = [minBound..maxBound]
+  let allBs = Relude.universe
       toZeroOne y = if y then 1 else 0
       getCol c = LA.fromList $ fmap (toZeroOne . (`elem` children c)) allBs
-  in LA.fromColumns $ fmap getCol [minBound..maxBound]
+  in LA.fromColumns $ fmap getCol Relude.universe
 
 aggregatePreferenceResults :: Fractional a => Aggregation c b -> PreferenceResults b a -> PreferenceResults c a
 aggregatePreferenceResults agg pr =
@@ -393,7 +388,7 @@ aggregatePreferenceResults agg pr =
       prVoters' = aggregateFold agg FL.sum (nationalVoters pr)
       prModeled' = popWeightedAggregate agg (nationalVoters pr) (modeled pr)
       mCB = cByB agg
-      prCovar' = LA.tr mCB LA.<> (covariances pr) LA.<> mCB
+      prCovar' = LA.tr mCB LA.<> covariances pr LA.<> mCB
   in PreferenceResults prVBPAD' prTurnout' prVoters' prModeled' prCovar'
 
 
@@ -439,13 +434,13 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
   do
     -- reorganize data from loaded Frames
     resultsFlattenedFrameFull <- knitX
-      $ (dsPreprocessElectionData ds) year houseElexFrame
-    let resultsFlattenedFrame = F.filterFrame (locFilter . F.rcast) resultsFlattenedFrameFull  
+      $ dsPreprocessElectionData ds year houseElexFrame
+    let resultsFlattenedFrame = F.filterFrame (locFilter . F.rcast) resultsFlattenedFrameFull
     filteredTurnoutFrame <- knitX
-      $ (dsPreprocessTurnoutData ds) year turnoutFrame
+      $ dsPreprocessTurnoutData ds year turnoutFrame
     let year' = year --if (year == 2018) then 2017 else year -- we're using 2017 for now, until census updated ACS data
     longByDCategoryFrame <- knitX
-      $ (dsPreprocessDemographicData ds) year' identityDFrame
+      $ dsPreprocessDemographicData ds year' identityDFrame
 
     -- turn long-format data into Arrays by demographic category, beginning with national turnout
     turnoutByGroupArray <-
@@ -458,7 +453,7 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
 
     -- now the populations in each district
     let votersArrayMF = MR.mapReduceFoldM
-          (MR.generalizeUnpack $ MR.noUnpack)
+          (MR.generalizeUnpack MR.noUnpack)
           (MR.generalizeAssign $ MR.splitOnKeys @LocationKey)
           (MR.foldAndLabelM
             (fmap (FT.recordSingleton @(PopArray b))
@@ -466,7 +461,7 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
             )
             V.rappend
           )
-    -- F.Frame (LocationKey V.++ (PopArray b))      
+    -- F.Frame (LocationKey V.++ (PopArray b))
     populationsFrame <-
       K.knitMaybe "Error converting long demographic data to arrays!"
       $   F.toFrame
@@ -484,14 +479,14 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
         catMaybes $ fmap F.recMaybe $ F.leftJoin @LocationKey resultsFlattenedFrame
                                                               populationsFrame
 
-    K.logLE K.Info $ "Computing Ghitza-Gelman turnout adjustment for each district so turnouts produce correct number D+R votes."
+    K.logLE K.Info "Computing Ghitza-Gelman turnout adjustment for each district so turnouts produce correct number D+R votes."
     resultsWithPopulationsAndGGAdjFrame <- fmap F.toFrame $ flip traverse resultsWithPopulationsFrame $ \r -> do
       let tVotesF x = F.rgetField @DVotes x + F.rgetField @RVotes x -- Should this be D + R or total?
       ggDelta <- ggTurnoutAdj r tVotesF turnoutByGroupArray
       K.logLE K.Diagnostic $
         "Ghitza-Gelman turnout adj="
-        <> (T.pack $ show ggDelta)
-        <> "; Adj Turnout=" <> (T.pack $ show $ TA.adjTurnoutP ggDelta turnoutByGroupArray)
+        <> show ggDelta
+        <> "; Adj Turnout=" <> show (TA.adjTurnoutP ggDelta turnoutByGroupArray)
       return $ FT.mutate (const $ FT.recordSingleton @(TurnoutArray b) $ TA.adjTurnoutP ggDelta turnoutByGroupArray) r
 
     let onlyOpposed r =
@@ -501,24 +496,24 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
 
     K.logLE K.Info
       $ "After removing races where someone is running unopposed we have "
-      <> (T.pack $ show numCompetitiveRaces)
+      <> show numCompetitiveRaces
       <> " contested races."
-      
-    totalVoteDiagnostics @b resultsWithPopulationsAndGGAdjFrame opposedFrame
-    
 
-    let 
+    totalVoteDiagnostics @b resultsWithPopulationsAndGGAdjFrame opposedFrame
+
+
+    let
       scaleInt s n = round $ s * realToFrac n
       mcmcData =
         fmap
         (\r ->
-           ( (F.rgetField @DVotes r)
+           ( F.rgetField @DVotes r
            , VB.fromList $ fmap round (adjVotersL (F.rgetField @(TurnoutArray b) r) (F.rgetField @(PopArray b) r))
            )
         )
         $ FL.fold FL.list opposedFrame
       numParams = length $ dsCategories ds
-    (cgRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ fmap (const 0.5) $ dsCategories ds)
+    (cgRes, _, _) <- liftIO $ PB.cgOptimizeAD mcmcData (VB.fromList $ (const 0.5) <$> dsCategories ds)
     let cgParamsA = A.listArray (minBound :: b, maxBound) $ VB.toList cgRes
         cgVarsA = A.listArray (minBound :: b, maxBound) $ VS.toList $ PB.variances mcmcData cgRes
         npe cl b =
@@ -529,21 +524,21 @@ preferenceModel ds locFilter year identityDFrame houseElexFrame turnoutFrame =
             interval = S.quantile (S.studentTUnstandardized dof 0 sigma) (1.0 - (S.significanceLevel cl/2))
           in FV.ParameterEstimate x (x - interval/2.0, x + interval/2.0)
 --          in FV.NamedParameterEstimate (T.pack $ show b) pEstimate
-        parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) $ [minBound :: b .. maxBound]
+        parameterEstimatesA = A.listArray (minBound :: b, maxBound) $ fmap (npe S.cl95) Relude.universe
 
-    K.logLE K.Info $ "MLE results: " <> (T.pack $ show $ A.elems parameterEstimatesA)     
+    K.logLE K.Info $ "MLE results: " <> show (A.elems parameterEstimatesA)
 -- For now this bit is diagnostic.  But we should chart the correlations
--- and, perhaps, the eigenvectors of the covariance??    
+-- and, perhaps, the eigenvectors of the covariance??
     let cgCovar = PB.covar mcmcData cgRes -- TODO: make a chart out of this
         (cgEv, cgEvs) = PB.mleCovEigens mcmcData cgRes
-    K.logLE K.Diagnostic $ "sigma = " <> (T.pack $ show $ fmap sqrt $ cgVarsA)
-    K.logLE K.Diagnostic $ "Covariances=" <> (T.pack $ PB.disps 3 cgCovar)
-    K.logLE K.Diagnostic $ "Correlations=" <> (T.pack $ PB.disps 3 $ PB.correlFromCov cgCovar)
-    K.logLE K.Diagnostic $ "Eigenvalues=" <> (T.pack $ show cgEv)
-    K.logLE K.Diagnostic $ "Eigenvectors=" <> (T.pack $ PB.disps 3 cgEvs)
-    
+    K.logLE K.Diagnostic $ "sigma = " <> show (fmap sqrt $ cgVarsA)
+    K.logLE K.Diagnostic $ "Covariances=" <> toText (PB.disps 3 cgCovar)
+    K.logLE K.Diagnostic $ "Correlations=" <> toText (PB.disps 3 $ PB.correlFromCov cgCovar)
+    K.logLE K.Diagnostic $ "Eigenvalues=" <> show cgEv
+    K.logLE K.Diagnostic $ "Eigenvectors=" <> toText (PB.disps 3 cgEvs)
+
     return $ PreferenceResults
-      (fmap F.rcast $ FL.fold FL.list opposedFrame)
+      (F.rcast <$> FL.fold FL.list opposedFrame)
       turnoutByGroupArray
       popByGroupArray
       parameterEstimatesA
@@ -559,7 +554,7 @@ ggTurnoutAdj r totalVotesF unadjTurnoutP = do
   liftIO $ TA.findDeltaA totalVotes population unadjTurnoutP
 
 adjVotersL :: A.Array b Double -> A.Array b Int -> [Double]
-adjVotersL turnoutPA popA = zipWith (*) (A.elems turnoutPA) (fmap realToFrac $ A.elems popA)
+adjVotersL turnoutPA popA = zipWith (*) (A.elems turnoutPA) (realToFrac <$> A.elems popA)
 
 totalVoteDiagnostics :: forall b rs f r
                         . (A.Ix b
@@ -588,28 +583,28 @@ totalVoteDiagnostics allFrame opposedFrame = K.wrapPrefix "VoteSummary" $ do
       (totalVotersCD, totalVotesCD, totalDVotesCD, totalRVotesCD) = FL.fold
         ((,,,) <$> allVotersF <*> allVotesF <*> allDVotesF <*> allRVotesF)
         opposedFrame
-  K.logLE K.Info $ "voters=" <> (T.pack $ show totalVoters)
-  K.logLE K.Info $ "house votes=" <> (T.pack $ show totalVotes)
+  K.logLE K.Info $ "voters=" <> show totalVoters
+  K.logLE K.Info $ "house votes=" <> show totalVotes
   K.logLE K.Info
     $  "D/R/D+R house votes="
-    <> (T.pack $ show totalDVotes)
+    <> show totalDVotes
     <> "/"
-    <> (T.pack $ show totalRVotes)
+    <> show totalRVotes
     <> "/"
-    <> (T.pack $ show (totalDVotes + totalRVotes))
+    <> show (totalDVotes + totalRVotes)
   K.logLE K.Info
     $  "voters (competitive districts)="
-    <> (T.pack $ show totalVotersCD)
+    <> show totalVotersCD
   K.logLE K.Info
     $  "house votes (competitive districts)="
-    <> (T.pack $ show totalVotesCD)
+    <> show totalVotesCD
   K.logLE K.Info
     $  "D/R/D+R house votes (competitive districts)="
-    <> (T.pack $ show totalDVotesCD)
+    <> show totalDVotesCD
     <> "/"
-    <> (T.pack $ show totalRVotesCD)
+    <> show totalRVotesCD
     <> "/"
-    <> (T.pack $ show (totalDVotesCD + totalRVotesCD))
+    <> show (totalDVotesCD + totalRVotesCD)
 
 
 totalArrayZipWith :: (A.Ix b, Enum b, Bounded b)
@@ -644,7 +639,7 @@ vlGroupingChart title vc rows =
                                 , GV.MmType GV.Quantitative
                                 , GV.MScale [GV.SDomain $ GV.DNumbers [5e6,30e6]]
                                 , GV.MLegend [GV.LFormatAsNum]
-                                
+
                                 ]
       estimateColorEnc = GV.color [FV.mName @'("Turnout", Double)
                                   , GV.MmType GV.Quantitative
@@ -688,13 +683,13 @@ exitCompareChart title vc rows =
                                         ]
                               ]
       colorEnc = GV.color [FV.mName @'("Group", T.Text)
-                          , GV.MmType GV.Nominal                          
+                          , GV.MmType GV.Nominal
                           ]
       enc = xEnc . yEnc . colorEnc
       spec = GV.asSpec [(GV.encoding . enc) [], GV.mark GV.Point [GV.MFilled True, GV.MSize 100]]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [spec], dat]
-             
+
 
 
 vlGroupingChartExit :: Foldable f
@@ -720,10 +715,8 @@ vlGroupingChartExit title vc rows =
       estimateSizeEnc = GV.size [FV.mName @'("VotingAgePop",Int)
                                 , GV.MmType GV.Quantitative]
       estimateColorEnc = GV.color [FV.mName @'("InfMinusExit", Double)
-                                  , GV.MmType GV.Quantitative] 
+                                  , GV.MmType GV.Quantitative]
       estEnc = estimateXenc . estimateYenc . estimateSizeEnc . estimateColorEnc
       estSpec = GV.asSpec [(GV.encoding . estEnc) [], GV.mark GV.Point []]
   in
     FV.configuredVegaLite vc [FV.title title, GV.layer [estSpec], dat]
-
-

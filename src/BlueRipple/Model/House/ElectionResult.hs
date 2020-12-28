@@ -29,7 +29,6 @@ import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
 import qualified Data.Map as M
-import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import Data.String.Here (here)
 import qualified Data.Serialize                as S
@@ -102,7 +101,7 @@ type CCESDataR = CCESByCD V.++ [Incumbency, FracCitizen, DT.AvgIncome, DT.Median
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
-data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData } 
+data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData }
 Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelData
 
 -- frames are not directly serializable so we have to do...shenanigans
@@ -223,7 +222,7 @@ ccesCountedDemHouseVotesByCD = do
   cces_C <- CCES.ccesDataLoader
 --  BR.clearIfPresentD "model/house/ccesByCD.bin"
   BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ return . FL.fold (ccesF 2012)
-    
+
 
 prepCachedData ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -258,35 +257,33 @@ prepCachedData = do
     K.knitEither $ if null missingElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and election data in house model prep:"
-                        <> T.pack
-                        (show missingElex)
+                        <> show missingElex
     let competitiveElectionResults = F.filterFrame competitive demoAndElex
         competitiveCDs = FL.fold (FL.premap (F.rcast @KeyR) FL.set) demoAndElex
         competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @KeyR r) competitiveCDs) countedCCES
         toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency,FracCitizen, DT.AvgIncome, DT.MedianIncome,DT.PopPerSqMile])) competitiveElectionResults
-        (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @KeyR toJoinWithCCES competitiveCCES --toJoinWithCCES        
+        (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @KeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
     K.knitEither $ if null missingDemo
                    then Right ()
                    else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
-                        <> T.pack
-                        (show missingDemo)
+                        <> show missingDemo
     let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
 --    BR.logFrame $ F.filterFrame (\r -> F.rgetField @DVotes r > F.rgetField @TVotes r) ccesWithoutNullVotes
     return $ HouseModelData competitiveElectionResults (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
-district r = F.rgetField @BR.StateAbbreviation r <> (T.pack $ show $ F.rgetField @BR.CongressionalDistrict r)
+district r = F.rgetField @BR.StateAbbreviation r <> show (F.rgetField @BR.CongressionalDistrict r)
 
 enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
 enumDistrictF = FL.premap district (SJ.enumerate 1)
-maxAvgIncomeF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
-maxDensityF = fmap (fromMaybe 1) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
+maxAvgIncomeF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
+maxDensityF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
 
 makeElectionResultJSON :: ElectionData -> Either T.Text A.Series
 makeElectionResultJSON er = do
   let tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
-      ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =        
+      ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold
         ( (,,,)
           <$> enumStateF
@@ -298,9 +295,9 @@ makeElectionResultJSON er = do
       predictRow :: F.Record DemographicsR -> Vec.Vector Double
       predictRow r =
         Vec.fromList
-        $ F.recToList 
-        $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
-        $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity) 
+        $ F.recToList
+        $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
+        $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
         $ F.rcast @ElectionPredictor r
       dataF =
         SJ.namedF "N" FL.length
@@ -330,9 +327,9 @@ makeCCESDataJSON cd = do
       predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
       predictRow r = Vec.fromList
                      $ FC.toListVia predictRowC
-                     $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome) 
+                     $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
                      $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
-                     $ r
+                     r
       dataF = SJ.namedF "M" FL.length
 --              <> SJ.constDataF "K" (7 :: Int)
               <> SJ.valueToPairF "stateC" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
@@ -343,7 +340,7 @@ makeCCESDataJSON cd = do
               <> SJ.valueToPairF "TVotesC" (SJ.jsonArrayF (F.rgetField @TVotes))
               <> SJ.valueToPairF "DVotesC" (SJ.jsonArrayF (F.rgetField @DVotes))
   SJ.frameToStanJSONSeries dataF cd
-  
+
 houseDataWrangler :: HouseDataWrangler
 houseDataWrangler = SC.Wrangle SC.NoIndex f
   where
@@ -355,7 +352,7 @@ houseDataWrangler = SC.Wrangle SC.NoIndex f
           return $ electionResultJsonE <> ccesDataJSONE
 
 data ModelWith = UseElectionResults | UseCCES | UseBoth deriving (Show, Eq, Ord)
-        
+
 type VoteP = "VoteProb" F.:-> Double
 type DVoteP = "DVoteProb" F.:-> Double
 type EVotes = "EstVotes" F.:-> Int
@@ -367,14 +364,14 @@ type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
 type ElectionFit = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, TVotes, DVotes] V.++ Modeled
 type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes, DVotes] V.++ Modeled
-                
+
 data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionFit
                                            , ccesFit :: F.FrameRec CCESFit
                                            , parameterDeltas :: MapRow.MapRow [Double] }
-                         
+
 Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelResults
 
--- frames are not directly serializable so we have to do...shenanigans. 
+-- frames are not directly serializable so we have to do...shenanigans.
 instance S.Serialize HouseModelResults where
   put (HouseModelResults ef cf fp) = S.put (FS.SFrame ef, FS.SFrame cf, fp)
   get = (\(ef, cf, fp) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) fp) <$> S.get
@@ -415,7 +412,7 @@ extractResults modelWith summary hmd = do
                     F.&: round d
                     F.&: round d95
                     F.&: V.RNil
-          else Left ("Wrong number of percentiles in stan statistic")
+          else Left "Wrong number of percentiles in stan statistic"
       makeCCESFitRow (cdRow, (pV, pD, etVotes, dVotesPcts)) = do
         if length dVotesPcts == 3
           then
@@ -479,16 +476,16 @@ runHouseModel ::
 runHouseModel hdw (modelName, modelWith, model, nSamples) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
-      modelNameSuffix = modelName <> "_" <> (T.pack $ show modelWith) <> "_" <> (T.pack $ show year) 
+      modelNameSuffix = modelName <> "_" <> show modelWith <> "_" <> show year
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
     SC.setSigFigs 4
       . SC.noLogOfSummary
       <$> SM.makeDefaultModelRunnerConfig
         workDir
-        (modelName <> "_" <> (T.pack $ show modelWith) <> "_model")
+        (modelName <> "_" <> show modelWith <> "_model")
         (Just (SB.All, model modelWith))
-        (Just $ "election_" <> (T.pack $ show year) <> ".json")
+        (Just $ "election_" <> show year <> ".json")
         (Just $ "election_" <> modelNameSuffix)
         4
         (Just nSamples)
@@ -499,8 +496,8 @@ runHouseModel hdw (modelName, modelWith, model, nSamples) year houseData_C = K.w
       filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
       houseDataForYear_C = fmap (Optics.over #electionData filterToYear . Optics.over #ccesData filterToYear) houseData_C
   modelDep <- SM.modelCacheTime stanConfig
-  K.logLE K.Diagnostic $ "modelDep: " <> (T.pack $ show $ K.cacheTime modelDep)
-  K.logLE K.Diagnostic $ "houseDataDep: " <> (T.pack $ show $ K.cacheTime houseData_C)
+  K.logLE K.Diagnostic $ "modelDep: " <> show (K.cacheTime modelDep)
+  K.logLE K.Diagnostic $ "houseDataDep: " <> show (K.cacheTime houseData_C)
   let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
@@ -567,7 +564,7 @@ betaBinomialInc2 modelWith =
   (Just betaBinomialIncTransformedParametersBlock)
   betaBinomialInc2ModelBlock
   (Just betaBinomialIncGeneratedQuantitiesBlock)
-  betaBinomialGQLLBlock  
+  betaBinomialGQLLBlock
 
 betaBinomialHS :: ModelWith -> SB.StanModel
 betaBinomialHS modelWith =
@@ -582,7 +579,7 @@ betaBinomialHS modelWith =
 
 binomialDataBlock :: SB.DataBlock
 binomialDataBlock =
-  [here|  
+  [here|
   int<lower = 1> N; // number of districts
   int<lower = 1> M; // number of cces rows
   int<lower = 1> K; // number of predictors
@@ -609,8 +606,8 @@ transformedDataBlockCommon = [here|
     real col_mean = mean(X[,k]);
     X_centered[,k] = X[,k] - col_mean;
     sigma[k] = sd(Xe[,k]);
-  } 
-  
+  }
+
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
@@ -619,7 +616,7 @@ transformedDataBlockCommon = [here|
   R_ast = qr_R(X_centered)[1:K,]/sqrt(G - 1);
   R_ast_inverse = inverse(R_ast);
 |]
-    
+
 binomialTransformedDataBlock_ElexOnly :: SB.TransformedDataBlock
 binomialTransformedDataBlock_ElexOnly =
   [here|
@@ -628,7 +625,7 @@ binomialTransformedDataBlock_ElexOnly =
   int<lower=-1, upper=1> Inc[G] = IncE;
   int<lower=0> VAP[G] = VAPe;
   int<lower=0> TVotes[G] = TVotesE;
-  int<lower=0> DVotes[G] = DVotesE;  
+  int<lower=0> DVotes[G] = DVotesE;
   |] <> transformedDataBlockCommon
 
 binomialTransformedDataBlock_CCESOnly :: SB.TransformedDataBlock
@@ -639,7 +636,7 @@ binomialTransformedDataBlock_CCESOnly =
   int<lower=-1, upper=1> Inc[G] = IncC;
   int<lower=0> VAP[G] = VAPc;
   int<lower=0> TVotes[G] = TVotesC;
-  int<lower=0> DVotes[G] = DVotesC;  
+  int<lower=0> DVotes[G] = DVotesC;
   |] <> transformedDataBlockCommon
 
 binomialTransformedDataBlock_Both :: SB.TransformedDataBlock
@@ -650,13 +647,13 @@ binomialTransformedDataBlock_Both =
   int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
-  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);  
+  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
   |] <> transformedDataBlockCommon
-  
+
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock =
   [here|
-  real alphaD;                             
+  real alphaD;
   vector[K] thetaV;
   real alphaV;
   vector[K] thetaD;
@@ -711,7 +708,7 @@ betaBinomialParametersBlock :: SB.ParametersBlock
 betaBinomialParametersBlock =
   [here|
   real alphaD;
-  real <lower=0, upper=1> dispD;                             
+  real <lower=0, upper=1> dispD;
   vector[K] thetaV;
   real alphaV;
   real <lower=0, upper=1> dispV;
@@ -771,11 +768,11 @@ betaBinomialIncParametersBlock =
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=1e-5, upper=(1-1e-5)> dispD;  
+  real <lower=1e-5, upper=(1-1e-5)> dispD;
   real <lower=1e-5, upper=(1-1e-5)> dispV;
 |]
 
-    
+
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
 betaBinomialIncTransformedParametersBlock =
   [here|
@@ -811,12 +808,12 @@ betaBinomialInc2ParametersBlock =
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=0> phiD;  
+  real <lower=0> phiD;
   real <lower=0> phiV;
   vector <lower=0, upper=1>[G] pV;
-  vector <lower=0, upper=1>[G] pD; 
+  vector <lower=0, upper=1>[G] pD;
 |]
-    
+
 betaBinomialInc2ModelBlock :: SB.ModelBlock
 betaBinomialInc2ModelBlock =
   [here|
@@ -831,7 +828,7 @@ betaBinomialInc2ModelBlock =
   TVotes ~ binomial(VAP, pV);
   pD ~ beta (phiD * pDVoteP, (1 - pDVoteP) * phiD);
   DVotes ~ binomial(TVotes, pD);
-|]    
+|]
 
 betaBinomialIncGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 betaBinomialIncGeneratedQuantitiesBlock =
@@ -857,7 +854,7 @@ betaBinomialHSParametersBlock :: SB.ParametersBlock
 betaBinomialHSParametersBlock =
   [here|
   real alphaD;
-  real <lower=0, upper=1> dispD;                             
+  real <lower=0, upper=1> dispD;
   vector[K] thetaV;
   vector<lower=0>[K] lambdaV;
   real<lower=0> tauV;

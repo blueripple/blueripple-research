@@ -46,7 +46,7 @@ import           Data.Discrimination            ( Grouping )
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
-
+import qualified Relude.Extra as Relude
 -- Serialize for caching
 -- FI.VectorFor for frames
 -- Grouping for leftJoin
@@ -66,7 +66,7 @@ type instance FI.VectorFor DemographicGrouping = UVec.Vector
 type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
 
 instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize PopCountOfT
@@ -81,7 +81,7 @@ type instance FI.VectorFor PopCountOfT = UVec.Vector
 
 type PopCountOf = "PopCountOf" F.:-> PopCountOfT
 instance FV.ToVLDataValue (F.ElField PopCountOf) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type PopCount = "PopCount" F.:-> Int
 
@@ -99,7 +99,7 @@ type instance FI.VectorFor Sex = UVec.Vector
 type SexC = "Sex" F.:-> Sex
 
 instance FV.ToVLDataValue (F.ElField SexC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 --
 data SimpleRace = NonWhite | White deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
@@ -115,7 +115,7 @@ type instance FI.VectorFor SimpleRace = UVec.Vector
 type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
 
 instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type IsCitizen = "IsCitizen" F.:-> Bool
 
@@ -132,7 +132,7 @@ type instance FI.VectorFor CollegeGrad = UVec.Vector
 type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
 
 instance FV.ToVLDataValue (F.ElField CollegeGradC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type InCollege = "InCollege" F.:-> Bool
 
@@ -148,7 +148,7 @@ type instance FI.VectorFor SimpleAge = UVec.Vector
 
 type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age4
@@ -339,7 +339,7 @@ type instance FI.VectorFor Race5 = UVec.Vector
 
 type Race5C = "Race5" F.:-> Race5
 instance FV.ToVLDataValue (F.ElField Race5C) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 simpleRaceFromRace5 :: Race5 -> SimpleRace
 simpleRaceFromRace5 R5_Other = NonWhite
@@ -361,7 +361,7 @@ type instance FI.VectorFor Race4 = UVec.Vector
 
 type Race4C = "Race4" F.:-> Race4
 instance FV.ToVLDataValue (F.ElField Race4C) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 simpleRaceFromRace4 :: Race4 -> SimpleRace
 simpleRaceFromRace4 R4_Other = NonWhite
@@ -408,7 +408,7 @@ type instance FI.VectorFor Language = UVec.Vector
 
 type LanguageC = "Language" F.:-> Language
 instance FV.ToVLDataValue (F.ElField LanguageC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
 data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
@@ -423,7 +423,7 @@ type instance FI.VectorFor SpeaksEnglish = UVec.Vector
 
 type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
 instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
-  toVLDataValue x = (T.pack $ V.getLabel x, GV.Str $ T.pack $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 type PctNativeEnglish = "PctNativeEnglish" F.:-> Double
 type PctNoEnglish = "PctNoEnglish" F.:-> Double
@@ -537,7 +537,7 @@ catKeyASER4 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 allCatKeysASER4 = [catKeyASER4 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
 
 type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
-      
+
 
 asrTurnoutLabel' :: (Age5, Sex, TurnoutRace) -> T.Text
 asrTurnoutLabel' (a, s, r) = turnoutRaceLabel r <> sexLabel s <> age5Label a
@@ -550,7 +550,7 @@ asrTurnoutLabel (a, s, r) = acsRaceLabel r <> sexLabel s <> age5Label a
 acsASELabelMap :: M.Map T.Text (Age4, Sex, Education)
 acsASELabelMap =
   M.fromList
-    . fmap (\x -> (aseACSLabel x, x))
+    . Relude.fmapToFst aseACSLabel
     $ [ (a, s, e)
       | a <- [(minBound :: Age4) ..]
       , s <- [(minBound :: Sex) ..]
@@ -562,7 +562,7 @@ allTextKeys
    . (V.KnownField t, V.Snd t ~ T.Text)
   => [T.Text]
   -> Set.Set (F.Record '[t])
-allTextKeys = Set.fromList . fmap (\x -> x F.&: V.RNil)
+allTextKeys = Set.fromList . fmap (F.&: V.RNil)
 
 allASE_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   aseACSLabel
@@ -602,11 +602,11 @@ typedASEDemographics
   -> Either T.Text (F.Record (rs ++ '[Age4C, SexC, EducationC]))
 typedASEDemographics r = do
   let key     = F.rgetField @BR.ACSKey r
-      textMap = T.pack $ show acsASELabelMap
+      textMap = show acsASELabelMap
       errMsg  = key <> " not found in " <> textMap
       toRec :: (Age4, Sex, Education) -> F.Record '[Age4C, SexC, EducationC]
       toRec (a, s, e) = a F.&: s F.&: e F.&: V.RNil
-  typedCols <- fmap toRec $ maybe (Left errMsg) Right $ M.lookup
+  typedCols <- fmap toRec $ maybeToRight errMsg $ M.lookup
     key
     acsASELabelMap
   return $ r `V.rappend` typedCols
@@ -659,7 +659,7 @@ simplifyACS_ASEFold =
   let
     aggAge4         = K.toAggListRec $ K.liftAggList simpleAgeFrom4
     aggACSEducation = K.toAggListRec $ K.liftAggList acsLevels
-    aggSex          = K.toAggListRec $ K.liftAggList (pure . id)
+    aggSex          = K.toAggListRec $ K.liftAggList pure
     aggASE =
       aggAge4 `K.aggListProductRec` aggSex `K.aggListProductRec` aggACSEducation
     agg = aggASE >>> aggACS_ASEKey -- when all is said and done, aggregations compose nicely
@@ -712,10 +712,10 @@ turnoutMonoidOps = K.monoidOpsFromFold $ FF.foldAllConstrained @Num FL.sum
 turnoutGroupOps
   :: K.GroupOps (F.Record '[BR.Population, BR.Citizen, BR.Registered, BR.Voted])
 turnoutGroupOps =
-  let pop  = F.rgetField @BR.Population 
-      cit  = F.rgetField @BR.Population 
-      reg  = F.rgetField @BR.Registered 
-      voted  = F.rgetField @BR.Voted 
+  let pop  = F.rgetField @BR.Population
+      cit  = F.rgetField @BR.Population
+      reg  = F.rgetField @BR.Registered
+      voted  = F.rgetField @BR.Voted
       invert r =
         negate (pop r)
           F.&: negate (cit r)
@@ -739,7 +739,7 @@ turnoutSimpleASEAgg
 turnoutSimpleASEAgg =
   let
     aggAge5      = K.toAggListRec $ K.liftAggList simpleAgeFrom5
-    aggSex       = K.toAggListRec $ K.liftAggList (pure . id)
+    aggSex       = K.toAggListRec $ K.liftAggList pure
     aggEducation = K.toAggListRec $ K.liftAggList turnoutLevels
     aggASE =
       aggAge5 `K.aggListProductRec` aggSex `K.aggListProductRec` aggEducation
@@ -780,7 +780,7 @@ turnoutSimpleASRAgg
 turnoutSimpleASRAgg
   = let
       aggAge5 = K.toAggListRec $ K.liftAggList simpleAgeFrom5
-      aggSex  = K.toAggListRec $ K.liftAggList (pure . id)
+      aggSex  = K.toAggListRec $ K.liftAggList pure
       aggRace = K.toAggListRec $ K.AggList $ \sr -> case sr of
         NonWhite ->
           K.IndexedList [(1, Turnout_All), (-1, Turnout_WhiteNonHispanic)]
@@ -812,7 +812,7 @@ simplifyTurnoutASRFold = FMR.concatFoldM $ FMR.mapReduceFoldM
 turnoutASELabelMap :: M.Map T.Text (Age5, Sex, Education)
 turnoutASELabelMap =
   M.fromList
-    . fmap (\x -> (aseTurnoutLabel x, x))
+    . Relude.fmapToFst aseTurnoutLabel
     $ [ (a, s, e)
       | a <- [(minBound :: Age5) ..]
       , s <- [(minBound :: Sex) ..]
@@ -825,13 +825,11 @@ typedASETurnout
   -> Either T.Text (F.Record (rs ++ '[Age5C, SexC, EducationC]))
 typedASETurnout r = do
   let key     = F.rgetField @BR.Group r
-      textMap = T.pack $ show turnoutASELabelMap
+      textMap = show turnoutASELabelMap
       errMsg  = key <> " not found in " <> textMap
       toRec :: (Age5, Sex, Education) -> F.Record '[Age5C, SexC, EducationC]
       toRec (a, s, e) = a F.&: s F.&: e F.&: V.RNil
-  typedCols <- fmap toRec $ maybe (Left errMsg) Right $ M.lookup
+  typedCols <- fmap toRec $ maybeToRight errMsg $ M.lookup
     key
     turnoutASELabelMap
   return $ r `V.rappend` typedCols
-
-

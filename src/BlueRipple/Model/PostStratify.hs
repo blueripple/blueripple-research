@@ -1,20 +1,14 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE DataKinds                 #-}
-{-# LANGUAGE DeriveDataTypeable        #-}
-{-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE PolyKinds                 #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-{-# LANGUAGE QuasiQuotes               #-}
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TupleSections             #-}
 
 module BlueRipple.Model.PostStratify where
 
@@ -29,7 +23,6 @@ import           Data.Maybe                     ( isJust
                                                 , catMaybes
                                                 )
 import           Data.Proxy                     ( Proxy(..) )
---import  Data.Ord (Compare)
 
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as SE
@@ -46,7 +39,6 @@ import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
---import qualified Frames.Misc                  as FU
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
@@ -72,7 +64,7 @@ postStratifyF
 postStratifyF cellFold = fmap (F.toFrame . concat) $ MR.mapReduceFold
   MR.noUnpack
   (FMR.assignKeysAndData @k @cs)
-  (MR.ReduceFold (\k -> fmap (fmap (k `V.rappend`)) cellFold))
+  (MR.ReduceFold (\k -> (k `V.rappend`) <<$>> cellFold))
 
 labeledPostStratifyF
   :: forall k cs p ts rs
@@ -87,5 +79,3 @@ labeledPostStratifyF
   -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ ('[p] V.++ ts)))
 labeledPostStratifyF lv cf =
   postStratifyF @k $ fmap (V.rappend (FT.recordSingleton @p lv)) <$> cf
-
-

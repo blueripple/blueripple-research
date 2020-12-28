@@ -4,15 +4,11 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# OPTIONS_GHC -O0              #-}
 module BlueRipple.Data.PrefModel
   (
@@ -36,7 +32,6 @@ import qualified Control.Monad.Except          as X
 import qualified Data.Array                    as A
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe)
 import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Text                     as T
 import           Data.Text                      ( Text )
@@ -74,15 +69,15 @@ type DemographicCounts b = LocationKey V.++ [DemographicCategory b, PopCount]
 
 data DemographicStructure demographicDataRow turnoutDataRow electionDataRow demographicCategories = DemographicStructure
   {
-    dsPreprocessDemographicData :: (forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories)))
-  , dsPreprocessTurnoutData :: (forall m. Monad m => Int -> F.Frame turnoutDataRow -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll]))
-  , dsPreprocessElectionData :: (forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes])))
+    dsPreprocessDemographicData :: forall m. Monad m => Int -> F.Frame demographicDataRow -> X.ExceptT Text m (F.FrameRec (DemographicCounts demographicCategories))
+  , dsPreprocessTurnoutData :: forall m. Monad m => Int -> F.Frame turnoutDataRow -> X.ExceptT Text m (F.FrameRec '[DemographicCategory demographicCategories, Population, VotedPctOfAll])
+  , dsPreprocessElectionData :: forall m. Monad m => Int -> F.Frame electionDataRow -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes]))
   , dsCategories :: [demographicCategories]
   }
 
 type instance FI.VectorFor (A.Array b Int) = V.Vector
 type instance FI.VectorFor (A.Array b Double) = V.Vector
-          
+
 processElectionData :: Monad m => Int -> F.Frame HouseElections
                 -> X.ExceptT Text m (F.FrameRec (LocationKey V.++ [DVotes, RVotes, Totalvotes]))
 processElectionData year eData = do
@@ -121,14 +116,14 @@ flattenVotes' =
   mapToRec :: (M.Map Text (M.Map Text Int),Int) -> Either Text (F.Record [DVotes, RVotes, Totalvotes])
   mapToRec (m, tVotes) = do
     let findByParty p =
-          let cs = L.filter (L.elem p . M.keys) $ fmap snd $ M.toList m  
+          let cs = L.filter (L.elem p . M.keys) $ snd <$> M.toList m
           in case cs of
             [] -> NoCands --Right 0 -- Left  $  "No cands when finding " <> p <> " in " <> (T.pack $ show m)
-            [cm] -> OneCand $ FL.fold FL.sum cm 
+            [cm] -> OneCand $ FL.fold FL.sum cm
             cms -> Multi $ FL.fold FL.sum $ fmap (FL.fold FL.sum) cms --Left $ "More than one candidate with party=" <> p <> ": " <> (T.pack $ show m)
     let dCand = findByParty "democrat"
         rCand = findByParty "republican"
-    return $ candsToVotes dCand F.&: candsToVotes rCand  F.&: tVotes F.&: V.RNil   
+    return $ candsToVotes dCand F.&: candsToVotes rCand  F.&: tVotes F.&: V.RNil
 
 flattenVotes
   :: FL.Fold
