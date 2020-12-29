@@ -34,7 +34,8 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
 import qualified Knit.Utilities.Streamly as KStreamly
 import qualified Polysemy as P
 import Polysemy.Error (Error)
-import qualified Streamly as Streamly
+import Relude.Extra as Relude
+import qualified Streamly
 import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
 import qualified System.Directory as System
@@ -50,25 +51,24 @@ knitX ::
   K.Member (Error K.PandocError) r =>
   X.ExceptT T.Text (K.Sem r) a ->
   K.Sem r a
-knitX ma = X.runExceptT ma >>= (K.knitEither @r)
+knitX ma = runExceptT ma >>= (K.knitEither @r)
 
 copyAsset :: K.KnitOne r => T.Text -> T.Text -> K.Sem r ()
 copyAsset sourcePath destDir = do
-  sourceExists <- K.liftKnit $ SD.doesFileExist (T.unpack sourcePath)
-  case sourceExists of
-    False ->
-      K.knitError $ "\"" <> sourcePath <> "\" doesn't exist (copyAsset)."
-    True -> do
-      K.logLE K.Info $
-        "If necessary, creating \""
-          <> destDir
-          <> "\" and copying \""
-          <> sourcePath
-          <> "\" there"
-      K.liftKnit $ do
-        let (_, fName) = T.breakOnEnd "/" sourcePath
-        SD.createDirectoryIfMissing True (T.unpack destDir)
-        SD.copyFile (T.unpack sourcePath) (T.unpack $ destDir <> "/" <> fName)
+  sourceExists <- K.liftKnit $ SD.doesFileExist (toString sourcePath)
+  if sourceExists
+    then (do
+             K.logLE K.Info $
+               "If necessary, creating \""
+               <> destDir
+               <> "\" and copying \""
+               <> sourcePath
+               <> "\" there"
+             K.liftKnit $ do
+               let (_, fName) = T.breakOnEnd "/" sourcePath
+               SD.createDirectoryIfMissing True (toString destDir)
+               SD.copyFile (toString sourcePath) (toString $ destDir <> "/" <> fName))
+    else K.knitError $ "\"" <> sourcePath <> "\" doesn't exist (copyAsset)."
 
 brWriterOptionsF :: PA.WriterOptions -> PA.WriterOptions
 brWriterOptionsF o =
@@ -101,13 +101,15 @@ brAddDates ::
   Bool -> Time.Day -> Time.Day -> M.Map String String -> M.Map String String
 brAddDates updated pubDate updateDate tMap =
   let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
-      pubT = M.singleton "published" $ formatTime pubDate
-      updT = case updated of
-        True ->
-          if (updateDate > pubDate)
-            then M.singleton "updated" (formatTime updateDate)
-            else M.empty
-        False -> M.empty
+      pubT = one ("published", formatTime pubDate)
+      updT = if updated
+             then
+               (
+                 if updateDate > pubDate
+                 then one ("updated", formatTime updateDate)
+                 else M.empty
+               )
+             else M.empty
    in tMap <> pubT <> updT
 
 logFrame ::
@@ -115,12 +117,12 @@ logFrame ::
   f (F.Record rs) ->
   K.Sem r ()
 logFrame =
-  K.logLE K.Info . T.intercalate "\n" . fmap (T.pack . show) . FL.fold FL.list
+  K.logLE K.Info . T.intercalate "\n" . fmap show . FL.fold FL.list
 
 retrieveOrMakeD ::
   ( K.KnitEffects r,
     K.CacheEffectsD r,
-    S.Serialize b    
+    S.Serialize b
   ) =>
   T.Text ->
   K.ActionWithCacheTime r a ->
