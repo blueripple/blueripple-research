@@ -75,7 +75,6 @@ type DemographicsR =
     FracFemale,
     FracGrad,
     FracNonWhite,
-    FracCitizen,
     DT.AvgIncome,
     DT.MedianIncome,
     DT.PopPerSqMile,
@@ -90,15 +89,15 @@ type TVotes = "TVotes" F.:-> Int
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes]
 type ElectionDataR = KeyR V.++ DemographicsR V.++ ElectionR
-type ElectionPredictor = [FracUnder45, FracFemale, FracGrad, FracNonWhite, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
+type ElectionPredictor = [FracUnder45, FracFemale, FracGrad, FracNonWhite, DT.AvgIncome, DT.PopPerSqMile]
 type ElectionData = F.FrameRec ElectionDataR
 
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
-type CCESDataR = CCESByCD V.++ [Incumbency, FracCitizen, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile]
-type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, FracCitizen, DT.AvgIncome, DT.PopPerSqMile]
+type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile]
+type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
 data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData }
@@ -134,7 +133,6 @@ pumsDataF =
           V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
           V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
           V.:& FF.toFoldRecord (fracF ((== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
-          V.:& FF.toFoldRecord ((\x y -> intRatio x (x + y)) <$> citF <*> FL.premap (F.rgetField @PUMS.NonCitizens) FL.sum)
           V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
           V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . cit) (F.rgetField @DT.MedianIncome)) -- FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
           V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
@@ -225,9 +223,8 @@ ccesCountedDemHouseVotesByCD = do
 
 
 prepCachedData ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
-  K.Sem r (K.ActionWithCacheTime r HouseModelData)
-prepCachedData = do
+  (K.KnitEffects r, K.CacheEffectsD r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+prepCachedData clearCache = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
@@ -237,7 +234,7 @@ prepCachedData = do
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "MT") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
---  BR.clearIfPresentD "model/house/houseData.bin"
+  when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
@@ -261,7 +258,7 @@ prepCachedData = do
     let competitiveElectionResults = F.filterFrame competitive demoAndElex
         competitiveCDs = FL.fold (FL.premap (F.rcast @KeyR) FL.set) demoAndElex
         competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @KeyR r) competitiveCDs) countedCCES
-        toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency,FracCitizen, DT.AvgIncome, DT.MedianIncome,DT.PopPerSqMile])) competitiveElectionResults
+        toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency, DT.AvgIncome, DT.MedianIncome,DT.PopPerSqMile])) competitiveElectionResults
         (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @KeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
     K.knitEither $ if null missingDemo
                    then Right ()
@@ -301,7 +298,7 @@ makeElectionResultJSON er = do
         $ F.rcast @ElectionPredictor r
       dataF =
         SJ.namedF "N" FL.length
-        <> SJ.constDataF "K" (7 :: Int)
+        <> SJ.constDataF "K" (6 :: Int)
         <> SJ.valueToPairF "stateE" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
         <> SJ.valueToPairF "districtE" (SJ.jsonArrayMF (cdM . district))
         <> SJ.valueToPairF "Xe" (SJ.jsonArrayF (predictRow . F.rcast))
@@ -322,7 +319,6 @@ makeCCESDataJSON cd = do
                     V.:& FC.mkConverter (boolToNumber . (== DT.NonWhite))
                     V.:& FC.mkConverter id
                     V.:& FC.mkConverter id
-                    V.:& FC.mkConverter id
                     V.:& V.RNil
       predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
       predictRow r = Vec.fromList
@@ -331,7 +327,6 @@ makeCCESDataJSON cd = do
                      $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
                      r
       dataF = SJ.namedF "M" FL.length
---              <> SJ.constDataF "K" (7 :: Int)
               <> SJ.valueToPairF "stateC" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
               <> SJ.valueToPairF "districtC" (SJ.jsonArrayMF (cdM . district))
               <> SJ.valueToPairF "Xc" (SJ.jsonArrayF (predictRow . F.rcast))
@@ -367,14 +362,16 @@ type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes
 
 data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionFit
                                            , ccesFit :: F.FrameRec CCESFit
-                                           , parameterDeltas :: MapRow.MapRow [Double] }
+                                           , sigmaDeltas :: MapRow.MapRow [Double]
+                                           , unitDeltas :: MapRow.MapRow [Double]
+                                           }
 
 Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelResults
 
 -- frames are not directly serializable so we have to do...shenanigans.
 instance S.Serialize HouseModelResults where
-  put (HouseModelResults ef cf fp) = S.put (FS.SFrame ef, FS.SFrame cf, fp)
-  get = (\(ef, cf, fp) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) fp) <$> S.get
+  put (HouseModelResults ef cf sd ud) = S.put (FS.SFrame ef, FS.SFrame cf, sd, ud)
+  get = (\(ef, cf, sd, ud) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) sd ud) <$> S.get
 
 extractResults ::
   ModelWith
@@ -437,43 +434,39 @@ extractResults modelWith summary hmd = do
   electionFit <- traverse makeElectionFitRow $ Vec.zip (FL.fold FL.vector $ electionData hmd) (Vec.take ccesIndex modeled)
   ccesFit <- traverse makeCCESFitRow $ Vec.zip (FL.fold FL.vector $ ccesData hmd) (Vec.drop ccesIndex modeled)
   -- deltas
-  deltaIncD <- fmap CS.percents <$> SP.parseScalar "deltaIncD" (CS.paramStats summary)
-  deltaD <- fmap CS.percents <$> SP.parse1D "deltaD" (CS.paramStats summary)
-  deltaV <- fmap CS.percents <$> SP.parse1D "deltaV" (CS.paramStats summary)
-  deltaDMR <-
-    MapRow.withNames
-      [ "PctUnder45D",
-        "PctFemaleD",
-        "PctGradD",
-        "PctNonWhiteD",
-        "PctCitizenD",
-        "AvgIncomeD",
-        "PopPerSqMileD"
-      ]
-      (SP.getVector deltaD)
-  deltaVMR <-
-    MapRow.withNames
-      [ "PctUnder45V",
-        "PctFemaleV",
-        "PctGradV",
-        "PctNonWhiteV",
-        "PctCitizenV",
-        "AvgIncomeV",
-        "PopPerSqMileV"
-      ]
-      (SP.getVector deltaV)
-  let deltas = deltaDMR <> deltaVMR <> M.singleton "Incumbency" (SP.getScalar deltaIncD)
-  return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) deltas
+  let rowNames =   [ "PctUnder45",
+                     "PctFemale",
+                     "PctGrad",
+                     "PctNonWhite",
+                     "AvgIncome",
+                     "PopPerSqMile"
+                   ]
+      rowNamesD = (<> "D") <$> rowNames
+      rowNamesV = (<> "V") <$> rowNames
+  -- sigmaDeltas
+  sigmaDeltaD <- fmap CS.percents <$> SP.parse1D "sigmaDeltaD" (CS.paramStats summary)
+  sigmaDeltaV <- fmap CS.percents <$> SP.parse1D "sigmaDeltaV" (CS.paramStats summary)
+  sigmaDeltaDMR <- MapRow.withNames rowNamesD (SP.getVector sigmaDeltaD)
+  sigmaDeltaVMR <- MapRow.withNames rowNamesV (SP.getVector sigmaDeltaV)
+  unitDeltaIncD <- fmap CS.percents <$> SP.parseScalar "unitDeltaIncD" (CS.paramStats summary)
+  unitDeltaD <- fmap CS.percents <$> SP.parse1D "unitDeltaD" (CS.paramStats summary)
+  unitDeltaV <- fmap CS.percents <$> SP.parse1D "unitDeltaV" (CS.paramStats summary)
+  unitDeltaDMR <- MapRow.withNames rowNamesD (SP.getVector unitDeltaD)
+  unitDeltaVMR <- MapRow.withNames rowNamesV (SP.getVector unitDeltaV)
+  let sigmaDeltas = sigmaDeltaDMR <> sigmaDeltaVMR
+      unitDeltas = unitDeltaDMR <> unitDeltaVMR <> M.singleton "Incumbency" (SP.getScalar unitDeltaIncD)
+  return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) sigmaDeltas unitDeltas
 
 runHouseModel ::
   forall r.
-  (K.KnitEffects r, K.CacheEffectsD r) =>
-  HouseDataWrangler ->
-  (T.Text, ModelWith, ModelWith -> SB.StanModel, Int) ->
-  Int ->
-  K.ActionWithCacheTime r HouseModelData ->
-  K.Sem r (K.ActionWithCacheTime r HouseModelResults)
-runHouseModel hdw (modelName, modelWith, model, nSamples) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+  (K.KnitEffects r, K.CacheEffectsD r)
+  => Bool
+  -> HouseDataWrangler
+  -> (T.Text, ModelWith, ModelWith -> SB.StanModel, Int)
+  -> Int
+  -> K.ActionWithCacheTime r HouseModelData
+  -> K.Sem r (K.ActionWithCacheTime r HouseModelResults)
+runHouseModel clearCache hdw (modelName, modelWith, model, nSamples) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
       modelNameSuffix = modelName <> "_" <> show modelWith <> "_" <> show year
@@ -507,6 +500,7 @@ runHouseModel hdw (modelName, modelWith, model, nSamples) year houseData_C = K.w
         UseCCES -> [SR.UnwrapNamed "DVotesC" "DVotes", SR.UnwrapNamed "TVotesC" "TVotes"]
         UseBoth -> [SR.UnwrapExpr "append (jsonData $ DVotesE, jsonData $ DVotesC)" "DVotes"
                    , SR.UnwrapExpr "append (jsonData $ TVotesE, jsonData $ TVotesC)" "TVotes"]
+  when clearCache $ BR.clearIfPresentD resultCacheKey
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
@@ -599,13 +593,13 @@ binomialDataBlock =
 
 transformedDataBlockCommon :: T.Text
 transformedDataBlockCommon = [here|
-
-  vector<lower=0>[K] sigma;
+  vector<lower=0>[K] sigmaPred;
+  vector[K] meanPred;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    real col_mean = mean(X[,k]);
-    X_centered[,k] = X[,k] - col_mean;
-    sigma[k] = sd(Xe[,k]);
+    meanPred[k] = mean(X[,k]);
+    X_centered[,k] = X[,k] - meanPred[k];
+    sigmaPred[k] = sd(Xe[,k]);
   }
 
   matrix[G, K] Q_ast;
@@ -841,13 +835,17 @@ betaBinomialIncGeneratedQuantitiesBlock =
   }
   real avgPVoted = inv_logit (alphaV);
   real avgPDVote = inv_logit (alphaD);
-  vector[K] deltaV;
-  vector[K] deltaD;
+  vector[K] sigmaDeltaV;
+  vector[K] sigmaDeltaD;
+  vector[K] unitDeltaV;
+  vector[K] unitDeltaD;
   for (k in 1:K) {
-    deltaV [k] = inv_logit (alphaV + sigma [k] * betaV [k]) - avgPVoted;
-    deltaD [k] = inv_logit (alphaD + sigma [k] * betaD [k]) - avgPDVote;
+    sigmaDeltaV [k] = inv_logit (alphaV + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV +  (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV - meanPred[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD +  (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD - meanPred[k] * betaD[k]);
   }
-  real deltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
+  real unitDeltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock

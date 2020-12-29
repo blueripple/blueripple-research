@@ -21,14 +21,15 @@ int<lower=0> G = M + N;
   int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
-  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);vector<lower=0>[K] sigma;
+  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);vector<lower=0>[K] sigmaPred;
+  vector[K] meanPred;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    real col_mean = mean(X[,k]);
-    X_centered[,k] = X[,k] - col_mean;
-    sigma[k] = sd(Xe[,k]);
-  } 
-  
+    meanPred[k] = mean(X[,k]);
+    X_centered[,k] = X[,k] - meanPred[k];
+    sigmaPred[k] = sd(Xe[,k]);
+  }
+
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
@@ -43,7 +44,7 @@ real alphaD;
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=1e-5, upper=(1-1e-5)> dispD;  
+  real <lower=1e-5, upper=(1-1e-5)> dispD;
   real <lower=1e-5, upper=(1-1e-5)> dispV;
 }
 transformed parameters {
@@ -80,11 +81,15 @@ vector<lower = 0>[G] eTVotes;
   }
   real avgPVoted = inv_logit (alphaV);
   real avgPDVote = inv_logit (alphaD);
-  vector[K] deltaV;
-  vector[K] deltaD;
+  vector[K] sigmaDeltaV;
+  vector[K] sigmaDeltaD;
+  vector[K] unitDeltaV;
+  vector[K] unitDeltaD;
   for (k in 1:K) {
-    deltaV [k] = inv_logit (alphaV + sigma [k] * betaV [k]) - avgPVoted;
-    deltaD [k] = inv_logit (alphaD + sigma [k] * betaD [k]) - avgPDVote;
+    sigmaDeltaV [k] = inv_logit (alphaV + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV +  (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV - meanPred[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD +  (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD - meanPred[k] * betaD[k]);
   }
-  real deltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
+  real unitDeltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
 }

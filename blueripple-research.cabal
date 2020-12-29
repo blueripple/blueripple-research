@@ -282,6 +282,9 @@ executable mrp-model
                , blueripple-research
                , glm-haskell
                , time
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
   default-language: Haskell2010
 
 executable stan-models
@@ -298,6 +301,9 @@ executable stan-models
                , haskell-stan
                , hs-cmdstan
                , hvega-utils
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
 
 executable ga-work
   import: deps
