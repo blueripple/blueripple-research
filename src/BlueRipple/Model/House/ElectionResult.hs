@@ -606,8 +606,8 @@ transformedDataBlockCommon = [here|
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
   // thin and scale the QR decomposition
-  Q_ast = qr_Q(X_centered)[, 1:K] * sqrt(G - 1);
-  R_ast = qr_R(X_centered)[1:K,]/sqrt(G - 1);
+  Q_ast = qr_thin_Q(X_centered) * sqrt(G - 1);
+  R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
   R_ast_inverse = inverse(R_ast);
 |]
 

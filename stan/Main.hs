@@ -172,13 +172,14 @@ testHouseModel =
             _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow f (y, modelResults)
           = fmap (M.insert "Year" (GV.Str $ show y)) <$> (traverse expandInterval $ M.toList $ f modelResults)
-
+        modelAndDeltaMR mw d = M.fromList [("Model",GV.Str $ show @Text mw), ("Delta",GV.Str d)]
         runModelWith mw = do
           results_C <- sequenceA <$> traverse (runYear mw) years
           results <- zip years <$> K.ignoreCacheTime results_C
-          sigmaDeltaMapRows <- K.knitEither $ traverse (expandMapRow BRE.sigmaDeltas) results
-          unitDeltaMapRows <- K.knitEither $ traverse (expandMapRow BRE.unitDeltas) results
+          sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> (K.knitEither $ traverse (expandMapRow BRE.sigmaDeltas) results)
+          unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> (K.knitEither $ traverse (expandMapRow BRE.unitDeltas) results)
     --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
+    {-
           _ <- K.addHvega Nothing Nothing
             $ modelChart
             ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands): " <> show mw)
@@ -193,11 +194,33 @@ testHouseModel =
             (FV.ViewConfig 200 200 5)
             "D Pref"
             $ concat unitDeltaMapRows
-          return ()
-    traverse_ runModelWith modelWiths
+-}
+          return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows
+    results <- mconcat <$> traverse runModelWith modelWiths
+    let dataValueAsText :: GV.DataValue -> Text
+        dataValueAsText (GV.Str x) = x
+        dataValueAsText _ = error "Non-string given to dataValueAsString"
+    _ <- K.addHvega Nothing Nothing
+         $ modelChart
+         ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)")
+         ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome"]
+         ["UseElectionResults", "UseCCES", "UseBoth"]
+         (FV.ViewConfig 200 200 5)
+         "D Pref"
+         $ filter (maybe False (== "Std. Dev") . fmap dataValueAsText . M.lookup "Delta") results
+    _ <- K.addHvega Nothing Nothing
+         $ modelChart
+         ("Change in Probability for full range of predictor (with 90% confidence bands)")
+         ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome", "Incumbency"]
+         ["UseElectionResults", "UseCCES", "UseBoth"]
+         (FV.ViewConfig 200 200 5)
+         "D Pref"
+         $ filter (maybe False (== "Min/Max") . fmap dataValueAsText . M.lookup "Delta") results
+--    K.logLE K.Info $ show results
+    return ()
 
-modelChart :: (Functor f, Foldable f) => T.Text -> [Text] -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
-modelChart title chartOrder vc t rows =
+modelChart :: (Functor f, Foldable f) => T.Text -> [Text] -> [Text] -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
+modelChart title predOrder modelOrder vc t rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encX = GV.position GV.X [GV.PName "Year", GV.PmType GV.Temporal]
       encY = GV.position GV.Y [GV.PName "mid", GV.PmType GV.Quantitative, axis{-, scale-}]
@@ -209,11 +232,14 @@ modelChart title chartOrder vc t rows =
       enc = GV.encoding . encX . encYLo . encY . encYHi . encColor
       markBand = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
       markLine = GV.mark GV.Line [GV.MInterpolate GV.Basis]
-      transform = GV.transform . GV.filter (GV.FEqual "Type" (GV.Str t))
+--      transform = GV.transform . GV.filter (GV.FEqual "Type" (GV.Str t))
       specBand = GV.asSpec [enc [], markBand]
       specLine = GV.asSpec [enc [], markLine]
       spec = GV.asSpec [GV.layer [specBand, specLine]]
-      facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle "", GV.FSort [GV.CustomSort $ GV.Strings chartOrder]]
+--      facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle "", GV.FSort [GV.CustomSort $ GV.Strings chartOrder]]
+      facet = GV.facet [GV.ColumnBy [GV.FName "Model", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings modelOrder]]
+                       ,GV.RowBy [GV.FName "Name", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings predOrder]]
+                       ]
    in FV.configuredVegaLite vc [FV.title title, GV.columns 4, facet, GV.specification spec, vlData]
 
 {-

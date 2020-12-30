@@ -34,8 +34,8 @@ int<lower=0> G = N;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
   // thin and scale the QR decomposition
-  Q_ast = qr_Q(X_centered)[, 1:K] * sqrt(G - 1);
-  R_ast = qr_R(X_centered)[1:K,]/sqrt(G - 1);
+  Q_ast = qr_thin_Q(X_centered) * sqrt(G - 1);
+  R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
   R_ast_inverse = inverse(R_ast);
 }
 parameters {
@@ -44,16 +44,16 @@ real alphaD;
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=1e-5, upper=(1-1e-5)> dispD;
-  real <lower=1e-5, upper=(1-1e-5)> dispV;
+  real <lower=0, upper=1> dispD;
+  real <lower=0, upper=1> dispV;
 }
 transformed parameters {
 real<lower=0> phiV = dispV/(1-dispV);
   real<lower=0> phiD = dispD/(1-dispD);
   vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
   vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
-  vector [K] betaV;
-  vector [K] betaD;
+  vector[K] betaV;
+  vector[K] betaD;
   betaV = R_ast_inverse * thetaV;
   betaD = R_ast_inverse * thetaD;
 }
