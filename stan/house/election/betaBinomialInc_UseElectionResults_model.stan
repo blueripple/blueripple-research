@@ -29,7 +29,9 @@ int<lower=0> G = N;
     X_centered[,k] = X[,k] - meanPred[k];
     sigmaPred[k] = sd(Xe[,k]);
   }
-
+  print("dims(TVotes)=",dims(TVotes));
+  print("dims(DVotes)=",dims(DVotes));
+  print("dims(X)=",dims(X));
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;

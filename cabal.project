@@ -9,8 +9,8 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-h
 --  type: git
 --  location: https://github.com/jfischoff/hs-cmdstan
 --  tag: 1481b2311f70a59b4a2f0c0855eb47db2e7b4c00
-   
-             
+
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/blueripple/data-sets
@@ -22,7 +22,7 @@ source-repository-package
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
 
--- Fixes ghc-8.10 panic, bumps random and ghc-prim.  At the cost of no longer having RevState 
+-- Fixes ghc-8.10 panic, bumps random and ghc-prim.  At the cost of no longer having RevState
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/polysemy-zoo
@@ -32,7 +32,7 @@ source-repository-package
 --  type: git
 --  location: https://github.com/polysemy-research/polysemy-zoo
 --  tag: fd7eb2b9934d15d233fb4e75acb7fbff80d149bf
-  
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/knit-haskell
@@ -42,7 +42,7 @@ source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames-map-reduce
 --  tag: 0e4409a4861e31e915b457a37fc359814ab781c6
-    
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames-utils
@@ -52,7 +52,7 @@ source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
   tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
-    
+
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames-hvega
@@ -84,7 +84,7 @@ source-repository-package
   location: https://github.com/adamConnerSax/polysemy-Extra
   subdir: polysemy-RandomFu
   tag: 1d40f687152e0c06c99efd6fe2c42e27aea6b76d
-  
+
 
 -- Beam
 source-repository-package
@@ -103,5 +103,4 @@ source-repository-package
     type: git
     location: https://github.com/haskell-beam/beam
     subdir: beam-migrate
-    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65  
-  
+    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65

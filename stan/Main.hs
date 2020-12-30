@@ -88,7 +88,11 @@ main = do
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = False
+    let clearCached = True
+        predictors = ["AvgIncome"]
+        years = [2016, 2018]
+        modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
+
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData clearCached
     hmd <- K.ignoreCacheTime houseData_C
@@ -112,7 +116,7 @@ testHouseModel =
                              ,FV.LabeledCol "Turnout" turnout
                              ,FV.LabeledCol "D Share" dShare
                              ]
-    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
+    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted (election data only)" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
     let isYear year = (== year) . F.rgetField @BR.Year
         {-dVotes = F.rgetField @BRE.DVotes
@@ -145,12 +149,10 @@ testHouseModel =
           BR.logFrame (hmr ^. #ccesFit)
 
     traverse printResult results -}
-    let modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
-        years = [2012, 2014, 2016, 2018]
-        runYear mw y =
+    let runYear mw y =
           BRE.runHouseModel
           clearCached
-          BRE.houseDataWrangler
+          predictors
           ("betaBinomialInc", mw, BRE.betaBinomialInc, 100)
           y
           (fmap (Optics.over #electionData (F.filterFrame (isYear y))
@@ -178,23 +180,6 @@ testHouseModel =
           results <- zip years <$> K.ignoreCacheTime results_C
           sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> (K.knitEither $ traverse (expandMapRow BRE.sigmaDeltas) results)
           unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> (K.knitEither $ traverse (expandMapRow BRE.unitDeltas) results)
-    --    K.logLE K.Info $ T.pack $ show $ fmap (fmap MapRow.dataValueText) $ concat mapRows
-    {-
-          _ <- K.addHvega Nothing Nothing
-            $ modelChart
-            ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands): " <> show mw)
-            ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome"]
-            (FV.ViewConfig 200 200 5)
-            "D Pref"
-            $ concat sigmaDeltaMapRows
-          _ <- K.addHvega Nothing Nothing
-            $ modelChart
-            ("Change in Probability for unit change (0 to 1) in predictor (with 90% confidence bands): " <> show mw)
-            ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome", "Incumbency"]
-            (FV.ViewConfig 200 200 5)
-            "D Pref"
-            $ concat unitDeltaMapRows
--}
           return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows
     results <- mconcat <$> traverse runModelWith modelWiths
     let dataValueAsText :: GV.DataValue -> Text
@@ -203,7 +188,7 @@ testHouseModel =
     _ <- K.addHvega Nothing Nothing
          $ modelChart
          ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)")
-         ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome"]
+         predictors
          ["UseElectionResults", "UseCCES", "UseBoth"]
          (FV.ViewConfig 200 200 5)
          "D Pref"
@@ -211,7 +196,7 @@ testHouseModel =
     _ <- K.addHvega Nothing Nothing
          $ modelChart
          ("Change in Probability for full range of predictor (with 90% confidence bands)")
-         ["PctUnder45", "PctFemale", "PctGrad", "PctNonWhite", "PopPerSqMile", "AvgIncome", "Incumbency"]
+         (predictors <> ["Incumbency"])
          ["UseElectionResults", "UseCCES", "UseBoth"]
          (FV.ViewConfig 200 200 5)
          "D Pref"

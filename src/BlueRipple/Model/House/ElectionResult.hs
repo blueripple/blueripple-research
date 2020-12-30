@@ -89,7 +89,7 @@ type TVotes = "TVotes" F.:-> Int
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes]
 type ElectionDataR = KeyR V.++ DemographicsR V.++ ElectionR
-type ElectionPredictor = [FracUnder45, FracFemale, FracGrad, FracNonWhite, DT.AvgIncome, DT.PopPerSqMile]
+type ElectionPredictorR = [FracUnder45, FracFemale, FracGrad, FracNonWhite, DT.AvgIncome, DT.PopPerSqMile]
 type ElectionData = F.FrameRec ElectionDataR
 
 
@@ -277,8 +277,25 @@ enumDistrictF = FL.premap district (SJ.enumerate 1)
 maxAvgIncomeF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
 maxDensityF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
 
-makeElectionResultJSON :: ElectionData -> Either T.Text A.Series
-makeElectionResultJSON er = do
+type PredictorMap = Map Text (F.Record ElectionPredictorR -> Double, F.Record CCESPredictorR -> Double)
+
+predictorMap =
+  let boolToNumber b = if b then 1 else 0
+  in M.fromList [("PctUnder45",(F.rgetField @FracUnder45, boolToNumber . (== DT.Under) . F.rgetField @DT.SimpleAgeC))
+                ,("PctFemale",(F.rgetField @FracFemale, boolToNumber . (== DT.Female) . F.rgetField @DT.SexC))
+                ,("PctGrad",(F.rgetField @FracGrad, boolToNumber . (== DT.Grad) . F.rgetField @DT.CollegeGradC))
+                ,("PctNonWhite",(F.rgetField @FracNonWhite, boolToNumber . (== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
+                ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
+                ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
+                ]
+
+adjustPredictor :: (Double -> Double) -> Text -> PredictorMap -> PredictorMap
+adjustPredictor f k =
+  let g (h1, h2) = (f . h1, f . h2)
+  in M.adjust g k
+
+makeElectionResultJSON :: [Text] -> ElectionData -> Either T.Text A.Series
+makeElectionResultJSON predictors er = do
   let tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
       ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold
@@ -289,16 +306,24 @@ makeElectionResultJSON er = do
           <*> maxDensityF
         )
         er
-      predictRow :: F.Record DemographicsR -> Vec.Vector Double
+      pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
+             $ adjustPredictor (/maxDensity) "PopPerSqMile"
+             predictorMap
+  rowMaker <- maybeToRight "Text in given predictors not found in predictors map"
+              $ traverse (fmap fst . flip M.lookup pMap) predictors
+  let predictRow :: F.Record DemographicsR -> Vec.Vector Double
+      predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
+{-
       predictRow r =
         Vec.fromList
         $ F.recToList
         $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
         $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
         $ F.rcast @ElectionPredictor r
+-}
       dataF =
         SJ.namedF "N" FL.length
-        <> SJ.constDataF "K" (6 :: Int)
+        <> SJ.constDataF "K" (length predictors)
         <> SJ.valueToPairF "stateE" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
         <> SJ.valueToPairF "districtE" (SJ.jsonArrayMF (cdM . district))
         <> SJ.valueToPairF "Xe" (SJ.jsonArrayF (predictRow . F.rcast))
@@ -308,11 +333,12 @@ makeElectionResultJSON er = do
         <> SJ.valueToPairF "DVotesE" (SJ.jsonArrayF (F.rgetField @DVotes))
   SJ.frameToStanJSONSeries dataF er
 
-makeCCESDataJSON :: CCESData ->  Either T.Text A.Series
-makeCCESDataJSON cd = do
+makeCCESDataJSON :: [Text] -> CCESData ->  Either T.Text A.Series
+makeCCESDataJSON predictors cd = do
   let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) cd
-      boolToNumber b = if b then 1 else 0
+--      boolToNumber b = if b then 1 else 0
+{-
       predictRowC = FC.mkConverter (boolToNumber . (== DT.Under))
                     V.:& FC.mkConverter (boolToNumber . (== DT.Female))
                     V.:& FC.mkConverter (boolToNumber . (== DT.Grad))
@@ -326,6 +352,14 @@ makeCCESDataJSON cd = do
                      $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
                      $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
                      r
+-}
+      pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
+             $ adjustPredictor (/maxDensity) "PopPerSqMile"
+             predictorMap
+  rowMaker <- maybeToRight "Text in given predictors not found in predictors map"
+              $ traverse (fmap snd . flip M.lookup pMap) predictors
+  let predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
+      predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
       dataF = SJ.namedF "M" FL.length
               <> SJ.valueToPairF "stateC" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
               <> SJ.valueToPairF "districtC" (SJ.jsonArrayMF (cdM . district))
@@ -336,14 +370,14 @@ makeCCESDataJSON cd = do
               <> SJ.valueToPairF "DVotesC" (SJ.jsonArrayF (F.rgetField @DVotes))
   SJ.frameToStanJSONSeries dataF cd
 
-houseDataWrangler :: HouseDataWrangler
-houseDataWrangler = SC.Wrangle SC.NoIndex f
+houseDataWrangler :: [Text] -> HouseDataWrangler
+houseDataWrangler predictors = SC.Wrangle SC.NoIndex f
   where
     f _ = ((), makeDataJsonE)
       where
         makeDataJsonE hmd = do
-          electionResultJsonE <- makeElectionResultJSON $ electionData hmd
-          ccesDataJSONE <- makeCCESDataJSON $ ccesData hmd
+          electionResultJsonE <- makeElectionResultJSON predictors $ electionData hmd
+          ccesDataJSONE <- makeCCESDataJSON predictors $ ccesData hmd
           return $ electionResultJsonE <> ccesDataJSONE
 
 data ModelWith = UseElectionResults | UseCCES | UseBoth deriving (Show, Eq, Ord)
@@ -375,10 +409,11 @@ instance S.Serialize HouseModelResults where
 
 extractResults ::
   ModelWith
+  -> [Text]
   -> CS.StanSummary
   -> HouseModelData
   -> Either T.Text HouseModelResults
-extractResults modelWith summary hmd = do
+extractResults modelWith predictors summary hmd = do
   -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
@@ -434,6 +469,7 @@ extractResults modelWith summary hmd = do
   electionFit <- traverse makeElectionFitRow $ Vec.zip (FL.fold FL.vector $ electionData hmd) (Vec.take ccesIndex modeled)
   ccesFit <- traverse makeCCESFitRow $ Vec.zip (FL.fold FL.vector $ ccesData hmd) (Vec.drop ccesIndex modeled)
   -- deltas
+  {-
   let rowNames =   [ "PctUnder45",
                      "PctFemale",
                      "PctGrad",
@@ -441,8 +477,9 @@ extractResults modelWith summary hmd = do
                      "AvgIncome",
                      "PopPerSqMile"
                    ]
-      rowNamesD = (<> "D") <$> rowNames
-      rowNamesV = (<> "V") <$> rowNames
+-}
+  let rowNamesD = (<> "D") <$> predictors
+      rowNamesV = (<> "V") <$> predictors
   -- sigmaDeltas
   sigmaDeltaD <- fmap CS.percents <$> SP.parse1D "sigmaDeltaD" (CS.paramStats summary)
   sigmaDeltaV <- fmap CS.percents <$> SP.parse1D "sigmaDeltaV" (CS.paramStats summary)
@@ -461,12 +498,13 @@ runHouseModel ::
   forall r.
   (K.KnitEffects r, K.CacheEffectsD r)
   => Bool
-  -> HouseDataWrangler
+  -> [Text]
   -> (T.Text, ModelWith, ModelWith -> SB.StanModel, Int)
   -> Int
   -> K.ActionWithCacheTime r HouseModelData
   -> K.Sem r (K.ActionWithCacheTime r HouseModelResults)
-runHouseModel clearCache hdw (modelName, modelWith, model, nSamples) year houseData_C = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
+runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year houseData_C
+  = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
       modelNameSuffix = modelName <> "_" <> show modelWith <> "_" <> show year
@@ -494,7 +532,7 @@ runHouseModel clearCache hdw (modelName, modelWith, model, nSamples) year houseD
   let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
-        K.knitEither $ extractResults modelWith s houseModelData
+        K.knitEither $ extractResults modelWith predictors s houseModelData
       unwraps = case modelWith of
         UseElectionResults -> [SR.UnwrapNamed "DVotesE" "DVotes", SR.UnwrapNamed "TVotesE" "TVotes"]
         UseCCES -> [SR.UnwrapNamed "DVotesC" "DVotes", SR.UnwrapNamed "TVotesC" "TVotes"]
@@ -506,7 +544,7 @@ runHouseModel clearCache hdw (modelName, modelWith, model, nSamples) year houseD
     SM.runModel
       stanConfig
       (SM.Both unwraps)
-      hdw
+      (houseDataWrangler predictors)
       (SC.UseSummary getResults)
       ()
       houseDataForYear_C
@@ -601,7 +639,9 @@ transformedDataBlockCommon = [here|
     X_centered[,k] = X[,k] - meanPred[k];
     sigmaPred[k] = sd(Xe[,k]);
   }
-
+  print("dims(TVotes)=",dims(TVotes));
+  print("dims(DVotes)=",dims(DVotes));
+  print("dims(X)=",dims(X));
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
