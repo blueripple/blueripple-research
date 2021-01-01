@@ -313,14 +313,6 @@ makeElectionResultJSON predictors er = do
               $ traverse (fmap fst . flip M.lookup pMap) predictors
   let predictRow :: F.Record DemographicsR -> Vec.Vector Double
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
-{-
-      predictRow r =
-        Vec.fromList
-        $ F.recToList
-        $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
-        $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
-        $ F.rcast @ElectionPredictor r
--}
       dataF =
         SJ.namedF "N" FL.length
         <> SJ.constDataF "K" (length predictors)
@@ -335,24 +327,9 @@ makeElectionResultJSON predictors er = do
 
 makeCCESDataJSON :: [Text] -> CCESData ->  Either T.Text A.Series
 makeCCESDataJSON predictors cd = do
+  let cd' = F.toFrame $ take 40 $ FL.fold FL.list cd -- test with way less CCES data
   let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) cd
---      boolToNumber b = if b then 1 else 0
-{-
-      predictRowC = FC.mkConverter (boolToNumber . (== DT.Under))
-                    V.:& FC.mkConverter (boolToNumber . (== DT.Female))
-                    V.:& FC.mkConverter (boolToNumber . (== DT.Grad))
-                    V.:& FC.mkConverter (boolToNumber . (== DT.NonWhite))
-                    V.:& FC.mkConverter id
-                    V.:& FC.mkConverter id
-                    V.:& V.RNil
-      predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
-      predictRow r = Vec.fromList
-                     $ FC.toListVia predictRowC
-                     $ FT.fieldEndo @DT.AvgIncome (/ maxAvgIncome)
-                     $ FT.fieldEndo @DT.PopPerSqMile (/ maxDensity)
-                     r
--}
       pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
              $ adjustPredictor (/maxDensity) "PopPerSqMile"
              predictorMap
@@ -368,7 +345,7 @@ makeCCESDataJSON predictors cd = do
               <> SJ.valueToPairF "VAPc" (SJ.jsonArrayF (F.rgetField @Surveyed))
               <> SJ.valueToPairF "TVotesC" (SJ.jsonArrayF (F.rgetField @TVotes))
               <> SJ.valueToPairF "DVotesC" (SJ.jsonArrayF (F.rgetField @DVotes))
-  SJ.frameToStanJSONSeries dataF cd
+  SJ.frameToStanJSONSeries dataF cd'
 
 houseDataWrangler :: [Text] -> HouseDataWrangler
 houseDataWrangler predictors = SC.Wrangle SC.NoIndex f
@@ -469,15 +446,6 @@ extractResults modelWith predictors summary hmd = do
   electionFit <- traverse makeElectionFitRow $ Vec.zip (FL.fold FL.vector $ electionData hmd) (Vec.take ccesIndex modeled)
   ccesFit <- traverse makeCCESFitRow $ Vec.zip (FL.fold FL.vector $ ccesData hmd) (Vec.drop ccesIndex modeled)
   -- deltas
-  {-
-  let rowNames =   [ "PctUnder45",
-                     "PctFemale",
-                     "PctGrad",
-                     "PctNonWhite",
-                     "AvgIncome",
-                     "PopPerSqMile"
-                   ]
--}
   let rowNamesD = (<> "D") <$> predictors
       rowNamesV = (<> "V") <$> predictors
   -- sigmaDeltas
@@ -511,7 +479,7 @@ runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
     SC.setSigFigs 4
-      . SC.noLogOfSummary
+--      . SC.noLogOfSummary
       <$> SM.makeDefaultModelRunnerConfig
         workDir
         (modelName <> "_" <> show modelWith <> "_model")
@@ -613,18 +581,18 @@ binomialDataBlock :: SB.DataBlock
 binomialDataBlock =
   [here|
   int<lower = 1> N; // number of districts
-  int<lower = 1> M; // number of cces rows
   int<lower = 1> K; // number of predictors
   int<lower = 1, upper = N> districtE[N]; // do we need this?
-  int<lower = 1, upper = M> districtC[M]; // do we need this?
   matrix[N, K] Xe;
-  matrix[M, K] Xc;
   int<lower=-1, upper=1> IncE[N];
-  int<lower=-1, upper=1> IncC[M];
   int<lower = 0> VAPe[N];
-  int<lower = 0> VAPc[M];
   int<lower = 0> TVotesE[N];
   int<lower = 0> DVotesE[N];
+  int<lower = 1> M; // number of cces rows
+  int<lower = 1, upper = M> districtC[M]; // do we need this?
+  matrix[M, K] Xc;
+  int<lower=-1, upper=1> IncC[M];
+  int<lower = 0> VAPc[M];
   int<lower = 0> TVotesC[M];
   int<lower = 0> DVotesC[M];
 |]
@@ -682,7 +650,7 @@ binomialTransformedDataBlock_Both =
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
   int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
-  |] <> transformedDataBlockCommon
+  |] <> "\n" <> transformedDataBlockCommon
 
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock =
@@ -842,8 +810,8 @@ betaBinomialInc2ParametersBlock =
   real alphaV;
   vector[K] thetaD;
   real incBetaD;
-  real <lower=0> phiD;
-  real <lower=0> phiV;
+  real <lower=0, upper=1> dispD;
+  real <lower=0, upper=1> dispV;
   vector <lower=0, upper=1>[G] pV;
   vector <lower=0, upper=1>[G] pD;
 |]

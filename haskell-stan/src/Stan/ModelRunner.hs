@@ -21,6 +21,7 @@ import CmdStan
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import Control.Monad (when)
+import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Maybe as Maybe
@@ -29,6 +30,8 @@ import qualified Data.Text.IO as T
 import qualified Knit.Effect.AtomicCache as K (cacheTime)
 import qualified Knit.Report as K
 import qualified Polysemy as P
+import qualified Relude.Extra as Relude
+import qualified Say
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
@@ -210,21 +213,32 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
     K.logLE K.Info "writing R scripts"
     K.liftKnit $ writeRScripts rScriptsToWrite config
     return res_C
-  let resultDeps = (\a b c -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
+  let resultDeps = (\a b _ -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
+      makeSummaryFromCSVs = do
+        summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
+        P.embed $ A.encodeFile (toString $ SC.summaryFilePath config) summary
+        return summary
   case makeResult of
     SC.UseSummary f -> do
       K.logLE K.Diagnostic $
         "Summary command: "
-          <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
-          <> " "
-          <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
-      summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
-      when (SC.mrcLogSummary config) $ K.logLE K.Info $ "Stan Summary:\n" <> show (CS.unparsed summary)
+        <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+        <> " "
+        <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
+      summary_C <- K.loadOrMakeFile
+                   (toString $ SC.summaryFilePath config)
+                   ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
+                   (pure ())
+                   (const $ makeSummaryFromCSVs)
+      summary <- K.ignoreCacheTime summary_C
+      when (SC.mrcLogSummary config) $ do
+        K.logLE K.Info $ "Stan Summary:\n"
+        Say.say $ toText (CS.unparsed summary)
       f summary toPredict resultDeps
     SC.SkipSummary f -> f toPredict resultDeps
     SC.DoNothing -> return ()
 
-checkClangEnv :: (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) => K.Sem r ()
+checkClangEnv :: (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) => K.Sem r ()
 checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
   clangBinDirM <- K.liftKnit $ Env.lookupEnv "CLANG_BINDIR"
   case clangBinDirM of
@@ -235,7 +249,7 @@ checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
       K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
 
 createDirIfNecessary ::
-  (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) =>
+  (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) =>
   T.Text ->
   K.Sem r ()
 createDirIfNecessary dir = K.wrapPrefix "createDirIfNecessary" $ do
@@ -255,7 +269,7 @@ createDirIfNecessary dir = K.wrapPrefix "createDirIfNecessary" $ do
 {-# INLINEABLE createDirIfNecessary #-}
 
 checkDir ::
-  (P.Members '[P.Embed IO] r, K.LogWithPrefixesLE r) =>
+  (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) =>
   T.Text ->
   P.Sem r (Maybe ())
 checkDir dir = K.wrapPrefix "checkDir" $ do

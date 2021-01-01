@@ -1,17 +1,17 @@
 data {
 int<lower = 1> N; // number of districts
-  int<lower = 1> M; // number of cces rows
   int<lower = 1> K; // number of predictors
   int<lower = 1, upper = N> districtE[N]; // do we need this?
-  int<lower = 1, upper = M> districtC[M]; // do we need this?
   matrix[N, K] Xe;
-  matrix[M, K] Xc;
   int<lower=-1, upper=1> IncE[N];
-  int<lower=-1, upper=1> IncC[M];
   int<lower = 0> VAPe[N];
-  int<lower = 0> VAPc[M];
   int<lower = 0> TVotesE[N];
   int<lower = 0> DVotesE[N];
+  int<lower = 1> M; // number of cces rows
+  int<lower = 1, upper = M> districtC[M]; // do we need this?
+  matrix[M, K] Xc;
+  int<lower=-1, upper=1> IncC[M];
+  int<lower = 0> VAPc[M];
   int<lower = 0> TVotesC[M];
   int<lower = 0> DVotesC[M];
 }
@@ -21,7 +21,8 @@ int<lower=0> G = M + N;
   int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
-  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);vector<lower=0>[K] sigmaPred;
+  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
+vector<lower=0>[K] sigmaPred;
   vector[K] meanPred;
   matrix[G, K] X_centered;
   for (k in 1:K) {

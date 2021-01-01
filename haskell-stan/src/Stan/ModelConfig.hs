@@ -81,3 +81,9 @@ outputFile outputFilePrefix chainIndex = toString outputFilePrefix <> "_" <> sho
 
 stanOutputFiles :: ModelRunnerConfig -> [T.Text]
 stanOutputFiles config = fmap (T.pack . outputFile (mrcOutputPrefix config)) [1..(mrcNumChains config)]
+
+summaryFileName :: ModelRunnerConfig -> T.Text
+summaryFileName config = mrcOutputPrefix config <> ".json"
+
+summaryFilePath :: ModelRunnerConfig -> T.Text
+summaryFilePath config = mrcModelDir config <> "/output/" <> summaryFileName config

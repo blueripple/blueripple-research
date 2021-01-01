@@ -88,8 +88,8 @@ main = do
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = True
-        predictors = ["AvgIncome"]
+    let clearCached = False
+        predictors = ["PopPerSqMile"]
         years = [2016, 2018]
         modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
 
@@ -153,7 +153,7 @@ testHouseModel =
           BRE.runHouseModel
           clearCached
           predictors
-          ("betaBinomialInc", mw, BRE.betaBinomialInc, 100)
+          ("betaBinomialInc2", mw, BRE.betaBinomialInc2, 100)
           y
           (fmap (Optics.over #electionData (F.filterFrame (isYear y))
                  . Optics.over #ccesData (F.filterFrame (isYear y)))
