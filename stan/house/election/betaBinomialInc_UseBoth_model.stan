@@ -22,6 +22,10 @@ int<lower=0> G = M + N;
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
   int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
+  int D = 2;
+  int<lower=0> dataSet[G];
+  for (l in 1:M) { dataSet[l] = 1; }
+  for (l in 1:N) { dataSet[M+l] = 2; }
 vector<lower=0>[K] sigmaPred;
   vector[K] meanPred;
   matrix[G, K] X_centered;
@@ -42,9 +46,9 @@ vector<lower=0>[K] sigmaPred;
   R_ast_inverse = inverse(R_ast);
 }
 parameters {
-real alphaD;
+vector[D] alphaD;
+  vector[D] alphaV;
   vector[K] thetaV;
-  real alphaV;
   vector[K] thetaD;
   real incBetaD;
   real <lower=0, upper=1> dispD;
@@ -53,8 +57,8 @@ real alphaD;
 transformed parameters {
 real<lower=0> phiV = dispV/(1-dispV);
   real<lower=0> phiD = dispD/(1-dispD);
-  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
-  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD[dataSet] + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV[dataSet] + Q_ast * thetaV);
   vector[K] betaV;
   vector[K] betaD;
   betaV = R_ast_inverse * thetaV;
@@ -63,11 +67,9 @@ real<lower=0> phiV = dispV/(1-dispV);
 model {
 alphaD ~ cauchy(0, 10);
   alphaV ~ cauchy(0, 10);
-  betaV ~ cauchy(0, 2.5);
-  betaD ~ cauchy(0, 2.5);
+  betaV ~ cauchy(0, 10);
+  betaD ~ cauchy(0, 10);
   incBetaD ~ cauchy(0, 2.5);
-  phiD ~ cauchy(0,2);
-  phiV ~ cauchy(0,2);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 }
@@ -82,17 +84,17 @@ vector<lower = 0>[G] eTVotes;
     eTVotes[g] = pVotedP[g] * VAP[g];
     eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
-  real avgPVoted = inv_logit (alphaV);
-  real avgPDVote = inv_logit (alphaD);
+  real avgPVoted = inv_logit (alphaV[1]);
+  real avgPDVote = inv_logit (alphaD[1]);
   vector[K] sigmaDeltaV;
   vector[K] sigmaDeltaD;
   vector[K] unitDeltaV;
   vector[K] unitDeltaD;
   for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV +  (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV - meanPred[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD +  (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD - meanPred[k] * betaD[k]);
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
   }
-  real unitDeltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
+  real unitDeltaIncD = inv_logit(alphaD[1] + incBetaD) - avgPDVote;
 }

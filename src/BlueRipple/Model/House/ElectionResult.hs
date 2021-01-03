@@ -327,7 +327,7 @@ makeElectionResultJSON predictors er = do
 
 makeCCESDataJSON :: [Text] -> CCESData ->  Either T.Text A.Series
 makeCCESDataJSON predictors cd = do
-  let cd' = F.toFrame $ take 40 $ FL.fold FL.list cd -- test with way less CCES data
+  let cd' = F.toFrame {- $ take 1000 -} $ FL.fold FL.list cd -- test with way less CCES data
   let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) cd
       pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
@@ -373,6 +373,7 @@ type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes
 
 data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionFit
                                            , ccesFit :: F.FrameRec CCESFit
+                                           , avgProbs :: MapRow.MapRow [Double]
                                            , sigmaDeltas :: MapRow.MapRow [Double]
                                            , unitDeltas :: MapRow.MapRow [Double]
                                            }
@@ -381,8 +382,8 @@ Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelResults
 
 -- frames are not directly serializable so we have to do...shenanigans.
 instance S.Serialize HouseModelResults where
-  put (HouseModelResults ef cf sd ud) = S.put (FS.SFrame ef, FS.SFrame cf, sd, ud)
-  get = (\(ef, cf, sd, ud) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) sd ud) <$> S.get
+  put (HouseModelResults ef cf aps sd ud) = S.put (FS.SFrame ef, FS.SFrame cf, aps, sd, ud)
+  get = (\(ef, cf, aps, sd, ud) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) aps sd ud) <$> S.get
 
 extractResults ::
   ModelWith
@@ -458,9 +459,12 @@ extractResults modelWith predictors summary hmd = do
   unitDeltaV <- fmap CS.percents <$> SP.parse1D "unitDeltaV" (CS.paramStats summary)
   unitDeltaDMR <- MapRow.withNames rowNamesD (SP.getVector unitDeltaD)
   unitDeltaVMR <- MapRow.withNames rowNamesV (SP.getVector unitDeltaV)
+  elexPVote <- M.singleton "probV" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPVoted" (CS.paramStats summary)
+  elexPDVote <- M.singleton "probD" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPDVote" (CS.paramStats summary)
   let sigmaDeltas = sigmaDeltaDMR <> sigmaDeltaVMR
       unitDeltas = unitDeltaDMR <> unitDeltaVMR <> M.singleton "Incumbency" (SP.getScalar unitDeltaIncD)
-  return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) sigmaDeltas unitDeltas
+--      avgProbs = _ --elexPVote <> elexPDVote
+  return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) (elexPVote <> elexPDVote) sigmaDeltas unitDeltas
 
 runHouseModel ::
   forall r.
@@ -628,6 +632,9 @@ binomialTransformedDataBlock_ElexOnly =
   int<lower=0> VAP[G] = VAPe;
   int<lower=0> TVotes[G] = TVotesE;
   int<lower=0> DVotes[G] = DVotesE;
+  int D = 1;
+  int<lower=0> dataSet[G];
+  for (l in 1:G) { dataSet[l] = 1; }
   |] <> transformedDataBlockCommon
 
 binomialTransformedDataBlock_CCESOnly :: SB.TransformedDataBlock
@@ -639,6 +646,9 @@ binomialTransformedDataBlock_CCESOnly =
   int<lower=0> VAP[G] = VAPc;
   int<lower=0> TVotes[G] = TVotesC;
   int<lower=0> DVotes[G] = DVotesC;
+  int D = 1;
+  int<lower=0> dataSet[G];
+  for (l in 1:G) { dataSet[l] = 1; }
   |] <> transformedDataBlockCommon
 
 binomialTransformedDataBlock_Both :: SB.TransformedDataBlock
@@ -650,7 +660,11 @@ binomialTransformedDataBlock_Both =
   int<lower=0> VAP[G] = append_array(VAPe, VAPc);
   int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
   int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
-  |] <> "\n" <> transformedDataBlockCommon
+  int D = 2;
+  int<lower=0> dataSet[G];
+  for (l in 1:M) { dataSet[l] = 1; }
+  for (l in 1:N) { dataSet[M+l] = 2; }
+|] <> "\n" <> transformedDataBlockCommon
 
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock =
@@ -762,26 +776,25 @@ betaBinomialGQLLBlock =
   }
 |]
 
-betaBinomialIncParametersBlock :: SB.ParametersBlock
+betaBinomialIncParametersBlock ::  SB.ParametersBlock
 betaBinomialIncParametersBlock =
   [here|
-  real alphaD;
+  vector[D] alphaD;
+  vector[D] alphaV;
   vector[K] thetaV;
-  real alphaV;
   vector[K] thetaD;
   real incBetaD;
   real <lower=0, upper=1> dispD;
   real <lower=0, upper=1> dispV;
-|]
-
+  |]
 
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock
 betaBinomialIncTransformedParametersBlock =
   [here|
   real<lower=0> phiV = dispV/(1-dispV);
   real<lower=0> phiD = dispD/(1-dispD);
-  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD + to_vector(Inc) * incBetaD);
-  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD[dataSet] + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV[dataSet] + Q_ast * thetaV);
   vector[K] betaV;
   vector[K] betaD;
   betaV = R_ast_inverse * thetaV;
@@ -793,11 +806,9 @@ betaBinomialIncModelBlock =
   [here|
   alphaD ~ cauchy(0, 10);
   alphaV ~ cauchy(0, 10);
-  betaV ~ cauchy(0, 2.5);
-  betaD ~ cauchy(0, 2.5);
+  betaV ~ cauchy(0, 10);
+  betaD ~ cauchy(0, 10);
   incBetaD ~ cauchy(0, 2.5);
-  phiD ~ cauchy(0,2);
-  phiV ~ cauchy(0,2);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
@@ -841,19 +852,19 @@ betaBinomialIncGeneratedQuantitiesBlock =
     eTVotes[g] = pVotedP[g] * VAP[g];
     eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
-  real avgPVoted = inv_logit (alphaV);
-  real avgPDVote = inv_logit (alphaD);
+  real avgPVoted = inv_logit (alphaV[1]);
+  real avgPDVote = inv_logit (alphaD[1]);
   vector[K] sigmaDeltaV;
   vector[K] sigmaDeltaD;
   vector[K] unitDeltaV;
   vector[K] unitDeltaD;
   for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV +  (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV - meanPred[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD +  (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD - meanPred[k] * betaD[k]);
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
   }
-  real unitDeltaIncD = inv_logit(alphaD + incBetaD) - avgPDVote;
+  real unitDeltaIncD = inv_logit(alphaD[1] + incBetaD) - avgPDVote;
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock

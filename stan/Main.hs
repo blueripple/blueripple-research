@@ -90,7 +90,7 @@ testHouseModel =
   do
     let clearCached = False
         predictors = ["PopPerSqMile"]
-        years = [2016, 2018]
+        years = [2012, 2014, 2016, 2018]
         modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
 
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
@@ -153,7 +153,7 @@ testHouseModel =
           BRE.runHouseModel
           clearCached
           predictors
-          ("betaBinomialInc2", mw, BRE.betaBinomialInc2, 100)
+          ("betaBinomialInc", mw, BRE.betaBinomialInc, 500)
           y
           (fmap (Optics.over #electionData (F.filterFrame (isYear y))
                  . Optics.over #ccesData (F.filterFrame (isYear y)))
@@ -174,17 +174,27 @@ testHouseModel =
             _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow f (y, modelResults)
           = fmap (M.insert "Year" (GV.Str $ show y)) <$> (traverse expandInterval $ M.toList $ f modelResults)
-        modelAndDeltaMR mw d = M.fromList [("Model",GV.Str $ show @Text mw), ("Delta",GV.Str d)]
+        modelMR mw = one ("Model", GV.Str $ show @Text mw)
+        modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
         runModelWith mw = do
           results_C <- sequenceA <$> traverse (runYear mw) years
           results <- zip years <$> K.ignoreCacheTime results_C
           sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> (K.knitEither $ traverse (expandMapRow BRE.sigmaDeltas) results)
           unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> (K.knitEither $ traverse (expandMapRow BRE.unitDeltas) results)
-          return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows
+          avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> (K.knitEither $ traverse (expandMapRow BRE.avgProbs) results)
+          return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows <> avgProbMapRows
     results <- mconcat <$> traverse runModelWith modelWiths
     let dataValueAsText :: GV.DataValue -> Text
         dataValueAsText (GV.Str x) = x
         dataValueAsText _ = error "Non-string given to dataValueAsString"
+    _ <- K.addHvega Nothing Nothing
+         $ modelChart
+         ("Average Probability")
+         ["probV", "probD"]
+         ["UseElectionResults", "UseCCES", "UseBoth"]
+         (FV.ViewConfig 200 200 5)
+         ""
+         $ filter (maybe False (== "Avg") . fmap dataValueAsText . M.lookup "Delta") results
     _ <- K.addHvega Nothing Nothing
          $ modelChart
          ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)")

@@ -206,7 +206,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
           K.logLE K.Info $ "Finished chain " <> show chainIndex
     res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ -> do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
-      K.logLE K.Info $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
+--      K.logLE K.Info $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
       maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneChain [1 .. (SC.mrcNumChains config)])
     K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."
@@ -228,7 +228,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
       summary_C <- K.loadOrMakeFile
                    (toString $ SC.summaryFilePath config)
                    ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
-                   (pure ())
+                   stanOutput_C -- this only is here to carry the timing to compare the output file with
                    (const $ makeSummaryFromCSVs)
       summary <- K.ignoreCacheTime summary_C
       when (SC.mrcLogSummary config) $ do
