@@ -17,6 +17,7 @@
 
 module BlueRipple.Model.House.ElectionResult where
 
+import Prelude hiding (pred)
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Model.MRP as MRP
@@ -45,7 +46,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
-import qualified Graphics.Vega.VegaLite.MapRow as MapRow
+import qualified Data.MapRow as MapRow
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
@@ -294,40 +295,51 @@ adjustPredictor f k =
   let g (h1, h2) = (f . h1, f . h2)
   in M.adjust g k
 
-makeElectionResultJSON :: [Text] -> ElectionData -> Either T.Text A.Series
-makeElectionResultJSON predictors er = do
-  let tVotes r = F.rgetField @DVotes r + F.rgetField @RVotes r
-      ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
-        FL.fold
-        ( (,,,)
-          <$> enumStateF
-          <*> enumDistrictF
-          <*> maxAvgIncomeF
-          <*> maxDensityF
-        )
-        er
-      pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
-             $ adjustPredictor (/maxDensity) "PopPerSqMile"
-             predictorMap
+data ModelRow = ModelRow { distLabel :: Text
+                         , pred :: Vec.Vector Double
+                         , inc :: Int
+                         , vap :: Int
+                         , tVotes :: Int
+                         , dVotes :: Int
+                         } deriving (Show)
+
+
+electionResultToModelRow :: (F.Record ElectionDataR -> Vec.Vector Double) -> F.Record ElectionDataR -> ModelRow
+electionResultToModelRow predictRow r =
+  (ModelRow <$> district <*> predictRow <*> F.rgetField @Incumbency <*> F.rgetField @PUMS.Citizens <*> tVotes <*> dVotes) $ r where
+  dVotes = F.rgetField @DVotes
+  tVotes r = dVotes r + F.rgetField @RVotes r
+
+electionResultsToModelRows :: Foldable f => [Text] -> f (F.Record ElectionDataR) -> Either Text (Vec.Vector ModelRow)
+electionResultsToModelRows predictors er = do
+  let  ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
+         FL.fold
+         ( (,,,)
+           <$> enumStateF
+           <*> enumDistrictF
+           <*> maxAvgIncomeF
+           <*> maxDensityF
+         )
+         er
+       pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
+              $ adjustPredictor (/maxDensity) "PopPerSqMile"
+              predictorMap
   rowMaker <- maybeToRight "Text in given predictors not found in predictors map"
               $ traverse (fmap fst . flip M.lookup pMap) predictors
   let predictRow :: F.Record DemographicsR -> Vec.Vector Double
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
-      dataF =
-        SJ.namedF "N" FL.length
-        <> SJ.constDataF "K" (length predictors)
-        <> SJ.valueToPairF "stateE" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
-        <> SJ.valueToPairF "districtE" (SJ.jsonArrayMF (cdM . district))
-        <> SJ.valueToPairF "Xe" (SJ.jsonArrayF (predictRow . F.rcast))
-        <> SJ.valueToPairF "IncE" (SJ.jsonArrayF (F.rgetField @Incumbency))
-        <> SJ.valueToPairF "VAPe" (SJ.jsonArrayF (F.rgetField @PUMS.Citizens))
-        <> SJ.valueToPairF "TVotesE" (SJ.jsonArrayF tVotes)
-        <> SJ.valueToPairF "DVotesE" (SJ.jsonArrayF (F.rgetField @DVotes))
-  SJ.frameToStanJSONSeries dataF er
+  return $ FL.fold (FL.premap (electionResultToModelRow $ predictRow . F.rcast) FL.vector) er
 
-makeCCESDataJSON :: [Text] -> CCESData ->  Either T.Text A.Series
-makeCCESDataJSON predictors cd = do
-  let cd' = F.toFrame {- $ take 1000 -} $ FL.fold FL.list cd -- test with way less CCES data
+
+ccesDataToModelRow :: (F.Record CCESDataR -> Vec.Vector Double) -> F.Record CCESDataR -> ModelRow
+ccesDataToModelRow predictRow r =
+  (ModelRow <$> district <*> predictRow <*> F.rgetField @Incumbency <*> F.rgetField @Surveyed <*> tVotes <*> dVotes) $ r where
+  dVotes = F.rgetField @DVotes
+  tVotes = F.rgetField @TVotes
+
+ccesDataToModelRows :: Foldable f => [Text] -> f (F.Record CCESDataR) -> Either Text (Vec.Vector ModelRow)
+ccesDataToModelRows predictors cd = do
+  let cd' = F.toFrame $ take 1000 $ FL.fold FL.list cd -- test with way less CCES data
   let ((stateM, _), (cdM, _), maxAvgIncome, maxDensity) =
         FL.fold ((,,,) <$> enumStateF <*> enumDistrictF <*> maxAvgIncomeF <*> maxDensityF) cd
       pMap = adjustPredictor (/maxAvgIncome) "AvgIncome"
@@ -337,25 +349,44 @@ makeCCESDataJSON predictors cd = do
               $ traverse (fmap snd . flip M.lookup pMap) predictors
   let predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
-      dataF = SJ.namedF "M" FL.length
-              <> SJ.valueToPairF "stateC" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
-              <> SJ.valueToPairF "districtC" (SJ.jsonArrayMF (cdM . district))
-              <> SJ.valueToPairF "Xc" (SJ.jsonArrayF (predictRow . F.rcast))
-              <> SJ.valueToPairF "IncC" (SJ.jsonArrayF (F.rgetField @Incumbency))
-              <> SJ.valueToPairF "VAPc" (SJ.jsonArrayF (F.rgetField @Surveyed))
-              <> SJ.valueToPairF "TVotesC" (SJ.jsonArrayF (F.rgetField @TVotes))
-              <> SJ.valueToPairF "DVotesC" (SJ.jsonArrayF (F.rgetField @DVotes))
-  SJ.frameToStanJSONSeries dataF cd'
+  return $ FL.fold (FL.premap (ccesDataToModelRow $ predictRow . F.rcast) FL.vector) cd
 
-houseDataWrangler :: [Text] -> HouseDataWrangler
-houseDataWrangler predictors = SC.Wrangle SC.NoIndex f
+
+houseDataWrangler :: ModelWith -> [Text] -> HouseDataWrangler
+houseDataWrangler mw predictors = SC.Wrangle SC.NoIndex f
   where
     f _ = ((), makeDataJsonE)
-      where
-        makeDataJsonE hmd = do
-          electionResultJsonE <- makeElectionResultJSON predictors $ electionData hmd
-          ccesDataJSONE <- makeCCESDataJSON predictors $ ccesData hmd
-          return $ electionResultJsonE <> ccesDataJSONE
+    numDataSets :: Int = if mw == UseBoth then 2 else 1
+    makeDataJsonE hmd = do
+      (modelRows, dataSetIndex, edRows) <- case mw of
+        UseElectionResults ->  do
+          edModelRows <- electionResultsToModelRows predictors $ electionData hmd
+          let dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int)
+          return (edModelRows, dataSetIndex, Vec.length edModelRows)
+        UseCCES -> do
+          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
+          let dataSetIndex = Vec.replicate (Vec.length ccesModelRows) (1 :: Int)
+          return (ccesModelRows, dataSetIndex, Vec.length ccesModelRows)
+        UseBoth -> do
+          edModelRows <- electionResultsToModelRows predictors $ electionData hmd
+          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
+          let modelRows = edModelRows <> ccesModelRows
+              dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int) <> Vec.replicate (Vec.length ccesModelRows) 2
+          return (modelRows, dataSetIndex, Vec.length edModelRows)
+      let dataF =
+            SJ.namedF "G" FL.length
+            <> SJ.constDataF "N" edRows
+            <> SJ.constDataF "D" numDataSets
+            <> SJ.constDataF "K" (length predictors)
+            <> SJ.valueToPairF "X" (SJ.jsonArrayF pred)
+            <> SJ.valueToPairF "Inc" (SJ.jsonArrayF inc)
+            <> SJ.valueToPairF "VAP" (SJ.jsonArrayF vap)
+            <> SJ.valueToPairF "TVotes"  (SJ.jsonArrayF tVotes)
+            <> SJ.valueToPairF "DVotes"  (SJ.jsonArrayF dVotes)
+      modelRowJson <- SJ.frameToStanJSONSeries dataF modelRows
+      dataSetIndexJson <- SJ.frameToStanJSONSeries (SJ.valueToPairF "dataSet" (SJ.jsonArrayF id)) dataSetIndex
+      return $ modelRowJson <> dataSetIndexJson
+
 
 data ModelWith = UseElectionResults | UseCCES | UseBoth deriving (Show, Eq, Ord)
 
@@ -471,7 +502,7 @@ runHouseModel ::
   (K.KnitEffects r, K.CacheEffectsD r)
   => Bool
   -> [Text]
-  -> (T.Text, ModelWith, ModelWith -> SB.StanModel, Int)
+  -> (T.Text, ModelWith, SB.StanModel, Int)
   -> Int
   -> K.ActionWithCacheTime r HouseModelData
   -> K.Sem r (K.ActionWithCacheTime r HouseModelResults)
@@ -486,9 +517,9 @@ runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year
 --      . SC.noLogOfSummary
       <$> SM.makeDefaultModelRunnerConfig
         workDir
-        (modelName <> "_" <> show modelWith <> "_model")
-        (Just (SB.All, model modelWith))
-        (Just $ "election_" <> show year <> ".json")
+        (modelName <> "_model")
+        (Just (SB.All, model))
+        (Just $ "election_" <> show modelWith <> "_" <> show year <> ".json")
         (Just $ "election_" <> modelNameSuffix)
         4
         (Just nSamples)
@@ -516,65 +547,63 @@ runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year
     SM.runModel
       stanConfig
       (SM.Both unwraps)
-      (houseDataWrangler predictors)
+      (houseDataWrangler modelWith predictors)
       (SC.UseSummary getResults)
       ()
       houseDataForYear_C
 
 tdb :: ModelWith -> SB.TransformedDataBlock
-tdb UseElectionResults = binomialTransformedDataBlock_ElexOnly
-tdb UseCCES = binomialTransformedDataBlock_CCESOnly
-tdb UseBoth = binomialTransformedDataBlock_Both
+tdb _ = transformedDataBlock
 
-binomial_v1 :: ModelWith -> SB.StanModel
-binomial_v1 modelWith =
+binomial_v1 :: SB.StanModel
+binomial_v1 =
   SB.StanModel
     binomialDataBlock
-    (Just $ tdb modelWith)
+    (Just transformedDataBlock)
     binomialParametersBlock
     (Just binomialTransformedParametersBlock)
     binomialModelBlock
     (Just binomialGeneratedQuantitiesBlock)
     binomialGQLLBlock
 
-betaBinomial_v1 :: ModelWith -> SB.StanModel
-betaBinomial_v1 modelWith =
+betaBinomial_v1 :: SB.StanModel
+betaBinomial_v1 =
   SB.StanModel
     binomialDataBlock
-    (Just $ tdb modelWith)
+    (Just transformedDataBlock)
     betaBinomialParametersBlock
     (Just betaBinomialTransformedParametersBlock)
     betaBinomialModelBlock
     (Just betaBinomialGeneratedQuantitiesBlock)
     betaBinomialGQLLBlock
 
-betaBinomialInc :: ModelWith -> SB.StanModel
-betaBinomialInc modelWith =
+betaBinomialInc :: SB.StanModel
+betaBinomialInc =
   SB.StanModel
   binomialDataBlock
-  (Just $ tdb modelWith)
+  (Just transformedDataBlock)
   betaBinomialIncParametersBlock
   (Just betaBinomialIncTransformedParametersBlock)
   betaBinomialIncModelBlock
   (Just betaBinomialIncGeneratedQuantitiesBlock)
   betaBinomialGQLLBlock
 
-betaBinomialInc2 :: ModelWith -> SB.StanModel
-betaBinomialInc2 modelWith =
+betaBinomialInc2 :: SB.StanModel
+betaBinomialInc2 =
   SB.StanModel
   binomialDataBlock
-  (Just $ tdb modelWith)
+  (Just transformedDataBlock)
   betaBinomialInc2ParametersBlock
   (Just betaBinomialIncTransformedParametersBlock)
   betaBinomialInc2ModelBlock
   (Just betaBinomialIncGeneratedQuantitiesBlock)
   betaBinomialGQLLBlock
 
-betaBinomialHS :: ModelWith -> SB.StanModel
-betaBinomialHS modelWith =
+betaBinomialHS :: SB.StanModel
+betaBinomialHS =
   SB.StanModel
     binomialDataBlock
-    (Just $ tdb modelWith)
+    (Just transformedDataBlock)
     betaBinomialHSParametersBlock
     (Just betaBinomialTransformedParametersBlock)
     betaBinomialHSModelBlock
@@ -584,32 +613,27 @@ betaBinomialHS modelWith =
 binomialDataBlock :: SB.DataBlock
 binomialDataBlock =
   [here|
-  int<lower = 1> N; // number of districts
+  int<lower = 1> G; // number of rows
+  int<lower = 1> N; // number of rows in data to use for sigma of predictors
+  int<lower = 1> D; // number of datasets
   int<lower = 1> K; // number of predictors
-  int<lower = 1, upper = N> districtE[N]; // do we need this?
-  matrix[N, K] Xe;
-  int<lower=-1, upper=1> IncE[N];
-  int<lower = 0> VAPe[N];
-  int<lower = 0> TVotesE[N];
-  int<lower = 0> DVotesE[N];
-  int<lower = 1> M; // number of cces rows
-  int<lower = 1, upper = M> districtC[M]; // do we need this?
-  matrix[M, K] Xc;
-  int<lower=-1, upper=1> IncC[M];
-  int<lower = 0> VAPc[M];
-  int<lower = 0> TVotesC[M];
-  int<lower = 0> DVotesC[M];
+  matrix[G, K] X;
+  int<lower=1> dataSet[G];
+  int<lower=-1, upper=1> Inc[G];
+  int<lower = 0> VAP[G];
+  int<lower = 0> TVotes[G];
+  int<lower = 0> DVotes[G];
 |]
 
-transformedDataBlockCommon :: T.Text
-transformedDataBlockCommon = [here|
+transformedDataBlock :: T.Text
+transformedDataBlock = [here|
   vector<lower=0>[K] sigmaPred;
   vector[K] meanPred;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    meanPred[k] = mean(X[,k]);
+    meanPred[k] = mean(X[1:N,k]); // we only want mean of the data for districts
+    sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
     X_centered[,k] = X[,k] - meanPred[k];
-    sigmaPred[k] = sd(Xe[,k]);
   }
   print("dims(TVotes)=",dims(TVotes));
   print("dims(DVotes)=",dims(DVotes));
@@ -622,49 +646,6 @@ transformedDataBlockCommon = [here|
   R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
   R_ast_inverse = inverse(R_ast);
 |]
-
-binomialTransformedDataBlock_ElexOnly :: SB.TransformedDataBlock
-binomialTransformedDataBlock_ElexOnly =
-  [here|
-  int<lower=0> G = N;
-  matrix[G, K] X = Xe;
-  int<lower=-1, upper=1> Inc[G] = IncE;
-  int<lower=0> VAP[G] = VAPe;
-  int<lower=0> TVotes[G] = TVotesE;
-  int<lower=0> DVotes[G] = DVotesE;
-  int D = 1;
-  int<lower=0> dataSet[G];
-  for (l in 1:G) { dataSet[l] = 1; }
-  |] <> transformedDataBlockCommon
-
-binomialTransformedDataBlock_CCESOnly :: SB.TransformedDataBlock
-binomialTransformedDataBlock_CCESOnly =
-  [here|
-  int<lower=0> G = M;
-  matrix[G, K] X = Xc;
-  int<lower=-1, upper=1> Inc[G] = IncC;
-  int<lower=0> VAP[G] = VAPc;
-  int<lower=0> TVotes[G] = TVotesC;
-  int<lower=0> DVotes[G] = DVotesC;
-  int D = 1;
-  int<lower=0> dataSet[G];
-  for (l in 1:G) { dataSet[l] = 1; }
-  |] <> transformedDataBlockCommon
-
-binomialTransformedDataBlock_Both :: SB.TransformedDataBlock
-binomialTransformedDataBlock_Both =
-  [here|
-  int<lower=0> G = M + N;
-  matrix[G, K] X = append_row (Xe, Xc);
-  int<lower=-1, upper=1> Inc[G] = append_array(IncE, IncC);
-  int<lower=0> VAP[G] = append_array(VAPe, VAPc);
-  int<lower=0> TVotes[G] = append_array (TVotesE, TVotesC);
-  int<lower=0> DVotes[G] = append_array (DVotesE, DVotesC);
-  int D = 2;
-  int<lower=0> dataSet[G];
-  for (l in 1:M) { dataSet[l] = 1; }
-  for (l in 1:N) { dataSet[M+l] = 2; }
-|] <> "\n" <> transformedDataBlockCommon
 
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock =
@@ -813,6 +794,30 @@ betaBinomialIncModelBlock =
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
 
+betaBinomialIncGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialIncGeneratedQuantitiesBlock =
+  [here|
+  vector<lower = 0>[G] eTVotes;
+  vector<lower = 0>[G] eDVotes;
+  for (g in 1:G) {
+    eTVotes[g] = pVotedP[g] * VAP[g];
+    eDVotes[g] = pDVoteP[g] * TVotes[g];
+  }
+  real avgPVoted = inv_logit (alphaV[1]);
+  real avgPDVote = inv_logit (alphaD[1]);
+  vector[K] sigmaDeltaV;
+  vector[K] sigmaDeltaD;
+  vector[K] unitDeltaV;
+  vector[K] unitDeltaD;
+  for (k in 1:K) {
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
+  }
+  real unitDeltaIncD = inv_logit(alphaD[1] + incBetaD) - avgPDVote;
+|]
+
 betaBinomialInc2ParametersBlock :: SB.ParametersBlock
 betaBinomialInc2ParametersBlock =
   [here|
@@ -841,30 +846,6 @@ betaBinomialInc2ModelBlock =
   TVotes ~ binomial(VAP, pV);
   pD ~ beta (phiD * pDVoteP, (1 - pDVoteP) * phiD);
   DVotes ~ binomial(TVotes, pD);
-|]
-
-betaBinomialIncGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
-betaBinomialIncGeneratedQuantitiesBlock =
-  [here|
-  vector<lower = 0>[G] eTVotes;
-  vector<lower = 0>[G] eDVotes;
-  for (g in 1:G) {
-    eTVotes[g] = pVotedP[g] * VAP[g];
-    eDVotes[g] = pDVoteP[g] * TVotes[g];
-  }
-  real avgPVoted = inv_logit (alphaV[1]);
-  real avgPDVote = inv_logit (alphaD[1]);
-  vector[K] sigmaDeltaV;
-  vector[K] sigmaDeltaD;
-  vector[K] unitDeltaV;
-  vector[K] unitDeltaD;
-  for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV[1] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD[1] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
-  }
-  real unitDeltaIncD = inv_logit(alphaD[1] + incBetaD) - avgPDVote;
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock

@@ -3,13 +3,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 
-module Graphics.Vega.VegaLite.MapRow where
+module Graphics.Vega.VegaLite.MapRow
+  (
+    module Graphics.Vega.VegaLite.MapRow
+  , module Data.MapRow
+  ) where
 
+{-
 import qualified Control.Foldl as Foldl
 import qualified Data.Map as Map
 import qualified Data.Text as Text
+-}
+import Data.MapRow
 import qualified Graphics.Vega.VegaLite as GV
-
+{-
 type MapRow a = Map.Map Text.Text a
 
 fromList :: [Text.Text] -> MapRow ()
@@ -30,6 +37,7 @@ withNames names values = fmap Map.fromList namedValues
                 <> show (toList values)
                 <> ") have different lengths in nameRow."
             )
+-}
 
 type VLDataField = (GV.FieldName, GV.DataValue)
 

@@ -36,6 +36,7 @@ common deps
                , foldl-statistics >= 0.1.5 && < 0.2
                , glm-haskell
                , groups
+               , heidi >= 0.1 && < 0.2
                , here
                , hvega >= 0.7.0 && < 0.10
                , hmatrix
@@ -97,19 +98,6 @@ library  haskell-stan
   hs-source-dirs:   haskell-stan/src
   default-language: Haskell2010
 
-library hvega-utils
-  build-depends:  base >= 4.13 && < 4.16
-                , containers >= 0.5 && < 0.7
-                , hvega >= 0.7 && < 0.12
-                , foldl >= 1.4 && < 1.5
-                , relude >=0.7.0 && < 0.8
-                , text >= 1.1 && < 1.3
-  mixins:  base hiding (Prelude)
-         , relude (Relude as Prelude
-         , Relude.Extra)
-  exposed-modules: Graphics.Vega.VegaLite.MapRow
-  hs-source-dirs: hvega-utils/src
-  default-language: Haskell2010
 
 library
   import: deps
@@ -169,7 +157,6 @@ library
                      , hashtables >= 1.2.3.4 && < 1.3
                      , haskell-stan
                      , hmatrix
-                     , hvega-utils
                      , lens
                      , math-functions
                      , mtl
@@ -300,7 +287,6 @@ executable stan-models
                , polysemy-RandomFu
                , haskell-stan
                , hs-cmdstan
-               , hvega-utils
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
          , Relude.Extra)

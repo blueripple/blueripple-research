@@ -35,7 +35,7 @@ import Graphics.Vega.VegaLite.Configuration as FV
     ViewConfig (ViewConfig),
   )
 import qualified Graphics.Vega.VegaLite.Configuration as FV
-import qualified Graphics.Vega.VegaLite.MapRow as MapRow
+import qualified Data.MapRow as MapRow
 import qualified Knit.Report as K
 import qualified Optics
 import Optics.Operators
@@ -80,16 +80,12 @@ main = do
       K.writeAndMakePathLT "stan.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
---  (demographics, elex) <- K.ignoreCacheTimeM $ HEM.prepCachedData
---  BR.logFrame demographics
---  BR.logFrame elex
---  return ()
 
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = False
-        predictors = ["PopPerSqMile"]
+    let clearCached = True
+        predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
         years = [2012, 2014, 2016, 2018]
         modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
 
@@ -173,15 +169,15 @@ testHouseModel =
             [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
             _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
         expandMapRow f (y, modelResults)
-          = fmap (M.insert "Year" (GV.Str $ show y)) <$> (traverse expandInterval $ M.toList $ f modelResults)
+          = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
         modelMR mw = one ("Model", GV.Str $ show @Text mw)
         modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
         runModelWith mw = do
           results_C <- sequenceA <$> traverse (runYear mw) years
           results <- zip years <$> K.ignoreCacheTime results_C
-          sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> (K.knitEither $ traverse (expandMapRow BRE.sigmaDeltas) results)
-          unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> (K.knitEither $ traverse (expandMapRow BRE.unitDeltas) results)
-          avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> (K.knitEither $ traverse (expandMapRow BRE.avgProbs) results)
+          sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
+          unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
+          avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> K.knitEither (traverse (expandMapRow BRE.avgProbs) results)
           return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows <> avgProbMapRows
     results <- mconcat <$> traverse runModelWith modelWiths
     let dataValueAsText :: GV.DataValue -> Text
@@ -189,28 +185,28 @@ testHouseModel =
         dataValueAsText _ = error "Non-string given to dataValueAsString"
     _ <- K.addHvega Nothing Nothing
          $ modelChart
-         ("Average Probability")
+         "Average Probability"
          ["probV", "probD"]
          ["UseElectionResults", "UseCCES", "UseBoth"]
          (FV.ViewConfig 200 200 5)
          ""
-         $ filter (maybe False (== "Avg") . fmap dataValueAsText . M.lookup "Delta") results
+         $ filter (maybe False ((== "Avg") . dataValueAsText) . M.lookup "Delta") results
     _ <- K.addHvega Nothing Nothing
          $ modelChart
-         ("Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)")
+         "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)"
          predictors
          ["UseElectionResults", "UseCCES", "UseBoth"]
          (FV.ViewConfig 200 200 5)
          "D Pref"
-         $ filter (maybe False (== "Std. Dev") . fmap dataValueAsText . M.lookup "Delta") results
+         $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta") results
     _ <- K.addHvega Nothing Nothing
          $ modelChart
-         ("Change in Probability for full range of predictor (with 90% confidence bands)")
+         "Change in Probability for full range of predictor (with 90% confidence bands)"
          (predictors <> ["Incumbency"])
          ["UseElectionResults", "UseCCES", "UseBoth"]
          (FV.ViewConfig 200 200 5)
          "D Pref"
-         $ filter (maybe False (== "Min/Max") . fmap dataValueAsText . M.lookup "Delta") results
+         $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta") results
 --    K.logLE K.Info $ show results
     return ()
 
