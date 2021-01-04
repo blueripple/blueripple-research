@@ -163,14 +163,15 @@ comparePredictors clearCached houseData_C = do
                    ,("RE",["PctNonWhite","PctGrad"])
                    ]
       isYear year = (== year) . F.rgetField @BR.Year
+      year = 2016
       runOne x =
         BRE.runHouseModel
         clearCached
         (snd x)
         ("betaBinomialInc", Just $ fst x, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
-        2018
-        (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
-                . Optics.over #ccesData (F.filterFrame (isYear 2018)))
+        year
+        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+                . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
   results <- K.ignoreCacheTimeM $ sequenceA <$> traverse runOne predictors
