@@ -26,7 +26,6 @@ reports/MRP/data
 bigData
 posts
 testbed/*.csv
-*.csv
 GA.html
 stan.html
 /stan/house/*

@@ -24,7 +24,7 @@ import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
-import qualified Data.Vector as V
+--import qualified Data.Vector as V
 import qualified Frames as F
 import qualified Frames.Visualization.VegaLite.Correlation as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
@@ -129,14 +129,15 @@ compareModels clearCached houseData_C = do
         , ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
         ]
       isYear year = (== year) . F.rgetField @BR.Year
+      year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
         predictors
         x
-        2018
-        (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
-                . Optics.over #ccesData (F.filterFrame (isYear 2018)))
+        year
+        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+                . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
   results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
@@ -161,6 +162,7 @@ comparePredictors clearCached houseData_C = do
                    ,("DR",["PopPerSqMile","PctNonWhite"])
                    ,("DE",["PopPerSqMile","PctGrad"])
                    ,("RE",["PctNonWhite","PctGrad"])
+                   ,("DRE",["PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ]
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2016
