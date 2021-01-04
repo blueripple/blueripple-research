@@ -29,6 +29,7 @@ testbed/*.csv
 *.csv
 GA.html
 stan.html
+/stan/house/*
 stan/*/output
 stan/*/data
 stan/*/*_model

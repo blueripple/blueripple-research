@@ -84,10 +84,8 @@ main = do
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = True
+    let clearCached = False
         predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
-        years = [2012, 2014, 2016, 2018]
-        modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
 
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
     houseData_C <- BRE.prepCachedData clearCached
@@ -114,101 +112,148 @@ testHouseModel =
                              ]
     corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted (election data only)" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
-    let isYear year = (== year) . F.rgetField @BR.Year
         {-dVotes = F.rgetField @BRE.DVotes
         rVotes = F.rgetField @BRE.RVotes
         competitive r = dVotes r > 0 && rVotes r > 0
         competitiveIn y r = isYear y r && competitive r-}
 
     K.logLE K.Info "run model(s)"
-{-
-    let models =
+    comparePredictors clearCached houseData_C
 
-          [ ("betaBinomialInc", BRE.UseCCES, BRE.betaBinomialInc)
-          , ("betaBinomialInc", BRE.UseElectionResults, BRE.betaBinomialInc)
-          , ("betaBinomialInc", BRE.UseBoth, BRE.betaBinomialInc)
-          ]
-        runOne x =
-          BRE.runHouseModel
-            BRE.houseDataWrangler
-            x
-            2018
-            (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
-                   . Optics.over #ccesData (F.filterFrame (isYear 2018)))
-              houseData_C
-            )
-    results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
-    let printResult hmr = do
-          K.logLE K.Info "electionFit:"
-          BR.logFrame (hmr ^. #electionFit)
-          K.logLE K.Info "ccesFit:"
-          BR.logFrame (hmr ^. #ccesFit)
+compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+compareModels clearCached houseData_C = do
+  let predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
+      models =
+        [ ("betaBinomialInc", Nothing, BRE.UseCCES, BRE.betaBinomialInc, 500)
+        , ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
+        , ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
+        ]
+      isYear year = (== year) . F.rgetField @BR.Year
+      runOne x =
+        BRE.runHouseModel
+        clearCached
+        predictors
+        x
+        2018
+        (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
+                . Optics.over #ccesData (F.filterFrame (isYear 2018)))
+          houseData_C
+        )
+  results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
+  let printResult hmr = do
+        K.logLE K.Info "electionFit:"
+        BR.logFrame (hmr ^. #electionFit)
+        K.logLE K.Info "ccesFit:"
+        BR.logFrame (hmr ^. #ccesFit)
 
-    traverse printResult results -}
-    let runYear mw y =
-          BRE.runHouseModel
-          clearCached
-          predictors
-          ("betaBinomialInc", mw, BRE.betaBinomialInc, 500)
-          y
-          (fmap (Optics.over #electionData (F.filterFrame (isYear y))
-                 . Optics.over #ccesData (F.filterFrame (isYear y)))
-            houseData_C
-          )
-    let nameType l =
-          let (name, t) = T.splitAt (T.length l - 1) l
-          in case t of
-               "D" -> Right (name, "D Pref")
-               "y" -> Right (l, "D Pref")
-               "V" -> Right (name, "Turnout")
-               _ -> Left $ "Bad last character in delta label (" <> l <> ")."
-        expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
-        expandInterval (l, vals) = do
-          (name, t) <- nameType l
-          case vals of
-            [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
-            _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
-        expandMapRow f (y, modelResults)
-          = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
-        modelMR mw = one ("Model", GV.Str $ show @Text mw)
-        modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
-        runModelWith mw = do
-          results_C <- sequenceA <$> traverse (runYear mw) years
-          results <- zip years <$> K.ignoreCacheTime results_C
-          sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
-          unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
-          avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> K.knitEither (traverse (expandMapRow BRE.avgProbs) results)
-          return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows <> avgProbMapRows
-    results <- mconcat <$> traverse runModelWith modelWiths
-    let dataValueAsText :: GV.DataValue -> Text
-        dataValueAsText (GV.Str x) = x
-        dataValueAsText _ = error "Non-string given to dataValueAsString"
-    _ <- K.addHvega Nothing Nothing
-         $ modelChart
-         "Average Probability"
-         ["probV", "probD"]
-         ["UseElectionResults", "UseCCES", "UseBoth"]
-         (FV.ViewConfig 200 200 5)
-         ""
-         $ filter (maybe False ((== "Avg") . dataValueAsText) . M.lookup "Delta") results
-    _ <- K.addHvega Nothing Nothing
-         $ modelChart
-         "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)"
-         predictors
-         ["UseElectionResults", "UseCCES", "UseBoth"]
-         (FV.ViewConfig 200 200 5)
-         "D Pref"
-         $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta") results
-    _ <- K.addHvega Nothing Nothing
-         $ modelChart
-         "Change in Probability for full range of predictor (with 90% confidence bands)"
-         (predictors <> ["Incumbency"])
-         ["UseElectionResults", "UseCCES", "UseBoth"]
-         (FV.ViewConfig 200 200 5)
-         "D Pref"
-         $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta") results
+--    traverse printResult results
+  return ()
+
+comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+comparePredictors clearCached houseData_C = do
+  let predictors = [("IntOnly",[])
+                   ,("Density",["PopPerSqMile"])
+                   ,("Income",["AvgIncome"])
+                   ,("Age",["PctUnder45"])
+                   ,("Sex",["PctFemale"])
+                   ,("Education",["PctGrad"])
+                   ,("Race",["PctNonWhite"])
+                   ,("DR",["PopPerSqMile","PctNonWhite"])
+                   ,("DE",["PopPerSqMile","PctGrad"])
+                   ,("RE",["PctNonWhite","PctGrad"])
+                   ]
+      isYear year = (== year) . F.rgetField @BR.Year
+      runOne x =
+        BRE.runHouseModel
+        clearCached
+        (snd x)
+        ("betaBinomialInc", Just $ fst x, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
+        2018
+        (fmap (Optics.over #electionData (F.filterFrame (isYear 2018))
+                . Optics.over #ccesData (F.filterFrame (isYear 2018)))
+          houseData_C
+        )
+  results <- K.ignoreCacheTimeM $ sequenceA <$> traverse runOne predictors
+  let printResult hmr = do
+        K.logLE K.Info "electionFit:"
+        BR.logFrame (hmr ^. #electionFit)
+        K.logLE K.Info "ccesFit:"
+        BR.logFrame (hmr ^. #ccesFit)
+
+--    traverse printResult results
+  return ()
+
+
+compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+compareData clearCached houseData_C = do
+  let predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
+      years = [2012, 2014, 2016, 2018]
+      modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
+      runYear mw y =
+        BRE.runHouseModel
+        clearCached
+        predictors
+        ("betaBinomialInc", Nothing, mw, BRE.betaBinomialInc, 500)
+        y
+        (fmap (Optics.over #electionData (F.filterFrame (isYear y))
+                . Optics.over #ccesData (F.filterFrame (isYear y)))
+          houseData_C
+        )
+      isYear year = (== year) . F.rgetField @BR.Year
+      nameType l =
+        let (name, t) = T.splitAt (T.length l - 1) l
+        in case t of
+             "D" -> Right (name, "D Pref")
+             "y" -> Right (l, "D Pref")
+             "V" -> Right (name, "Turnout")
+             _ -> Left $ "Bad last character in delta label (" <> l <> ")."
+      expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
+      expandInterval (l, vals) = do
+        (name, t) <- nameType l
+        case vals of
+          [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
+          _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
+      expandMapRow f (y, modelResults)
+        = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
+      modelMR mw = one ("Model", GV.Str $ show @Text mw)
+      modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
+      runModelWith mw = do
+        results_C <- sequenceA <$> traverse (runYear mw) years
+        results <- zip years <$> K.ignoreCacheTime results_C
+        sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
+        unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
+        avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> K.knitEither (traverse (expandMapRow BRE.avgProbs) results)
+        return $ concat $ sigmaDeltaMapRows <> unitDeltaMapRows <> avgProbMapRows
+  results <- mconcat <$> traverse runModelWith modelWiths
+  let dataValueAsText :: GV.DataValue -> Text
+      dataValueAsText (GV.Str x) = x
+      dataValueAsText _ = error "Non-string given to dataValueAsString"
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Average Probability"
+       ["probV", "probD"]
+       ["UseElectionResults", "UseCCES", "UseBoth"]
+       (FV.ViewConfig 200 200 5)
+       ""
+       $ filter (maybe False ((== "Avg") . dataValueAsText) . M.lookup "Delta") results
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)"
+       predictors
+       ["UseElectionResults", "UseCCES", "UseBoth"]
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta") results
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for full range of predictor (with 90% confidence bands)"
+       (predictors <> ["Incumbency"])
+       ["UseElectionResults", "UseCCES", "UseBoth"]
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta") results
 --    K.logLE K.Info $ show results
-    return ()
+  return ()
 
 modelChart :: (Functor f, Foldable f) => T.Text -> [Text] -> [Text] -> FV.ViewConfig -> T.Text -> f (MapRow.MapRow GV.DataValue) -> GV.VegaLite
 modelChart title predOrder modelOrder vc t rows =

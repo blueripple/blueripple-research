@@ -480,16 +480,14 @@ extractResults modelWith predictors summary hmd = do
   -- deltas
   let rowNamesD = (<> "D") <$> predictors
       rowNamesV = (<> "V") <$> predictors
+      g :: Either Text (MapRow.MapRow a) -> Either Text (MapRow.MapRow a)
+      g x = if null predictors then Right mempty else x
   -- sigmaDeltas
-  sigmaDeltaD <- fmap CS.percents <$> SP.parse1D "sigmaDeltaD" (CS.paramStats summary)
-  sigmaDeltaV <- fmap CS.percents <$> SP.parse1D "sigmaDeltaV" (CS.paramStats summary)
-  sigmaDeltaDMR <- MapRow.withNames rowNamesD (SP.getVector sigmaDeltaD)
-  sigmaDeltaVMR <- MapRow.withNames rowNamesV (SP.getVector sigmaDeltaV)
+  sigmaDeltaDMR <- g $ (MapRow.withNames rowNamesD . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "sigmaDeltaD" (CS.paramStats summary)
+  sigmaDeltaVMR <- g $ (MapRow.withNames rowNamesV . SP.getVector .fmap CS.percents =<<) $ SP.parse1D "sigmaDeltaV" (CS.paramStats summary)
   unitDeltaIncD <- fmap CS.percents <$> SP.parseScalar "unitDeltaIncD" (CS.paramStats summary)
-  unitDeltaD <- fmap CS.percents <$> SP.parse1D "unitDeltaD" (CS.paramStats summary)
-  unitDeltaV <- fmap CS.percents <$> SP.parse1D "unitDeltaV" (CS.paramStats summary)
-  unitDeltaDMR <- MapRow.withNames rowNamesD (SP.getVector unitDeltaD)
-  unitDeltaVMR <- MapRow.withNames rowNamesV (SP.getVector unitDeltaV)
+  unitDeltaDMR <- g $ (MapRow.withNames rowNamesD . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "unitDeltaD" (CS.paramStats summary)
+  unitDeltaVMR <- g $ (MapRow.withNames rowNamesV . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "unitDeltaV" (CS.paramStats summary)
   elexPVote <- M.singleton "probV" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPVoted" (CS.paramStats summary)
   elexPDVote <- M.singleton "probD" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPDVote" (CS.paramStats summary)
   let sigmaDeltas = sigmaDeltaDMR <> sigmaDeltaVMR
@@ -497,20 +495,23 @@ extractResults modelWith predictors summary hmd = do
 --      avgProbs = _ --elexPVote <> elexPDVote
   return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) (elexPVote <> elexPDVote) sigmaDeltas unitDeltas
 
+
 runHouseModel ::
   forall r.
   (K.KnitEffects r, K.CacheEffectsD r)
   => Bool
   -> [Text]
-  -> (T.Text, ModelWith, SB.StanModel, Int)
+  -> (Text, Maybe Text, ModelWith, SB.StanModel, Int)
   -> Int
   -> K.ActionWithCacheTime r HouseModelData
   -> K.Sem r (K.ActionWithCacheTime r HouseModelResults)
-runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year houseData_C
+runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nSamples) year houseData_C
   = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
-      modelNameSuffix = modelName <> "_" <> show modelWith <> "_" <> show year
+      nameExtra = fromMaybe "" $ fmap ("_" <>) mNameExtra
+      dataLabel = show modelWith <> nameExtra <> "_" <> show year
+      outputLabel = modelName <> "_" <> dataLabel
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
     SC.setSigFigs 4
@@ -519,13 +520,13 @@ runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year
         workDir
         (modelName <> "_model")
         (Just (SB.All, model))
-        (Just $ "election_" <> show modelWith <> "_" <> show year <> ".json")
-        (Just $ "election_" <> modelNameSuffix)
+        (Just $ dataLabel <> ".json")
+        (Just $ outputLabel)
         4
         (Just nSamples)
         (Just nSamples)
         (Just stancConfig)
-  let resultCacheKey = "house/model/stan/election_" <> modelNameSuffix <> ".bin"
+  let resultCacheKey = "house/model/stan/election_" <> outputLabel <> ".bin"
       filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
       filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
       houseDataForYear_C = fmap (Optics.over #electionData filterToYear . Optics.over #ccesData filterToYear) houseData_C
@@ -536,11 +537,7 @@ runHouseModel clearCache predictors (modelName, modelWith, model, nSamples) year
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults modelWith predictors s houseModelData
-      unwraps = case modelWith of
-        UseElectionResults -> [SR.UnwrapNamed "DVotesE" "DVotes", SR.UnwrapNamed "TVotesE" "TVotes"]
-        UseCCES -> [SR.UnwrapNamed "DVotesC" "DVotes", SR.UnwrapNamed "TVotesC" "TVotes"]
-        UseBoth -> [SR.UnwrapExpr "append (jsonData $ DVotesE, jsonData $ DVotesC)" "DVotes"
-                   , SR.UnwrapExpr "append (jsonData $ TVotesE, jsonData $ TVotesC)" "TVotes"]
+      unwraps = [SR.UnwrapNamed "DVotes" "DVotes", SR.UnwrapNamed "TVotes" "TVotes"]
   when clearCache $ BR.clearIfPresentD resultCacheKey
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
@@ -616,7 +613,7 @@ binomialDataBlock =
   int<lower = 1> G; // number of rows
   int<lower = 1> N; // number of rows in data to use for sigma of predictors
   int<lower = 1> D; // number of datasets
-  int<lower = 1> K; // number of predictors
+  int<lower = 0> K; // number of predictors
   matrix[G, K] X;
   int<lower=1> dataSet[G];
   int<lower=-1, upper=1> Inc[G];
@@ -642,9 +639,12 @@ transformedDataBlock = [here|
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
   // thin and scale the QR decomposition
-  Q_ast = qr_thin_Q(X_centered) * sqrt(G - 1);
-  R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
-  R_ast_inverse = inverse(R_ast);
+  if (K > 0)
+    {
+      Q_ast = qr_thin_Q(X_centered) * sqrt(G - 1);
+      R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
+      R_ast_inverse = inverse(R_ast);
+    }
 |]
 
 binomialParametersBlock :: SB.ParametersBlock
