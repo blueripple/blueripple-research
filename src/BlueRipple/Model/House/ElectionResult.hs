@@ -278,7 +278,7 @@ enumDistrictF = FL.premap district (SJ.enumerate 1)
 maxAvgIncomeF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.AvgIncome) FL.maximum
 maxDensityF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximum
 
-type PredictorMap = Map Text (F.Record ElectionPredictorR -> Double, F.Record CCESPredictorR -> Double)
+type PredictorMap = Map Text (F.Record ElectionDataR -> Double, F.Record CCESDataR -> Double)
 
 predictorMap =
   let boolToNumber b = if b then 1 else 0
@@ -288,6 +288,7 @@ predictorMap =
                 ,("PctNonWhite",(F.rgetField @FracNonWhite, boolToNumber . (== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
                 ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
                 ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
+                ,("Incumbency",(realToFrac . F.rgetField @Incumbency, realToFrac . F.rgetField @Incumbency))
                 ]
 
 adjustPredictor :: (Double -> Double) -> Text -> PredictorMap -> PredictorMap
@@ -297,7 +298,7 @@ adjustPredictor f k =
 
 data ModelRow = ModelRow { distLabel :: Text
                          , pred :: Vec.Vector Double
-                         , inc :: Int
+--                         , inc :: Int
                          , vap :: Int
                          , tVotes :: Int
                          , dVotes :: Int
@@ -306,7 +307,7 @@ data ModelRow = ModelRow { distLabel :: Text
 
 electionResultToModelRow :: (F.Record ElectionDataR -> Vec.Vector Double) -> F.Record ElectionDataR -> ModelRow
 electionResultToModelRow predictRow r =
-  (ModelRow <$> district <*> predictRow <*> F.rgetField @Incumbency <*> F.rgetField @PUMS.Citizens <*> tVotes <*> dVotes) $ r where
+  (ModelRow <$> district <*> predictRow <*> F.rgetField @PUMS.Citizens <*> tVotes <*> dVotes) $ r where
   dVotes = F.rgetField @DVotes
   tVotes r = dVotes r + F.rgetField @RVotes r
 
@@ -326,14 +327,14 @@ electionResultsToModelRows predictors er = do
               predictorMap
   rowMaker <- maybeToRight "Text in given predictors not found in predictors map"
               $ traverse (fmap fst . flip M.lookup pMap) predictors
-  let predictRow :: F.Record DemographicsR -> Vec.Vector Double
+  let predictRow :: F.Record ElectionDataR -> Vec.Vector Double
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
   return $ FL.fold (FL.premap (electionResultToModelRow $ predictRow . F.rcast) FL.vector) er
 
 
 ccesDataToModelRow :: (F.Record CCESDataR -> Vec.Vector Double) -> F.Record CCESDataR -> ModelRow
 ccesDataToModelRow predictRow r =
-  (ModelRow <$> district <*> predictRow <*> F.rgetField @Incumbency <*> F.rgetField @Surveyed <*> tVotes <*> dVotes) $ r where
+  (ModelRow <$> district <*> predictRow <*> F.rgetField @Surveyed <*> tVotes <*> dVotes) $ r where
   dVotes = F.rgetField @DVotes
   tVotes = F.rgetField @TVotes
 
@@ -347,7 +348,7 @@ ccesDataToModelRows predictors cd = do
              predictorMap
   rowMaker <- maybeToRight "Text in given predictors not found in predictors map"
               $ traverse (fmap snd . flip M.lookup pMap) predictors
-  let predictRow :: F.Record CCESPredictorR -> Vec.Vector Double
+  let predictRow :: F.Record CCESDataR -> Vec.Vector Double
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
   return $ FL.fold (FL.premap (ccesDataToModelRow $ predictRow . F.rcast) FL.vector) cd
 
@@ -373,13 +374,15 @@ houseDataWrangler mw predictors = SC.Wrangle SC.NoIndex f
           let modelRows = edModelRows <> ccesModelRows
               dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int) <> Vec.replicate (Vec.length ccesModelRows) 2
           return (modelRows, dataSetIndex, Vec.length edModelRows)
-      let dataF =
+      let incumbencyCol = fromMaybe (0 :: Int) $ fmap fst $ find ((== "Incumbency") . snd)$ zip [1..] predictors
+          dataF =
             SJ.namedF "G" FL.length
             <> SJ.constDataF "N" edRows
             <> SJ.constDataF "D" numDataSets
             <> SJ.constDataF "K" (length predictors)
+            <> SJ.constDataF "IC" incumbencyCol
             <> SJ.valueToPairF "X" (SJ.jsonArrayF pred)
-            <> SJ.valueToPairF "Inc" (SJ.jsonArrayF inc)
+--            <> SJ.valueToPairF "Inc" (SJ.jsonArrayF inc)
             <> SJ.valueToPairF "VAP" (SJ.jsonArrayF vap)
             <> SJ.valueToPairF "TVotes"  (SJ.jsonArrayF tVotes)
             <> SJ.valueToPairF "DVotes"  (SJ.jsonArrayF dVotes)
@@ -482,16 +485,15 @@ extractResults modelWith predictors summary hmd = do
       rowNamesV = (<> "V") <$> predictors
       g :: Either Text (MapRow.MapRow a) -> Either Text (MapRow.MapRow a)
       g x = if null predictors then Right mempty else x
-  -- sigmaDeltas
+  -- deltas
   sigmaDeltaDMR <- g $ (MapRow.withNames rowNamesD . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "sigmaDeltaD" (CS.paramStats summary)
   sigmaDeltaVMR <- g $ (MapRow.withNames rowNamesV . SP.getVector .fmap CS.percents =<<) $ SP.parse1D "sigmaDeltaV" (CS.paramStats summary)
-  unitDeltaIncD <- fmap CS.percents <$> SP.parseScalar "unitDeltaIncD" (CS.paramStats summary)
   unitDeltaDMR <- g $ (MapRow.withNames rowNamesD . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "unitDeltaD" (CS.paramStats summary)
   unitDeltaVMR <- g $ (MapRow.withNames rowNamesV . SP.getVector . fmap CS.percents =<<) $ SP.parse1D "unitDeltaV" (CS.paramStats summary)
   elexPVote <- M.singleton "probV" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPVoted" (CS.paramStats summary)
   elexPDVote <- M.singleton "probD" . SP.getScalar . fmap CS.percents <$> SP.parseScalar "avgPDVote" (CS.paramStats summary)
   let sigmaDeltas = sigmaDeltaDMR <> sigmaDeltaVMR
-      unitDeltas = unitDeltaDMR <> unitDeltaVMR <> M.singleton "Incumbency" (SP.getScalar unitDeltaIncD)
+      unitDeltas = unitDeltaDMR <> unitDeltaVMR
 --      avgProbs = _ --elexPVote <> elexPDVote
   return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) (elexPVote <> elexPDVote) sigmaDeltas unitDeltas
 
@@ -616,7 +618,6 @@ binomialDataBlock =
   int<lower = 0> K; // number of predictors
   matrix[G, K] X;
   int<lower=1> dataSet[G];
-  int<lower=-1, upper=1> Inc[G];
   int<lower = 0> VAP[G];
   int<lower = 0> TVotes[G];
   int<lower = 0> DVotes[G];
@@ -635,6 +636,7 @@ transformedDataBlock = [here|
   print("dims(TVotes)=",dims(TVotes));
   print("dims(DVotes)=",dims(DVotes));
   print("dims(X)=",dims(X));
+
   matrix[G, K] Q_ast;
   matrix[K, K] R_ast;
   matrix[K, K] R_ast_inverse;
@@ -764,7 +766,6 @@ betaBinomialIncParametersBlock =
   vector[D] alphaV;
   vector[K] thetaV;
   vector[K] thetaD;
-  real incBetaD;
   real <lower=0, upper=1> dispD;
   real <lower=0, upper=1> dispV;
   |]
@@ -774,7 +775,7 @@ betaBinomialIncTransformedParametersBlock =
   [here|
   real<lower=0> phiV = dispV/(1-dispV);
   real<lower=0> phiD = dispD/(1-dispD);
-  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD[dataSet] + Q_ast * thetaD + to_vector(Inc) * incBetaD);
+  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD[dataSet] + Q_ast * thetaD);
   vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV[dataSet] + Q_ast * thetaV);
   vector[K] betaV;
   vector[K] betaD;
@@ -789,7 +790,6 @@ betaBinomialIncModelBlock =
   alphaV ~ cauchy(0, 10);
   betaV ~ cauchy(0, 10);
   betaD ~ cauchy(0, 10);
-  incBetaD ~ cauchy(0, 2.5);
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
 |]
@@ -815,7 +815,6 @@ betaBinomialIncGeneratedQuantitiesBlock =
     unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
     unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
   }
-  real unitDeltaIncD = inv_logit(alphaD[1] + incBetaD) - avgPDVote;
 |]
 
 betaBinomialInc2ParametersBlock :: SB.ParametersBlock
@@ -825,7 +824,6 @@ betaBinomialInc2ParametersBlock =
   vector[K] thetaV;
   real alphaV;
   vector[K] thetaD;
-  real incBetaD;
   real <lower=0, upper=1> dispD;
   real <lower=0, upper=1> dispV;
   vector <lower=0, upper=1>[G] pV;
@@ -839,7 +837,6 @@ betaBinomialInc2ModelBlock =
   alphaV ~ cauchy(0, 10);
   betaV ~ cauchy(0, 2.5);
   betaD ~ cauchy(0, 2.5);
-  incBetaD ~ cauchy(0, 2.5);
   phiD ~ cauchy(0,2);
   phiV ~ cauchy(0,2);
   pV ~ beta (phiV * pVotedP, (1 - pVotedP) * phiV);

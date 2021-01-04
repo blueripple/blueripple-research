@@ -29,6 +29,7 @@ testbed/*.csv
 GA.html
 stan.html
 /stan/house/*
+/stan/voterPref/*
 stan/*/output
 stan/*/data
 stan/*/*_model
@@ -37,6 +38,7 @@ stan/*/*/output
 stan/*/*/data
 stan/*/*/*_model
 stan/*/*/*_loo
+georgia/stan
 /*.html
 /*.csv
 /*.xlsx
