@@ -122,7 +122,7 @@ testHouseModel =
         competitiveIn y r = isYear y r && competitive r-}
 
     K.logLE K.Info "run model(s)"
-    comparePredictors clearCached houseData_C
+    compareData clearCached houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = K.liftKnit $ do

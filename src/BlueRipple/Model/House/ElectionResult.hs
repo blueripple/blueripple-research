@@ -620,6 +620,7 @@ binomialDataBlock =
   int<lower = 1> G; // number of rows
   int<lower = 1> N; // number of rows in data to use for sigma of predictors
   int<lower = 1> D; // number of datasets
+  int<lower = 0> IC; // incumbency column, 0 if incumbency is not a predictor
   int<lower = 0> K; // number of predictors
   matrix[G, K] X;
   int<lower=1> dataSet[G];
@@ -631,12 +632,19 @@ binomialDataBlock =
 transformedDataBlock :: T.Text
 transformedDataBlock = [here|
   vector<lower=0>[K] sigmaPred;
-  vector[K] meanPred;
+  vector[K] meanPredD;
+  vector[K] meanPredV;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    meanPred[k] = mean(X[1:N,k]); // we only want mean of the data for districts
+    meanPredD[k] = mean(X[1:N,k]); // we only want mean of the data for districts
+    meanPredV[k] = mean(X[1:N,k]); // we only want mean of the data for districts
     sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
-    X_centered[,k] = X[,k] - meanPred[k];
+//    X_centered[,k] = X[,k] - meanPred[k];
+  }
+  if (IC > 0) // if incumbency is present as a predictor, set the mean to be non-incumbent
+  {
+    meanPredD[IC] = 0;
+    meanPredV[IC] = 0;
   }
   print("dims(TVotes)=",dims(TVotes));
   print("dims(DVotes)=",dims(DVotes));
@@ -648,8 +656,8 @@ transformedDataBlock = [here|
   // thin and scale the QR decomposition
   if (K > 0)
     {
-      Q_ast = qr_thin_Q(X_centered) * sqrt(G - 1);
-      R_ast = qr_thin_R(X_centered) /sqrt(G - 1);
+      Q_ast = qr_thin_Q(X) * sqrt(G - 1);
+      R_ast = qr_thin_R(X) /sqrt(G - 1);
       R_ast_inverse = inverse(R_ast);
     }
 |]
@@ -808,17 +816,17 @@ betaBinomialIncGeneratedQuantitiesBlock =
     eTVotes[g] = pVotedP[g] * VAP[g];
     eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
-  real avgPVoted = inv_logit (alphaV[1]);
-  real avgPDVote = inv_logit (alphaD[1]);
+  real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
+  real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
   vector[K] sigmaDeltaV;
   vector[K] sigmaDeltaD;
   vector[K] unitDeltaV;
   vector[K] unitDeltaD;
   for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV[1] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD[1] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPred[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPred[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPred[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPred[k] * betaD[k]);
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
   }
 |]
 
