@@ -41,6 +41,10 @@ import qualified Optics
 import Optics.Operators
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
+import qualified Stan.ModelConfig as SC
+import qualified Stan.RScriptBuilder as SR
+
+
 yamlAuthor :: T.Text
 yamlAuthor =
   [here|
@@ -120,9 +124,14 @@ testHouseModel =
     K.logLE K.Info "run model(s)"
     comparePredictors clearCached houseData_C
 
+writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
+writeCompareScript configs compareScriptName = K.liftKnit $ do
+  let modelDir = "/Users/adam/BlueRipple/research/stan/house/election"
+  SR.compareScript configs modelDir 10 Nothing >>= writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
+
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C = do
-  let predictors = ["Incumbency","PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
+  let predictors = ["Incumbency","PopPerSqMile","PctUnder45","PctGrad", "PctNonWhite", "PctNonWhite_x_PctGrad"]
       models =
         [ ("betaBinomialInc", Nothing, BRE.UseCCES, BRE.betaBinomialInc, 500)
         , ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
@@ -140,33 +149,28 @@ compareModels clearCached houseData_C = do
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
-  results <- K.ignoreCacheTimeM $ fmap sequenceA $ traverse runOne models
-  let printResult hmr = do
-        K.logLE K.Info "electionFit:"
-        BR.logFrame (hmr ^. #electionFit)
-        K.logLE K.Info "ccesFit:"
-        BR.logFrame (hmr ^. #ccesFit)
-
---    traverse printResult results
+  resultConfigs <- traverse (fmap snd . runOne) models
+  writeCompareScript resultConfigs "compareModels"
   return ()
 
 comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 comparePredictors clearCached houseData_C = do
-  let predictors = [("IntOnly",[])
-                   ,("Incumbency",["Incumbency"])
-                   ,("Density",["PopPerSqMile"])
-                   ,("Income",["AvgIncome"])
-                   ,("Age",["PctUnder45"])
-                   ,("Sex",["PctFemale"])
-                   ,("Education",["PctGrad"])
-                   ,("Race",["PctNonWhite"])
-                   ,("IDR",["Incumbency","PopPerSqMile","PctNonWhite"])
-                   ,("IDE",["Incumbency","PopPerSqMile","PctGrad"])
-                   ,("IRE",["Incumbency","PctNonWhite","PctGrad"])
-                   ,("IDRE",["Incumbency","PopPerSqMile", "PctNonWhite", "PctGrad"])
+  let predictors = [("IntOnly", [])
+                   ,("Incumbency", ["Incumbency"])
+                   ,("Density", ["PopPerSqMile"])
+                   ,("Income", ["AvgIncome"])
+                   ,("Age", ["PctUnder45"])
+                   ,("Sex", ["PctFemale"])
+                   ,("Education", ["PctGrad"])
+                   ,("Race", ["PctNonWhite"])
+                   ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
+                   ,("IDE", ["Incumbency", "PopPerSqMile", "PctGrad"])
+                   ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
+                   ,("IRxE",["Incumbency", "PctNonWhite", "PctGrad", "PctNonWhite_x_PctGrad"])
+                   ,("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ]
       isYear year = (== year) . F.rgetField @BR.Year
-      year = 2016
+      year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
@@ -177,20 +181,14 @@ comparePredictors clearCached houseData_C = do
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
-  results <- K.ignoreCacheTimeM $ sequenceA <$> traverse runOne predictors
-  let printResult hmr = do
-        K.logLE K.Info "electionFit:"
-        BR.logFrame (hmr ^. #electionFit)
-        K.logLE K.Info "ccesFit:"
-        BR.logFrame (hmr ^. #ccesFit)
-
---    traverse printResult results
+  resultConfigs <- traverse (fmap snd . runOne) predictors
+  writeCompareScript resultConfigs ("comparePredictors_" <> show year)
   return ()
 
 
 compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 compareData clearCached houseData_C = do
-  let predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
+  let predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       years = [2012, 2014, 2016, 2018]
       modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
       runYear mw y =
@@ -208,7 +206,6 @@ compareData clearCached houseData_C = do
         let (name, t) = T.splitAt (T.length l - 1) l
         in case t of
              "D" -> Right (name, "D Pref")
-             "y" -> Right (l, "D Pref")
              "V" -> Right (name, "Turnout")
              _ -> Left $ "Bad last character in delta label (" <> l <> ")."
       expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
@@ -222,7 +219,7 @@ compareData clearCached houseData_C = do
       modelMR mw = one ("Model", GV.Str $ show @Text mw)
       modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
       runModelWith mw = do
-        results_C <- sequenceA <$> traverse (runYear mw) years
+        results_C <- sequenceA <$> traverse (fmap fst . runYear mw) years
         results <- zip years <$> K.ignoreCacheTime results_C
         sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
         unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
@@ -251,7 +248,7 @@ compareData clearCached houseData_C = do
   _ <- K.addHvega Nothing Nothing
        $ modelChart
        "Change in Probability for full range of predictor (with 90% confidence bands)"
-       (predictors <> ["Incumbency"])
+       predictors
        ["UseElectionResults", "UseCCES", "UseBoth"]
        (FV.ViewConfig 200 200 5)
        "D Pref"
@@ -269,18 +266,19 @@ modelChart title predOrder modelOrder vc t rows =
       encYLo = GV.position GV.YError [GV.PName "lo", GV.PmType GV.Quantitative]
       encYHi = GV.position GV.YError2 [GV.PName "hi", GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Type", GV.MmType GV.Nominal]
-      enc = GV.encoding . encX . encYLo . encY . encYHi . encColor
+      encL = GV.encoding . encX . encY . encColor
+      encB = GV.encoding . encX . encYLo . encY . encYHi . encColor
       markBand = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
       markLine = GV.mark GV.Line [GV.MInterpolate GV.Basis]
 --      transform = GV.transform . GV.filter (GV.FEqual "Type" (GV.Str t))
-      specBand = GV.asSpec [enc [], markBand]
-      specLine = GV.asSpec [enc [], markLine]
+      specBand = GV.asSpec [encB [], markBand]
+      specLine = GV.asSpec [encL [], markLine]
       spec = GV.asSpec [GV.layer [specBand, specLine]]
 --      facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle "", GV.FSort [GV.CustomSort $ GV.Strings chartOrder]]
       facet = GV.facet [GV.ColumnBy [GV.FName "Model", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings modelOrder]]
                        ,GV.RowBy [GV.FName "Name", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings predOrder]]
                        ]
-   in FV.configuredVegaLite vc [FV.title title, GV.columns 4, facet, GV.specification spec, vlData]
+   in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
 {-
 getCorrelation :: (T.Text, V.Vector Double) -> (T.Text, V.Vector Double) -> Double

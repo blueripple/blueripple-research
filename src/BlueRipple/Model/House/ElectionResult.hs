@@ -280,6 +280,7 @@ maxDensityF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximu
 
 type PredictorMap = Map Text (F.Record ElectionDataR -> Double, F.Record CCESDataR -> Double)
 
+predictorMap :: PredictorMap
 predictorMap =
   let boolToNumber b = if b then 1 else 0
   in M.fromList [("PctUnder45",(F.rgetField @FracUnder45, boolToNumber . (== DT.Under) . F.rgetField @DT.SimpleAgeC))
@@ -289,6 +290,9 @@ predictorMap =
                 ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
                 ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
                 ,("Incumbency",(realToFrac . F.rgetField @Incumbency, realToFrac . F.rgetField @Incumbency))
+                ,("PctNonWhite_x_PctGrad", (\r -> F.rgetField @FracNonWhite r * F.rgetField @FracGrad r
+                                           ,(\r -> boolToNumber ((F.rgetField @DT.SimpleRaceC r == DT.NonWhite)
+                                                                 && (F.rgetField @DT.CollegeGradC r == DT.Grad)))))
                 ]
 
 adjustPredictor :: (Double -> Double) -> Text -> PredictorMap -> PredictorMap
@@ -474,7 +478,7 @@ extractResults modelWith predictors summary hmd = do
                     F.&: round d
                     F.&: round d95
                     F.&: V.RNil
-          else Left ("Wrong number of percentiles in stan statistic")
+          else Left "Wrong number of percentiles in stan statistic"
       ccesIndex = case modelWith of
         UseCCES -> 0
         _ -> FL.fold FL.length (electionData hmd)
@@ -506,7 +510,7 @@ runHouseModel ::
   -> (Text, Maybe Text, ModelWith, SB.StanModel, Int)
   -> Int
   -> K.ActionWithCacheTime r HouseModelData
-  -> K.Sem r (K.ActionWithCacheTime r HouseModelResults)
+  -> K.Sem r (K.ActionWithCacheTime r HouseModelResults, SC.ModelRunnerConfig)
 runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nSamples) year houseData_C
   = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
@@ -517,7 +521,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
     SC.setSigFigs 4
---      . SC.noLogOfSummary
+      . SC.noLogOfSummary
       <$> SM.makeDefaultModelRunnerConfig
         workDir
         (modelName <> "_model")
@@ -541,7 +545,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
         K.knitEither $ extractResults modelWith predictors s houseModelData
       unwraps = [SR.UnwrapNamed "DVotes" "DVotes", SR.UnwrapNamed "TVotes" "TVotes"]
   when clearCache $ BR.clearIfPresentD resultCacheKey
-  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
+  res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
       stanConfig
@@ -550,6 +554,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
       (SC.UseSummary getResults)
       ()
       houseDataForYear_C
+  return (res_C, stanConfig)
 
 tdb :: ModelWith -> SB.TransformedDataBlock
 tdb _ = transformedDataBlock

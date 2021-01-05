@@ -184,24 +184,24 @@ runModel ::
   K.ActionWithCacheTime r a ->
   K.Sem r c
 runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wrapPrefix "Stan.ModelRunner.runModel" $ do
-  let modelNameS = T.unpack $ SC.mrcModel config
-      modelDirS = T.unpack $ SC.mrcModelDir config
+  let modelNameS = toString $ SC.mrcModel config
+      modelDirS = toString $ SC.mrcModelDir config
   K.logLE K.Info "running Model"
-  let outputFiles = fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
+  let outputFiles = toString <$> SC.stanOutputFiles config --fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
   checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!"
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   indices_C <- wrangleData config dataWrangler cachedA toPredict
-  curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ T.unpack $ SB.modelFile $ SC.mrcModel config)
+  curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ toString $ SB.modelFile $ SC.mrcModel config)
   stanOutput_C <- do
     curStanOutputs_C <- K.oldestUnit <$> traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
         runOneChain chainIndex = do
           let exeConfig = SC.mrcStanExeConfigF config chainIndex
-          K.logLE K.Info $ "Running " <> T.pack modelNameS <> " for chain " <> show chainIndex
-          K.logLE K.Diagnostic $ "Command: " <> T.pack (CS.toStanExeCmdLine exeConfig)
+          K.logLE K.Info $ "Running " <> toText modelNameS <> " for chain " <> show chainIndex
+          K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine exeConfig)
           K.liftKnit $ CS.stan (SC.addDirFP modelDirS modelNameS) exeConfig
           K.logLE K.Info $ "Finished chain " <> show chainIndex
     res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ -> do

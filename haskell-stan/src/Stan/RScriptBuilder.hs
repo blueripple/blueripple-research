@@ -15,7 +15,8 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 
-import           Control.Monad (when)
+--import           Control.Monad (when)
+import qualified Control.Foldl as Foldl
 import Data.Maybe ()
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -84,22 +85,35 @@ shinyStanScript config dirBase unwrapJSONs = do
                 <> "launch_shinystan(stanFit)\n"
   return rScript
 
-looScript :: SC.ModelRunnerConfig -> T.Text -> T.Text-> Int -> IO T.Text
-looScript config dirBase looName nCores = do
+looOne :: SC.ModelRunnerConfig -> Text -> Text -> Maybe Text -> Int -> IO Text
+looOne config dirBase fitName mLooName nCores = do
   rSetCWD <- rSetWorkingDirectory config dirBase
-  let rScript = addLibs libsForLoo
-                <> rSetCWD <> "\n"
-                <> rPrint "Loading csv output.  Might take a minute or two..." <> "\n"
-                <> rReadStanCSV config "stanFit" <> "\n"
-                <> rPrint "Extracting log likelihood for loo..." <> "\n"
-                <> "log_lik <-" <> rExtractLogLikelihood config "stanFit" <> "\n"
-                <> rPrint "Computing r_eff for loo..." <> "\n"
-                <> "rel_eff <- relative_eff(exp(log_lik), cores = " <> show nCores <> ")\n"
-                <> rPrint "Computing loo.." <> "\n"
-                <> looName <> " <- loo(log_lik, r_eff = rel_eff, cores = " <> show nCores <> ")\n"
-                <> "print(" <> looName <> ")\n"
+  let llName = "ll_" <> fitName
+      reName = "re_" <> fitName
+      looName = fromMaybe ("loo_" <> fitName) mLooName
+      rScript =  rPrint ("Loading csv output for " <> fitName <> ".  Might take a minute or two...") <> "\n"
+                 <> rReadStanCSV config fitName <> "\n"
+                 <> rPrint "Extracting log likelihood for loo..." <> "\n"
+                 <> llName <> " <-" <> rExtractLogLikelihood config fitName <> "\n"
+                 <> rPrint "Computing r_eff for loo..." <> "\n"
+                 <> reName <> " <- relative_eff(exp(" <> llName <> "), cores = " <> show nCores <> ")\n"
+                 <> rPrint "Computing loo.." <> "\n"
+                 <> looName <> " <- loo(" <> llName <> ", r_eff = " <> reName <> ", cores = " <> show nCores <> ")\n"
+                 <> "print(" <> looName <> ")\n"
   return rScript
 
+looScript :: SC.ModelRunnerConfig -> T.Text -> T.Text-> Int -> IO T.Text
+looScript config dirBase looName nCores = do
+  looScript <- looOne config dirBase "stanFit" (Just looName) nCores
+  return (addLibs libsForLoo <> looScript)
 
 
-
+compareScript :: Foldable f => f SC.ModelRunnerConfig -> Text -> Int -> Maybe Text -> IO Text
+compareScript configs dirBase nCores mOutCSV = do
+  let  doOne (n, c) = looOne c dirBase (SC.mrcOutputPrefix c) (Just $ "model" <> show n) nCores
+       (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
+  looScripts <- mconcat <$> traverse doOne (zip [1..] configList)
+  let compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")"
+      writeCSV = maybe "" (\csvName -> "write.csv(c," <> csvName <> ")\n") mOutCSV
+      rScript = addLibs libsForLoo <> looScripts  <> compare <> writeCSV
+  return rScript

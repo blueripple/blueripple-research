@@ -74,13 +74,13 @@ addDirFP :: FilePath -> FilePath -> FilePath
 addDirFP dir fp = dir ++ "/" ++ fp
 
 defaultDatFile :: T.Text -> FilePath
-defaultDatFile modelNameT = T.unpack modelNameT ++ ".json"
+defaultDatFile modelNameT = toString modelNameT ++ ".json"
 
 outputFile :: T.Text -> Int -> FilePath
 outputFile outputFilePrefix chainIndex = toString outputFilePrefix <> "_" <> show chainIndex <> ".csv"
 
 stanOutputFiles :: ModelRunnerConfig -> [T.Text]
-stanOutputFiles config = fmap (T.pack . outputFile (mrcOutputPrefix config)) [1..(mrcNumChains config)]
+stanOutputFiles config = fmap (toText . outputFile (mrcOutputPrefix config)) [1..(mrcNumChains config)]
 
 summaryFileName :: ModelRunnerConfig -> T.Text
 summaryFileName config = mrcOutputPrefix config <> ".json"

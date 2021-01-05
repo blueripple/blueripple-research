@@ -36,7 +36,6 @@ common deps
                , foldl-statistics >= 0.1.5 && < 0.2
                , glm-haskell
                , groups
-               , heidi >= 0.1 && < 0.2
                , here
                , hvega >= 0.7.0 && < 0.10
                , hmatrix
