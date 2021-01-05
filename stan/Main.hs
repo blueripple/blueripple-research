@@ -88,7 +88,7 @@ main = do
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = True
+    let clearCached = False
 --        predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
 
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
@@ -122,12 +122,13 @@ testHouseModel =
         competitiveIn y r = isYear y r && competitive r-}
 
     K.logLE K.Info "run model(s)"
-    compareData clearCached houseData_C
+    comparePredictors clearCached houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
-writeCompareScript configs compareScriptName = K.liftKnit $ do
+writeCompareScript configs compareScriptName = do
   let modelDir = "/Users/adam/BlueRipple/research/stan/house/election"
-  SR.compareScript configs modelDir 10 Nothing >>= writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
+  writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
+    $ SR.compareScript configs 10 Nothing
 
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C = do
@@ -155,19 +156,16 @@ compareModels clearCached houseData_C = do
 
 comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 comparePredictors clearCached houseData_C = do
-  let predictors = [("IntOnly", [])
-                   ,("Incumbency", ["Incumbency"])
-                   ,("Density", ["PopPerSqMile"])
-                   ,("Income", ["AvgIncome"])
-                   ,("Age", ["PctUnder45"])
-                   ,("Sex", ["PctFemale"])
-                   ,("Education", ["PctGrad"])
-                   ,("Race", ["PctNonWhite"])
+  let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
+                   ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
                    ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
                    ,("IDE", ["Incumbency", "PopPerSqMile", "PctGrad"])
-                   ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
-                   ,("IRxE",["Incumbency", "PctNonWhite", "PctGrad", "PctNonWhite_x_PctGrad"])
-                   ,("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
+                   ,("Race", ["PctNonWhite"])
+                   ,("Incumbency", ["Incumbency"])
+                   ,("Density", ["PopPerSqMile"])
+                   ,("Education", ["PctGrad"])
+                   ,("Income", ["AvgIncome"])
+                   ,("IntOnly", [])
                    ]
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2018

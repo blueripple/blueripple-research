@@ -102,11 +102,11 @@ data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] de
 
 writeRScripts :: RScripts -> SC.ModelRunnerConfig -> IO ()
 writeRScripts rScripts config = do
-  dirBase <- T.pack <$> Dir.getCurrentDirectory
   let modelDir = SC.mrcModelDir config
       scriptPrefix = SC.mrcOutputPrefix config
-      writeShiny ujs = SR.shinyStanScript config dirBase ujs >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> "_shinystan.R")
-      writeLoo = SR.looScript config dirBase scriptPrefix 10 >>= T.writeFile (T.unpack $ modelDir <> "/R/" <> scriptPrefix <> ".R")
+      write mSuffix t =  writeFileText (toString $ modelDir <> "/R/" <> scriptPrefix <> fromMaybe "" mSuffix <> ".R") t
+      writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
+      writeLoo = write Nothing $ SR.looScript config scriptPrefix 10
   case rScripts of
     None -> return ()
     ShinyStan ujs -> writeShiny ujs

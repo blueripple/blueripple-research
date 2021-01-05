@@ -35,23 +35,29 @@ addLibs = foldMap addOneLib where
 rArray :: (a -> T.Text) -> [a] -> T.Text
 rArray toText as = "c(" <> T.intercalate "," (fmap toText as) <> ")"
 
+{-
 rSetWorkingDirectory :: SC.ModelRunnerConfig -> T.Text -> IO T.Text
 rSetWorkingDirectory config dirBase = do
   let wd = dirBase <> "/" <> SC.mrcModelDir config
   cwd <- T.pack <$> Dir.canonicalizePath (T.unpack wd)
   return $ "setwd(\"" <> cwd <> "\")"
+-}
 
 rReadStanCSV :: SC.ModelRunnerConfig -> T.Text -> T.Text
-rReadStanCSV config fitName = fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"output/" <> x <> "\"") (SC.stanOutputFiles config) <> ")"
+rReadStanCSV config fitName =
+  let modelDir = SC.mrcModelDir config
+  in  fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") (SC.stanOutputFiles config) <> ")"
 
 rStanModel :: SC.ModelRunnerConfig -> T.Text
-rStanModel config = "stan_model(" <> SB.modelFile (SC.mrcModel config) <> ")"
+rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SB.modelFile (SC.mrcModel config) <> ")"
 
 rExtractLogLikelihood :: SC.ModelRunnerConfig -> T.Text -> T.Text
 rExtractLogLikelihood config fitName = "extract_log_lik(" <> fitName <> ", merge_chains = FALSE)"
 
 rReadJSON :: SC.ModelRunnerConfig -> T.Text
-rReadJSON config = "jsonData <- fromJSON(file = \"data/" <> SC.mrcDatFile config <> "\")"
+rReadJSON config =
+  let modelDir = SC.mrcModelDir config
+  in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.mrcDatFile config <> "\")"
 
 rPrint :: T.Text -> T.Text
 rPrint t = "print(\"" <> t <> "\")"
@@ -64,9 +70,8 @@ unwrap :: UnwrapJSON -> T.Text
 unwrap (UnwrapNamed jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
 unwrap (UnwrapExpr je rn) = rn <> " <- " <> je <> "\n"
 
-shinyStanScript :: SC.ModelRunnerConfig -> T.Text -> [UnwrapJSON] -> IO T.Text
-shinyStanScript config dirBase unwrapJSONs = do
-  rSetCWD <- rSetWorkingDirectory config dirBase
+shinyStanScript :: SC.ModelRunnerConfig -> [UnwrapJSON] -> T.Text
+shinyStanScript config unwrapJSONs =
   let unwrapCode = if null unwrapJSONs
                    then ""
                    else
@@ -74,20 +79,18 @@ shinyStanScript config dirBase unwrapJSONs = do
                      in rReadJSON config
                         <> "\n"
                         <> unwraps
-  let rScript = addLibs libsForShinyStan
+      rScript = addLibs libsForShinyStan
                 <> "\n"
-                <> rSetCWD <> "\n"
                 <> rPrint "Loading csv output.  Might take a minute or two..." <> "\n"
                 <> rReadStanCSV config "stanFit" <> "\n"
                 <> unwrapCode
 --                <> "stanFit@stanModel <- " <> rStanModel config
                 <> rPrint "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanFit)\n"
-  return rScript
+  in rScript
 
-looOne :: SC.ModelRunnerConfig -> Text -> Text -> Maybe Text -> Int -> IO Text
-looOne config dirBase fitName mLooName nCores = do
-  rSetCWD <- rSetWorkingDirectory config dirBase
+looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
+looOne config fitName mLooName nCores =
   let llName = "ll_" <> fitName
       reName = "re_" <> fitName
       looName = fromMaybe ("loo_" <> fitName) mLooName
@@ -100,20 +103,20 @@ looOne config dirBase fitName mLooName nCores = do
                  <> rPrint "Computing loo.." <> "\n"
                  <> looName <> " <- loo(" <> llName <> ", r_eff = " <> reName <> ", cores = " <> show nCores <> ")\n"
                  <> "print(" <> looName <> ")\n"
-  return rScript
+  in rScript
 
-looScript :: SC.ModelRunnerConfig -> T.Text -> T.Text-> Int -> IO T.Text
-looScript config dirBase looName nCores = do
-  looScript <- looOne config dirBase "stanFit" (Just looName) nCores
-  return (addLibs libsForLoo <> looScript)
+looScript :: SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
+looScript config looName nCores =
+  let justLoo = looOne config "stanFit" (Just looName) nCores
+  in addLibs libsForLoo <> justLoo
 
 
-compareScript :: Foldable f => f SC.ModelRunnerConfig -> Text -> Int -> Maybe Text -> IO Text
-compareScript configs dirBase nCores mOutCSV = do
-  let  doOne (n, c) = looOne c dirBase (SC.mrcOutputPrefix c) (Just $ "model" <> show n) nCores
+compareScript :: Foldable f => f SC.ModelRunnerConfig -> Int -> Maybe Text -> Text
+compareScript configs nCores mOutCSV =
+  let  doOne (n, c) = looOne c (SC.mrcOutputPrefix c) (Just $ "model" <> show n) nCores
        (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
-  looScripts <- mconcat <$> traverse doOne (zip [1..] configList)
-  let compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")"
-      writeCSV = maybe "" (\csvName -> "write.csv(c," <> csvName <> ")\n") mOutCSV
-      rScript = addLibs libsForLoo <> looScripts  <> compare <> writeCSV
-  return rScript
+       looScripts = mconcat $ fmap doOne  $ zip [1..] configList
+       compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")"
+       writeCSV = maybe "" (\csvName -> "write.csv(c," <> csvName <> ")\n") mOutCSV
+       rScript = addLibs libsForLoo <> looScripts  <> compare <> writeCSV
+  in rScript
