@@ -636,8 +636,8 @@ transformedDataBlock = [here|
   vector[K] meanPredV;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    meanPredD[k] = mean(X[1:N,k]); // we only want mean of the data for districts
-    meanPredV[k] = mean(X[1:N,k]); // we only want mean of the data for districts
+    meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes)); // we only want mean of the data for districts. Weighted by votes.
+    meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP)); // we only want mean of the data for districts. Weighted by VAP.
     sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
 //    X_centered[,k] = X[,k] - meanPred[k];
   }
