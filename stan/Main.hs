@@ -88,7 +88,7 @@ main = do
 testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel =
   do
-    let clearCached = True
+    let clearCached = False
 --        predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
 
     K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
@@ -122,7 +122,7 @@ testHouseModel =
         competitiveIn y r = isYear y r && competitive r-}
 
     K.logLE K.Info "run model(s)"
-    compareData clearCached houseData_C
+    comparePredictors clearCached houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = do
@@ -181,6 +181,7 @@ comparePredictors clearCached houseData_C = do
         )
   resultConfigs <- traverse (fmap snd . runOne) predictors
   writeCompareScript resultConfigs ("comparePredictors_" <> show year)
+  K.liftKnit $ SR.compareModels (zip (fst <$> predictors) resultConfigs) 10
   return ()
 
 

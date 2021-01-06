@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 module Stan.RScriptBuilder where
 
 {-
@@ -20,7 +21,10 @@ import qualified Control.Foldl as Foldl
 import Data.Maybe ()
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Frames as F
+import qualified Frames.Streamly.CSV as FStreamly
 import qualified System.Directory as Dir
+import qualified System.Process as Process
 
 import Data.String.Here (here)
 
@@ -59,8 +63,17 @@ rReadJSON config =
   let modelDir = SC.mrcModelDir config
   in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.mrcDatFile config <> "\")"
 
+rMessage :: T.Text -> T.Text
+rMessage t = "sink(stderr())\n" <> rPrint t <> "\nsink()\n"
+
+rMessageText :: T.Text -> T.Text
+rMessageText t = rMessage $ "\"" <> t <> "\""
+
 rPrint :: T.Text -> T.Text
-rPrint t = "print(\"" <> t <> "\")"
+rPrint t = "print(" <> t <> ")"
+
+rPrintText :: T.Text -> T.Text
+rPrintText t = rPrint $ "\"" <> t <> "\""
 
 -- Named version is simpler if you just need to copy a value from jsonData into global namespace
 -- Expr version lets you run R code to build the value to put in global namespace
@@ -81,11 +94,11 @@ shinyStanScript config unwrapJSONs =
                         <> unwraps
       rScript = addLibs libsForShinyStan
                 <> "\n"
-                <> rPrint "Loading csv output.  Might take a minute or two..." <> "\n"
+                <> rMessageText "Loading csv output.  Might take a minute or two..." <> "\n"
                 <> rReadStanCSV config "stanFit" <> "\n"
                 <> unwrapCode
 --                <> "stanFit@stanModel <- " <> rStanModel config
-                <> rPrint "Launching shinystan...." <> "\n"
+                <> rMessageText "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanFit)\n"
   in rScript
 
@@ -94,15 +107,15 @@ looOne config fitName mLooName nCores =
   let llName = "ll_" <> fitName
       reName = "re_" <> fitName
       looName = fromMaybe ("loo_" <> fitName) mLooName
-      rScript =  rPrint ("Loading csv output for " <> fitName <> ".  Might take a minute or two...") <> "\n"
+      rScript =  rMessageText ("Loading csv output for " <> fitName <> ".  Might take a minute or two...") <> "\n"
                  <> rReadStanCSV config fitName <> "\n"
-                 <> rPrint "Extracting log likelihood for loo..." <> "\n"
+                 <> rMessageText "Extracting log likelihood for loo..." <> "\n"
                  <> llName <> " <-" <> rExtractLogLikelihood config fitName <> "\n"
-                 <> rPrint "Computing r_eff for loo..." <> "\n"
+                 <> rMessageText "Computing r_eff for loo..." <> "\n"
                  <> reName <> " <- relative_eff(exp(" <> llName <> "), cores = " <> show nCores <> ")\n"
-                 <> rPrint "Computing loo.." <> "\n"
+                 <> rMessageText "Computing loo.." <> "\n"
                  <> looName <> " <- loo(" <> llName <> ", r_eff = " <> reName <> ", cores = " <> show nCores <> ")\n"
-                 <> "print(" <> looName <> ")\n"
+                 <> rMessage looName <> "\n"
   in rScript
 
 looScript :: SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
@@ -116,7 +129,31 @@ compareScript configs nCores mOutCSV =
   let  doOne (n, c) = looOne c (SC.mrcOutputPrefix c) (Just $ "model" <> show n) nCores
        (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
        looScripts = mconcat $ fmap doOne  $ zip [1..] configList
-       compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")"
-       writeCSV = maybe "" (\csvName -> "write.csv(c," <> csvName <> ")\n") mOutCSV
-       rScript = addLibs libsForLoo <> looScripts  <> compare <> writeCSV
+       compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")\n"
+       writeTable = rMessage "c,simplify=FALSE" <> "\n"
+       writeCSV = "write.csv(c" <> maybe ")\n" (\csvName -> "," <> csvName <> ")\n") mOutCSV
+       rScript = addLibs libsForLoo <> looScripts  <> compare <> writeTable <> writeCSV
   in rScript
+
+-- The below requires Frames and thus adds a dependency
+
+type Model = "Model" F.:-> Text
+type ELPD_Diff = "elpd_diff" F.:-> Double
+type SE_Diff = "se_diff" F.:-> Double
+type ELPD_Loo = "elpd_loo" F.:-> Double
+type SE_ELPD_Loo = "se_elpd_loo" F.:-> Double
+type P_Loo = "p_loo" F.:-> Double
+type SE_P_Loo = "se_p_loo" F.:-> Double
+type LOOIC = "looic" F.:-> Double
+type SE_LOOIC = "se_looic" F.:-> Double
+
+type LOO_DataR = [ELPD_Diff, SE_Diff, ELPD_Loo, SE_ELPD_Loo, P_Loo, SE_P_Loo, LOOIC, SE_LOOIC]
+type LOO_R = Model : LOO_DataR
+
+compareModels :: (Foldable f, Functor f) => f (Text, SC.ModelRunnerConfig) -> Int -> IO () -- (F.FrameRec LLO_R)
+compareModels configs nCores = do
+  let script = compareScript (snd <$> configs) nCores Nothing
+      cp = (Process.proc "R" ["BATCH", "--no-save", "--no-restore"]) {Process.std_err = Process.NoStream}
+  putTextLn "Running R for loo comparisons..."
+  rOut <- Process.readCreateProcess cp (toString script)
+  putStrLn rOut
