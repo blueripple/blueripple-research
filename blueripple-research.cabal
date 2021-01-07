@@ -81,6 +81,7 @@ library  haskell-stan
                , process >= 1.6 && < 1.7
                , relude >=0.7.0 && < 0.8
                , say >= 0.1.0.1 && < 0.2
+               , streamly >= 0.7.2 && < 0.8
                , text
                , time
                , vector

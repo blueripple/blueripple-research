@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 module Stan.RScriptBuilder where
@@ -18,16 +19,17 @@ import qualified Stan.ModelBuilder as SB
 
 --import           Control.Monad (when)
 import qualified Control.Foldl as Foldl
-import Data.Maybe ()
+--import Data.Maybe ()
+import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Frames as F
 import qualified Frames.Streamly.CSV as FStreamly
+import qualified Frames.Streamly.InCore as FStreamly
 import qualified System.Directory as Dir
 import qualified System.Process as Process
-
-import Data.String.Here (here)
-
+import qualified Streamly.Prelude as Streamly
+import qualified Data.Vinyl as V
 
 libsForShinyStan = ["rstan", "shinystan", "rjson"]
 libsForLoo = ["rstan", "shinystan", "loo"]
@@ -153,7 +155,13 @@ type LOO_R = Model : LOO_DataR
 compareModels :: (Foldable f, Functor f) => f (Text, SC.ModelRunnerConfig) -> Int -> IO () -- (F.FrameRec LLO_R)
 compareModels configs nCores = do
   let script = compareScript (snd <$> configs) nCores Nothing
-      cp = (Process.proc "R" ["BATCH", "--no-save", "--no-restore"]) {Process.std_err = Process.NoStream}
+      cp = Process.proc "R" ["BATCH", "--no-save", "--no-restore"]
   putTextLn "Running R for loo comparisons..."
-  rOut <- Process.readCreateProcess cp (toString script)
-  putStrLn rOut
+  rOut <- toText <$> Process.readCreateProcess cp (toString script)
+  putTextLn "R finished."
+  let sRText = Streamly.filter (not . T.isPrefixOf ">") $ Streamly.fromList $ lines rOut
+  fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS $ FStreamly.streamTable $ Streamly.drop 1 $ sRText
+  let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
+      fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
+--  Streamly.toList sRText >>= traverse putTextLn
+  putTextLn $ T.intercalate "\n" $ fmap show $ Foldl.fold Foldl.list fLoo
