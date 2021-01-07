@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell
+packages: ./
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, Frames-hvega:vinyl, knit-haskell
@@ -31,10 +31,10 @@ source-repository-package
 --  location: https://github.com/polysemy-research/polysemy-zoo
 --  tag: fd7eb2b9934d15d233fb4e75acb7fbff80d149bf
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/knit-haskell
---  tag: d0da356520bcacd97bbe12f0038c9a2cec58bade
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 0a94066856e228563ce008cdeaf0f20dc563ae47
 
 --source-repository-package
 --  type: git

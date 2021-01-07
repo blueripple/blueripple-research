@@ -287,20 +287,20 @@ modelChart title predOrder modelOrder vc t rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encX = GV.position GV.X [GV.PName "Year", GV.PmType GV.Temporal]
       encY = GV.position GV.Y [GV.PName "mid", GV.PmType GV.Quantitative, axis{-, scale-}]
-      axis = GV.PAxis [GV.AxTitle "Change" {-, GV.AxValues (GV.Numbers [-15, -10, -5, 0, 5, 10, 15])-}]
+      axis = GV.PAxis [GV.AxNoTitle  {-, GV.AxValues (GV.Numbers [-15, -10, -5, 0, 5, 10, 15])-}]
       scale = GV.PScale [GV.SDomain $ GV.DNumbers [-12, 12]]
       encYLo = GV.position GV.YError [GV.PName "lo", GV.PmType GV.Quantitative]
       encYHi = GV.position GV.YError2 [GV.PName "hi", GV.PmType GV.Quantitative]
       encColor = GV.color [GV.MName "Type", GV.MmType GV.Nominal]
       encL = GV.encoding . encX . encY . encColor
       encB = GV.encoding . encX . encYLo . encY . encYHi . encColor
-      markBand = GV.mark GV.ErrorBand [GV.MInterpolate GV.Basis]
-      markLine = GV.mark GV.Line [GV.MInterpolate GV.Basis]
---      transform = GV.transform . GV.filter (GV.FEqual "Type" (GV.Str t))
+      markBand = GV.mark GV.ErrorBand [GV.MTooltip GV.TTData]
+      markLine = GV.mark GV.Line []
+      markPoint = GV.mark GV.Point [GV.MTooltip GV.TTData]
       specBand = GV.asSpec [encB [], markBand]
       specLine = GV.asSpec [encL [], markLine]
-      spec = GV.asSpec [GV.layer [specBand, specLine]]
---      facet = GV.facetFlow [GV.FName "Name", GV.FmType GV.Nominal, GV.FTitle "", GV.FSort [GV.CustomSort $ GV.Strings chartOrder]]
+      specPoint = GV.asSpec [encL [], markPoint]
+      spec = GV.asSpec [GV.layer [specBand, specLine, specPoint]]
       facet = GV.facet [GV.ColumnBy [GV.FName "Model", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings modelOrder]]
                        ,GV.RowBy [GV.FName "Name", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings predOrder]]
                        ]
