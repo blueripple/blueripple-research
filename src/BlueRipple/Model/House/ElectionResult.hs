@@ -233,7 +233,6 @@ prepCachedData clearCache = do
     PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
   houseElections_C <- BR.houseElectionsWithIncumbency
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
-  K.ignoreCacheTime countedCCES_C >>= BR.logFrame . F.filterFrame ((== "MT") . F.rgetField @BR.StateAbbreviation)
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
   when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
@@ -266,7 +265,6 @@ prepCachedData clearCache = do
                    else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
                         <> show missingDemo
     let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
---    BR.logFrame $ F.filterFrame (\r -> F.rgetField @DVotes r > F.rgetField @TVotes r) ccesWithoutNullVotes
     return $ HouseModelData competitiveElectionResults (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()

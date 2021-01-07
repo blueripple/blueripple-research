@@ -215,6 +215,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
     return res_C
   let resultDeps = (\a b _ -> (a, b)) <$> cachedA <*> indices_C <*> stanOutput_C
       makeSummaryFromCSVs = do
+        K.logLE K.Info "Stan summary older than model output.  Re-summarizing."
         summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config)
         P.embed $ A.encodeFile (toString $ SC.summaryFilePath config) summary
         return summary

@@ -18,14 +18,18 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
 import qualified Data.Random.Source.PureMT as PureMT
+import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
 --import qualified Data.Vector as V
 import qualified Frames as F
+import qualified Frames.Transform  as FT
+import qualified Frames.Table as FTable
 import qualified Frames.Visualization.VegaLite.Correlation as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
@@ -37,13 +41,14 @@ import Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Data.MapRow as MapRow
 import qualified Knit.Report as K
+import qualified Knit.Effect.AtomicCache as KC
 import qualified Optics
 import Optics.Operators
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
-
+import qualified Text.Blaze.Html5              as BH
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -72,38 +77,47 @@ main = do
       K.mindocOptionsF
   let knitConfig =
         (K.defaultKnitConfig Nothing)
-          { K.outerLogPrefix = Just "stan.Main",
-            K.logIf = K.logAll,
+          { K.outerLogPrefix = Just "HouseModel",
+            K.logIf = K.nonDiagnostic,
             K.pandocWriterConfig = pandocWriterConfig
           }
-  let pureMTseed = PureMT.pureMT 1
+--  let pureMTseed = PureMT.pureMT 1
   --
-  resE <- K.knitHtml knitConfig testHouseModel
+  resE <- K.knitHtmls knitConfig testHouseModel
   case resE of
-    Right htmlAsText ->
-      K.writeAndMakePathLT "stan.html" htmlAsText
+    Right namedDocs ->
+      K.writeAllPandocResultsWithInfoAsHtml "house_model" namedDocs
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
+type PctTurnout = "PctTurnout" F.:-> Double
+type DShare = "DShare" F.:-> Double
 
-testHouseModel :: forall r. (K.KnitOne r, K.CacheEffectsD r) => K.Sem r ()
-testHouseModel =
-  do
-    let clearCached = False
---        predictors = ["PopPerSqMile","PctUnder45","PctGrad","PctNonWhite"]
 
-    K.logLE K.Info "Test: Stan model fit for house turnout and dem votes. Data prep..."
-    houseData_C <- BRE.prepCachedData clearCached
-    hmd <- K.ignoreCacheTime houseData_C
-    BR.logFrame $ F.filterFrame ((== "GA") . F.rgetField @BR.StateAbbreviation) (hmd ^. #ccesData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True (FV.ViewConfig 400 400 5) (hmd ^. #electionData)
-    let votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
+testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
+testHouseModel = do
+  K.logLE K.Info "Data prep..."
+  houseData_C <- BRE.prepCachedData False
+  hmd <- K.ignoreCacheTime houseData_C
+  K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
+  K.newPandoc (K.PandocInfo "examine_predictors" mempty) $ do
+    BR.brAddMarkDown "## Predictors/Predicted: Distributions in house elections 2012-2018"
+    let vcDist = FV.ViewConfig 400 400 5
+        votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if votes r > 0 then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @PctTurnout "Turnout %" Nothing 50 FV.DataMinMax True vcDist
+         $ FT.mutate (FT.recordSingleton @PctTurnout . turnout) <$> (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @DShare "Dem Share" Nothing 50 FV.DataMinMax True vcDist
+         $ FT.mutate (FT.recordSingleton @DShare . dShare) <$> (hmd ^. #electionData)
+    BR.brAddMarkDown "## Predictors/Predicted: Correlations in house elections 2012-2018"
     let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
                              ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
                              ,FV.LabeledCol "% Grad" (F.rgetField @BRE.FracGrad)
@@ -114,15 +128,18 @@ testHouseModel =
                              ,FV.LabeledCol "Turnout" turnout
                              ,FV.LabeledCol "D Share" dShare
                              ]
-    corrChart <- K.knitEither $ FV.frameCorrelations "Correlations among predictors & predicted (election data only)" (FV.ViewConfig 600 600 10) False corrSet (hmd ^. #electionData)
+    corrChart <- K.knitEither
+                 $ FV.frameCorrelations
+                 "Correlations among predictors & predicted (election data only)"
+                 (FV.ViewConfig 600 600 10)
+                 False
+                 corrSet
+                 (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
-        {-dVotes = F.rgetField @BRE.DVotes
-        rVotes = F.rgetField @BRE.RVotes
-        competitive r = dVotes r > 0 && rVotes r > 0
-        competitiveIn y r = isYear y r && competitive r-}
-
     K.logLE K.Info "run model(s)"
-    comparePredictors clearCached houseData_C
+  K.newPandoc (K.PandocInfo "compare_predictors" mempty) $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
+  K.newPandoc (K.PandocInfo "compare_data_sets" mempty) $ compareData False $ K.liftActionWithCacheTime houseData_C
+--  K.newPandoc (K.PandocInfo "compare_models" mempty) $ compareModels False houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = do
@@ -179,9 +196,19 @@ comparePredictors clearCached houseData_C = do
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
-  resultConfigs <- traverse (fmap snd . runOne) predictors
-  writeCompareScript resultConfigs ("comparePredictors_" <> show year)
-  K.liftKnit $ SR.compareModels (zip (fst <$> predictors) resultConfigs) 10
+  results <- traverse runOne predictors
+  looDeps <- K.knitMaybe "No results (comparePredictors)"
+             $ fmap Semigroup.sconcat $ nonEmpty $ (fmap (const ()) . fst <$> results) -- unit dependency on newest of results
+  fLoo_C <- BR.retrieveOrMakeFrame "model/house/predictorsLoo.bin" looDeps $ const $ do
+    K.logLE K.Info "model run(s) are newer than loo comparison data.  Re-running comparisons."
+    writeCompareScript (snd <$> results) ("comparePredictors_" <> show year)
+    K.liftKnit $ SR.compareModels (zip (fst <$> predictors) (snd <$> results)) 10
+  fLoo <- K.ignoreCacheTime fLoo_C
+  BR.brAddRawHtmlTable
+    "Predictor LOO (Leave-One-Out Cross Validatiion) comparison"
+    mempty
+    (BR.toCell mempty () "" BR.textToStyledHtml <$> SR.looTextColonnade 2)
+    (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)
   return ()
 
 

@@ -78,7 +78,7 @@ textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)
 
 brAddRawHtmlTable
-  :: forall c k ct r f a.
+  :: forall {-c k ct -} r f a.
      (K.KnitOne r, Foldable f)
   => T.Text
   -> BH.Attribute

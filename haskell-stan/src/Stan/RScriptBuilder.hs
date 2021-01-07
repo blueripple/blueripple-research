@@ -7,19 +7,12 @@
 {-# LANGUAGE TypeOperators #-}
 module Stan.RScriptBuilder where
 
-{-
-import qualified Knit.Report as K
-import qualified Knit.Effect.Logger            as K
-import qualified BlueRipple.Utilities.KnitUtils as BR
-
--}
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 
---import           Control.Monad (when)
+import qualified Colonnade as Col
 import qualified Control.Foldl as Foldl
---import Data.Maybe ()
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -29,6 +22,7 @@ import qualified Frames.Streamly.InCore as FStreamly
 import qualified System.Directory as Dir
 import qualified System.Process as Process
 import qualified Streamly.Prelude as Streamly
+import qualified Text.Printf as Printf
 import qualified Data.Vinyl as V
 
 libsForShinyStan = ["rstan", "shinystan", "rjson"]
@@ -152,7 +146,7 @@ type SE_LOOIC = "se_looic" F.:-> Double
 type LOO_DataR = [ELPD_Diff, SE_Diff, ELPD_Loo, SE_ELPD_Loo, P_Loo, SE_P_Loo, LOOIC, SE_LOOIC]
 type LOO_R = Model : LOO_DataR
 
-compareModels :: (Foldable f, Functor f) => f (Text, SC.ModelRunnerConfig) -> Int -> IO () -- (F.FrameRec LLO_R)
+compareModels :: (Foldable f, Functor f) => f (Text, SC.ModelRunnerConfig) -> Int -> IO (F.FrameRec LOO_R)
 compareModels configs nCores = do
   let script = compareScript (snd <$> configs) nCores Nothing
       cp = Process.proc "R" ["BATCH", "--no-save", "--no-restore"]
@@ -163,5 +157,16 @@ compareModels configs nCores = do
   fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS $ FStreamly.streamTable $ Streamly.drop 1 $ sRText
   let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
       fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
---  Streamly.toList sRText >>= traverse putTextLn
-  putTextLn $ T.intercalate "\n" $ fmap show $ Foldl.fold Foldl.list fLoo
+  return fLoo
+--  putTextLn $ T.intercalate "\n" $ fmap show $ Foldl.fold Foldl.list fLoo
+
+looTextColonnade :: Int -> Col.Colonnade Col.Headed (F.Record LOO_R) Text
+looTextColonnade digits =
+  let printDouble = toText @String . Printf.printf "%.*f" digits
+  in mconcat
+     [
+       Col.headed "Model" (F.rgetField @Model)
+     , Col.headed "elpd diff" (printDouble . F.rgetField @ELPD_Diff)
+     , Col.headed "se diff" (printDouble . F.rgetField @SE_Diff)
+     , Col.headed "elpd loo" (printDouble . F.rgetField @ELPD_Loo)
+     ]
