@@ -105,18 +105,24 @@ testHouseModel = do
         votes r = F.rgetField @BRE.DVotes r + F.rgetField @BRE.RVotes r
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if votes r > 0 then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
-    _ <- K.addHvega Nothing Nothing $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.multiHistogram @BR.Year @BRE.FracUnder45 "% Under 45" Nothing 50 FV.DataMinMax True FV.AdjacentBar vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @BRE.FracFemale "% Female" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @BRE.FracGrad "% Grad" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @BRE.FracNonWhite "% Non-White" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @DT.AvgIncome "Average Income" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.singleHistogram @DT.PopPerSqMile "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.singleHistogram @PctTurnout "Turnout %" Nothing 50 FV.DataMinMax True vcDist
-         $ FT.mutate (FT.recordSingleton @PctTurnout . turnout) <$> (hmd ^. #electionData)
+         $ FT.mutate (FT.recordSingleton @PctTurnout . (*100) . turnout) <$> (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.singleHistogram @DShare "Dem Share" Nothing 50 FV.DataMinMax True vcDist
-         $ FT.mutate (FT.recordSingleton @DShare . dShare) <$> (hmd ^. #electionData)
+         $ FT.mutate (FT.recordSingleton @DShare . (*100). dShare) <$> (hmd ^. #electionData)
     BR.brAddMarkDown "## Predictors/Predicted: Correlations in house elections 2012-2018"
     let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
                              ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
