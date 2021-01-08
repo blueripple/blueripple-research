@@ -27,7 +27,9 @@ import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
 --import qualified Data.Vector as V
+import qualified Data.Vinyl as V
 import qualified Frames as F
+import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
 import qualified Frames.Table as FTable
 import qualified Frames.Visualization.VegaLite.Correlation as FV
@@ -39,9 +41,13 @@ import Graphics.Vega.VegaLite.Configuration as FV
     ViewConfig (ViewConfig),
   )
 import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified Frames.Visualization.VegaLite.Data
+                                               as FV
+
 import qualified Data.MapRow as MapRow
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
+import qualified Numeric
 import qualified Optics
 import Optics.Operators
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
@@ -117,7 +123,8 @@ testHouseModel = do
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DT.AvgIncome @BR.Year "Average Income" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @DT.PopPerSqMile @BR.Year "Density (ppl/sq mile)" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @DT.PopPerSqMile @BR.Year "Density [log(ppl/sq mile)]" Nothing 50 FV.DataMinMax True mhStyle vcDist
+         $ fmap (FT.fieldEndo @DT.PopPerSqMile (Numeric.logBase 10)) (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @PctTurnout @BR.Year "Turnout %" Nothing 50 FV.DataMinMax True mhStyle vcDist
          $ FT.mutate (FT.recordSingleton @PctTurnout . (*100) . turnout) <$> (hmd ^. #electionData)
@@ -146,6 +153,7 @@ testHouseModel = do
     K.logLE K.Info "run model(s)"
   K.newPandoc (K.PandocInfo "compare_predictors" mempty) $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
   K.newPandoc (K.PandocInfo "compare_data_sets" mempty) $ compareData False $ K.liftActionWithCacheTime houseData_C
+  K.newPandoc (K.PandocInfo "examine_fit" mempty) $ examineFit False $ K.liftActionWithCacheTime houseData_C
 --  K.newPandoc (K.PandocInfo "compare_models" mempty) $ compareModels False houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
@@ -313,23 +321,75 @@ modelChart title predOrder modelOrder vc t rows =
                        ]
    in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
-{-
-getCorrelation :: (T.Text, V.Vector Double) -> (T.Text, V.Vector Double) -> Double
-getCorrelation (_, v1) (_, v2) =
-  let v12 = V.zip v1 v2
-      (m1, var1, m2, var2) = FL.fold ((,,,)
-                                      <$> FL.premap fst FL.mean
-                                      <*> FL.premap fst FL.variance
-                                      <*> FL.premap snd FL.mean
-                                      <*> FL.premap snd FL.variance
-                                     )
-                             v12
+examineFit :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+examineFit clearCached houseData_C = do
+  let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
+      model = ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
+      isYear year = (== year) . F.rgetField @BR.Year
+      year = 2018
+      runOne x =
+        BRE.runHouseModel
+        clearCached
+        predictors
+        x
+        year
+        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+                . Optics.over #ccesData (F.filterFrame (isYear year)))
+          houseData_C
+        )
+  results <- runOne model
+  electionData <- K.ignoreCacheTime
+                  $ fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, BRE.FracGrad, BRE.FracNonWhite])
+                  . F.filterFrame (isYear year)
+                  . BRE.electionData
+                  <$> houseData_C
+  electionFit <- K.ignoreCacheTime $ fmap BRE.electionFit . fst $ results
+  let (fitWithDemo, missing) =  FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] electionFit electionData
+  unless (null missing) $ K.knitError "Missing keys in electionFit/electionData join"
+  _ <- K.addHvega Nothing Nothing
+       $ fitScatter
+       "Test"
+       (FV.ViewConfig 800 800 10)
+       $ fmap F.rcast fitWithDemo
+--  BR.logFrame fitWithDemo
+  return ()
 
-      covF = (/) <$> (FL.Fold (\s (x1, x2) -> (s + (x1 - m1) * (x2 - m2))) 0 id) <*> fmap realToFrac FL.length
---      corrF = (\var1 var2 cov -> cov / sqrt (var1 * var2)) <$> var1F <*> var2F <*> covF
-   in (FL.fold covF v12) / sqrt (var1 * var2)
+fitScatter :: (Functor f, Foldable f)
+           => Text
+           -> FV.ViewConfig
+           -> f (F.Record ([BR.StateAbbreviation
+                           , BR.CongressionalDistrict
+                           , BRE.TVotes
+                           , BRE.DVotes
+                           , BRE.EDVotes5
+                           , BRE.EDVotes
+                           , BRE.EDVotes95
+                           , BRE.FracGrad
+                           , BRE.FracNonWhite]))
+           -> GV.VegaLite
+fitScatter title vc rows =
+  let toVLDataRec = FV.useColName FV.textAsVLStr
+                    V.:& FV.asVLStrViaShow "District"
+                    V.:& FV.asVLNumber "Votes"
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.asVLData (GV.Number . (*100)) "% Grad"
+                    V.:& FV.asVLData (GV.Number . (*100)) "% Non-White"
+                    V.:& V.RNil
+      dat = FV.recordsToData toVLDataRec rows
+      encX = GV.position GV.X [GV.PName "% Grad", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "% Non-White", GV.PmType GV.Quantitative]
+      calcFitDiff = GV.calculateAs ("(datum.DVotes - datum.EstDVotes)/datum.Votes") "actual - fit (D Share)"
+      calcShare = GV.calculateAs ("datum.DVotes/datum.Votes - 0.5") "D Share"
+      transform = GV.transform . calcFitDiff . calcShare
+      encColor = GV.color [GV.MName "D Share", GV.MmType GV.Quantitative]
+      encSize = GV.size [GV.MName "actual - fit (D Share)", GV.MmType GV.Quantitative]
+      enc = GV.encoding . encX . encY . encColor . encSize
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+  in FV.configuredVegaLite vc [FV.title title, transform [], enc [], mark, dat]
 
--}
 testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
