@@ -347,14 +347,19 @@ examineFit clearCached houseData_C = do
   let (fitWithDemo, missing) =  FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] electionFit electionData
   unless (null missing) $ K.knitError "Missing keys in electionFit/electionData join"
   _ <- K.addHvega Nothing Nothing
-       $ fitScatter
+       $ fitScatter1
+       "Test"
+       (FV.ViewConfig 800 800 10)
+       $ fmap F.rcast fitWithDemo
+  _ <- K.addHvega Nothing Nothing
+       $ fitScatter2
        "Test"
        (FV.ViewConfig 800 800 10)
        $ fmap F.rcast fitWithDemo
 --  BR.logFrame fitWithDemo
   return ()
 
-fitScatter :: (Functor f, Foldable f)
+fitScatter1 :: (Functor f, Foldable f)
            => Text
            -> FV.ViewConfig
            -> f (F.Record ([BR.StateAbbreviation
@@ -367,7 +372,7 @@ fitScatter :: (Functor f, Foldable f)
                            , BRE.FracGrad
                            , BRE.FracNonWhite]))
            -> GV.VegaLite
-fitScatter title vc rows =
+fitScatter1 title vc rows =
   let toVLDataRec = FV.useColName FV.textAsVLStr
                     V.:& FV.asVLStrViaShow "District"
                     V.:& FV.asVLNumber "Votes"
@@ -386,6 +391,42 @@ fitScatter title vc rows =
       transform = GV.transform . calcFitDiff . calcShare
       encColor = GV.color [GV.MName "D Share", GV.MmType GV.Quantitative]
       encSize = GV.size [GV.MName "actual - fit (D Share)", GV.MmType GV.Quantitative]
+      enc = GV.encoding . encX . encY . encColor . encSize
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+  in FV.configuredVegaLite vc [FV.title title, transform [], enc [], mark, dat]
+
+fitScatter2 :: (Functor f, Foldable f)
+           => Text
+           -> FV.ViewConfig
+           -> f (F.Record ([BR.StateAbbreviation
+                           , BR.CongressionalDistrict
+                           , BRE.TVotes
+                           , BRE.DVotes
+                           , BRE.EDVotes5
+                           , BRE.EDVotes
+                           , BRE.EDVotes95
+                           , BRE.FracGrad
+                           , BRE.FracNonWhite]))
+           -> GV.VegaLite
+fitScatter2 title vc rows =
+  let toVLDataRec = FV.useColName FV.textAsVLStr
+                    V.:& FV.asVLStrViaShow "District"
+                    V.:& FV.asVLNumber "Votes"
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.useColName FV.asVLNumber
+                    V.:& FV.asVLData (GV.Number . (*100)) "% Grad"
+                    V.:& FV.asVLData (GV.Number . (*100)) "% Non-White"
+                    V.:& V.RNil
+      dat = FV.recordsToData toVLDataRec rows
+      calcFitDiff = GV.calculateAs ("(datum.DVotes - datum.EstDVotes)/datum.Votes") "actual - fit (D Share)"
+      calcShare = GV.calculateAs ("datum.DVotes/datum.Votes - 0.5") "D Share"
+      transform = GV.transform . calcFitDiff . calcShare
+      encX = GV.position GV.X [GV.PName "D Share", GV.PmType GV.Quantitative]
+      encY = GV.position GV.Y [GV.PName "actual - fit (D Share)", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "% Grad", GV.MmType GV.Quantitative]
+      encSize = GV.size [GV.MName "% Non-White", GV.MmType GV.Quantitative]
       enc = GV.encoding . encX . encY . encColor . encSize
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, transform [], enc [], mark, dat]
