@@ -37,7 +37,8 @@ common deps
                , glm-haskell
                , groups
                , here
-               , hvega >= 0.7.0 && < 0.10
+               , hvega >= 0.7.0 && < 0.12
+               , hvega-utils >= 0.3.0 && < 0.4
                , hmatrix
                , knit-haskell >= 0.8.0 && < 0.11
                , lens
