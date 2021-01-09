@@ -105,7 +105,7 @@ testHouseModel = do
   houseData_C <- BRE.prepCachedData False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
-  K.newPandoc (K.PandocInfo "examine_predictors" mempty) $ do
+  K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
     BR.brAddMarkDown "## Predictors/Predicted: Distributions in house elections 2012-2018"
     let vcDist = FV.ViewConfig 200 200 5
         mhStyle = FV.FacetedBar
@@ -151,10 +151,18 @@ testHouseModel = do
                  (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-  K.newPandoc (K.PandocInfo "compare_predictors" mempty) $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
-  K.newPandoc (K.PandocInfo "compare_data_sets" mempty) $ compareData False $ K.liftActionWithCacheTime houseData_C
-  K.newPandoc (K.PandocInfo "examine_fit" mempty) $ examineFit False $ K.liftActionWithCacheTime houseData_C
---  K.newPandoc (K.PandocInfo "compare_models" mempty) $ compareModels False houseData_C
+  K.newPandoc
+    (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
+    $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
+  K.newPandoc
+    (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
+    $ compareData False $ K.liftActionWithCacheTime houseData_C
+  K.newPandoc
+    (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
+    $ examineFit False $ K.liftActionWithCacheTime houseData_C
+  K.newPandoc
+    (K.PandocInfo "compare_models" $ one ("pagetitle","Compare Models"))
+    $ compareModels False $ K.liftActionWithCacheTime houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = do
@@ -164,14 +172,13 @@ writeCompareScript configs compareScriptName = do
 
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C = do
-  let predictors = ["Incumbency","PopPerSqMile","PctUnder45","PctGrad", "PctNonWhite", "PctNonWhite_x_PctGrad"]
+  let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       models =
-        [ ("betaBinomialInc", Nothing, BRE.UseCCES, BRE.betaBinomialInc, 500)
-        , ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
-        , ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
+        [ ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
+        , ("betaBinomialInc2", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc2, 500)
         ]
       isYear year = (== year) . F.rgetField @BR.Year
-      year = 2016
+      year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
@@ -182,8 +189,19 @@ compareModels clearCached houseData_C = do
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
-  resultConfigs <- traverse (fmap snd . runOne) models
-  writeCompareScript resultConfigs "compareModels"
+  results <- traverse runOne models
+  looDeps <- K.knitMaybe "No results (compareModels)"
+             $ fmap Semigroup.sconcat $ nonEmpty $ (fmap (const ()) . fst <$> results) -- unit dependency on newest of results
+  fLoo_C <- BR.retrieveOrMakeFrame "model/house/modelsLoo.bin" looDeps $ const $ do
+    K.logLE K.Info "model run(s) are newer than loo comparison data.  Re-running comparisons."
+    writeCompareScript (snd <$> results) ("compareModels_" <> show year)
+    K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
+  fLoo <- K.ignoreCacheTime fLoo_C
+  BR.brAddRawHtmlTable
+    "Predictor LOO (Leave-One-Out Cross Validatiion) comparison"
+    mempty
+    (BR.toCell mempty () "" BR.textToStyledHtml <$> SR.looTextColonnade 2)
+    (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)
   return ()
 
 comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()

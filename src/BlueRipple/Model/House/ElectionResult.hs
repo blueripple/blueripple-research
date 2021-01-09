@@ -596,10 +596,10 @@ betaBinomialInc2 =
   binomialDataBlock
   (Just transformedDataBlock)
   betaBinomialInc2ParametersBlock
-  (Just betaBinomialIncTransformedParametersBlock)
+  (Just betaBinomialInc2TransformedParametersBlock)
   betaBinomialInc2ModelBlock
   (Just betaBinomialIncGeneratedQuantitiesBlock)
-  betaBinomialGQLLBlock
+  betaBinomialInc2GQLLBlock
 
 betaBinomialHS :: SB.StanModel
 betaBinomialHS =
@@ -829,16 +829,31 @@ betaBinomialIncGeneratedQuantitiesBlock =
 |]
 
 betaBinomialInc2ParametersBlock :: SB.ParametersBlock
-betaBinomialInc2ParametersBlock =
-  [here|
-  real alphaD;
+betaBinomialInc2ParametersBlock = [here|
+  vector[D] alphaD;
+  vector[D] alphaV;
   vector[K] thetaV;
-  real alphaV;
   vector[K] thetaD;
   real <lower=0, upper=1> dispD;
   real <lower=0, upper=1> dispV;
-  vector <lower=0, upper=1>[G] pV;
-  vector <lower=0, upper=1>[G] pD;
+  vector<lower=0, upper=1>[K] gammaD;
+  vector<lower=0, upper=1>[K] gammaV;
+|]
+
+betaBinomialInc2TransformedParametersBlock :: SB.TransformedParametersBlock
+betaBinomialInc2TransformedParametersBlock = [here|
+  vector<lower=0>[G] phiV = dispV/(1-dispV) + Q_ast * gammaD;
+  vector<lower=0>[G] phiD = dispD/(1-dispD) + Q_ast * gammaV;
+  vector<lower=0, upper=1> [G] pDVoteP = inv_logit (alphaD[dataSet] + Q_ast * thetaD);
+  vector<lower=0, upper=1> [G] pVotedP = inv_logit (alphaV[dataSet] + Q_ast * thetaV);
+  vector[K] betaV;
+  vector[K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
+  vector[K] etaV;
+  vector[K] etaD;
+  etaV = R_ast_inverse * gammaV;
+  etaD = R_ast_inverse * gammaD;
 |]
 
 betaBinomialInc2ModelBlock :: SB.ModelBlock
@@ -846,14 +861,19 @@ betaBinomialInc2ModelBlock =
   [here|
   alphaD ~ cauchy(0, 10);
   alphaV ~ cauchy(0, 10);
-  betaV ~ cauchy(0, 2.5);
-  betaD ~ cauchy(0, 2.5);
-  phiD ~ cauchy(0,2);
-  phiV ~ cauchy(0,2);
-  pV ~ beta (phiV * pVotedP, (1 - pVotedP) * phiV);
-  TVotes ~ binomial(VAP, pV);
-  pD ~ beta (phiD * pDVoteP, (1 - pDVoteP) * phiD);
-  DVotes ~ binomial(TVotes, pD);
+  betaV ~ cauchy(0, 10);
+  betaD ~ cauchy(0, 10);
+  TVotes ~ beta_binomial(VAP, pVotedP .* phiV, (1 - pVotedP) .* phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP .* phiD, (1 - pDVoteP) .* phiD);
+|]
+
+betaBinomialInc2GQLLBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialInc2GQLLBlock =
+  [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD[g], (1 - pDVoteP[g]) * phiD[g]) ;
+  }
 |]
 
 betaBinomialHSParametersBlock :: SB.ParametersBlock
