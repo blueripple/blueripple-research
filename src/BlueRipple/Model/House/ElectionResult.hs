@@ -544,8 +544,8 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
       unwraps = [SR.UnwrapNamed "DVotes" "DVotes"
                 , SR.UnwrapNamed "TVotes" "TVotes"
                 , SR.UnwrapNamed "VAP" "VAP"
-                , SR.UnwrapExpr "ProbD" "DVotes/TVotes"
-                , SR.UnwrapExpr "ProbV" "TVotes/VAP"
+                , SR.UnwrapExpr "DVotes/TVotes" "ProbD"
+                , SR.UnwrapExpr "TVotes/VAP" "ProbV"
                 ]
   when clearCache $ BR.clearIfPresentD resultCacheKey
   res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
@@ -642,7 +642,6 @@ transformedDataBlock = [here|
     meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes)); // we only want mean of the data for districts. Weighted by votes.
     meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP)); // we only want mean of the data for districts. Weighted by VAP.
     sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
-//    X_centered[,k] = X[,k] - meanPred[k];
   }
   if (IC > 0) // if incumbency is present as a predictor, set the "mean" to be non-incumbent
   {
@@ -697,18 +696,18 @@ binomialModelBlock =
 binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
 binomialGeneratedQuantitiesBlock =
   [here|
-  vector<lower = 0, upper = 1>[G] pVotedP;
-  vector<lower = 0, upper = 1>[G] pDVoteP;
-  pVotedP = inv_logit(alphaV[dataSet] + Q_ast * thetaV);
-  pDVoteP = inv_logit(alphaD[dataSet] + Q_ast * thetaD);
-  vector<lower = 0>[G] eTVotes;
-  vector<lower = 0>[G] eDVotes;
-  for (g in 1:G) {
-    eTVotes[g] = inv_logit(alphaV[dataSet[g]] + (Q_ast[g] * thetaV)) * VAP[g];
-    eDVotes[g] = inv_logit(alphaD[dataSet[g]] + (Q_ast[g] * thetaD)) * TVotes[g];
-  }
+  vector<lower = 0, upper = 1>[G] pVotedP = inv_logit(alphaV[dataSet] + Q_ast * thetaV);
+  vector<lower = 0, upper = 1>[G] pDVoteP = inv_logit(alphaD[dataSet] + Q_ast * thetaD);
+
+  vector<lower = 0>[G] eTVotes = pVotedP .* to_vector(VAP);
+  vector<lower = 0>[G] eDVotes = pDVoteP .* to_vector(TVotes);
+
+  int<lower=0> DVote_ppred[G] = binomial_rng(TVotes, pDVoteP);
+  int<lower=0> TVote_ppred[G] = binomial_rng(VAP, pVotedP);
+
   real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
   real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
+
   vector[K] sigmaDeltaV;
   vector[K] sigmaDeltaD;
   vector[K] unitDeltaV;
@@ -719,6 +718,7 @@ binomialGeneratedQuantitiesBlock =
     unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
     unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
   }
+
 |]
 
 binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
@@ -726,8 +726,10 @@ binomialGQLLBlock =
   [here|
   vector[G] log_lik;
 //  log_lik = binomial_logit_lpmf(DVotes | TVotes, alphaD[dataSet] + Q_ast * thetaD);
+
   for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
+      log_lik[g] = binomial_lpmf (DVotes[g] | TVotes[g], pDVoteP[g]);
+//    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
   }
 |]
 
@@ -827,9 +829,13 @@ betaBinomialIncGeneratedQuantitiesBlock =
   [here|
   vector<lower = 0>[G] eTVotes;
   vector<lower = 0>[G] eDVotes;
+  int<lower=0> DVote_ppred[G];
+  int<lower=0> TVote_ppred[G];
   for (g in 1:G) {
     eTVotes[g] = pVotedP[g] * VAP[g];
     eDVotes[g] = pDVoteP[g] * TVotes[g];
+    TVote_ppred[g] = beta_binomial_rng(VAP[g], pVotedP[g] * phiV, (1 - pVotedP[g]) * phiV);
+    DVote_ppred[g] = beta_binomial_rng(TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD);
   }
   real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
   real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));

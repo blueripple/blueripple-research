@@ -52,10 +52,11 @@ stanModelAsText gq sm =
           NoLL -> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
           OnlyLL -> section "generated quantities" (genLogLikelihoodBlock sm)
           All ->
-            section "generated quantities" $
-              genLogLikelihoodBlock sm
-                <> "\n"
-                <> fromMaybe "" (generatedQuantitiesBlockM sm)
+            section "generated quantities"
+            $ fromMaybe "" (generatedQuantitiesBlockM sm)
+            <> "\n"
+            <> genLogLikelihoodBlock sm
+            <> "\n"
 
 modelFile :: T.Text -> T.Text
 modelFile modelNameT = modelNameT <> ".stan"
