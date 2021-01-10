@@ -175,7 +175,7 @@ compareModels clearCached houseData_C = do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       models =
         [ ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
-        , ("betaBinomialInc2", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc2, 500)
+        , ("binomial", Nothing, BRE.UseElectionResults, BRE.binomial, 500)
         ]
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2018

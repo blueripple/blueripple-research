@@ -541,7 +541,12 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
         K.knitEither $ extractResults modelWith predictors s houseModelData
-      unwraps = [SR.UnwrapNamed "DVotes" "DVotes", SR.UnwrapNamed "TVotes" "TVotes"]
+      unwraps = [SR.UnwrapNamed "DVotes" "DVotes"
+                , SR.UnwrapNamed "TVotes" "TVotes"
+                , SR.UnwrapNamed "VAP" "VAP"
+                , SR.UnwrapExpr "ProbD" "DVotes/TVotes"
+                , SR.UnwrapExpr "ProbV" "TVotes/VAP"
+                ]
   when clearCache $ BR.clearIfPresentD resultCacheKey
   res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
@@ -557,8 +562,8 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
 tdb :: ModelWith -> SB.TransformedDataBlock
 tdb _ = transformedDataBlock
 
-binomial_v1 :: SB.StanModel
-binomial_v1 =
+binomial :: SB.StanModel
+binomial =
   SB.StanModel
     binomialDataBlock
     (Just transformedDataBlock)
@@ -639,7 +644,7 @@ transformedDataBlock = [here|
     sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
 //    X_centered[,k] = X[,k] - meanPred[k];
   }
-  if (IC > 0) // if incumbency is present as a predictor, set the mean to be non-incumbent
+  if (IC > 0) // if incumbency is present as a predictor, set the "mean" to be non-incumbent
   {
     meanPredD[IC] = 0;
     meanPredV[IC] = 0;
@@ -663,9 +668,9 @@ transformedDataBlock = [here|
 binomialParametersBlock :: SB.ParametersBlock
 binomialParametersBlock =
   [here|
-  real alphaD;
+  vector[D] alphaD;
   vector[K] thetaV;
-  real alphaV;
+  vector[D] alphaV;
   vector[K] thetaD;
 |]
 
@@ -685,8 +690,8 @@ binomialModelBlock =
   alphaV ~ cauchy(0, 10);
   betaD ~ cauchy(0, 2.5);
   betaV ~ cauchy(0,2.5);
-  TVotes ~ binomial_logit(VAP, alphaV + Q_ast * thetaV);
-  DVotes ~ binomial_logit(TVotes, alphaD + Q_ast * thetaD);
+  TVotes ~ binomial_logit(VAP, alphaV[dataSet] + Q_ast * thetaV);
+  DVotes ~ binomial_logit(TVotes, alphaD[dataSet] + Q_ast * thetaD);
 |]
 
 binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
@@ -694,13 +699,25 @@ binomialGeneratedQuantitiesBlock =
   [here|
   vector<lower = 0, upper = 1>[G] pVotedP;
   vector<lower = 0, upper = 1>[G] pDVoteP;
-  pVotedP = inv_logit(alphaV + (Q_ast * thetaV));
-  pDVoteP = inv_logit(alphaD + (Q_ast * thetaD));
+  pVotedP = inv_logit(alphaV[dataSet] + Q_ast * thetaV);
+  pDVoteP = inv_logit(alphaD[dataSet] + Q_ast * thetaD);
   vector<lower = 0>[G] eTVotes;
   vector<lower = 0>[G] eDVotes;
   for (g in 1:G) {
-    eTVotes[g] = inv_logit(alphaV + (Q_ast[g] * thetaV)) * VAP[g];
-    eDVotes[g] = inv_logit(alphaD + (Q_ast[g] * thetaD)) * TVotes[g];
+    eTVotes[g] = inv_logit(alphaV[dataSet[g]] + (Q_ast[g] * thetaV)) * VAP[g];
+    eDVotes[g] = inv_logit(alphaD[dataSet[g]] + (Q_ast[g] * thetaD)) * TVotes[g];
+  }
+  real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
+  real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
+  vector[K] sigmaDeltaV;
+  vector[K] sigmaDeltaD;
+  vector[K] unitDeltaV;
+  vector[K] unitDeltaD;
+  for (k in 1:K) {
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
   }
 |]
 
@@ -708,9 +725,9 @@ binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialGQLLBlock =
   [here|
   vector[G] log_lik;
-//  log_lik = binomial_logit_lpmf(DVotes1 | TVotes1, alphaD + Q_ast * thetaD);
+//  log_lik = binomial_logit_lpmf(DVotes | TVotes, alphaD[dataSet] + Q_ast * thetaD);
   for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD + Q_ast[g] * thetaD);
+    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
   }
 |]
 

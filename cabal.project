@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/hvega-utils
+packages: ./
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
