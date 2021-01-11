@@ -169,4 +169,7 @@ looTextColonnade digits =
      , Col.headed "elpd diff" (printDouble . F.rgetField @ELPD_Diff)
      , Col.headed "se diff" (printDouble . F.rgetField @SE_Diff)
      , Col.headed "elpd loo" (printDouble . F.rgetField @ELPD_Loo)
+     , Col.headed "se_elpd_loo" (printDouble . F.rgetField @SE_ELPD_Loo)
+     , Col.headed "p_loo" (printDouble . F.rgetField @P_Loo)
+     , Col.headed "se_p_loo" (printDouble . F.rgetField @SE_P_Loo)
      ]

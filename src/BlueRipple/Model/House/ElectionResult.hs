@@ -559,9 +559,6 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
       houseDataForYear_C
   return (res_C, stanConfig)
 
-tdb :: ModelWith -> SB.TransformedDataBlock
-tdb _ = transformedDataBlock
-
 binomial :: SB.StanModel
 binomial =
   SB.StanModel
