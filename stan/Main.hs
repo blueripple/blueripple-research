@@ -20,6 +20,7 @@ import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified Control.Foldl as FL
+import qualified Data.List as List
 import qualified Data.Map as M
 import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Semigroup as Semigroup
@@ -198,7 +199,7 @@ compareModels clearCached houseData_C = do
     K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
   fLoo <- K.ignoreCacheTime fLoo_C
   BR.brAddRawHtmlTable
-    "Predictor LOO (Leave-One-Out Cross Validatiion) comparison"
+    "Predictor LOO (Leave-One-Out Cross Validation) comparison"
     mempty
     (BR.toCell mempty () "" BR.textToStyledHtml <$> SR.looTextColonnade 2)
     (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)

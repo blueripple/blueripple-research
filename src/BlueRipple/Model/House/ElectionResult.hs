@@ -725,11 +725,8 @@ binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
 binomialGQLLBlock =
   [here|
   vector[G] log_lik;
-//  log_lik = binomial_logit_lpmf(DVotes | TVotes, alphaD[dataSet] + Q_ast * thetaD);
-
   for (g in 1:G) {
-      log_lik[g] = binomial_lpmf (DVotes[g] | TVotes[g], pDVoteP[g]);
-//    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
+    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
   }
 |]
 
