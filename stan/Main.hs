@@ -152,6 +152,7 @@ testHouseModel = do
                  (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
+{-
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
@@ -161,9 +162,10 @@ testHouseModel = do
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
     $ examineFit False $ K.liftActionWithCacheTime houseData_C
+-}
   K.newPandoc
     (K.PandocInfo "compare_models" $ one ("pagetitle","Compare Models"))
-    $ compareModels False $ K.liftActionWithCacheTime houseData_C
+    $ compareModels True $ K.liftActionWithCacheTime houseData_C
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = do
