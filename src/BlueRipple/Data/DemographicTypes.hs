@@ -280,6 +280,16 @@ turnoutEducationLabel BA = "BA"
 turnoutEducationLabel AD = "AD"
 
 
+data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+instance S.Serialize Hisp
+instance Grouping Hisp
+instance K.FiniteSet Hisp
+derivingUnbox "Hisp"
+  [t|Hisp -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Hisp = UVec.Vector
+
 data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
 instance Grouping ACSRace

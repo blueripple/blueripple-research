@@ -26,7 +26,7 @@ import qualified Text.Printf as Printf
 import qualified Data.Vinyl as V
 
 libsForShinyStan = ["rstan", "shinystan", "rjson"]
-libsForLoo = ["rstan", "shinystan", "loo"]
+libsForLoo = ["rstan", "shinystan", "loo", "bayesplot"]
 
 addLibs :: [T.Text] -> T.Text
 addLibs = foldMap addOneLib where
@@ -51,8 +51,20 @@ rReadStanCSV config fitName =
 rStanModel :: SC.ModelRunnerConfig -> T.Text
 rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SB.modelFile (SC.mrcModel config) <> ")"
 
-rExtractLogLikelihood :: SC.ModelRunnerConfig -> T.Text -> T.Text
-rExtractLogLikelihood config fitName = "extract_log_lik(" <> fitName <> ", merge_chains = FALSE)"
+llName :: Text -> Text
+llName = ("ll_" <>)
+
+reName :: Text -> Text
+reName = ("re_" <>)
+
+rExtractLogLikelihood :: T.Text -> T.Text
+rExtractLogLikelihood fitName = "extract_log_lik(" <> fitName <> ", merge_chains = FALSE)"
+
+rPSIS :: T.Text -> Int -> T.Text
+rPSIS fitName nCores = "psis(" <> llName fitName <> ", r_eff=" <> reName fitName <> ", cores=" <> show nCores <> ")"
+
+rExtract :: T.Text -> T.Text
+rExtract fitName = "extract(" <> fitName <> ")"
 
 rReadJSON :: SC.ModelRunnerConfig -> T.Text
 rReadJSON config =
@@ -100,18 +112,23 @@ shinyStanScript config unwrapJSONs =
 
 looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
 looOne config fitName mLooName nCores =
-  let llName = "ll_" <> fitName
-      reName = "re_" <> fitName
+  let psisName = "psis_" <> fitName
       looName = fromMaybe ("loo_" <> fitName) mLooName
+      samplesName = "samples_" <> fitName
       rScript =  rMessageText ("Loading csv output for " <> fitName <> ".  Might take a minute or two...") <> "\n"
                  <> rReadStanCSV config fitName <> "\n"
                  <> rMessageText "Extracting log likelihood for loo..." <> "\n"
-                 <> llName <> " <-" <> rExtractLogLikelihood config fitName <> "\n"
+                 <> llName fitName <> " <-" <> rExtractLogLikelihood fitName <> "\n"
                  <> rMessageText "Computing r_eff for loo..." <> "\n"
-                 <> reName <> " <- relative_eff(exp(" <> llName <> "), cores = " <> show nCores <> ")\n"
+                 <> reName fitName <> " <- relative_eff(exp(" <> llName fitName <> "), cores = " <> show nCores <> ")\n"
                  <> rMessageText "Computing loo.." <> "\n"
-                 <> looName <> " <- loo(" <> llName <> ", r_eff = " <> reName <> ", cores = " <> show nCores <> ")\n"
+                 <> looName <> " <- loo(" <> llName fitName <> ", r_eff = " <> reName fitName <> ", cores = " <> show nCores <> ")\n"
                  <> rMessage looName <> "\n"
+                 <> rMessageText "Computing PSIS..."
+                 <> psisName <> " <- " <> looName <> "$psis_object" <> "\n"
+                 <> rMessageText ("Placing samples in" <> samplesName) <> "\n"
+                 <> samplesName <> " <- " <> rExtract fitName <> "\n"
+                 <> rMessageText ("E.g., 'ppc_loo_pit_qq(y,as.matrix(" <> samplesName <> "$y_ppred)," <> psisName <> "$log_weights)'") <> "\n"
   in rScript
 
 looScript :: SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
@@ -158,7 +175,6 @@ compareModels configs nCores = do
   let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
       fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
   return fLoo
---  putTextLn $ T.intercalate "\n" $ fmap show $ Foldl.fold Foldl.list fLoo
 
 looTextColonnade :: Int -> Col.Colonnade Col.Headed (F.Record LOO_R) Text
 looTextColonnade digits =

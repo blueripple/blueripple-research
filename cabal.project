@@ -6,6 +6,19 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-has
 
 source-repository-package
   type: git
+  location: https://github.com/kcsongor/generic-lens
+  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
+  subdir: generic-lens-core
+
+source-repository-package
+  type: git
+  location: https://github.com/kcsongor/generic-lens
+  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
+  subdir: generic-optics
+
+
+source-repository-package
+  type: git
   location: https://github.com/adamConnerSax/hs-cmdstan
   tag: 9b8fe31bbc46e3e97ec51ae526799f82b02dea14
 
