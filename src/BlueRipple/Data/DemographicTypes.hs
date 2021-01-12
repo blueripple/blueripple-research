@@ -289,6 +289,7 @@ derivingUnbox "Hisp"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Hisp = UVec.Vector
+type HispC = "Hisp" F.:-> Hisp
 
 data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
