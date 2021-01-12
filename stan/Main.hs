@@ -27,7 +27,6 @@ import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
---import qualified Data.Vector as V
 import qualified Data.Vinyl as V
 import qualified Frames as F
 import qualified Frames.SimpleJoins  as FJ

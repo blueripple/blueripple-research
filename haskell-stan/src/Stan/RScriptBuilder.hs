@@ -125,8 +125,8 @@ looOne config fitName mLooName nCores =
                  <> looName <> " <- loo(" <> llName fitName <> ", r_eff = " <> reName fitName <> ", cores = " <> show nCores <> ")\n"
                  <> rMessage looName <> "\n"
                  <> rMessageText "Computing PSIS..."
-                 <> psisName <> " <- " <> rPSIS fitName nCores <> "\n"
-                 <> rMessageText ("Placing samples in" <> samplesName)
+                 <> psisName <> " <- " <> looName <> "$psis_object" <> "\n"
+                 <> rMessageText ("Placing samples in" <> samplesName) <> "\n"
                  <> samplesName <> " <- " <> rExtract fitName <> "\n"
                  <> rMessageText ("E.g., 'ppc_loo_pit_qq(y,as.matrix(" <> samplesName <> "$y_ppred)," <> psisName <> "$log_weights)'") <> "\n"
   in rScript
@@ -175,7 +175,6 @@ compareModels configs nCores = do
   let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
       fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
   return fLoo
---  putTextLn $ T.intercalate "\n" $ fmap show $ Foldl.fold Foldl.list fLoo
 
 looTextColonnade :: Int -> Col.Colonnade Col.Headed (F.Record LOO_R) Text
 looTextColonnade digits =

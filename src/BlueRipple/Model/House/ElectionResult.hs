@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -9,7 +10,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -29,6 +29,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
+import qualified Data.Generics.Labels as GLabels
 import qualified Data.Map as M
 import qualified Data.Set as Set
 import Data.String.Here (here)
@@ -46,11 +47,11 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
+import GHC.Generics (Generic)
 import qualified Data.MapRow as MapRow
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
 import qualified Numeric.Foldl as NFL
-import qualified Optics.TH as Optics
 import qualified Optics
 import qualified Stan.JSON as SJ
 import qualified Stan.ModelBuilder as SB
@@ -101,8 +102,7 @@ type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.MedianIncome, DT.Po
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
-data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData }
-Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelData
+data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData } deriving (Generic)
 
 -- frames are not directly serializable so we have to do...shenanigans
 instance S.Serialize HouseModelData where
@@ -412,9 +412,7 @@ data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionF
                                            , avgProbs :: MapRow.MapRow [Double]
                                            , sigmaDeltas :: MapRow.MapRow [Double]
                                            , unitDeltas :: MapRow.MapRow [Double]
-                                           }
-
-Optics.makeFieldLabelsWith Optics.noPrefixFieldLabels ''HouseModelResults
+                                           } deriving (Generic)
 
 -- frames are not directly serializable so we have to do...shenanigans.
 instance S.Serialize HouseModelResults where
