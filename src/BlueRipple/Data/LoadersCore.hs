@@ -118,7 +118,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       strictFix !r = fixRow r
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
   Streamly.map strictFix
-    $ Streamly.tapOffsetEvery
+    $! Streamly.tapOffsetEvery
     250000
     250000
     (runningCountF
@@ -131,7 +131,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       )
       ("loading \"" <> toText path <> "\" from disk finished.")
     )
-    $ BR.loadToRecStream @qs csvParserOptions path filter
+    $! BR.loadToRecStream @qs csvParserOptions path filter
 
 {-
 -- This is bad.  Requires entire thing to be in mem as a list before writing.
