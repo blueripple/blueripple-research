@@ -40,7 +40,7 @@ import qualified Data.Serialize.Text           as S
 import qualified Data.List                     as L
 import qualified Data.Map                      as M
 import qualified Data.Map.Strict                      as MS
-import           Data.Maybe                     ( fromMaybe, catMaybes)
+import           Data.Maybe                     ( catMaybes)
 import qualified Data.Sequence                 as Seq
 import qualified Data.Text                     as T
 import qualified Data.Text.IO                     as T
@@ -103,13 +103,24 @@ import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
+{-
+class StrictRecord rs where
+  forceRec :: F.Record rs -> F.Record rs
+
+instance StrictRecord '[] where
+  forceRec = id
+
+instance (V.KnownField t, StrictRecord rs) => StrictRecord (t ': rs) where
+  forceRec (t V.:& rs) = t `seq` (t V.:& forceRec rs)
+-}
+
 typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                      => BR.DataPath
                      -> Maybe Text
                      -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader' dataPath mCacheKey =
   let cacheKey = fromMaybe "acs1YR_All_Typed.bin" mCacheKey
-  in BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing cacheKey
+  in BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow' Nothing cacheKey
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
@@ -763,6 +774,30 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSPOVERTY @BR.PctOfPovertyLine realToFrac)
             . (FT.addOneFrom @'[BR.PUMSLANGUAGE, BR.PUMSLANGUAGED] @BR.LanguageC intsToLanguage)
             . (FT.addOneFromOne @BR.PUMSSPEAKENG @BR.SpeaksEnglishC intToSpeaksEnglish)
+
+transformPUMSRow' :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
+transformPUMSRow' r =
+  F.rgetField @BR.PUMSYEAR r
+  F.&: F.rgetField @BR.PUMSPERWT r
+  F.&: F.rgetField @BR.PUMSSTATEFIP r
+  F.&: (intToCensusRegion $ F.rgetField @BR.PUMSREGION r)
+  F.&: F.rgetField @BR.PUMSPUMA r
+  F.&: (intToCensusMetro $ F.rgetField @BR.PUMSMETRO r)
+  F.&: F.rgetField @BR.PUMSDENSITY r
+  F.&: (intToAge5F $ F.rgetField @BR.PUMSAGE r)
+  F.&: (intToCollegeGrad $ F.rgetField @BR.PUMSEDUCD r)
+  F.&: (intToInCollege $ F.rgetField @BR.PUMSGRADEATT r)
+  F.&: (intToSex $ F.rgetField @BR.PUMSSEX r)
+  F.&: (intsToRace5 (F.rgetField @BR.PUMSHISPAN r) (F.rgetField @BR.PUMSRACE r))
+  F.&: (intsToLanguage (F.rgetField @BR.PUMSLANGUAGE r) (F.rgetField @BR.PUMSLANGUAGED r))
+  F.&: (intToSpeaksEnglish $ F.rgetField @BR.PUMSSPEAKENG r)
+  F.&: (intToEmploymentStatus $ F.rgetField @BR.PUMSEMPSTAT r)
+  F.&: (realToFrac $ F.rgetField @BR.PUMSINCTOT r)
+  F.&: (realToFrac $ F.rgetField @BR.PUMSINCSS r)
+  F.&: (realToFrac $ F.rgetField @BR.PUMSPOVERTY r)
+  F.&: (intToCitizen $ F.rgetField @BR.PUMSCITIZEN r)
+  F.&: V.RNil
+
 
 -- tracing fold
 runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
