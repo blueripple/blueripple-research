@@ -104,21 +104,24 @@ import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
 
 typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
-                    => BR.DataPath
-                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
-typedPUMSRowsLoader' dataPath =
-  BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing "acs1YR_All_Typed.bin"
+                     => BR.DataPath
+                     -> Maybe Text
+                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
+typedPUMSRowsLoader' dataPath mCacheKey =
+  let cacheKey = fromMaybe "acs1YR_All_Typed.bin" mCacheKey
+  in BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow Nothing cacheKey
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
-typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV')
+typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') Nothing
 
 pumsRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
-               => BR.DataPath
-               -> Maybe (F.Record PUMS_Typed -> Bool)
-               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
-pumsRowsLoader' dataPath filterTypedM = do
-  pums_C <- typedPUMSRowsLoader' dataPath
+                => BR.DataPath
+                -> Maybe Text
+                -> Maybe (F.Record PUMS_Typed -> Bool)
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
+pumsRowsLoader' dataPath mCacheKey filterTypedM = do
+  pums_C <- typedPUMSRowsLoader' dataPath mCacheKey
   case filterTypedM of
     Nothing -> return pums_C
     Just f -> return $ fmap (FStreamly.filter f) pums_C
@@ -133,9 +136,10 @@ pumsRowsLoader filterTypedM = do
     Just f -> return $ fmap (FStreamly.filter f) pums_C
 
 pumsRowsLoaderAdults' :: (K.KnitEffects r, K.CacheEffectsD r)
-                     => BR.DataPath
-                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
-pumsRowsLoaderAdults' dataPath = pumsRowsLoader' dataPath (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
+                      => BR.DataPath
+                      -> Maybe Text
+                      -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
+pumsRowsLoaderAdults' dataPath mCacheKey = pumsRowsLoader' dataPath mCacheKey (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
 pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
@@ -165,13 +169,14 @@ pumsCountStreamlyF = BRF.framesStreamlyMR
 pumsLoader'
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => BR.DataPath
-  -> T.Text
+  -> Maybe Text
+  -> Text
   -> Maybe (F.Record PUMS_Typed -> Bool)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader' dataPath cacheKey filterTypedM = do
+pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
 --  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
-  cachedPums <- pumsRowsLoader' dataPath filterTypedM
+  cachedPums <- pumsRowsLoader' dataPath mRawCacheKey filterTypedM
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedPums
 --  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
   BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pums) -> do
@@ -203,11 +208,12 @@ pumsLoader
   ::  (K.KnitEffects r, K.CacheEffectsD r)
   => Maybe (F.Record PUMS_Typed -> Bool)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
-pumsLoader =  pumsLoader' (BR.LocalData $ toText BR.pumsACS1YrCSV') "data/acs1YrPUMS.bin"
+pumsLoader =  pumsLoader' (BR.LocalData $ toText BR.pumsACS1YrCSV') Nothing "data/acs1YrPUMS.bin"
 
 pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults =  pumsLoader'
                     (BR.LocalData $ toText BR.pumsACS1YrCSV')
+                    Nothing
                     "data/acs1YrPUMS_Adults.bin"
                     (Just (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18))
 {-

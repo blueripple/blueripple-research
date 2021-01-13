@@ -4,7 +4,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-
+{-# OPTIONS_GHC -eventlog #-}
 module Main where
 
 import qualified Data.Text as T
@@ -83,7 +83,7 @@ makeDoc = do
 -}
   K.logLE K.Info "Testing pumsLoader..."
 --  K.clearIfPresent (T.pack "testbed/data/test.sbin")
-  pumsAge5F_C <- PUMS.pumsLoader' dataPath "testbed/data/test.sbin" Nothing
+  pumsAge5F_C <- PUMS.pumsLoader' dataPath (Just "test/ACS_1YR_Raw.sbin") "test/ACS_1YR.sbin" Nothing
   pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
   K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
 
@@ -97,7 +97,7 @@ testsInIO = do
   putStrLn $ T.unpack $ "raw PUMS data has " <> (T.pack $ show rawBytes) <> " bytes."
   putStrLn $ T.unpack "Testing streamTable..."
   let pumsRowsRawS :: Streamly.SerialT IO PUMS.PUMS_Raw
-        = FStreamly.streamTable Frames.defaultParser pumsCSV
+        = FStreamly.readTableOpt Frames.defaultParser pumsCSV
   rawRows <- Streamly.fold Streamly.Fold.length pumsRowsRawS
   putStrLn $ T.unpack $ "raw PUMS data has " <> (T.pack $ show rawRows) <> " rows."
   let --pumsRowsFixedS :: Streamly.SerialT IO PUMS.PUMS
