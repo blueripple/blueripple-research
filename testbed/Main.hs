@@ -18,6 +18,7 @@ import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
 import qualified Frames.Streamly.CSV as FStreamly
 import qualified BlueRipple.Data.LoadersCore as Loaders
+import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Frames.CSV                     as Frames
 import qualified Streamly.Data.Fold            as Streamly.Fold
 import qualified Streamly.Prelude              as Streamly
@@ -62,7 +63,7 @@ main= do
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
-  let pumsCSV = "../bigData/test/acs100k.csv"
+  let pumsCSV = "../bigData/test/acs1MM.csv"
       dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)
   K.logLE K.Info "Testing File.toBytes..."
   let rawBytesS =  Streamly.File.toBytes pumsCSV
@@ -82,7 +83,8 @@ makeDoc = do
   K.logLE K.Info $ "fixed PUMS data has " <> (T.pack $ show fixedRows) <> " rows."
 -}
   K.logLE K.Info "Testing pumsLoader..."
---  K.clearIfPresent (T.pack "testbed/data/test.sbin")
+  BR.clearIfPresentD (T.pack "test/ACS_1YR.sbin")
+  BR.clearIfPresentD (T.pack "data/test/ACS_1YR_Raw.sbin")
   pumsAge5F_C <- PUMS.pumsLoader' dataPath (Just "test/ACS_1YR_Raw.sbin") "test/ACS_1YR.sbin" Nothing
   pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
   K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
