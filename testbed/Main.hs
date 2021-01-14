@@ -32,6 +32,8 @@ import qualified Streamly              as Streamly
 import qualified Streamly.Internal.FileSystem.File
                                                as Streamly.File
 
+import qualified Streamly.Internal.Data.Array  as Streamly.Data.Array
+
 yamlAuthor :: T.Text
 yamlAuthor = [here|
 - name: Adam Conner-Sax
@@ -103,16 +105,23 @@ makeDoc = do
   K.logLE K.Info $ "retrieveOrMake"
   let testCacheKey = "test/fPumsCached.sbin"
       sDict = KS.cerealStreamlyDict
+  K.logLE K.Info "buffer stream"
+  let bufferFold = fmap Streamly.Data.Array.toStream Streamly.Data.Array.write
+  sBuffered <- K.streamlyToKnit $ Streamly.fold bufferFold sPUMSRCToS
+  bufferRows <- K.streamlyToKnit $ Streamly.length sBuffered
+  K.logLE K.Info $ "buffer stream is " <> show bufferRows <> " bytes long"
+
+  {-
   BR.clearIfPresentD testCacheKey
   K.logLE K.Info $ "retrieveOrMake (action)"
-  awctPUMSRunningCount2 <- KAC.retrieveOrMake @KS.DefaultCacheData  (KC.knitSerialize sDict) testCacheKey (pure ())
+  awctPUMSRunningCount2 <- KAC.retrieveOrMake @KS.DefaultCacheData  (KC.knitSerializeStream sDict) testCacheKey (pure ())
                            $ const
-                           $ sPUMSRCToS
+                           $ return sPUMSRCToS
   swctPUMSRunningCount2 <- K.ignoreCacheTime awctPUMSRunningCount2
   --sPUMSRunningCount2 <- K.ignoreCacheTime csPUMSRunningCount
-  iRows2 <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length (K.ignoreCacheTime swctPUMSRunningCount2)
+  iRows2 <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length swctPUMSRunningCount2
   K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show iRows2) <> " rows."
-
+-}
 
 {-
   K.logLE K.Info "Testing pumsRowsLoader..."
