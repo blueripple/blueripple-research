@@ -107,10 +107,9 @@ makeDoc = do
       sDict = KS.cerealStreamlyDict
   K.logLE K.Info "buffer stream"
   let bufferFold = fmap Streamly.Data.Array.toStream Streamly.Data.Array.write
-  sBuffered <- K.streamlyToKnit $ Streamly.fold bufferFold sPUMSRCToS
-  bufferRows <- K.streamlyToKnit $ Streamly.length sBuffered
-  K.logLE K.Info $ "buffer stream is " <> show bufferRows <> " bytes long"
-
+  sBuffered :: Streamly.SerialT K.StreamlyM PUMS.PUMS_Raw2 <- K.streamlyToKnit $ Streamly.fold bufferFold sPUMSRCToS
+--  bufferRows <- K.streamlyToKnit $ Streamly.length sBuffered
+--  K.logLE K.Info $ "buffer stream is " <> show bufferRows <> " bytes long"
   {-
   BR.clearIfPresentD testCacheKey
   K.logLE K.Info $ "retrieveOrMake (action)"
@@ -136,6 +135,8 @@ makeDoc = do
   pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
   K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
 -}
+
+  K.logLE K.Info "done"
 testsInIO :: IO ()
 testsInIO = do
   let pumsCSV = "testbed/medPUMS.csv"
