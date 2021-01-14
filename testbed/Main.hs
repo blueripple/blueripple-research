@@ -4,19 +4,24 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# OPTIONS_GHC -eventlog #-}
 module Main where
 
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
+import qualified Knit.Report.Cache as KC
+import qualified Knit.Effect.AtomicCache as KAC
+import qualified Knit.Effect.Serialize as KS
 import qualified Polysemy as P
 import qualified Control.Foldl                 as FL
+import qualified BlueRipple.Data.DataFrames    as DS.Loaders
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
 import qualified Frames.Streamly.CSV as FStreamly
+import qualified Frames.Streamly.InCore as FStreamly
+import qualified Frames.Serialize as FS
 import qualified BlueRipple.Data.LoadersCore as Loaders
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Frames.CSV                     as Frames
@@ -69,26 +74,59 @@ makeDoc = do
   let rawBytesS =  Streamly.File.toBytes pumsCSV
   rawBytes <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length rawBytesS
   K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show rawBytes) <> " bytes."
+  K.logLE K.Info "Testing readTable..."
+  let sPumsRawRows :: Streamly.SerialT K.StreamlyM PUMS.PUMS_Raw2
+        = FStreamly.readTableOpt Frames.defaultParser pumsCSV
+  iRows <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length sPumsRawRows
+  K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show iRows) <> " rows."
+  K.logLE K.Info "Testing Frames.Streamly.inCoreAoS:"
+  fPums <- K.streamlyToKnit $ FStreamly.inCoreAoS sPumsRawRows
+  K.logLE K.Info $ "raw PUMS frame has " <> show (FL.fold FL.length fPums) <> " rows."
+  -- Previous goes up to 28MB, looks like via doubling.  Then to 0 (collects fPums after counting?)
+  -- This one then climbs to 10MB, rows are smaller.  No large leaks.
+  K.logLE K.Info "Testing Frames.Streamly.inCoreAoS with row transform:"
+  fPums' <- K.streamlyToKnit $ FStreamly.inCoreAoS $ Streamly.map PUMS.transformPUMSRow' sPumsRawRows
+  K.logLE K.Info $ "transformed PUMS frame has " <> show (FL.fold FL.length fPums') <> " rows."
+  K.logLE K.Info "loadToRecStream..."
+  let sRawRows2 :: Streamly.SerialT K.StreamlyM PUMS.PUMS_Raw2
+        = DS.Loaders.loadToRecStream Frames.defaultParser pumsCSV (const True)
+  iRawRows2 <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length sRawRows2
+  K.logLE K.Info $ "PUMS data (via loadToRecStream) has " <> show iRows <> " rows."
+  K.logLE K.Info $ "transform and load that stream to frame..."
+  let countFold = Loaders.runningCountF "reading..." (\n -> "read " <> show (250000 * n) <> " rows") "finished"
+      sPUMSRunningCount = Streamly.map PUMS.transformPUMSRow'
+                          $ Streamly.tapOffsetEvery 250000 250000 countFold sRawRows2
+  fPums'' <- K.streamlyToKnit $ FStreamly.inCoreAoS sPUMSRunningCount
+  K.logLE K.Info $ "frame has " <> show (FL.fold FL.length fPums'') <> " rows."
+  K.logLE K.Info $ "toS and fromS transform and load that stream to frame..."
+  let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
+  K.logLE K.Info $ "retrieveOrMake"
+  let testCacheKey = "test/fPumsCached.sbin"
+      sDict = KS.cerealStreamlyDict
+  BR.clearIfPresentD testCacheKey
+  K.logLE K.Info $ "retrieveOrMake (action)"
+  awctPUMSRunningCount2 <- KAC.retrieveOrMake @KS.DefaultCacheData  (KC.knitSerialize sDict) testCacheKey (pure ())
+                           $ const
+                           $ sPUMSRCToS
+  swctPUMSRunningCount2 <- K.ignoreCacheTime awctPUMSRunningCount2
+  --sPUMSRunningCount2 <- K.ignoreCacheTime csPUMSRunningCount
+  iRows2 <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length (K.ignoreCacheTime swctPUMSRunningCount2)
+  K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show iRows2) <> " rows."
+
+
 {-
-  K.logLE K.Info "Testing streamTable..."
-  let pumsRowsRawS :: Streamly.SerialT K.StreamlyM PUMS.PUMS_Raw
-        = FStreamly.streamTable Frames.defaultParser "bigData/IPUMS/acsSelected2006To2018.csv"
-  rawRows <-  K.streamlyToKnit $ Streamly.fold Streamly.Fold.length pumsRowsRawS
-  K.logLE K.Info $ "raw PUMS data has " <> (T.pack $ show rawRows) <> " rows."
-
-
   K.logLE K.Info "Testing pumsRowsLoader..."
   let pumsRowsFixedS = PUMS.pumsRowsLoader dataPath Nothing
   fixedRows <- K.streamlyToKnit $ Streamly.fold Streamly.Fold.length pumsRowsFixedS
   K.logLE K.Info $ "fixed PUMS data has " <> (T.pack $ show fixedRows) <> " rows."
--}
+
   K.logLE K.Info "Testing pumsLoader..."
   BR.clearIfPresentD (T.pack "test/ACS_1YR.sbin")
   BR.clearIfPresentD (T.pack "data/test/ACS_1YR_Raw.sbin")
   pumsAge5F_C <- PUMS.pumsLoader' dataPath (Just "test/ACS_1YR_Raw.sbin") "test/ACS_1YR.sbin" Nothing
   pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
   K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
-
+-}
 testsInIO :: IO ()
 testsInIO = do
   let pumsCSV = "testbed/medPUMS.csv"
