@@ -352,6 +352,9 @@ executable testbed
                , cereal-text >= 0.1.0 && < 0.2
                , blueripple-data-sets
                , blueripple-research
+               , bytestring
+               , bytestring-strict-builder
+               , streamly-bytestring
                , time
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude

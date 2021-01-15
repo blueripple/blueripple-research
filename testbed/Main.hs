@@ -1,13 +1,22 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 module Main where
 
 import qualified Data.Text as T
 import qualified Data.Map as M
+import qualified Data.Serialize                as S
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString.Builder as BB
+import qualified ByteString.StrictBuilder as BSB
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
 import qualified Knit.Report.Cache as KC
@@ -19,6 +28,7 @@ import qualified BlueRipple.Data.DataFrames    as DS.Loaders
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
+import qualified Data.Word as Word
 import qualified Frames as F
 import qualified Frames.Streamly.CSV as FStreamly
 import qualified Frames.Streamly.InCore as FStreamly
@@ -27,11 +37,13 @@ import qualified BlueRipple.Data.LoadersCore as Loaders
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Frames.CSV                     as Frames
 import qualified Streamly.Data.Fold            as Streamly.Fold
+import qualified Streamly.Internal.Data.Fold.Types            as Streamly.Fold
 import qualified Streamly.Prelude              as Streamly
 import qualified Streamly.Internal.Prelude              as Streamly
 import qualified Streamly              as Streamly
 import qualified Streamly.Internal.FileSystem.File
                                                as Streamly.File
+import qualified Streamly.External.ByteString  as Streamly.ByteString
 
 import qualified Streamly.Internal.Data.Array  as Streamly.Data.Array
 import qualified Streamly.Internal.Memory.Array as Streamly.Memory.Array
@@ -69,6 +81,40 @@ main= do
       K.writeAndMakePathLT "testbed.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
+encodeOne :: S.Serialize a => a -> BB.Builder
+encodeOne !x = S.execPut $ S.put x
+
+bldrToCT  = Streamly.ByteString.toArray . BL.toStrict . BB.toLazyByteString
+
+encodeBS :: S.Serialize a => a -> BSB.Builder
+encodeBS !x = BSB.bytes $! S.runPut $! S.put x
+
+bsToCT  = Streamly.ByteString.toArray . BSB.builderBytes
+
+
+data Accum b = Accum { count :: !Int, bldr :: !b }
+
+streamlySerializeF :: forall c bldr m a ct.(Monad m, Monoid bldr, c a, c Word.Word64)
+                   => (forall b. c b => b -> bldr)
+                   -> (bldr -> ct)
+                   -> Streamly.Fold.Fold m a ct
+streamlySerializeF encodeOne bldrToCT = Streamly.Fold.Fold step initial extract where
+  step (Accum n b) !a = return $ Accum (n + 1) (b <> encodeOne a)
+  initial = return $ Accum 0 mempty
+  extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
+{-# INLINEABLE streamlySerializeF #-}
+
+{-
+streamlySerializeF2 :: forall c bldr m a ct.(Monad m, Monoid bldr, c a, c Word.Word64)
+                   => (forall b. c b => b -> bldr)
+                   -> (bldr -> ct)
+                   -> Streamly.Fold.Fold m a ct
+streamlySerializeF2 encodeOne bldrToCT = Streamly.Fold.Fold step initial extract where
+  step (Accum n b) !a = return $ Accum (n + 1) (b <> encodeOne a)
+  initial = return $ Accum 0 mempty
+  extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
+{-# INLINEABLE streamlySerializeF #-}
+-}
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
@@ -106,9 +152,9 @@ makeDoc = do
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
   K.logLE K.Info $ "retrieveOrMake"
   let testCacheKey = "test/fPumsCached.sbin"
-      sDict = KS.cerealStreamlyDict
+--    sDict  = KS.cerealStreamlyDict
   serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
-                                             $ Streamly.fold (KS.streamlySerializeF sDict)  sPUMSRCToS
+                                             $ Streamly.fold (streamlySerializeF @S.Serialize encodeBS bsToCT)  sPUMSRCToS
   print $ Streamly.Memory.Array.length serializedBytes
 {-
   K.logLE K.Info "test array "
