@@ -38,6 +38,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Frames.CSV                     as Frames
 import qualified Streamly.Data.Fold            as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold.Types            as Streamly.Fold
+import qualified Streamly.Internal.Data.Fold            as Streamly.Fold
 import qualified Streamly.Prelude              as Streamly
 import qualified Streamly.Internal.Prelude              as Streamly
 import qualified Streamly              as Streamly
@@ -86,10 +87,14 @@ encodeOne !x = S.execPut $ S.put x
 
 bldrToCT  = Streamly.ByteString.toArray . BL.toStrict . BB.toLazyByteString
 
-encodeBS :: S.Serialize a => a -> BSB.Builder
-encodeBS !x = BSB.bytes $! S.runPut $! S.put x
+encodeBSB :: S.Serialize a => a -> BSB.Builder
+encodeBSB !x = BSB.bytes $! S.runPut $! S.put x
 
-bsToCT  = Streamly.ByteString.toArray . BSB.builderBytes
+encodeBS :: S.Serialize a => a -> BS.ByteString
+encodeBS !x = S.runPut $! S.put x
+
+
+bsbToCT  = Streamly.ByteString.toArray . BSB.builderBytes
 
 
 data Accum b = Accum { count :: !Int, bldr :: !b }
@@ -104,17 +109,22 @@ streamlySerializeF encodeOne bldrToCT = Streamly.Fold.Fold step initial extract 
   extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
 {-# INLINEABLE streamlySerializeF #-}
 
-{-
+toCT :: BSB.Builder -> Int -> Streamly.Memory.Array.Array Word8
+toCT bldr n = bsbToCT $ encodeBSB (fromIntegral @Int @Word.Word64 n) <> bldr
+
 streamlySerializeF2 :: forall c bldr m a ct.(Monad m, Monoid bldr, c a, c Word.Word64)
                    => (forall b. c b => b -> bldr)
                    -> (bldr -> ct)
                    -> Streamly.Fold.Fold m a ct
-streamlySerializeF2 encodeOne bldrToCT = Streamly.Fold.Fold step initial extract where
-  step (Accum n b) !a = return $ Accum (n + 1) (b <> encodeOne a)
-  initial = return $ Accum 0 mempty
-  extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
-{-# INLINEABLE streamlySerializeF #-}
--}
+streamlySerializeF2 encodeOne bldrToCT =
+  let fBuilder = Streamly.Fold.Fold step initial return where
+        step !b !a = return $ b <> encodeOne a
+        initial = return mempty
+      toCT' bldr n = bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> bldr
+  in toCT' <$> fBuilder <*> Streamly.Fold.length
+--        extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
+{-# INLINEABLE streamlySerializeF2 #-}
+
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
@@ -150,13 +160,31 @@ makeDoc = do
   K.logLE K.Info $ "frame has " <> show (FL.fold FL.length fPums'') <> " rows."
   K.logLE K.Info $ "toS and fromS transform and load that stream to frame..."
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
-  K.logLE K.Info $ "retrieveOrMake"
+  K.logLE K.Info $ "testing Memory.Array (fold to raw bytes)"
+  K.logLE K.Info $ "v1"
   let testCacheKey = "test/fPumsCached.sbin"
 --    sDict  = KS.cerealStreamlyDict
   serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
-                                             $ Streamly.fold (streamlySerializeF @S.Serialize encodeBS bsToCT)  sPUMSRCToS
+                                             $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
   print $ Streamly.Memory.Array.length serializedBytes
+  K.logLE K.Info $ "v2"
+  let bldrStream = Streamly.map encodeBSB sPUMSRCToS
+  length <- K.streamlyToKnit $ Streamly.length bldrStream
+  fullBldr <- K.streamlyToKnit $ Streamly.foldl' (<>) mempty bldrStream
+  let serializedBytes2 = toCT fullBldr length
+  print $ Streamly.Memory.Array.length serializedBytes2
 {-
+  K.logLE K.Info $ "v3"
+--  let bldrStream3 = Streamly.map encodeBS sPUMSRCToS
+  let assemble :: Int -> BS.ByteString -> BS.ByteString
+      assemble n bs = encodeBS (fromIntegral @Int @Word.Word64 n) <> bs
+      fSB = assemble <$> Streamly.Fold.length <*> Streamly.Fold.mconcat
+      bldrStream2 = Streamly.map encodeBS sPUMSRCToS
+
+  serializedBytes3 <- K.streamlyToKnit $ Streamly.fold fSB bldrStream2
+  print $ BS.length serializedBytes3
+-}
+  {-
   K.logLE K.Info "test array "
   K.streamlyToKnit $ do
     arr <- Streamly.fold Streamly.Data.Array.write sPUMSRunningCount
