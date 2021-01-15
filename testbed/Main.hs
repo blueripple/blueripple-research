@@ -19,6 +19,7 @@ import qualified BlueRipple.Data.DataFrames    as DS.Loaders
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
+import qualified Frames as F
 import qualified Frames.Streamly.CSV as FStreamly
 import qualified Frames.Streamly.InCore as FStreamly
 import qualified Frames.Serialize as FS
@@ -33,6 +34,7 @@ import qualified Streamly.Internal.FileSystem.File
                                                as Streamly.File
 
 import qualified Streamly.Internal.Data.Array  as Streamly.Data.Array
+import qualified Streamly.Internal.Memory.Array as Streamly.Memory.Array
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -105,11 +107,24 @@ makeDoc = do
   K.logLE K.Info $ "retrieveOrMake"
   let testCacheKey = "test/fPumsCached.sbin"
       sDict = KS.cerealStreamlyDict
-  K.logLE K.Info "buffer stream"
-  let bufferFold = fmap Streamly.Data.Array.toStream Streamly.Data.Array.write
-  sBuffered :: Streamly.SerialT K.StreamlyM PUMS.PUMS_Raw2 <- K.streamlyToKnit $ Streamly.fold bufferFold sPUMSRCToS
---  bufferRows <- K.streamlyToKnit $ Streamly.length sBuffered
---  K.logLE K.Info $ "buffer stream is " <> show bufferRows <> " bytes long"
+  serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
+                                             $ Streamly.fold (KS.streamlySerializeF sDict)  sPUMSRCToS
+  print $ Streamly.Memory.Array.length serializedBytes
+{-
+  K.logLE K.Info "test array "
+  K.streamlyToKnit $ do
+    arr <- Streamly.fold Streamly.Data.Array.write sPUMSRunningCount
+    print $ Streamly.Data.Array.length arr
+-}
+{-
+  let --bufferFold = fmap Streamly.Data.Array.toStream Streamly.Data.Array.write
+      buffer :: Streamly.SerialT K.StreamlyM a -> K.StreamlyM (Streamly.SerialT K.StreamlyM a)
+      buffer = fmap (Streamly.unfold Streamly.Data.Array.read) . Streamly.fold Streamly.Data.Array.write
+  sBuffered :: Streamly.SerialT K.StreamlyM (F.Record PUMS.PUMS_Typed) <- K.streamlyToKnit
+                                                                          $ buffer sPUMSRunningCount
+  bufferRows <- K.streamlyToKnit $ Streamly.length sBuffered
+  K.logLE K.Info $ "buffer stream is " <> show bufferRows <> " bytes long"
+-}
   {-
   BR.clearIfPresentD testCacheKey
   K.logLE K.Info $ "retrieveOrMake (action)"
