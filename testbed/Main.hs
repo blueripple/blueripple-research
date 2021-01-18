@@ -191,7 +191,6 @@ makeDoc = do
   let nPUMS = FL.fold FL.length fPUMS
   K.logLE K.Info $ "folded PUMS data has " <> show nPUMS <> " rows."
 
-
   K.logLE K.Info "count fold (framesStreamlyMR)"
   fPUMS2 <- K.streamlyToKnit $ FL.foldM PUMS.pumsCountStreamlyF fPUMSSmall
   let nPUMS2 = FL.fold FL.length fPUMS2

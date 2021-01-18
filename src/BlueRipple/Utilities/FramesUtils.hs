@@ -75,10 +75,10 @@ framesStreamlyMRM unpack (MapReduce.AssignM af) reduce =
         MapReduce.FilterM f -> Streamly.filterM f
         MapReduce.UnpackM f -> Streamly.concatMapM (fmap Streamly.fromFoldable . f)
       assignS = Streamly.mapM af
-      groupS = streamGrouper2
+      groupS = streamGrouper
       reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
       processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS
-  in Foldl.FoldM (\s a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
+  in Foldl.FoldM (\s !a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
 {-# INLINEABLE framesStreamlyMRM #-}
 
 framesStreamlyMR ::
@@ -212,3 +212,27 @@ reduceFunctionM
 reduceFunctionM (MapReduce.ReduceM     f) k = f k
 reduceFunctionM (MapReduce.ReduceFoldM f) k = Foldl.foldM (f k)
 {-# INLINABLE reduceFunctionM #-}
+
+
+framesStreamlyMRM_SF ::
+  (Prim.PrimMonad m
+  , Streamly.MonadAsync m
+  , Ord (Frames.Record ks)
+  , Frames.InCore.RecVec cs
+  , Frames.InCore.RecVec ds
+  )
+  => MapReduce.UnpackM m (Frames.Record as) (Frames.Record bs)
+  -> MapReduce.AssignM m (Frames.Record ks) (Frames.Record bs) (Frames.Record cs)
+  -> MapReduce.ReduceM m (Frames.Record ks) (Frames.Record cs) (Frames.Record ds)
+  -> Streamly.SerialT m (Frames.Record as)
+  -> Frames.FrameRec ds
+framesStreamlyMRM_SF unpack (MapReduce.AssignM af) reduce =
+  let unpackS = case unpack of
+        MapReduce.FilterM f -> Streamly.filterM f
+        MapReduce.UnpackM f -> Streamly.concatMapM (fmap Streamly.fromFoldable . f)
+      assignS = Streamly.mapM af
+      groupS = streamGrouper
+      reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
+      processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS
+  in Frames.Streamly.inCoreAoS_F . processS
+{-# INLINEABLE framesStreamlyMRM_SF #-}
