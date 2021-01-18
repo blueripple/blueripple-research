@@ -8,6 +8,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+--{-# OPTIONS_GHC -O0 #-}
 module Main where
 
 import qualified Data.Text as T
@@ -48,6 +49,7 @@ import qualified Streamly.External.ByteString  as Streamly.ByteString
 
 import qualified Streamly.Internal.Data.Array  as Streamly.Data.Array
 import qualified Streamly.Internal.Memory.Array as Streamly.Memory.Array
+import qualified Control.DeepSeq as DeepSeq
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -67,7 +69,7 @@ pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic
 
 main :: IO ()
 main= do
---  testsInIO
+
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                K.mindocOptionsF
@@ -82,13 +84,14 @@ main= do
       K.writeAndMakePathLT "testbed.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
+
 encodeOne :: S.Serialize a => a -> BB.Builder
 encodeOne !x = S.execPut $ S.put x
 
 bldrToCT  = Streamly.ByteString.toArray . BL.toStrict . BB.toLazyByteString
 
 encodeBSB :: S.Serialize a => a -> BSB.Builder
-encodeBSB !x = BSB.bytes $! S.runPut $! S.put x
+encodeBSB !x = BSB.bytes DeepSeq.$!! encodeBS x
 
 encodeBS :: S.Serialize a => a -> BS.ByteString
 encodeBS !x = S.runPut $! S.put x
@@ -162,27 +165,77 @@ makeDoc = do
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
   K.logLE K.Info $ "testing Memory.Array (fold to raw bytes)"
   K.logLE K.Info $ "v1"
-  let testCacheKey = "test/fPumsCached.sbin"
 --    sDict  = KS.cerealStreamlyDict
   serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
                                              $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
+
   print $ Streamly.Memory.Array.length serializedBytes
+
+  K.logLE K.Info "Testing typedPUMSRowsLoader..."
+  BR.clearIfPresentD "data/testbed/acs1YR_All_Typed.bin"
+  cfPUMSRaw <- PUMS.typedPUMSRowsLoader' dataPath (Just "testbed/acs1YR_All_Typed.bin")
+  fPUMSRaw <- K.ignoreCacheTime cfPUMSRaw
+  let nRaw = FL.fold FL.length fPUMSRaw
+  K.logLE K.Info $ "PUMS data has " <> show nRaw <> " rows."
+
+  K.logLE K.Info "Testing pumsRowsLoader..."
+  BR.clearIfPresentD "data/testbed/acs1YR_Small.bin"
+  cfPUMSSmall <- PUMS.pumsRowsLoader' dataPath (Just "testbed/acs1YR_Small.bin") Nothing
+  fPUMSSmall <- K.ignoreCacheTime cfPUMSSmall
+  let nSmall = FL.fold FL.length fPUMSSmall
+  K.logLE K.Info $ "PUMS data has " <> show nSmall <> " rows."
+
+  K.logLE K.Info "Testing pumsLoader bits... (including MR fold)"
+  K.logLE K.Info "count fold (usual)"
+  let fPUMS = FL.fold PUMS.pumsCountF fPUMSSmall --dataPath (Just "testbed/acs1YR_Small.bin") "testbed/acs1YR_folded.bin" Nothing
+  let nPUMS = FL.fold FL.length fPUMS
+  K.logLE K.Info $ "folded PUMS data has " <> show nPUMS <> " rows."
+
+
+  K.logLE K.Info "count fold (framesStreamlyMR)"
+  fPUMS2 <- K.streamlyToKnit $ FL.foldM PUMS.pumsCountStreamlyF fPUMSSmall
+  let nPUMS2 = FL.fold FL.length fPUMS2
+  K.logLE K.Info $ "streamlyMR folded PUMS data has " <> show nPUMS2 <> " rows."
+
+
+
+{-
+
   K.logLE K.Info $ "v2"
   let bldrStream = Streamly.map encodeBSB sPUMSRCToS
-  length <- K.streamlyToKnit $ Streamly.length bldrStream
+  n <- K.streamlyToKnit $ Streamly.length bldrStream
   fullBldr <- K.streamlyToKnit $ Streamly.foldl' (<>) mempty bldrStream
-  let serializedBytes2 = toCT fullBldr length
+  let serializedBytes2 = toCT fullBldr n
   print $ Streamly.Memory.Array.length serializedBytes2
+
+  let testCacheKey = "test/fPumsCached.sbin"
+-}
 {-
   K.logLE K.Info $ "v3"
 --  let bldrStream3 = Streamly.map encodeBS sPUMSRCToS
   let assemble :: Int -> BS.ByteString -> BS.ByteString
       assemble n bs = encodeBS (fromIntegral @Int @Word.Word64 n) <> bs
+      fSB :: Streamly.Fold.Fold K.StreamlyM ByteString ByteString
       fSB = assemble <$> Streamly.Fold.length <*> Streamly.Fold.mconcat
-      bldrStream2 = Streamly.map encodeBS sPUMSRCToS
+      bldrStream2 :: Streamly.SerialT K.StreamlyM ByteString = Streamly.map encodeBS sPUMSRCToS
 
   serializedBytes3 <- K.streamlyToKnit $ Streamly.fold fSB bldrStream2
   print $ BS.length serializedBytes3
+-}
+{-
+  K.logLE K.Info "v4"
+  serializedBytes4 <- BSB.builderBytes
+                      <$> (K.streamlyToKnit $ Streamly.foldl' (\acc x -> let b = S.runPut (S.put x) in seq b (acc <> BSB.bytes b)) mempty sPUMSRCToS)
+  print $ BS.length serializedBytes4
+-}
+{-
+  K.logLE K.Info $ "v4"
+--    sDict  = KS.cerealStreamlyDict
+  lazyList <- K.streamlyToKnit $ Streamly.toList bldrStream
+  let n2 = length lazyList
+      bb = mconcat $ encodeBSB (fromIntegral @Int @Word.Word64 n2) : lazyList
+      serializedBytes4 =  Streamly.ByteString.toArray $ BSB.builderBytes bb
+  print $ Streamly.Memory.Array.length serializedBytes4
 -}
   {-
   K.logLE K.Info "test array "
@@ -226,6 +279,54 @@ makeDoc = do
 -}
 
   K.logLE K.Info "done"
+
+
+testInIO :: IO ()
+testInIO = do
+  let pumsCSV = "../bigData/test/acs100k.csv"
+      dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)
+  putTextLn "Testing File.toBytes..."
+  let rawBytesS =  Streamly.File.toBytes pumsCSV
+  rawBytes <-  Streamly.fold Streamly.Fold.length rawBytesS
+  putTextLn $ "raw PUMS data has " <> show rawBytes <> " bytes."
+  putTextLn "Testing readTable..."
+  let sPUMSRawRows :: Streamly.SerialT IO PUMS.PUMS_Raw2
+        = FStreamly.readTableOpt Frames.defaultParser pumsCSV
+  iRows <-  Streamly.fold Streamly.Fold.length sPUMSRawRows
+  putTextLn $ "raw PUMS data has " <> (T.pack $ show iRows) <> " rows."
+  putTextLn "Testing Frames.Streamly.inCoreAoS:"
+  fPums <- FStreamly.inCoreAoS sPUMSRawRows
+  putTextLn $ "raw PUMS frame has " <> show (FL.fold FL.length fPums) <> " rows."
+  -- Previous goes up to 28MB, looks like via doubling.  Then to 0 (collects fPums after counting?)
+  -- This one then climbs to 10MB, rows are smaller.  No large leaks.
+  let f !x = PUMS.transformPUMSRow' x
+  putTextLn "Testing Frames.Streamly.inCoreAoS with row transform:"
+  fPums' <- FStreamly.inCoreAoS $ Streamly.map f sPUMSRawRows
+  putTextLn $ "transformed PUMS frame has " <> show (FL.fold FL.length fPums') <> " rows."
+  putTextLn "v1"
+--    sDict  = KS.cerealStreamlyDict
+  let countFold = Loaders.runningCountF "reading..." (\n -> "read " <> show (250000 * n) <> " rows") "finished"
+      sPUMSRunningCount = Streamly.map PUMS.transformPUMSRow'
+                          $ Streamly.tapOffsetEvery 250000 250000 countFold sPUMSRawRows
+      sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
+
+  serializedBytes :: KS.DefaultCacheData  <- Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
+  print $ Streamly.Memory.Array.length serializedBytes
+
+  putTextLn "v4"
+  bldr <- Streamly.foldl' (\acc !x -> let b = S.runPut (S.put x) in b `seq` (acc <> BSB.bytes b)) mempty sPUMSRCToS
+  print $ BS.length $ BSB.builderBytes bldr
+
+
+{-
+  putTextLn "v5"
+  bldr <- Streamly.foldl' (\acc !x -> let b = encodeOne x in b `seq` (acc <> b)) mempty sPUMSRCToS
+  print $ BS.length $ BL.toStrict $ BB.toLazyByteString bldr
+-}
+
+  return ()
+
+{-
 testsInIO :: IO ()
 testsInIO = do
   let pumsCSV = "testbed/medPUMS.csv"
@@ -243,3 +344,4 @@ testsInIO = do
       pumsRowsFixedS = Loaders.recStreamLoader (Loaders.LocalData $ T.pack $ pumsCSV) Nothing Nothing PUMS.transformPUMSRow
   fixedRows <- Streamly.fold Streamly.Fold.length pumsRowsFixedS
   putStrLn $ T.unpack $ "fixed PUMS data has " <> (T.pack $ show fixedRows) <> " rows."
+-}

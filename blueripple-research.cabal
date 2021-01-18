@@ -354,6 +354,7 @@ executable testbed
                , blueripple-research
                , bytestring
                , bytestring-strict-builder
+               , deepseq
                , streamly-bytestring
                , time
   mixins:  base hiding (Prelude)

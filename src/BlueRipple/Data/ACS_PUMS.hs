@@ -120,7 +120,7 @@ typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
                      -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader' dataPath mCacheKey =
   let cacheKey = fromMaybe "acs1YR_All_Typed.bin" mCacheKey
-  in BR.cachedFrameLoaderS dataPath Nothing Nothing transformPUMSRow' Nothing cacheKey
+  in BR.cachedFrameLoader dataPath Nothing Nothing transformPUMSRow' Nothing cacheKey
 
 typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
@@ -160,8 +160,9 @@ type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
 
-pumsCountF :: FL.Fold (F.Record PUMS_Typed) [F.Record PUMS_Counted]
-pumsCountF = FMR.mapReduceFold
+pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
+pumsCountF = fmap F.toFrame
+             $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @(PUMADesc ++ PUMABucket) @PUMSCountFromFields)
              (FMR.foldAndLabel pumsRowCountF  V.rappend)
@@ -204,8 +205,8 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
       let numRows = FL.fold FL.length pums
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
       K.logLE K.Diagnostic $ "Finished loading " <> show numRows <> " rows to Frame.  " <> show numYoung <> " under 18. Counting..."
-      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
---      let countedL = FL.fold pumsCountF allRowsF
+--      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
+      let countedF = FL.fold pumsCountF pums
       let numCounted = FL.fold FL.length countedF
       K.logLE K.Diagnostic $ "Finished counting. " <> show numCounted <> " rows of counts.  Adding state abbreviations..."
 --      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
