@@ -8,6 +8,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
+
 --{-# OPTIONS_GHC -O0 #-}
 module Main where
 
@@ -31,11 +33,15 @@ import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
 import qualified Data.Word as Word
 import qualified Frames as F
+import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vinyl as V
 import qualified Frames.Streamly.CSV as FStreamly
 import qualified Frames.Streamly.InCore as FStreamly
 import qualified Frames.Serialize as FS
+import qualified Frames.MapReduce as FMR
 import qualified BlueRipple.Data.LoadersCore as Loaders
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified Frames.CSV                     as Frames
 import qualified Streamly.Data.Fold            as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold.Types            as Streamly.Fold
@@ -128,6 +134,11 @@ streamlySerializeF2 encodeOne bldrToCT =
 --        extract (Accum n b) = return $ bldrToCT $ encodeOne (fromIntegral @Int @Word.Word64 n) <> b
 {-# INLINEABLE streamlySerializeF2 #-}
 
+toStreamlyFold :: Monad m => FL.Fold a b -> Streamly.Fold.Fold m a b
+toStreamlyFold (FL.Fold step init done) = Streamly.Fold.mkPure step init done
+
+toStreamlyFoldM :: Monad m => FL.FoldM m a b -> Streamly.Fold.Fold m a b
+toStreamlyFoldM (FL.FoldM step init done) = Streamly.Fold.mkFold step init done
 
 makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
 makeDoc = do
@@ -190,13 +201,63 @@ makeDoc = do
   let fPUMS = FL.fold PUMS.pumsCountF fPUMSSmall --dataPath (Just "testbed/acs1YR_Small.bin") "testbed/acs1YR_folded.bin" Nothing
   let nPUMS = FL.fold FL.length fPUMS
   K.logLE K.Info $ "folded PUMS data has " <> show nPUMS <> " rows."
-
+{-
   K.logLE K.Info "count fold (framesStreamlyMR)"
   fPUMS2 <- K.streamlyToKnit $ FL.foldM PUMS.pumsCountStreamlyF fPUMSSmall
   let nPUMS2 = FL.fold FL.length fPUMS2
   K.logLE K.Info $ "streamlyMR folded PUMS data has " <> show nPUMS2 <> " rows."
 
+  K.logLE K.Info "count fold (framesStreamlyMRM_SF)"
+  fPUMS3 <- K.streamlyToKnit $ PUMS.pumsCountStreamly fPUMSSmall
+  let nPUMS3 = FL.fold FL.length fPUMS3
+  K.logLE K.Info $ "streamlyMR folded PUMS data has " <> show nPUMS3 <> " rows."
 
+  K.logLE K.Info "count fold (fStreamlyMRM_HT)"
+  fPUMS4 <- K.streamlyToKnit $ PUMS.pumsCountStreamlyHT fPUMSSmall
+  let nPUMS4 = FL.fold FL.length fPUMS4
+  K.logLE K.Info $ "streamlyMR folded PUMS data has " <> show nPUMS4 <> " rows."
+-}
+{-
+  K.logLE K.Info "count fold (direct 1)"
+  fMap <- K.streamlyToKnit
+
+          $ fmap ({- Streamly.fromFoldable .-} M.mapWithKey V.rappend)
+          $ fmap (fmap (FL.fold PUMS.pumsRowCountF))
+          $ Streamly.fold (Streamly.Fold.classify FStreamly.inCoreAoS_F)
+          $ Streamly.map (\x -> (F.rcast @(PUMS.PUMADesc V.++ PUMS.PUMABucket) x, F.rcast @PUMS.PUMSCountFromFields x))
+          $ Streamly.fromFoldable fPUMSSmall
+  let nMap = FL.fold FL.length fMap
+  K.logLE K.Info $ "streamlyMR map has " <> show nMap <> " rows."
+-}
+{-
+  K.logLE K.Info "count fold (direct 2)"
+  fPUMS2 <- K.streamlyToKnit
+--            $ FStreamly.inCoreAoS
+--            $ Streamly.concatM
+            $ fmap (F.toFrame . M.mapWithKey V.rappend)
+            $ Streamly.fold (Streamly.Fold.classify $ toStreamlyFold PUMS.pumsRowCountF)
+            $ Streamly.map (\x -> (F.rcast @(PUMS.PUMADesc V.++ PUMS.PUMABucket) x, F.rcast @PUMS.PUMSCountFromFields x))
+            $ Streamly.fromFoldable fPUMSSmall
+  let nPUMS2 = FL.fold FL.length fPUMS2
+  K.logLE K.Info $ "streamlyMR (direct) has " <> show nPUMS2 <> " rows."
+  K.logLE K.Info $ show $ T.intercalate "\n" $ fmap show $ FL.fold FL.list fPUMS2
+-}
+  K.logLE K.Info "count fold (direct 3)"
+  fPUMS3 <- K.streamlyToKnit
+            $ BRF.frameCompactMRM
+            FMR.noUnpack
+            (FMR.assignKeysAndData @(PUMS.PUMADesc V.++ PUMS.PUMABucket) @PUMS.PUMSCountFromFields)
+             PUMS.pumsRowCountF
+            fPUMSSmall
+  let nPUMS3 = FL.fold FL.length fPUMS3
+  K.logLE K.Info $ "streamlyMR (direct from Framesutils) has " <> show nPUMS3 <> " rows."
+  K.logLE K.Info $ show $ T.intercalate "\n" $ fmap show $ FL.fold FL.list fPUMS3
+
+
+
+--  if fMap == fMap2
+--    then K.logLE K.Info "Maps are the same"
+--    else K.logLE K.Info "Maps are *not* the same"
 
 {-
 

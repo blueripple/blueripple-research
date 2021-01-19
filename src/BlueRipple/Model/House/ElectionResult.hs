@@ -78,7 +78,7 @@ type DemographicsR =
     FracGrad,
     FracNonWhite,
     DT.AvgIncome,
-    DT.MedianIncome,
+--    DT.MedianIncome,
     DT.PopPerSqMile,
     PUMS.Citizens
   ]
@@ -98,7 +98,7 @@ type ElectionData = F.FrameRec ElectionDataR
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
-type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile]
+type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome{-, DT.MedianIncome-}, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
@@ -120,7 +120,7 @@ pumsF =
 
 pumsDataF ::
   FL.Fold
-    (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.MedianIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
+    (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome{-, DT.MedianIncome-}, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
     (F.Record DemographicsR)
 pumsDataF =
   let cit = F.rgetField @PUMS.Citizens
@@ -135,7 +135,7 @@ pumsDataF =
           V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
           V.:& FF.toFoldRecord (fracF ((== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
           V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
-          V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . cit) (F.rgetField @DT.MedianIncome)) -- FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
+--          V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . cit) (F.rgetField @DT.MedianIncome)) -- FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
           V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
           V.:& FF.toFoldRecord citF
           V.:& V.RNil
@@ -258,7 +258,7 @@ prepCachedData clearCache = do
     let competitiveElectionResults = F.filterFrame competitive demoAndElex
         competitiveCDs = FL.fold (FL.premap (F.rcast @KeyR) FL.set) demoAndElex
         competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @KeyR r) competitiveCDs) countedCCES
-        toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency, DT.AvgIncome, DT.MedianIncome,DT.PopPerSqMile])) competitiveElectionResults
+        toJoinWithCCES = fmap (F.rcast @(KeyR V.++ [Incumbency, DT.AvgIncome{-, DT.MedianIncome-}, DT.PopPerSqMile])) competitiveElectionResults
         (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @KeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
     K.knitEither $ if null missingDemo
                    then Right ()
