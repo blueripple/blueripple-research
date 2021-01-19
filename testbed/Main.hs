@@ -16,6 +16,9 @@ module Main where
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Serialize                as S
+import qualified Data.Binary                as B
+import qualified Data.Binary.Builder                as B
+import qualified Data.Binary.Put                as B
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Builder as BB
@@ -94,13 +97,23 @@ main= do
 encodeOne :: S.Serialize a => a -> BB.Builder
 encodeOne !x = S.execPut $ S.put x
 
+bEncodeOne :: B.Binary a => a -> BB.Builder
+bEncodeOne !x = B.fromLazyByteString $ B.runPut $ B.put x
+
+
 bldrToCT  = Streamly.ByteString.toArray . BL.toStrict . BB.toLazyByteString
 
 encodeBSB :: S.Serialize a => a -> BSB.Builder
 encodeBSB !x = BSB.bytes DeepSeq.$!! encodeBS x
 
+bEncodeBSB :: B.Binary a => a -> BSB.Builder
+bEncodeBSB !x = BSB.bytes DeepSeq.$!! bEncodeBS x
+
 encodeBS :: S.Serialize a => a -> BS.ByteString
 encodeBS !x = S.runPut $! S.put x
+
+bEncodeBS :: B.Binary a => a -> BS.ByteString
+bEncodeBS !x = BL.toStrict $ B.runPut $! B.put x
 
 
 bsbToCT  = Streamly.ByteString.toArray . BSB.builderBytes
@@ -120,6 +133,9 @@ streamlySerializeF encodeOne bldrToCT = Streamly.Fold.Fold step initial extract 
 
 toCT :: BSB.Builder -> Int -> Streamly.Memory.Array.Array Word8
 toCT bldr n = bsbToCT $ encodeBSB (fromIntegral @Int @Word.Word64 n) <> bldr
+
+bToCT :: BSB.Builder -> Int -> Streamly.Memory.Array.Array Word8
+bToCT bldr n = bsbToCT $ bEncodeBSB (fromIntegral @Int @Word.Word64 n) <> bldr
 
 streamlySerializeF2 :: forall c bldr m a ct.(Monad m, Monoid bldr, c a, c Word.Word64)
                    => (forall b. c b => b -> bldr)

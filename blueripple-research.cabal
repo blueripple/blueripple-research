@@ -348,6 +348,7 @@ executable testbed
   hs-source-dirs: testbed
   main-is:        Main.hs
   build-depends: base >= 4.11
+               , binary
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , blueripple-data-sets
