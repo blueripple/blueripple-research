@@ -191,12 +191,50 @@ makeDoc = do
   K.logLE K.Info $ "toS and fromS transform and load that stream to frame..."
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
   K.logLE K.Info $ "testing Memory.Array (fold to raw bytes)"
-  K.logLE K.Info $ "v1"
+
+  K.logLE K.Info $ "v1 (cereal)"
 --    sDict  = KS.cerealStreamlyDict
   serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
                                              $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
 
-  print $ Streamly.Memory.Array.length serializedBytes
+  K.logLE K.Info $ "v1 (binary)"
+--    sDict  = KS.cerealStreamlyDict
+  bSerializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
+                                             $ Streamly.fold (streamlySerializeF2 @B.Binary bEncodeBSB bsbToCT)  sPUMSRCToS
+
+
+  print $ Streamly.Memory.Array.length bSerializedBytes
+
+{-
+  K.logLE K.Info $ "v2"
+  let bldrStream = Streamly.map encodeBSB sPUMSRCToS
+  n <- K.streamlyToKnit $ Streamly.length bldrStream
+  fullBldr <- K.streamlyToKnit $ Streamly.foldl' (<>) mempty bldrStream
+  let serializedBytes2 = toCT fullBldr n
+  print $ Streamly.Memory.Array.length serializedBytes2
+
+  K.logLE K.Info $ "v3"
+--  let bldrStream3 = Streamly.map encodeBS sPUMSRCToS
+  let assemble :: Int -> BS.ByteString -> BS.ByteString
+      assemble n bs = encodeBS (fromIntegral @Int @Word.Word64 n) <> bs
+      fSB :: Streamly.Fold.Fold K.StreamlyM ByteString ByteString
+      fSB = assemble <$> Streamly.Fold.length <*> Streamly.Fold.mconcat
+      bldrStream2 :: Streamly.SerialT K.StreamlyM ByteString = Streamly.map encodeBS sPUMSRCToS
+
+  serializedBytes3 <- K.streamlyToKnit $ Streamly.fold fSB bldrStream2
+  print $ BS.length serializedBytes3
+
+
+  K.logLE K.Info "v4"
+  serializedBytes4 <- BSB.builderBytes
+                      <$> (K.streamlyToKnit $ Streamly.foldl' (\acc x -> let b = S.runPut (S.put x) in seq b (acc <> BSB.bytes b)) mempty sPUMSRCToS)
+  print $ BS.length serializedBytes4
+
+-}
+
+
+
+{-
 
   K.logLE K.Info "Testing typedPUMSRowsLoader..."
   BR.clearIfPresentD "data/testbed/acs1YR_All_Typed.bin"
@@ -211,6 +249,7 @@ makeDoc = do
   fPUMSSmall <- K.ignoreCacheTime cfPUMSSmall
   let nSmall = FL.fold FL.length fPUMSSmall
   K.logLE K.Info $ "PUMS data has " <> show nSmall <> " rows."
+-}
 {-
   K.logLE K.Info "Testing pumsLoader bits... (including MR fold)"
   K.logLE K.Info "count fold (usual)"
@@ -259,6 +298,7 @@ makeDoc = do
   K.logLE K.Info $ "streamlyMR (direct) has " <> show nPUMS2 <> " rows."
   K.logLE K.Info $ show $ T.intercalate "\n" $ fmap show $ FL.fold FL.list fPUMS2
 -}
+{-
   K.logLE K.Info "count fold (direct 3)"
   fPUMS3 <- K.streamlyToKnit
             $ BRF.frameCompactMRM
@@ -276,7 +316,7 @@ makeDoc = do
   pumsAge5F_C <- PUMS.pumsLoader' dataPath (Just "test/ACS_1YR_Raw.sbin") "test/ACS_1YR.sbin" Nothing
   pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
   K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
-
+-}
 
 
 --  if fMap == fMap2

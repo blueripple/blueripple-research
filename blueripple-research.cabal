@@ -20,6 +20,7 @@ common deps
                , array
                , blaze-html
                , blueripple-data-sets
+               , binary
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2
                , clock >= 0.8 && < 0.9

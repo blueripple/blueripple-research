@@ -21,6 +21,7 @@ import           Control.Arrow                  ( (>>>) )
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
+import qualified Data.Binary as B
 import Data.Hashable (Hashable)
 import qualified Data.Map                      as M
 import qualified Data.Monoid                   as Mon
@@ -48,12 +49,14 @@ import qualified Frames.Visualization.VegaLite.Data
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Relude.Extra as Relude
 -- Serialize for caching
+-- Binary for caching
 -- FI.VectorFor for frames
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
 
 data DemographicGrouping = ASE | ASR | ASER | ASER4 | ASER5 deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
+instance B.Binary DemographicGrouping
 instance Grouping DemographicGrouping
 instance K.FiniteSet DemographicGrouping
 
@@ -70,6 +73,7 @@ instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
 
 data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize PopCountOfT
+instance B.Binary PopCountOfT
 instance Grouping PopCountOfT
 instance K.FiniteSet PopCountOfT
 
@@ -87,7 +91,7 @@ type PopCount = "PopCount" F.:-> Int
 
 data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic, Hashable)
 instance S.Serialize Sex
-
+instance B.Binary Sex
 instance Grouping Sex
 instance K.FiniteSet Sex
 derivingUnbox "Sex"
@@ -104,6 +108,7 @@ instance FV.ToVLDataValue (F.ElField SexC) where
 --
 data SimpleRace = NonWhite | White deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 instance S.Serialize SimpleRace
+instance B.Binary SimpleRace
 instance Grouping SimpleRace
 instance K.FiniteSet SimpleRace
 derivingUnbox "SimpleRace"
@@ -121,6 +126,7 @@ type IsCitizen = "IsCitizen" F.:-> Bool
 
 data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic, Hashable)
 instance S.Serialize CollegeGrad
+instance B.Binary CollegeGrad
 instance Grouping CollegeGrad
 instance K.FiniteSet CollegeGrad
 derivingUnbox "CollegeGrad"
@@ -138,6 +144,7 @@ type InCollege = "InCollege" F.:-> Bool
 
 data SimpleAge = Under | EqualOrOver deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 instance S.Serialize SimpleAge
+instance B.Binary SimpleAge
 instance Grouping SimpleAge
 instance K.FiniteSet SimpleAge
 derivingUnbox "SimpleAge"
@@ -152,6 +159,7 @@ instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
 
 data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age4
+instance B.Binary Age4
 instance Grouping Age4
 instance K.FiniteSet Age4
 derivingUnbox "Age4"
@@ -173,6 +181,7 @@ age4ToSimple _ = EqualOrOver
 
 data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Age5F
+instance B.Binary Age5F
 instance Grouping Age5F
 instance K.FiniteSet Age5F
 derivingUnbox "Age5F"
@@ -198,6 +207,7 @@ age5FToSimple _ = EqualOrOver
 
 data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age5
+instance B.Binary Age5
 instance Grouping Age5
 instance K.FiniteSet Age5
 derivingUnbox "Age5"
@@ -214,6 +224,7 @@ simpleAgeFrom5 EqualOrOver = [A5_45To64, A5_65To74, A5_75AndOver]
 
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Education
+instance B.Binary Education
 instance Grouping Education
 instance K.FiniteSet Education
 derivingUnbox "Education"
@@ -282,6 +293,7 @@ turnoutEducationLabel AD = "AD"
 
 data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Hisp
+instance B.Binary Hisp
 instance Grouping Hisp
 instance K.FiniteSet Hisp
 derivingUnbox "Hisp"
@@ -293,6 +305,7 @@ type HispC = "Hisp" F.:-> Hisp
 
 data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
+instance B.Binary ACSRace
 instance Grouping ACSRace
 instance K.FiniteSet ACSRace
 derivingUnbox "ACSRace"
@@ -327,6 +340,7 @@ asACSLabel (a, s) = sexLabel s <> age5Label a
 
 data TurnoutRace = Turnout_All | Turnout_WhiteNonHispanic | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize TurnoutRace
+instance B.Binary TurnoutRace
 
 instance Grouping TurnoutRace
 instance K.FiniteSet TurnoutRace
@@ -340,6 +354,7 @@ type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
 data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Race5
+instance B.Binary Race5
 instance Grouping Race5
 instance K.FiniteSet Race5
 derivingUnbox "Race5"
@@ -362,6 +377,7 @@ simpleRaceFromRace5 R5_WhiteNonLatinx = White
 
 data Race4 = R4_Other | R4_Black | R4_Latinx | R4_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Race4
+instance B.Binary Race4
 instance Grouping Race4
 instance K.FiniteSet Race4
 derivingUnbox "Race4"
@@ -409,6 +425,7 @@ data Language = English
               | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize Language
+instance B.Binary Language
 instance Grouping Language
 instance K.FiniteSet Language
 derivingUnbox "Language"
@@ -424,6 +441,7 @@ instance FV.ToVLDataValue (F.ElField LanguageC) where
 
 data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 instance S.Serialize SpeaksEnglish
+instance B.Binary SpeaksEnglish
 instance Grouping SpeaksEnglish
 instance K.FiniteSet SpeaksEnglish
 derivingUnbox "SpeaksEnglish"
@@ -463,6 +481,7 @@ data CensusRegion = NewEngland
                   deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize CensusRegion
+instance B.Binary CensusRegion
 instance Grouping CensusRegion
 instance K.FiniteSet CensusRegion
 derivingUnbox "CensusRegion"
@@ -485,6 +504,7 @@ data CensusMetro = MetroUnknown
 
 
 instance S.Serialize CensusMetro
+instance B.Binary CensusMetro
 instance Grouping CensusMetro
 instance K.FiniteSet CensusMetro
 derivingUnbox "CensusMetro"
@@ -502,6 +522,7 @@ data EmploymentStatus = Employed
                       | EmploymentUnknown deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize EmploymentStatus
+instance B.Binary EmploymentStatus
 instance Grouping EmploymentStatus
 instance K.FiniteSet EmploymentStatus
 derivingUnbox "EmploymentStatus"

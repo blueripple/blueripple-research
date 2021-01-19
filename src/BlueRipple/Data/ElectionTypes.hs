@@ -12,9 +12,9 @@ module BlueRipple.Data.ElectionTypes where
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified Data.Array as A
+import qualified Data.Binary as B
 import Data.Discrimination (Grouping)
 import qualified Data.Serialize as S
-import qualified Data.Serialize as SE
 import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
@@ -39,9 +39,8 @@ data MajorPartyParticipation
   deriving (Show, Enum, Eq, Ord, Bounded, Generic)
 
 instance S.Serialize MajorPartyParticipation
-
+instance B.Binary MajorPartyParticipation
 instance FCSV.ShowCSV MajorPartyParticipation
-
 instance Grouping MajorPartyParticipation
 
 derivingUnbox
@@ -65,6 +64,7 @@ type MajorPartyParticipationC = "MajorPartyParticipation" F.:-> MajorPartyPartic
 data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize PartyT
+instance B.Binary PartyT
 
 instance Grouping PartyT
 
@@ -86,6 +86,7 @@ instance FV.ToVLDataValue (F.ElField Party) where
 data OfficeT = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize OfficeT
+instance B.Binary OfficeT
 
 instance Grouping OfficeT
 
@@ -120,7 +121,8 @@ type PrefType = "PrefType" F.:-> PrefTypeT
 
 instance Grouping PrefTypeT
 
-instance SE.Serialize PrefTypeT
+instance S.Serialize PrefTypeT
+instance B.Binary PrefTypeT
 
 instance FCSV.ShowCSV PrefTypeT
 
@@ -146,7 +148,8 @@ type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSource
 
 instance Grouping ElectoralWeightSourceT
 
-instance SE.Serialize ElectoralWeightSourceT
+instance S.Serialize ElectoralWeightSourceT
+instance B.Binary ElectoralWeightSourceT
 
 instance FCSV.ShowCSV ElectoralWeightSourceT
 
@@ -174,7 +177,8 @@ type ElectoralWeightOf = "ElectoralWeightOf" F.:-> ElectoralWeightOfT
 
 instance Grouping ElectoralWeightOfT
 
-instance SE.Serialize ElectoralWeightOfT
+instance S.Serialize ElectoralWeightOfT
+instance B.Binary ElectoralWeightOfT
 
 instance FCSV.ShowCSV ElectoralWeightOfT
 
@@ -214,7 +218,8 @@ type VoteWhyNotC = "VoteWhyNot" F.:-> VoteWhyNot
 
 instance Grouping VoteWhyNot
 
-instance SE.Serialize VoteWhyNot
+instance S.Serialize VoteWhyNot
+instance B.Binary VoteWhyNot
 
 instance FCSV.ShowCSV VoteWhyNot
 
@@ -241,7 +246,8 @@ type RegWhyNotC = "RegWhyNot" F.:-> RegWhyNot
 
 instance Grouping RegWhyNot
 
-instance SE.Serialize RegWhyNot
+instance S.Serialize RegWhyNot
+instance B.Binary RegWhyNot
 
 derivingUnbox
   "RegWhyNot"
@@ -261,7 +267,8 @@ type VoteHowC = "VoteHow" F.:-> VoteHow
 
 instance Grouping VoteHow
 
-instance SE.Serialize VoteHow
+instance S.Serialize VoteHow
+instance B.Binary VoteHow
 
 instance FCSV.ShowCSV VoteHow
 
@@ -283,7 +290,8 @@ type VoteWhenC = "VoteWhen" F.:-> VoteWhen
 
 instance Grouping VoteWhen
 
-instance SE.Serialize VoteWhen
+instance S.Serialize VoteWhen
+instance B.Binary VoteWhen
 
 derivingUnbox
   "VoteWhen"
@@ -306,7 +314,8 @@ type VotedYNC = "Voted" F.:-> VotedYN
 
 instance Grouping VotedYN
 
-instance SE.Serialize VotedYN
+instance S.Serialize VotedYN
+instance B.Binary VotedYN
 
 instance FCSV.ShowCSV VotedYN
 
@@ -328,7 +337,8 @@ type RegisteredYNC = "RegisteredYN" F.:-> RegisteredYN
 
 instance Grouping RegisteredYN
 
-instance SE.Serialize RegisteredYN
+instance S.Serialize RegisteredYN
+instance B.Binary RegisteredYN
 
 instance FCSV.ShowCSV RegisteredYN
 
