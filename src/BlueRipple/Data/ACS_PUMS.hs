@@ -160,13 +160,22 @@ type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
 
-pumsCountF :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
-pumsCountF = fmap F.toFrame
+pumsCountF_old :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
+pumsCountF_old = fmap F.toFrame
              $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @(PUMADesc ++ PUMABucket) @PUMSCountFromFields)
              (FMR.foldAndLabel pumsRowCountF  V.rappend)
-{-# INLINEABLE pumsCountF #-}
+{-# INLINEABLE pumsCountF_old #-}
+
+pumsCount :: Foldable f => f (F.Record PUMS_Typed) -> K.StreamlyM (F.FrameRec PUMS_Counted)
+pumsCount = BRF.frameCompactMRM
+            FMR.noUnpack
+            (FMR.assignKeysAndData @(PUMADesc V.++ PUMABucket) @PUMSCountFromFields)
+             pumsRowCountF
+{-# INLINEABLE pumsCount #-}
+
+
 
 
 
@@ -223,7 +232,7 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
       K.logLE K.Diagnostic $ "Finished loading " <> show numRows <> " rows to Frame.  " <> show numYoung <> " under 18. Counting..."
 --      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
-      let countedF = FL.fold pumsCountF pums
+      countedF <- K.streamlyToKnit $ pumsCount pums
       let numCounted = FL.fold FL.length countedF
       K.logLE K.Diagnostic $ "Finished counting. " <> show numCounted <> " rows of counts.  Adding state abbreviations..."
 --      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL

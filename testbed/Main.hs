@@ -254,6 +254,13 @@ makeDoc = do
   K.logLE K.Info $ "streamlyMR (direct from Framesutils) has " <> show nPUMS3 <> " rows."
   K.logLE K.Info $ show $ T.intercalate "\n" $ fmap show $ FL.fold FL.list fPUMS3
 
+  K.logLE K.Info "Testing pumsLoader..."
+  BR.clearIfPresentD (T.pack "test/ACS_1YR.sbin")
+  BR.clearIfPresentD (T.pack "data/test/ACS_1YR_Raw.sbin")
+  pumsAge5F_C <- PUMS.pumsLoader' dataPath (Just "test/ACS_1YR_Raw.sbin") "test/ACS_1YR.sbin" Nothing
+  pumsAge5F <- K.ignoreCacheTime pumsAge5F_C
+  K.logLE K.Info $ "PUMS data has " <> (T.pack $ show $ FL.fold FL.length pumsAge5F) <> " rows."
+
 
 
 --  if fMap == fMap2

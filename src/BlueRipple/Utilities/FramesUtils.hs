@@ -42,7 +42,7 @@ frameCompactMRM :: ( Ord (Frames.Record ks)
                     )
   => MapReduce.Unpack (Frames.Record as) (Frames.Record bs)
   -> MapReduce.Assign (Frames.Record ks) (Frames.Record bs) (Frames.Record cs)
-  -> Foldl.Fold (Frames.Record cs) (Frames.Record ds) --MapReduce.Reduce (Frames.Record ks) (Frames.Record cs) (Frames.Record ds)
+  -> Foldl.Fold (Frames.Record cs) (Frames.Record ds)
   -> f (Frames.Record as)
   -> m (Frames.FrameRec (ks V.++ ds))
 frameCompactMRM unpack (MapReduce.Assign a) fld =
@@ -51,7 +51,7 @@ frameCompactMRM unpack (MapReduce.Assign a) fld =
                   MapReduce.Unpack f -> Streamly.concatMap (Streamly.fromFoldable . f)
   in  fmap (Frames.toFrame . Map.mapWithKey V.rappend)
       . Streamly.fold (Streamly.Fold.classify $ toStreamlyFold fld)
-      . Streamly.map a --(\x -> (F.rcast @(PUMS.PUMADesc V.++ PUMS.PUMABucket) x, F.rcast @PUMS.PUMSCountFromFields x))
+      . Streamly.map a
       . unpackS
       . Streamly.fromFoldable
 {-# INLINEABLE frameCompactMRM #-}
