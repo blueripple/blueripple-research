@@ -195,12 +195,13 @@ makeDoc = do
   fPUMSSmall <- K.ignoreCacheTime cfPUMSSmall
   let nSmall = FL.fold FL.length fPUMSSmall
   K.logLE K.Info $ "PUMS data has " <> show nSmall <> " rows."
-
+{-
   K.logLE K.Info "Testing pumsLoader bits... (including MR fold)"
   K.logLE K.Info "count fold (usual)"
   let fPUMS = FL.fold PUMS.pumsCountF fPUMSSmall --dataPath (Just "testbed/acs1YR_Small.bin") "testbed/acs1YR_folded.bin" Nothing
   let nPUMS = FL.fold FL.length fPUMS
   K.logLE K.Info $ "folded PUMS data has " <> show nPUMS <> " rows."
+-}
 {-
   K.logLE K.Info "count fold (framesStreamlyMR)"
   fPUMS2 <- K.streamlyToKnit $ FL.foldM PUMS.pumsCountStreamlyF fPUMSSmall
