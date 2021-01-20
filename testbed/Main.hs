@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
---{-# OPTIONS_GHC -O0 #-}
+{-# OPTIONS_GHC -O0 #-}
 module Main where
 
 import qualified Data.Text as T
@@ -104,10 +104,10 @@ bEncodeOne !x = B.fromLazyByteString $ B.runPut $ B.put x
 bldrToCT  = Streamly.ByteString.toArray . BL.toStrict . BB.toLazyByteString
 
 encodeBSB :: S.Serialize a => a -> BSB.Builder
-encodeBSB !x = BSB.bytes DeepSeq.$!! encodeBS x
+encodeBSB !x = BSB.bytes $! encodeBS x
 
 bEncodeBSB :: B.Binary a => a -> BSB.Builder
-bEncodeBSB !x = BSB.bytes DeepSeq.$!! bEncodeBS x
+bEncodeBSB !x = BSB.bytes $! bEncodeBS x
 
 encodeBS :: S.Serialize a => a -> BS.ByteString
 encodeBS !x = S.runPut $! S.put x
@@ -192,11 +192,19 @@ makeDoc = do
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
   K.logLE K.Info $ "testing Memory.Array (fold to raw bytes)"
 
-  K.logLE K.Info $ "v1 (cereal)"
+  K.logLE K.Info $ "v1 (cereal, bsb)"
 --    sDict  = KS.cerealStreamlyDict
   serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
                                              $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
+  print $ Streamly.Memory.Array.length serializedBytes
 
+  K.logLE K.Info $ "v1 (cereal, bs)"
+--    sDict  = KS.cerealStreamlyDict
+  serializedBytes' :: KS.DefaultCacheData  <- K.streamlyToKnit
+                                              $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeOne bldrToCT)  sPUMSRCToS
+  print $ Streamly.Memory.Array.length serializedBytes'
+
+{-
   K.logLE K.Info $ "v1 (binary)"
 --    sDict  = KS.cerealStreamlyDict
   bSerializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
@@ -205,15 +213,15 @@ makeDoc = do
 
   print $ Streamly.Memory.Array.length bSerializedBytes
 
-{-
-  K.logLE K.Info $ "v2"
+
+  K.logLE K.Info $ "v2 (cereal)"
   let bldrStream = Streamly.map encodeBSB sPUMSRCToS
   n <- K.streamlyToKnit $ Streamly.length bldrStream
   fullBldr <- K.streamlyToKnit $ Streamly.foldl' (<>) mempty bldrStream
   let serializedBytes2 = toCT fullBldr n
   print $ Streamly.Memory.Array.length serializedBytes2
 
-  K.logLE K.Info $ "v3"
+  K.logLE K.Info $ "v3 (cereal)"
 --  let bldrStream3 = Streamly.map encodeBS sPUMSRCToS
   let assemble :: Int -> BS.ByteString -> BS.ByteString
       assemble n bs = encodeBS (fromIntegral @Int @Word.Word64 n) <> bs
@@ -224,8 +232,19 @@ makeDoc = do
   serializedBytes3 <- K.streamlyToKnit $ Streamly.fold fSB bldrStream2
   print $ BS.length serializedBytes3
 
+  K.logLE K.Info $ "v3 (binary)"
+--  let bldrStream3 = Streamly.map encodeBS sPUMSRCToS
+  let bAssemble :: Int -> BS.ByteString -> BS.ByteString
+      bAssemble n bs = bEncodeBS (fromIntegral @Int @Word.Word64 n) <> bs
+      bfSB :: Streamly.Fold.Fold K.StreamlyM ByteString ByteString
+      bfSB = bAssemble <$> Streamly.Fold.length <*> Streamly.Fold.mconcat
+      bbldrStream2 :: Streamly.SerialT K.StreamlyM ByteString = Streamly.map bEncodeBS sPUMSRCToS
 
-  K.logLE K.Info "v4"
+  bSerializedBytes3 <- K.streamlyToKnit $ Streamly.fold bfSB bbldrStream2
+  print $ BS.length bSerializedBytes3
+
+
+  K.logLE K.Info "v4 (cereal)"
   serializedBytes4 <- BSB.builderBytes
                       <$> (K.streamlyToKnit $ Streamly.foldl' (\acc x -> let b = S.runPut (S.put x) in seq b (acc <> BSB.bytes b)) mempty sPUMSRCToS)
   print $ BS.length serializedBytes4

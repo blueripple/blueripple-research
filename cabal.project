@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-streamly ~/DataScience/Frames-utils ~/DataScience/data-science-utils
+packages: ./ ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -54,15 +54,15 @@ source-repository-package
 --  location: https://github.com/adamConnerSax/Frames-map-reduce
 --  tag: 0e4409a4861e31e915b457a37fc359814ab781c6
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 495770656003535a5fa6e0cc57ee761392e394c6
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: bdd548c64e21168ae7085d1e2247369a3089540a
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-streamly
---  tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: 2c572249cdbf2323f4ac346c531440e389eb02d8
 
 source-repository-package
   type: git
@@ -74,10 +74,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hvega-utils
   tag: bdd33924b4a77d6edd282294762dbb4c98420f9d
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/data-science-utils
---  tag: fc7a2aa8c08c400db605f07b480f383fa5f3365f
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/data-science-utils
+  tag: b364ec3ca3d3ef4dfe809550b200823d4edd3026
 
 source-repository-package
   type: git
