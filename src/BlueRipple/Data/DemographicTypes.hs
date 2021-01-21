@@ -291,7 +291,7 @@ turnoutEducationLabel BA = "BA"
 turnoutEducationLabel AD = "AD"
 
 
-data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Hisp
 instance B.Binary Hisp
 instance Grouping Hisp

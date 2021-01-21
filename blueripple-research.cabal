@@ -33,6 +33,7 @@ common deps
                , Frames-hvega >= 0.3
                , Frames-utils >= 0.3.1
                , Frames-streamly >= 0.1.0
+               , Frames-serialize >= 0.1.0
                , foldl >= 1.4 && < 1.5
                , foldl-statistics >= 0.1.5 && < 0.2
                , generic-optics
@@ -343,8 +344,8 @@ executable house-data
 
 executable testbed
   import: deps
---  ghc-options: -Wall -O0
-  ghc-options: -Wall -prof -fprof-auto -eventlog -rtsopts -fexternal-interpreter -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  ghc-options: -Wall -O0
+--  ghc-options: -Wall -prof -fprof-auto -eventlog -rtsopts -fexternal-interpreter -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
 --  ghc-options: -Wall -eventlog -rtsopts
   hs-source-dirs: testbed
   main-is:        Main.hs

@@ -192,6 +192,7 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
     let recStream = recStreamLoader dataPath parserOptionsM mFilter fixRow
     K.streamlyToKnit $ FStreamly.inCoreAoS recStream
 
+{-
 -- file has qs
 -- Filter qs
 -- transform to rs
@@ -220,7 +221,7 @@ cachedFrameLoaderS filePath parserOptionsM mFilter fixRow cachePathM key = do
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrameS cacheKey cachedDataPath $ \dataPath -> recStreamLoader dataPath parserOptionsM mFilter fixRow
-
+-}
 -- file has qs
 -- Filter qs
 -- transform to rs

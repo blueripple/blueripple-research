@@ -230,7 +230,7 @@ prepCachedData clearCache = do
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) ->
-    PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True) cdFromPUMA pums
+    PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True . F.rcast) cdFromPUMA pums
   houseElections_C <- BR.houseElectionsWithIncumbency
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C

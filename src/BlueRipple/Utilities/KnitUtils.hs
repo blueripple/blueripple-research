@@ -163,7 +163,7 @@ retrieveOrMakeFrameAnd key cachedDeps action =
         fromFirst = Arrow.first FS.unSFrame
     K.retrieveOrMakeTransformed toFirst fromFirst key cachedDeps action
 
-
+{-
 retrieveOrMakeFrameS ::
   ( K.KnitEffects r,
     K.CacheEffectsD r,
@@ -180,7 +180,7 @@ retrieveOrMakeFrameS key cachedDeps action =
     do
       fmap (K.streamToAction FStreamly.inCoreAoS)
       $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS key cachedDeps action
-
+-}
 
 retrieveOrMake2Frames ::
   ( K.KnitEffects r,

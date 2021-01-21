@@ -192,17 +192,23 @@ makeDoc = do
   let sPUMSRCToS = Streamly.map FS.toS sPUMSRunningCount
   K.logLE K.Info $ "testing Memory.Array (fold to raw bytes)"
 
-  K.logLE K.Info $ "v1 (cereal, bsb)"
---    sDict  = KS.cerealStreamlyDict
-  serializedBytes :: KS.DefaultCacheData  <- K.streamlyToKnit
-                                             $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeBSB bsbToCT)  sPUMSRCToS
-  print $ Streamly.Memory.Array.length serializedBytes
+  K.logLE K.Info "Testing typedPUMSRowsLoader..."
+  cfPUMSRaw <- PUMS.typedPUMSRowsLoader' dataPath (Just "testbed/acs1YR_All_Typed.bin")
+  fPUMSRaw <- K.ignoreCacheTime cfPUMSRaw
+  let nRaw = FL.fold FL.length fPUMSRaw
+  K.logLE K.Info $ "PUMS data has " <> show nRaw <> " rows."
 
-  K.logLE K.Info $ "v1 (cereal, bs)"
---    sDict  = KS.cerealStreamlyDict
-  serializedBytes' :: KS.DefaultCacheData  <- K.streamlyToKnit
-                                              $ Streamly.fold (streamlySerializeF2 @S.Serialize encodeOne bldrToCT)  sPUMSRCToS
-  print $ Streamly.Memory.Array.length serializedBytes'
+  K.logLE K.Info "Testing pumsRowsLoader..."
+  cfPUMSSmall <- PUMS.pumsRowsLoader' dataPath (Just "testbed/acs1YR_Small.bin") Nothing
+  fPUMSSmall <- K.ignoreCacheTime cfPUMSSmall
+  let nSmall = FL.fold FL.length fPUMSSmall
+  K.logLE K.Info $ "PUMS data has " <> show nSmall <> " rows."
+
+  K.logLE K.Info "Testing pumsLoader"
+  cfPUMS_C <- PUMS.pumsLoader' dataPath  (Just "testbed/acs1YR_All_Typed.bin") "testbed/pums.bin" Nothing
+  fPUMS <- K.ignoreCacheTime cfPUMS_C
+  let n = FL.fold FL.length fPUMS
+  K.logLE K.Info $ "final PUMS data has " <> show n <> " rows."
 
 {-
   K.logLE K.Info $ "v1 (binary)"

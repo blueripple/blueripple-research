@@ -17,7 +17,6 @@
 {-# OPTIONS_GHC -O0 -freduction-depth=0 #-}
 module BlueRipple.Data.ACS_PUMS where
 
-
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.DataFrames as BR hiding (fixMonadCatch)
@@ -61,7 +60,6 @@ import qualified Text.Read                     as TR
 
 import qualified Control.MapReduce as MapReduce
 import qualified Control.MapReduce.Engines.Streamly as MapReduce.Streamly
-
 
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
@@ -156,7 +154,7 @@ pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
-type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C]
+type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.HispC]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
 
@@ -195,13 +193,14 @@ pumsCountStreamly = BRF.framesStreamlyMR_SF
                     (FMR.foldAndLabel pumsRowCountF V.rappend)
 {-# INLINEABLE pumsCountStreamly #-}
 
+{-
 pumsCountStreamlyHT :: F.FrameRec PUMS_Typed -> K.StreamlyM (F.FrameRec PUMS_Counted)
 pumsCountStreamlyHT = BRF.fStreamlyMR_HT
                       FMR.noUnpack
                       (FMR.assignKeysAndData @(PUMADesc ++ PUMABucket) @PUMSCountFromFields)
                       (FMR.foldAndLabel pumsRowCountF V.rappend)
 {-# INLINEABLE pumsCountStreamlyHT #-}
-
+-}
 
 
 pumsLoader'
@@ -507,6 +506,7 @@ type PUMS_Typed = '[ BR.Year
                    , BR.InCollege
                    , BR.SexC
                    , BR.Race5C
+                   , BR.HispC
                    , BR.LanguageC
                    , BR.SpeaksEnglishC
                    , BR.EmploymentStatusC
@@ -525,6 +525,7 @@ type PUMS_Counted = '[BR.Year
                      , BR.CollegeGradC
                      , BR.InCollege
                      , BR.Race5C
+                     , BR.HispC
                      , BR.PctInMetro
                      , BR.PopPerSqMile
                      , BR.PctNativeEnglish
@@ -551,6 +552,7 @@ type PUMS = '[BR.Year
              , BR.CollegeGradC
              , BR.InCollege
              , BR.Race5C
+             , BR.HispC
              , BR.PctNativeEnglish
              , BR.PctNoEnglish
              , BR.PctUnemployed
@@ -764,6 +766,11 @@ intsToRace5 hN rN
   | rN `elem` [4, 5, 6] = BR.R5_Asian
   | otherwise = BR.R5_Other
 
+intToHisp :: Int -> BR.Hisp
+intToHisp n
+  | n < 2 = BR.NonHispanic
+  | otherwise = BR.Hispanic
+
 -- NB these codes are only right for (unharmonized) ACS PUMS data from 2018.
 -- PUMSLANGUAGE PUMSLANGUAGED
 intsToLanguage :: Int -> Int -> BR.Language
@@ -822,6 +829,7 @@ intToEmploymentStatus n
 transformPUMSRow :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
 transformPUMSRow = F.rcast . addCols where
   addCols = (FT.addOneFrom @'[BR.PUMSHISPAN, BR.PUMSRACE]  @BR.Race5C intsToRace5)
+            . (FT.addOneFromOne @BR.PUMSHISPAN @BR.HispC intToHisp)
             . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
             . (FT.addName @BR.PUMSPUMA @BR.PUMA)
             . (FT.addOneFromOne @BR.PUMSREGION @BR.CensusRegionC intToCensusRegion)
@@ -855,6 +863,7 @@ transformPUMSRow' r =
   F.&: (intToInCollege $ F.rgetField @BR.PUMSGRADEATT r)
   F.&: (intToSex $ F.rgetField @BR.PUMSSEX r)
   F.&: (intsToRace5 (F.rgetField @BR.PUMSHISPAN r) (F.rgetField @BR.PUMSRACE r))
+  F.&: (intToHisp $ F.rgetField @BR.PUMSHISPAN r)
   F.&: (intsToLanguage (F.rgetField @BR.PUMSLANGUAGE r) (F.rgetField @BR.PUMSLANGUAGED r))
   F.&: (intToSpeaksEnglish $ F.rgetField @BR.PUMSSPEAKENG r)
   F.&: (intToEmploymentStatus $ F.rgetField @BR.PUMSEMPSTAT r)

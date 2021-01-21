@@ -84,7 +84,7 @@ main = do
   let knitConfig =
         (K.defaultKnitConfig Nothing)
           { K.outerLogPrefix = Just "HouseModel",
-            K.logIf = K.nonDiagnostic,
+            K.logIf = K.logDiagnostic,
             K.pandocWriterConfig = pandocWriterConfig
           }
 --  let pureMTseed = PureMT.pureMT 1
