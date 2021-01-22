@@ -154,7 +154,7 @@ pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
-type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.HispC]
+type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
 type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
 type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
 
@@ -419,54 +419,54 @@ pumsStateRollupF mapKeys =
       reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
-pumsKeysToASER5H :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.HispC] -> F.Record BR.CatColsASER5H
-pumsKeysToASER5H addInCollegeToGrads r =
+pumsKeysToASER5H :: Bool -> Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER5H
+pumsKeysToASER5H addInCollegeToGrads hispAsRace r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: F.rgetField @BR.SexC r
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: F.rgetField @BR.Race5C r
+     F.&: (BR.race5FromRaceAlone4AndHisp hispAsRace (F.rgetField @BR.RaceAlone4C r) (F.rgetField @BR.HispC r))
      F.&: F.rgetField @BR.HispC r
      F.&: V.RNil
 
 
-pumsKeysToASER5 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
-pumsKeysToASER5 addInCollegeToGrads r =
+pumsKeysToASER5 :: Bool -> Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER5
+pumsKeysToASER5 addInCollegeToGrads hispAsRace r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: F.rgetField @BR.SexC r
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: F.rgetField @BR.Race5C r
+     F.&: (BR.race5FromRaceAlone4AndHisp hispAsRace (F.rgetField @BR.RaceAlone4C r) (F.rgetField @BR.HispC r))
      F.&: V.RNil
 
 
-pumsKeysToASER4 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
-pumsKeysToASER4 addInCollegeToGrads r =
+pumsKeysToASER4 :: Bool -> Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER4
+pumsKeysToASER4 addInCollegeToGrads hispAsRace r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: F.rgetField @BR.SexC r
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
+     F.&: (BR.race4FromRaceAlone4AndHisp hispAsRace (F.rgetField @BR.RaceAlone4C r) (F.rgetField @BR.HispC r))
      F.&: V.RNil
 
 
-pumsKeysToASER :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
-pumsKeysToASER addInCollegeToGrads r =
+pumsKeysToASER :: Bool -> Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER
+pumsKeysToASER addInCollegeToGrads hispAsRace r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
      F.&: F.rgetField @BR.SexC r
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+     F.&: (BR.simpleRaceFromRaceAlone4AndHisp hispAsRace (F.rgetField @BR.RaceAlone4C r) (F.rgetField @BR.HispC r))
      F.&: V.RNil
 
-pumsKeysToLanguage :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record BR.CatColsLanguage
+pumsKeysToLanguage :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC, BR.LanguageC, BR.SpeaksEnglishC] -> F.Record BR.CatColsLanguage
 pumsKeysToLanguage = F.rcast
 
-pumsKeysToASE :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
+pumsKeysToASE :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASE
 pumsKeysToASE addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
@@ -475,14 +475,14 @@ pumsKeysToASE addInCollegeToGrads r =
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
      F.&: V.RNil
 
-pumsKeysToASR :: F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASR
-pumsKeysToASR r =
+pumsKeysToASR :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASR
+pumsKeysToASR hispAsRace r =
   (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
   F.&: F.rgetField @BR.SexC r
-  F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+  F.&: (BR.simpleRaceFromRaceAlone4AndHisp hispAsRace (F.rgetField @BR.RaceAlone4C r) (F.rgetField @BR.HispC r))
   F.&: V.RNil
 
-pumsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record '[]
+pumsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record '[]
 pumsKeysToIdentity = const V.RNil
 
 type PUMSWeight = "Weight" F.:-> Int
@@ -502,7 +502,7 @@ type PUMS_Typed = '[ BR.Year
                    , BR.CollegeGradC
                    , BR.InCollege
                    , BR.SexC
-                   , BR.Race5C
+                   , BR.RaceAlone4C
                    , BR.HispC
                    , BR.LanguageC
                    , BR.SpeaksEnglishC
@@ -521,7 +521,7 @@ type PUMS_Counted = '[BR.Year
                      , BR.SexC
                      , BR.CollegeGradC
                      , BR.InCollege
-                     , BR.Race5C
+                     , BR.RaceAlone4C
                      , BR.HispC
                      , BR.PctInMetro
                      , BR.PopPerSqMile
@@ -548,7 +548,7 @@ type PUMS = '[BR.Year
              , BR.SexC
              , BR.CollegeGradC
              , BR.InCollege
-             , BR.Race5C
+             , BR.RaceAlone4C
              , BR.HispC
              , BR.PctNativeEnglish
              , BR.PctNoEnglish
@@ -755,13 +755,12 @@ intToSex :: Int -> BR.Sex
 intToSex n = if n == 1 then BR.Male else BR.Female
 
 -- PUMSHISPANIC PUMSRACE
-intsToRace5 :: Int -> Int -> BR.Race5
-intsToRace5 hN rN
-  | (hN > 1) && (hN < 9) = BR.R5_Latinx
-  | rN == 1 = BR.R5_WhiteNonLatinx
-  | rN == 2 = BR.R5_Black
-  | rN `elem` [4, 5, 6] = BR.R5_Asian
-  | otherwise = BR.R5_Other
+intToRaceAlone4 :: Int -> BR.RaceAlone4
+intToRaceAlone4 rN
+  | rN == 1 = BR.RA4_White
+  | rN == 2 = BR.RA4_Black
+  | rN `elem` [4, 5, 6] = BR.RA4_Asian
+  | otherwise = BR.RA4_Other
 
 intToHisp :: Int -> BR.Hisp
 intToHisp n
@@ -825,7 +824,7 @@ intToEmploymentStatus n
 
 transformPUMSRow :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
 transformPUMSRow = F.rcast . addCols where
-  addCols = (FT.addOneFrom @'[BR.PUMSHISPAN, BR.PUMSRACE]  @BR.Race5C intsToRace5)
+  addCols = (FT.addOneFromOne @BR.PUMSRACE  @BR.RaceAlone4C intToRaceAlone4)
             . (FT.addOneFromOne @BR.PUMSHISPAN @BR.HispC intToHisp)
             . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
             . (FT.addName @BR.PUMSPUMA @BR.PUMA)
@@ -859,7 +858,7 @@ transformPUMSRow' r =
   F.&: (intToCollegeGrad $ F.rgetField @BR.PUMSEDUCD r)
   F.&: (intToInCollege $ F.rgetField @BR.PUMSGRADEATT r)
   F.&: (intToSex $ F.rgetField @BR.PUMSSEX r)
-  F.&: (intsToRace5 (F.rgetField @BR.PUMSHISPAN r) (F.rgetField @BR.PUMSRACE r))
+  F.&: (intToRaceAlone4 (F.rgetField @BR.PUMSRACE r))
   F.&: (intToHisp $ F.rgetField @BR.PUMSHISPAN r)
   F.&: (intsToLanguage (F.rgetField @BR.PUMSLANGUAGE r) (F.rgetField @BR.PUMSLANGUAGED r))
   F.&: (intToSpeaksEnglish $ F.rgetField @BR.PUMSSPEAKENG r)
@@ -916,7 +915,7 @@ transformPUMSRow2 r = F.rcast @PUMS_Typed (mutate r) where
   addSpeaksEnglish = FT.recordSingleton @BR.SpeaksEnglishC . intToSpeaksEnglish . F.rgetField @BR.PUMSSPEAKENG
   hN = F.rgetField @BR.PUMSHISPAN
   rN = F.rgetField @BR.PUMSRACE
-  addRace r = FT.recordSingleton @BR.Race5C (intsToRace5 (hN r) (rN r))
+  addRace r = FT.recordSingleton @BR.RaceAlone4C (intsToRaceAlone4 (hN r) (rN r))
   mutate = FT.retypeColumn @BR.PUMSSTATEFIP @BR.StateFIPS
            . FT.retypeColumn @BR.PUMSPUMA @BR.PUMA
            . FT.retypeColumn @BR.PUMSYEAR @BR.Year

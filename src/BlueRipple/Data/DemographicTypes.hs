@@ -291,18 +291,6 @@ turnoutEducationLabel BA = "BA"
 turnoutEducationLabel AD = "AD"
 
 
-data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
-instance S.Serialize Hisp
-instance B.Binary Hisp
-instance Grouping Hisp
-instance K.FiniteSet Hisp
-derivingUnbox "Hisp"
-  [t|Hisp -> Word8|]
-  [|toEnum . fromEnum|]
-  [|toEnum . fromEnum|]
-type instance FI.VectorFor Hisp = UVec.Vector
-type HispC = "Hisp" F.:-> Hisp
-
 data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
 instance B.Binary ACSRace
@@ -390,6 +378,36 @@ type Race4C = "Race4" F.:-> Race4
 instance FV.ToVLDataValue (F.ElField Race4C) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
+
+data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+instance S.Serialize Hisp
+instance B.Binary Hisp
+instance Grouping Hisp
+instance K.FiniteSet Hisp
+derivingUnbox "Hisp"
+  [t|Hisp -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Hisp = UVec.Vector
+type HispC = "Hisp" F.:-> Hisp
+instance FV.ToVLDataValue (F.ElField HispC) where
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+
+
+data RaceAlone4 = RA4_White | RA4_Black | RA4_Asian | RA4_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+instance S.Serialize RaceAlone4
+instance B.Binary RaceAlone4
+instance Grouping RaceAlone4
+instance K.FiniteSet RaceAlone4
+derivingUnbox "RaceAlone4"
+  [t|RaceAlone4 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor RaceAlone4 = UVec.Vector
+type RaceAlone4C = "RaceAlone4" F.:-> RaceAlone4
+instance FV.ToVLDataValue (F.ElField RaceAlone4C) where
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+
 simpleRaceFromRace4 :: Race4 -> SimpleRace
 simpleRaceFromRace4 R4_Other = NonWhite
 simpleRaceFromRace4 R4_Black = NonWhite
@@ -402,6 +420,36 @@ race4FromRace5 R5_Asian = R4_Other
 race4FromRace5 R5_Black = R4_Black
 race4FromRace5 R5_Latinx = R4_Latinx
 race4FromRace5 R5_WhiteNonLatinx = R4_WhiteNonLatinx
+
+simpleRaceFromRaceAlone4 :: RaceAlone4 -> SimpleRace
+simpleRaceFromRaceAlone4 RA4_White = White
+simpleRaceFromRaceAlone4 _ = NonWhite
+
+simpleRaceFromRaceAlone4AndHisp :: Bool -> RaceAlone4 -> Hisp -> SimpleRace
+simpleRaceFromRaceAlone4AndHisp True RA4_White Hispanic = White
+simpleRaceFromRaceAlone4AndHisp True _ _ = NonWhite
+simpleRaceFromRaceAlone4AndHisp False x _ = simpleRaceFromRaceAlone4 x
+
+race5FromRaceAlone4AndHisp :: Bool -> RaceAlone4 -> Hisp -> Race5
+race5FromRaceAlone4AndHisp True _ Hispanic = R5_Latinx
+race5FromRaceAlone4AndHisp True RA4_White NonHispanic = R5_WhiteNonLatinx
+race5FromRaceAlone4AndHisp True RA4_Black NonHispanic = R5_Black
+race5FromRaceAlone4AndHisp True RA4_Asian NonHispanic = R5_Asian
+race5FromRaceAlone4AndHisp True RA4_Other NonHispanic = R5_Other
+race5FromRaceAlone4AndHisp False RA4_White _ = R5_WhiteNonLatinx
+race5FromRaceAlone4AndHisp False RA4_Black _ = R5_Black
+race5FromRaceAlone4AndHisp False RA4_Asian _ = R5_Asian
+race5FromRaceAlone4AndHisp False RA4_Other _ = R5_Other
+
+
+race4FromRaceAlone4AndHisp :: Bool -> RaceAlone4 -> Hisp -> Race4
+race4FromRaceAlone4AndHisp True _ Hispanic = R4_Latinx
+race4FromRaceAlone4AndHisp True RA4_White NonHispanic = R4_WhiteNonLatinx
+race4FromRaceAlone4AndHisp True RA4_Black NonHispanic = R4_Black
+race4FromRaceAlone4AndHisp True _ NonHispanic = R4_Other
+race4FromRaceAlone4AndHisp False RA4_White _ = R4_WhiteNonLatinx
+race4FromRaceAlone4AndHisp False RA4_Black _ = R4_Black
+race4FromRaceAlone4AndHisp False _ _ = R4_Other
 
 turnoutRaceLabel :: TurnoutRace -> T.Text
 turnoutRaceLabel Turnout_All              = "All"
@@ -568,7 +616,6 @@ catKeyASER5H a s e r h = a F.&: s F.&: e F.&: r F.&: h F.&: V.RNil
 
 allCatKeysASER5H =
   [catKeyASER5H a s e r h | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..], h <- [Hispanic, NonHispanic]]
-
 
 type CatColsASER4 = '[SimpleAgeC, SexC, CollegeGradC, Race4C]
 catKeyASER4 :: SimpleAge -> Sex -> CollegeGrad -> Race4 -> F.Record CatColsASER4

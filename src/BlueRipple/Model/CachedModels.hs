@@ -103,7 +103,7 @@ pumsByStateASER = do
   cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)
-                 $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True . F.rcast) pumsDemographics
+                 $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER True True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
                            (F.FrameRec (DT.CatColsASER V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
         addDefaultsOneF = F.toFrame <$> Keyed.addDefaultRec @DT.CatColsASER (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
@@ -120,7 +120,7 @@ pumsByStateASER5 = do
   cachedPUMS_Demographics <- PUMS.pumsLoaderAdults
   BR.retrieveOrMakeFrame "model/MRP_ASER5/PumsByState.bin" cachedPUMS_Demographics $ \pumsDemographics -> do
     let rollup = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_Citizen)
-                 $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True . F.rcast) pumsDemographics
+                 $ FL.fold (PUMS.pumsStateRollupF $ PUMS.pumsKeysToASER5 True True . F.rcast) pumsDemographics
         addDefaultsOneF :: FL.Fold (F.Record (DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
                            (F.FrameRec (DT.CatColsASER5 V.++ [PUMS.NonCitizens, DT.PopCountOf, PUMS.Citizens]))
         addDefaultsOneF = F.toFrame <$> Keyed.addDefaultRec @DT.CatColsASER5 (0 F.&: DT.PC_Citizen F.&: 0 F.&: V.RNil)
@@ -293,7 +293,7 @@ pumsByCD2018ASER5 = do
           FL.fold (FL.prefilter g
                     $ FL.premap  (\r -> F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r) FL.sum) pums
     K.logLE K.Diagnostic $ "(Raw) Sum of all Citizens + NonCitizens in 2018=" <> show pums2018WeightTotal
-    PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True . F.rcast) cdFromPUMA pums
+    PUMS.pumsCDRollup g (PUMS.pumsKeysToASER5 True True . F.rcast) cdFromPUMA pums
 
 
 type PSRow = [DT.PopCountOf, DT.PopCount, ET.PrefType, ET.DemPref, ET.ElectoralWeight, ET.DemShare]
