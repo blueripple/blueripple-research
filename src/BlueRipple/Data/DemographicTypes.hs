@@ -562,6 +562,14 @@ catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
 allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
 
+type CatColsASER5H = '[SimpleAgeC, SexC, CollegeGradC, Race5C, HispC]
+catKeyASER5H :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> Hisp -> F.Record CatColsASER5H
+catKeyASER5H a s e r h = a F.&: s F.&: e F.&: r F.&: h F.&: V.RNil
+
+allCatKeysASER5H =
+  [catKeyASER5H a s e r h | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..], h <- [Hispanic, NonHispanic]]
+
+
 type CatColsASER4 = '[SimpleAgeC, SexC, CollegeGradC, Race4C]
 catKeyASER4 :: SimpleAge -> Sex -> CollegeGrad -> Race4 -> F.Record CatColsASER4
 catKeyASER4 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil

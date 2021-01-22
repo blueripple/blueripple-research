@@ -419,6 +419,18 @@ pumsStateRollupF mapKeys =
       reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
+pumsKeysToASER5H :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C, BR.HispC] -> F.Record BR.CatColsASER5H
+pumsKeysToASER5H addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+  in (BR.age5FToSimple $ F.rgetField @BR.Age5FC r)
+     F.&: F.rgetField @BR.SexC r
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
+     F.&: F.rgetField @BR.Race5C r
+     F.&: F.rgetField @BR.HispC r
+     F.&: V.RNil
+
+
 pumsKeysToASER5 :: Bool -> F.Record '[BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
 pumsKeysToASER5 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
@@ -473,21 +485,6 @@ pumsKeysToASR r =
 pumsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record '[]
 pumsKeysToIdentity = const V.RNil
 
-{-
-type PUMS_Raw = '[ BR.PUMSPWGTP
-                 , BR.PUMSPUMA
-                 , BR.PUMSST
-                 , BR.PUMSAGEP
-                 , BR.PUMSCIT
-                 , BR.PUMSSCHL
-                 , BR.PUMSSCHG
-                 , BR.PUMSSEX
-                 , BR.PUMSHISP
-                 , BR.PUMSRAC1P
-                 , BR.PUMSLANP
-                 , BR.PUMSENG
-                 ]
--}
 type PUMSWeight = "Weight" F.:-> Int
 type Citizen = "Citizen" F.:-> Bool
 type Citizens = "Citizens" F.:-> Int

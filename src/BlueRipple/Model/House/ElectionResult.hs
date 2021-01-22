@@ -78,7 +78,6 @@ type DemographicsR =
     FracGrad,
     FracNonWhite,
     DT.AvgIncome,
---    DT.MedianIncome,
     DT.PopPerSqMile,
     PUMS.Citizens
   ]
