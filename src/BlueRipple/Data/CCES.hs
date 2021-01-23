@@ -71,15 +71,16 @@ import qualified Relude.Extra as Relude
 
 
 ccesDataLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
-ccesDataLoader = K.wrapPrefix "ccesDataLoader"
-                 $ BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
-                 (BR.LocalData $ toText ccesCSV)
-                 Nothing
-                 Nothing
-                 fixCCESRow
-                 transformCCESRow
-                 Nothing
-                 "cces.bin"
+ccesDataLoader = K.wrapPrefix "ccesDataLoader" $ do
+  K.logLE K.Info "Loading/Building CCES data"
+  BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
+    (BR.LocalData $ toText ccesCSV)
+    Nothing
+    Nothing
+    fixCCESRow
+    transformCCESRow
+    Nothing
+    "cces.bin"
 
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId

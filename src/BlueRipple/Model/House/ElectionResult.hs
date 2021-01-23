@@ -66,20 +66,30 @@ type FracFemale = "FracFemale" F.:-> Double
 
 type FracGrad = "FracGrad" F.:-> Double
 
-type FracNonWhite = "FracNonWhite" F.:-> Double
+type FracWhiteNonHispanic = "FracWhiteNonHispanic" F.:-> Double
+type FracWhiteHispanic = "FracWhiteHispanic" F.:-> Double
+type FracNonWhiteHispanic = "FracNonWhiteHispanic" F.:-> Double
+type FracBlack = "FracBlack" F.:-> Double
+type FracAsian = "FracAsian" F.:-> Double
+type FracOther = "FracOther" F.:-> Double
 
 type FracCitizen = "FracCitizen" F.:-> Double
 
 type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
 
 type DemographicsR =
-  [ FracUnder45,
-    FracFemale,
-    FracGrad,
-    FracNonWhite,
-    DT.AvgIncome,
-    DT.PopPerSqMile,
-    PUMS.Citizens
+  [ FracUnder45
+  , FracFemale
+  , FracGrad
+  , FracWhiteNonHispanic
+  , FracWhiteHispanic
+  , FracNonWhiteHispanic
+  , FracBlack
+  , FracAsian
+  , FracOther
+  , DT.AvgIncome
+  , DT.PopPerSqMile
+  , PUMS.Citizens
   ]
 
 type DVotes = "DVotes" F.:-> Int
@@ -90,15 +100,25 @@ type TVotes = "TVotes" F.:-> Int
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes]
 type ElectionDataR = KeyR V.++ DemographicsR V.++ ElectionR
-type ElectionPredictorR = [FracUnder45, FracFemale, FracGrad, FracNonWhite, DT.AvgIncome, DT.PopPerSqMile]
+type ElectionPredictorR = [FracUnder45
+                          , FracFemale
+                          , FracGrad
+                          , FracWhiteNonHispanic
+                          , FracWhiteHispanic
+                          , FracNonWhiteHispanic
+                          , FracBlack
+                          , FracAsian
+                          , FracOther
+                          , DT.AvgIncome
+                          , DT.PopPerSqMile]
 type ElectionData = F.FrameRec ElectionDataR
 
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
-type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome{-, DT.MedianIncome-}, DT.PopPerSqMile]
-type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome, DT.PopPerSqMile]
+type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
+type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
 data HouseModelData = HouseModelData { electionData :: ElectionData, ccesData :: CCESData } deriving (Generic)
@@ -109,7 +129,7 @@ instance S.Serialize HouseModelData where
   get = (\(a, b) -> HouseModelData (FS.unSFrame a) (FS.unSFrame b)) <$> S.get
 
 
-pumsF :: FL.Fold (F.Record (PUMS.CDCounts DT.CatColsASER)) (F.FrameRec (KeyR V.++ DemographicsR))
+pumsF :: FL.Fold (F.Record (PUMS.CDCounts [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])) (F.FrameRec (KeyR V.++ DemographicsR))
 pumsF =
   FMR.concatFold $
     FMR.mapReduceFold
@@ -119,7 +139,7 @@ pumsF =
 
 pumsDataF ::
   FL.Fold
-    (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, DT.AvgIncome{-, DT.MedianIncome-}, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
+    (F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens])
     (F.Record DemographicsR)
 pumsDataF =
   let cit = F.rgetField @PUMS.Citizens
@@ -128,16 +148,28 @@ pumsDataF =
       fracF f = intRatio <$> FL.prefilter f citF <*> citF
       citWgtdSumF f = FL.premap (\r -> realToFrac (cit r) * f r) FL.sum
       citWgtdF f = (/) <$> citWgtdSumF f <*> fmap realToFrac citF
-   in FF.sequenceRecFold $
-        FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
-          V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
-          V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
-          V.:& FF.toFoldRecord (fracF ((== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
-          V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
---          V.:& FF.toFoldRecord (NFL.weightedMedianF (realToFrac . cit) (F.rgetField @DT.MedianIncome)) -- FL.premap (\r -> (realToFrac (cit r), F.rgetField @DT.MedianIncome r)) PUMS.medianIncomeF)
-          V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
-          V.:& FF.toFoldRecord citF
-          V.:& V.RNil
+      race4A = F.rgetField @DT.RaceAlone4C
+      hisp = F.rgetField @DT.HispC
+      wnh r = race4A r == DT.RA4_White && hisp r == DT.NonHispanic
+      wh r = race4A r == DT.RA4_White && hisp r == DT.Hispanic
+      nwh r = race4A r /= DT.RA4_White && hisp r == DT.Hispanic -- this overlaps other categories
+      black r = race4A r /= DT.RA4_Black
+      asian r = race4A r /= DT.RA4_Asian
+      other r = race4A r /= DT.RA4_Other
+  in FF.sequenceRecFold $
+     FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
+     V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
+     V.:& FF.toFoldRecord (fracF ((== DT.Grad) . F.rgetField @DT.CollegeGradC))
+     V.:& FF.toFoldRecord (fracF wnh)
+     V.:& FF.toFoldRecord (fracF wh)
+     V.:& FF.toFoldRecord (fracF nwh)
+     V.:& FF.toFoldRecord (fracF black)
+     V.:& FF.toFoldRecord (fracF asian)
+     V.:& FF.toFoldRecord (fracF other)
+     V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
+     V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
+     V.:& FF.toFoldRecord citF
+     V.:& V.RNil
 
 electionF :: FL.FoldM (Either T.Text) (F.Record (BR.HouseElectionCols V.++ '[ET.Incumbent])) (F.FrameRec (KeyR V.++ ElectionR))
 electionF =
@@ -212,7 +244,7 @@ ccesF :: Int -> FL.Fold (F.Record CCES.CCES_MRP) (F.FrameRec CCESByCD)
 ccesF earliestYear = FMR.concatFold
         $ FMR.mapReduceFold
         (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC])
+        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
         (FMR.foldAndAddKey countCCESVotesF)
 
 ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
@@ -221,6 +253,17 @@ ccesCountedDemHouseVotesByCD = do
 --  BR.clearIfPresentD "model/house/ccesByCD.bin"
   BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ return . FL.fold (ccesF 2012)
 
+pumsReKey :: F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+          ->  F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+pumsReKey r =
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = F.rgetField @DT.InCollege r
+  in DT.age5FToSimple (F.rgetField @DT.Age5FC r)
+     F.&: F.rgetField @DT.SexC r
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: F.rgetField @DT.RaceAlone4C r
+     F.&: F.rgetField @DT.HispC r
+     F.&: V.RNil
 
 prepCachedData ::
   (K.KnitEffects r, K.CacheEffectsD r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
@@ -229,7 +272,7 @@ prepCachedData clearCache = do
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) ->
-    PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (PUMS.pumsKeysToASER True True . F.rcast) cdFromPUMA pums
+    PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (pumsReKey . F.rcast) cdFromPUMA pums
   houseElections_C <- BR.houseElectionsWithIncumbency
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
@@ -277,19 +320,22 @@ maxDensityF = fromMaybe 1 <$> FL.premap (F.rgetField @DT.PopPerSqMile) FL.maximu
 
 type PredictorMap = Map Text (F.Record ElectionDataR -> Double, F.Record CCESDataR -> Double)
 
+ccesWNH r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+ccesWH r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.Hispanic)
+ccesNWH r = (F.rgetField @DT.Race5C r /= DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.Hispanic)
+
 predictorMap :: PredictorMap
 predictorMap =
   let boolToNumber b = if b then 1 else 0
   in M.fromList [("PctUnder45",(F.rgetField @FracUnder45, boolToNumber . (== DT.Under) . F.rgetField @DT.SimpleAgeC))
                 ,("PctFemale",(F.rgetField @FracFemale, boolToNumber . (== DT.Female) . F.rgetField @DT.SexC))
                 ,("PctGrad",(F.rgetField @FracGrad, boolToNumber . (== DT.Grad) . F.rgetField @DT.CollegeGradC))
-                ,("PctNonWhite",(F.rgetField @FracNonWhite, boolToNumber . (== DT.NonWhite) . F.rgetField @DT.SimpleRaceC))
+                ,("PcWhiteNonHispanic", (F.rgetField @FracWhiteNonHispanic , boolToNumber . ccesWNH))
+                ,("PctWhite",
+                  (\r -> F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r, boolToNumber . ccesWH))
                 ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
                 ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
                 ,("Incumbency",(realToFrac . F.rgetField @Incumbency, realToFrac . F.rgetField @Incumbency))
-                ,("PctNonWhite_x_PctGrad", (\r -> F.rgetField @FracNonWhite r * F.rgetField @FracGrad r
-                                           ,(\r -> boolToNumber ((F.rgetField @DT.SimpleRaceC r == DT.NonWhite)
-                                                                 && (F.rgetField @DT.CollegeGradC r == DT.Grad)))))
                 ]
 
 adjustPredictor :: (Double -> Double) -> Text -> PredictorMap -> PredictorMap
