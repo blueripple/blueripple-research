@@ -133,34 +133,6 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
     )
     $! BR.loadToRecStream @qs csvParserOptions path filter
 
-{-
--- This is bad.  Requires entire thing to be in mem as a list before writing.
-cachedRecStreamLoader
-  :: forall qs rs r
-   . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
-     , K.CacheEffectsD r
-     )
-  => DataPath
-  -> Maybe F.ParserOptions
-  -> Maybe (F.Record qs -> Bool)
-  -> (F.Record qs -> F.Record rs)
-  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
-  -> T.Text -- ^ cache key
-  -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
-cachedRecStreamLoader filePath parserOptionsM filterM fixRow cachePathM key = do
-  let cacheKey      = (fromMaybe "data/" cachePathM) <> key
-  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
-  K.logLE K.Diagnostic $ "loading or retrieving and saving (streamly) data at key=" <> cacheKey
-  K.retrieveOrMakeTransformedStream FS.toS FS.fromS cacheKey cachedDataPath
-    $ \dataPath -> recStreamLoader dataPath parserOptionsM filterM fixRow
--}
-
 -- file has qs
 -- Filter qs
 -- transform to rs
@@ -192,36 +164,6 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
     let recStream = recStreamLoader dataPath parserOptionsM mFilter fixRow
     K.streamlyToKnit $ FStreamly.inCoreAoS recStream
 
-{-
--- file has qs
--- Filter qs
--- transform to rs
-cachedFrameLoaderS
-  :: forall qs rs r
-   . ( V.RMap rs
-     , V.RMap qs
-     , F.ReadRec qs
-     , FI.RecVec qs
-     , FI.RecVec rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
-     , K.CacheEffectsD r
-     )
-  => DataPath
-  -> Maybe F.ParserOptions
-  -> Maybe (F.Record qs -> Bool)
-  -> (F.Record qs -> F.Record rs)
-  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
-  -> T.Text -- ^ cache key
-  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
-cachedFrameLoaderS filePath parserOptionsM mFilter fixRow cachePathM key = do
-  let cacheKey      = fromMaybe "data/" cachePathM <> key
-  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
-  K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
-  BR.retrieveOrMakeFrameS cacheKey cachedDataPath $ \dataPath -> recStreamLoader dataPath parserOptionsM mFilter fixRow
--}
 -- file has qs
 -- Filter qs
 -- transform to rs
@@ -287,55 +229,6 @@ maybeFrameLoader
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
   = K.streamlyToKnit $ FStreamly.inCoreAoS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
-
--- file has fs
--- load fs
--- rcast to qs
--- filter qs
--- "fix" the maybes in qs
--- transform to rs
-cachedMaybeRecStreamLoader
-  :: forall (fs :: [(Symbol, Type)]) qs rs r
-   . ( V.RMap rs
-     , V.RMap fs
-     , F.ReadRec fs
-     , V.RFoldMap qs
-     , V.RPureConstrained V.KnownField qs
-     , V.RecApplicative qs
-     , V.RApply qs
-     , qs F.⊆ fs
-     , FI.RecVec qs
-     , V.RFoldMap rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
-     , K.KnitEffects r
-     , K.CacheEffectsD r
-     , Show (F.Record qs)
-     , V.RMap qs
-     , V.RecordToList qs
-     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
-     )
-  => DataPath
-  -> Maybe F.ParserOptions
-  -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
-  -> (F.Record qs -> F.Record rs)
-  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
-  -> T.Text -- ^ cache key
-  -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
-cachedMaybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow mCachePath key = do
-  let cacheRecStream :: T.Text
-                     -> K.ActionWithCacheTime r DataPath
-                     -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
-                     -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
-      cacheRecStream = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS
-      cacheKey      = fromMaybe "data/" mCachePath <> key
-  K.logLE K.Diagnostic
-    $  "loading or retrieving and saving data at key="
-    <> cacheKey
-  cachedDataPath <- liftIO $ dataPathWithCacheTime dataPath
-  cacheRecStream cacheKey cachedDataPath $ \dataPath -> maybeRecStreamLoader @fs @qs @rs dataPath mParserOptions mFilterMaybes fixMaybes transformRow
 
 -- file has fs
 -- load fs
@@ -413,9 +306,15 @@ cachedMaybeFrameLoader
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
-cachedMaybeFrameLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow cachePathM key
-  = K.streamToAction FStreamly.inCoreAoS
-    <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath mParserOptions mFilterMaybes fixMaybes transformRow cachePathM key
+cachedMaybeFrameLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow cachePathM key = do
+  let cachePath = fromMaybe "data" cachePathM
+      cacheKey = cachePath <> "/" <> key
+  BR.retrieveOrMakeFrame cacheKey (pure ())
+    $ const
+    $ maybeFrameLoader @fs dataPath mParserOptions mFilterMaybes fixMaybes transformRow
+
+--  = K.streamToAction FStreamly.inCoreAoS
+--    <$> cachedMaybeRecStreamLoader @fs @qs @rs dataPath mParserOptions mFilterMaybes fixMaybes transformRow cachePathM key
 
 
 -- tracing fold
@@ -428,3 +327,56 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     putTextLn $ countMsg n
     return (n+1)
   done _ = ST.liftIO $ putTextLn endMsg
+
+
+
+{-
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
+cachedMaybeRecStreamLoader
+  :: forall (fs :: [(Symbol, Type)]) qs rs r
+   . ( V.RMap rs
+     , V.RMap fs
+     , F.ReadRec fs
+     , V.RFoldMap qs
+     , V.RPureConstrained V.KnownField qs
+     , V.RecApplicative qs
+     , V.RApply qs
+     , qs F.⊆ fs
+     , FI.RecVec qs
+     , V.RFoldMap rs
+     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
+     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
+     , Generic (F.Rec FS.SElField rs)
+     , K.KnitEffects r
+     , K.CacheEffectsD r
+     , Show (F.Record qs)
+     , V.RMap qs
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
+     )
+  => DataPath
+  -> Maybe F.ParserOptions
+  -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
+  -> (F.Record qs -> F.Record rs)
+  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
+  -> T.Text -- ^ cache key
+  -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
+cachedMaybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow mCachePath key = do
+  let cacheRecStream :: T.Text
+                     -> K.ActionWithCacheTime r DataPath
+                     -> (DataPath -> Streamly.SerialT K.StreamlyM (F.Record rs))
+                     -> K.Sem r (K.StreamWithCacheTime (F.Record rs))
+      cacheRecStream = K.retrieveOrMakeTransformedStream @K.DefaultSerializer @K.DefaultCacheData FS.toS FS.fromS
+      cacheKey      = fromMaybe "data/" mCachePath <> key
+  K.logLE K.Diagnostic
+    $  "loading or retrieving and saving data at key="
+    <> cacheKey
+  cachedDataPath <- liftIO $ dataPathWithCacheTime dataPath
+  cacheRecStream cacheKey cachedDataPath $ \dataPath -> maybeRecStreamLoader @fs @qs @rs dataPath mParserOptions mFilterMaybes fixMaybes transformRow
+-}

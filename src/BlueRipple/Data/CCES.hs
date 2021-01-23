@@ -79,7 +79,7 @@ ccesDataLoader = K.wrapPrefix "ccesDataLoader"
                  fixCCESRow
                  transformCCESRow
                  Nothing
-                 "ccesMRP.sbin"
+                 "cces.bin"
 
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId
@@ -115,6 +115,7 @@ type CCES_MRP = '[ Year
                  , DT.EducationC
                  , DT.CollegeGradC
                  , DT.Race5C
+                 , DT.HispC
                  , DT.SimpleRaceC
                  , PartisanId3
                  , PartisanId7
@@ -172,6 +173,11 @@ raceToRace5 Hispanic = DT.R5_Latinx
 raceToRace5 Asian = DT.R5_Asian
 raceToRace5 _ = DT.R5_Other
 
+intToHisp :: Int -> DT.Hisp
+intToHisp n
+  | n == 1 = DT.Hispanic
+  | otherwise = DT.NonHispanic
+
 
 intToAgeT :: Real a => a -> DT.Age5
 intToAgeT x
@@ -184,7 +190,6 @@ intToAgeT x
 intToSimpleAge :: Int -> DT.SimpleAge
 intToSimpleAge n = if n < 45 then DT.Under else DT.EqualOrOver
 
-
 data RegistrationT = R_Active
                    | R_NoRecord
                    | R_Unregistered
@@ -194,7 +199,6 @@ data RegistrationT = R_Active
                    | R_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegistrationT = V.Vector
 instance S.Serialize RegistrationT
-
 
 parseRegistration :: T.Text -> RegistrationT
 parseRegistration "Active" = R_Active
@@ -300,12 +304,6 @@ type PartisanIdLeaner = "PartisanIdLeaner" F.:-> PartisanIdentityLeaner
 instance FV.ToVLDataValue (F.ElField PartisanIdLeaner) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-{-
-data VotePartyT = VP_Democratic | VP_Republican | VP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor VotePartyT = V.Vector
-instance S.Serialize VotePartyT
--}
-
 parseHouseVoteParty :: T.Text -> ET.PartyT
 parseHouseVoteParty "Democratic" = ET.Democratic
 parseHouseVoteParty "Republican" = ET.Republican
@@ -329,12 +327,6 @@ parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
                            else if T.isInfixOf "John McCain" t
                                 then ET.Republican
                                      else ET.Other
-
-{-
-parsePres2008VoteParty "Barack Obama" = VP_Democratic
-parsePres2008VoteParty "John McCain" = VP_Republican
-parsePres2008VoteParty _ = VP_Other
--}
 
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT
@@ -366,15 +358,15 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
 
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
 transformCCESRow = F.rcast . addCols where
-  intsToRace h r = if h == 1 then Hispanic else intToRaceT r
   addCols = (FT.addName  @CCESYear @Year)
             . (FT.addName @CCESSt @StateAbbreviation)
             . (FT.addName @CCESDistUp @CongressionalDistrict)
             . (FT.addOneFromOne @CCESGender @DT.SexC intToSex)
             . (FT.addOneFromOne @CCESEduc @DT.EducationC intToEducation)
             . (FT.addOneFromOne @CCESEduc @DT.CollegeGradC intToCollegeGrad)
-            . (FT.addOneFrom @[CCESHispanic, CCESRace] @DT.Race5C (\x y -> raceToRace5 $ intsToRace x y))
-            . (FT.addOneFrom @[CCESHispanic, CCESRace] @DT.SimpleRaceC (\h r -> raceToSimpleRace $ intsToRace h r))
+            . (FT.addOneFromOne @CCESRace @DT.Race5C (raceToRace5 . intToRaceT))
+            . (FT.addOneFromOne @CCESRace @DT.SimpleRaceC (raceToSimpleRace . intToRaceT))
+            . (FT.addOneFromOne @CCESHispanic @DT.HispC intToHisp)
             . (FT.addOneFromOne @CCESAge @DT.Age5C intToAgeT)
             . (FT.addOneFromOne @CCESAge @DT.SimpleAgeC intToSimpleAge)
             . (FT.addOneFromOne @CCESVvRegstatus @Registration parseRegistration)
