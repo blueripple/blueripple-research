@@ -155,9 +155,9 @@ pumsDataF =
       wnh r = race4A r == DT.RA4_White && hisp r == DT.NonHispanic
       wh r = race4A r == DT.RA4_White && hisp r == DT.Hispanic
       nwh r = race4A r /= DT.RA4_White && hisp r == DT.Hispanic -- this overlaps other categories
-      black r = race4A r /= DT.RA4_Black
-      asian r = race4A r /= DT.RA4_Asian
-      other r = race4A r /= DT.RA4_Other
+      black r = race4A r == DT.RA4_Black
+      asian r = race4A r == DT.RA4_Asian
+      other r = race4A r == DT.RA4_Other
   in FF.sequenceRecFold $
      FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
      V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
