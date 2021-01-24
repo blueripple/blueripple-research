@@ -323,7 +323,11 @@ type PredictorMap = Map Text (F.Record ElectionDataR -> Double, F.Record CCESDat
 
 ccesWNH r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 ccesWH r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.Hispanic)
+ccesW r = ccesWNH r || ccesWH r
 ccesNWH r = (F.rgetField @DT.Race5C r /= DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.Hispanic)
+
+pumsWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
+pumsWhiteNH r = F.rgetField @FracWhiteNonHispanic r
 
 predictorMap :: PredictorMap
 predictorMap =
@@ -332,8 +336,9 @@ predictorMap =
                 ,("PctFemale",(F.rgetField @FracFemale, boolToNumber . (== DT.Female) . F.rgetField @DT.SexC))
                 ,("PctGrad",(F.rgetField @FracGrad, boolToNumber . (== DT.Grad) . F.rgetField @DT.CollegeGradC))
                 ,("PcWhiteNonHispanic", (F.rgetField @FracWhiteNonHispanic , boolToNumber . ccesWNH))
-                ,("PctWhite",
-                  (\r -> F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r, boolToNumber . ccesWH))
+                ,("PctWhite",(pumsWhite, boolToNumber . ccesW))
+                ,("PctNonWhiteNH", (\r -> 1 - pumsWhiteNH r, boolToNumber . not . ccesWNH))
+                ,("PctNonWhite", (\r -> 1 - pumsWhite r, boolToNumber . not . ccesW))
                 ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
                 ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
                 ,("Incumbency",(realToFrac . F.rgetField @Incumbency, realToFrac . F.rgetField @Incumbency))

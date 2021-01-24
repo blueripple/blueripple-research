@@ -43,6 +43,7 @@ import Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
+import qualified Visualization.VegaLite.Histogram as VL
 
 import qualified Data.MapRow as MapRow
 import qualified Knit.Report as K
@@ -102,7 +103,7 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedData False
+  houseData_C <- BRE.prepCachedData True
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
@@ -118,8 +119,22 @@ testHouseModel = do
          $ FV.multiHistogram @BRE.FracFemale @BR.Year "% Female" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @BRE.FracGrad @BR.Year "% Grad" Nothing 50 FV.DataMinMax True  mhStyle vcDist (hmd ^. #electionData)
+--    _ <- K.addHvega Nothing Nothing
+--         $ FV.multiHistogram @BRE.FracNonWhite @BR.Year "% Non-White" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracNonWhite @BR.Year "% Non-White" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ VL.multiHistogram
+         "% Non-White"
+         Nothing Nothing
+         (Just "Year")
+         (\r -> 1 - BRE.pumsWhiteNH r)
+         (realToFrac . F.rgetField @BR.Year)
+         GV.Number
+         50
+         FV.DataMinMax
+         True
+         mhStyle
+         vcDist
+         (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DT.AvgIncome @BR.Year "Average Income" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
@@ -135,7 +150,11 @@ testHouseModel = do
     let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
                              ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
                              ,FV.LabeledCol "% Grad" (F.rgetField @BRE.FracGrad)
-                             ,FV.LabeledCol "% NonWhite" (F.rgetField @BRE.FracNonWhite)
+                             ,FV.LabeledCol "% White-Non-Hispanic" (F.rgetField @BRE.FracWhiteNonHispanic)
+                             ,FV.LabeledCol "% White-Hispanic" (F.rgetField @BRE.FracWhiteHispanic)
+                             ,FV.LabeledCol "% Non-White-Hispanic" (F.rgetField @BRE.FracNonWhiteHispanic)
+                             ,FV.LabeledCol "% Black" (F.rgetField @BRE.FracBlack)
+                             ,FV.LabeledCol "% Asian" (F.rgetField @BRE.FracAsian)
                              ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
                              ,FV.LabeledCol "Density" (F.rgetField @DT.PopPerSqMile)
                              ,FV.LabeledCol "Incumbency" (realToFrac . F.rgetField @BRE.Incumbency)
@@ -359,7 +378,7 @@ examineFit clearCached houseData_C = do
         )
   results <- runOne model
   electionData <- K.ignoreCacheTime
-                  $ fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, BRE.FracGrad, BRE.FracNonWhite])
+                  $ fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, BRE.FracGrad, BRE.FracWhiteNonHispanic])
                   . F.filterFrame (isYear year)
                   . BRE.electionData
                   <$> houseData_C
@@ -390,7 +409,7 @@ fitScatter1 :: (Functor f, Foldable f)
                            , BRE.EDVotes
                            , BRE.EDVotes95
                            , BRE.FracGrad
-                           , BRE.FracNonWhite]))
+                           , BRE.FracWhiteNonHispanic]))
            -> GV.VegaLite
 fitScatter1 title vc rows =
   let toVLDataRec = FV.useColName FV.textAsVLStr
@@ -401,7 +420,7 @@ fitScatter1 title vc rows =
                     V.:& FV.useColName FV.asVLNumber
                     V.:& FV.useColName FV.asVLNumber
                     V.:& FV.asVLData (GV.Number . (*100)) "% Grad"
-                    V.:& FV.asVLData (GV.Number . (*100)) "% Non-White"
+                    V.:& FV.asVLData (\x -> GV.Number $ 100 * (1 - x)) "% Non-White"
                     V.:& V.RNil
       dat = FV.recordsToData toVLDataRec rows
       encX = GV.position GV.X [GV.PName "% Grad", GV.PmType GV.Quantitative]
@@ -426,7 +445,7 @@ fitScatter2 :: (Functor f, Foldable f)
                            , BRE.EDVotes
                            , BRE.EDVotes95
                            , BRE.FracGrad
-                           , BRE.FracNonWhite]))
+                           , BRE.FracWhiteNonHispanic]))
            -> GV.VegaLite
 fitScatter2 title vc rows =
   let toVLDataRec = FV.useColName FV.textAsVLStr
@@ -437,7 +456,7 @@ fitScatter2 title vc rows =
                     V.:& FV.useColName FV.asVLNumber
                     V.:& FV.useColName FV.asVLNumber
                     V.:& FV.asVLData (GV.Number . (*100)) "% Grad"
-                    V.:& FV.asVLData (GV.Number . (*100)) "% Non-White"
+                    V.:& FV.asVLData (\x -> GV.Number $ 100 * (1 - x)) "% Non-White"
                     V.:& V.RNil
       dat = FV.recordsToData toVLDataRec rows
       calcFitDiff = GV.calculateAs ("(datum.DVotes - datum.EstDVotes)/datum.Votes") "actual - fit (D Share)"

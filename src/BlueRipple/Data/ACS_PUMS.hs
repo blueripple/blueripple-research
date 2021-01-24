@@ -176,7 +176,6 @@ pumsCount = BRF.frameCompactMRM
 
 
 
-
 pumsCountStreamlyF :: FL.FoldM K.StreamlyM (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountStreamlyF = BRF.framesStreamlyMR
                      FMR.noUnpack
@@ -384,19 +383,17 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
   unless (null missing) $ K.knitError $ "missing items in join: " <> show missing
   -- roll it up to the CD level
-  let demoByCDF  =  FMR.concatFold
-                    $ FMR.mapReduceFold
-                    FMR.noUnpack
-                    (FMR.assignKeysAndData
-                      @('[BR.Year] ++ CDDescWA ++ ks)
-                      @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
-                    (FMR.foldAndAddKey {-@('[BR.Year] ++ CDDescWA ++ ks) @PUMSCountToFields -}
-                      $ sumPUMSCountedF
-                      (Just $ F.rgetField @BR.FracPUMAInCD)
-                      F.rcast
-                    )
-      demoByCD = FL.fold demoByCDF byPUMAWithCDAndWeight
-      rows = FL.fold FL.length demoByCD
+  let demoByCD  = BRF.frameCompactMRM
+                  FMR.noUnpack
+                  (FMR.assignKeysAndData
+                    @('[BR.Year] ++ CDDescWA ++ ks)
+                    @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
+                  (sumPUMSCountedF
+                    (Just $ F.rgetField @BR.FracPUMAInCD)
+                    F.rcast
+                  )
+  demoByCD <- K.streamlyToKnit $ demoByCD byPUMAWithCDAndWeight
+  let rows = FL.fold FL.length demoByCD
 --  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
   K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> show (totalPeople demoByCD)
   return demoByCD
