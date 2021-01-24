@@ -26,6 +26,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
@@ -51,6 +52,7 @@ import GHC.Generics (Generic)
 import qualified Data.MapRow as MapRow
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
+import qualified Knit.Utilities.Streamly as K
 import qualified Numeric.Foldl as NFL
 import qualified Optics
 import qualified Stan.JSON as SJ
@@ -116,7 +118,7 @@ type ElectionData = F.FrameRec ElectionDataR
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
-type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC, Surveyed, TVotes, DVotes]
+type CCESByCD = KeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, Surveyed, TVotes, DVotes]
 type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
@@ -129,13 +131,13 @@ instance S.Serialize HouseModelData where
   get = (\(a, b) -> HouseModelData (FS.unSFrame a) (FS.unSFrame b)) <$> S.get
 
 
-pumsF :: FL.Fold (F.Record (PUMS.CDCounts [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])) (F.FrameRec (KeyR V.++ DemographicsR))
-pumsF =
-  FMR.concatFold $
-    FMR.mapReduceFold
-      FMR.noUnpack
-      (FMR.assignKeysAndData @KeyR)
-      (FMR.foldAndAddKey pumsDataF)
+pumsMR :: (Foldable f, Monad m)
+       => f (F.Record (PUMS.CDCounts [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]))
+       -> m (F.FrameRec (KeyR V.++ DemographicsR))
+pumsMR = BRF.frameCompactMRM
+        FMR.noUnpack
+        (FMR.assignKeysAndData @KeyR)
+        pumsDataF
 
 pumsDataF ::
   FL.Fold
@@ -240,18 +242,17 @@ countCCESVotesF =
       dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) votedF
   in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
 
-ccesF :: Int -> FL.Fold (F.Record CCES.CCES_MRP) (F.FrameRec CCESByCD)
-ccesF earliestYear = FMR.concatFold
-        $ FMR.mapReduceFold
-        (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
-        (FMR.foldAndAddKey countCCESVotesF)
+ccesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CCES_MRP) -> m (F.FrameRec CCESByCD)
+ccesMR earliestYear = BRF.frameCompactMRM
+                     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
+                     countCCESVotesF
 
 ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
 ccesCountedDemHouseVotesByCD = do
   cces_C <- CCES.ccesDataLoader
 --  BR.clearIfPresentD "model/house/ccesByCD.bin"
-  BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ return . FL.fold (ccesF 2012)
+  BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ ccesMR 2012
 
 pumsReKey :: F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
           ->  F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
@@ -279,8 +280,8 @@ prepCachedData clearCache = do
   when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, elex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
-    let demographics = FL.fold pumsF $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
-        isYear year = (== year) . F.rgetField @BR.Year
+    demographics <- K.streamlyToKnit $ pumsMR $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
+    let isYear year = (== year) . F.rgetField @BR.Year
         afterYear year = (>= year) . F.rgetField @BR.Year
         dVotes = F.rgetField @DVotes
         rVotes = F.rgetField @RVotes
