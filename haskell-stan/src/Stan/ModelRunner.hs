@@ -37,6 +37,7 @@ import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
+import qualified Relude.Extra as Relude
 
 makeDefaultModelRunnerConfig ::
   K.KnitEffects r =>
@@ -239,15 +240,23 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
     SC.SkipSummary f -> f toPredict resultDeps
     SC.DoNothing -> return ()
 
-deleteOutputFiles :: SC.ModelRunnerConfig -> IO ()
-deleteOutputFiles config = do
-   let modelDirS = toString $ SC.mrcModelDir config
+data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord)
+
+deleteStaleFiles :: SC.ModelRunnerConfig -> [StaleFiles] -> IO ()
+deleteStaleFiles config staleFiles = do
+   let
+       modelDirS = toString $ SC.mrcModelDir config
        outputCSVPaths = SC.addDirFP (modelDirS ++ "/output") . toString <$> SC.stanOutputFiles config
        summaryFilePath = toString $ SC.summaryFilePath config
-       toDelete = summaryFilePath : outputCSVPaths
+       dataPath = jsonFP config
+       toDelete x = case x of
+         StaleData -> [dataPath]
+         StaleOutput -> outputCSVPaths
+         StaleSummary -> [summaryFilePath]
        exists fp = Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
-   extantPaths <- catMaybes <$> traverse exists toDelete
-   putTextLn $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
+       filesToDelete = ordNub $ concat $ toDelete <$> staleFiles
+   extantPaths <- catMaybes <$> traverse exists filesToDelete
+   Say.say $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
    traverse_ Dir.removeFile extantPaths
 
 

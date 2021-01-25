@@ -593,7 +593,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> outputLabel <> ".bin"
   when clearCache $ do
-    K.liftKnit $ SM.deleteOutputFiles stanConfig
+    K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
   let  filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
        filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
