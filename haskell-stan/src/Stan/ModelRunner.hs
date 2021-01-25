@@ -239,6 +239,18 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
     SC.SkipSummary f -> f toPredict resultDeps
     SC.DoNothing -> return ()
 
+deleteOutputFiles :: SC.ModelRunnerConfig -> IO ()
+deleteOutputFiles config = do
+   let modelDirS = toString $ SC.mrcModelDir config
+       outputCSVPaths = SC.addDirFP (modelDirS ++ "/output") . toString <$> SC.stanOutputFiles config
+       summaryFilePath = toString $ SC.summaryFilePath config
+       toDelete = summaryFilePath : outputCSVPaths
+       exists fp = Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
+   extantPaths <- catMaybes <$> traverse exists toDelete
+   putTextLn $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
+   traverse_ Dir.removeFile extantPaths
+
+
 checkClangEnv :: (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) => K.Sem r ()
 checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
   clangBinDirM <- K.liftKnit $ Env.lookupEnv "CLANG_BINDIR"

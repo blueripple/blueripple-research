@@ -229,7 +229,7 @@ writeCompareScript configs compareScriptName = do
     $ SR.compareScript configs 10 Nothing
 
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-compareModels clearCached houseData_C = do
+compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       models =
         [ ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
@@ -263,9 +263,10 @@ compareModels clearCached houseData_C = do
   return ()
 
 comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-comparePredictors clearCached houseData_C = do
+comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ do
   let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ,("IDEBHFAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
+                   ,("IDEBHAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "PctAsian", "PctOther"])
                    ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
                    ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
                    ,("IDE", ["Incumbency", "PopPerSqMile", "PctGrad"])
@@ -309,7 +310,7 @@ comparePredictors clearCached houseData_C = do
 
 
 compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
-compareData clearCached houseData_C = do
+compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       years = [2012, 2014, 2016, 2018]
@@ -404,7 +405,7 @@ modelChart title predOrder modelOrder vc t rows =
    in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
 examineFit :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
-examineFit clearCached houseData_C = do
+examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
       model = ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
       isYear year = (== year) . F.rgetField @BR.Year

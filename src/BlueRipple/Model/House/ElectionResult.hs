@@ -592,9 +592,12 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
         (Just nSamples)
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> outputLabel <> ".bin"
-      filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
-      filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
-      houseDataForYear_C = fmap (Optics.over #electionData filterToYear . Optics.over #ccesData filterToYear) houseData_C
+  when clearCache $ do
+    K.liftKnit $ SM.deleteOutputFiles stanConfig
+    BR.clearIfPresentD resultCacheKey
+  let  filterToYear :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
+       filterToYear = F.filterFrame ((== year) . F.rgetField @BR.Year)
+       houseDataForYear_C = fmap (Optics.over #electionData filterToYear . Optics.over #ccesData filterToYear) houseData_C
   modelDep <- SM.modelCacheTime stanConfig
   K.logLE K.Diagnostic $ "modelDep: " <> show (K.cacheTime modelDep)
   K.logLE K.Diagnostic $ "houseDataDep: " <> show (K.cacheTime houseData_C)
@@ -608,7 +611,6 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
                 , SR.UnwrapExpr "DVotes/TVotes" "ProbD"
                 , SR.UnwrapExpr "TVotes/VAP" "ProbV"
                 ]
-  when clearCache $ BR.clearIfPresentD resultCacheKey
   res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel
