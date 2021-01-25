@@ -170,22 +170,25 @@ testHouseModel = do
                  (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-{-
+
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
--}
+{-
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C
+-}
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
     $ examineFit False $ K.liftActionWithCacheTime houseData_C
 -}
+{-
   K.newPandoc
     (K.PandocInfo "compare_models" $ one ("pagetitle","Compare Models"))
     $ compareModels True $ K.liftActionWithCacheTime houseData_C
+-}
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
 writeCompareScript configs compareScriptName = do
@@ -233,7 +236,9 @@ comparePredictors clearCached houseData_C = do
                    ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
                    ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
                    ,("IDE", ["Incumbency", "PopPerSqMile", "PctGrad"])
-                   ,("Race", ["PctNonWhite"])
+                   ,("PctBlack", ["PctBlack"])
+                   ,("PctNonWhite", ["PctNonWhite"])
+                   ,("PctNonWhiteNH", ["PctNonWhiteNH"])
                    ,("Incumbency", ["Incumbency"])
                    ,("Density", ["PopPerSqMile"])
                    ,("Education", ["PctGrad"])
