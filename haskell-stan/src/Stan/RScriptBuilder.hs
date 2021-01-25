@@ -13,6 +13,7 @@ import qualified Stan.ModelBuilder as SB
 
 import qualified Colonnade as Col
 import qualified Control.Foldl as Foldl
+import qualified Data.Map as M
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -172,9 +173,17 @@ compareModels configs nCores = do
   putTextLn "R finished."
   let sRText = Streamly.filter (not . T.isPrefixOf ">") $ Streamly.fromList $ lines rOut
   fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS $ FStreamly.streamTable $ Streamly.drop 1 $ sRText
-  let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
-      fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
-  return fLoo
+  -- map results to models
+  let resultModelMap :: Map Text Text = M.fromList $ zip ((\n -> "model"<> show n) <$> [1..]) (Foldl.fold (Foldl.premap fst Foldl.list) configs)
+      fixName :: F.Record LOO_R -> F.Record LOO_R
+      fixName r =
+        let oldName = F.rgetField @Model r
+            newName = fromMaybe oldName $ M.lookup oldName resultModelMap
+        in F.rputField @Model newName r
+  return $ fmap fixName fLooRaw
+
+--  let nameFrame = F.toFrame $ fmap (F.&: V.RNil) $ fst <$> configs
+--      fLoo :: F.FrameRec LOO_R = nameFrame `F.zipFrames` (F.rcast @LOO_DataR <$> fLooRaw)
 
 looTextColonnade :: Int -> Col.Colonnade Col.Headed (F.Record LOO_R) Text
 looTextColonnade digits =

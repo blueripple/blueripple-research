@@ -103,7 +103,7 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedData True
+  houseData_C <- BRE.prepCachedData False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
@@ -136,6 +136,40 @@ testHouseModel = do
          vcDist
          (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
+         $ VL.multiHistogram
+         "% Hispanic"
+         Nothing Nothing
+         (Just "Year")
+         (BRE.pumsHispanic)
+         (realToFrac . F.rgetField @BR.Year)
+         GV.Number
+         50
+         FV.DataMinMax
+         True
+         mhStyle
+         vcDist
+         (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ VL.multiHistogram
+         "% Hispanic Identifying as White"
+         Nothing Nothing
+         (Just "Year")
+         (BRE.pumsHispanicWhiteFraction)
+         (realToFrac . F.rgetField @BR.Year)
+         GV.Number
+         50
+         FV.DataMinMax
+         True
+         mhStyle
+         vcDist
+         (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.multiHistogram @BRE.FracBlack @BR.Year "% Black" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.multiHistogram @BRE.FracAsian @BR.Year "% Asian" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
+         $ FV.multiHistogram @BRE.FracOther @BR.Year "% Other (Race)" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+    _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DT.AvgIncome @BR.Year "Average Income" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DT.PopPerSqMile @BR.Year "Density [log(ppl/sq mile)]" Nothing 50 FV.DataMinMax True mhStyle vcDist
@@ -150,9 +184,8 @@ testHouseModel = do
     let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
                              ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
                              ,FV.LabeledCol "% Grad" (F.rgetField @BRE.FracGrad)
-                             ,FV.LabeledCol "% White-Non-Hispanic" (F.rgetField @BRE.FracWhiteNonHispanic)
-                             ,FV.LabeledCol "% White-Hispanic" (F.rgetField @BRE.FracWhiteHispanic)
-                             ,FV.LabeledCol "% Non-White-Hispanic" (F.rgetField @BRE.FracNonWhiteHispanic)
+                             ,FV.LabeledCol "% Hispanic" BRE.pumsHispanic
+                             ,FV.LabeledCol "WhiteHispanic/Hispanic" BRE.pumsHispanicWhiteFraction
                              ,FV.LabeledCol "% Black" (F.rgetField @BRE.FracBlack)
                              ,FV.LabeledCol "% Asian" (F.rgetField @BRE.FracAsian)
                              ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
@@ -174,11 +207,10 @@ testHouseModel = do
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
-{-
+
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
-    $ compareData False $ K.liftActionWithCacheTime houseData_C
--}
+    $ compareData True $ K.liftActionWithCacheTime houseData_C
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
@@ -233,9 +265,12 @@ compareModels clearCached houseData_C = do
 comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 comparePredictors clearCached houseData_C = do
   let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
+                   ,("IDEBHFAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
                    ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
                    ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
                    ,("IDE", ["Incumbency", "PopPerSqMile", "PctGrad"])
+                   ,("IBHF", ["Incumbency", "PctBlack", "PctHispanic", "HispanicWhiteFraction"])
+                   ,("IBH", ["Incumbency", "PctBlack", "PctHispanic"])
                    ,("PctBlack", ["PctBlack"])
                    ,("PctNonWhite", ["PctNonWhite"])
                    ,("PctNonWhiteNH", ["PctNonWhiteNH"])
@@ -266,7 +301,7 @@ comparePredictors clearCached houseData_C = do
     K.liftKnit $ SR.compareModels (zip (fst <$> predictors) (snd <$> results)) 10
   fLoo <- K.ignoreCacheTime fLoo_C
   BR.brAddRawHtmlTable
-    "Predictor LOO (Leave-One-Out Cross Validatiion) comparison"
+    "Predictor LOO (Leave-One-Out Cross Validation) comparison"
     mempty
     (BR.toCell mempty () "" BR.textToStyledHtml <$> SR.looTextColonnade 2)
     (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)
@@ -275,7 +310,8 @@ comparePredictors clearCached houseData_C = do
 
 compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 compareData clearCached houseData_C = do
-  let predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
+  let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
+      predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       years = [2012, 2014, 2016, 2018]
       modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
       runYear mw y =
