@@ -361,20 +361,26 @@ type SenateElectionCols =
     ET.TotalVotes
   ]
 
-senateElectionKey :: F.Record SenateElectionCols -> (Text, Int)
-senateElectionKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Year r)
+-- NB: If there are 2 specials at the same time, this will fail to distinguish them. :(
+senateElectionKey :: F.Record SenateElectionCols -> ((Text, Bool), Int)
+senateElectionKey r = ((F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Special r), F.rgetField @BR.Year r)
 
 processSenateElectionRow :: BR.SenateElections -> F.Record SenateElectionCols
 processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
   where
     mutate =
-      FT.retypeColumn @BR.StatePo @BR.StateAbbreviation
-        . FT.retypeColumn @BR.StateFips @BR.StateFIPS
+      FT.retypeColumn @BR.SenateStatePo @BR.StateAbbreviation
+        . FT.retypeColumn @BR.SenateStateFips @BR.StateFIPS
+        . FT.retypeColumn @BR.SenateYear @BR.Year
+        . FT.retypeColumn @BR.SenateState @BR.State
+        . FT.retypeColumn @BR.SenateStage @BR.Stage
+        . FT.retypeColumn @BR.SenateSpecial @BR.Special
         . FT.mutate (const $ FT.recordSingleton @ET.Office ET.Senate)
-        . FT.retypeColumn @BR.Candidatevotes @ET.Votes
-        . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
+        . FT.retypeColumn @BR.SenateCandidatevotes @ET.Votes
+        . FT.retypeColumn @BR.SenateCandidate @BR.Candidate
+        . FT.retypeColumn @BR.SenateTotalvotes @ET.TotalVotes
         . FT.mutate
-          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.PartyDetailed)
+          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.SenatePartyDetailed)
 
 senateElectionsLoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
