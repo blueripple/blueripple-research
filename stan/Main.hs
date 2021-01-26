@@ -206,7 +206,7 @@ testHouseModel = do
 
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
-    $ comparePredictors True $ K.liftActionWithCacheTime houseData_C
+    $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
 
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))

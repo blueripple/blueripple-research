@@ -275,6 +275,9 @@ prepCachedData clearCache = do
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) ->
     PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (pumsReKey . F.rcast) cdFromPUMA pums
   houseElections_C <- BR.houseElectionsWithIncumbency
+  senateElection_C <- BR.senateElectionsLoader
+  K.logLE K.Info $ "Senate "
+  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   let houseDataDeps = (,,) <$> pumsByCD_C <*> houseElections_C <*> countedCCES_C
   when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
