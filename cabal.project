@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -22,10 +22,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hs-cmdstan
   tag: 9b8fe31bbc46e3e97ec51ae526799f82b02dea14
 
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: e3aee87dd16a4d4c328cd616a6175b747f777c2d
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: e3aee87dd16a4d4c328cd616a6175b747f777c2d
 
 source-repository-package
   type: git

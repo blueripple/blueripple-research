@@ -46,11 +46,13 @@ parsePEParty :: T.Text -> ET.PartyT
 parsePEParty t
   | T.isInfixOf "democrat" t = ET.Democratic
   | T.isInfixOf "republican" t = ET.Republican
+  | T.isInfixOf "DEMOCRAT" t = ET.Democratic
+  | T.isInfixOf "REPUBLICAN" t = ET.Republican
   | otherwise = ET.Other
 
-type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidatevotes, BR.Totalvotes, BR.Party]
+type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidate, BR.Candidatevotes, BR.Totalvotes, BR.Party]
 
-type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office, ET.Party, ET.Votes, ET.TotalVotes]
+type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
 
 fixPresidentialElectionRow ::
   F.Record PEFromCols -> F.Record PresidentialElectionCols
@@ -75,6 +77,18 @@ presidentialByStateFrame =
     fixPresidentialElectionRow
     Nothing
     "presByState.sbin"
+
+presidentialElectionKey :: F.Record PresidentialElectionCols -> ((), Int)
+presidentialElectionKey r = ((), F.rgetField @BR.Year r)
+
+presidentialElectionsWithIncumbency ::
+  (K.KnitEffects r, K.CacheEffectsD r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec (PresidentialElectionCols V.++ '[ET.Incumbent])))
+presidentialElectionsWithIncumbency = do
+  presidentialElex_C <- presidentialByStateFrame
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) presidentialElectionKey elex in addIncumbency 1 presidentialElectionKey sameCandidate wm) elex
+  --  K.clearIfPresent "data/presidentialWithIncumbency.bin"
+  BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
 cdFromPUMA2012Loader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -275,36 +289,104 @@ houseElectionsWithIncumbency ::
 houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
-  let g elex = fmap (addIncumbency $ winnerMap elex) elex
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) houseElectionKey elex in addIncumbency 1 houseElectionKey sameCandidate wm) elex
   --  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/houseWithIncumbency.bin" houseElex_C (return . g)
 
-type KeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+--type HouseKeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
 
-winnerMap :: Foldable f => f (F.Record HouseElectionCols) -> M.Map (F.Record KeyR) (F.Record HouseElectionCols)
-winnerMap = FL.fold f
+winnerMap :: forall rs f kl ky.(Foldable f, Ord kl, Ord ky) => (F.Record rs -> Int) -> (F.Record rs -> (kl, ky)) -> f (F.Record rs) -> M.Map kl (Map ky (F.Record rs))
+winnerMap votes key = FL.fold (FL.Fold g mempty id)
   where
-    chooseWinner :: F.Record HouseElectionCols -> F.Record HouseElectionCols -> F.Record HouseElectionCols
-    chooseWinner a b = if F.rgetField @ET.Votes a > F.rgetField @ET.Votes b then a else b
-    key = F.rcast @KeyR
-    --f :: FL.Fold (F.Record BR.HouseElectionCols) (M.Map (F.Record KeyR) T
-    f = FL.Fold (\m r -> M.insertWith chooseWinner (key r) r m) M.empty id
+    chooseWinner :: F.Record rs -> F.Record rs -> F.Record rs
+    chooseWinner a b = if votes a > votes b then a else b
+    g :: M.Map kl (M.Map ky (F.Record rs)) -> F.Record rs -> M.Map kl (M.Map ky (F.Record rs))
+    g m r =
+      let (kl, ky) = key r
+          mi =  case M.lookup kl m of
+            Nothing -> one (ky, r)
+            Just mi' -> M.insertWith chooseWinner ky r mi'
+      in M.insert kl mi m
 
-prevElectionKey :: F.Record KeyR -> F.Record KeyR
-prevElectionKey = FT.fieldEndo @BR.Year (\x -> x - 2)
+lastWinners :: (Ord kl, Ord ky) => Int -> (F.Record rs -> (kl, ky)) -> M.Map kl (Map ky (F.Record rs)) -> F.Record rs -> Maybe [F.Record rs]
+lastWinners n key winnerMap r = do
+  let (kl, ky) = key r
+  ml <- M.lookup kl winnerMap
+  let ascendingWinners = M.toAscList ml
+      lastLess :: forall a b.Ord a => Int -> a -> [(a, b)] -> Maybe (a, b)
+      lastLess n a abs =
+        let paired = zip abs $ drop n abs
+            go :: [((a, b), (a, b))] -> Maybe (a, b)
+            go [] = Nothing
+            go (((al, bl), (ar, br)) : pabs) = if a > al && a <= ar then Just (al, bl) else go pabs
+        in go paired
+  fmap snd <$> traverse (\m -> lastLess m ky ascendingWinners) [1..n]
 
-addIncumbency ::
-  M.Map (F.Record KeyR) (F.Record HouseElectionCols) ->
-  F.Record HouseElectionCols ->
-  F.Record (HouseElectionCols V.++ '[ET.Incumbent])
-addIncumbency wm r =
-  let incumbent = case M.lookup (prevElectionKey $ F.rcast @KeyR r) wm of
+houseElectionKey :: F.Record HouseElectionCols -> ((Text, Int), Int)
+houseElectionKey r = ((F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.CongressionalDistrict r), F.rgetField @BR.Year r)
+
+sameCandidate :: F.ElemOf rs BR.Candidate => F.Record rs -> F.Record rs -> Bool
+sameCandidate a b = F.rgetField @BR.Candidate a == F.rgetField @BR.Candidate b
+
+addIncumbency :: (Ord kl, Ord ky)
+  => Int
+  -> (F.Record rs -> (kl, ky))
+  -> (F.Record rs -> F.Record rs -> Bool)
+  -> M.Map kl (M.Map ky (F.Record rs))
+  -> F.Record rs
+  -> F.Record (rs V.++ '[ET.Incumbent])
+addIncumbency n key sameCand wm r =
+  let incumbent = case lastWinners n key wm r of
         Nothing -> False
-        Just pr -> F.rgetField @BR.Candidate pr == F.rgetField @BR.Candidate r
-   in r V.<+> (incumbent F.&: V.RNil)
-
+        Just prs -> not $ null $ filter (sameCand r) prs
+  in r V.<+> ((incumbent F.&: V.RNil) :: F.Record '[ET.Incumbent])
 
 fixAtLargeDistricts :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs BR.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
 fixAtLargeDistricts n = fmap fixOne where
   statesWithAtLargeCDs = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
   fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
+
+
+type SenateElectionCols =
+  [ BR.Year,
+    BR.State,
+    BR.StateAbbreviation,
+    BR.StateFIPS,
+    ET.Office,
+    BR.Stage,
+    BR.Special,
+    BR.Candidate,
+    ET.Party,
+    ET.Votes,
+    ET.TotalVotes
+  ]
+
+senateElectionKey :: F.Record SenateElectionCols -> (Text, Int)
+senateElectionKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Year r)
+
+processSenateElectionRow :: BR.SenateElections -> F.Record SenateElectionCols
+processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
+  where
+    mutate =
+      FT.retypeColumn @BR.StatePo @BR.StateAbbreviation
+        . FT.retypeColumn @BR.StateFips @BR.StateFIPS
+        . FT.mutate (const $ FT.recordSingleton @ET.Office ET.Senate)
+        . FT.retypeColumn @BR.Candidatevotes @ET.Votes
+        . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
+        . FT.mutate
+          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.PartyDetailed)
+
+senateElectionsLoader ::
+  (K.KnitEffects r, K.CacheEffectsD r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionCols))
+senateElectionsLoader = cachedFrameLoader (DataSets $ toText BR.senateElectionsCSV) Nothing Nothing processSenateElectionRow Nothing "senateElections.bin"
+
+senateElectionsWithIncumbency ::
+  (K.KnitEffects r, K.CacheEffectsD r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec (SenateElectionCols V.++ '[ET.Incumbent])))
+senateElectionsWithIncumbency = do
+  senateElex_C <- senateElectionsLoader
+  --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) senateElectionKey elex in addIncumbency 2 senateElectionKey sameCandidate wm) elex
+  --  K.clearIfPresent "data/houseWithIncumbency.bin"
+  BR.retrieveOrMakeFrame "data/senateWithIncumbency.bin" senateElex_C (return . g)
