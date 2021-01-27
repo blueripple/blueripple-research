@@ -52,7 +52,10 @@ parsePEParty t
 
 type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidate, BR.Candidatevotes, BR.Totalvotes, BR.Party]
 
-type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
+type ElectionDataCols = [ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
+
+type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ ElectionDataCols
+type PresidentialElectionColsI = PresidentialElectionCols V.++ '[ET.Incumbent]
 
 fixPresidentialElectionRow ::
   F.Record PEFromCols -> F.Record PresidentialElectionCols
@@ -83,7 +86,7 @@ presidentialElectionKey r = ((), F.rgetField @BR.Year r)
 
 presidentialElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec (PresidentialElectionCols V.++ '[ET.Incumbent])))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionColsI))
 presidentialElectionsWithIncumbency = do
   presidentialElex_C <- presidentialByStateFrame
   let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) presidentialElectionKey elex in addIncumbency 1 presidentialElectionKey sameCandidate wm) elex
@@ -249,21 +252,9 @@ stateTurnoutLoader =
     missingBCTo0 = FM.fromMaybeMono 0
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
 
-type HouseElectionCols =
-  [ BR.Year,
-    BR.State,
-    BR.StateAbbreviation,
-    BR.StateFIPS,
-    ET.Office,
-    BR.CongressionalDistrict,
-    BR.Stage,
-    BR.Runoff,
-    BR.Special,
-    BR.Candidate,
-    ET.Party,
-    ET.Votes,
-    ET.TotalVotes
-  ]
+type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ (BR.Special ': ElectionDataCols)
+
+type HouseElectionColsI = HouseElectionCols V.++ '[ET.Incumbent]
 
 processHouseElectionRow :: BR.HouseElections -> F.Record HouseElectionCols
 processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
@@ -285,7 +276,7 @@ houseElectionsLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV
 
 houseElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec (HouseElectionCols V.++ '[ET.Incumbent])))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionColsI))
 houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
@@ -347,20 +338,9 @@ fixAtLargeDistricts n = fmap fixOne where
   fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
 
 
-type SenateElectionCols =
-  [ BR.Year,
-    BR.State,
-    BR.StateAbbreviation,
-    BR.StateFIPS,
-    ET.Office,
-    BR.Stage,
-    BR.Special,
-    BR.Candidate,
-    ET.Party,
-    ET.Votes,
-    ET.TotalVotes
-  ]
+type SenateElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ (BR.Special ': ElectionDataCols)
 
+type SenateElectionColsI = SenateElectionCols V.++ '[ET.Incumbent]
 -- NB: If there are 2 specials at the same time, this will fail to distinguish them. :(
 senateElectionKey :: F.Record SenateElectionCols -> ((Text, Bool), Int)
 senateElectionKey r = ((F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Special r), F.rgetField @BR.Year r)
@@ -389,7 +369,7 @@ senateElectionsLoader = cachedFrameLoader (DataSets $ toText BR.senateElectionsC
 
 senateElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec (SenateElectionCols V.++ '[ET.Incumbent])))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionColsI))
 senateElectionsWithIncumbency = do
   senateElex_C <- senateElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap

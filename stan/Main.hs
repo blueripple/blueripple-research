@@ -114,13 +114,13 @@ testHouseModel = do
         turnout r = realToFrac (votes r) / realToFrac (F.rgetField @PUMS.Citizens r)
         dShare r = if votes r > 0 then realToFrac (F.rgetField @BRE.DVotes r) / realToFrac (votes r) else 0
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracUnder45 @BR.Year "% Under 45" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracUnder45 @BR.Year "% Under 45" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracFemale @BR.Year "% Female" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracFemale @BR.Year "% Female" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracGrad @BR.Year "% Grad" Nothing 50 FV.DataMinMax True  mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracGrad @BR.Year "% Grad" Nothing 50 FV.DataMinMax True  mhStyle vcDist (hmd ^. #houseElectionData)
 --    _ <- K.addHvega Nothing Nothing
---         $ FV.multiHistogram @BRE.FracNonWhite @BR.Year "% Non-White" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+--         $ FV.multiHistogram @BRE.FracNonWhite @BR.Year "% Non-White" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ VL.multiHistogram
          "% Non-White"
@@ -134,7 +134,7 @@ testHouseModel = do
          True
          mhStyle
          vcDist
-         (hmd ^. #electionData)
+         (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ VL.multiHistogram
          "% Hispanic"
@@ -148,7 +148,7 @@ testHouseModel = do
          True
          mhStyle
          vcDist
-         (hmd ^. #electionData)
+         (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ VL.multiHistogram
          "% Hispanic Identifying as White"
@@ -162,24 +162,24 @@ testHouseModel = do
          True
          mhStyle
          vcDist
-         (hmd ^. #electionData)
+         (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracBlack @BR.Year "% Black" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracBlack @BR.Year "% Black" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracAsian @BR.Year "% Asian" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracAsian @BR.Year "% Asian" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @BRE.FracOther @BR.Year "% Other (Race)" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @BRE.FracOther @BR.Year "% Other (Race)" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
-         $ FV.multiHistogram @DT.AvgIncome @BR.Year "Average Income" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #electionData)
+         $ FV.multiHistogram @DT.AvgIncome @BR.Year "Average Income" Nothing 50 FV.DataMinMax True mhStyle vcDist (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DT.PopPerSqMile @BR.Year "Density [log(ppl/sq mile)]" Nothing 50 FV.DataMinMax True mhStyle vcDist
-         $ fmap (FT.fieldEndo @DT.PopPerSqMile (Numeric.logBase 10)) (hmd ^. #electionData)
+         $ fmap (FT.fieldEndo @DT.PopPerSqMile (Numeric.logBase 10)) (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @PctTurnout @BR.Year "Turnout %" Nothing 50 FV.DataMinMax True mhStyle vcDist
-         $ FT.mutate (FT.recordSingleton @PctTurnout . (*100) . turnout) <$> (hmd ^. #electionData)
+         $ FT.mutate (FT.recordSingleton @PctTurnout . (*100) . turnout) <$> (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing
          $ FV.multiHistogram @DShare @BR.Year "Dem Share" Nothing 50 FV.DataMinMax True mhStyle vcDist
-         $ FT.mutate (FT.recordSingleton @DShare . (*100). dShare) <$> (hmd ^. #electionData)
+         $ FT.mutate (FT.recordSingleton @DShare . (*100). dShare) <$> (hmd ^. #houseElectionData)
     BR.brAddMarkDown "## Predictors/Predicted: Correlations in house elections 2012-2018"
     let corrSet = S.fromList [FV.LabeledCol "% Under 45" (F.rgetField @BRE.FracUnder45)
                              ,FV.LabeledCol "% Female" (F.rgetField @BRE.FracFemale)
@@ -200,7 +200,7 @@ testHouseModel = do
                  (FV.ViewConfig 600 600 10)
                  False
                  corrSet
-                 (hmd ^. #electionData)
+                 (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
 {-
@@ -245,7 +245,7 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
         predictors
         x
         year
-        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+        (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -291,7 +291,7 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
         (snd x)
         ("betaBinomialInc", Just $ fst x, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
         year
-        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+        (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -323,7 +323,7 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
         predictors
         ("betaBinomialInc", Nothing, mw, BRE.betaBinomialInc, 500)
         y
-        (fmap (Optics.over #electionData (F.filterFrame (isYear y))
+        (fmap (Optics.over #houseElectionData (F.filterFrame (isYear y))
                 . Optics.over #ccesData (F.filterFrame (isYear y)))
           houseData_C
         )
@@ -418,7 +418,7 @@ examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
         predictors
         x
         year
-        (fmap (Optics.over #electionData (F.filterFrame (isYear year))
+        (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -426,7 +426,7 @@ examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
   electionData <- K.ignoreCacheTime
                   $ fmap (F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict, BRE.FracGrad, BRE.FracWhiteNonHispanic])
                   . F.filterFrame (isYear year)
-                  . BRE.electionData
+                  . BRE.houseElectionData
                   <$> houseData_C
   electionFit <- K.ignoreCacheTime $ fmap BRE.electionFit . fst $ results
   let (fitWithDemo, missing) =  FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] electionFit electionData
