@@ -26,11 +26,13 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import Control.Lens ((%~))
 import qualified Data.Map as M
+import qualified Data.Sequence as Sequence
 import Data.Serialize.Text ()
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
+import qualified Frames.InCore as FI
 import qualified Frames.Melt as F
 import qualified Frames.MaybeUtils as FM
 import qualified Frames.Serialize as FS
@@ -272,10 +274,17 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
         . FT.mutate
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
-houseElectionsLoader ::
+houseElectionsRawLoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
-houseElectionsLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElections.sbin"
+houseElectionsRawLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElectionsRaw.bin"
+
+houseElectionsLoader ::   (K.KnitEffects r, K.CacheEffectsD r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
+houseElectionsLoader = do
+  elexRaw_C <- houseElectionsRawLoader
+  BR.retrieveOrMakeFrame "data/houseElections.bin" elexRaw_C $ return . fixRunoffYear houseRaceKey isRunoff
+
 
 houseElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
@@ -287,36 +296,21 @@ houseElectionsWithIncumbency = do
   --  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/houseWithIncumbency.bin" houseElex_C (return . g)
 
---type HouseKeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
-{-
-electionsByRaceAndYear :: forall k y r r2 f. Foldable f => (r -> k) -> (r -> y) -> (r -> r2) -> (r2 -> r2 -> r2) -> f r -> M.Map k (M.Map y r2)
-electionsByRaceAndYear getK getY lift combine = FL.fold (FL.Fold g mempty id) where
-  g :: M.Map k (M.Map y r2) -> r -> M.Map k (M.Map y r2)
-  g m r =
-    let k = getK r
-        y = getY r
-        mi =  case M.lookup k m of
-                Nothing -> one (y, lift r)
-                Just mi' -> M.insertWith combine y (lift r) mi'
-    in M.insert k mi m
+fixRunoffYear :: forall rs raceKey f. (FI.RecVec rs, Foldable f, Ord raceKey, F.ElemOf rs BR.Year)
+  => (F.Record rs -> raceKey) -> (F.Record rs -> Bool) -> f (F.Record rs) -> F.FrameRec rs
+fixRunoffYear rKey runoff rows = flip evalState M.empty $ FL.foldM g rows where
+  year = F.rgetField @BR.Year
+  g :: FL.FoldM (State (Map raceKey Int)) (F.Record rs) (F.FrameRec rs)
+  g = FL.FoldM step (return Sequence.empty) (return . F.toFrame) where
+    step :: Sequence.Seq (F.Record rs) -> F.Record rs -> State (Map raceKey Int) (Sequence.Seq (F.Record rs))
+    step s r = if not $ runoff r
+               then modify (M.insert (rKey r) (year r)) >> return (s <> Sequence.singleton r)
+               else (do
+                        year <- fromMaybe (year r) <$> gets (M.lookup $ rKey r)
+                        let r' = FT.fieldEndo @BR.Year (const year) r
+                        return (s <> Sequence.singleton r')
+                    )
 
-
-fixRunoffs :: forall rs raceKey f. Foldable f => (F.Record rs -> raceKey) -> (F.Record rs -> Int) -> (F.Record rs -> Bool) -> f (F.Record rs) -> F.FrameRec rs
-fixRunoffs rKey year runoff rows =
-  let byRaceAndYear :: Map raceKey (Map Int [F.Record rs])= electionsByRaceAndYear rKey year (pure @[]) (<>) rows
-      f :: [(Int, F.Record rs)] -> [(Int, F.Record rs)]
-      f [] = []
-      f (x : xs) =
-        let paired = zip (x : (x : xs)) (x : xs)
-            choose ((y1, r1), (y2, r2)) = if runoff r1
-                                          then Nothing
-                                          else if runoff r2
-                                               then Just (y1, r2)
-                                               else Just (y1, r1)
-        in mapMaybe choose paired
-  in F.toFrame $ fmap snd $ concat $ fmap snd $ M.toList $ fmap (f . M.toList) byRaceAndYear
---  in F.toFrame $ fmap snd $ concat $ fmap snd $ M.toList $
--}
 winnerMap :: forall rs f kl ky.(Foldable f, Ord kl, Ord ky)
           => (F.Record rs -> Int)
           -> (F.Record rs -> (kl, ky))
@@ -348,8 +342,10 @@ lastWinners n key winnerMap r = do
         in go paired
   fmap snd <$> traverse (\m -> lastLess m ky ascendingWinners) [1..n]
 
+houseRaceKey :: F.Record HouseElectionCols -> (Text, Int)
+houseRaceKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.CongressionalDistrict r)
 houseElectionKey :: F.Record HouseElectionCols -> ((Text, Int), Int)
-houseElectionKey r = ((F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.CongressionalDistrict r), F.rgetField @BR.Year r)
+houseElectionKey r = (houseRaceKey r, F.rgetField @BR.Year r)
 
 sameCandidate :: F.ElemOf rs BR.Candidate => F.Record rs -> F.Record rs -> Bool
 sameCandidate a b = F.rgetField @BR.Candidate a == F.rgetField @BR.Candidate b
@@ -382,8 +378,11 @@ type SenateElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS
 
 type SenateElectionColsI = SenateElectionCols V.++ '[ET.Incumbent]
 -- NB: If there are 2 specials at the same time, this will fail to distinguish them. :(
+senateRaceKey :: F.Record SenateElectionCols -> (Text, Bool)
+senateRaceKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Special r)
+
 senateElectionKey :: F.Record SenateElectionCols -> ((Text, Bool), Int)
-senateElectionKey r = ((F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Special r), F.rgetField @BR.Year r)
+senateElectionKey r = (senateRaceKey r, F.rgetField @BR.Year r)
 
 processSenateElectionRow :: BR.SenateElections -> F.Record SenateElectionCols
 processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
@@ -402,10 +401,17 @@ processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
         . FT.mutate
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.SenatePartyDetailed)
 
-senateElectionsLoader ::
+senateElectionsRawLoader ::
   (K.KnitEffects r, K.CacheEffectsD r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionCols))
-senateElectionsLoader = cachedFrameLoader (DataSets $ toText BR.senateElectionsCSV) Nothing Nothing processSenateElectionRow Nothing "senateElections.bin"
+senateElectionsRawLoader = cachedFrameLoader (DataSets $ toText BR.senateElectionsCSV) Nothing Nothing processSenateElectionRow Nothing "senateElectionsRaw.bin"
+
+senateElectionsLoader ::   (K.KnitEffects r, K.CacheEffectsD r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionCols))
+senateElectionsLoader = do
+  elexRaw_C <- senateElectionsRawLoader
+  BR.retrieveOrMakeFrame "data/senateElections.bin" elexRaw_C $ return . fixRunoffYear senateRaceKey isRunoff
+
 
 senateElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>

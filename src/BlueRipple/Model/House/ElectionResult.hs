@@ -297,6 +297,8 @@ pumsReKey r =
      F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
 
+type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
+
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 prepCachedData ::forall r.
@@ -328,13 +330,11 @@ prepCachedData clearCache = do
   when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
   BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, pumsByState, houseElex, senateElex, presElex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
-    let cdDemographics = pumsMR @CDKeyR
-                         $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation) pumsByCD
-        stateDemographics = pumsMR @StateKeyR
-                            $ F.filterFrame ((/= "DC") . F.rgetField @BR.StateAbbreviation)
-                            $ pumsByState
+    let cdDemographics = pumsMR @CDKeyR pumsByCD
+        stateDemographics = pumsMR @StateKeyR pumsByState
         isYear year = (== year) . F.rgetField @BR.Year
         afterYear year = (>= year) . F.rgetField @BR.Year
+        betweenYears earliest latest r = let y = F.rgetField @BR.Year r in y >= earliest && y <= latest
         dVotes = F.rgetField @DVotes
         rVotes = F.rgetField @RVotes
         competitive r = dVotes r > 0 && rVotes r > 0
@@ -345,8 +345,8 @@ prepCachedData clearCache = do
         hasDVotes r = F.rgetField @DVotes r > 0
         fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
         fHouseElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
-        fSenateElex :: FL.FoldM (Either Text) (F.Record BR.SenateElectionColsI) (F.FrameRec (StateKeyR V.++ ElectionR))
-        fSenateElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @StateKeyR
+        fSenateElex :: FL.FoldM (Either Text) (F.Record BR.SenateElectionColsI) (F.FrameRec (SenateRaceKeyR V.++ ElectionR))
+        fSenateElex = FL.prefilterM (return . betweenYears 2012 2018) $ FL.premapM (return . F.rcast) $ electionF @SenateRaceKeyR
         fPresElex :: FL.FoldM (Either Text) (F.Record BR.PresidentialElectionColsI) (F.FrameRec (StateKeyR V.++ ElectionR))
         fPresElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @StateKeyR
 
@@ -354,12 +354,12 @@ prepCachedData clearCache = do
     senateElectionResults <- K.knitEither $ FL.foldM fSenateElex senateElex
     presElectionResults <- K.knitEither $ FL.foldM fPresElex presElex
 
-    let (houseDemoAndElex, missinghElex) = FJ.leftJoinWithMissing @CDKeyR cdDemographics houseElectionResults
+    let (houseDemoAndElex, missinghElex) = FJ.leftJoinWithMissing @CDKeyR houseElectionResults cdDemographics
     K.knitEither $ if null missinghElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
                         <> show missinghElex
-    let competitiveHouseElectionResults = F.filterFrame competitive houseDemoAndElex
+    let competitiveHouseElectionResults = F.rcast <$> F.filterFrame competitive houseDemoAndElex
         competitiveCDs = FL.fold (FL.premap (F.rcast @CDKeyR) FL.set) houseDemoAndElex
         competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @CDKeyR r) competitiveCDs) countedCCES
         toJoinWithCCES = fmap (F.rcast @(CDKeyR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile])) competitiveHouseElectionResults
@@ -369,12 +369,12 @@ prepCachedData clearCache = do
                    else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
                         <> show missingDemo
     let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
-    let (senateDemoAndElex, missingsElex) = FJ.leftJoinWithMissing @StateKeyR stateDemographics senateElectionResults
+    let (senateDemoAndElex, missingsElex) = FJ.leftJoinWithMissing @StateKeyR senateElectionResults stateDemographics
     K.knitEither $ if null missingsElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and senate election data in house model prep:"
                         <> show missingsElex
-    let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR stateDemographics presElectionResults
+    let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR presElectionResults stateDemographics
     K.knitEither $ if null missingpElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and presidential election data in house model prep:"
@@ -383,8 +383,8 @@ prepCachedData clearCache = do
 
     return $ HouseModelData
       competitiveHouseElectionResults
-      (F.filterFrame competitive senateDemoAndElex)
-      (F.filterFrame competitive presDemoAndElex)
+      (F.rcast <$> F.filterFrame competitive senateDemoAndElex)
+      (F.rcast <$> F.filterFrame competitive presDemoAndElex)
       (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
@@ -775,8 +775,8 @@ transformedDataBlock = [here|
   vector[K] meanPredV;
   matrix[G, K] X_centered;
   for (k in 1:K) {
-    meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes)); // we only want mean of the data for districts. Weighted by votes.
-    meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP)); // we only want mean of the data for districts. Weighted by VAP.
+    meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes));
+    meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP));
     sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
   }
   if (IC > 0) // if incumbency is present as a predictor, set the "mean" to be non-incumbent
