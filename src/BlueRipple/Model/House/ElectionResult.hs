@@ -212,19 +212,19 @@ electionF =
       (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
       (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
 
-data IncParty = None | Inc ET.PartyT | Multi
+data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
 
-updateIncParty :: IncParty -> ET.PartyT -> IncParty
-updateIncParty Multi _ = Multi
-updateIncParty (Inc _) _ = Multi
-updateIncParty None p = Inc p
+updateIncParty :: IncParty -> (ET.PartyT, Text) -> IncParty
+updateIncParty (Multi cs) (_, c) = Multi (c:cs)
+updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
+updateIncParty None (p, c) = Inc (p, c)
 
 incPartyToInt :: IncParty -> Either T.Text Int
 incPartyToInt None = Right 0
-incPartyToInt (Inc ET.Democratic) = Right 1
-incPartyToInt (Inc ET.Republican) = Right (negate 1)
+incPartyToInt (Inc (ET.Democratic, _)) = Right 1
+incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
 incPartyToInt (Inc _) = Right 0
-incPartyToInt Multi = Left "Error: Multiple incumbents!"
+incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
 
 flattenVotesF :: FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
 flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
@@ -235,7 +235,7 @@ flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
       FMR.postMapM incPartyToInt $
         FL.generalize $
           FL.prefilter (F.rgetField @ET.Incumbent) $
-            FL.premap (F.rgetField @ET.Party) (FL.Fold updateIncParty None id)
+            FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
     demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
     repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
     flattenF = (\ii dv rv -> ii F.&: dv F.&: rv F.&: V.RNil) <$> incumbentPartyF <*> demVotesF <*> repVotesF
@@ -372,12 +372,12 @@ prepCachedData clearCache = do
     let (senateDemoAndElex, missingsElex) = FJ.leftJoinWithMissing @StateKeyR stateDemographics senateElectionResults
     K.knitEither $ if null missingsElex
                    then Right ()
-                   else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
+                   else Left $ "Missing keys in left-join of demographics and senate election data in house model prep:"
                         <> show missingsElex
     let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR stateDemographics presElectionResults
     K.knitEither $ if null missingpElex
                    then Right ()
-                   else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
+                   else Left $ "Missing keys in left-join of demographics and presidential election data in house model prep:"
                         <> show missingpElex
 
 

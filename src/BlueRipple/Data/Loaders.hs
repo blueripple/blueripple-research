@@ -89,7 +89,7 @@ presidentialElectionsWithIncumbency ::
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionColsI))
 presidentialElectionsWithIncumbency = do
   presidentialElex_C <- presidentialByStateFrame
-  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) presidentialElectionKey elex in addIncumbency 1 presidentialElectionKey sameCandidate wm) elex
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) presidentialElectionKey elex in addIncumbency 1 presidentialElectionKey sameCandidate (const False) wm) elex
   --  K.clearIfPresent "data/presidentialWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
@@ -252,9 +252,12 @@ stateTurnoutLoader =
     missingBCTo0 = FM.fromMaybeMono 0
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
 
-type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ (BR.Special ': ElectionDataCols)
+
+type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
 
 type HouseElectionColsI = HouseElectionCols V.++ '[ET.Incumbent]
+
+isRunoff r = F.rgetField @BR.Stage r == "runoff"
 
 processHouseElectionRow :: BR.HouseElections -> F.Record HouseElectionCols
 processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
@@ -280,13 +283,45 @@ houseElectionsWithIncumbency ::
 houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
-  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) houseElectionKey elex in addIncumbency 1 houseElectionKey sameCandidate wm) elex
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) houseElectionKey elex in addIncumbency 1 houseElectionKey sameCandidate isRunoff wm) elex
   --  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/houseWithIncumbency.bin" houseElex_C (return . g)
 
 --type HouseKeyR = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+{-
+electionsByRaceAndYear :: forall k y r r2 f. Foldable f => (r -> k) -> (r -> y) -> (r -> r2) -> (r2 -> r2 -> r2) -> f r -> M.Map k (M.Map y r2)
+electionsByRaceAndYear getK getY lift combine = FL.fold (FL.Fold g mempty id) where
+  g :: M.Map k (M.Map y r2) -> r -> M.Map k (M.Map y r2)
+  g m r =
+    let k = getK r
+        y = getY r
+        mi =  case M.lookup k m of
+                Nothing -> one (y, lift r)
+                Just mi' -> M.insertWith combine y (lift r) mi'
+    in M.insert k mi m
 
-winnerMap :: forall rs f kl ky.(Foldable f, Ord kl, Ord ky) => (F.Record rs -> Int) -> (F.Record rs -> (kl, ky)) -> f (F.Record rs) -> M.Map kl (Map ky (F.Record rs))
+
+fixRunoffs :: forall rs raceKey f. Foldable f => (F.Record rs -> raceKey) -> (F.Record rs -> Int) -> (F.Record rs -> Bool) -> f (F.Record rs) -> F.FrameRec rs
+fixRunoffs rKey year runoff rows =
+  let byRaceAndYear :: Map raceKey (Map Int [F.Record rs])= electionsByRaceAndYear rKey year (pure @[]) (<>) rows
+      f :: [(Int, F.Record rs)] -> [(Int, F.Record rs)]
+      f [] = []
+      f (x : xs) =
+        let paired = zip (x : (x : xs)) (x : xs)
+            choose ((y1, r1), (y2, r2)) = if runoff r1
+                                          then Nothing
+                                          else if runoff r2
+                                               then Just (y1, r2)
+                                               else Just (y1, r1)
+        in mapMaybe choose paired
+  in F.toFrame $ fmap snd $ concat $ fmap snd $ M.toList $ fmap (f . M.toList) byRaceAndYear
+--  in F.toFrame $ fmap snd $ concat $ fmap snd $ M.toList $
+-}
+winnerMap :: forall rs f kl ky.(Foldable f, Ord kl, Ord ky)
+          => (F.Record rs -> Int)
+          -> (F.Record rs -> (kl, ky))
+          -> f (F.Record rs)
+          -> M.Map kl (Map ky (F.Record rs))
 winnerMap votes key = FL.fold (FL.Fold g mempty id)
   where
     chooseWinner :: F.Record rs -> F.Record rs -> F.Record rs
@@ -323,11 +358,16 @@ addIncumbency :: (Ord kl, Ord ky)
   => Int
   -> (F.Record rs -> (kl, ky))
   -> (F.Record rs -> F.Record rs -> Bool)
+  -> (F.Record rs -> Bool)
   -> M.Map kl (M.Map ky (F.Record rs))
   -> F.Record rs
   -> F.Record (rs V.++ '[ET.Incumbent])
-addIncumbency n key sameCand wm r =
-  let incumbent = case lastWinners n key wm r of
+addIncumbency n key sameCand runoff wm r =
+  let lws = lastWinners (n+1) key wm r
+      lwsFixed = if runoff r
+                 then fmap (take n) lws -- we got n + 1 and drop the last since that's the general leading to this runoff, not the previous
+                 else fmap (drop 1) lws -- not a runoff so get rid of the extra one
+      incumbent = case lwsFixed of
         Nothing -> False
         Just prs -> not $ null $ filter (sameCand r) prs
   in r V.<+> ((incumbent F.&: V.RNil) :: F.Record '[ET.Incumbent])
@@ -338,7 +378,7 @@ fixAtLargeDistricts n = fmap fixOne where
   fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
 
 
-type SenateElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ (BR.Special ': ElectionDataCols)
+type SenateElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
 
 type SenateElectionColsI = SenateElectionCols V.++ '[ET.Incumbent]
 -- NB: If there are 2 specials at the same time, this will fail to distinguish them. :(
@@ -373,6 +413,6 @@ senateElectionsWithIncumbency ::
 senateElectionsWithIncumbency = do
   senateElex_C <- senateElectionsLoader
   --K.ignoreCacheTime houseElex_C >>= K.logLE K.Diagnostic . T.pack . show . winnerMap
-  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) senateElectionKey elex in addIncumbency 2 senateElectionKey sameCandidate wm) elex
+  let g elex = fmap (let wm = winnerMap (F.rgetField @ET.Votes) senateElectionKey elex in addIncumbency 2 senateElectionKey sameCandidate isRunoff wm) elex
   --  K.clearIfPresent "data/houseWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/senateWithIncumbency.bin" senateElex_C (return . g)
