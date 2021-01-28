@@ -500,30 +500,29 @@ houseDataWrangler mw predictors = SC.Wrangle SC.NoIndex f
     f _ = ((), makeDataJsonE)
     numDataSets :: Int = if mw == UseBoth then 2 else 1
     makeDataJsonE hmd = do
-      (modelRows, dataSetIndex, edRows) <- case mw of
+      (modelRows, dataSetIndex, nCD) <- case mw of
         UseElectionResults ->  do
           edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
           let dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int)
-          return (edModelRows, dataSetIndex, Vec.length edModelRows)
+          return (edModelRows, dataSetIndex, 1 :: Int)
         UseCCES -> do
           ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
           let dataSetIndex = Vec.replicate (Vec.length ccesModelRows) (1 :: Int)
-          return (ccesModelRows, dataSetIndex, Vec.length ccesModelRows)
+          return (ccesModelRows, dataSetIndex, 1 :: Int)
         UseBoth -> do
           edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
           ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
           let modelRows = edModelRows <> ccesModelRows
               dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int) <> Vec.replicate (Vec.length ccesModelRows) 2
-          return (modelRows, dataSetIndex, Vec.length edModelRows)
+          return (modelRows, dataSetIndex, 1 :: Int)
       let incumbencyCol = fromMaybe (0 :: Int) $ fmap fst $ find ((== "Incumbency") . snd)$ zip [1..] predictors
           dataF =
             SJ.namedF "G" FL.length
-            <> SJ.constDataF "N" edRows
             <> SJ.constDataF "D" numDataSets
+            <> SJ.constDataF "CD" nCD
             <> SJ.constDataF "K" (length predictors)
             <> SJ.constDataF "IC" incumbencyCol
             <> SJ.valueToPairF "X" (SJ.jsonArrayF pred)
---            <> SJ.valueToPairF "Inc" (SJ.jsonArrayF inc)
             <> SJ.valueToPairF "VAP" (SJ.jsonArrayF vap)
             <> SJ.valueToPairF "TVotes"  (SJ.jsonArrayF tVotes)
             <> SJ.valueToPairF "DVotes"  (SJ.jsonArrayF dVotes)
@@ -701,7 +700,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
 binomial :: SB.StanModel
 binomial =
   SB.StanModel
-    binomialDataBlock
+    dataBlock
     (Just transformedDataBlock)
     binomialParametersBlock
     (Just binomialTransformedParametersBlock)
@@ -712,7 +711,7 @@ binomial =
 betaBinomial_v1 :: SB.StanModel
 betaBinomial_v1 =
   SB.StanModel
-    binomialDataBlock
+    dataBlock
     (Just transformedDataBlock)
     betaBinomialParametersBlock
     (Just betaBinomialTransformedParametersBlock)
@@ -723,7 +722,7 @@ betaBinomial_v1 =
 betaBinomialInc :: SB.StanModel
 betaBinomialInc =
   SB.StanModel
-  binomialDataBlock
+  dataBlock
   (Just transformedDataBlock)
   betaBinomialIncParametersBlock
   (Just betaBinomialIncTransformedParametersBlock)
@@ -734,7 +733,7 @@ betaBinomialInc =
 betaBinomialInc2 :: SB.StanModel
 betaBinomialInc2 =
   SB.StanModel
-  binomialDataBlock
+  dataBlock
   (Just transformedDataBlock)
   betaBinomialInc2ParametersBlock
   (Just betaBinomialInc2TransformedParametersBlock)
@@ -745,7 +744,7 @@ betaBinomialInc2 =
 betaBinomialHS :: SB.StanModel
 betaBinomialHS =
   SB.StanModel
-    binomialDataBlock
+    dataBlock
     (Just transformedDataBlock)
     betaBinomialHSParametersBlock
     (Just betaBinomialTransformedParametersBlock)
@@ -753,12 +752,12 @@ betaBinomialHS =
     (Just betaBinomialGeneratedQuantitiesBlock)
     betaBinomialGQLLBlock
 
-binomialDataBlock :: SB.DataBlock
-binomialDataBlock =
+dataBlock :: SB.DataBlock
+dataBlock =
   [here|
   int<lower = 1> G; // number of rows
-  int<lower = 1> N; // number of rows in data to use for sigma of predictors
   int<lower = 1> D; // number of datasets
+  int<lower = 1, upper=D> CD; // dataset to use for generated stats
   int<lower = 0> IC; // incumbency column, 0 if incumbency is not a predictor
   int<lower = 0> K; // number of predictors
   matrix[G, K] X;
@@ -768,16 +767,27 @@ binomialDataBlock =
   int<lower = 0> DVotes[G];
 |]
 
-transformedDataBlock :: T.Text
+transformedDataBlock :: SB.TransformedDataBlock
 transformedDataBlock = [here|
   vector<lower=0>[K] sigmaPred;
   vector[K] meanPredD;
   vector[K] meanPredV;
-  matrix[G, K] X_centered;
+  int<lower=1, upper=G> cdStart = 1;
+  int<lower=1, upper=G> cdEnd = G;
+  for (g in 1:G) {
+    if (dataSet[g] < CD)
+    {
+      cdStart = g + 1;
+    }
+    if (dataSet[G - g - 1] > CD)
+    {
+      cdEnd = G - g;
+    }
+  }
   for (k in 1:K) {
     meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes));
     meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP));
-    sigmaPred[k] = sd(X[1:N,k]); // we only want std dev of the data for districts
+    sigmaPred[k] = sd(X[cdStart:cdEnd,k]); // we only want std dev of the data for the chosen set
   }
   if (IC > 0) // if incumbency is present as a predictor, set the "mean" to be non-incumbent
   {
@@ -798,128 +808,6 @@ transformedDataBlock = [here|
       R_ast = qr_thin_R(X) /sqrt(G - 1);
       R_ast_inverse = inverse(R_ast);
     }
-|]
-
-binomialParametersBlock :: SB.ParametersBlock
-binomialParametersBlock =
-  [here|
-  vector[D] alphaD;
-  vector[K] thetaV;
-  vector[D] alphaV;
-  vector[K] thetaD;
-|]
-
-binomialTransformedParametersBlock :: SB.TransformedParametersBlock
-binomialTransformedParametersBlock =
-  [here|
-  vector [K] betaV;
-  vector [K] betaD;
-  betaV = R_ast_inverse * thetaV;
-  betaD = R_ast_inverse * thetaD;
-|]
-
-binomialModelBlock :: SB.ModelBlock
-binomialModelBlock =
-  [here|
-  alphaD ~ cauchy(0, 10);
-  alphaV ~ cauchy(0, 10);
-  betaD ~ cauchy(0, 2.5);
-  betaV ~ cauchy(0,2.5);
-  TVotes ~ binomial_logit(VAP, alphaV[dataSet] + Q_ast * thetaV);
-  DVotes ~ binomial_logit(TVotes, alphaD[dataSet] + Q_ast * thetaD);
-|]
-
-binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
-binomialGeneratedQuantitiesBlock =
-  [here|
-  vector<lower = 0, upper = 1>[G] pVotedP = inv_logit(alphaV[dataSet] + Q_ast * thetaV);
-  vector<lower = 0, upper = 1>[G] pDVoteP = inv_logit(alphaD[dataSet] + Q_ast * thetaD);
-
-  vector<lower = 0>[G] eTVotes = pVotedP .* to_vector(VAP);
-  vector<lower = 0>[G] eDVotes = pDVoteP .* to_vector(TVotes);
-
-  int<lower=0> DVote_ppred[G] = binomial_rng(TVotes, pDVoteP);
-  int<lower=0> TVote_ppred[G] = binomial_rng(VAP, pVotedP);
-
-  real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
-  real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
-
-  vector[K] sigmaDeltaV;
-  vector[K] sigmaDeltaD;
-  vector[K] unitDeltaV;
-  vector[K] unitDeltaD;
-  for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV[1] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD[1] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
-  }
-
-|]
-
-binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
-binomialGQLLBlock =
-  [here|
-  vector[G] log_lik;
-  for (g in 1:G) {
-    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
-  }
-|]
-
-betaBinomialParametersBlock :: SB.ParametersBlock
-betaBinomialParametersBlock =
-  [here|
-  real alphaD;
-  real <lower=0, upper=1> dispD;
-  vector[K] thetaV;
-  real alphaV;
-  real <lower=0, upper=1> dispV;
-  vector[K] thetaD;
-|]
-
-betaBinomialTransformedParametersBlock :: SB.TransformedParametersBlock
-betaBinomialTransformedParametersBlock =
-  [here|
-  real <lower=0> phiD = (1-dispD)/dispD;
-  real <lower=0> phiV = (1-dispV)/dispV;
-  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD);
-  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
-  vector [K] betaV;
-  vector [K] betaD;
-  betaV = R_ast_inverse * thetaV;
-  betaD = R_ast_inverse * thetaD;
-|]
-
-betaBinomialModelBlock :: SB.ModelBlock
-betaBinomialModelBlock =
-  [here|
-  alphaD ~ cauchy(0, 10);
-  alphaV ~ cauchy(0, 10);
-  betaV ~ cauchy(0, 2.5);
-  betaD ~ cauchy(0, 2.5);
-
-  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
-  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
-|]
-
-betaBinomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
-betaBinomialGeneratedQuantitiesBlock =
-  [here|
-  vector<lower = 0>[G] eTVotes;
-  vector<lower = 0>[G] eDVotes;
-  for (g in 1:G) {
-    eTVotes[g] = pVotedP[g] * VAP[g];
-    eDVotes[g] = pDVoteP[g] * TVotes[g];
-  }
-|]
-
-betaBinomialGQLLBlock :: SB.GeneratedQuantitiesBlock
-betaBinomialGQLLBlock =
-  [here|
-  vector[G] log_lik;
-  for (g in 1:G) {
-    log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
-  }
 |]
 
 betaBinomialIncParametersBlock ::  SB.ParametersBlock
@@ -970,19 +858,30 @@ betaBinomialIncGeneratedQuantitiesBlock =
     TVote_ppred[g] = beta_binomial_rng(VAP[g], pVotedP[g] * phiV, (1 - pVotedP[g]) * phiV);
     DVote_ppred[g] = beta_binomial_rng(TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD);
   }
-  real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
-  real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
+  real avgPVoted = inv_logit (alphaV[CD] + dot_product(meanPredV, betaV));
+  real avgPDVote = inv_logit (alphaD[CD] + dot_product(meanPredD, betaD));
   vector[K] sigmaDeltaV;
   vector[K] sigmaDeltaD;
   vector[K] unitDeltaV;
   vector[K] unitDeltaD;
   for (k in 1:K) {
-    sigmaDeltaV [k] = inv_logit (alphaV[1] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
-    sigmaDeltaD [k] = inv_logit (alphaD[1] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
-    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
-    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
+    sigmaDeltaV [k] = inv_logit (alphaV[CD] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[CD] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[CD] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[CD] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[CD] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[CD] - meanPredV[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[CD] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[CD] - meanPredD[k] * betaD[k]);
   }
 |]
+
+
+betaBinomialGQLLBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialGQLLBlock =
+  [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  beta_binomial_lpmf(DVotes[g] | TVotes[g], pDVoteP[g] * phiD, (1 - pDVoteP[g]) * phiD) ;
+  }
+|]
+
 
 betaBinomialInc2ParametersBlock :: SB.ParametersBlock
 betaBinomialInc2ParametersBlock = [here|
@@ -1062,4 +961,121 @@ betaBinomialHSModelBlock =
   }
   TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
   DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
+|]
+
+
+
+binomialParametersBlock :: SB.ParametersBlock
+binomialParametersBlock =
+  [here|
+  vector[D] alphaD;
+  vector[K] thetaV;
+  vector[D] alphaV;
+  vector[K] thetaD;
+|]
+
+binomialTransformedParametersBlock :: SB.TransformedParametersBlock
+binomialTransformedParametersBlock =
+  [here|
+  vector [K] betaV;
+  vector [K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
+|]
+
+binomialModelBlock :: SB.ModelBlock
+binomialModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaD ~ cauchy(0, 2.5);
+  betaV ~ cauchy(0,2.5);
+  TVotes ~ binomial_logit(VAP, alphaV[dataSet] + Q_ast * thetaV);
+  DVotes ~ binomial_logit(TVotes, alphaD[dataSet] + Q_ast * thetaD);
+|]
+
+binomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+binomialGeneratedQuantitiesBlock =
+  [here|
+  vector<lower = 0, upper = 1>[G] pVotedP = inv_logit(alphaV[dataSet] + Q_ast * thetaV);
+  vector<lower = 0, upper = 1>[G] pDVoteP = inv_logit(alphaD[dataSet] + Q_ast * thetaD);
+
+  vector<lower = 0>[G] eTVotes = pVotedP .* to_vector(VAP);
+  vector<lower = 0>[G] eDVotes = pDVoteP .* to_vector(TVotes);
+
+  int<lower=0> DVote_ppred[G] = binomial_rng(TVotes, pDVoteP);
+  int<lower=0> TVote_ppred[G] = binomial_rng(VAP, pVotedP);
+
+  real avgPVoted = inv_logit (alphaV[1] + dot_product(meanPredV, betaV));
+  real avgPDVote = inv_logit (alphaD[1] + dot_product(meanPredD, betaD));
+
+  vector[K] sigmaDeltaV;
+  vector[K] sigmaDeltaD;
+  vector[K] unitDeltaV;
+  vector[K] unitDeltaD;
+  for (k in 1:K) {
+    sigmaDeltaV [k] = inv_logit (alphaV[1] + meanPredV[k] + sigmaPred[k]/2 * betaV[k]) - inv_logit (alphaV[1] + meanPredV[k] - sigmaPred[k]/2 * betaV[k]);
+    sigmaDeltaD [k] = inv_logit (alphaD[1] + meanPredD[k] + sigmaPred[k]/2 * betaD[k]) - inv_logit (alphaD[1] + meanPredD[k] - sigmaPred[k]/2 * betaD[k]);
+    unitDeltaV[k] = inv_logit (alphaV[1] + (1-meanPredV[k]) * betaV[k]) - inv_logit (alphaV[1] - meanPredV[k] * betaV[k]);
+    unitDeltaD[k] = inv_logit (alphaD[1] + (1-meanPredD[k]) * betaD[k]) - inv_logit (alphaD[1] - meanPredD[k] * betaD[k]);
+  }
+
+|]
+
+binomialGQLLBlock :: SB.GeneratedQuantitiesBlock
+binomialGQLLBlock =
+  [here|
+  vector[G] log_lik;
+  for (g in 1:G) {
+    log_lik[g] =  binomial_logit_lpmf(DVotes[g] | TVotes[g], alphaD[dataSet[g]] + (Q_ast[g] * thetaD));
+  }
+|]
+
+
+
+betaBinomialParametersBlock :: SB.ParametersBlock
+betaBinomialParametersBlock =
+  [here|
+  real alphaD;
+  real <lower=0, upper=1> dispD;
+  vector[K] thetaV;
+  real alphaV;
+  real <lower=0, upper=1> dispV;
+  vector[K] thetaD;
+|]
+
+betaBinomialTransformedParametersBlock :: SB.TransformedParametersBlock
+betaBinomialTransformedParametersBlock =
+  [here|
+  real <lower=0> phiD = (1-dispD)/dispD;
+  real <lower=0> phiV = (1-dispV)/dispV;
+  vector [G] pDVoteP = inv_logit (alphaD + Q_ast * thetaD);
+  vector [G] pVotedP = inv_logit (alphaV + Q_ast * thetaV);
+  vector [K] betaV;
+  vector [K] betaD;
+  betaV = R_ast_inverse * thetaV;
+  betaD = R_ast_inverse * thetaD;
+|]
+
+betaBinomialModelBlock :: SB.ModelBlock
+betaBinomialModelBlock =
+  [here|
+  alphaD ~ cauchy(0, 10);
+  alphaV ~ cauchy(0, 10);
+  betaV ~ cauchy(0, 2.5);
+  betaD ~ cauchy(0, 2.5);
+
+  TVotes ~ beta_binomial(VAP, pVotedP * phiV, (1 - pVotedP) * phiV);
+  DVotes ~ beta_binomial(TVotes, pDVoteP * phiD, (1 - pDVoteP) * phiD);
+|]
+
+betaBinomialGeneratedQuantitiesBlock :: SB.GeneratedQuantitiesBlock
+betaBinomialGeneratedQuantitiesBlock =
+  [here|
+  vector<lower = 0>[G] eTVotes;
+  vector<lower = 0>[G] eDVotes;
+  for (g in 1:G) {
+    eTVotes[g] = pVotedP[g] * VAP[g];
+    eDVotes[g] = pDVoteP[g] * TVotes[g];
+  }
 |]
