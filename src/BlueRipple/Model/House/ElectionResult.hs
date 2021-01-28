@@ -114,11 +114,14 @@ type ElectionPredictorR = [FracUnder45
                           , FracOther
                           , DT.AvgIncome
                           , DT.PopPerSqMile]
-type CDElectionDataR = CDKeyR V.++ DemographicsR V.++ ElectionR
-type CDElectionData = F.FrameRec CDElectionDataR
+type HouseElectionDataR = CDKeyR V.++ DemographicsR V.++ ElectionR
+type HouseElectionData = F.FrameRec HouseElectionDataR
 
-type StateElectionDataR = StateKeyR V.++ DemographicsR V.++ ElectionR
-type StateElectionData  = F.FrameRec StateElectionDataR
+type SenateElectionDataR = SenateRaceKeyR V.++ DemographicsR V.++ ElectionR
+type SenateElectionData = F.FrameRec SenateElectionDataR
+
+type PresidentialElectionDataR = StateKeyR V.++ DemographicsR V.++ ElectionR
+type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
@@ -127,11 +130,20 @@ type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
-data HouseModelData = HouseModelData { houseElectionData :: CDElectionData
-                                     , senateElectionData :: StateElectionData
-                                     , presidentByStateElectionData :: StateElectionData
+data HouseModelData = HouseModelData { houseElectionData :: HouseElectionData
+                                     , senateElectionData :: SenateElectionData
+                                     , presidentByStateElectionData :: PresidentialElectionData
                                      , ccesData :: CCESData
                                      } deriving (Generic)
+
+houseRaceKey :: F.Record HouseElectionDataR -> F.Record CDKeyR
+houseRaceKey = F.rcast
+
+senateRaceKey :: F.Record SenateElectionDataR -> F.Record SenateRaceKeyR
+senateRaceKey = F.rcast
+
+presidentialRaceKey :: F.Record PresidentialElectionDataR -> F.Record StateKeyR
+presidentialRaceKey = F.rcast
 
 -- frames are not directly serializable so we have to do...shenanigans
 instance S.Serialize HouseModelData where
@@ -542,10 +554,14 @@ type EDVotes95 = "EstDVotes95" F.:-> Int
 
 type Modeled = [VoteP, DVoteP, EVotes, EDVotes5, EDVotes, EDVotes95]
 
-type ElectionFit = [BR.StateAbbreviation, BR.CongressionalDistrict, PUMS.Citizens, TVotes, DVotes] V.++ Modeled
+type ElectionFitR as = as V.++ [PUMS.Citizens, TVotes, DVotes] V.++ Modeled
+type HouseElectionFitR = ElectionFitR CDKeyR
+type SenateElectionFitR = ElectionFitR SenateRaceKeyR
+type PresidentialElectionFitR = ElectionFitR StateKeyR
+
 type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes, DVotes] V.++ Modeled
 
-data HouseModelResults = HouseModelResults { electionFit :: F.FrameRec ElectionFit
+data HouseModelResults = HouseModelResults { houseElectionFit :: F.FrameRec HouseElectionFitR
                                            , ccesFit :: F.FrameRec CCESFit
                                            , avgProbs :: MapRow.MapRow [Double]
                                            , sigmaDeltas :: MapRow.MapRow [Double]
@@ -577,23 +593,22 @@ extractResults modelWith predictors summary hmd = do
             (SP.getVector pDVotedP)
             (SP.getVector eTVote)
             (SP.getVector eDVotePcts)
-      makeElectionFitRow (edRow, (pV, pD, etVotes, dVotesPcts)) = do
+      makeElectionFitRow key (edRow, (pV, pD, etVotes, dVotesPcts)) = do
         if length dVotesPcts == 3
           then
             let [d5, d, d95] = dVotesPcts
-             in Right $
-                  F.rgetField @BR.StateAbbreviation edRow
-                    F.&: F.rgetField @BR.CongressionalDistrict edRow
-                    F.&: F.rgetField @PUMS.Citizens edRow
-                    F.&: (F.rgetField @DVotes edRow + F.rgetField @RVotes edRow)
-                    F.&: F.rgetField @DVotes edRow
-                    F.&: pV
-                    F.&: pD
-                    F.&: round etVotes
-                    F.&: round d5
-                    F.&: round d
-                    F.&: round d95
-                    F.&: V.RNil
+             in Right $ key edRow `V.rappend` (
+              F.rgetField @PUMS.Citizens edRow
+              F.&: (F.rgetField @DVotes edRow + F.rgetField @RVotes edRow)
+              F.&: F.rgetField @DVotes edRow
+              F.&: pV
+              F.&: pD
+              F.&: round etVotes
+              F.&: round d5
+              F.&: round d
+              F.&: round d95
+              F.&: V.RNil
+              )
           else Left "Wrong number of percentiles in stan statistic"
       makeCCESFitRow (cdRow, (pV, pD, etVotes, dVotesPcts)) = do
         if length dVotesPcts == 3
@@ -616,7 +631,7 @@ extractResults modelWith predictors summary hmd = do
       ccesIndex = case modelWith of
         UseCCES -> 0
         _ -> FL.fold FL.length (houseElectionData hmd)
-  electionFit <- traverse makeElectionFitRow $ Vec.zip (FL.fold FL.vector $ houseElectionData hmd) (Vec.take ccesIndex modeled)
+  electionFit <- traverse (makeElectionFitRow houseRaceKey) $ Vec.zip (FL.fold FL.vector $ houseElectionData hmd) (Vec.take ccesIndex modeled)
   ccesFit <- traverse makeCCESFitRow $ Vec.zip (FL.fold FL.vector $ ccesData hmd) (Vec.drop ccesIndex modeled)
   -- deltas
   let rowNamesD = (<> "D") <$> predictors

@@ -428,7 +428,7 @@ examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
                   . F.filterFrame (isYear year)
                   . BRE.houseElectionData
                   <$> houseData_C
-  electionFit <- K.ignoreCacheTime $ fmap BRE.electionFit . fst $ results
+  electionFit <- K.ignoreCacheTime $ fmap BRE.houseElectionFit . fst $ results
   let (fitWithDemo, missing) =  FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.CongressionalDistrict] electionFit electionData
   unless (null missing) $ K.knitError "Missing keys in electionFit/electionData join"
   _ <- K.addHvega Nothing Nothing
