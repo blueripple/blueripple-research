@@ -103,7 +103,7 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedData False
+  houseData_C <- BRE.prepCachedData True
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
@@ -203,16 +203,16 @@ testHouseModel = do
                  (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-
+{-
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
+-}
 
-{-
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C
--}
+
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
@@ -233,11 +233,12 @@ writeCompareScript configs compareScriptName = do
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
+      modeledDataSets = S.fromList [BRE.HouseE]
       models =
-        [ ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
-        , ("binomial", Nothing, BRE.UseElectionResults, BRE.binomial, 500)
+        [ ("betaBinomialInc", Nothing, modeledDataSets, BRE.HouseE, BRE.betaBinomialInc, 500)
+        , ("binomial", Nothing, modeledDataSets, BRE.HouseE, BRE.binomial, 500)
         ]
-      isYear year = (== year) . F.rgetField @BR.Year
+      isYear x = (== x) . F.rgetField @BR.Year
       year = 2018
       runOne x =
         BRE.runHouseModel
@@ -246,6 +247,8 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
         x
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -255,7 +258,7 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   fLoo_C <- BR.retrieveOrMakeFrame "model/house/modelsLoo.bin" looDeps $ const $ do
     K.logLE K.Info "model run(s) are newer than loo comparison data.  Re-running comparisons."
     writeCompareScript (snd <$> results) ("compareModels_" <> show year)
-    K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
+    K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
   fLoo <- K.ignoreCacheTime fLoo_C
   BR.brAddRawHtmlTable
     "Predictor LOO (Leave-One-Out Cross Validation) comparison"
@@ -283,15 +286,17 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
                    ,("Income", ["AvgIncome"])
                    ,("IntOnly", [])
                    ]
-      isYear year = (== year) . F.rgetField @BR.Year
+      isYear y = (== y) . F.rgetField @BR.Year
       year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
         (snd x)
-        ("betaBinomialInc", Just $ fst x, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Just $ fst x, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -316,14 +321,16 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       years = [2012, 2014, 2016, 2018]
-      modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
-      runYear mw y =
+      modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE), (S.fromList [BRE.SenateE], BRE.SenateE), (S.fromList [BRE.PresidentialE], BRE.PresidentialE)]
+      runYear (mds, cds) y =
         BRE.runHouseModel
         clearCached
         predictors
-        ("betaBinomialInc", Nothing, mw, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Nothing, mds, cds, BRE.betaBinomialInc, 500)
         y
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear y))
+                . Optics.over #senateElectionData (F.filterFrame (isYear y))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear y))
                 . Optics.over #ccesData (F.filterFrame (isYear y)))
           houseData_C
         )
@@ -409,7 +416,7 @@ modelChart title predOrder modelOrder vc t rows =
 examineFit :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
-      model = ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
+      model = ("betaBinomialInc", Nothing, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2018
       runOne x =
@@ -419,6 +426,8 @@ examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
         x
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
