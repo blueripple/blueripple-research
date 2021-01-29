@@ -334,7 +334,7 @@ prepCachedData clearCache = do
   pumsByState_C <- BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C (return . pumsByState)
 
   houseElections_C <- BR.houseElectionsWithIncumbency
-  senateElections_C <- BR.senateElectionsWithIncumbency
+  senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
 
   -- prefer runoffs when both present

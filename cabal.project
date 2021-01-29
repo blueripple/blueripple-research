@@ -25,7 +25,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 35c1811e6e7749440cb20172d05c3427b7577e81
+  tag: 9ad48f64fc488daf86d85bf20234946c3a26a177
 
 source-repository-package
   type: git
