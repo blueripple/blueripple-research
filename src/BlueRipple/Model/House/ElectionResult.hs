@@ -32,6 +32,7 @@ import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
 import qualified Data.Generics.Labels as GLabels
+import qualified Data.List as List
 import qualified Data.Map as M
 import qualified Data.Set as Set
 import Data.String.Here (here)
@@ -132,7 +133,7 @@ type CCESData = F.FrameRec CCESDataR
 
 data HouseModelData = HouseModelData { houseElectionData :: HouseElectionData
                                      , senateElectionData :: SenateElectionData
-                                     , presidentByStateElectionData :: PresidentialElectionData
+                                     , presidentialElectionData :: PresidentialElectionData
                                      , ccesData :: CCESData
                                      } deriving (Generic)
 
@@ -452,20 +453,24 @@ adjustPredictor f k =
 
 data ModelRow = ModelRow { stateAbbr :: Text
                          , pred :: Vec.Vector Double
---                         , inc :: Int
                          , vap :: Int
                          , tVotes :: Int
                          , dVotes :: Int
                          } deriving (Show)
 
 
-electionResultToModelRow :: (F.Record (DemographicsR V.++ ElectionR) -> Vec.Vector Double) -> F.Record (BR.StateAbbreviation  ': (DemographicsR V.++ ElectionR)) -> ModelRow
+electionResultToModelRow :: (F.Record (DemographicsR V.++ ElectionR) -> Vec.Vector Double)
+                         -> F.Record (BR.StateAbbreviation  ': (DemographicsR V.++ ElectionR))
+                         -> ModelRow
 electionResultToModelRow predictRow r =
   (ModelRow <$> F.rgetField @BR.StateAbbreviation  <*> (predictRow . F.rcast) <*> F.rgetField @PUMS.Citizens <*> tVotes <*> dVotes) $ r where
   dVotes = F.rgetField @DVotes
   tVotes r = dVotes r + F.rgetField @RVotes r
 
-electionResultsToModelRows :: Foldable f => [Text] -> f (F.Record (BR.StateAbbreviation ': (DemographicsR V.++ ElectionR))) -> Either Text (Vec.Vector ModelRow)
+electionResultsToModelRows :: Foldable f
+                           => [Text]
+                           -> f (F.Record (BR.StateAbbreviation ': (DemographicsR V.++ ElectionR)))
+                           -> Either Text (Vec.Vector ModelRow)
 electionResultsToModelRows predictors er = do
   let  ((stateM, _), maxAvgIncome, maxDensity) =
          FL.fold
@@ -505,33 +510,42 @@ ccesDataToModelRows predictors cd = do
       predictRow r = Vec.fromList $ fmap ($ F.rcast r) rowMaker
   return $ FL.fold (FL.premap (ccesDataToModelRow predictRow) FL.vector) cd
 
+dataSetToModelRows :: [Text] -> HouseModelData -> DataSet -> Either Text (Vec.Vector ModelRow)
+dataSetToModelRows predictors hmd HouseE =  electionResultsToModelRows predictors
+                                           $ fmap F.rcast $ houseElectionData hmd
+dataSetToModelRows predictors hmd SenateE =  electionResultsToModelRows predictors
+                                            $ fmap F.rcast $ senateElectionData hmd
+dataSetToModelRows predictors hmd PresidentialE =  electionResultsToModelRows predictors
+                                                  $ fmap F.rcast $ presidentialElectionData hmd
+dataSetToModelRows predictors hmd CCES =  ccesDataToModelRows predictors
+                                         $ fmap F.rcast $ ccesData hmd
 
-houseDataWrangler :: ModelWith -> [Text] -> HouseDataWrangler
-houseDataWrangler mw predictors = SC.Wrangle SC.NoIndex f
+
+dataSetRows :: HouseModelData -> DataSet -> Int
+dataSetRows hmd HouseE = FL.fold FL.length $ houseElectionData hmd
+dataSetRows hmd SenateE = FL.fold FL.length $ senateElectionData hmd
+dataSetRows hmd PresidentialE = FL.fold FL.length $ presidentialElectionData hmd
+dataSetRows hmd CCES = FL.fold FL.length $ ccesData hmd
+
+houseDataWrangler :: ModeledDataSets -> DataSet -> [Text] -> HouseDataWrangler
+houseDataWrangler mds cds predictors = SC.Wrangle SC.NoIndex f
   where
     f _ = ((), makeDataJsonE)
-    numDataSets :: Int = if mw == UseBoth then 2 else 1
+    numDataSets :: Int = Set.size mds --if mw == UseBoth then 2 else 1
     makeDataJsonE hmd = do
-      (modelRows, dataSetIndex, nCD) <- case mw of
-        UseElectionResults ->  do
-          edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
-          let dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int)
-          return (edModelRows, dataSetIndex, 1 :: Int)
-        UseCCES -> do
-          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
-          let dataSetIndex = Vec.replicate (Vec.length ccesModelRows) (1 :: Int)
-          return (ccesModelRows, dataSetIndex, 1 :: Int)
-        UseBoth -> do
-          edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
-          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
-          let modelRows = edModelRows <> ccesModelRows
-              dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int) <> Vec.replicate (Vec.length ccesModelRows) 2
-          return (modelRows, dataSetIndex, 1 :: Int)
-      let incumbencyCol = fromMaybe (0 :: Int) $ fmap fst $ find ((== "Incumbency") . snd)$ zip [1..] predictors
+      -- 0 based index of cds set in Set.toAscList mds
+      cdsIndex <- if Set.member cds mds
+                  then Right $ Set.findIndex cds mds
+                  else Left $ "Chosen data set (" <> show cds <> ") mising from modeledDataSets (" <> show mds <> ")"
+      lModelRows <- traverse (dataSetToModelRows predictors hmd) $ Set.toAscList mds
+      let lRowCounts = fmap Vec.length lModelRows
+          modelRows = mconcat lModelRows
+          dataSetIndex = mconcat $ fmap (uncurry Vec.replicate) $ zip lRowCounts [(1 :: Int)..]
+          incumbencyCol = fromMaybe (0 :: Int) $ fmap fst $ find ((== "Incumbency") . snd)$ zip [1..] predictors
           dataF =
             SJ.namedF "G" FL.length
             <> SJ.constDataF "D" numDataSets
-            <> SJ.constDataF "CD" nCD
+            <> SJ.constDataF "CD" (cdsIndex + 1)
             <> SJ.constDataF "K" (length predictors)
             <> SJ.constDataF "IC" incumbencyCol
             <> SJ.valueToPairF "X" (SJ.jsonArrayF pred)
@@ -544,6 +558,18 @@ houseDataWrangler mw predictors = SC.Wrangle SC.NoIndex f
 
 
 data ModelWith = UseElectionResults | UseCCES | UseBoth deriving (Show, Eq, Ord)
+data DataSet = HouseE | SenateE | PresidentialE | CCES deriving (Show, Eq, Ord, Enum, Bounded)
+
+dataSetKey :: DataSet -> Text
+dataSetKey HouseE = "H"
+dataSetKey SenateE = "S"
+dataSetKey PresidentialE = "P"
+dataSetKey CCES = "C"
+
+type ModeledDataSets = Set DataSet
+
+modeledDataSetsKey :: ModeledDataSets -> Text
+modeledDataSetsKey mds = mconcat $ fmap dataSetKey $ Set.toAscList mds
 
 type VoteP = "VoteProb" F.:-> Double
 type DVoteP = "DVoteProb" F.:-> Double
@@ -562,6 +588,8 @@ type PresidentialElectionFitR = ElectionFitR StateKeyR
 type CCESFit = [BR.StateAbbreviation, BR.CongressionalDistrict, Surveyed, TVotes, DVotes] V.++ Modeled
 
 data HouseModelResults = HouseModelResults { houseElectionFit :: F.FrameRec HouseElectionFitR
+                                           , senateElectionFit :: F.FrameRec SenateElectionFitR
+                                           , presidentialElectionFit :: F.FrameRec PresidentialElectionFitR
                                            , ccesFit :: F.FrameRec CCESFit
                                            , avgProbs :: MapRow.MapRow [Double]
                                            , sigmaDeltas :: MapRow.MapRow [Double]
@@ -570,16 +598,24 @@ data HouseModelResults = HouseModelResults { houseElectionFit :: F.FrameRec Hous
 
 -- frames are not directly serializable so we have to do...shenanigans.
 instance S.Serialize HouseModelResults where
-  put (HouseModelResults ef cf aps sd ud) = S.put (FS.SFrame ef, FS.SFrame cf, aps, sd, ud)
-  get = (\(ef, cf, aps, sd, ud) -> HouseModelResults (FS.unSFrame ef) (FS.unSFrame cf) aps sd ud) <$> S.get
+  put (HouseModelResults hef sef pef cf aps sd ud) =
+    S.put (FS.SFrame hef, FS.SFrame sef, FS.SFrame pef, FS.SFrame cf, aps, sd, ud)
+  get = (\(hef, sef, pef, cf, aps, sd, ud) -> HouseModelResults
+                                              (FS.unSFrame hef)
+                                              (FS.unSFrame sef)
+                                              (FS.unSFrame pef)
+                                              (FS.unSFrame cf)
+                                              aps
+                                              sd
+                                              ud) <$> S.get
 
 extractResults ::
-  ModelWith
+  ModeledDataSets
   -> [Text]
   -> CS.StanSummary
   -> HouseModelData
   -> Either T.Text HouseModelResults
-extractResults modelWith predictors summary hmd = do
+extractResults mds predictors summary hmd = do
   -- predictions
   pVotedP <- fmap CS.mean <$> SP.parse1D "pVotedP" (CS.paramStats summary)
   pDVotedP <- fmap CS.mean <$> SP.parse1D "pDVoteP" (CS.paramStats summary)
@@ -628,11 +664,30 @@ extractResults modelWith predictors summary hmd = do
                     F.&: round d95
                     F.&: V.RNil
           else Left "Wrong number of percentiles in stan statistic"
-      ccesIndex = case modelWith of
-        UseCCES -> 0
-        _ -> FL.fold FL.length (houseElectionData hmd)
-  electionFit <- traverse (makeElectionFitRow houseRaceKey) $ Vec.zip (FL.fold FL.vector $ houseElectionData hmd) (Vec.take ccesIndex modeled)
-  ccesFit <- traverse makeCCESFitRow $ Vec.zip (FL.fold FL.vector $ ccesData hmd) (Vec.drop ccesIndex modeled)
+      lMDS = Set.toAscList mds
+      lDSLengths = fmap (dataSetRows hmd) lMDS
+      lDSStartLength  = let x = List.scanl1 (+) lDSLengths in zip (0 : x) lDSLengths
+      mDSIndices = M.fromList $ zip lMDS lDSStartLength
+  houseElectionFit <- case M.lookup HouseE mDSIndices of
+    Nothing -> Right mempty
+    Just (start, length) -> traverse (makeElectionFitRow houseRaceKey)
+                            $ Vec.zip (FL.fold FL.vector $ houseElectionData hmd)
+                            (Vec.take length . Vec.drop start $ modeled)
+  senateElectionFit <- case M.lookup SenateE mDSIndices of
+    Nothing -> Right mempty
+    Just (start, length) -> traverse (makeElectionFitRow senateRaceKey)
+                            $ Vec.zip (FL.fold FL.vector $ senateElectionData hmd)
+                            (Vec.take length . Vec.drop start $ modeled)
+  presidentialElectionFit <- case M.lookup SenateE mDSIndices of
+    Nothing -> Right mempty
+    Just (start, length) -> traverse (makeElectionFitRow presidentialRaceKey)
+                             $ Vec.zip (FL.fold FL.vector $ presidentialElectionData hmd)
+                             (Vec.take length . Vec.drop start $ modeled)
+  ccesFit <- case M.lookup CCES mDSIndices of
+    Nothing -> Right mempty
+    Just (start, length) -> traverse makeCCESFitRow
+                            $ Vec.zip (FL.fold FL.vector $ ccesData hmd)
+                            (Vec.take length . Vec.drop start $ modeled)
   -- deltas
   let rowNamesD = (<> "D") <$> predictors
       rowNamesV = (<> "V") <$> predictors
@@ -648,7 +703,14 @@ extractResults modelWith predictors summary hmd = do
   let sigmaDeltas = sigmaDeltaDMR <> sigmaDeltaVMR
       unitDeltas = unitDeltaDMR <> unitDeltaVMR
 --      avgProbs = _ --elexPVote <> elexPDVote
-  return $ HouseModelResults (F.toFrame electionFit) (F.toFrame ccesFit) (elexPVote <> elexPDVote) sigmaDeltas unitDeltas
+  return $ HouseModelResults
+    (F.toFrame houseElectionFit)
+    (F.toFrame senateElectionFit)
+    (F.toFrame presidentialElectionFit)
+    (F.toFrame ccesFit)
+    (elexPVote <> elexPDVote)
+    sigmaDeltas
+    unitDeltas
 
 
 runHouseModel ::
@@ -656,16 +718,16 @@ runHouseModel ::
   (K.KnitEffects r, K.CacheEffectsD r)
   => Bool
   -> [Text]
-  -> (Text, Maybe Text, ModelWith, SB.StanModel, Int)
+  -> (Text, Maybe Text, ModeledDataSets, DataSet, SB.StanModel, Int)
   -> Int
   -> K.ActionWithCacheTime r HouseModelData
   -> K.Sem r (K.ActionWithCacheTime r HouseModelResults, SC.ModelRunnerConfig)
-runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nSamples) year houseData_C
+runHouseModel clearCache predictors (modelName, mNameExtra, mds, cds, model, nSamples) year houseData_C
   = K.wrapPrefix "BlueRipple.Model.House.ElectionResults.runHouseModel" $ do
   K.logLE K.Info "Running..."
   let workDir = "stan/house/election"
       nameExtra = fromMaybe "" $ fmap ("_" <>) mNameExtra
-      dataLabel = show modelWith <> nameExtra <> "_" <> show year
+      dataLabel = modeledDataSetsKey mds <> nameExtra <> "_" <> show year
       outputLabel = modelName <> "_" <> dataLabel
   let stancConfig = (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
   stanConfig <-
@@ -694,7 +756,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
   let dataModelDep = const <$> modelDep <*> houseDataForYear_C
       getResults s () inputAndIndex_C = do
         (houseModelData, _) <- K.ignoreCacheTime inputAndIndex_C
-        K.knitEither $ extractResults modelWith predictors s houseModelData
+        K.knitEither $ extractResults mds predictors s houseModelData
       unwraps = [SR.UnwrapNamed "DVotes" "DVotes"
                 , SR.UnwrapNamed "TVotes" "TVotes"
                 , SR.UnwrapNamed "VAP" "VAP"
@@ -706,7 +768,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, modelWith, model, nS
     SM.runModel
       stanConfig
       (SM.Both unwraps)
-      (houseDataWrangler modelWith predictors)
+      (houseDataWrangler mds cds predictors)
       (SC.UseSummary getResults)
       ()
       houseDataForYear_C
@@ -1094,3 +1156,43 @@ betaBinomialGeneratedQuantitiesBlock =
     eDVotes[g] = pDVoteP[g] * TVotes[g];
   }
 |]
+
+
+
+{-
+houseDataWrangler' :: ModelWith -> [Text] -> HouseDataWrangler
+houseDataWrangler' mw predictors = SC.Wrangle SC.NoIndex f
+  where
+    f _ = ((), makeDataJsonE)
+    numDataSets :: Int = if mw == UseBoth then 2 else 1
+    makeDataJsonE hmd = do
+      (modelRows, dataSetIndex, nCD) <- case mw of
+        UseElectionResults ->  do
+          edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
+          let dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int)
+          return (edModelRows, dataSetIndex, 1 :: Int)
+        UseCCES -> do
+          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
+          let dataSetIndex = Vec.replicate (Vec.length ccesModelRows) (1 :: Int)
+          return (ccesModelRows, dataSetIndex, 1 :: Int)
+        UseBoth -> do
+          edModelRows <- electionResultsToModelRows predictors $ fmap F.rcast $ houseElectionData hmd
+          ccesModelRows <- ccesDataToModelRows predictors $ ccesData hmd
+          let modelRows = edModelRows <> ccesModelRows
+              dataSetIndex = Vec.replicate (Vec.length edModelRows) (1 :: Int) <> Vec.replicate (Vec.length ccesModelRows) 2
+          return (modelRows, dataSetIndex, 1 :: Int)
+      let incumbencyCol = fromMaybe (0 :: Int) $ fmap fst $ find ((== "Incumbency") . snd)$ zip [1..] predictors
+          dataF =
+            SJ.namedF "G" FL.length
+            <> SJ.constDataF "D" numDataSets
+            <> SJ.constDataF "CD" nCD
+            <> SJ.constDataF "K" (length predictors)
+            <> SJ.constDataF "IC" incumbencyCol
+            <> SJ.valueToPairF "X" (SJ.jsonArrayF pred)
+            <> SJ.valueToPairF "VAP" (SJ.jsonArrayF vap)
+            <> SJ.valueToPairF "TVotes"  (SJ.jsonArrayF tVotes)
+            <> SJ.valueToPairF "DVotes"  (SJ.jsonArrayF dVotes)
+      modelRowJson <- SJ.frameToStanJSONSeries dataF modelRows
+      dataSetIndexJson <- SJ.frameToStanJSONSeries (SJ.valueToPairF "dataSet" (SJ.jsonArrayF id)) dataSetIndex
+      return $ modelRowJson <> dataSetIndexJson
+-}
