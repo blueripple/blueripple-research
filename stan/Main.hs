@@ -320,13 +320,15 @@ compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWit
 compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
+      presPredictors = List.filter (/= "Incumbency") predictors
       years = [2012, 2014, 2016, 2018]
       presYears = [2012, 2016]
       modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE), (S.fromList [BRE.SenateE], BRE.SenateE), (S.fromList [BRE.PresidentialE], BRE.PresidentialE)]
+      modelWithLabels = fmap (BRE.modeledDataSetsLabel . fst) modelWiths
       runYear (mds, cds) y =
         BRE.runHouseModel
         clearCached
-        predictors
+        (if mds == S.fromList [BRE.PresidentialE] then presPredictors else predictors)
         ("betaBinomialInc", Nothing, mds, cds, BRE.betaBinomialInc, 500)
         y
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear y))
@@ -350,12 +352,12 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
           _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
       expandMapRow f (y, modelResults)
         = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
-      modelMR mw = one ("Model", GV.Str $ show @Text mw)
+      modelMR mw = one ("Model", GV.Str $ BRE.modeledDataSetsLabel $ fst mw)
       modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
       runModelWith mw = do
         let yrs = if (fst mw == S.fromList [BRE.PresidentialE]) then presYears else years
         results_C <- sequenceA <$> traverse (fmap fst . runYear mw) yrs
-        results <- zip years <$> K.ignoreCacheTime results_C
+        results <- zip yrs <$> K.ignoreCacheTime results_C
         sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
         unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
         avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> K.knitEither (traverse (expandMapRow BRE.avgProbs) results)
@@ -368,26 +370,38 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
        $ modelChart
        "Average Probability"
        ["probV", "probD"]
-       ["UseElectionResults", "UseCCES", "UseBoth"]
+       modelWithLabels
        (FV.ViewConfig 200 200 5)
        ""
        $ filter (maybe False ((== "Avg") . dataValueAsText) . M.lookup "Delta") results
+  -- Do one just for incumbency
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for Incumbency (with 90% confidence bands)"
+       ["incumbency"]
+       modelWithLabels
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((== "Incumbency") . dataValueAsText) . M.lookup "Name") results
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for full range of predictor (with 90% confidence bands)"
+       (List.filter (/= "Incumbency") predictors)
+       modelWithLabels
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((/= "Incumbency") . dataValueAsText) . M.lookup "Name") results
   _ <- K.addHvega Nothing Nothing
        $ modelChart
        "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)"
        predictors
-       ["UseElectionResults", "UseCCES", "UseBoth"]
+       modelWithLabels
        (FV.ViewConfig 200 200 5)
        "D Pref"
-       $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta") results
-  _ <- K.addHvega Nothing Nothing
-       $ modelChart
-       "Change in Probability for full range of predictor (with 90% confidence bands)"
-       predictors
-       ["UseElectionResults", "UseCCES", "UseBoth"]
-       (FV.ViewConfig 200 200 5)
-       "D Pref"
-       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta") results
+       $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((/= "Incumbency") . dataValueAsText) . M.lookup "Name") results
 --    K.logLE K.Info $ show results
   return ()
 

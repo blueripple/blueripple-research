@@ -591,7 +591,17 @@ dataSetKey SenateE = "S"
 dataSetKey PresidentialE = "P"
 dataSetKey CCES = "C"
 
+dataSetLabel :: DataSet -> Text
+dataSetLabel HouseE = "House"
+dataSetLabel SenateE = "Senate"
+dataSetLabel PresidentialE = "Presidential"
+dataSetLabel CCES = "CCES"
+
 type ModeledDataSets = Set DataSet
+
+modeledDataSetsLabel :: ModeledDataSets -> Text
+modeledDataSetsLabel = T.intercalate "+" . fmap dataSetLabel . Set.toAscList
+
 
 modeledDataSetsKey :: ModeledDataSets -> Text
 modeledDataSetsKey mds = mconcat $ fmap dataSetKey $ Set.toAscList mds
