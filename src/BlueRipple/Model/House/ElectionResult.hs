@@ -336,6 +336,7 @@ prepCachedData clearCache = do
   houseElections_C <- BR.houseElectionsWithIncumbency
   senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
+  K.ignoreCacheTime presByStateElections_C >>=  BR.logFrame
 
   -- prefer runoffs when both present
 

@@ -103,7 +103,7 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedData True
+  houseData_C <- BRE.prepCachedData False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
@@ -321,6 +321,7 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       years = [2012, 2014, 2016, 2018]
+      presYears = [2012, 2016]
       modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE), (S.fromList [BRE.SenateE], BRE.SenateE), (S.fromList [BRE.PresidentialE], BRE.PresidentialE)]
       runYear (mds, cds) y =
         BRE.runHouseModel
@@ -352,7 +353,8 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
       modelMR mw = one ("Model", GV.Str $ show @Text mw)
       modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
       runModelWith mw = do
-        results_C <- sequenceA <$> traverse (fmap fst . runYear mw) years
+        let yrs = if (fst mw == S.fromList [BRE.PresidentialE]) then presYears else years
+        results_C <- sequenceA <$> traverse (fmap fst . runYear mw) yrs
         results <- zip years <$> K.ignoreCacheTime results_C
         sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
         unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
