@@ -203,11 +203,10 @@ testHouseModel = do
                  (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-{-
+
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
--}
 
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
@@ -292,7 +291,7 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
         BRE.runHouseModel
         clearCached
         (snd x)
-        ("betaBinomialInc", Just $ fst x, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Just $ fst x, S.fromList [BRE.HouseE, BRE.SenateE], BRE.HouseE, BRE.betaBinomialInc, 500)
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
                 . Optics.over #senateElectionData (F.filterFrame (isYear year))
@@ -323,7 +322,11 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
       presPredictors = List.filter (/= "Incumbency") predictors
       years = [2012, 2014, 2016, 2018]
       presYears = [2012, 2016]
-      modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE), (S.fromList [BRE.SenateE], BRE.SenateE), (S.fromList [BRE.PresidentialE], BRE.PresidentialE)]
+      modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE)
+                   , (S.fromList [BRE.SenateE], BRE.SenateE)
+                   , (S.fromList [BRE.PresidentialE], BRE.PresidentialE)
+                   , (S.fromList [BRE.HouseE, BRE.PresidentialE], BRE.HouseE)
+                   ]
       modelWithLabels = fmap (BRE.modeledDataSetsLabel . fst) modelWiths
       runYear (mds, cds) y =
         BRE.runHouseModel
@@ -355,7 +358,7 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
       modelMR mw = one ("Model", GV.Str $ BRE.modeledDataSetsLabel $ fst mw)
       modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
       runModelWith mw = do
-        let yrs = if (fst mw == S.fromList [BRE.PresidentialE]) then presYears else years
+        let yrs = if BRE.PresidentialE `elem` S.toList (fst mw) then presYears else years
         results_C <- sequenceA <$> traverse (fmap fst . runYear mw) yrs
         results <- zip yrs <$> K.ignoreCacheTime results_C
         sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
