@@ -52,7 +52,7 @@ parsePEParty t
   | T.isInfixOf "REPUBLICAN" t = ET.Republican
   | otherwise = ET.Other
 
-type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidate, BR.Candidatevotes, BR.Totalvotes, BR.Party]
+type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.StateIc, BR.Office, BR.Candidate, BR.Party, BR.Writein, BR.Candidatevotes, BR.Totalvotes]
 
 type ElectionDataCols = [ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
 
@@ -81,10 +81,10 @@ presidentialByStateFrame =
     id
     fixPresidentialElectionRow
     Nothing
-    "presByState.sbin"
+    "presByState.bin"
 
-presidentialElectionKey :: F.Record PresidentialElectionCols -> ((), Int)
-presidentialElectionKey r = ((), F.rgetField @BR.Year r)
+presidentialElectionKey :: F.Record PresidentialElectionCols -> (Text, Int)
+presidentialElectionKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Year r)
 
 presidentialElectionsWithIncumbency ::
   (K.KnitEffects r, K.CacheEffectsD r) =>

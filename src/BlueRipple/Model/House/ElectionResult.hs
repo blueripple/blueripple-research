@@ -353,8 +353,13 @@ prepCachedData clearCache = do
   pumsByState_C <- BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C (return . pumsByState)
 
   houseElections_C <- BR.houseElectionsWithIncumbency
-  senateElections_C <- BR.senateElectionsWithIncumbency
+  senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
+  K.ignoreCacheTime presByStateElections_C >>=  BR.logFrame
+
+  -- prefer runoffs when both present
+
+
 --  K.logLE K.Info $ "Senate "
 --  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
@@ -386,13 +391,21 @@ prepCachedData clearCache = do
     senateElectionResults <- K.knitEither $ FL.foldM fSenateElex senateElex
     presElectionResults <- K.knitEither $ FL.foldM fPresElex presElex
 
+    let moreVotesThanPeople r = F.rgetField @PUMS.Citizens r < (F.rgetField @DVotes r + F.rgetField @RVotes r)
+
     let (houseDemoAndElex, missinghElex) = FJ.leftJoinWithMissing @CDKeyR houseElectionResults cdDemographics
     K.knitEither $ if null missinghElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
                         <> show missinghElex
     let competitiveHouseElectionResults = F.rcast <$> F.filterFrame competitive houseDemoAndElex
-        competitiveCDs = FL.fold (FL.premap (F.rcast @CDKeyR) FL.set) houseDemoAndElex
+        mvtpH = F.filterFrame moreVotesThanPeople competitiveHouseElectionResults
+    _ <- K.knitEither $ if null mvtpH
+                        then Right ()
+                        else (Left $ "More votes than people in House Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpH))
+
+
+    let competitiveCDs = FL.fold (FL.premap (F.rcast @CDKeyR) FL.set) houseDemoAndElex
         competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @CDKeyR r) competitiveCDs) countedCCES
         toJoinWithCCES = fmap (F.rcast @(CDKeyR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile])) competitiveHouseElectionResults
         (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @CDKeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
@@ -406,17 +419,29 @@ prepCachedData clearCache = do
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and senate election data in house model prep:"
                         <> show missingsElex
+    let competitiveSenateElectionResults = F.rcast <$> F.filterFrame competitive senateDemoAndElex
+        mvtpS = F.filterFrame moreVotesThanPeople competitiveSenateElectionResults
+    _ <- K.knitEither $ if null mvtpS
+                        then Right ()
+                        else (Left $ "More votes than people in Senate Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpS))
+
+
     let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR presElectionResults stateDemographics
     K.knitEither $ if null missingpElex
                    then Right ()
                    else Left $ "Missing keys in left-join of demographics and presidential election data in house model prep:"
                         <> show missingpElex
 
+    let competitivePresidentialElectionResults = F.rcast <$> F.filterFrame competitive presDemoAndElex
+        mvtpP = F.filterFrame moreVotesThanPeople competitivePresidentialElectionResults
+    _ <- K.knitEither $ if null mvtpP
+                        then Right ()
+                        else (Left $ "More votes than people in Presidential Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpP))
 
     return $ HouseModelData
       competitiveHouseElectionResults
-      (F.rcast <$> F.filterFrame competitive senateDemoAndElex)
-      (F.rcast <$> F.filterFrame competitive presDemoAndElex)
+      competitiveSenateElectionResults
+      competitivePresidentialElectionResults
       (fmap F.rcast ccesWithoutNullVotes)
 
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
@@ -585,7 +610,17 @@ dataSetKey SenateE = "S"
 dataSetKey PresidentialE = "P"
 dataSetKey CCES = "C"
 
+dataSetLabel :: DataSet -> Text
+dataSetLabel HouseE = "House"
+dataSetLabel SenateE = "Senate"
+dataSetLabel PresidentialE = "Presidential"
+dataSetLabel CCES = "CCES"
+
 type ModeledDataSets = Set DataSet
+
+modeledDataSetsLabel :: ModeledDataSets -> Text
+modeledDataSetsLabel = T.intercalate "+" . fmap dataSetLabel . Set.toAscList
+
 
 modeledDataSetsKey :: ModeledDataSets -> Text
 modeledDataSetsKey mds = mconcat $ fmap dataSetKey $ Set.toAscList mds
@@ -905,11 +940,13 @@ transformedDataBlock = [here|
     {
       cdStart = g + 1;
     }
-    if (dataSet[G - g - 1] > CD)
+    if (dataSet[G - g + 1] > CD)
     {
       cdEnd = G - g;
     }
   }
+  print("cdStart=",cdStart);
+  print("cdEnd=",cdEnd);
   for (k in 1:K) {
     meanPredD[k] = mean(X[,k] .* to_vector(TVotes))/mean(to_vector(TVotes));
     meanPredV[k] = mean(X[,k] .* to_vector(VAP))/mean(to_vector(VAP));
@@ -943,8 +980,8 @@ betaBinomialIncParametersBlock =
   vector[D] alphaV;
   vector[K] thetaV;
   vector[K] thetaD;
-  real <lower=0, upper=1> dispD;
-  real <lower=0, upper=1> dispV;
+  real <lower=1e-5, upper=1-1e-5> dispD;
+  real <lower=1e-5, upper=1-1e-5> dispV;
   |]
 
 betaBinomialIncTransformedParametersBlock :: SB.TransformedParametersBlock

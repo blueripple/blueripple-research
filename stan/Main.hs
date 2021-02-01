@@ -203,16 +203,16 @@ testHouseModel = do
                  (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-
+{-
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
+-}
 
-{-
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C
--}
+
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
@@ -233,11 +233,12 @@ writeCompareScript configs compareScriptName = do
 compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
+      modeledDataSets = S.fromList [BRE.HouseE]
       models =
-        [ ("betaBinomialInc", Nothing, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
-        , ("binomial", Nothing, BRE.UseElectionResults, BRE.binomial, 500)
+        [ ("betaBinomialInc", Nothing, modeledDataSets, BRE.HouseE, BRE.betaBinomialInc, 500)
+        , ("binomial", Nothing, modeledDataSets, BRE.HouseE, BRE.binomial, 500)
         ]
-      isYear year = (== year) . F.rgetField @BR.Year
+      isYear x = (== x) . F.rgetField @BR.Year
       year = 2018
       runOne x =
         BRE.runHouseModel
@@ -246,6 +247,8 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
         x
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -255,7 +258,7 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   fLoo_C <- BR.retrieveOrMakeFrame "model/house/modelsLoo.bin" looDeps $ const $ do
     K.logLE K.Info "model run(s) are newer than loo comparison data.  Re-running comparisons."
     writeCompareScript (snd <$> results) ("compareModels_" <> show year)
-    K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
+    K.liftKnit $ SR.compareModels (zip ((\(n,_,_,_,_,_) -> n) <$> models) (snd <$> results)) 10
   fLoo <- K.ignoreCacheTime fLoo_C
   BR.brAddRawHtmlTable
     "Predictor LOO (Leave-One-Out Cross Validation) comparison"
@@ -283,15 +286,17 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
                    ,("Income", ["AvgIncome"])
                    ,("IntOnly", [])
                    ]
-      isYear year = (== year) . F.rgetField @BR.Year
+      isYear y = (== y) . F.rgetField @BR.Year
       year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
         (snd x)
-        ("betaBinomialInc", Just $ fst x, BRE.UseElectionResults, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Just $ fst x, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )
@@ -315,15 +320,20 @@ compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWit
 compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
+      presPredictors = List.filter (/= "Incumbency") predictors
       years = [2012, 2014, 2016, 2018]
-      modelWiths = [BRE.UseElectionResults, BRE.UseCCES, BRE.UseBoth]
-      runYear mw y =
+      presYears = [2012, 2016]
+      modelWiths = [(S.fromList [BRE.HouseE], BRE.HouseE), (S.fromList [BRE.SenateE], BRE.SenateE), (S.fromList [BRE.PresidentialE], BRE.PresidentialE)]
+      modelWithLabels = fmap (BRE.modeledDataSetsLabel . fst) modelWiths
+      runYear (mds, cds) y =
         BRE.runHouseModel
         clearCached
-        predictors
-        ("betaBinomialInc", Nothing, mw, BRE.betaBinomialInc, 500)
+        (if mds == S.fromList [BRE.PresidentialE] then presPredictors else predictors)
+        ("betaBinomialInc", Nothing, mds, cds, BRE.betaBinomialInc, 500)
         y
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear y))
+                . Optics.over #senateElectionData (F.filterFrame (isYear y))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear y))
                 . Optics.over #ccesData (F.filterFrame (isYear y)))
           houseData_C
         )
@@ -342,11 +352,12 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
           _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
       expandMapRow f (y, modelResults)
         = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
-      modelMR mw = one ("Model", GV.Str $ show @Text mw)
+      modelMR mw = one ("Model", GV.Str $ BRE.modeledDataSetsLabel $ fst mw)
       modelAndDeltaMR mw d = modelMR mw <> one ("Delta",GV.Str d)
       runModelWith mw = do
-        results_C <- sequenceA <$> traverse (fmap fst . runYear mw) years
-        results <- zip years <$> K.ignoreCacheTime results_C
+        let yrs = if (fst mw == S.fromList [BRE.PresidentialE]) then presYears else years
+        results_C <- sequenceA <$> traverse (fmap fst . runYear mw) yrs
+        results <- zip yrs <$> K.ignoreCacheTime results_C
         sigmaDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Std. Dev") <<$>> K.knitEither (traverse (expandMapRow BRE.sigmaDeltas) results)
         unitDeltaMapRows <- fmap (<> modelAndDeltaMR mw "Min/Max") <<$>> K.knitEither (traverse (expandMapRow BRE.unitDeltas) results)
         avgProbMapRows <- fmap (<> modelAndDeltaMR mw "Avg") <<$>> K.knitEither (traverse (expandMapRow BRE.avgProbs) results)
@@ -359,26 +370,38 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
        $ modelChart
        "Average Probability"
        ["probV", "probD"]
-       ["UseElectionResults", "UseCCES", "UseBoth"]
+       modelWithLabels
        (FV.ViewConfig 200 200 5)
        ""
        $ filter (maybe False ((== "Avg") . dataValueAsText) . M.lookup "Delta") results
+  -- Do one just for incumbency
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for Incumbency (with 90% confidence bands)"
+       ["incumbency"]
+       modelWithLabels
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((== "Incumbency") . dataValueAsText) . M.lookup "Name") results
+  _ <- K.addHvega Nothing Nothing
+       $ modelChart
+       "Change in Probability for full range of predictor (with 90% confidence bands)"
+       (List.filter (/= "Incumbency") predictors)
+       modelWithLabels
+       (FV.ViewConfig 200 200 5)
+       "D Pref"
+       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((/= "Incumbency") . dataValueAsText) . M.lookup "Name") results
   _ <- K.addHvega Nothing Nothing
        $ modelChart
        "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)"
        predictors
-       ["UseElectionResults", "UseCCES", "UseBoth"]
+       modelWithLabels
        (FV.ViewConfig 200 200 5)
        "D Pref"
-       $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta") results
-  _ <- K.addHvega Nothing Nothing
-       $ modelChart
-       "Change in Probability for full range of predictor (with 90% confidence bands)"
-       predictors
-       ["UseElectionResults", "UseCCES", "UseBoth"]
-       (FV.ViewConfig 200 200 5)
-       "D Pref"
-       $ filter (maybe False ((== "Min/Max") . dataValueAsText) . M.lookup "Delta") results
+       $ filter (maybe False ((== "Std. Dev") . dataValueAsText) . M.lookup "Delta")
+       $ filter (maybe False ((/= "Incumbency") . dataValueAsText) . M.lookup "Name") results
 --    K.logLE K.Info $ show results
   return ()
 
@@ -409,7 +432,7 @@ modelChart title predOrder modelOrder vc t rows =
 examineFit :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
-      model = ("betaBinomialInc", Nothing, BRE.UseBoth, BRE.betaBinomialInc, 500)
+      model = ("betaBinomialInc", Nothing, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2018
       runOne x =
@@ -419,6 +442,8 @@ examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
         x
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
+                . Optics.over #senateElectionData (F.filterFrame (isYear year))
+                . Optics.over #presidentialElectionData (F.filterFrame (isYear year))
                 . Optics.over #ccesData (F.filterFrame (isYear year)))
           houseData_C
         )

@@ -112,7 +112,7 @@ recStreamLoader
   -> t m (F.Record rs)
 recStreamLoader dataPath parserOptionsM mFilter fixRow = do
   let csvParserOptions =
-        F.defaultParser { F.quotingMode = F.RFC4180Quoting '"' }
+        F.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
@@ -184,7 +184,8 @@ frameLoader
   -> K.Sem r (F.FrameRec rs)
 frameLoader filePath mParserOptions mFilter fixRow = do
   let csvParserOptions =
-        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+        F.defaultParser --
+        { F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = fromMaybe csvParserOptions mParserOptions
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
@@ -260,7 +261,7 @@ maybeRecStreamLoader
   -> Streamly.SerialT K.StreamlyM (F.Record rs)
 maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow = do
   let csvParserOptions =
-        F.defaultParser { F.quotingMode = F.RFC4180Quoting ' ' }
+        F.defaultParser --{ F.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = fromMaybe csvParserOptions mParserOptions
       filterMaybes !r = fromMaybe (const True) mFilterMaybes r
       strictTransform r = transformRow r
