@@ -20,6 +20,7 @@ import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import qualified Data.Vinyl as V
 import Data.Word (Word8)
+import qualified Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.ShowCSV as FCSV
@@ -40,6 +41,7 @@ data MajorPartyParticipation
 
 instance S.Serialize MajorPartyParticipation
 instance B.Binary MajorPartyParticipation
+instance Flat.Flat MajorPartyParticipation
 instance FCSV.ShowCSV MajorPartyParticipation
 instance Grouping MajorPartyParticipation
 
@@ -65,7 +67,7 @@ data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq,
 
 instance S.Serialize PartyT
 instance B.Binary PartyT
-
+instance Flat.Flat PartyT
 instance Grouping PartyT
 
 instance FCSV.ShowCSV PartyT
@@ -87,7 +89,7 @@ data OfficeT = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord
 
 instance S.Serialize OfficeT
 instance B.Binary OfficeT
-
+instance Flat.Flat OfficeT
 instance Grouping OfficeT
 
 instance FCSV.ShowCSV OfficeT
@@ -123,6 +125,7 @@ instance Grouping PrefTypeT
 
 instance S.Serialize PrefTypeT
 instance B.Binary PrefTypeT
+instance Flat.Flat PrefTypeT
 
 instance FCSV.ShowCSV PrefTypeT
 
@@ -150,6 +153,7 @@ instance Grouping ElectoralWeightSourceT
 
 instance S.Serialize ElectoralWeightSourceT
 instance B.Binary ElectoralWeightSourceT
+instance Flat.Flat ElectoralWeightSourceT
 
 instance FCSV.ShowCSV ElectoralWeightSourceT
 
@@ -179,6 +183,7 @@ instance Grouping ElectoralWeightOfT
 
 instance S.Serialize ElectoralWeightOfT
 instance B.Binary ElectoralWeightOfT
+instance Flat.Flat ElectoralWeightOfT
 
 instance FCSV.ShowCSV ElectoralWeightOfT
 
@@ -220,6 +225,7 @@ instance Grouping VoteWhyNot
 
 instance S.Serialize VoteWhyNot
 instance B.Binary VoteWhyNot
+instance Flat.Flat VoteWhyNot
 
 instance FCSV.ShowCSV VoteWhyNot
 
@@ -248,6 +254,7 @@ instance Grouping RegWhyNot
 
 instance S.Serialize RegWhyNot
 instance B.Binary RegWhyNot
+instance Flat.Flat RegWhyNot
 
 derivingUnbox
   "RegWhyNot"
@@ -269,6 +276,7 @@ instance Grouping VoteHow
 
 instance S.Serialize VoteHow
 instance B.Binary VoteHow
+instance Flat.Flat VoteHow
 
 instance FCSV.ShowCSV VoteHow
 
@@ -292,6 +300,7 @@ instance Grouping VoteWhen
 
 instance S.Serialize VoteWhen
 instance B.Binary VoteWhen
+instance Flat.Flat VoteWhen
 
 derivingUnbox
   "VoteWhen"
@@ -316,6 +325,7 @@ instance Grouping VotedYN
 
 instance S.Serialize VotedYN
 instance B.Binary VotedYN
+instance Flat.Flat VotedYN
 
 instance FCSV.ShowCSV VotedYN
 
@@ -339,6 +349,7 @@ instance Grouping RegisteredYN
 
 instance S.Serialize RegisteredYN
 instance B.Binary RegisteredYN
+instance Flat.Flat RegisteredYN
 
 instance FCSV.ShowCSV RegisteredYN
 

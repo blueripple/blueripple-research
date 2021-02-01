@@ -28,6 +28,7 @@ common deps
                , data-science-utils
                , discrimination
                , exceptions >= 0.10.4 && < 0.11
+               , flat >= 0.4.4 && < 0.5
                , Frames >= 0.6.1 && < 0.8
                , Frames-map-reduce >= 0.3.0.0
                , Frames-hvega >= 0.3
