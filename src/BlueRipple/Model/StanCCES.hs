@@ -177,7 +177,7 @@ countCCESASER5 office year ccesMRP = do
   let counted = FL.fold countFold ccesMRP
   return counted
 
-prefASER5_MR :: (K.KnitEffects r,  K.CacheEffectsD r)
+prefASER5_MR :: (K.KnitEffects r,  BR.CacheEffects r)
              => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
              -> (T.Text, SB.StanModel)
              -> ET.OfficeT
@@ -223,7 +223,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
     SM.runModel stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
 
 
-prefASER5_MR_Loo :: (K.KnitEffects r,  K.CacheEffectsD r)
+prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r)
                  => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
                  -> (T.Text, SB.StanModel)
                  -> ET.OfficeT

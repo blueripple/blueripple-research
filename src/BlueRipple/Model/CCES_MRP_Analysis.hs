@@ -146,7 +146,7 @@ countDemPres2016VotesF =
 mrpPrefs
   :: forall cc r
    . ( K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      , K.Member GLM.RandomFu r
      , ( (((cc V.++ '[BR.Year]) V.++ '[ET.Office]) V.++ '[ET.DemVPV])
            V.++

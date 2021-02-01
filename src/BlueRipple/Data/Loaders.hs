@@ -40,7 +40,7 @@ import qualified Frames.Transform as FT
 import qualified Knit.Report as K
 
 electoralCollegeFrame ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ElectoralCollege))
 electoralCollegeFrame = cachedFrameLoader (DataSets $ T.pack BR.electorsCSV) Nothing Nothing id Nothing "electoralCollege.bin"
 
@@ -72,7 +72,7 @@ fixPresidentialElectionRow = F.rcast . addCols
         . (FT.addOneFromOne @BR.Party @ET.Party parsePEParty)
 
 presidentialByStateFrame ::
-  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionCols))
+  (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionCols))
 presidentialByStateFrame =
   cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PresidentialElectionCols
     (DataSets $ toText BR.presidentialByStateCSV)
@@ -87,7 +87,7 @@ presidentialElectionKey :: F.Record PresidentialElectionCols -> (Text, Int)
 presidentialElectionKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Year r)
 
 presidentialElectionsWithIncumbency ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionColsI))
 presidentialElectionsWithIncumbency = do
   presidentialElex_C <- presidentialByStateFrame
@@ -96,7 +96,7 @@ presidentialElectionsWithIncumbency = do
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
 cdFromPUMA2012Loader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   Int ->
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CDFromPUMA2012))
 cdFromPUMA2012Loader congress = do
@@ -112,32 +112,32 @@ cdFromPUMA2012Loader congress = do
 type DatedCDFromPUMA2012 = '[BR.Year] V.++ F.RecordColumns BR.CDFromPUMA2012
 
 allCDFromPUMA2012Loader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
 allCDFromPUMA2012Loader = do
   let addYear :: Int -> BR.CDFromPUMA2012 -> F.Record DatedCDFromPUMA2012
       addYear y r = (y F.&: V.RNil) `V.rappend` r
-      loadWithYear :: (K.KnitEffects r, K.CacheEffectsD r) => (Int, Int) -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
+      loadWithYear :: (K.KnitEffects r, BR.CacheEffects r) => (Int, Int) -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
       loadWithYear (year, congress) = fmap (fmap (addYear year)) <$> cdFromPUMA2012Loader congress
   withYears_C <- sequenceA <$> traverse loadWithYear [(2012, 113), (2014, 114), (2016, 115), (2018, 116)]
   BR.retrieveOrMakeFrame "data/cdFromPUMA2012.bin" withYears_C $ \withYears -> return $ mconcat withYears
 
 {-
-puma2000ToCD116Loader :: (K.KnitEffects r, K.CacheEffectsD r)
+puma2000ToCD116Loader :: (K.KnitEffects r, BR.CacheEffects r)
                       => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.PUMA2000ToCD116))
 puma2000ToCD116Loader = cachedFrameLoader (DataSets $ T.pack BR.puma2000ToCD116CSV) Nothing Nothing id Nothing "puma2000ToCD116.sbin"
 -}
 county2010ToCD116Loader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyToCD116))
 county2010ToCD116Loader = cachedFrameLoader (DataSets $ toText BR.countyToCD116CSV) Nothing Nothing id Nothing "county2010ToCD116.sbin"
 
 countyToPUMALoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CountyFromPUMA))
 countyToPUMALoader = cachedFrameLoader (DataSets $ toText BR.county2014FromPUMA2012CSV) Nothing Nothing id Nothing "countyFromPUMA.bin"
 
-aseDemographicsLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASEDemographics))
+aseDemographicsLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASEDemographics))
 aseDemographicsLoader =
   cachedFrameLoader
     (DataSets $ toText BR.ageSexEducationDemographicsLongCSV)
@@ -148,7 +148,7 @@ aseDemographicsLoader =
     "aseDemographics.sbin"
 
 simpleASEDemographicsLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.ACSCount])))
 simpleASEDemographicsLoader = do
   cachedASE_Demographics <- aseDemographicsLoader -- get cache time and action to decode data if required
@@ -156,7 +156,7 @@ simpleASEDemographicsLoader = do
   K.retrieveOrMakeTransformed (fmap FS.toS . FL.fold FL.list) (F.toFrame . fmap FS.fromS) ("data/acs_simpleASE.bin" :: T.Text) cachedASE_Demographics make
 
 asrDemographicsLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.ASRDemographics))
 asrDemographicsLoader =
   cachedFrameLoader
@@ -168,7 +168,7 @@ asrDemographicsLoader =
     "asrDemographics.sbin"
 
 simpleASRDemographicsLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ '[DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.ACSCount])))
 simpleASRDemographicsLoader = do
   cachedASR_Demographics <- asrDemographicsLoader -- get cache time and action to decode data if required
@@ -180,7 +180,7 @@ simpleASRDemographicsLoader = do
     cachedASR_Demographics
     make
 
-aseTurnoutLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASE))
+aseTurnoutLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASE))
 aseTurnoutLoader =
   cachedFrameLoader
     (DataSets $ toText BR.detailedASETurnoutCSV)
@@ -191,7 +191,7 @@ aseTurnoutLoader =
     "aseTurnout.sbin"
 
 simpleASETurnoutLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
 simpleASETurnoutLoader = do
   cachedASE_Turnout <- aseTurnoutLoader -- get cache time and action to decode data if required
@@ -203,7 +203,7 @@ simpleASETurnoutLoader = do
     cachedASE_Turnout
     make
 
-asrTurnoutLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASR))
+asrTurnoutLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.Frame BR.TurnoutASR))
 asrTurnoutLoader =
   cachedFrameLoader
     (DataSets $ toText BR.detailedASRTurnoutCSV)
@@ -214,7 +214,7 @@ asrTurnoutLoader =
     "asrTurnout.sbin"
 
 simpleASRTurnoutLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, DT.SimpleAgeC, DT.SexC, DT.SimpleRaceC, BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
 simpleASRTurnoutLoader = do
   cachedASR_Turnout <- asrTurnoutLoader
@@ -227,14 +227,14 @@ simpleASRTurnoutLoader = do
     make
 
 stateAbbrCrosswalkLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
 stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
 stateTurnoutLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.StateTurnout))
 stateTurnoutLoader =
   cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
@@ -275,11 +275,11 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
 
 houseElectionsRawLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
 houseElectionsRawLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElectionsRaw.bin"
 
-houseElectionsLoader ::   (K.KnitEffects r, K.CacheEffectsD r) =>
+houseElectionsLoader ::   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
 houseElectionsLoader = do
   elexRaw_C <- houseElectionsRawLoader
@@ -287,7 +287,7 @@ houseElectionsLoader = do
 
 
 houseElectionsWithIncumbency ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionColsI))
 houseElectionsWithIncumbency = do
   houseElex_C <- houseElectionsLoader
@@ -402,11 +402,11 @@ processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
           (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.SenatePartyDetailed)
 
 senateElectionsRawLoader ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionCols))
 senateElectionsRawLoader = cachedFrameLoader (DataSets $ toText BR.senateElectionsCSV) Nothing Nothing processSenateElectionRow Nothing "senateElectionsRaw.bin"
 
-senateElectionsLoader ::   (K.KnitEffects r, K.CacheEffectsD r) =>
+senateElectionsLoader ::   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionCols))
 senateElectionsLoader = do
   elexRaw_C <- senateElectionsRawLoader
@@ -414,7 +414,7 @@ senateElectionsLoader = do
 
 
 senateElectionsWithIncumbency ::
-  (K.KnitEffects r, K.CacheEffectsD r) =>
+  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec SenateElectionColsI))
 senateElectionsWithIncumbency = do
   senateElex_C <- senateElectionsLoader

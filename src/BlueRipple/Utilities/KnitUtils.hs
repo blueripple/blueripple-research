@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -15,6 +16,7 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Exception as EX
 import qualified Control.Foldl as FL
 import qualified Control.Monad.Except as X
+import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Serialize as S
 import qualified Data.Text as T
@@ -23,11 +25,15 @@ import qualified Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
 import qualified Data.Time.Format as Time
 import qualified Data.Vinyl as V
+import qualified Flat
+import qualified Flat.Encoder as Flat
+import qualified Flat.Encoder.Types as Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.Serialize as FS
 import qualified Frames.Streamly.InCore as FStreamly
 import qualified Knit.Effect.AtomicCache as KC
+import qualified Knit.Effect.Serialize as KS
 import qualified Knit.Report as K
 import qualified Knit.Report.Cache as KC
 import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
@@ -36,6 +42,8 @@ import qualified Polysemy as P
 import Polysemy.Error (Error)
 import Relude.Extra as Relude
 import qualified Streamly
+import qualified Streamly.External.ByteString  as Streamly.ByteString
+import qualified Streamly.Memory.Array         as Streamly.Array
 import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
 import qualified System.Directory as System
@@ -45,6 +53,7 @@ import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5 as BH
 import qualified Text.Blaze.Html5.Attributes as BHA
 import qualified Text.Pandoc.Options as PA
+--import qualified Streamly.Internal.Memory.ArrayStream as Streamly.ByteString
 
 knitX ::
   forall r a.
@@ -121,19 +130,19 @@ logFrame =
 
 retrieveOrMakeD ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    S.Serialize b
+    CacheEffects r,
+    SerializerC b
   ) =>
   T.Text ->
   K.ActionWithCacheTime r a ->
   (a -> K.Sem r b) ->
   K.Sem r (K.ActionWithCacheTime r b)
-retrieveOrMakeD = K.retrieveOrMake @K.DefaultSerializer @K.DefaultCacheData @T.Text
+retrieveOrMakeD = K.retrieveOrMake @SerializerC @K.DefaultCacheData @T.Text
 
 retrieveOrMakeFrame ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    FS.RecSerialize rs,
+    CacheEffects r,
+    RecSerializerC rs,
     V.RMap rs,
     FI.RecVec rs
   ) =>
@@ -147,11 +156,11 @@ retrieveOrMakeFrame key cachedDeps action =
 
 retrieveOrMakeFrameAnd ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    FS.RecSerialize rs,
+    CacheEffects r,
+    RecSerializerC rs,
     V.RMap rs,
     FI.RecVec rs,
-    S.Serialize c
+    SerializerC c
   ) =>
   T.Text ->
   K.ActionWithCacheTime r b ->
@@ -166,7 +175,7 @@ retrieveOrMakeFrameAnd key cachedDeps action =
 {-
 retrieveOrMakeFrameS ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
+    CacheEffects r,
     FS.RecSerialize rs,
     V.RMap rs,
     FI.RecVec rs
@@ -184,11 +193,11 @@ retrieveOrMakeFrameS key cachedDeps action =
 
 retrieveOrMake2Frames ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    FS.RecSerialize rs1,
+    CacheEffects r,
+    RecSerializerC rs1,
     V.RMap rs1,
     FI.RecVec rs1,
-    FS.RecSerialize rs2,
+    RecSerializerC rs2,
     V.RMap rs2,
     FI.RecVec rs2
   ) =>
@@ -204,14 +213,14 @@ retrieveOrMake2Frames key cachedDeps action =
 
 retrieveOrMake3Frames ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    FS.RecSerialize rs1,
+    CacheEffects r,
+    RecSerializerC rs1,
     V.RMap rs1,
     FI.RecVec rs1,
-    FS.RecSerialize rs2,
+    RecSerializerC rs2,
     V.RMap rs2,
     FI.RecVec rs2,
-    FS.RecSerialize rs3,
+    RecSerializerC rs3,
     V.RMap rs3,
     FI.RecVec rs3
   ) =>
@@ -227,8 +236,8 @@ retrieveOrMake3Frames key cachedDeps action =
 
 retrieveOrMakeRecList ::
   ( K.KnitEffects r,
-    K.CacheEffectsD r,
-    FS.RecSerialize rs,
+    CacheEffects r,
+    RecSerializerC rs,
     V.RMap rs,
     FI.RecVec rs
   ) =>
@@ -240,5 +249,30 @@ retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")") $
     K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
-clearIfPresentD :: (K.KnitEffects r, K.CacheEffectsD r) => T.Text -> K.Sem r ()
+clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
 clearIfPresentD = K.clearIfPresent @T.Text @_
+
+type SerializerC = Flat.Flat
+type RecSerializerC rs = FS.RecFlat rs
+type CacheData = KS.DefaultCacheData
+type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
+
+data FlatBldr = FlatBldr !Flat.NumBits !Flat.Encoding
+
+instance Semigroup FlatBldr where
+  (FlatBldr n1 e1) <> (FlatBldr n2 e2) = FlatBldr (n1 + n2) (e1 <> e2)
+
+instance Monoid FlatBldr where
+  mempty = FlatBldr 0 mempty
+
+flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
+flatSerializeDict =
+  let bOrd bs = if BS.null bs then KS.Done else KS.Bytes bs
+      flatPut a = FlatBldr (Flat.getSize a) (Flat.encode a)
+      flatGet bs = first (KS.SerializationError . show) $ (second bOrd <$> FS.flatPartialDecoder Flat.decode bs)
+  in KS.SerializeDict
+     flatPut
+     flatGet
+     (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
+     Streamly.ByteString.fromArray
+     (fromIntegral . Streamly.Array.length)

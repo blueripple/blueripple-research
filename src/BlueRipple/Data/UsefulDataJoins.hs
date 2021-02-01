@@ -360,7 +360,7 @@ type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
 acsDemographicsWithAdjCensusTurnoutByCD
   :: forall catCols r
   . (K.KnitEffects r
-    , K.CacheEffectsD r
+    , BR.CacheEffects r
     , V.RMap catCols
     , V.ReifyConstraint Show V.ElField catCols
     , V.RecordToList catCols
@@ -419,7 +419,7 @@ acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cached
 
 cachedASEDemographicsWithAdjTurnoutByCD
   :: (K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      )
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASE V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
@@ -429,7 +429,7 @@ cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByC
 
 cachedASRDemographicsWithAdjTurnoutByCD
   :: (K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      )
   => K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ BR.CatColsASR V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ BR.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))

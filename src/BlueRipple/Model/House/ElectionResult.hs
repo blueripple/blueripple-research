@@ -311,7 +311,7 @@ ccesMR earliestYear = BRF.frameCompactMRM
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCCESVotesF
 
-ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
+ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCD))
 ccesCountedDemHouseVotesByCD = do
   cces_C <- CCES.ccesDataLoader
 --  BR.clearIfPresentD "model/house/ccesByCD.bin"
@@ -334,7 +334,7 @@ type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 prepCachedData ::forall r.
-  (K.KnitEffects r, K.CacheEffectsD r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
 prepCachedData clearCache = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
@@ -795,7 +795,7 @@ extractResults mds predictors summary hmd = do
 
 runHouseModel ::
   forall r.
-  (K.KnitEffects r, K.CacheEffectsD r)
+  (K.KnitEffects r, BR.CacheEffects r)
   => Bool
   -> [Text]
   -> (Text, Maybe Text, ModeledDataSets, DataSet, SB.StanModel, Int)

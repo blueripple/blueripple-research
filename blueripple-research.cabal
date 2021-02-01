@@ -62,6 +62,7 @@ common deps
                , say >= 0.1.0.1 && < 0.2
                , statistics
                , streamly >= 0.7.2 && < 0.8
+               , streamly-bytestring
                , text
                , time
                , tsne >= 1.2 && < 1.4

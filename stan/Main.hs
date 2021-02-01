@@ -83,7 +83,7 @@ main = do
       templateVars
       K.mindocOptionsF
   let knitConfig =
-        (K.defaultKnitConfig Nothing)
+        (K.defaultKnitConfig $ Just ".flat-kh-cache")
           { K.outerLogPrefix = Just "HouseModel",
             K.logIf = K.logDiagnostic,
             K.pandocWriterConfig = pandocWriterConfig

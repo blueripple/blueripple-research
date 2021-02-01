@@ -70,7 +70,7 @@ import qualified Polysemy                as P (raise)
 import qualified Relude.Extra as Relude
 
 
-ccesDataLoader :: (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
+ccesDataLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
 ccesDataLoader = K.wrapPrefix "ccesDataLoader" $ do
   K.logLE K.Info "Loading/Building CCES data"
   BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP

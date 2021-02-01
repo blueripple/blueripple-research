@@ -112,7 +112,7 @@ instance (V.KnownField t, StrictRecord rs) => StrictRecord (t ': rs) where
   forceRec (t V.:& rs) = t `seq` (t V.:& forceRec rs)
 -}
 
-typedPUMSRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
+typedPUMSRowsLoader' :: (K.KnitEffects r, BR.CacheEffects r)
                      => BR.DataPath
                      -> Maybe Text
                      -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
@@ -120,11 +120,11 @@ typedPUMSRowsLoader' dataPath mCacheKey =
   let cacheKey = fromMaybe "acs1YR_All_Typed.bin" mCacheKey
   in BR.cachedFrameLoader dataPath Nothing Nothing transformPUMSRow' Nothing cacheKey
 
-typedPUMSRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
+typedPUMSRowsLoader :: (K.KnitEffects r, BR.CacheEffects r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') Nothing
 
-pumsRowsLoader' :: (K.KnitEffects r, K.CacheEffectsD r)
+pumsRowsLoader' :: (K.KnitEffects r, BR.CacheEffects r)
                 => BR.DataPath
                 -> Maybe Text
                 -> Maybe (F.Record PUMS_Typed -> Bool)
@@ -135,7 +135,7 @@ pumsRowsLoader' dataPath mCacheKey filterTypedM = do
     Nothing -> return pums_C
     Just f -> return $ fmap (FStreamly.filter f) pums_C
 
-pumsRowsLoader :: (K.KnitEffects r, K.CacheEffectsD r)
+pumsRowsLoader :: (K.KnitEffects r, BR.CacheEffects r)
                => Maybe (F.Record PUMS_Typed -> Bool)
                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoader filterTypedM = do
@@ -144,13 +144,13 @@ pumsRowsLoader filterTypedM = do
     Nothing -> return pums_C
     Just f -> return $ fmap (FStreamly.filter f) pums_C
 
-pumsRowsLoaderAdults' :: (K.KnitEffects r, K.CacheEffectsD r)
+pumsRowsLoaderAdults' :: (K.KnitEffects r, BR.CacheEffects r)
                       => BR.DataPath
                       -> Maybe Text
                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults' dataPath mCacheKey = pumsRowsLoader' dataPath mCacheKey (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
-pumsRowsLoaderAdults :: (K.KnitEffects r, K.CacheEffectsD r)
+pumsRowsLoaderAdults :: (K.KnitEffects r, BR.CacheEffects r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
@@ -203,7 +203,7 @@ pumsCountStreamlyHT = BRF.fStreamlyMR_HT
 
 
 pumsLoader'
-  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  ::  (K.KnitEffects r, BR.CacheEffects r)
   => BR.DataPath
   -> Maybe Text
   -> Text
@@ -241,12 +241,12 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
 
 
 pumsLoader
-  ::  (K.KnitEffects r, K.CacheEffectsD r)
+  ::  (K.KnitEffects r, BR.CacheEffects r)
   => Maybe (F.Record PUMS_Typed -> Bool)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader =  pumsLoader' (BR.LocalData $ toText BR.pumsACS1YrCSV') Nothing "data/acs1YrPUMS.bin"
 
-pumsLoaderAdults ::  (K.KnitEffects r, K.CacheEffectsD r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
+pumsLoaderAdults ::  (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoaderAdults =  pumsLoader'
                     (BR.LocalData $ toText BR.pumsACS1YrCSV')
                     Nothing
@@ -315,7 +315,7 @@ type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
-   , K.CacheEffectsD r
+   , BR.CacheEffects r
    , FJ.CanLeftJoinM [BR.Year, BR.StateFIPS, BR.PUMA] (PUMACounts ks) BR.DatedCDFromPUMA2012
    , FI.RecVec (ks ++ PUMSCountToFields)
    , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)

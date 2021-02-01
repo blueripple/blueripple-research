@@ -147,7 +147,7 @@ cachedFrameLoader
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      )
   => DataPath
   -> Maybe F.ParserOptions
@@ -172,7 +172,7 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
 frameLoader
   :: forall qs rs r
   . (K.KnitEffects r
-    , K.CacheEffectsD r
+    , BR.CacheEffects r
     , F.ReadRec qs
     , FI.RecVec qs
     , V.RMap qs
@@ -216,7 +216,7 @@ maybeFrameLoader
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      , Show (F.Record qs)
      , V.RMap qs
      , V.RecordToList qs
@@ -248,7 +248,7 @@ maybeRecStreamLoader
      , V.RecApplicative qs
      , V.RApply qs
      , qs F.⊆ fs
---     , K.KnitEffects r, K.CacheEffectsD r
+--     , K.KnitEffects r, BR.CacheEffects r
      , Show (F.Record qs)
      , V.RecordToList qs
      , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
@@ -279,7 +279,7 @@ maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRo
 cachedMaybeFrameLoader
   :: forall fs qs rs r
    . ( K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      , V.RMap rs
      , V.RFoldMap rs
      , V.RMap fs
@@ -354,7 +354,7 @@ cachedMaybeRecStreamLoader
      , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
      , Generic (F.Rec FS.SElField rs)
      , K.KnitEffects r
-     , K.CacheEffectsD r
+     , BR.CacheEffects r
      , Show (F.Record qs)
      , V.RMap qs
      , V.RecordToList qs

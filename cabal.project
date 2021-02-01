@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ~/DataScience/Frames-serialize
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -72,9 +72,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: 2dbce930164c92aa6c908778758bbc09753c744a
-
-
+  tag: 1e8c9d7a3db5a4bab27bb2ebeb077f37d3733a04
 
 source-repository-package
   type: git
