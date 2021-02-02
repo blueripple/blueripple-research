@@ -35,6 +35,7 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as PUMS
 import           Data.String.Here               ( i, here )
 import qualified Data.Word as Word
+import qualified Flat
 import qualified Frames as F
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl as V
@@ -77,15 +78,16 @@ templateVars =
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 main :: IO ()
-main= do
+main = do
 
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                K.mindocOptionsF
-  let  knitConfig = (K.defaultKnitConfig Nothing)
+  let  knitConfig = (K.defaultKnitConfig $ Just ".flat-kh-cache")
         { K.outerLogPrefix = Just "Testbed.Main"
         , K.logIf = K.logDiagnostic
         , K.pandocWriterConfig = pandocWriterConfig
+        , K.serializeDict = BR.flatSerializeDict
         }
   resE <- K.knitHtml knitConfig makeDoc
   case resE of
@@ -156,7 +158,7 @@ toStreamlyFold (FL.Fold step init done) = Streamly.Fold.mkPure step init done
 toStreamlyFoldM :: Monad m => FL.FoldM m a b -> Streamly.Fold.Fold m a b
 toStreamlyFoldM (FL.FoldM step init done) = Streamly.Fold.mkFold step init done
 
-makeDoc :: forall r. (K.KnitOne r,  K.CacheEffectsD r) => K.Sem r ()
+makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
   let pumsCSV = "../bigData/test/acs100k.csv"
       dataPath = (Loaders.LocalData $ T.pack $ pumsCSV)

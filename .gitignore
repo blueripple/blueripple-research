@@ -23,6 +23,7 @@ examples/html
 .Rhistory
 reports/MRP/data
 .knit-haskell-cache
+.flat-kh-cache
 bigData
 posts
 testbed/*.csv

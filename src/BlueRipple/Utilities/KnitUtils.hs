@@ -28,6 +28,7 @@ import qualified Data.Vinyl as V
 import qualified Flat
 import qualified Flat.Encoder as Flat
 import qualified Flat.Encoder.Types as Flat
+import qualified Flat.Filler as Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.Serialize as FS
@@ -252,8 +253,14 @@ retrieveOrMakeRecList key cachedDeps action =
 clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
 clearIfPresentD = K.clearIfPresent @T.Text @_
 
+type SerializerC = Flat.Flat
+type RecSerializerC rs = FS.RecFlat rs
+
+{-
 type SerializerC = S.Serialize --Flat.Flat
 type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
+-}
+
 type CacheData = KS.DefaultCacheData
 type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
 
@@ -268,11 +275,13 @@ instance Monoid FlatBldr where
 flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
 flatSerializeDict =
   let bOrd bs = if BS.null bs then KS.Done else KS.Bytes bs
-      flatPut a = FlatBldr (Flat.getSize a) (Flat.encode a)
-      flatGet bs = first (KS.SerializationError . show) $ (second bOrd <$> FS.flatPartialDecoder Flat.decode bs)
+      flatPut a = let pa = Flat.postAligned a in FlatBldr (Flat.getSize pa) (Flat.encode pa)
+      flatGet bs = first (KS.SerializationError . show) $ (second bOrd <$> FS.flatPartialDecoder (Flat.postAlignedDecoder Flat.decode) bs)
+      filler = Flat.FillerEnd
   in KS.SerializeDict
      flatPut
      flatGet
+--     (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
      (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
      Streamly.ByteString.fromArray
      (fromIntegral . Streamly.Array.length)
