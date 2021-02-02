@@ -143,9 +143,7 @@ cachedFrameLoader
      , F.ReadRec qs
      , FI.RecVec qs
      , FI.RecVec rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
+     , BR.RecSerializerC rs
      , K.KnitEffects r
      , BR.CacheEffects r
      )
@@ -212,9 +210,7 @@ maybeFrameLoader
      , qs F.⊆ fs
      , FI.RecVec rs
      , V.RFoldMap rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
+     , BR.RecSerializerC rs
      , K.KnitEffects r
      , BR.CacheEffects r
      , Show (F.Record qs)
@@ -291,9 +287,7 @@ cachedMaybeFrameLoader
      , V.RApply qs
      , qs F.⊆ fs
      , FI.RecVec rs
-     , S.GSerializePut (Rep (F.Rec FS.SElField rs))
-     , S.GSerializeGet (Rep (F.Rec FS.SElField rs))
-     , Generic (F.Rec FS.SElField rs)
+     , BR.RecSerializerC rs
      , Show (F.Record qs)
      , V.RMap qs
      , V.RecordToList qs

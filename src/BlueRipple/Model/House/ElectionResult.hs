@@ -440,7 +440,7 @@ prepCachedData clearCache = do
       competitivePresidentialElectionResults
       (fmap F.rcast ccesWithoutNullVotes)
 
-type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
+type HouseDataWrangler = SC.DataWrangler BR.SerializerC HouseModelData  () ()
 
 district r = F.rgetField @BR.StateAbbreviation r <> show (F.rgetField @BR.CongressionalDistrict r)
 

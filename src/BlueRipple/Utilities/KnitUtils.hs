@@ -252,8 +252,8 @@ retrieveOrMakeRecList key cachedDeps action =
 clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
 clearIfPresentD = K.clearIfPresent @T.Text @_
 
-type SerializerC = Flat.Flat
-type RecSerializerC rs = FS.RecFlat rs
+type SerializerC = S.Serialize --Flat.Flat
+type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
 type CacheData = KS.DefaultCacheData
 type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
 

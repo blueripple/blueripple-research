@@ -367,7 +367,7 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , ((catCols V.++ PCols BR.ACSCount) V.++ BR.EWCols) ~ (catCols V.++ PEWCols BR.ACSCount)
     , ((catCols V.++ '[BR.PopCountOf]) V.++ '[BR.ACSCount]) ~ (catCols V.++ [BR.PopCountOf, BR.ACSCount])
     , ((catCols V.++ PCols BR.ACSCount) V.++ F.RDeleteAll catCols (catCols V.++ BR.EWCols)) ~ (catCols V.++ PEWCols BR.ACSCount)
-    , FS.RecSerialize (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])
+    , BR.RecSerializerC (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])
     , V.RMap (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])
     , FI.RecVec (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])
     , (catCols V.++ PCols BR.ACSCount) F.⊆ (BR.ACSKeys V.++ (catCols V.++ '[BR.ACSCount]) V.++ '[BR.PopCountOf])

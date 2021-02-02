@@ -20,7 +20,7 @@ import qualified Frames as F
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
-
+import Flat.Instances.Vector()
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
@@ -56,6 +56,7 @@ type CCES_CountRow cc =  (CCES_KeyRow cc) V.++ BR.CountCols
 
 
 type CCESDataWrangler cc b = SC.DataWrangler
+                             BR.SerializerC
                              (F.FrameRec (CCES_CountRow cc))
                              b
                              (F.FrameRec (CCES_KeyRow cc))

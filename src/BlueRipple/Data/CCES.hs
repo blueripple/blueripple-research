@@ -29,8 +29,8 @@ import qualified BlueRipple.Model.MRP as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as Keyed
-
 import           BlueRipple.Data.CCESFrame
+import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
@@ -44,6 +44,8 @@ import qualified Data.Text.Read as Text.Read
 
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+
+import qualified Flat
 
 import qualified Frames                        as F
 import           Frames                         ( (:.)(..) )
@@ -154,6 +156,7 @@ intToCollegeGrad n = if n >= 4 then DT.Grad else DT.NonGrad
 data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
 instance S.Serialize RaceT
+instance Flat.Flat RaceT
 
 intToRaceT :: Int -> RaceT
 intToRaceT = fromMaybe Other . Relude.safeToEnum . minus1
@@ -200,6 +203,8 @@ data RegistrationT = R_Active
                    | R_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegistrationT = V.Vector
 instance S.Serialize RegistrationT
+instance Flat.Flat RegistrationT
+
 
 parseRegistration :: T.Text -> RegistrationT
 parseRegistration "Active" = R_Active
@@ -224,6 +229,7 @@ data RegPartyT = RP_NoRecord
                | RP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegPartyT = V.Vector
 instance S.Serialize RegPartyT
+instance Flat.Flat RegPartyT
 
 parseRegParty :: T.Text -> RegPartyT
 parseRegParty "No Record Of Party Registration" = RP_NoRecord
@@ -241,6 +247,7 @@ data TurnoutT = T_Voted
               | T_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor TurnoutT = V.Vector
 instance S.Serialize TurnoutT
+instance Flat.Flat TurnoutT
 
 parseTurnout :: T.Text -> TurnoutT
 parseTurnout "Voted" = T_Voted
@@ -261,6 +268,7 @@ data PartisanIdentity3 = PI3_Democrat
                        | PI3_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity3 = V.Vector
 instance S.Serialize PartisanIdentity3
+instance Flat.Flat PartisanIdentity3
 
 parsePartisanIdentity3 :: Int -> PartisanIdentity3
 parsePartisanIdentity3 = fromMaybe PI3_Missing . Relude.safeToEnum . minus1 . min 6
@@ -281,6 +289,7 @@ data PartisanIdentity7 = PI7_StrongDem
                        | PI7_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity7 = V.Vector
 instance S.Serialize PartisanIdentity7
+instance Flat.Flat PartisanIdentity7
 
 parsePartisanIdentity7 :: Int -> PartisanIdentity7
 parsePartisanIdentity7 = fromMaybe PI7_Missing . Relude.safeToEnum . minus1 . min 9
@@ -297,6 +306,7 @@ data PartisanIdentityLeaner = PIL_Democrat
                             | PIL_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentityLeaner = V.Vector
 instance S.Serialize PartisanIdentityLeaner
+instance Flat.Flat PartisanIdentityLeaner
 
 parsePartisanIdentityLeaner :: Int -> PartisanIdentityLeaner
 parsePartisanIdentityLeaner = fromMaybe PIL_Missing . Relude.safeToEnum . minus1 . min 5

@@ -1,3 +1,4 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -35,25 +36,25 @@ noLogOfSummary :: ModelRunnerConfig -> ModelRunnerConfig
 noLogOfSummary sc = sc { mrcLogSummary = False }
 
 -- produce indexes and json producer from the data as well as a data-set to predict.
-data DataIndexerType b where
-  NoIndex :: DataIndexerType ()
-  TransientIndex :: DataIndexerType b
-  CacheableIndex :: K.DefaultSerializer b =>  (ModelRunnerConfig -> T.Text) -> DataIndexerType b
+data DataIndexerType (c :: Type -> Constraint) (b :: Type) where
+  NoIndex :: DataIndexerType c ()
+  TransientIndex :: DataIndexerType c b
+  CacheableIndex :: c b =>  (ModelRunnerConfig -> T.Text) -> DataIndexerType c b
 
-data DataWrangler a b p where
-  Wrangle :: DataIndexerType b -> (a -> (b, a -> Either T.Text A.Series)) -> DataWrangler a b ()
-  WrangleWithPredictions :: DataIndexerType b -> (a -> (b, a -> Either T.Text A.Series)) -> (b -> p -> Either T.Text A.Series) -> DataWrangler a b p
+data DataWrangler c a b p where
+  Wrangle :: DataIndexerType c b -> (a -> (b, a -> Either T.Text A.Series)) -> DataWrangler c a b ()
+  WrangleWithPredictions :: DataIndexerType c b -> (a -> (b, a -> Either T.Text A.Series)) -> (b -> p -> Either T.Text A.Series) -> DataWrangler c a b p
 
-noPredictions :: DataWrangler a b p -> DataWrangler a b ()
+noPredictions :: DataWrangler c a b p -> DataWrangler c a b ()
 noPredictions w@(Wrangle _ _) = w
 noPredictions (WrangleWithPredictions x y _) = Wrangle x y
 
 
-dataIndexerType :: DataWrangler a b p -> DataIndexerType b
+dataIndexerType :: DataWrangler c a b p -> DataIndexerType c b
 dataIndexerType (Wrangle i _) = i
 dataIndexerType (WrangleWithPredictions i _ _) = i
 
-indexerAndEncoder :: DataWrangler a b p -> a -> (b, a -> Either T.Text A.Series)
+indexerAndEncoder :: DataWrangler c a b p -> a -> (b, a -> Either T.Text A.Series)
 indexerAndEncoder (Wrangle _ x) = x
 indexerAndEncoder (WrangleWithPredictions _ x _) = x
 

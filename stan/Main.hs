@@ -83,10 +83,11 @@ main = do
       templateVars
       K.mindocOptionsF
   let knitConfig =
-        (K.defaultKnitConfig $ Just ".flat-kh-cache")
+        (K.defaultKnitConfig $ Just ".knit-haskell-cache")
           { K.outerLogPrefix = Just "HouseModel",
             K.logIf = K.logDiagnostic,
             K.pandocWriterConfig = pandocWriterConfig
+--            K.serializeDict = BR.flatSerializeDict
           }
 --  let pureMTseed = PureMT.pureMT 1
   --
@@ -100,7 +101,7 @@ type PctTurnout = "PctTurnout" F.:-> Double
 type DShare = "DShare" F.:-> Double
 
 
-testHouseModel :: forall r. (K.KnitMany r, K.CacheEffectsD r) => K.Sem r ()
+testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
   houseData_C <- BRE.prepCachedData False
@@ -229,7 +230,7 @@ writeCompareScript configs compareScriptName = do
   writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
     $ SR.compareScript configs 10 Nothing
 
-compareModels :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+compareModels :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       modeledDataSets = S.fromList [BRE.HouseE]
@@ -266,7 +267,7 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
     (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)
   return ()
 
-comparePredictors :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+comparePredictors :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ do
   let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ,("IDEBHFAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
@@ -315,7 +316,7 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
   return ()
 
 
-compareData :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+compareData :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
@@ -432,7 +433,7 @@ modelChart title predOrder modelOrder vc t rows =
                        ]
    in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
-examineFit :: forall r. (K.KnitOne r, K.CacheEffectsD r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+examineFit :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
       model = ("betaBinomialInc", Nothing, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
@@ -544,7 +545,7 @@ fitScatter2 title vc rows =
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, transform [], enc [], mark, dat]
 
-testCCESPref :: forall r. (K.KnitOne r, K.CacheEffectsD r, K.Member RandomFu r) => K.Sem r ()
+testCCESPref :: forall r. (K.KnitOne r, BR.CacheEffects r, K.Member RandomFu r) => K.Sem r ()
 testCCESPref = do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
   stan_allBuckets <-

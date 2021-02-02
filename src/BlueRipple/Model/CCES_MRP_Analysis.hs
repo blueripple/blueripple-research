@@ -42,10 +42,8 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP     as BR
 import           BlueRipple.Data.CCES
-
-
 import qualified BlueRipple.Data.Keyed         as BR
-
+import qualified BlueRipple.Utilities.KnitUtils as BR
 
 countDemHouseVotesF
   :: forall cs
@@ -154,7 +152,7 @@ mrpPrefs
        )
          ~
          (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
-     , FS.RecSerialize (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+     , BR.RecSerializerC (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
      , FI.RecVec (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
      , V.RMap (cc V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
      , cc F.⊆ (BR.LocationCols V.++ cc V.++ BR.CountCols)
@@ -217,7 +215,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedCCES_Data >>= fa
           Just tmpDir -> K.ignoreCacheTimeM
-                         $ K.retrieveOrMakeTransformed @KS.DefaultSerializer @KS.DefaultCacheData
+                         $ K.retrieveOrMakeTransformed @BR.SerializerC @KS.DefaultCacheData
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)
