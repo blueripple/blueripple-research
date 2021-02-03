@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-serialize
+packages: ./ ~/DataScience/Frames-serialize ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -44,10 +44,10 @@ source-repository-package
 --  location: https://github.com/polysemy-research/polysemy-zoo
 --  tag: fd7eb2b9934d15d233fb4e75acb7fbff80d149bf
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: ae9b22c9e0184c4965289dd9ff8d148e172d9872
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: ae9b22c9e0184c4965289dd9ff8d148e172d9872
 
 --source-repository-package
 --  type: git
@@ -69,10 +69,10 @@ source-repository-package
   location:  https://github.com/adamConnerSax/flat
   tag: 719594cda7bd45718dfb113ed7ed9afc8267d014
 
-source-repository-package
-  type: git
-  location: https://gitlab.com/adamCS/Frames-serialize
-  tag: 1e8c9d7a3db5a4bab27bb2ebeb077f37d3733a04
+--source-repository-package
+--  type: git
+--  location: https://gitlab.com/adamCS/Frames-serialize
+--  tag: 1e8c9d7a3db5a4bab27bb2ebeb077f37d3733a04
 
 source-repository-package
   type: git

@@ -264,6 +264,19 @@ type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
 type CacheData = KS.DefaultCacheData
 type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
 
+
+flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
+flatSerializeDict =
+  KS.SerializeDict
+  Flat.flat
+  (first (KS.SerializationError . show) . Flat.unflat)
+  Streamly.ByteString.toArray
+  Streamly.ByteString.fromArray
+  (fromIntegral . Streamly.Array.length)
+
+--decodeExceptionToSerializtionError :: Flat.Decode
+
+{-
 data FlatBldr = FlatBldr !Flat.NumBits !Flat.Encoding
 
 instance Semigroup FlatBldr where
@@ -271,6 +284,7 @@ instance Semigroup FlatBldr where
 
 instance Monoid FlatBldr where
   mempty = FlatBldr 0 mempty
+
 
 flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
 flatSerializeDict =
@@ -285,3 +299,4 @@ flatSerializeDict =
      (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
      Streamly.ByteString.fromArray
      (fromIntegral . Streamly.Array.length)
+-}
