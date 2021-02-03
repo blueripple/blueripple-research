@@ -83,11 +83,11 @@ main = do
       templateVars
       K.mindocOptionsF
   let knitConfig =
-        (K.defaultKnitConfig $ Just ".knit-haskell-cache")
-          { K.outerLogPrefix = Just "HouseModel",
-            K.logIf = K.logDiagnostic,
-            K.pandocWriterConfig = pandocWriterConfig
---            K.serializeDict = BR.flatSerializeDict
+        (K.defaultKnitConfig $ Just ".flat-kh-cache")
+          { K.outerLogPrefix = Just "HouseModel"
+          , K.logIf = K.logDiagnostic
+          , K.pandocWriterConfig = pandocWriterConfig
+          , K.serializeDict = BR.flatSerializeDict
           }
 --  let pureMTseed = PureMT.pureMT 1
   --

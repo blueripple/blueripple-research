@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/Frames-serialize ~/DataScience/knit-haskell
+packages: ./ ~/DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -66,13 +66,13 @@ source-repository-package
 
 source-repository-package
   type: git
-  location:  https://github.com/adamConnerSax/flat
-  tag: 719594cda7bd45718dfb113ed7ed9afc8267d014
+  location:  https://github.com/Quid2/flat
+  tag: 6bd3b5dc74b3a7d7151e5d950538353c7c207f7d
 
---source-repository-package
---  type: git
---  location: https://gitlab.com/adamCS/Frames-serialize
---  tag: 1e8c9d7a3db5a4bab27bb2ebeb077f37d3733a04
+source-repository-package
+  type: git
+  location: https://gitlab.com/adamCS/Frames-serialize
+  tag: 7d47cc3765a0005accf90f713f951dc008813fcd
 
 source-repository-package
   type: git
