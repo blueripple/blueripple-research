@@ -140,6 +140,7 @@ retrieveOrMakeD ::
   K.Sem r (K.ActionWithCacheTime r b)
 retrieveOrMakeD = K.retrieveOrMake @SerializerC @K.DefaultCacheData @T.Text
 
+
 retrieveOrMakeFrame ::
   ( K.KnitEffects r,
     CacheEffects r,
@@ -153,7 +154,7 @@ retrieveOrMakeFrame ::
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserialization. But we may not need to, so we defer
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")") $
-    K.retrieveOrMakeTransformed FS.SFrame FS.unSFrame key cachedDeps action
+    K.retrieveOrMakeTransformed fromFrame toFrame key cachedDeps action
 
 retrieveOrMakeFrameAnd ::
   ( K.KnitEffects r,
@@ -169,8 +170,8 @@ retrieveOrMakeFrameAnd ::
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs, c)) -- inner action does deserialization. But we may not need to, so we defer
 retrieveOrMakeFrameAnd key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrameAnd (key=" <> key <> ")") $ do
-    let toFirst = Arrow.first FS.SFrame
-        fromFirst = Arrow.first FS.unSFrame
+    let toFirst = first fromFrame
+        fromFirst = first toFrame
     K.retrieveOrMakeTransformed toFirst fromFirst key cachedDeps action
 
 {-
@@ -207,8 +208,8 @@ retrieveOrMake2Frames ::
   (b -> K.Sem r (F.FrameRec rs1, F.FrameRec rs2)) ->
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs1, F.FrameRec rs2)) -- inner action does deserialization. But we may not need to, so we defer
 retrieveOrMake2Frames key cachedDeps action =
-  let from (f1, f2) = (FS.unSFrame f1, FS.unSFrame f2)
-      to (s1, s2) = (FS.SFrame s1, FS.SFrame s2)
+  let from (f1, f2) = (toFrame f1, toFrame f2)
+      to (s1, s2) = (fromFrame s1, fromFrame s2)
    in K.wrapPrefix ("BlueRipple.retrieveOrMake2Frames (key=" <> key <> ")") $
         K.retrieveOrMakeTransformed to from key cachedDeps action
 
@@ -230,8 +231,8 @@ retrieveOrMake3Frames ::
   (b -> K.Sem r (F.FrameRec rs1, F.FrameRec rs2, F.FrameRec rs3)) ->
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs1, F.FrameRec rs2, F.FrameRec rs3)) -- inner action does deserialization. But we may not need to, so we defer
 retrieveOrMake3Frames key cachedDeps action =
-  let from (f1, f2, f3) = (FS.unSFrame f1, FS.unSFrame f2, FS.unSFrame f3)
-      to (s1, s2, s3) = (FS.SFrame s1, FS.SFrame s2, FS.SFrame s3)
+  let from (f1, f2, f3) = (toFrame f1, toFrame f2, toFrame f3)
+      to (s1, s2, s3) = (fromFrame s1, fromFrame s2, fromFrame s3)
    in K.wrapPrefix ("BlueRipple.retrieveOrMake3Frames (key=" <> key <> ")") $
         K.retrieveOrMakeTransformed to from key cachedDeps action
 
@@ -263,6 +264,9 @@ type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
 
 type CacheData = KS.DefaultCacheData
 type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
+
+fromFrame = FS.SFrame
+toFrame = FS.unSFrame
 
 
 flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
