@@ -215,7 +215,7 @@ mrpPrefs mdv cacheTmpDirM cachedCCES_Data predictor catPredMap = do
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedCCES_Data >>= fa
           Just tmpDir -> K.ignoreCacheTimeM
-                         $ K.retrieveOrMakeTransformed @BR.SerializerC @KS.DefaultCacheData
+                         $ K.retrieveOrMakeTransformed @BR.SerializerC @BR.CacheData
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)

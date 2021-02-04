@@ -112,7 +112,7 @@ mrpTurnout verbosity cacheTmpDirM ewSource ewOf cachedDat votersF predictor catP
         case cacheTmpDirM of
           Nothing -> K.ignoreCacheTime cachedDat >>= fa
           Just tmpDir -> K.ignoreCacheTimeM -- ignores cache time and decodes the cached data
-                         $ K.retrieveOrMakeTransformed @BR.SerializerC @KS.DefaultCacheData
+                         $ K.retrieveOrMakeTransformed @BR.SerializerC @BR.CacheData
                          (fmap FS.toS . FL.fold FL.list)
                          (F.toFrame . fmap FS.fromS)
                          ("mrp/tmp/" <> tmpDir <> "/" <> cn)

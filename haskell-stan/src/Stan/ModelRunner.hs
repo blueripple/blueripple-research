@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -90,10 +92,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       numChains
       True
 
-modelCacheTime :: forall r.
-                  (K.KnitEffects r
---                  , K.CacheEffects c K.DefaultCacheData Text r
-                  )
+modelCacheTime :: forall r. (K.KnitEffects r)
                => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
 modelCacheTime config = K.wrapPrefix "modelCacheTime" $ do
   let modelFile = T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config
@@ -118,21 +117,24 @@ writeRScripts rScripts config = do
     Loo -> writeLoo
     Both ujs -> writeShiny ujs >> writeLoo
 
-wrangleDataWithoutPredictions :: forall c a b r.
+wrangleDataWithoutPredictions :: forall st cd a b r.
   (K.KnitEffects r
-  , K.CacheEffects c K.DefaultCacheData Text r
+  , K.CacheEffects st cd Text r
+  , st b
   ) =>
   SC.ModelRunnerConfig ->
-  SC.DataWrangler c a b () ->
+  SC.DataWrangler a b () ->
   K.ActionWithCacheTime r a ->
   K.Sem r (K.ActionWithCacheTime r b)
-wrangleDataWithoutPredictions config dw a = wrangleData config dw a ()
+wrangleDataWithoutPredictions config dw a = wrangleData @st @cd config dw a ()
 
-wrangleData :: forall c a b p r.
+wrangleData :: forall st cd a b p r.
   (K.KnitEffects r
-  , K.CacheEffects c K.DefaultCacheData Text r) =>
+  , K.CacheEffects st cd Text r
+  , st b
+  ) =>
   SC.ModelRunnerConfig ->
-  SC.DataWrangler c a b p ->
+  SC.DataWrangler a b p ->
   K.ActionWithCacheTime r a ->
   p ->
   K.Sem r (K.ActionWithCacheTime r b)
@@ -140,7 +142,7 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _ = do
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
       b_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex config indexType b_C
+  index_C <- manageIndex @st @cd config indexType b_C
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
   updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
@@ -148,11 +150,12 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cachedA _ = do
     jsonEncoding <- K.knitEither e
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
+
 wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeToPredict) cachedA p = do
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
       b_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex config indexType b_C
+  index_C <- manageIndex @st @cd config indexType b_C
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
       jsonDeps = (,) <$> newJSON_C <*> index_C
@@ -163,12 +166,13 @@ wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeTo
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
 
-manageIndex :: forall c b r.
+manageIndex :: forall st cd b r.
   (K.KnitEffects r
-  , K.CacheEffects c K.DefaultCacheData Text r
+  , K.CacheEffects st cd Text r
+  , st b
   )
   => SC.ModelRunnerConfig
-  -> SC.DataIndexerType c b
+  -> SC.DataIndexerType b
   -> K.ActionWithCacheTime r b
   -> K.Sem r (K.ActionWithCacheTime r b)
 manageIndex config dataIndexer bFromA_C = do
@@ -177,19 +181,21 @@ manageIndex config dataIndexer bFromA_C = do
       curJSON_C <- K.fileDependency $ jsonFP config
       when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
         K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
-        K.clearIfPresent @_ @K.DefaultCacheData (indexCacheKey config)
-      K.retrieveOrMake @c @K.DefaultCacheData (indexCacheKey config) bFromA_C return
+        K.clearIfPresent @Text @cd (indexCacheKey config)
+      K.retrieveOrMake @st @cd (indexCacheKey config) bFromA_C return
     _ -> return bFromA_C
 
 jsonFP :: SC.ModelRunnerConfig -> FilePath
 jsonFP config = SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.unpack $ SC.mrcDatFile config
 
-runModel :: forall st a b p c r.
+runModel :: forall st cd a b p c r.
   (K.KnitEffects r
-  , K.CacheEffects st K.DefaultCacheData Text r) =>
+  , K.CacheEffects st cd Text r
+  , st b
+  ) =>
   SC.ModelRunnerConfig ->
   RScripts ->
-  SC.DataWrangler st a b p ->
+  SC.DataWrangler a b p ->
   SC.ResultAction r a b p c ->
   p ->
   K.ActionWithCacheTime r a ->
@@ -204,7 +210,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
-  indices_C <- wrangleData config dataWrangler cachedA toPredict
+  indices_C <- wrangleData @st @cd config dataWrangler cachedA toPredict
   curModel_C <- K.fileDependency (SC.addDirFP modelDirS $ toString $ SB.modelFile $ SC.mrcModel config)
   stanOutput_C <- do
     curStanOutputs_C <- K.oldestUnit <$> traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles

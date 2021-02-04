@@ -8,6 +8,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -O0 #-}
+
 
 module Main where
 
@@ -82,12 +84,14 @@ main = do
       pandocTemplate
       templateVars
       K.mindocOptionsF
-  let knitConfig =
-        (K.defaultKnitConfig $ Just ".flat-kh-cache")
+  let cacheDir = ".flat-kh-cache"
+      knitConfig :: K.KnitConfig BR.SerializerC BR.CacheData Text =
+        (K.defaultKnitConfig $ Just cacheDir)
           { K.outerLogPrefix = Just "HouseModel"
           , K.logIf = K.logDiagnostic
           , K.pandocWriterConfig = pandocWriterConfig
           , K.serializeDict = BR.flatSerializeDict
+          , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
 --  let pureMTseed = PureMT.pureMT 1
   --
@@ -204,11 +208,11 @@ testHouseModel = do
                  (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-
+{-
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
-
+-}
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C

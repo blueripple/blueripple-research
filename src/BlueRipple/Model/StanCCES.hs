@@ -21,6 +21,8 @@ import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import Flat.Instances.Vector()
+import Flat.Instances.Containers()
+
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
@@ -56,7 +58,6 @@ type CCES_CountRow cc =  (CCES_KeyRow cc) V.++ BR.CountCols
 
 
 type CCESDataWrangler cc b = SC.DataWrangler
-                             BR.SerializerC
                              (F.FrameRec (CCES_CountRow cc))
                              b
                              (F.FrameRec (CCES_KeyRow cc))
@@ -178,7 +179,7 @@ countCCESASER5 office year ccesMRP = do
   let counted = FL.fold countFold ccesMRP
   return counted
 
-prefASER5_MR :: (K.KnitEffects r,  BR.CacheEffects r)
+prefASER5_MR :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
              => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
              -> (T.Text, SB.StanModel)
              -> ET.OfficeT
@@ -221,10 +222,10 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
         return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
+    SM.runModel @BR.SerializerC @BR.CacheData stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
 
 
-prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r)
+prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
                  => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
                  -> (T.Text, SB.StanModel)
                  -> ET.OfficeT
@@ -249,7 +250,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just 1000)
                 (Just 1000)
                 (Just stancConfig)
-  SM.runModel stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
+  SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
 
 
 model_BinomialAllBuckets :: SB.StanModel

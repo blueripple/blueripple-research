@@ -138,7 +138,7 @@ retrieveOrMakeD ::
   K.ActionWithCacheTime r a ->
   (a -> K.Sem r b) ->
   K.Sem r (K.ActionWithCacheTime r b)
-retrieveOrMakeD = K.retrieveOrMake @SerializerC @K.DefaultCacheData @T.Text
+retrieveOrMakeD = K.retrieveOrMake @SerializerC @CacheData @T.Text
 
 
 retrieveOrMakeFrame ::
@@ -173,25 +173,6 @@ retrieveOrMakeFrameAnd key cachedDeps action =
     let toFirst = first fromFrame
         fromFirst = first toFrame
     K.retrieveOrMakeTransformed toFirst fromFirst key cachedDeps action
-
-{-
-retrieveOrMakeFrameS ::
-  ( K.KnitEffects r,
-    CacheEffects r,
-    FS.RecSerialize rs,
-    V.RMap rs,
-    FI.RecVec rs
-  ) =>
-  T.Text ->
-  K.ActionWithCacheTime r b ->
-  (b -> Streamly.SerialT KStreamly.StreamlyM (F.Record rs)) ->
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserialization. But we may not need to, so we defer
-retrieveOrMakeFrameS key cachedDeps action =
-  K.wrapPrefix ("BlueRipple.retrieveOrMakeFrameS (key=" <> key <> ")") $
-    do
-      fmap (K.streamToAction FStreamly.inCoreAoS)
-      $ K.retrieveOrMakeTransformedStream FS.toS FS.fromS key cachedDeps action
--}
 
 retrieveOrMake2Frames ::
   ( K.KnitEffects r,
@@ -262,13 +243,23 @@ type SerializerC = S.Serialize --Flat.Flat
 type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
 -}
 
-type CacheData = KS.DefaultCacheData
-type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
+type CacheData = BS.ByteString
+--type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
+type CacheEffects r = K.CacheEffects SerializerC CacheData T.Text r
 
 fromFrame = FS.SFrame
 toFrame = FS.unSFrame
 
+flatSerializeDict :: KS.SerializeDict Flat.Flat BS.ByteString
+flatSerializeDict =
+  KS.SerializeDict
+  Flat.flat
+  (first (KS.SerializationError . show) . Flat.unflat)
+  id
+  id
+  (fromIntegral . BS.length)
 
+{-
 flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
 flatSerializeDict =
   KS.SerializeDict
@@ -277,7 +268,7 @@ flatSerializeDict =
   Streamly.ByteString.toArray
   Streamly.ByteString.fromArray
   (fromIntegral . Streamly.Array.length)
-
+-}
 --decodeExceptionToSerializtionError :: Flat.Decode
 
 {-

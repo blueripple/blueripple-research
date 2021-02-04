@@ -173,7 +173,7 @@ simpleASRDemographicsLoader ::
 simpleASRDemographicsLoader = do
   cachedASR_Demographics <- asrDemographicsLoader -- get cache time and action to decode data if required
   let make asrDemographics = K.knitEither $ FL.foldM DT.simplifyACS_ASRFold asrDemographics
-  K.retrieveOrMakeTransformed @BR.SerializerC @K.DefaultCacheData
+  K.retrieveOrMakeTransformed @BR.SerializerC @BR.CacheData
     (fmap FS.toS . FL.fold FL.list)
     (F.toFrame . fmap FS.fromS)
     ("data/acs_simpleASR.bin" :: T.Text)
@@ -196,7 +196,7 @@ simpleASETurnoutLoader ::
 simpleASETurnoutLoader = do
   cachedASE_Turnout <- aseTurnoutLoader -- get cache time and action to decode data if required
   let make aseTurnoutRaw = K.knitEither $ FL.foldM DT.simplifyTurnoutASEFold aseTurnoutRaw
-  K.retrieveOrMakeTransformed @BR.SerializerC @K.DefaultCacheData
+  K.retrieveOrMakeTransformed @BR.SerializerC @BR.CacheData
     (fmap FS.toS . FL.fold FL.list)
     (F.toFrame . fmap FS.fromS)
     ("data/turnout_simpleASE.bin" :: T.Text)
@@ -219,7 +219,7 @@ simpleASRTurnoutLoader ::
 simpleASRTurnoutLoader = do
   cachedASR_Turnout <- asrTurnoutLoader
   let make asrTurnoutRaw = K.knitEither $ FL.foldM DT.simplifyTurnoutASRFold asrTurnoutRaw
-  K.retrieveOrMakeTransformed @BR.SerializerC @K.DefaultCacheData
+  K.retrieveOrMakeTransformed @BR.SerializerC @BR.CacheData
     (fmap FS.toS . FL.fold FL.list)
     (F.toFrame . fmap FS.fromS)
     ("data/turnout_simpleASR.bin" :: T.Text)

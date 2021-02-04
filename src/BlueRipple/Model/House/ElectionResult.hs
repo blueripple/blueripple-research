@@ -153,22 +153,24 @@ instance S.Serialize HouseModelData where
   get = (\(h, s, p, c) -> HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> S.get
 
 instance Flat.Flat HouseModelData where
-  size (HouseModelData h s p c) n = Flat.size (FS.SFrame h)
+  size (HouseModelData h s p c) n = Flat.size (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c) n
+{-                                      Flat.size (FS.SFrame h)
                                     . Flat.size (FS.SFrame s)
                                     . Flat.size (FS.SFrame p)
                                     $ Flat.size (FS.SFrame c) n
-
-  encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h)
+-}
+  encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
+{-                                    Flat.encode (FS.SFrame h)
                                     <> Flat.encode (FS.SFrame s)
                                     <> Flat.encode (FS.SFrame p)
                                     <> Flat.encode (FS.SFrame c)
-
-  decode = HouseModelData
-           <$> (FS.unSFrame <$> Flat.decode)
+-}
+  decode = (\(h, s, p, c) -> HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
+{- HouseModelData           <$> (FS.unSFrame <$> Flat.decode)
            <*> (FS.unSFrame <$> Flat.decode)
            <*> (FS.unSFrame <$> Flat.decode)
            <*> (FS.unSFrame <$> Flat.decode)
-
+-}
 
 type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens]
 
@@ -440,7 +442,7 @@ prepCachedData clearCache = do
       competitivePresidentialElectionResults
       (fmap F.rcast ccesWithoutNullVotes)
 
-type HouseDataWrangler = SC.DataWrangler BR.SerializerC HouseModelData  () ()
+type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
 district r = F.rgetField @BR.StateAbbreviation r <> show (F.rgetField @BR.CongressionalDistrict r)
 
@@ -845,7 +847,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, mds, cds, model, nSa
                 ]
   res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
-    SM.runModel
+    SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
       (SM.Both unwraps)
       (houseDataWrangler mds cds predictors)
