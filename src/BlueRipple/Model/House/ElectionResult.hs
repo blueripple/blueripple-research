@@ -154,23 +154,8 @@ instance S.Serialize HouseModelData where
 
 instance Flat.Flat HouseModelData where
   size (HouseModelData h s p c) n = Flat.size (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c) n
-{-                                      Flat.size (FS.SFrame h)
-                                    . Flat.size (FS.SFrame s)
-                                    . Flat.size (FS.SFrame p)
-                                    $ Flat.size (FS.SFrame c) n
--}
   encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
-{-                                    Flat.encode (FS.SFrame h)
-                                    <> Flat.encode (FS.SFrame s)
-                                    <> Flat.encode (FS.SFrame p)
-                                    <> Flat.encode (FS.SFrame c)
--}
   decode = (\(h, s, p, c) -> HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
-{- HouseModelData           <$> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
--}
 
 type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens]
 
@@ -662,34 +647,24 @@ instance S.Serialize HouseModelResults where
                                               ud) <$> S.get
 
 instance Flat.Flat HouseModelResults where
-  size (HouseModelResults fh fs fp fc a s u) n = Flat.size (FS.SFrame fh)
-                                                 . Flat.size (FS.SFrame fs)
-                                                 . Flat.size (FS.SFrame fp)
-                                                 . Flat.size (FS.SFrame fc)
-                                                 . Flat.size a
-                                                 . Flat.size s
-                                                 $ Flat.size u n
+  size (HouseModelResults fh fs fp fc a s u) n = Flat.size (FS.SFrame fh
+                                                           , FS.SFrame fs
+                                                           , FS.SFrame fp
+                                                           , FS.SFrame fc
+                                                           , a
+                                                           , s
+                                                           , u) n
 
-  encode (HouseModelResults fh fs fp fc a s u) = Flat.encode (FS.SFrame fh)
-                                                 <> Flat.encode (FS.SFrame fs)
-                                                 <> Flat.encode (FS.SFrame fp)
-                                                 <> Flat.encode (FS.SFrame fc)
-                                                 <> Flat.encode a
-                                                 <> Flat.encode s
-                                                 <> Flat.encode u
+  encode (HouseModelResults fh fs fp fc a s u) = Flat.encode (FS.SFrame fh
+                                                             , FS.SFrame fs
+                                                             , FS.SFrame fp
+                                                             , FS.SFrame fc
+                                                             , a
+                                                             , s
+                                                             , u)
 
-  decode = HouseModelResults
-           <$> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
-           <*> (FS.unSFrame <$> Flat.decode)
-           <*> Flat.decode
-           <*> Flat.decode
-           <*> Flat.decode
-
-
-
-
+  decode = (\(sfh, sfs, sfp, sfc, a, s, u)
+             -> HouseModelResults (FS.unSFrame sfh) (FS.unSFrame sfs) (FS.unSFrame sfp) (FS.unSFrame sfc) a s u) <$> Flat.decode
 
 extractResults ::
   ModeledDataSets

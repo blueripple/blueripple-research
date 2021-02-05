@@ -67,12 +67,12 @@ source-repository-package
 source-repository-package
   type: git
   location:  https://github.com/Quid2/flat
-  tag: 6bd3b5dc74b3a7d7151e5d950538353c7c207f7d
+  tag: 8a8baa4a0b762bd052218114830497ff8fbe008c
 
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: b51f15e813fdb31a0991c5bd64a640cf27cbc73d
+  tag: f571fb4bf1198b1ed1c54c23aca563a425786156
 
 source-repository-package
   type: git

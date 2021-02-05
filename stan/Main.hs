@@ -208,11 +208,11 @@ testHouseModel = do
                  (hmd ^. #houseElectionData)
     _ <- K.addHvega Nothing Nothing corrChart
     K.logLE K.Info "run model(s)"
-{-
+
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
     $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
--}
+
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C
