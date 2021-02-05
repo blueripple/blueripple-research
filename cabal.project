@@ -72,7 +72,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: 1860cdf0d0a6c8ff0c76060a48052a3269e783e7
+  tag: b51f15e813fdb31a0991c5bd64a640cf27cbc73d
 
 source-repository-package
   type: git
