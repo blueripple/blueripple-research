@@ -104,7 +104,6 @@ main = do
 type PctTurnout = "PctTurnout" F.:-> Double
 type DShare = "DShare" F.:-> Double
 
-
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
@@ -234,7 +233,12 @@ writeCompareScript configs compareScriptName = do
   writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
     $ SR.compareScript configs 10 Nothing
 
-compareModels :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+examineDropoff :: forall r. (K.KnitOne r, BR.CacheEffects r)
+  => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+examineDropoff = undefined
+
+compareModels :: forall r. (K.KnitOne r, BR.CacheEffects r)
+  => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
 compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       modeledDataSets = S.fromList [BRE.HouseE]
@@ -432,8 +436,14 @@ modelChart title predOrder modelOrder vc t rows =
       specLine = GV.asSpec [encL [], markLine]
       specPoint = GV.asSpec [encL [], markPoint]
       spec = GV.asSpec [GV.layer [specBand, specLine, specPoint]]
-      facet = GV.facet [GV.ColumnBy [GV.FName "Model", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings modelOrder]]
-                       ,GV.RowBy [GV.FName "Name", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings predOrder]]
+      facet = GV.facet [GV.ColumnBy [GV.FName "Model"
+                                    , GV.FmType GV.Nominal
+                                    , GV.FSort [GV.CustomSort $ GV.Strings modelOrder]
+                                    ]
+                       ,GV.RowBy [GV.FName "Name"
+                                 , GV.FmType GV.Nominal
+                                 , GV.FSort [GV.CustomSort $ GV.Strings predOrder]
+                                 ]
                        ]
    in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
