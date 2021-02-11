@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell
+packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega
 jobs: 4
 with-compiler: ghc
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
@@ -74,10 +74,10 @@ source-repository-package
   location: https://gitlab.com/adamCS/Frames-serialize
   tag: bfd0273dd3f5e66ac1f8c31a7f0c293dd9d819c5
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-hvega
-  tag: 79d68f20d38a8167ec4ef7ca9c61f729ad5e7a52
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-hvega
+--  tag: 79d68f20d38a8167ec4ef7ca9c61f729ad5e7a52
 
 source-repository-package
   type: git

@@ -31,6 +31,7 @@ import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vinyl.CoRec as V
 import qualified Frames as F
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
@@ -41,6 +42,8 @@ import qualified Frames.Visualization.VegaLite.Correlation as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
+import qualified Frames.Visualization.VegaLite.Data as FV
+
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
     ViewConfig (ViewConfig),
@@ -258,7 +261,44 @@ examineVoteTotals clearCached houseData_C = do
   let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
       (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
   when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
-  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fHouseVotesByState
+  let fForChart = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, ET.Office, BRE.RVotes, BRE.DVotes, BRE.TVotes])
+                  $ fmap (FT.mutate (\r -> FT.recordSingleton @BRE.TVotes $ F.rgetField @BRE.RVotes r + F.rgetField @BRE.DVotes r))
+                  $ fmap (FT.mutate (const $ FT.recordSingleton @ET.Office ET.House))
+                  $ fHouseVotesByState
+--  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fForChart
+  _ <- K.addHvega Nothing Nothing
+       $ voteTotalChart "test" (FV.ViewConfig 800 800 10)
+       $  F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) fForChart
+  return ()
+
+type VoteTotalData = [BRE.RVotes, BRE.DVotes, BRE.TVotes]
+type DataCol = "value" F.:-> F.CoRec V.ElField VoteTotalData
+type VoteTotalR = [BR.Year, BR.StateAbbreviation, ET.Office, DataCol]
+
+voteTotalChart :: (Functor f, Foldable f)
+           => T.Text
+           -> FV.ViewConfig
+           -> f (F.Record VoteTotalR)
+           -> GV.VegaLite
+voteTotalChart title vc rows =
+  let dataColHandlers :: FV.VLCoRecHandlers VoteTotalData
+      dataColHandlers = FV.EH (\rv -> ("RVotes", GV.Number $ realToFrac $ V.getField rv))
+                        V.:& FV.EH (\dv -> ("DVotes", GV.Number $ realToFrac $ V.getField dv))
+                        V.:& FV.EH (\tv -> ("TVotes", GV.Number $ realToFrac $ V.getField tv))
+                        V.:& V.RNil
+--                        [GV.Parse
+      toVLDataRec = FV.useColName FV.asVLNumber
+                    V.:& FV.asVLStrViaShow "State"
+                    V.:& FV.asVLStrViaShow "Office"
+                    V.:& FV.asVLCoRec dataColHandlers
+                    V.:& V.RNil
+      dat = FV.recordsToDataWithParse [("Year", GV.FoDate "%Y")] toVLDataRec rows
+      encX = GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
+      encY = GV.position GV.Y [GV.PName "DVotes", GV.PmType GV.Quantitative]
+      encoding = GV.encoding . encX . encY
+      mark = GV.mark GV.Bar []
+  in FV.configuredVegaLite vc [FV.title title, encoding [], mark, dat]
+
 
 
 
