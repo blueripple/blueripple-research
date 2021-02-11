@@ -30,7 +30,10 @@ import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
+import qualified Frames.MapReduce as FMR
+import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
 import qualified Frames.Table as FTable
@@ -216,6 +219,11 @@ testHouseModel = do
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
     $ compareData False $ K.liftActionWithCacheTime houseData_C
 
+  K.newPandoc
+    (K.PandocInfo "compare_vote_totals" $ one ("pagetitle","Compare Vote Totals Across Races"))
+    $ examineVoteTotals False $ K.liftActionWithCacheTime houseData_C
+
+
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
@@ -233,9 +241,26 @@ writeCompareScript configs compareScriptName = do
   writeFileText (toString $ modelDir <> "/R/" <> compareScriptName <> ".R")
     $ SR.compareScript configs 10 Nothing
 
-examineDropoff :: forall r. (K.KnitOne r, BR.CacheEffects r)
+examineVoteTotals :: forall r. (K.KnitOne r, BR.CacheEffects r)
   => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-examineDropoff = undefined
+examineVoteTotals clearCached houseData_C = do
+  houseData <- K.ignoreCacheTime houseData_C
+  -- Aggregate house votes by state to compare to senate and prez
+  let houseVoteByStateF = FMR.concatFold
+                          $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BRE.DVotes, BRE.RVotes])
+                          (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+      fHouseVotesByState' = FL.fold houseVoteByStateF $ BRE.houseElectionData houseData
+  -- this should exist as a side effect of producing the prepped data
+  pumsByState :: F.FrameRec (BRE.StateKeyR V.++ BRE.PUMSDataR) <- K.ignoreCacheTimeM
+                                                                  $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" (pure ()) undefined
+  let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
+      (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
+  when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
+  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fHouseVotesByState
+
+
 
 compareModels :: forall r. (K.KnitOne r, BR.CacheEffects r)
   => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
