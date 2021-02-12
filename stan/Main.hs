@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -33,6 +34,7 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl.CoRec as V
 import qualified Frames as F
+import qualified Frames.Melt as F
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins  as FJ
@@ -261,17 +263,34 @@ examineVoteTotals clearCached houseData_C = do
   let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
       (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
   when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
-  let fForChart = fmap (F.rcast @[BR.Year, BR.StateAbbreviation, ET.Office, BRE.RVotes, BRE.DVotes, BRE.TVotes])
-                  $ fmap (FT.mutate (\r -> FT.recordSingleton @BRE.TVotes $ F.rgetField @BRE.RVotes r + F.rgetField @BRE.DVotes r))
-                  $ fmap (FT.mutate (const $ FT.recordSingleton @ET.Office ET.House))
-                  $ fHouseVotesByState
+  let totalVotes r = F.rgetField @BRE.RVotes r + F.rgetField @BRE.DVotes r
+      fracOfCit x r = realToFrac x / realToFrac (F.rgetField @PUMS.Citizens r)
+      dFracOfCit r = fracOfCit (F.rgetField @BRE.DVotes r) r
+      rFracOfCit r = fracOfCit (F.rgetField @BRE.RVotes r) r
+      tFracOfCit r = fracOfCit (F.rgetField @BRE.TVotes r) r
+      forChart x =  fmap
+                    (F.rcast @[BR.Year, BR.StateAbbreviation, ET.Office, RFracOfCit, DFracOfCit, TFracOfCit]
+                     . (FT.mutate (const $ FT.recordSingleton @ET.Office x))
+                     . (FT.mutate (FT.recordSingleton @DFracOfCit . dFracOfCit))
+                     . (FT.mutate (FT.recordSingleton @RFracOfCit . rFracOfCit))
+                     . (FT.mutate (FT.recordSingleton @TFracOfCit . tFracOfCit))
+                     . (FT.mutate (FT.recordSingleton @BRE.TVotes . totalVotes))
+                    )
+      fForChartH = forChart ET.House fHouseVotesByState
+      fForChartS = forChart ET.Senate $ BRE.senateElectionData houseData
+      fForChartP = forChart ET.President $ BRE.presidentialElectionData houseData
+
 --  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fForChart
   _ <- K.addHvega Nothing Nothing
-       $ voteTotalChart "test" (FV.ViewConfig  400 20 2)
-       $  F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) fForChart
+       $ voteTotalChart "Votes By Office (2016)" (FV.ViewConfig  400 20 2)
+       $  F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) (fForChartH <> fForChartS <> fForChartP)
   return ()
 
-type VoteTotalData = [BRE.RVotes, BRE.DVotes, BRE.TVotes]
+type DFracOfCit = "DemFracOfCit" F.:-> Double
+type RFracOfCit = "RepFracOfCit" F.:-> Double
+type TFracOfCit = "TotFracOfCit" F.:-> Double
+
+type VoteTotalData = [RFracOfCit, DFracOfCit, TFracOfCit]
 type DataCol = "value" F.:-> F.CoRec V.ElField VoteTotalData
 type VoteTotalR = [BR.Year, BR.StateAbbreviation, ET.Office, DataCol]
 
@@ -282,27 +301,30 @@ voteTotalChart :: (Functor f, Foldable f)
            -> GV.VegaLite
 voteTotalChart title vc rows =
   let dataColHandlers :: FV.VLCoRecHandlers VoteTotalData
-      dataColHandlers = FV.EH (\rv -> ("Rep", GV.Number $ realToFrac rv))
-                        V.:& FV.EH (\dv -> ("Dem", GV.Number $ realToFrac dv))
-                        V.:& FV.EH (\tv -> ("Total", GV.Number $ realToFrac tv))
+      dataColHandlers = FV.EH (\rv -> ("Rep", GV.Number $ V.getField rv))
+                        V.:& FV.EH (\dv -> ("Dem", GV.Number $ V.getField dv))
+                        V.:& FV.EH (\tv -> ("Total", GV.Number $ V.getField tv))
                         V.:& V.RNil
---                        [GV.Parse
-      toVLDataRec = FV.useColName FV.asVLNumber
-                    V.:& FV.asVLStrViaShow "State"
+      toVLDataRec = FV.asVLNumber "Year"
+                    V.:& FV.textAsVLStr "State"
                     V.:& FV.asVLStrViaShow "Office"
                     V.:& FV.asVLCoRec dataColHandlers
                     V.:& V.RNil
-      dat = FV.recordsToDataWithParse [("Year", GV.FoDate "%Y")] toVLDataRec rows
-      foldVotes = GV.foldAs ["Dem", "Rep"] "Party" "Votes"
-      transform = GV.transform . foldVotes
+      dat = FV.recordsToDataWithParse [{-("Year", GV.FoDate "%Y")-}] toVLDataRec rows
+      filterParty = GV.filter (GV.FEqual "Party" (GV.Str "Total"))
+      filterYear = GV.filter (GV.FEqual "Year" (GV.Number 2016))
+      foldVotes = GV.foldAs ["Dem", "Rep", "Total"] "Party" "Votes"
+      transform = GV.transform . foldVotes . filterParty . filterYear
       encState = GV.row [GV.FName "State", GV.FmType GV.Nominal]
-      encParty = GV.position GV.Y [GV.PName "Party", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
-      encVotes = GV.position GV.X [GV.PName "Votes", GV.PmType GV.Quantitative]
-      encColor = GV.color [GV.MName "Party", GV.MmType GV.Nominal]
-      encoding = GV.encoding . encParty . encVotes . encState . encColor
+      encParty = GV.position GV.Y [GV.PName "Office", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
+      encVotes = GV.position GV.X [GV.PName "Votes"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Total Votes/Citizen Population"]]
+      encColor = GV.color [GV.MName "Year", GV.MmType GV.Nominal]
+      encoding = GV.encoding . encParty . encVotes . encState -- . encColor
       mark = GV.mark GV.Bar []
 --      spec = GV.specification $ GV.asSpec [encoding [], mark]
-  in FV.configuredVegaLite vc [FV.title title, encoding [], mark, transform [], dat]
+  in FV.configuredVegaLite vc [FV.title title, transform [],  encoding [], mark, dat]
 
 
 
