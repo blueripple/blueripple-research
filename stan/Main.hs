@@ -254,15 +254,15 @@ examineVoteTotals clearCached houseData_C = do
   let houseVoteByStateF = FMR.concatFold
                           $ FMR.mapReduceFold
                           FMR.noUnpack
-                          (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BRE.DVotes, BRE.RVotes])
+                          (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BRE.DVotes, BRE.RVotes, PUMS.Citizens])
                           (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-      fHouseVotesByState' = FL.fold houseVoteByStateF $ BRE.houseElectionData houseData
+      fHouseVotesByState = FL.fold houseVoteByStateF $ BRE.houseElectionData houseData
   -- this should exist as a side effect of producing the prepped data
-  pumsByState :: F.FrameRec (BRE.StateKeyR V.++ BRE.PUMSDataR) <- K.ignoreCacheTimeM
-                                                                  $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" (pure ()) undefined
-  let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
-      (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
-  when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
+  --pumsByState :: F.FrameRec (BRE.StateKeyR V.++ BRE.PUMSDataR) <- K.ignoreCacheTimeM
+--                                                                  $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" (pure ()) undefined
+--  let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
+--      (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
+--  when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
   let totalVotes r = F.rgetField @BRE.RVotes r + F.rgetField @BRE.DVotes r
       fracOfCit x r = realToFrac x / realToFrac (F.rgetField @PUMS.Citizens r)
       dFracOfCit r = fracOfCit (F.rgetField @BRE.DVotes r) r
@@ -282,8 +282,8 @@ examineVoteTotals clearCached houseData_C = do
 
 --  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fForChart
   _ <- K.addHvega Nothing Nothing
-       $ voteTotalChart "Votes By Office (2016)" (FV.ViewConfig  400 20 2)
-       $  F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) (fForChartH <> fForChartS <> fForChartP)
+       $ voteTotalChart "Turnout By Office" (FV.ViewConfig  200 30 2)
+       $ (fForChartH <> fForChartS <> fForChartP)
   return ()
 
 type DFracOfCit = "DemFracOfCit" F.:-> Double
@@ -292,36 +292,40 @@ type TFracOfCit = "TotFracOfCit" F.:-> Double
 
 type VoteTotalData = [RFracOfCit, DFracOfCit, TFracOfCit]
 type DataCol = "value" F.:-> F.CoRec V.ElField VoteTotalData
-type VoteTotalR = [BR.Year, BR.StateAbbreviation, ET.Office, DataCol]
+type VoteTotalR = [BR.Year, BR.StateAbbreviation, ET.Office] V.++ VoteTotalData
 
 voteTotalChart :: (Functor f, Foldable f)
-           => T.Text
-           -> FV.ViewConfig
-           -> f (F.Record VoteTotalR)
-           -> GV.VegaLite
+               => Text
+               -> FV.ViewConfig
+               -> f (F.Record VoteTotalR)
+               -> GV.VegaLite
 voteTotalChart title vc rows =
-  let dataColHandlers :: FV.VLCoRecHandlers VoteTotalData
-      dataColHandlers = FV.EH (\rv -> ("Rep", GV.Number $ V.getField rv))
-                        V.:& FV.EH (\dv -> ("Dem", GV.Number $ V.getField dv))
-                        V.:& FV.EH (\tv -> ("Total", GV.Number $ V.getField tv))
-                        V.:& V.RNil
-      toVLDataRec = FV.asVLNumber "Year"
+  let toVLDataRec = FV.asVLNumber "Year"
                     V.:& FV.textAsVLStr "State"
                     V.:& FV.asVLStrViaShow "Office"
-                    V.:& FV.asVLCoRec dataColHandlers
+                    V.:& FV.asVLNumber "Rep"
+                    V.:& FV.asVLNumber "Dem"
+                    V.:& FV.asVLNumber "Total"
                     V.:& V.RNil
       dat = FV.recordsToDataWithParse [{-("Year", GV.FoDate "%Y")-}] toVLDataRec rows
-      filterParty = GV.filter (GV.FEqual "Party" (GV.Str "Total"))
-      filterYear = GV.filter (GV.FEqual "Year" (GV.Number 2016))
-      foldVotes = GV.foldAs ["Dem", "Rep", "Total"] "Party" "Votes"
-      transform = GV.transform . foldVotes . filterParty . filterYear
+--      filterParty = GV.filter (GV.FEqual "Party" (GV.Str "Total"))
+      filterYear = GV.filter (GV.FEqual "Year" (GV.Number 2012))
+--      imputeVotes = GV.impute "Votes" "Office" [GV.ImMethod GV.ImValue, GV.ImNewValue $ GV.Number 0]
+      foldVotes = GV.foldAs ["Dem", "Rep"] "Party" "Votes"
+      transform = GV.transform . foldVotes
       encState = GV.row [GV.FName "State", GV.FmType GV.Nominal]
-      encParty = GV.position GV.Y [GV.PName "Office", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
+      encYear = GV.column [GV.FName "Year", GV.FmType GV.Nominal]
+      encParty = GV.color [GV.MName "Party", GV.MmType GV.Nominal]
+      encOffice = GV.position GV.Y [GV.PName "Office"
+                                  , GV.PmType GV.Nominal
+                                  , GV.PAxis [GV.AxNoTitle]
+                                  , GV.PSort [GV.CustomSort $ GV.Strings ["President", "Senate", "House"]]
+                                  ]
       encVotes = GV.position GV.X [GV.PName "Votes"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Total Votes/Citizen Population"]]
-      encColor = GV.color [GV.MName "Year", GV.MmType GV.Nominal]
-      encoding = GV.encoding . encParty . encVotes . encState -- . encColor
+                                  , GV.PAxis [GV.AxTitle "Total Votes/Citizen Population"]
+                                  ]
+      encoding = GV.encoding . encOffice . encVotes . encState . encYear . encParty
       mark = GV.mark GV.Bar []
 --      spec = GV.specification $ GV.asSpec [encoding [], mark]
   in FV.configuredVegaLite vc [FV.title title, transform [],  encoding [], mark, dat]
