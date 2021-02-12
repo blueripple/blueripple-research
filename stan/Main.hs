@@ -267,7 +267,7 @@ examineVoteTotals clearCached houseData_C = do
                   $ fHouseVotesByState
 --  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fForChart
   _ <- K.addHvega Nothing Nothing
-       $ voteTotalChart "test" (FV.ViewConfig 800 800 10)
+       $ voteTotalChart "test" (FV.ViewConfig  400 20 2)
        $  F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) fForChart
   return ()
 
@@ -282,9 +282,9 @@ voteTotalChart :: (Functor f, Foldable f)
            -> GV.VegaLite
 voteTotalChart title vc rows =
   let dataColHandlers :: FV.VLCoRecHandlers VoteTotalData
-      dataColHandlers = FV.EH (\rv -> ("RVotes", GV.Number $ realToFrac $ V.getField rv))
-                        V.:& FV.EH (\dv -> ("DVotes", GV.Number $ realToFrac $ V.getField dv))
-                        V.:& FV.EH (\tv -> ("TVotes", GV.Number $ realToFrac $ V.getField tv))
+      dataColHandlers = FV.EH (\rv -> ("Rep", GV.Number $ realToFrac rv))
+                        V.:& FV.EH (\dv -> ("Dem", GV.Number $ realToFrac dv))
+                        V.:& FV.EH (\tv -> ("Total", GV.Number $ realToFrac tv))
                         V.:& V.RNil
 --                        [GV.Parse
       toVLDataRec = FV.useColName FV.asVLNumber
@@ -293,11 +293,16 @@ voteTotalChart title vc rows =
                     V.:& FV.asVLCoRec dataColHandlers
                     V.:& V.RNil
       dat = FV.recordsToDataWithParse [("Year", GV.FoDate "%Y")] toVLDataRec rows
-      encX = GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
-      encY = GV.position GV.Y [GV.PName "DVotes", GV.PmType GV.Quantitative]
-      encoding = GV.encoding . encX . encY
+      foldVotes = GV.foldAs ["Dem", "Rep"] "Party" "Votes"
+      transform = GV.transform . foldVotes
+      encState = GV.row [GV.FName "State", GV.FmType GV.Nominal]
+      encParty = GV.position GV.Y [GV.PName "Party", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]]
+      encVotes = GV.position GV.X [GV.PName "Votes", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "Party", GV.MmType GV.Nominal]
+      encoding = GV.encoding . encParty . encVotes . encState . encColor
       mark = GV.mark GV.Bar []
-  in FV.configuredVegaLite vc [FV.title title, encoding [], mark, dat]
+--      spec = GV.specification $ GV.asSpec [encoding [], mark]
+  in FV.configuredVegaLite vc [FV.title title, encoding [], mark, transform [], dat]
 
 
 
