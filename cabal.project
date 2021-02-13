@@ -1,7 +1,10 @@
-packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega
+packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega ../data-sets
 jobs: 4
 with-compiler: ghc
+-- ghc 8.10
 allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell
+-- ghc 9.0
+--allow-newer: base, template-haskell, ghc-prim, ghc, time, pandoc:random, knit-haskell, Cabal, th-abstraction
 -- hashable because of foldl-statistics
 
 source-repository-package
@@ -22,10 +25,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hs-cmdstan
   tag: 9b8fe31bbc46e3e97ec51ae526799f82b02dea14
 
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: 7a8744cbf92edd8433721cf5393daf26b53e5d6f
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: 7a8744cbf92edd8433721cf5393daf26b53e5d6f
 
 source-repository-package
   type: git
@@ -135,3 +138,15 @@ source-repository-package
     location: https://github.com/haskell-beam/beam
     subdir: beam-migrate
     tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+
+-- ghc 9.0
+--source-repository-package
+--    type: git
+--    location: https://github.com/LaurentRDC/foundation
+--    subdir: basement
+--    tag: d02ab182c977272ae4089ce20d15d82fc4fcd5e8
+
+--source-repository-package
+--    type: git
+--    location: https://github.com/galenhuntington/bytestring-strict-builder
+--    tag: 8a254ef1a42ec577f722e42f163d668d7fbcf0ad
