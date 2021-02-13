@@ -59,7 +59,7 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes
                                                as BR
 
-import qualified BlueRipple.Data.PrefModel     as BR
+--import qualified BlueRipple.Data.PrefModel     as BR
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as BR
 

@@ -82,6 +82,7 @@ import qualified Relude.Extra as Relude
 import qualified Statistics.Types              as ST
 import           GHC.Generics                   ( Generic, Rep )
 
+{- Moved to BlueRipple.Data.CountFolds
 -- map reduce folds for counting
 type Count = "Count" F.:-> Int
 type Successes = "Successes" F.:-> Int
@@ -170,7 +171,7 @@ weightedCountFoldGeneral getKey filterData testData weightData =
     (FMR.assignKeysAndData @k @d)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
 
-
+-}
 
 getFraction r =
   let n = F.rgetField @Count r

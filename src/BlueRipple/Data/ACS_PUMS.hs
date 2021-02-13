@@ -73,8 +73,8 @@ import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.Transform     as FStreamly
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
+{-
+import qualified Frames.Visualization.VegaLite.Data as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.IndexedSet               as IS
@@ -82,7 +82,7 @@ import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.Predict            as GLM
 import qualified Numeric.LinearAlgebra         as LA
-
+-}
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic, Rep )

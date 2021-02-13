@@ -38,7 +38,6 @@ common deps
                , foldl >= 1.4 && < 1.5
                , foldl-statistics >= 0.1.5 && < 0.2
                , generic-optics
-               , glm-haskell
                , groups
                , here
                , hvega >= 0.7.0 && < 0.12
@@ -107,6 +106,59 @@ library  haskell-stan
   hs-source-dirs:   haskell-stan/src
   default-language: Haskell2010
 
+library blueripple-glm
+--  import: deps
+  ghc-options:
+  build-depends: base
+               , array
+               , blaze-colonnade
+               , blaze-html
+               , blueripple-data-sets
+               , blueripple-research
+               , cereal
+               , cereal-text
+               , colonnade
+               , containers
+               , foldl
+               , Frames
+               , Frames-map-reduce
+               , Frames-serialize
+               , Frames-hvega
+               , Frames-utils
+               , glm-haskell
+               , hashable
+               , here
+               , hmatrix
+               , hvega
+               , hvega-utils
+               , knit-haskell
+               , lens
+               , map-reduce-folds
+               , mtl
+               , pandoc
+               , pipes
+               , polysemy
+               , profunctors
+               , relude
+               , statistics
+               , text
+               , time
+               , vector
+               , vinyl
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+  exposed-modules: BlueRipple.Model.CachedModels
+                 , BlueRipple.Model.Preference
+                 , BlueRipple.Data.PrefModel
+                 , BlueRipple.Data.PrefModel.SimpleAgeSexRace
+                 , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
+                 , BlueRipple.Data.PrefModel.AgeSexRace
+                 , BlueRipple.Model.CCES_MRP_Analysis
+                 , BlueRipple.Model.MRP
+                 , BlueRipple.Model.Turnout_MRP
+  hs-source-dirs:   blueripple-glm/src
+
 
 library
   import: deps
@@ -114,13 +166,10 @@ library
 
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.Keyed
+                 , BlueRipple.Data.CountFolds
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
                  , BlueRipple.Data.UsefulDataJoins
-                 , BlueRipple.Data.PrefModel
-                 , BlueRipple.Data.PrefModel.SimpleAgeSexRace
-                 , BlueRipple.Data.PrefModel.SimpleAgeSexEducation
-                 , BlueRipple.Data.PrefModel.AgeSexRace
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.LoadersCore
                  , BlueRipple.Data.Loaders
@@ -134,14 +183,9 @@ library
                  , BlueRipple.Data.CCESFrame
                  , BlueRipple.Data.CCES
                  , BlueRipple.Model.StanCCES
-                 , BlueRipple.Model.CachedModels
                  , BlueRipple.Model.PreferenceBayes
-                 , BlueRipple.Model.Preference
                  , BlueRipple.Model.TurnoutAdjustment
-                 , BlueRipple.Model.CCES_MRP_Analysis
-                 , BlueRipple.Model.MRP
                  , BlueRipple.Model.PostStratify
-                 , BlueRipple.Model.Turnout_MRP
                  , BlueRipple.Model.TSNE
                  , BlueRipple.Model.House.ElectionResult
                  , BlueRipple.Utilities.KnitUtils
@@ -226,6 +270,7 @@ executable preference-model
                , Paths_blueripple_research
 --  autogen-modules: Paths_preference_model
   build-depends: base >= 4.11
+               , blueripple-glm
                , blueripple-research
                , blaze-colonnade
                , cmdargs
@@ -276,6 +321,7 @@ executable mrp-model
                , som > 10.0 && < 10.2
                , sparse-linear-algebra
                , blueripple-research
+               , blueripple-glm
                , glm-haskell
                , time
   mixins:  base hiding (Prelude)

@@ -23,12 +23,14 @@ module BlueRipple.Data.CCES
   where
 
 import           BlueRipple.Data.DataFrames
+import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP as BR
+import qualified BlueRipple.Data.CountFolds as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as Keyed
+import qualified BlueRipple.Data.CountFolds as BR
 import           BlueRipple.Data.CCESFrame
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
@@ -51,7 +53,7 @@ import qualified Frames                        as F
 import           Frames                         ( (:.)(..) )
 import qualified Frames.InCore                 as FI
 import qualified Frames.Melt                   as F
-
+import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
 
@@ -60,8 +62,8 @@ import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
-import qualified Numeric.GLM.ProblemTypes      as GLM
-import qualified Numeric.GLM.Predict            as GLM
+--import qualified Numeric.GLM.ProblemTypes      as GLM
+--import qualified Numeric.GLM.Predict            as GLM
 
 import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic, Rep )
@@ -396,3 +398,101 @@ transformCCESRow = F.rcast . addCols where
 
 -- some keys for aggregation
 type ByCCESPredictors = '[StateAbbreviation, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC]
+
+
+--
+countDemHouseVotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) HouseVoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    )
+  => Int
+  -> FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countDemHouseVotesF y =
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
+    @'[HouseVoteParty, CCESWeightCumulative]
+    (\r ->
+      (F.rgetField @BR.Year r == y)
+        && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic])
+    )
+    ((== ET.Democratic) . F.rgetField @HouseVoteParty)
+    (F.rgetField @CCESWeightCumulative)
+
+
+countDemPres2008VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , cs F.⊆ CCES_MRP
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2008VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countDemPres2008VotesF =
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
+    @'[Pres2008VoteParty, CCESWeightCumulative]
+    (\r ->
+      (F.rgetField @BR.Year r == 2008)
+        && (      F.rgetField @Pres2008VoteParty r
+           `elem` [ET.Republican, ET.Democratic]
+           )
+    )
+    ((== ET.Democratic) . F.rgetField @Pres2008VoteParty)
+    (F.rgetField @CCESWeightCumulative)
+
+countDemPres2012VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2012VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countDemPres2012VotesF =
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
+    @'[Pres2012VoteParty, CCESWeightCumulative]
+    (\r ->
+      (F.rgetField @BR.Year r == 2012)
+        && (      F.rgetField @Pres2012VoteParty r
+           `elem` [ET.Republican, ET.Democratic]
+           )
+    )
+    ((== ET.Democratic) . F.rgetField @Pres2012VoteParty)
+    (F.rgetField @CCESWeightCumulative)
+
+countDemPres2016VotesF
+  :: forall cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , cs F.⊆ CCES_MRP
+    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
+    , F.ElemOf (cs V.++ CCES_MRP) Pres2016VoteParty
+    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
+    )
+  => FMR.Fold
+  (F.Record CCES_MRP)
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
+countDemPres2016VotesF =
+  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
+    @'[Pres2016VoteParty, CCESWeightCumulative]
+    (\r ->
+      (F.rgetField @BR.Year r == 2016)
+        && (      F.rgetField @Pres2016VoteParty r
+           `elem` [ET.Republican, ET.Democratic]
+           )
+    )
+    ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
+    (F.rgetField @CCESWeightCumulative)

@@ -21,7 +21,7 @@ module BlueRipple.Model.House.ElectionResult where
 import Prelude hiding (pred)
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Model.MRP as MRP
+--import qualified BlueRipple.Model.MRP as MRP
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET

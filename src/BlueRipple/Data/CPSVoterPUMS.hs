@@ -46,7 +46,7 @@ import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Model.MRP as MRP
+import qualified BlueRipple.Data.CountFolds as BRCF
 
 import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
@@ -86,13 +86,15 @@ import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
-import qualified Graphics.Vega.VegaLite        as GV
+--import qualified Graphics.Vega.VegaLite        as GV
 
+{-
 import qualified Data.IndexedSet               as IS
 import qualified Numeric.GLM.ProblemTypes      as GLM
 import qualified Numeric.GLM.ModelTypes      as GLM
 import qualified Numeric.GLM.Predict            as GLM
 import qualified Numeric.LinearAlgebra         as LA
+-}
 
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
@@ -361,7 +363,7 @@ cpsVoterPUMSElectoralWeightsByCD getCatKey =
 cpsCountVotersByStateF
   :: forall ks.
   (Ord (F.Record ks)
-  , FI.RecVec (ks V.++ MRP.CountCols)
+  , FI.RecVec (ks V.++ BRCF.CountCols)
   , F.ElemOf (ks V.++ CPSVoterPUMS) CPSVoterPUMSWeight
   , F.ElemOf (ks V.++ CPSVoterPUMS) BR.VotedYNC
   , ks F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ CPSVoterPUMS)
@@ -370,14 +372,14 @@ cpsCountVotersByStateF
   -> Int -- year
   -> FMR.Fold
   (F.Record CPSVoterPUMS)
-  (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ MRP.CountCols))
+  (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ BRCF.CountCols))
 cpsCountVotersByStateF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
       citizen r = F.rgetField @BR.IsCitizen r
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
-  in MRP.weightedCountFoldGeneral
+  in BRCF.weightedCountFoldGeneral
      @('[BR.StateAbbreviation] V.++ ks)
      @_
      @[BR.VotedYNC, CPSVoterPUMSWeight]
@@ -389,7 +391,7 @@ cpsCountVotersByStateF getCatKey year =
 cpsCountVotersByCDF
   :: forall ks.
   (Ord (F.Record ks)
-  , FI.RecVec (ks V.++ MRP.CountCols)
+  , FI.RecVec (ks V.++ BRCF.CountCols)
   , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) CPSVoterPUMSWeight
   , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.VotedYNC
   , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.CountyWeight
@@ -399,7 +401,7 @@ cpsCountVotersByCDF
   -> Int -- year
   -> FMR.Fold
   (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-  (F.FrameRec ('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks V.++ MRP.CountCols))
+  (F.FrameRec ('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks V.++ BRCF.CountCols))
 cpsCountVotersByCDF getCatKey year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
@@ -407,7 +409,7 @@ cpsCountVotersByCDF getCatKey year =
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
       wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
-  in MRP.weightedCountFoldGeneral
+  in BRCF.weightedCountFoldGeneral
      @([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks)
      @_
      @[BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]

@@ -33,9 +33,9 @@ import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Model.MRP as BR
+import qualified BlueRipple.Data.CountFolds as BR
 import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Model.CCES_MRP_Analysis as CCES
+--import qualified BlueRipple.Model.CCES_MRP_Analysis as CCES
 import qualified BlueRipple.Data.Keyed as BK
 import qualified BlueRipple.Utilities.KnitUtils as BR
 

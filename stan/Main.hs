@@ -257,12 +257,6 @@ examineVoteTotals clearCached houseData_C = do
                           (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @[BRE.DVotes, BRE.RVotes, PUMS.Citizens])
                           (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       fHouseVotesByState = FL.fold houseVoteByStateF $ BRE.houseElectionData houseData
-  -- this should exist as a side effect of producing the prepped data
-  --pumsByState :: F.FrameRec (BRE.StateKeyR V.++ BRE.PUMSDataR) <- K.ignoreCacheTimeM
---                                                                  $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" (pure ()) undefined
---  let stateDemographics = BRE.pumsMR @BRE.StateKeyR pumsByState
---      (fHouseVotesByState, missingHVBS) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] fHouseVotesByState' stateDemographics
---  when (not $ null missingHVBS) $ K.knitError $ "Missing keys in pumsByState: " <> show missingHVBS
   let totalVotes r = F.rgetField @BRE.RVotes r + F.rgetField @BRE.DVotes r
       fracOfCit x r = realToFrac x / realToFrac (F.rgetField @PUMS.Citizens r)
       dFracOfCit r = fracOfCit (F.rgetField @BRE.DVotes r) r
