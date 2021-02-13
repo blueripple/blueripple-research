@@ -44,6 +44,7 @@ import qualified BlueRipple.Model.MRP     as BR
 import           BlueRipple.Data.CCES
 import qualified BlueRipple.Data.Keyed         as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Data.CountFolds as BR
 
 
 mrpPrefs

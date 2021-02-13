@@ -18,7 +18,7 @@ module BlueRipple.Model.MRP where
 
 import qualified BlueRipple.Data.Keyed         as K
 import qualified BlueRipple.Data.DataFrames    as BR
-
+import           BlueRipple.Data.CountFolds
 import qualified Control.Foldl                 as FL
 import           Control.Monad                  ( join )
 import qualified Control.Monad.State           as State
@@ -81,6 +81,8 @@ import qualified Relude.Extra as Relude
 
 import qualified Statistics.Types              as ST
 import           GHC.Generics                   ( Generic, Rep )
+
+
 
 {- Moved to BlueRipple.Data.CountFolds
 -- map reduce folds for counting

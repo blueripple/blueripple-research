@@ -47,6 +47,8 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.MRP     as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Data.CountFolds as BR
+
 --import           MRP.CCES
 --import           MRP.DeltaVPV                   ( DemVPV )
 

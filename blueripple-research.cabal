@@ -138,6 +138,7 @@ library blueripple-glm
                , pandoc
                , pipes
                , polysemy
+               , polysemy-plugin
                , profunctors
                , relude
                , statistics
