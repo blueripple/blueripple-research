@@ -15,13 +15,16 @@
 module Main where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.TableUtils as BR
+
 import qualified Control.Foldl as FL
 import qualified Data.List as List
 import qualified Data.Map as M
@@ -228,6 +231,9 @@ testHouseModel = do
     (K.PandocInfo "compare_vote_totals" $ one ("pagetitle","Compare Vote Totals Across Races"))
     $ examineVoteTotals False $ K.liftActionWithCacheTime houseData_C
 
+  K.newPandoc
+    (K.PandocInfo "examine_turnout_gapss" $ one ("pagetitle","Turnout Gaps")) turnoutGaps
+
 
 {-
   K.newPandoc
@@ -279,6 +285,50 @@ examineVoteTotals clearCached houseData_C = do
        $ voteTotalChart "Turnout By Office" (FV.ViewConfig  200 30 2)
        $ (fForChartH <> fForChartS <> fForChartP)
   return ()
+
+type LeanDem = "LeanDemVoters" F.:-> Double
+type LeanRep = "LeanRepVoters" F.:-> Double
+type LDReg = "LDRegistered" F.:-> Double
+type LRReg = "LRRegistered" F.:-> Double
+type LDVoted = "LDVoted" F.:-> Double
+type LRVoted = "LRVoted" F.:-> Double
+type Gap = "Gap" F.:-> Double
+type BreakEven = "BreakEven" F.:-> Double
+
+type TurnoutGapR = [LeanDem, LDReg, LDVoted, LeanRep, LRReg, LRVoted, Gap, BreakEven]
+
+fTurnoutGap :: FL.Fold (F.Record [CCES.CCESWeight, CCES.PartisanId3, CCES.Turnout, CCES.Registration]) (F.Record TurnoutGapR)
+fTurnoutGap =
+  let leanDem r = F.rgetField @CCES.PartisanId3 r == CCES.PI3_Democrat
+      leanRep r = F.rgetField @CCES.PartisanId3 r == CCES.PI3_Republican
+      reg r = F.rgetField @CCES.Registration r == CCES.R_Active
+      voted r = F.rgetField @CCES.Turnout r == CCES.T_Voted
+      wgt r = F.rgetField @CCES.CCESWeight r
+      fLD = FL.prefilter leanDem $ FL.premap wgt $ FL.sum
+      fLDR = FL.prefilter (\r -> leanDem r && reg r) $ FL.premap wgt $ FL.sum
+      fLDV = FL.prefilter (\r -> leanDem r && voted r) $ FL.premap wgt $ FL.sum
+      fLR = FL.prefilter leanRep $ FL.premap wgt $ FL.sum
+      fLRR = FL.prefilter (\r -> leanRep r && reg r) $ FL.premap wgt $ FL.sum
+      fLRV = FL.prefilter (\r -> leanRep r && voted r) $ FL.premap wgt $ FL.sum
+      gap ld ldv lr lrv = (realToFrac lr/realToFrac lrv) - (realToFrac ld/realToFrac ldv)
+      breakEven ld ldv lr lrv = (realToFrac lrv / realToFrac lr) * (realToFrac ld/realToFrac ldv) - 1.0
+  in (\ld ldr ldv lr lrr lrv
+       -> ld F.&: ldr F.&: ldv F.&: lr F.&: lrr F.&: lrv F.&: gap ld ldv lr lrv  F.&: breakEven ld ldv lr lrv F.&: V.RNil)
+     <$> fLD <*> fLDR <*> fLDV <*> fLR <*> fLRR <*> fLRV
+
+turnoutGaps :: forall r. (K.KnitOne r, BR.CacheEffects r) => K.Sem r ()
+turnoutGaps = do
+  fCCES <- K.ignoreCacheTimeM CCES.ccesDataLoader
+  fTurnoutGapByStateYear <- BRF.frameCompactMRM
+                            FMR.noUnpack
+                            (FMR.assignKeysAndData @[BR.Year,BR.StateAbbreviation])
+                            fTurnoutGap
+                            $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) fCCES
+  BR.logFrame fTurnoutGapByStateYear
+
+
+
+
 
 type DFracOfCit = "DemFracOfCit" F.:-> Double
 type RFracOfCit = "RepFracOfCit" F.:-> Double
