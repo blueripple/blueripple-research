@@ -171,12 +171,35 @@ class Eq a => FiniteSet a where
 instance FiniteSet Bool where
   elements = Set.fromAscList [False, True]
 
-instance (FiniteSet a, FiniteSet b) => FiniteSet (a,b) where
+instance (FiniteSet a, FiniteSet b) => FiniteSet (a, b) where
   elements = Set.fromAscList $ do
     a <- Set.toAscList elements
     b <- Set.toAscList elements
     return (a, b)
 
+instance (FiniteSet a, FiniteSet b, FiniteSet c) => FiniteSet (a, b, c) where
+  elements = Set.fromAscList $ do
+    a <- Set.toAscList elements
+    b <- Set.toAscList elements
+    c <- Set.toAscList elements
+    return (a, b, c)
+
+instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d) => FiniteSet (a, b, c, d) where
+  elements = Set.fromAscList $ do
+    a <- Set.toAscList elements
+    b <- Set.toAscList elements
+    c <- Set.toAscList elements
+    d <- Set.toAscList elements
+    return (a, b, c, d)
+
+instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d, FiniteSet e) => FiniteSet (a, b, c, d, e) where
+  elements = Set.fromAscList $ do
+    a <- Set.toAscList elements
+    b <- Set.toAscList elements
+    c <- Set.toAscList elements
+    d <- Set.toAscList elements
+    e <- Set.toAscList elements
+    return (a, b, c, d, e)
 
 -- For composing aggregations, we will also want our coefficients to
 -- have multiplicative monoid structure, that is, to be semirings
