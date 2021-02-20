@@ -2,12 +2,14 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 module BlueRipple.Data.KeyedTables where
 
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified Control.Foldl as FL
 import qualified Data.Array as Array
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Set as Set
 import qualified Data.Csv as CSV
 import           Data.Csv ((.:))
@@ -52,7 +54,7 @@ unNest (Table t) =
 
 data TablesRow f a = TablesRow { prefix :: a, counts :: f (Vec.Vector Int)}
 
--- I need to build a function "CSV.Record -> Parser (TablesRow a)"
+deriving instance (Show a, Show (f (Vec.Vector Int))) => Show (TablesRow f a)
 
 parseTablesRow :: (Traversable f, CSV.FromNamedRecord a)  => f [Text] -> CSV.NamedRecord -> CSV.Parser (TablesRow f a)
 parseTablesRow tableHeaders r = TablesRow <$> CSV.parseNamedRecord r <*> traverse (parseTable r) tableHeaders where
@@ -60,3 +62,9 @@ parseTablesRow tableHeaders r = TablesRow <$> CSV.parseNamedRecord r <*> travers
   lookupOne r = CSV.lookup r . encodeUtf8
   parseTable :: CSV.NamedRecord -> [Text] -> CSV.Parser (Vec.Vector Int)
   parseTable r headers = Vec.fromList <$> traverse (lookupOne r) headers
+
+decodeCSVTables :: (Traversable f, CSV.FromNamedRecord a) => f [Text] -> LByteString -> Either Text (CSV.Header, Vec.Vector (TablesRow f a))
+decodeCSVTables tableHeaders = first toText . CSV.decodeByNameWithP (parseTablesRow tableHeaders) CSV.defaultDecodeOptions
+
+decodeCSVTablesFromFile :: (Traversable f, CSV.FromNamedRecord a) => f [Text] -> FilePath -> IO (Either Text (CSV.Header, Vec.Vector (TablesRow f a)))
+decodeCSVTablesFromFile tableHeaders fp = decodeCSVTables tableHeaders <$> LBS.readFile fp

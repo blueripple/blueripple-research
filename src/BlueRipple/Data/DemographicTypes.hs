@@ -30,6 +30,7 @@ import qualified Data.Serialize                as S
 import qualified Data.Set                      as Set
 import qualified Flat
 import qualified Frames                        as F
+import qualified Frames.TH
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
