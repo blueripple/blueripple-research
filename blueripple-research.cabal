@@ -167,9 +167,11 @@ library
 
   exposed-modules: BlueRipple.Configuration
                  , BlueRipple.Data.Keyed
+                 , BlueRipple.Data.KeyedTables
                  , BlueRipple.Data.CountFolds
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
+                 , BlueRipple.Data.CensusTables
                  , BlueRipple.Data.UsefulDataJoins
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.LoadersCore
@@ -198,6 +200,7 @@ library
                      , aeson >= 1.4 && < 1.6
                      , blaze-colonnade
                      , bytestring >= 0.10 && < 0.12
+                     , cassava >= 0.5 && < 0.6
                      , colonnade
                      , cereal-vector >= 0.2 && < 0.3
                      , data-default

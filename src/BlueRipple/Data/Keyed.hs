@@ -32,6 +32,8 @@ module BlueRipple.Data.Keyed
   , GroupOps (..)
   , Collapse (..)
   , pattern Collapse
+    -- * FiniteSet utilities
+  , finiteSetMinMax
     -- * Checking Data
   , hasAll
   , complete
@@ -167,6 +169,10 @@ class Eq a => FiniteSet a where
   elements :: Set.Set a
   default elements :: (Enum a, Bounded a) => Set.Set a
   elements = Set.fromAscList [minBound..]
+
+finiteSetMinMax :: FiniteSet a => (a, a)
+finiteSetMinMax = let se = elements in (Set.findMin se, Set.findMax se)
+
 
 instance FiniteSet Bool where
   elements = Set.fromAscList [False, True]

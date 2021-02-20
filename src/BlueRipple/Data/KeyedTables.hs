@@ -9,6 +9,9 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified Control.Foldl as FL
 import qualified Data.Array as Array
 import qualified Data.Set as Set
+import qualified Data.Csv as CSV
+import           Data.Csv ((.:))
+import qualified Data.Vector as Vec
 
 {-
 newtype TableKey a = TableKey { unTableKey :: a }
@@ -23,18 +26,16 @@ data Partition a b where
   Partition :: (BRK.FiniteSet a, BRK.FiniteSet b) => (b -> Set a) -> Partition a b
 -}
 -- This will error if a has no elements
-finiteSetMinMax :: BRK.FiniteSet a => (a, a)
-finiteSetMinMax = let se = BRK.elements in (Set.findMin se, Set.findMax se)
-
-rePartition :: (Array.Ix k1, Array.Ix k2, BRK.FiniteSet k2, Monoid x)
-            => (k2 -> Set.Set k1) -> Array.Array k1 x -> Array.Array k2 x
-rePartition f t =
+{-
+rekey :: (Array.Ix k1, Array.Ix k2, BRK.FiniteSet k2, Monoid x)
+      => (k2 -> Set.Set k1) -> Array.Array k1 x -> Array.Array k2 x
+rekey f t =
   let setToIntF :: Set a -> a -> Int
       setToIntF s a = if a `Set.member` s then 1 else 0
       af :: BRK.AggF Bool k2 k1
       af = BRK.AggF (flip Set.member . f)
       rekeyF = BRK.aggFoldAll af BRK.dataFoldCollapseBool
-  in Array.array finiteSetMinMax $ FL.fold rekeyF $ Array.assocs t
+  in Array.array BRK.finiteSetMinMax $ FL.fold rekeyF $ Array.assocs t
 
 unNest :: (Array.Ix k1, Array.Ix k2, BRK.FiniteSet k1, BRK.FiniteSet k2)
        => (Array.Array k1 (Array.Array k2 x)) -> Array.Array (k1, k2) x
@@ -44,6 +45,18 @@ unNest (Table t) =
       rekey :: (k1, [(k2, x)]) -> [(k1, k2), x]
       rekey (k1, xs) = fmap (rekeyOne k1) xs
   in Array.array finiteSetMinMax $ fmap (rekey . second Array.assocs) $ Array.assocs t
+-}
+-- What we want is to parse a csv file which contains some given prefix cols and then census labeled counts
+-- and produce a (long) frame with the data from that table
+-- Better, the table part should be a fold so we can compose this for multiple tables.
 
-nest :: (Array.Ix k1, Array.Ix k2, BRK.FiniteSet k1, BRK.FiniteSet k2)
-         Array.Array (k1, k2) x ->  (Array.Array k1 (Array.Array k2 x))
+data TablesRow f a = TablesRow { prefix :: a, counts :: f (Vec.Vector Int)}
+
+-- I need to build a function "CSV.Record -> Parser (TablesRow a)"
+
+parseTablesRow :: (Traversable f, CSV.FromNamedRecord a)  => f [Text] -> CSV.NamedRecord -> CSV.Parser (TablesRow f a)
+parseTablesRow tableHeaders r = TablesRow <$> CSV.parseNamedRecord r <*> traverse (parseTable r) tableHeaders where
+  lookupOne :: CSV.NamedRecord -> Text -> CSV.Parser Int
+  lookupOne r = CSV.lookup r . encodeUtf8
+  parseTable :: CSV.NamedRecord -> [Text] -> CSV.Parser (Vec.Vector Int)
+  parseTable r headers = Vec.fromList <$> traverse (lookupOne r) headers
