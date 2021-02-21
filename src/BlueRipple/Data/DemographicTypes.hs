@@ -23,6 +23,7 @@ import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
 import qualified Data.Binary as B
 import Data.Hashable (Hashable)
+import qualified Data.Ix as Ix
 import qualified Data.Map                      as M
 import qualified Data.Monoid                   as Mon
 import qualified Data.Text                     as T
@@ -189,11 +190,12 @@ age4ToSimple A4_18To24 = Under
 age4ToSimple A4_25To44 = Under
 age4ToSimple _ = EqualOrOver
 
-data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable, Ix.Ix)
 instance S.Serialize Age5F
 instance B.Binary Age5F
 instance Flat.Flat Age5F
 instance Grouping Age5F
+--instance Ix.Ix Age5F
 instance K.FiniteSet Age5F
 derivingUnbox "Age5F"
   [t|Age5F -> Word8|]

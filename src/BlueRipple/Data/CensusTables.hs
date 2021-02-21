@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -22,6 +23,7 @@ import qualified Data.Array as Array
 import qualified Data.Csv as CSV
 import           Data.Csv ((.:))
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Frames                        as F
 import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
@@ -70,51 +72,66 @@ type instance FI.VectorFor AgeACS = UVec.Vector
 --F.declareColumn "AgeACS" ''AgeACS
 type AgeACS_C = "AgeACS" F.:-> AgeACS
 
-acsSexByAge :: Map Text (DT.Sex, AgeACS)
-acsSexByAge = Map.fromList [("JLZE003",(DT.Male, AA_Under5))
-                           ,("JLZE004",(DT.Male, AA_5To9))
-                           ,("JLZE005",(DT.Male, AA_10To14))
-                           ,("JLZE006",(DT.Male, AA_15To17))
-                           ,("JLZE007",(DT.Male, AA_18To19))
-                           ,("JLZE008",(DT.Male, AA_20))
-                           ,("JLZE009",(DT.Male, AA_21))
-                           ,("JLZE010",(DT.Male, AA_22To24))
-                           ,("JLZE011",(DT.Male, AA_25To29))
-                           ,("JLZE012",(DT.Male, AA_30To34))
-                           ,("JLZE013",(DT.Male, AA_35To39))
-                           ,("JLZE014",(DT.Male, AA_40To44))
-                           ,("JLZE015",(DT.Male, AA_45To49))
-                           ,("JLZE016",(DT.Male, AA_50To54))
-                           ,("JLZE017",(DT.Male, AA_55To59))
-                           ,("JLZE018",(DT.Male, AA_60To61))
-                           ,("JLZE019",(DT.Male, AA_62To64))
-                           ,("JLZE020",(DT.Male, AA_65To66))
-                           ,("JLZE021",(DT.Male, AA_67To69))
-                           ,("JLZE022",(DT.Male, AA_70To74))
-                           ,("JLZE023",(DT.Male, AA_75To79))
-                           ,("JLZE024",(DT.Male, AA_80To84))
-                           ,("JLZE025",(DT.Male, AA_85AndOver))
-                           ,("JLZE027",(DT.Female, AA_Under5))
-                           ,("JLZE028",(DT.Female, AA_5To9))
-                           ,("JLZE029",(DT.Female, AA_10To14))
-                           ,("JLZE030",(DT.Female, AA_15To17))
-                           ,("JLZE031",(DT.Female, AA_18To19))
-                           ,("JLZE032",(DT.Female, AA_20))
-                           ,("JLZE033",(DT.Female, AA_21))
-                           ,("JLZE034",(DT.Female, AA_22To24))
-                           ,("JLZE035",(DT.Female, AA_25To29))
-                           ,("JLZE036",(DT.Female, AA_30To34))
-                           ,("JLZE037",(DT.Female, AA_35To39))
-                           ,("JLZE038",(DT.Female, AA_40To44))
-                           ,("JLZE039",(DT.Female, AA_45To49))
-                           ,("JLZE040",(DT.Female, AA_50To54))
-                           ,("JLZE041",(DT.Female, AA_55To59))
-                           ,("JLZE042",(DT.Female, AA_60To61))
-                           ,("JLZE043",(DT.Female, AA_62To64))
-                           ,("JLZE044",(DT.Female, AA_65To66))
-                           ,("JLZE045",(DT.Female, AA_67To69))
-                           ,("JLZE046",(DT.Female, AA_70To74))
-                           ,("JLZE047",(DT.Female, AA_75To79))
-                           ,("JLZE048",(DT.Female, AA_80To84))
-                           ,("JLZE049",(DT.Female, AA_85AndOver))
+age5FFromAgeACS :: DT.Age5F -> Set.Set AgeACS
+age5FFromAgeACS DT.A5F_Under18 = Set.fromList [AA_Under5, AA_5To9, AA_10To14, AA_15To17]
+age5FFromAgeACS DT.A5F_18To24 = Set.fromList [AA_18To19, AA_20, AA_21, AA_22To24]
+age5FFromAgeACS DT.A5F_25To44 = Set.fromList [AA_25To29, AA_30To34, AA_35To39, AA_40To44]
+age5FFromAgeACS DT.A5F_45To64 = Set.fromList [AA_45To49, AA_50To54, AA_55To59, AA_60To61, AA_62To64]
+age5FFromAgeACS DT.A5F_65AndOver = Set.fromList [AA_65To66, AA_67To69, AA_70To74, AA_75To79, AA_80To84, AA_85AndOver]
+
+reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> Set.Set (DT.Sex, AgeACS)
+reKeyAgeBySex (s, a) = Set.map (s, ) $ age5FFromAgeACS a
+
+data CensusTable = SexByAge deriving (Show, Eq, Ord)
+
+type family CensusTableKey (c :: CensusTable) :: Type where
+  CensusTableKey 'SexByAge = (DT.Sex, AgeACS)
+
+acsSexByAge :: Map (DT.Sex, AgeACS) Text
+acsSexByAge = Map.fromList [((DT.Male, AA_Under5), "JLZE003")
+                           ,((DT.Male, AA_5To9), "JLZE004")
+                           ,((DT.Male, AA_10To14), "JLZE005")
+                           ,((DT.Male, AA_15To17), "JLZE006")
+                           ,((DT.Male, AA_18To19), "JLZE007")
+                           ,((DT.Male, AA_20), "JLZE008")
+                           ,((DT.Male, AA_21), "JLZE009")
+                           ,((DT.Male, AA_22To24), "JLZE010")
+                           ,((DT.Male, AA_25To29), "JLZE011")
+                           ,((DT.Male, AA_30To34), "JLZE012")
+                           ,((DT.Male, AA_35To39), "JLZE013")
+                           ,((DT.Male, AA_40To44), "JLZE014")
+                           ,((DT.Male, AA_45To49), "JLZE015")
+                           ,((DT.Male, AA_50To54), "JLZE016")
+                           ,((DT.Male, AA_55To59), "JLZE017")
+                           ,((DT.Male, AA_60To61), "JLZE018")
+                           ,((DT.Male, AA_62To64), "JLZE019")
+                           ,((DT.Male, AA_65To66), "JLZE020")
+                           ,((DT.Male, AA_67To69), "JLZE021")
+                           ,((DT.Male, AA_70To74), "JLZE022")
+                           ,((DT.Male, AA_75To79), "JLZE023")
+                           ,((DT.Male, AA_80To84), "JLZE024")
+                           ,((DT.Male, AA_85AndOver), "JLZE025")
+                           ,((DT.Female, AA_Under5), "JLZE027")
+                           ,((DT.Female, AA_5To9), "JLZE028")
+                           ,((DT.Female, AA_10To14), "JLZE029")
+                           ,((DT.Female, AA_15To17), "JLZE030")
+                           ,((DT.Female, AA_18To19), "JLZE031")
+                           ,((DT.Female, AA_20), "JLZE032")
+                           ,((DT.Female, AA_21), "JLZE033")
+                           ,((DT.Female, AA_22To24), "JLZE034")
+                           ,((DT.Female, AA_25To29), "JLZE035")
+                           ,((DT.Female, AA_30To34), "JLZE036")
+                           ,((DT.Female, AA_35To39), "JLZE037")
+                           ,((DT.Female, AA_40To44), "JLZE038")
+                           ,((DT.Female, AA_45To49), "JLZE039")
+                           ,((DT.Female, AA_50To54), "JLZE040")
+                           ,((DT.Female, AA_55To59), "JLZE041")
+                           ,((DT.Female, AA_60To61), "JLZE042")
+                           ,((DT.Female, AA_62To64), "JLZE043")
+                           ,((DT.Female, AA_65To66), "JLZE044")
+                           ,((DT.Female, AA_67To69), "JLZE045")
+                           ,((DT.Female, AA_70To74), "JLZE046")
+                           ,((DT.Female, AA_75To79), "JLZE047")
+                           ,((DT.Female, AA_80To84), "JLZE048")
+                           ,((DT.Female, AA_85AndOver), "JLZE049")
                            ]
