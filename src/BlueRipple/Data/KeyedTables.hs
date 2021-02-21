@@ -63,8 +63,8 @@ parseTablesRow tableHeaders r = TablesRow <$> CSV.parseNamedRecord r <*> travers
   parseTable :: CSV.NamedRecord -> [Text] -> CSV.Parser (Vec.Vector Int)
   parseTable r headers = Vec.fromList <$> traverse (lookupOne r) headers
 
-decodeCSVTables :: (Traversable f, CSV.FromNamedRecord a) => f [Text] -> LByteString -> Either Text (CSV.Header, Vec.Vector (TablesRow f a))
+decodeCSVTables :: forall a f.(Traversable f, CSV.FromNamedRecord a) => f [Text] -> LByteString -> Either Text (CSV.Header, Vec.Vector (TablesRow f a))
 decodeCSVTables tableHeaders = first toText . CSV.decodeByNameWithP (parseTablesRow tableHeaders) CSV.defaultDecodeOptions
 
-decodeCSVTablesFromFile :: (Traversable f, CSV.FromNamedRecord a) => f [Text] -> FilePath -> IO (Either Text (CSV.Header, Vec.Vector (TablesRow f a)))
+decodeCSVTablesFromFile :: forall a f.(Traversable f, CSV.FromNamedRecord a) => f [Text] -> FilePath -> IO (Either Text (CSV.Header, Vec.Vector (TablesRow f a)))
 decodeCSVTablesFromFile tableHeaders fp = decodeCSVTables tableHeaders <$> LBS.readFile fp

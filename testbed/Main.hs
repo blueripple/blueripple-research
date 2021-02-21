@@ -43,9 +43,7 @@ import qualified Frames.Streamly.CSV as FStreamly
 import qualified Frames.Streamly.InCore as FStreamly
 import qualified Frames.Serialize as FS
 import qualified Frames.MapReduce as FMR
-import qualified BlueRipple.Data.LoadersCore as Loaders
-import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Utilities.FramesUtils as BRF
+
 import qualified Frames.CSV                     as Frames
 import qualified Streamly.Data.Fold            as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold.Types            as Streamly.Fold
@@ -60,6 +58,12 @@ import qualified Streamly.External.ByteString  as Streamly.ByteString
 import qualified Streamly.Internal.Data.Array  as Streamly.Data.Array
 import qualified Streamly.Internal.Memory.Array as Streamly.Memory.Array
 import qualified Control.DeepSeq as DeepSeq
+
+import qualified BlueRipple.Data.LoadersCore as Loaders
+import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Utilities.FramesUtils as BRF
+import qualified BlueRipple.Data.CensusTables as BRC
+import qualified BlueRipple.Data.KeyedTables as BRK
 
 yamlAuthor :: T.Text
 yamlAuthor = [here|
@@ -83,11 +87,13 @@ main = do
   pandocWriterConfig <- K.mkPandocWriterConfig pandocTemplate
                                                templateVars
                                                K.mindocOptionsF
-  let  knitConfig = (K.defaultKnitConfig $ Just ".flat-kh-cache")
+  let cacheDir =  ".flat-kh-cache"
+  let  knitConfig :: K.KnitConfig BR.SerializerC BR.CacheData Text = (K.defaultKnitConfig $ Just cacheDir)
         { K.outerLogPrefix = Just "Testbed.Main"
         , K.logIf = K.logDiagnostic
         , K.pandocWriterConfig = pandocWriterConfig
         , K.serializeDict = BR.flatSerializeDict
+        , K.persistCache = KAC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
         }
   resE <- K.knitHtml knitConfig makeDoc
   case resE of
@@ -97,7 +103,10 @@ main = do
 
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
-  let file = "~/GeoData/output/"
+  let censusFile = "../GeoData/output_data/US_2010_cd116/cd116Raw.csv"
+  tableRows <- K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix [M.keys BRC.acsSexByAge] censusFile
+  K.logLE K.Info $ show tableRows
+  return ()
 
 {-
 
