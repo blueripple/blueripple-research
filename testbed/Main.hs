@@ -103,7 +103,7 @@ main = do
 
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
-  let censusFile = "../GeoData/output_data/US_2010_cd116/cd116Raw.csv"
+  let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
       tableDescriptions = M.fromList [(BRC.SexByAge, M.elems BRC.acsSexByAge)]
   (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions censusFile)
   vSexByAge <- K.knitEither $ traverse (fmap (BRK.reKeyTable $ BRK.keyF BRC.reKeyAgeBySex) . BRK.typeOneTable BRC.SexByAge BRC.acsSexByAge) vTableRows

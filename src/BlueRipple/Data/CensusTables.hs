@@ -49,89 +49,98 @@ instance CSV.FromNamedRecord CDPrefix where
                        <*> r .: "SqMiles"
                        <*> r .: "SqKm"
 
-
-
 -- types for tables
 
-data AgeACS = AA_Under5 | AA_5To9 | AA_10To14 | AA_15To17 | AA_18To19 | AA_20
-            | AA_21 | AA_22To24 | AA_25To29 | AA_30To34 | AA_35To39 | AA_40To44
-            | AA_45To49 | AA_50To54 | AA_55To59 | AA_60To61 | AA_62To64 | AA_65To66
-            | AA_67To69 | AA_70To74 | AA_75To79 | AA_80To84 | AA_85AndOver deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data Age14 = A14_Under5 | A14_5To9 | A14_10To14 | A14_15To17 | A14_18To19 | A14_20To24
+           | A14_25To29 | A14_30To34 | A14_35To44 | A14_45To54
+           | A14_55To64 | A14_65To74 | A14_75To84 | A14_85AndOver deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 
-instance S.Serialize AgeACS
-instance B.Binary AgeACS
-instance Flat.Flat AgeACS
-instance Grouping AgeACS
-instance K.FiniteSet AgeACS
+instance S.Serialize Age14
+instance B.Binary Age14
+instance Flat.Flat Age14
+instance Grouping Age14
+instance K.FiniteSet Age14
 
-derivingUnbox "AgeACS"
-  [t|AgeACS -> Word8|]
+derivingUnbox "Age14"
+  [t|Age14 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor AgeACS = UVec.Vector
+type instance FI.VectorFor Age14 = UVec.Vector
 --F.declareColumn "AgeACS" ''AgeACS
-type AgeACS_C = "AgeACS" F.:-> AgeACS
+type Age14C = "Age14" F.:-> Age14
 
-age5FFromAgeACS :: DT.Age5F -> [AgeACS]
-age5FFromAgeACS DT.A5F_Under18 = [AA_Under5, AA_5To9, AA_10To14, AA_15To17]
-age5FFromAgeACS DT.A5F_18To24 = [AA_18To19, AA_20, AA_21, AA_22To24]
-age5FFromAgeACS DT.A5F_25To44 = [AA_25To29, AA_30To34, AA_35To39, AA_40To44]
-age5FFromAgeACS DT.A5F_45To64 = [AA_45To49, AA_50To54, AA_55To59, AA_60To61, AA_62To64]
-age5FFromAgeACS DT.A5F_65AndOver = [AA_65To66, AA_67To69, AA_70To74, AA_75To79, AA_80To84, AA_85AndOver]
+age5FFromAge14 :: DT.Age5F -> [AgeACS]
+age5FFromAge14 DT.A5F_Under18 = [A14_Under5, A14_5To9, A14_10To14, A14_15To17]
+age5FFromAge14 DT.A5F_18To24 = [A14_18To19, A14_20To24]
+age5FFromAge14 DT.A5F_25To44 = [A14_25To29, A14_30To34, AA_35To44]
+age5FFromAge14 DT.A5F_45To64 = [A14_45To54, A14_55To64]
+age5FFromAge14 DT.A5F_65AndOver = [A14_65To74, A1475To84, A14_85AndOver]
 
-reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, AgeACS)]
+reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age5FFromAgeACS a
 
-data CensusTable = SexByAge deriving (Show, Eq, Ord)
+data Citizenship = Native | Naturalized | NonCitizen  deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data instance S.Serialize Citizenship
+instance B.Binary Citizenship
+instance Flat.Flat Citizenship
+instance Grouping Citizenship
+instance K.FiniteSet Citizenship
+derivingUnbox "Citizenship"
+  [t|Citizenship -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Citizenship = UVec.Vector
+--F.declareColumn "AgeACS" ''AgeACS
+type CitizenShipC = "Citizenship" F.:-> Citizenship
+
+data CensusTable = SexByAge | SexByCitizenship deriving (Show, Eq, Ord)
 
 type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByAge = (DT.Sex, AgeACS)
+  CensusTableKey 'SexByCitizenship = (DT.Sex, Citizenship)
 
-acsSexByAge :: Map (DT.Sex, AgeACS) Text
-acsSexByAge = Map.fromList [((DT.Male, AA_Under5), "JLZE003")
-                           ,((DT.Male, AA_5To9), "JLZE004")
-                           ,((DT.Male, AA_10To14), "JLZE005")
-                           ,((DT.Male, AA_15To17), "JLZE006")
-                           ,((DT.Male, AA_18To19), "JLZE007")
-                           ,((DT.Male, AA_20), "JLZE008")
-                           ,((DT.Male, AA_21), "JLZE009")
-                           ,((DT.Male, AA_22To24), "JLZE010")
-                           ,((DT.Male, AA_25To29), "JLZE011")
-                           ,((DT.Male, AA_30To34), "JLZE012")
-                           ,((DT.Male, AA_35To39), "JLZE013")
-                           ,((DT.Male, AA_40To44), "JLZE014")
-                           ,((DT.Male, AA_45To49), "JLZE015")
-                           ,((DT.Male, AA_50To54), "JLZE016")
-                           ,((DT.Male, AA_55To59), "JLZE017")
-                           ,((DT.Male, AA_60To61), "JLZE018")
-                           ,((DT.Male, AA_62To64), "JLZE019")
-                           ,((DT.Male, AA_65To66), "JLZE020")
-                           ,((DT.Male, AA_67To69), "JLZE021")
-                           ,((DT.Male, AA_70To74), "JLZE022")
-                           ,((DT.Male, AA_75To79), "JLZE023")
-                           ,((DT.Male, AA_80To84), "JLZE024")
-                           ,((DT.Male, AA_85AndOver), "JLZE025")
-                           ,((DT.Female, AA_Under5), "JLZE027")
-                           ,((DT.Female, AA_5To9), "JLZE028")
-                           ,((DT.Female, AA_10To14), "JLZE029")
-                           ,((DT.Female, AA_15To17), "JLZE030")
-                           ,((DT.Female, AA_18To19), "JLZE031")
-                           ,((DT.Female, AA_20), "JLZE032")
-                           ,((DT.Female, AA_21), "JLZE033")
-                           ,((DT.Female, AA_22To24), "JLZE034")
-                           ,((DT.Female, AA_25To29), "JLZE035")
-                           ,((DT.Female, AA_30To34), "JLZE036")
-                           ,((DT.Female, AA_35To39), "JLZE037")
-                           ,((DT.Female, AA_40To44), "JLZE038")
-                           ,((DT.Female, AA_45To49), "JLZE039")
-                           ,((DT.Female, AA_50To54), "JLZE040")
-                           ,((DT.Female, AA_55To59), "JLZE041")
-                           ,((DT.Female, AA_60To61), "JLZE042")
-                           ,((DT.Female, AA_62To64), "JLZE043")
-                           ,((DT.Female, AA_65To66), "JLZE044")
-                           ,((DT.Female, AA_67To69), "JLZE045")
-                           ,((DT.Female, AA_70To74), "JLZE046")
-                           ,((DT.Female, AA_75To79), "JLZE047")
-                           ,((DT.Female, AA_80To84), "JLZE048")
-                           ,((DT.Female, AA_85AndOver), "JLZE049")
-                           ]
+totalSexByCitizenshipPrefix :: Text = "AJ7B"
+whiteSexByCitizenshipPrefix :: Text = "AJ7C"
+blackSexByCitizenshipPrefix :: Text = "AJ7D"
+asianSexByCitizenshipPrefix :: Text = "AJ7F"
+hispanicSexByCitizenshipPrefix :: Text = "AJ7K"
+acsSexByCitizenship :: Text -> Map (DT.Sex, Citizenship) Text
+acsSexByCitizenship p = Map.fromList [((DT.Male, Native), p <> "E009")
+                                              ,((DT.Male, Naturalized), p <> "E011")
+                                              ,((DT.Male, NonCitizen), p <> "E012")
+                                              ,((DT.Female, Native), p <> "E020")
+                                              ,((DT.Female, Naturalized), p <> "E022")
+                                              ,((DT.Female, NonCitizen), p <> "E023")
+                                              ]
+
+acsSexByAge :: Text -> Map (DT.Sex, AgeACS) Text
+acsSexByAge p =
+  Map.fromList [((DT.Male, A14_Under5), p <> "E003")
+               ,((DT.Male, A14_5To9), p <> "E004")
+               ,((DT.Male, A14_10To14), p <> "E005")
+               ,((DT.Male, A14_15To17), p <> "E006")
+               ,((DT.Male, A14_18To19), p <> "E007")
+               ,((DT.Male, A14_20To24), p <> "E008")
+               ,((DT.Male, A14_25To29), p <> "E009")
+               ,((DT.Male, A14_30To34), p <> "E010")
+               ,((DT.Male, A14_35To44), p <> "E011")
+               ,((DT.Male, A14_45To54), p <> "E012")
+               ,((DT.Male, A14_55To64), p <> "E013")
+               ,((DT.Male, A14_65To74), p <> "E014")
+               ,((DT.Male, A14_75To84), p <> "E015")
+               ,((DT.Male, A14_85AndOver), p <> "E016")
+               ,((DT.Female, A14_Under5), p <> "E018")
+               ,((DT.Female, A14_5To9), p <> "E019")
+               ,((DT.Female, A14_10To14), p <> "E020")
+               ,((DT.Female, A14_15To17), p <> "E021")
+               ,((DT.Female, A14_18To19), p <> "E022")
+               ,((DT.Female, A14_20To24), p <> "E023")
+               ,((DT.Female, A14_25To29), p <> "E024")
+               ,((DT.Female, A14_30To34), p <> "E025")
+               ,((DT.Female, A14_35To44), p <> "E026")
+               ,((DT.Female, A14_45To54), p <> "E027")
+               ,((DT.Female, A14_55To64), p <> "E028")
+               ,((DT.Female, A14_65To74), p <> "E029")
+               ,((DT.Female, A14_75To84), p <> "E030")
+               ,((DT.Female, A14_85AndOver), p <> "E031")
+               ]
