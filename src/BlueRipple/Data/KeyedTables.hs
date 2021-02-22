@@ -33,7 +33,7 @@ data Partition a b where
   Partition :: (BRK.FiniteSet a, BRK.FiniteSet b) => (b -> Set a) -> Partition a b
 -}
 -- This will error if a has no elements
-
+{-
 rekeyArray :: forall k1 k2 x.(Array.Ix k1, Array.Ix k2, BRK.FiniteSet k2, Monoid x)
       => (k2 -> Set.Set k1) -> Array.Array k1 x -> Array.Array k2 x
 rekeyArray f t =
@@ -42,6 +42,7 @@ rekeyArray f t =
       rekeyF = BRK.aggFoldAll af (BRK.dataFoldCollapseBool FL.mconcat)
   in Array.array BRK.finiteSetMinMax $ FL.fold rekeyF $ Array.assocs t
 
+
 rekeyMap :: forall k1 k2 x.(Ord k1, Ord k2, BRK.FiniteSet k2, Num x)
       => (k2 -> Set.Set k1) -> Map k1 x -> Map k2 x
 rekeyMap f t =
@@ -49,6 +50,18 @@ rekeyMap f t =
       af = BRK.AggF (flip Set.member . f)
       rekeyF = BRK.aggFoldAll af (BRK.dataFoldCollapseBool FL.sum)
   in Map.fromList $ FL.fold rekeyF $ Map.toList t
+-}
+
+reKeyMap :: forall k1 k2 x.(Ord k1, Ord k2, BRK.FiniteSet k2, Num x)
+      => (k2 -> k1 -> Bool) -> Map k1 x -> Map k2 x
+reKeyMap f t =
+  let af :: BRK.AggF Bool k2 k1
+      af = BRK.AggF f
+      rekeyF = BRK.aggFoldAll af (BRK.dataFoldCollapseBool FL.sum)
+  in Map.fromList $ FL.fold rekeyF $ Map.toList t
+
+keyF :: Eq k1 => (k2 -> [k1]) -> k2 -> k1  -> Bool
+keyF f k2 k1 = k1 `elem` f k2
 
 {-
 unNest :: (Array.Ix k1, Array.Ix k2, BRK.FiniteSet k1, BRK.FiniteSet k2)
@@ -97,6 +110,9 @@ typeOneTable tableKey tableDescription rtr@(TableRow p cm) = do
   if Map.size typedMap /= Map.size tableDescription
     then Left $ "Mismatch when composing maps: counts=" <> show countMap <> "; description=" <> show tableDescription
     else Right $ TableRow p typedMap
+
+reKeyTable :: (Ord k1, Ord k2, BRK.FiniteSet k2, Num x) => (k2 -> k1 -> Bool) -> TableRow a (Map k1 x) -> TableRow a (Map k2 x)
+reKeyTable f = fmap (reKeyMap f)
 
 -- This is present in containers >= 0.6.3.1 but that has conflicts.  Fix eventually
 mapCompose  :: Ord b => Map b c -> Map a b -> Map a c

@@ -72,15 +72,15 @@ type instance FI.VectorFor AgeACS = UVec.Vector
 --F.declareColumn "AgeACS" ''AgeACS
 type AgeACS_C = "AgeACS" F.:-> AgeACS
 
-age5FFromAgeACS :: DT.Age5F -> Set.Set AgeACS
-age5FFromAgeACS DT.A5F_Under18 = Set.fromList [AA_Under5, AA_5To9, AA_10To14, AA_15To17]
-age5FFromAgeACS DT.A5F_18To24 = Set.fromList [AA_18To19, AA_20, AA_21, AA_22To24]
-age5FFromAgeACS DT.A5F_25To44 = Set.fromList [AA_25To29, AA_30To34, AA_35To39, AA_40To44]
-age5FFromAgeACS DT.A5F_45To64 = Set.fromList [AA_45To49, AA_50To54, AA_55To59, AA_60To61, AA_62To64]
-age5FFromAgeACS DT.A5F_65AndOver = Set.fromList [AA_65To66, AA_67To69, AA_70To74, AA_75To79, AA_80To84, AA_85AndOver]
+age5FFromAgeACS :: DT.Age5F -> [AgeACS]
+age5FFromAgeACS DT.A5F_Under18 = [AA_Under5, AA_5To9, AA_10To14, AA_15To17]
+age5FFromAgeACS DT.A5F_18To24 = [AA_18To19, AA_20, AA_21, AA_22To24]
+age5FFromAgeACS DT.A5F_25To44 = [AA_25To29, AA_30To34, AA_35To39, AA_40To44]
+age5FFromAgeACS DT.A5F_45To64 = [AA_45To49, AA_50To54, AA_55To59, AA_60To61, AA_62To64]
+age5FFromAgeACS DT.A5F_65AndOver = [AA_65To66, AA_67To69, AA_70To74, AA_75To79, AA_80To84, AA_85AndOver]
 
-reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> Set.Set (DT.Sex, AgeACS)
-reKeyAgeBySex (s, a) = Set.map (s, ) $ age5FFromAgeACS a
+reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, AgeACS)]
+reKeyAgeBySex (s, a) = fmap (s, ) $ age5FFromAgeACS a
 
 data CensusTable = SexByAge deriving (Show, Eq, Ord)
 
