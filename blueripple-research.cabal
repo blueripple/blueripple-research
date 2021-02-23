@@ -172,6 +172,7 @@ library
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
                  , BlueRipple.Data.CensusTables
+                 , BlueRipple.Data.CensusLoaders
                  , BlueRipple.Data.UsefulDataJoins
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.LoadersCore

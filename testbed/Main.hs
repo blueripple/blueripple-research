@@ -50,7 +50,7 @@ import qualified Streamly.Internal.Data.Fold.Types            as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold            as Streamly.Fold
 import qualified Streamly.Prelude              as Streamly
 import qualified Streamly.Internal.Prelude              as Streamly
-import qualified Streamly              as Streamly
+--import qualified Streamly              as Streamly
 import qualified Streamly.Internal.FileSystem.File
                                                as Streamly.File
 import qualified Streamly.External.ByteString  as Streamly.ByteString
@@ -60,6 +60,7 @@ import qualified Streamly.Internal.Memory.Array as Streamly.Memory.Array
 import qualified Control.DeepSeq as DeepSeq
 
 import qualified BlueRipple.Data.LoadersCore as Loaders
+import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Data.CensusTables as BRC
@@ -104,9 +105,11 @@ main = do
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
-      tableDescriptions = M.fromList [(BRC.SexByAge, M.elems BRC.acsSexByAge)]
+--      sexByAgeTD = BRC.sexByAge $ BRC.sexByAgePrefix DT.RA4_Black
+--      prefixes = BRC.sexByAgePrefix DT.RA4_Asian
+      tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix --M.fromList $ fmap (\p -> (BRC.SexByAge, M.elems ) [(BRC.SexByAge, M.elems $ sexByAgeTD)]
   (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions censusFile)
-  vSexByAge <- K.knitEither $ traverse (fmap (BRK.reKeyTable $ BRK.keyF BRC.reKeyAgeBySex) . BRK.typeOneTable BRC.SexByAge BRC.acsSexByAge) vTableRows
+  vSexByAge <- K.knitEither $ traverse (BRK.consolidateTables BRC.sexByAge BRC.sexByAgePrefix) vTableRows
   K.logLE K.Info $ show vSexByAge
   return ()
 

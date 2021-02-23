@@ -77,6 +77,14 @@ unNest (Table t) =
 -- and produce a (long) frame with the data from that table
 -- Better, the table part should be a fold so we can compose this for multiple tables.
 
+-- b is some key unique to each set of columns in a table
+-- And we can map it to the typed description of the table, for later.
+tableDescriptions :: Ord b => (b -> Map c Text) -> [b] -> Map b [Text]
+tableDescriptions describe bs = Map.fromList $ fmap (\b -> (b, Map.elems $ describe b)) bs
+
+allTableDescriptions :: (Ord b, BRK.FiniteSet d) => (b -> Map c Text) -> (d -> [b]) -> Map b [Text]
+allTableDescriptions describe fromType = Map.unions $ (tableDescriptions describe . fromType) <$> Set.toList BRK.elements
+
 data TableRow a c = TableRow { prefix :: a, counts :: c}
 deriving instance (Show a, Show c) => Show (TableRow a c)
 deriving stock instance Functor (TableRow a)
@@ -103,13 +111,42 @@ decodeCSVTablesFromFile :: forall a b.(CSV.FromNamedRecord a)
                         -> IO (Either Text (CSV.Header, Vec.Vector (RawTablesRow a b)))
 decodeCSVTablesFromFile tableHeaders fp = decodeCSVTables tableHeaders <$> readFileLBS fp
 
-typeOneTable :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => b -> Map c Text -> RawTablesRow a b -> Either Text (TableRow a (Map c Int))
-typeOneTable tableKey tableDescription rtr@(TableRow p cm) = do
+typeOneTable' :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (Map c Int)
+typeOneTable' tableDescription rtr@(TableRow _ cm) tableKey = do
   countMap <- maybeToRight ("Failed to find \"" <> show tableKey <> " in TableRow: " <> show rtr) $ Map.lookup tableKey cm
-  let typedMap = mapCompose countMap tableDescription
-  if Map.size typedMap /= Map.size tableDescription
-    then Left $ "Mismatch when composing maps: counts=" <> show countMap <> "; description=" <> show tableDescription
-    else Right $ TableRow p typedMap
+  let description = tableDescription tableKey
+      typedMap = mapCompose countMap description
+  if Map.size typedMap /= Map.size description
+    then Left $ "Mismatch when composing maps: counts=" <> show countMap <> "; description=" <> show description
+    else Right typedMap
+
+typeOneTable :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (TableRow a (Map c Int))
+typeOneTable tableDescription rtr@(TableRow p cm) tableKey = fmap (TableRow p) $ typeOneTable' tableDescription rtr tableKey
+
+typeAndMergeTables :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c)
+                   => (b -> Map c Text) -> [b] -> RawTablesRow a b -> Either Text (TableRow a (Map c Int))
+typeAndMergeTables tableDescription tableKeys rtr@(TableRow p _) =
+  TableRow p . Map.unionsWith (+) <$> traverse (typeOneTable' tableDescription rtr) tableKeys
+
+consolidateTables ::  forall d a b c.
+                      (Ord b
+                      , Array.Ix c
+                      , Bounded c
+                      , Show b
+                      , Show a
+                      , Show c
+                      , Ord d
+                      , BRK.FiniteSet d
+                      ) => (b -> Map c Text) -> (d -> [b]) -> RawTablesRow a b -> Either Text (TableRow a (Map (d, c) Int))
+consolidateTables tableDescription keysFrom rtr@(TableRow p _) = do
+  let allD :: [d] = Set.toList BRK.elements
+      doOne d = fmap (d,) $ counts <$> typeAndMergeTables tableDescription (keysFrom d) rtr
+      remap (d, m) = Map.fromAscList $ fmap (\(c, x) -> ((d, c), x)) $ Map.toAscList m
+  merged <- traverse doOne allD
+  let remapped = remap <$> merged
+  return $ TableRow p $ Map.unions remapped
+
+
 
 reKeyTable :: (Ord k1, Ord k2, BRK.FiniteSet k2, Num x) => (k2 -> k1 -> Bool) -> TableRow a (Map k1 x) -> TableRow a (Map k2 x)
 reKeyTable f = fmap (reKeyMap f)

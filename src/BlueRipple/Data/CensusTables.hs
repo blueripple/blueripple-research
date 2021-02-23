@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
@@ -66,21 +67,20 @@ derivingUnbox "Age14"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Age14 = UVec.Vector
---F.declareColumn "AgeACS" ''AgeACS
 type Age14C = "Age14" F.:-> Age14
 
-age5FFromAge14 :: DT.Age5F -> [AgeACS]
-age5FFromAge14 DT.A5F_Under18 = [A14_Under5, A14_5To9, A14_10To14, A14_15To17]
-age5FFromAge14 DT.A5F_18To24 = [A14_18To19, A14_20To24]
-age5FFromAge14 DT.A5F_25To44 = [A14_25To29, A14_30To34, AA_35To44]
-age5FFromAge14 DT.A5F_45To64 = [A14_45To54, A14_55To64]
-age5FFromAge14 DT.A5F_65AndOver = [A14_65To74, A1475To84, A14_85AndOver]
+age14FromAge5F :: DT.Age5F -> [Age14]
+age14FromAge5F DT.A5F_Under18 = [A14_Under5, A14_5To9, A14_10To14, A14_15To17]
+age14FromAge5F DT.A5F_18To24 = [A14_18To19, A14_20To24]
+age14FromAge5F DT.A5F_25To44 = [A14_25To29, A14_30To34, A14_35To44]
+age14FromAge5F DT.A5F_45To64 = [A14_45To54, A14_55To64]
+age14FromAge5F DT.A5F_65AndOver = [A14_65To74, A14_75To84, A14_85AndOver]
 
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
-reKeyAgeBySex (s, a) = fmap (s, ) $ age5FFromAgeACS a
+reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
 data Citizenship = Native | Naturalized | NonCitizen  deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
-data instance S.Serialize Citizenship
+instance S.Serialize Citizenship
 instance B.Binary Citizenship
 instance Flat.Flat Citizenship
 instance Grouping Citizenship
@@ -91,30 +91,81 @@ derivingUnbox "Citizenship"
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Citizenship = UVec.Vector
 --F.declareColumn "AgeACS" ''AgeACS
-type CitizenShipC = "Citizenship" F.:-> Citizenship
+type CitizenshipC = "Citizenship" F.:-> Citizenship
 
-data CensusTable = SexByAge | SexByCitizenship deriving (Show, Eq, Ord)
+citizenshipFromIsCitizen :: Bool -> [Citizenship]
+citizenshipFromIsCitizen True = [Native, Naturalized]
+citizenshipFromIsCitizen False = [NonCitizen]
+
+data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+instance S.Serialize Education4
+instance B.Binary Education4
+instance Flat.Flat Education4
+instance Grouping Education4
+instance K.FiniteSet Education4
+derivingUnbox "Education4"
+  [t|Education4 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Education4 = UVec.Vector
+type Education4C = "Education" F.:-> Education4
+
+education4FromCollegeGrad :: DT.CollegeGrad -> [Education4]
+education4FromCollegeGrad DT.NonGrad = [E4_NonHSGrad, E4_HSGrad, E4_SomeCollege]
+education4FromCollegeGrad DT.Grad = [E4_CollegeGrad]
+
+data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving (Show, Eq, Ord)
 
 type family CensusTableKey (c :: CensusTable) :: Type where
-  CensusTableKey 'SexByAge = (DT.Sex, AgeACS)
+  CensusTableKey 'SexByAge = (DT.Sex, Age14)
   CensusTableKey 'SexByCitizenship = (DT.Sex, Citizenship)
+  CensusTableKey 'SexByEducation = (DT.Sex, Education4)
 
-totalSexByCitizenshipPrefix :: Text = "AJ7B"
-whiteSexByCitizenshipPrefix :: Text = "AJ7C"
-blackSexByCitizenshipPrefix :: Text = "AJ7D"
-asianSexByCitizenshipPrefix :: Text = "AJ7F"
-hispanicSexByCitizenshipPrefix :: Text = "AJ7K"
-acsSexByCitizenship :: Text -> Map (DT.Sex, Citizenship) Text
-acsSexByCitizenship p = Map.fromList [((DT.Male, Native), p <> "E009")
-                                              ,((DT.Male, Naturalized), p <> "E011")
-                                              ,((DT.Male, NonCitizen), p <> "E012")
-                                              ,((DT.Female, Native), p <> "E020")
-                                              ,((DT.Female, Naturalized), p <> "E022")
-                                              ,((DT.Female, NonCitizen), p <> "E023")
+newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
+
+sexByEducationPrefix :: DT.RaceAlone4 -> [NHGISPrefix]
+sexByEducationPrefix DT.RA4_White = [NHGISPrefix "AKDA"]
+sexByEducationPrefix DT.RA4_Black = [NHGISPrefix "AKDB"]
+sexByEducationPrefix DT.RA4_Asian = [NHGISPrefix "AKDD"]
+sexByEducationPrefix DT.RA4_Other = NHGISPrefix <$> ["AKDC", "AKDE", "AKDF", "AKDG"]
+hispanicSexByEducationPrefix :: [NHGISPrefix] = [NHGISPrefix "AKDI"]
+
+
+sexByEducation :: NHGISPrefix -> Map (DT.Sex, Education4) Text
+sexByEducation (NHGISPrefix p) = Map.fromList [((DT.Male, E4_NonHSGrad), p <> "E003")
+                                              ,((DT.Male, E4_HSGrad), p <> "E004")
+                                              ,((DT.Male, E4_SomeCollege), p <> "E005")
+                                              ,((DT.Male, E4_CollegeGrad), p <> "E006")
+                                              ,((DT.Female, E4_NonHSGrad), p <> "E008")
+                                              ,((DT.Female, E4_HSGrad), p <> "E009")
+                                              ,((DT.Female, E4_SomeCollege), p <> "E010")
+                                              ,((DT.Female, E4_CollegeGrad), p <> "E011")
                                               ]
 
-acsSexByAge :: Text -> Map (DT.Sex, AgeACS) Text
-acsSexByAge p =
+sexByCitizenshipPrefix :: DT.RaceAlone4 -> [NHGISPrefix]
+sexByCitizenshipPrefix DT.RA4_White = [NHGISPrefix "AJ7C"]
+sexByCitizenshipPrefix DT.RA4_Black = [NHGISPrefix "AJ7D"]
+sexByCitizenshipPrefix DT.RA4_Asian = [NHGISPrefix "AJ7F"]
+sexByCitizenshipPrefix DT.RA4_Other = NHGISPrefix <$> ["AJ7E", "AJ7G", "AJ7H", "AJ7I"]
+hispanicSexByCitizenshipPrefix :: [NHGISPrefix] = [NHGISPrefix "AJ7K"]
+
+sexByCitizenship :: NHGISPrefix -> Map (DT.Sex, Citizenship) Text
+sexByCitizenship (NHGISPrefix p) = Map.fromList [((DT.Male, Native), p <> "E009")
+                                                   ,((DT.Male, Naturalized), p <> "E011")
+                                                   ,((DT.Male, NonCitizen), p <> "E012")
+                                                   ,((DT.Female, Native), p <> "E020")
+                                                   ,((DT.Female, Naturalized), p <> "E022")
+                                                   ,((DT.Female, NonCitizen), p <> "E023")
+                                                   ]
+sexByAgePrefix :: DT.RaceAlone4 -> [NHGISPrefix]
+sexByAgePrefix DT.RA4_White = [NHGISPrefix "AJ6O"]
+sexByAgePrefix DT.RA4_Black = [NHGISPrefix "AJ6P"]
+sexByAgePrefix DT.RA4_Asian = [NHGISPrefix "AJ6R"]
+sexByAgePrefix DT.RA4_Other = NHGISPrefix <$> ["AJ6Q", "AJ6S", "AJ6T", "AJ6U"]
+hispanicSexByAgePrefix :: [NHGISPrefix] = [NHGISPrefix "AJ6W"]
+
+sexByAge :: NHGISPrefix -> Map (DT.Sex, Age14) Text
+sexByAge (NHGISPrefix p) =
   Map.fromList [((DT.Male, A14_Under5), p <> "E003")
                ,((DT.Male, A14_5To9), p <> "E004")
                ,((DT.Male, A14_10To14), p <> "E005")

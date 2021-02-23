@@ -1,0 +1,4629 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compare Data Sets</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex; 
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;      
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .brTable {
+      font-size: 180t
+  }
+  .brTableTitle {
+      text-align: center;
+      font-size:  14pt
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 600px) {
+     .content-wrapper {
+	 margin-left: 218px;
+	 margin-right: 218px
+     }   
+  }
+  @media screen and (max-width: 600px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }		       
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;		
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px		       
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;      		       
+  }  
+  table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+      
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+      
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+      
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+
+</style>
+
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>	
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<figure id="figure_15">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 200,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 200,
+            "continuousWidth": 200,
+            "discreteHeight": 200,
+            "discreteWidth": 200
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "Delta": "Avg",
+                "hi": 0.8600000000000052,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 51.82,
+                "Type": "D Pref",
+                "lo": -0.8499999999999952
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.5199999999999982,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 55.2,
+                "Type": "Turnout",
+                "lo": -0.5200000000000093
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.0199999999999987,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 47.71,
+                "Type": "D Pref",
+                "lo": -0.940000000000002
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.6500000000000006,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 35.85,
+                "Type": "Turnout",
+                "lo": -0.6299999999999972
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.9099999999999997,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 50.29,
+                "Type": "D Pref",
+                "lo": -0.8900000000000019
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.5100000000000104,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 56.39999999999999,
+                "Type": "Turnout",
+                "lo": -0.48999999999999044
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.869999999999993,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 53.28000000000001,
+                "Type": "D Pref",
+                "lo": -0.7900000000000018
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.41999999999999815,
+                "Name": "prob",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 49.05,
+                "Type": "Turnout",
+                "lo": -0.4500000000000004
+            },
+            {
+                "Delta": "Avg",
+                "hi": 3.91999999999999,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 50.96000000000001,
+                "Type": "D Pref",
+                "lo": -3.8100000000000076
+            },
+            {
+                "Delta": "Avg",
+                "hi": 3.1100000000000017,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 52.14,
+                "Type": "Turnout",
+                "lo": -3.3499999999999974
+            },
+            {
+                "Delta": "Avg",
+                "hi": 2.809999999999996,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 46.050000000000004,
+                "Type": "D Pref",
+                "lo": -2.5600000000000014
+            },
+            {
+                "Delta": "Avg",
+                "hi": 2.0100000000000007,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 36.68,
+                "Type": "Turnout",
+                "lo": -2.0000000000000018
+            },
+            {
+                "Delta": "Avg",
+                "hi": 3.200000000000003,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 50.43,
+                "Type": "D Pref",
+                "lo": -3.1799999999999997
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.4900000000000024,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 56.87,
+                "Type": "Turnout",
+                "lo": -1.639999999999997
+            },
+            {
+                "Delta": "Avg",
+                "hi": 3.290000000000004,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 51.15,
+                "Type": "D Pref",
+                "lo": -3.239999999999993
+            },
+            {
+                "Delta": "Avg",
+                "hi": 2.629999999999999,
+                "Name": "prob",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 46.02,
+                "Type": "Turnout",
+                "lo": -2.5500000000000025
+            },
+            {
+                "Delta": "Avg",
+                "hi": 2.4600000000000066,
+                "Name": "prob",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 52.65,
+                "Type": "D Pref",
+                "lo": -2.2699999999999942
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.3799999999999923,
+                "Name": "prob",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 57.730000000000004,
+                "Type": "Turnout",
+                "lo": -1.4500000000000068
+            },
+            {
+                "Delta": "Avg",
+                "hi": 2.72,
+                "Name": "prob",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 49.99,
+                "Type": "D Pref",
+                "lo": -2.7100000000000013
+            },
+            {
+                "Delta": "Avg",
+                "hi": 5.509999999999993,
+                "Name": "prob",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 51.07000000000001,
+                "Type": "Turnout",
+                "lo": -4.970000000000002
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.319999999999999,
+                "Name": "prob",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 54.44,
+                "Type": "D Pref",
+                "lo": -1.1900000000000022
+            },
+            {
+                "Delta": "Avg",
+                "hi": 0.649999999999995,
+                "Name": "prob",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 54,
+                "Type": "Turnout",
+                "lo": -0.6199999999999983
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.2399999999999967,
+                "Name": "prob",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 52.64,
+                "Type": "D Pref",
+                "lo": -1.1900000000000022
+            },
+            {
+                "Delta": "Avg",
+                "hi": 1.0499999999999954,
+                "Name": "prob",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 55.42,
+                "Type": "Turnout",
+                "lo": -0.9800000000000031
+            }
+        ],
+        "format": {
+            "parse": {
+                "Year": "date:'%Y'"
+            }
+        }
+    },
+    "width": 200,
+    "spec": {
+        "layer": [
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "errorband"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "yError2": {
+                        "field": "hi",
+                        "type": "quantitative"
+                    },
+                    "yError": {
+                        "field": "lo",
+                        "type": "quantitative"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": "line",
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "point"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "facet": {
+        "row": {
+            "field": "Name",
+            "sort": [
+                "probV",
+                "probD"
+            ],
+            "type": "nominal"
+        },
+        "column": {
+            "field": "Model",
+            "sort": [
+                "House",
+                "Senate",
+                "Presidential",
+                "House+Presidential"
+            ],
+            "type": "nominal"
+        }
+    },
+    "title": "Average Probability",
+    "padding": 5
+};
+vegaEmbed('#figure_15',vlSpec);</script>
+</figure>
+<figure id="figure_16">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 200,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 200,
+            "continuousWidth": 200,
+            "discreteHeight": 200,
+            "discreteWidth": 200
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "Delta": "Min/Max",
+                "hi": 1.419999999999999,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 12.64,
+                "Type": "D Pref",
+                "lo": -1.4500000000000013
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 0.9202999999999999,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 0.22169999999999998,
+                "Type": "Turnout",
+                "lo": -0.9087
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.7000000000000002,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 10.6,
+                "Type": "D Pref",
+                "lo": -1.7869999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 0.935,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 1.327,
+                "Type": "Turnout",
+                "lo": -0.9303
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.3799999999999992,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 11.700000000000001,
+                "Type": "D Pref",
+                "lo": -1.5100000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 0.6527,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -0.2193,
+                "Type": "Turnout",
+                "lo": -0.6602
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.3230000000000006,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 6.7059999999999995,
+                "Type": "D Pref",
+                "lo": -1.2889999999999993
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 0.66047,
+                "Name": "Incumbency",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -0.6157,
+                "Type": "Turnout",
+                "lo": -0.6143
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.62,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 10.61,
+                "Type": "D Pref",
+                "lo": -5.800000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.878000000000001,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 3.8059999999999996,
+                "Type": "Turnout",
+                "lo": -3.6451
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.4770000000000008,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 7.5329999999999995,
+                "Type": "D Pref",
+                "lo": -3.7869999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.578,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 2.67,
+                "Type": "Turnout",
+                "lo": -2.1258000000000004
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.9450000000000007,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 6.145,
+                "Type": "D Pref",
+                "lo": -4.16
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.9799,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 0.8220999999999999,
+                "Type": "Turnout",
+                "lo": -1.725
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.8249999999999997,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 4.029,
+                "Type": "D Pref",
+                "lo": -3.2683999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.0140000000000007,
+                "Name": "Incumbency",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 3.2779999999999996,
+                "Type": "Turnout",
+                "lo": -2.5464999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.4899999999999998,
+                "Name": "Incumbency",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 12.73,
+                "Type": "D Pref",
+                "lo": -1.469999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 0.8829,
+                "Name": "Incumbency",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 0.2201,
+                "Type": "Turnout",
+                "lo": -0.9018999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.3700000000000003,
+                "Name": "Incumbency",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 11.76,
+                "Type": "D Pref",
+                "lo": -1.4899999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 1.0526,
+                "Name": "Incumbency",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 0.1724,
+                "Type": "Turnout",
+                "lo": -1.0454999999999999
+            }
+        ],
+        "format": {
+            "parse": {
+                "Year": "date:'%Y'"
+            }
+        }
+    },
+    "width": 200,
+    "spec": {
+        "layer": [
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "errorband"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "yError2": {
+                        "field": "hi",
+                        "type": "quantitative"
+                    },
+                    "yError": {
+                        "field": "lo",
+                        "type": "quantitative"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": "line",
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "point"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "facet": {
+        "row": {
+            "field": "Name",
+            "sort": [
+                "incumbency"
+            ],
+            "type": "nominal"
+        },
+        "column": {
+            "field": "Model",
+            "sort": [
+                "House",
+                "Senate",
+                "Presidential",
+                "House+Presidential"
+            ],
+            "type": "nominal"
+        }
+    },
+    "title": "Change in Probability for Incumbency (with 90% confidence bands)",
+    "padding": 5
+};
+vegaEmbed('#figure_16',vlSpec);</script>
+</figure>
+<figure id="figure_17">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 200,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 200,
+            "continuousWidth": 200,
+            "discreteHeight": 200,
+            "discreteWidth": 200
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "Delta": "Min/Max",
+                "hi": 7.73,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -18.44,
+                "Type": "D Pref",
+                "lo": -7.5699999999999985
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.1160000000000005,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -7.184,
+                "Type": "Turnout",
+                "lo": -4.486
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 15.410000000000002,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 23.93,
+                "Type": "D Pref",
+                "lo": -18.877000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.559999999999999,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -23.189999999999998,
+                "Type": "Turnout",
+                "lo": -7.250000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.540000000000001,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 39.519999999999996,
+                "Type": "D Pref",
+                "lo": -6.35
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.382999999999999,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -2.5069999999999997,
+                "Type": "Turnout",
+                "lo": -4.283
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 10.18,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 29.970000000000002,
+                "Type": "D Pref",
+                "lo": -11.120000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.489999999999995,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 44.66,
+                "Type": "Turnout",
+                "lo": -5.540000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.669999999999998,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 22.38,
+                "Type": "D Pref",
+                "lo": -15.739
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.8051,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -0.9581,
+                "Type": "Turnout",
+                "lo": -9.5919
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.509999999999993,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 42.870000000000005,
+                "Type": "D Pref",
+                "lo": -16.850000000000005
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.02,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -38.56,
+                "Type": "Turnout",
+                "lo": -6.65
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 10.23,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 37.04,
+                "Type": "D Pref",
+                "lo": -11.659999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.880000000000002,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -18.84,
+                "Type": "Turnout",
+                "lo": -5.4899999999999975
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.3592,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -6.8260000000000005,
+                "Type": "D Pref",
+                "lo": -9.084
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.778,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 4.867,
+                "Type": "Turnout",
+                "lo": -4.6846
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 22.132999999999996,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 7.066999999999999,
+                "Type": "D Pref",
+                "lo": -18.257
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.799,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -13.309999999999999,
+                "Type": "Turnout",
+                "lo": -7.41
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.519999999999999,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 37.730000000000004,
+                "Type": "D Pref",
+                "lo": -8.080000000000004
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.71,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -7.2459999999999996,
+                "Type": "Turnout",
+                "lo": -4.524
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.950000000000003,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 27.529999999999998,
+                "Type": "D Pref",
+                "lo": -11.179999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.359999999999999,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 30.48,
+                "Type": "Turnout",
+                "lo": -7.0100000000000025
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.52,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 17.05,
+                "Type": "D Pref",
+                "lo": -17.5421
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.901399999999999,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -9.644,
+                "Type": "Turnout",
+                "lo": -6.776000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 16.090000000000003,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 43.15,
+                "Type": "D Pref",
+                "lo": -22.189999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.469999999999999,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -23.87,
+                "Type": "Turnout",
+                "lo": -6.500000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.399999999999997,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 60.150000000000006,
+                "Type": "D Pref",
+                "lo": -15.930000000000005
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.29,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -19,
+                "Type": "Turnout",
+                "lo": -5.27
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.713999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -9.075999999999999,
+                "Type": "D Pref",
+                "lo": -8.934000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.1459,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -5.795999999999999,
+                "Type": "Turnout",
+                "lo": -4.964
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.821,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 2.3890000000000002,
+                "Type": "D Pref",
+                "lo": -15.238999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.619999999999997,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -26.029999999999998,
+                "Type": "Turnout",
+                "lo": -7.15
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.480000000000002,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 37,
+                "Type": "D Pref",
+                "lo": -6.6400000000000015
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.446999999999999,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -9.075999999999999,
+                "Type": "Turnout",
+                "lo": -4.124000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.37,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 32.06,
+                "Type": "D Pref",
+                "lo": -9.03
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.140000000000001,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 46.550000000000004,
+                "Type": "Turnout",
+                "lo": -5.74
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.852,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 7.217999999999999,
+                "Type": "D Pref",
+                "lo": -11.863999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.302000000000001,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 7.588,
+                "Type": "Turnout",
+                "lo": -7.7335
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.0699999999999985,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 66.56,
+                "Type": "D Pref",
+                "lo": -9.609999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.77,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -35.21,
+                "Type": "Turnout",
+                "lo": -7.2899999999999965
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.669999999999998,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 27.1,
+                "Type": "D Pref",
+                "lo": -12.990000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.808000000000001,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -15.09,
+                "Type": "Turnout",
+                "lo": -5.429999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.082999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -6.476999999999999,
+                "Type": "D Pref",
+                "lo": -7.063
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.4237,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 0.9433,
+                "Type": "Turnout",
+                "lo": -3.9072999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 15.560000000000002,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 0.16,
+                "Type": "D Pref",
+                "lo": -11.379999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.282000000000002,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -15.64,
+                "Type": "Turnout",
+                "lo": -5.449999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.980000000000002,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 36.74,
+                "Type": "D Pref",
+                "lo": -6.519999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.4019999999999992,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -7.199999999999999,
+                "Type": "Turnout",
+                "lo": -3.54
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.000000000000005,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 50.51,
+                "Type": "D Pref",
+                "lo": -6.950000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 3.819999999999996,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 47.32,
+                "Type": "Turnout",
+                "lo": -4.0100000000000025
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 11.912999999999998,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 4.657,
+                "Type": "D Pref",
+                "lo": -9.657
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.148000000000001,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -3.588,
+                "Type": "Turnout",
+                "lo": -5.175
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.330000000000005,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 62.83,
+                "Type": "D Pref",
+                "lo": -12.580000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.320000000000001,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -20.16,
+                "Type": "Turnout",
+                "lo": -6.440000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 15.850000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 43.39,
+                "Type": "D Pref",
+                "lo": -16.450000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.159,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -11.64,
+                "Type": "Turnout",
+                "lo": -3.7099999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 26.839999999999996,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -11.32,
+                "Type": "D Pref",
+                "lo": -20.84
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 27.184,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -22.52,
+                "Type": "Turnout",
+                "lo": -14.699999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 39.04,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 14.77,
+                "Type": "D Pref",
+                "lo": -46.48
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 38.15,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -27.93,
+                "Type": "Turnout",
+                "lo": -32.03
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 31.151,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 9.408999999999999,
+                "Type": "D Pref",
+                "lo": -29.988999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 28.9433,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -0.6133000000000001,
+                "Type": "Turnout",
+                "lo": -27.526699999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 53.233,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 0.7969999999999999,
+                "Type": "D Pref",
+                "lo": -53.007000000000005
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 35.510000000000005,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 40.78,
+                "Type": "Turnout",
+                "lo": -46.796
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 41.75,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 13.58,
+                "Type": "D Pref",
+                "lo": -52.73
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 34.305,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 7.115,
+                "Type": "Turnout",
+                "lo": -49.315
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 65.033,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -6.543,
+                "Type": "D Pref",
+                "lo": -59.297
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 65.72,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -23.49,
+                "Type": "Turnout",
+                "lo": -46.37
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 22.21,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 18.17,
+                "Type": "D Pref",
+                "lo": -17.3862
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 14.523,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -11.57,
+                "Type": "Turnout",
+                "lo": -16.36
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 24.543,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -19.5,
+                "Type": "D Pref",
+                "lo": -19.179999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.872999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 4.827,
+                "Type": "Turnout",
+                "lo": -18.317
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 29.219999999999995,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 34.31,
+                "Type": "D Pref",
+                "lo": -36.956
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 35.9,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 11.18,
+                "Type": "Turnout",
+                "lo": -25
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 20.423,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 6.607,
+                "Type": "D Pref",
+                "lo": -23.387
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 10.2967,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -11.24,
+                "Type": "Turnout",
+                "lo": -19.740000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 44.08,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 27.800000000000004,
+                "Type": "D Pref",
+                "lo": -57.97000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 24.09,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 55.71,
+                "Type": "Turnout",
+                "lo": -36.620000000000005
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 29.590000000000003,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 42.449999999999996,
+                "Type": "D Pref",
+                "lo": -57.29
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 40.6,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -11.82,
+                "Type": "Turnout",
+                "lo": -20.470000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 44.91,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -27.310000000000002,
+                "Type": "D Pref",
+                "lo": -35.62
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 26.783999999999995,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -8.904,
+                "Type": "Turnout",
+                "lo": -23.115999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 15.204999999999998,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 6.375,
+                "Type": "D Pref",
+                "lo": -14.387
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.176500000000001,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -6.485,
+                "Type": "Turnout",
+                "lo": -10.245
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 26.863,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -9.793000000000001,
+                "Type": "D Pref",
+                "lo": -34.927
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 14.219999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 16.14,
+                "Type": "Turnout",
+                "lo": -23.811
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 25.470000000000002,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 63.949999999999996,
+                "Type": "D Pref",
+                "lo": -37.99999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 29.369999999999997,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 17.560000000000002,
+                "Type": "Turnout",
+                "lo": -31.34
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 22.442715,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -2.715e-3,
+                "Type": "D Pref",
+                "lo": -25.797285000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.061,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -12.030000000000001,
+                "Type": "Turnout",
+                "lo": -14.379999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 31.689999999999998,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 48.69,
+                "Type": "D Pref",
+                "lo": -48.3958
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 23.220000000000002,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 41,
+                "Type": "Turnout",
+                "lo": -30.329999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 35.22,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 33.36,
+                "Type": "D Pref",
+                "lo": -49.75
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 40.232800000000005,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -0.3628,
+                "Type": "Turnout",
+                "lo": -28.057199999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 30.89,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -42.35,
+                "Type": "D Pref",
+                "lo": -35.6
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.37,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -41.94,
+                "Type": "Turnout",
+                "lo": -20.79
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 20.455999999999996,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 9.404,
+                "Type": "D Pref",
+                "lo": -19.328
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.886000000000001,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -1.9959999999999998,
+                "Type": "Turnout",
+                "lo": -12.193999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 30.0946,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -30.680000000000003,
+                "Type": "D Pref",
+                "lo": -15.559999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 19.706000000000003,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -9.146,
+                "Type": "Turnout",
+                "lo": -27.424000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 47.39,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -18.12,
+                "Type": "D Pref",
+                "lo": -45.07
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 26.672,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -24.34,
+                "Type": "Turnout",
+                "lo": -32.57000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 29.95,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 19.67,
+                "Type": "D Pref",
+                "lo": -24.571
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 19.643,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -0.703,
+                "Type": "Turnout",
+                "lo": -24.616999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 40.35,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 24.64,
+                "Type": "D Pref",
+                "lo": -39.99
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 23.119999999999997,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 52.09,
+                "Type": "Turnout",
+                "lo": -39.93000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 28.39999999999999,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 24.169999999999998,
+                "Type": "D Pref",
+                "lo": -40.09
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 40.849999999999994,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -16,
+                "Type": "Turnout",
+                "lo": -22.27
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 42.940000000000005,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 35.86,
+                "Type": "D Pref",
+                "lo": -56.519999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 51.08999999999999,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 22.23,
+                "Type": "Turnout",
+                "lo": -59.72
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.361,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -1.691,
+                "Type": "D Pref",
+                "lo": -17.569
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.249,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -10.75,
+                "Type": "Turnout",
+                "lo": -16.12
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.803,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -1.261,
+                "Type": "D Pref",
+                "lo": -27.278999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 11.631999999999998,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 4.308,
+                "Type": "Turnout",
+                "lo": -18.128
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 31.739999999999995,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 43,
+                "Type": "D Pref",
+                "lo": -36.809999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 23.413,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -7.153,
+                "Type": "Turnout",
+                "lo": -21.587
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.75,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 12.030000000000001,
+                "Type": "D Pref",
+                "lo": -12.7044
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 11.129,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -7.926,
+                "Type": "Turnout",
+                "lo": -11.793999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.070000000000004,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 73.07000000000001,
+                "Type": "D Pref",
+                "lo": -21.189999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 14.100000000000001,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 59.14,
+                "Type": "Turnout",
+                "lo": -21.790000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 48.910000000000004,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 22.84,
+                "Type": "D Pref",
+                "lo": -31.339
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 36.165000000000006,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 2.585,
+                "Type": "Turnout",
+                "lo": -26.305
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 31.448999999999998,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -8.009,
+                "Type": "D Pref",
+                "lo": -23.311
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 19.859999999999996,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -32.08,
+                "Type": "Turnout",
+                "lo": -20.19000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 19.811000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 5.718999999999999,
+                "Type": "D Pref",
+                "lo": -9.123999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.304299999999998,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -9.569999999999999,
+                "Type": "Turnout",
+                "lo": -9.38
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 14.693999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -10.45,
+                "Type": "D Pref",
+                "lo": -36.260000000000005
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 49.440200000000004,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -6.02e-2,
+                "Type": "Turnout",
+                "lo": -13.269800000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 46.25,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 14.84,
+                "Type": "D Pref",
+                "lo": -30.759999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 48.540000000000006,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -19.18,
+                "Type": "Turnout",
+                "lo": -65.53
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 18.906,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 7.084,
+                "Type": "D Pref",
+                "lo": -15.209
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 40.06,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -56.34,
+                "Type": "Turnout",
+                "lo": -26.549999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.39,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 77.72,
+                "Type": "D Pref",
+                "lo": -24.980000000000004
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 52.006,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -46.71,
+                "Type": "Turnout",
+                "lo": -38.87
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 49.4,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 21.98,
+                "Type": "D Pref",
+                "lo": -33.56
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 38.818000000000005,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 4.422000000000001,
+                "Type": "Turnout",
+                "lo": -63.212
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 47.266200000000005,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 0.6938,
+                "Type": "D Pref",
+                "lo": -26.363799999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 69.33,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -42.21,
+                "Type": "Turnout",
+                "lo": -50.57000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 25.427,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 7.263,
+                "Type": "D Pref",
+                "lo": -11.371
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 34.751,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 8.259,
+                "Type": "Turnout",
+                "lo": -15.214
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.71,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -18.87,
+                "Type": "D Pref",
+                "lo": -7.249999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.291,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -7.088,
+                "Type": "Turnout",
+                "lo": -4.172000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 14.860000000000001,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 23.65,
+                "Type": "D Pref",
+                "lo": -16.737999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.45,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -22.73,
+                "Type": "Turnout",
+                "lo": -6.8199999999999985
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.870000000000003,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 38.53,
+                "Type": "D Pref",
+                "lo": -6.139999999999995
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.254,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -3.2079999999999997,
+                "Type": "Turnout",
+                "lo": -4.23
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.839999999999998,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 32.79,
+                "Type": "D Pref",
+                "lo": -11.260000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.200000000000005,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 44.879999999999995,
+                "Type": "Turnout",
+                "lo": -5.729999999999996
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.47,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 24.68,
+                "Type": "D Pref",
+                "lo": -14.229999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 9.305,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -1.7590000000000001,
+                "Type": "Turnout",
+                "lo": -8.761
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 12.960000000000004,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 39.82,
+                "Type": "D Pref",
+                "lo": -18.740000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.889999999999997,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -38.879999999999995,
+                "Type": "Turnout",
+                "lo": -6.340000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 10.280000000000001,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 33.39,
+                "Type": "D Pref",
+                "lo": -11.589999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 4.84,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -16.509999999999998,
+                "Type": "Turnout",
+                "lo": -4.550000000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.003,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -10.440000000000001,
+                "Type": "D Pref",
+                "lo": -8.29
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.762,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -4.107,
+                "Type": "Turnout",
+                "lo": -7.583000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 16.5199,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 0.7501,
+                "Type": "D Pref",
+                "lo": -13.250100000000002
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.190000000000001,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -26.040000000000003,
+                "Type": "Turnout",
+                "lo": -10.909999999999997
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 5.939999999999995,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 35.36,
+                "Type": "D Pref",
+                "lo": -6.4
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 6.2490000000000006,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -15.82,
+                "Type": "Turnout",
+                "lo": -6.279999999999999
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.200000000000001,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 35.86,
+                "Type": "D Pref",
+                "lo": -9.239999999999998
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.200000000000001,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 39.06,
+                "Type": "Turnout",
+                "lo": -8.77
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.092,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 7.638,
+                "Type": "D Pref",
+                "lo": -11.790000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 11.284999999999998,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 6.765000000000001,
+                "Type": "Turnout",
+                "lo": -12.224
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 7.960000000000001,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 64.29,
+                "Type": "D Pref",
+                "lo": -9.950000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 13.309999999999999,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -35.839999999999996,
+                "Type": "Turnout",
+                "lo": -11.370000000000003
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 11.379999999999995,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 29.110000000000003,
+                "Type": "D Pref",
+                "lo": -11.530000000000001
+            },
+            {
+                "Delta": "Min/Max",
+                "hi": 8.097,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -11.59,
+                "Type": "Turnout",
+                "lo": -7.869999999999999
+            }
+        ],
+        "format": {
+            "parse": {
+                "Year": "date:'%Y'"
+            }
+        }
+    },
+    "width": 200,
+    "spec": {
+        "layer": [
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "errorband"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "yError2": {
+                        "field": "hi",
+                        "type": "quantitative"
+                    },
+                    "yError": {
+                        "field": "lo",
+                        "type": "quantitative"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": "line",
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "point"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "facet": {
+        "row": {
+            "field": "Name",
+            "sort": [
+                "PopPerSqMile",
+                "PctGrad",
+                "PctBlack",
+                "PctHispanic",
+                "HispanicWhiteFraction",
+                "PctAsian",
+                "PctOther"
+            ],
+            "type": "nominal"
+        },
+        "column": {
+            "field": "Model",
+            "sort": [
+                "House",
+                "Senate",
+                "Presidential",
+                "House+Presidential"
+            ],
+            "type": "nominal"
+        }
+    },
+    "title": "Change in Probability for full range of predictor (with 90% confidence bands)",
+    "padding": 5
+};
+vegaEmbed('#figure_17',vlSpec);</script>
+</figure>
+<figure id="figure_18">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 200,
+    "autosize": {
+        "resize": true,
+        "type": "pad",
+        "contains": "padding"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 200,
+            "continuousWidth": 200,
+            "discreteHeight": 200,
+            "discreteWidth": 200
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.927,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -2.424,
+                "Type": "D Pref",
+                "lo": -0.8429999999999996
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.4886,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -0.8789999999999999,
+                "Type": "Turnout",
+                "lo": -0.5050000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.269,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 1.484,
+                "Type": "D Pref",
+                "lo": -1.1742000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7003,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -1.574,
+                "Type": "Turnout",
+                "lo": -0.654
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9289999999999999,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 5.475,
+                "Type": "D Pref",
+                "lo": -0.8969999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5685,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -0.3255,
+                "Type": "Turnout",
+                "lo": -0.5628
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0759999999999998,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 2.86,
+                "Type": "D Pref",
+                "lo": -1.125
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.671,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 4.385,
+                "Type": "Turnout",
+                "lo": -0.6449999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.208,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 1.608,
+                "Type": "D Pref",
+                "lo": -1.1342
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.70889,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -6.899e-2,
+                "Type": "Turnout",
+                "lo": -0.71571
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0510000000000002,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 2.553,
+                "Type": "D Pref",
+                "lo": -1.092
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7029999999999998,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -2.669,
+                "Type": "Turnout",
+                "lo": -0.7190000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.8290000000000002,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2012",
+                "mid": 4.442,
+                "Type": "D Pref",
+                "lo": -1.5620000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.734,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2012",
+                "mid": -2.243,
+                "Type": "Turnout",
+                "lo": -0.7440000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0248199999999998,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -0.9467,
+                "Type": "D Pref",
+                "lo": -1.1033000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6862000000000001,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 0.7468,
+                "Type": "Turnout",
+                "lo": -0.72041
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.2497999999999998,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 0.4202,
+                "Type": "D Pref",
+                "lo": -1.2060000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7984999999999999,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -1.027,
+                "Type": "Turnout",
+                "lo": -0.8630000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.902,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 4.271,
+                "Type": "D Pref",
+                "lo": -0.8889999999999996
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6508,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -0.9795,
+                "Type": "Turnout",
+                "lo": -0.6555
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0290000000000001,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 2.7560000000000002,
+                "Type": "D Pref",
+                "lo": -1.1440000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6260000000000001,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 3.082,
+                "Type": "Turnout",
+                "lo": -0.707
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0668,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 0.9421999999999999,
+                "Type": "D Pref",
+                "lo": -0.9720799999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.62158,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -0.6673,
+                "Type": "Turnout",
+                "lo": -0.6406999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0079999999999998,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 2.06,
+                "Type": "D Pref",
+                "lo": -1.0711
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8549999999999999,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -2.021,
+                "Type": "Turnout",
+                "lo": -0.936
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.498,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2014",
+                "mid": 5.151,
+                "Type": "D Pref",
+                "lo": -2.114
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7559999999999999,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2014",
+                "mid": -2.0629999999999997,
+                "Type": "Turnout",
+                "lo": -0.9450000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.032,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -1.2269999999999999,
+                "Type": "D Pref",
+                "lo": -1.0260000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5786,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -0.6537000000000001,
+                "Type": "Turnout",
+                "lo": -0.5053
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0681,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 0.1469,
+                "Type": "D Pref",
+                "lo": -1.0513
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6740000000000002,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -1.8190000000000002,
+                "Type": "Turnout",
+                "lo": -0.6749999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.845,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 4.522,
+                "Type": "D Pref",
+                "lo": -0.7800000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5727000000000001,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -1.173,
+                "Type": "Turnout",
+                "lo": -0.5379999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8759999999999997,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 3.232,
+                "Type": "D Pref",
+                "lo": -0.9410000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6609999999999998,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 4.6850000000000005,
+                "Type": "Turnout",
+                "lo": -0.6900000000000004
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9809999999999999,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 0.577,
+                "Type": "D Pref",
+                "lo": -0.9823000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7064000000000001,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 0.6245999999999999,
+                "Type": "Turnout",
+                "lo": -0.63654
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9820000000000002,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 4.913,
+                "Type": "D Pref",
+                "lo": -0.9430000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7349999999999999,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -2.547,
+                "Type": "Turnout",
+                "lo": -0.6960000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5170000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2016",
+                "mid": 2.776,
+                "Type": "D Pref",
+                "lo": -1.308
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7050000000000001,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2016",
+                "mid": -1.752,
+                "Type": "Turnout",
+                "lo": -0.6859999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9285800000000001,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -0.9950000000000001,
+                "Type": "D Pref",
+                "lo": -0.926
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5090000000000001,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 0.1336,
+                "Type": "Turnout",
+                "lo": -0.5311
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8891699999999999,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 1.033e-2,
+                "Type": "D Pref",
+                "lo": -0.86853
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5376000000000001,
+                "Name": "PctAsian",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -1.1860000000000002,
+                "Type": "Turnout",
+                "lo": -0.5519999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6849999999999995,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 3.8850000000000002,
+                "Type": "D Pref",
+                "lo": -0.6510000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.44909999999999994,
+                "Name": "PctBlack",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -0.9307,
+                "Type": "Turnout",
+                "lo": -0.4763
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7469999999999998,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 5.614,
+                "Type": "D Pref",
+                "lo": -0.8100000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.47999999999999987,
+                "Name": "PctGrad",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 5.237,
+                "Type": "Turnout",
+                "lo": -0.4959999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8373,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 0.3657,
+                "Type": "D Pref",
+                "lo": -0.8089999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5036,
+                "Name": "PctHispanic",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -0.2986,
+                "Type": "Turnout",
+                "lo": -0.4684
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8560000000000005,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 3.3939999999999997,
+                "Type": "D Pref",
+                "lo": -0.8039999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5983999999999999,
+                "Name": "PctOther",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -1.4529999999999998,
+                "Type": "Turnout",
+                "lo": -0.6060000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.976,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2018",
+                "mid": 3.926,
+                "Type": "D Pref",
+                "lo": -1.5310000000000004
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5356000000000002,
+                "Name": "PopPerSqMile",
+                "Model": "House",
+                "Year": "2018",
+                "mid": -1.395,
+                "Type": "Turnout",
+                "lo": -0.5319999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.5409999999999995,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -1.117,
+                "Type": "D Pref",
+                "lo": -2.103
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.789,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -2.186,
+                "Type": "Turnout",
+                "lo": -1.5950000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 4.127,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 1.29,
+                "Type": "D Pref",
+                "lo": -3.8080000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.1491,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -2.3009999999999997,
+                "Type": "Turnout",
+                "lo": -3.5070000000000006
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.9265000000000003,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 0.7975,
+                "Type": "D Pref",
+                "lo": -2.5135
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.68393,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -4.893e-2,
+                "Type": "Turnout",
+                "lo": -2.30807
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.77164,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 3.5359999999999996e-2,
+                "Type": "D Pref",
+                "lo": -2.02436
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.6679999999999997,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 2.097,
+                "Type": "Turnout",
+                "lo": -2.3313
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.5253999999999994,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 0.7136,
+                "Type": "D Pref",
+                "lo": -3.2956
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.6665,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 0.3485,
+                "Type": "Turnout",
+                "lo": -2.9964999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 4.0666,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -0.3496,
+                "Type": "D Pref",
+                "lo": -4.0374
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.673,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -1.174,
+                "Type": "Turnout",
+                "lo": -3.422
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 4.279,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": 3.2300000000000004,
+                "Type": "D Pref",
+                "lo": -3.0939
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.4557,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2012",
+                "mid": -1.931,
+                "Type": "Turnout",
+                "lo": -2.7769999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.0262000000000002,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -2.236,
+                "Type": "D Pref",
+                "lo": -2.2499999999999996
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.6482999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 0.8977,
+                "Type": "Turnout",
+                "lo": -2.6587
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.4090000000000007,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 3.001,
+                "Type": "D Pref",
+                "lo": -3.2105
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.8613000000000002,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 0.7067,
+                "Type": "Turnout",
+                "lo": -2.0787
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.1388,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 0.6982,
+                "Type": "D Pref",
+                "lo": -2.4002000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5176,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -1.6340000000000001,
+                "Type": "Turnout",
+                "lo": -2.7369999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.8209999999999997,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 1.484,
+                "Type": "D Pref",
+                "lo": -2.838
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.6129999999999998,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 2.701,
+                "Type": "Turnout",
+                "lo": -1.6680000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.024,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 2.217,
+                "Type": "D Pref",
+                "lo": -2.8592
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5966,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -0.8116999999999999,
+                "Type": "Turnout",
+                "lo": -2.0593
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.0018999999999996,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -2.03,
+                "Type": "D Pref",
+                "lo": -3.5230000000000006
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.4364,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -0.6955,
+                "Type": "Turnout",
+                "lo": -2.6504999999999996
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.9850000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": 1.6469999999999998,
+                "Type": "D Pref",
+                "lo": -3.881
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.4201,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2014",
+                "mid": -2.199,
+                "Type": "Turnout",
+                "lo": -3.104
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.659,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -1.051,
+                "Type": "D Pref",
+                "lo": -3.234
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.291,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 1.8270000000000002,
+                "Type": "Turnout",
+                "lo": -2.4890000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 5.151,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 7.309,
+                "Type": "D Pref",
+                "lo": -4.5120000000000005
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.1479999999999997,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 1.307,
+                "Type": "Turnout",
+                "lo": -2.479
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.0602702,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -2.702e-4,
+                "Type": "D Pref",
+                "lo": -2.4447297999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.4104,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -1.3050000000000002,
+                "Type": "Turnout",
+                "lo": -1.4919999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.458,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 2.408,
+                "Type": "D Pref",
+                "lo": -2.395
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.4059999999999997,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 2.099,
+                "Type": "Turnout",
+                "lo": -1.6023000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.2830000000000004,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 1.477,
+                "Type": "D Pref",
+                "lo": -2.4240999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.89023,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -1.423e-2,
+                "Type": "Turnout",
+                "lo": -1.69877
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 4.561999999999999,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -6.4879999999999995,
+                "Type": "D Pref",
+                "lo": -4.332000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.234,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -5.479,
+                "Type": "Turnout",
+                "lo": -2.037000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.3000000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": 1.5699999999999998,
+                "Type": "D Pref",
+                "lo": -3.304
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.7288999999999999,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2016",
+                "mid": -0.3639,
+                "Type": "Turnout",
+                "lo": -2.1121
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.8742900000000002,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -2.96,
+                "Type": "D Pref",
+                "lo": -1.928
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.013,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -1.113,
+                "Type": "Turnout",
+                "lo": -2.5979999999999994
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.837,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -1.354,
+                "Type": "D Pref",
+                "lo": -3.9190000000000005
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.0712,
+                "Name": "PctAsian",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -2.894,
+                "Type": "Turnout",
+                "lo": -3.7700000000000005
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.01,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 2.038,
+                "Type": "D Pref",
+                "lo": -2.4361
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.7322900000000003,
+                "Name": "PctBlack",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -7.329e-2,
+                "Type": "Turnout",
+                "lo": -2.41871
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.869,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 1.351,
+                "Type": "D Pref",
+                "lo": -1.9876999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.044,
+                "Name": "PctGrad",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 3.116,
+                "Type": "Turnout",
+                "lo": -2.476
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.092,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 1.9120000000000001,
+                "Type": "D Pref",
+                "lo": -2.971
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.729,
+                "Name": "PctHispanic",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -1.2309999999999999,
+                "Type": "Turnout",
+                "lo": -2.347
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 4.508,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 2.93,
+                "Type": "D Pref",
+                "lo": -3.7380999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.7792999999999997,
+                "Name": "PctOther",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": 0.9827,
+                "Type": "Turnout",
+                "lo": -3.1857
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.1466000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -0.27959999999999996,
+                "Type": "D Pref",
+                "lo": -2.6684
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.338,
+                "Name": "PopPerSqMile",
+                "Model": "Senate",
+                "Year": "2018",
+                "mid": -2.0660000000000003,
+                "Type": "Turnout",
+                "lo": -2.727
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.3756000000000002,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -0.18860000000000002,
+                "Type": "D Pref",
+                "lo": -2.9984
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.7057,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 0.4743,
+                "Type": "Turnout",
+                "lo": -1.7223
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.2720000000000002,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 1.7239999999999998,
+                "Type": "D Pref",
+                "lo": -1.3869
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5190000000000001,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -0.498,
+                "Type": "Turnout",
+                "lo": -1.7419999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.8439999999999999,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 1.119,
+                "Type": "D Pref",
+                "lo": -1.19964
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.2926,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -0.9329000000000001,
+                "Type": "Turnout",
+                "lo": -1.4370999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.926,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 4.096,
+                "Type": "D Pref",
+                "lo": -1.9420000000000004
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.2360000000000002,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 3.902,
+                "Type": "Turnout",
+                "lo": -1.659
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.2689,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 0.6311,
+                "Type": "D Pref",
+                "lo": -1.1529
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5726999999999998,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 0.1003,
+                "Type": "Turnout",
+                "lo": -1.4133
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.32,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -0.5967,
+                "Type": "D Pref",
+                "lo": -2.5103
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.7721,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -2.496,
+                "Type": "Turnout",
+                "lo": -1.902
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.8977999999999997,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": 0.9131999999999999,
+                "Type": "D Pref",
+                "lo": -1.5326
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.63659,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2012",
+                "mid": -1.6809999999999998,
+                "Type": "Turnout",
+                "lo": -1.7440000000000004
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.1792,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -1.4200000000000002,
+                "Type": "D Pref",
+                "lo": -3.633
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 5.78251,
+                "Name": "HispanicWhiteFraction",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -3.51e-3,
+                "Type": "Turnout",
+                "lo": -0.8986900000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.9864,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 0.7236,
+                "Type": "D Pref",
+                "lo": -2.1606
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.4394,
+                "Name": "PctAsian",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -0.6814,
+                "Type": "Turnout",
+                "lo": -5.0446
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5986999999999998,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 0.7042999999999999,
+                "Type": "D Pref",
+                "lo": -1.7363
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.2215000000000003,
+                "Name": "PctBlack",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -3.83,
+                "Type": "Turnout",
+                "lo": -5.900999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.6319999999999997,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 5.022,
+                "Type": "D Pref",
+                "lo": -2.6270000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.8306,
+                "Name": "PctGrad",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -1.5070000000000001,
+                "Type": "Turnout",
+                "lo": -3.9690000000000003
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.5333,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 0.6577000000000001,
+                "Type": "D Pref",
+                "lo": -1.4159000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.4770000000000003,
+                "Name": "PctHispanic",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 0.358,
+                "Type": "Turnout",
+                "lo": -3.4259999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5489899999999999,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 3.601e-2,
+                "Type": "D Pref",
+                "lo": -2.23501
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 2.999,
+                "Name": "PctOther",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": -1.121,
+                "Type": "Turnout",
+                "lo": -4.304
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 3.7630000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 1.126,
+                "Type": "D Pref",
+                "lo": -1.9302
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 7.103999999999999,
+                "Name": "PopPerSqMile",
+                "Model": "Presidential",
+                "Year": "2016",
+                "mid": 1.548,
+                "Type": "Turnout",
+                "lo": -2.4225
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9329999999999999,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -2.487,
+                "Type": "D Pref",
+                "lo": -0.844
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5155,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -0.868,
+                "Type": "Turnout",
+                "lo": -0.4670000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.134,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 1.456,
+                "Type": "D Pref",
+                "lo": -1.0369
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6261000000000001,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -1.541,
+                "Type": "Turnout",
+                "lo": -0.6159999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8729999999999994,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 5.299,
+                "Type": "D Pref",
+                "lo": -0.8830000000000005
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5524,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -0.41650000000000004,
+                "Type": "Turnout",
+                "lo": -0.5549000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9459999999999996,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 3.148,
+                "Type": "D Pref",
+                "lo": -1.1640000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6409999999999999,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 4.41,
+                "Type": "Turnout",
+                "lo": -0.6720000000000004
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.1300000000000001,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 1.789,
+                "Type": "D Pref",
+                "lo": -1.0534
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.6736,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -0.1266,
+                "Type": "Turnout",
+                "lo": -0.6538
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0370000000000001,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 2.294,
+                "Type": "D Pref",
+                "lo": -1.1589999999999998
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7210000000000001,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -2.725,
+                "Type": "Turnout",
+                "lo": -0.6770000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.5380000000000005,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": 3.881,
+                "Type": "D Pref",
+                "lo": -1.4559999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.5890000000000001,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2012",
+                "mid": -1.923,
+                "Type": "Turnout",
+                "lo": -0.5819999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0303,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -1.397,
+                "Type": "D Pref",
+                "lo": -0.9580000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8767,
+                "Name": "HispanicWhiteFraction",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -0.4481,
+                "Type": "Turnout",
+                "lo": -0.7619
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.95724,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 4.6759999999999996e-2,
+                "Type": "D Pref",
+                "lo": -0.92186
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9389,
+                "Name": "PctAsian",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -1.7530000000000001,
+                "Type": "Turnout",
+                "lo": -1.065
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.7200000000000005,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 4.316,
+                "Type": "D Pref",
+                "lo": -0.7459999999999994
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8069999999999999,
+                "Name": "PctBlack",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -2.045,
+                "Type": "Turnout",
+                "lo": -0.8099999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.8869999999999996,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 3.611,
+                "Type": "D Pref",
+                "lo": -0.9570000000000002
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.988,
+                "Name": "PctGrad",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 3.791,
+                "Type": "Turnout",
+                "lo": -0.9610000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9821,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 0.6099,
+                "Type": "D Pref",
+                "lo": -0.9682
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9819999999999999,
+                "Name": "PctHispanic",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 0.5599999999999999,
+                "Type": "Turnout",
+                "lo": -1.0170000000000001
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.9209999999999996,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 4.492,
+                "Type": "D Pref",
+                "lo": -0.8920000000000005
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.0149999999999997,
+                "Name": "PctOther",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -2.4819999999999998,
+                "Type": "Turnout",
+                "lo": -0.9979999999999999
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 1.3440000000000003,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": 3.069,
+                "Type": "D Pref",
+                "lo": -1.2159999999999997
+            },
+            {
+                "Delta": "Std. Dev",
+                "hi": 0.902,
+                "Name": "PopPerSqMile",
+                "Model": "House+Presidential",
+                "Year": "2016",
+                "mid": -1.286,
+                "Type": "Turnout",
+                "lo": -0.9420000000000002
+            }
+        ],
+        "format": {
+            "parse": {
+                "Year": "date:'%Y'"
+            }
+        }
+    },
+    "width": 200,
+    "spec": {
+        "layer": [
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "errorband"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "yError2": {
+                        "field": "hi",
+                        "type": "quantitative"
+                    },
+                    "yError": {
+                        "field": "lo",
+                        "type": "quantitative"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": "line",
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            },
+            {
+                "mark": {
+                    "tooltip": {
+                        "content": "data"
+                    },
+                    "type": "point"
+                },
+                "encoding": {
+                    "color": {
+                        "field": "Type",
+                        "type": "nominal"
+                    },
+                    "x": {
+                        "field": "Year",
+                        "type": "temporal"
+                    },
+                    "y": {
+                        "field": "mid",
+                        "type": "quantitative",
+                        "axis": {
+                            "title": null
+                        }
+                    }
+                }
+            }
+        ]
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "facet": {
+        "row": {
+            "field": "Name",
+            "sort": [
+                "Incumbency",
+                "PopPerSqMile",
+                "PctGrad",
+                "PctBlack",
+                "PctHispanic",
+                "HispanicWhiteFraction",
+                "PctAsian",
+                "PctOther"
+            ],
+            "type": "nominal"
+        },
+        "column": {
+            "field": "Model",
+            "sort": [
+                "House",
+                "Senate",
+                "Presidential",
+                "House+Presidential"
+            ],
+            "type": "nominal"
+        }
+    },
+    "title": "Change in Probability for 1 std dev change in predictor (1/2 below avg to 1/2 above) (with 90% confidence bands)",
+    "padding": 5
+};
+vegaEmbed('#figure_18',vlSpec);</script>
+</figure>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>
