@@ -169,19 +169,22 @@ class Eq a => FiniteSet a where
   elements :: Set.Set a
   default elements :: (Enum a, Bounded a) => Set.Set a
   elements = Set.fromAscList [minBound..]
+  {-# INLINE elements #-}
 
 finiteSetMinMax :: FiniteSet a => (a, a)
 finiteSetMinMax = let se = elements in (Set.findMin se, Set.findMax se)
-
+{-# INLINEABLE finiteSetMinMax #-}
 
 instance FiniteSet Bool where
   elements = Set.fromAscList [False, True]
+  {-# INLINE elements #-}
 
 instance (FiniteSet a, FiniteSet b) => FiniteSet (a, b) where
   elements = Set.fromAscList $ do
     a <- Set.toAscList elements
     b <- Set.toAscList elements
     return (a, b)
+  {-# INLINE elements #-}
 
 instance (FiniteSet a, FiniteSet b, FiniteSet c) => FiniteSet (a, b, c) where
   elements = Set.fromAscList $ do
@@ -189,6 +192,7 @@ instance (FiniteSet a, FiniteSet b, FiniteSet c) => FiniteSet (a, b, c) where
     b <- Set.toAscList elements
     c <- Set.toAscList elements
     return (a, b, c)
+  {-# INLINE elements #-}
 
 instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d) => FiniteSet (a, b, c, d) where
   elements = Set.fromAscList $ do
@@ -197,6 +201,7 @@ instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d) => FiniteSet (a, b
     c <- Set.toAscList elements
     d <- Set.toAscList elements
     return (a, b, c, d)
+  {-# INLINE elements #-}
 
 instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d, FiniteSet e) => FiniteSet (a, b, c, d, e) where
   elements = Set.fromAscList $ do
@@ -206,6 +211,7 @@ instance (FiniteSet a, FiniteSet b, FiniteSet c, FiniteSet d, FiniteSet e) => Fi
     d <- Set.toAscList elements
     e <- Set.toAscList elements
     return (a, b, c, d, e)
+  {-# INLINE elements #-}
 
 -- For composing aggregations, we will also want our coefficients to
 -- have multiplicative monoid structure, that is, to be semirings
@@ -218,25 +224,30 @@ data AggF x b a where
 
 runAggF :: AggF x b a -> b -> a -> x
 runAggF (AggF f) = f
+{-# INLINE runAggF #-}
 
 newtype IndexedList x a = IndexedList { getIndexedList :: [(x, a)] }
   deriving stock (Functor, Show, Foldable, Traversable)
 
 instance SR.Semiring x => Applicative (IndexedList x) where
   pure a = IndexedList $ pure (SR.one, a)
+  {-# INLINEABLE pure #-}
   IndexedList fs <*> IndexedList as = IndexedList $ do
     (x1, f) <- fs
     (x2, a) <- as
     return (x1 `SR.times` x2, f a)
+  {-# INLINEABLE (<*>) #-}
 
 instance SR.Semiring x => Monad (IndexedList x) where
   (IndexedList as) >>= f = IndexedList $ do
     (x1, a) <- as
     (x2, b) <- getIndexedList $ f a
     return (x1 `SR.times` x2, b)
+  {-# INLINEABLE (>>=) #-}
 
 instance BF.Bifunctor IndexedList where
   bimap f g (IndexedList l) = IndexedList $ Relude.bimapF f g l
+  {-# INLINE bimap #-}
 
 type AggList x b a = P.Star (IndexedList x) b a -- b -> [(a,x)]
 pattern AggList :: (b -> IndexedList x a) -> AggList x b a
@@ -245,20 +256,25 @@ pattern AggList f <- P.Star f where
 
 runAggList :: AggList x b a -> b -> [(x, a)]
 runAggList al = getIndexedList . P.runStar al
+{-# INLINE runAggList #-}
 
 mapIndex :: (x -> y) -> IndexedList x a -> IndexedList y a
 mapIndex = first
+{-# INLINE mapIndex #-}
 
 -- The natural transformation List(A x -) => Hom(A, -), where both are viewed as functors Mon -> Set
 functionalize :: (Ord a, SR.Semiring x) => AggList x b a -> AggF x b a
 functionalize aggList = AggF $ \b a -> fromMaybe SR.zero $ M.lookup a $ M.fromListWith SR.plus (swap <$> runAggList aggList b) where
   swap (a, b) = (b, a)
+{-# INLINEABLE functionalize #-}
 
 aggregateF :: AggF q b a -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
 aggregateF agg fld b = FL.premap (first (runAggF agg b)) fld
+{-# INLINEABLE aggregateF #-}
 
 aggregateList :: (Ord a, SR.Semiring q) => AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
 aggregateList aggList = aggregateF (functionalize aggList)
+{-# INLINEABLE aggregateList #-}
 
 {-
 For A a finite set, we might want to know if [(a, d)] is "complete"
@@ -279,9 +295,11 @@ hasAll elements = MR.postMapM check $ FL.generalize FL.map where
             <> show (Set.toList elements)
             <> "; Got="
             <> show (sort (M.keys m))
+{-# INLINEABLE hasAll #-}
 
 complete :: (FiniteSet a, Ord a, Show a) => FL.FoldM AggE (a, d) ()
 complete = hasAll elements
+{-# INLINE complete #-}
 
 hasOneOfEach :: (Show a, Ord a) => Set.Set a -> FL.FoldM AggE (a, d) ()
 hasOneOfEach elements = MR.postMapM check $ FL.generalize FL.list where
@@ -294,9 +312,11 @@ hasOneOfEach elements = MR.postMapM check $ FL.generalize FL.list where
             <> show expected
             <> "; Got="
             <> show  got
+{-# INLINEABLE hasOneOfEach #-}
 
 exact :: (FiniteSet a, Ord a, Show a) => FL.FoldM AggE (a, d) ()
 exact = hasOneOfEach elements
+{-# INLINE exact #-}
 
 {-
 It turns out to be very convenient to combine aggregation functions in two
@@ -313,33 +333,37 @@ a multiplicative identity.  So Q is a monoid two ways: a semiring.
 
 aggFId :: (Eq b, SR.Semiring q) => AggF q b b
 aggFId = AggF $ \b1 b2 -> if b1 == b2 then SR.one else SR.zero
+{-# INLINEABLE aggFId #-}
 
 aggFProduct' :: SR.Semiring s => (q -> r -> s) -> AggF q b a -> AggF r y x -> AggF s (b, y) (a, x)
 aggFProduct' op aggFba aggFyx = AggF $ \ (b,y) (a, x) -> runAggF aggFba b a `op` runAggF aggFyx y x
+{-# INLINE aggFProduct' #-}
 
 aggFProduct :: SR.Semiring q => AggF q b a -> AggF q y x -> AggF q (b, y) (a, x)
 aggFProduct = aggFProduct' SR.times
-
+{-# INLINEABLE aggFProduct #-}
 -- here we need to sum over intermediate states which we can only do if B is finite.  Can this be expressed
 -- more generally?
 aggFCompose' :: (FiniteSet b, SR.Semiring s) => (q -> r -> s) -> AggF q b a -> AggF r c b -> AggF s c a
 aggFCompose' times aggFba aggFcb =
   AggF $ \ c a -> FL.fold (FL.premap (\b -> runAggF aggFba b a `times` runAggF aggFcb c b) (FL.Fold SR.plus SR.zero id)) elements
+{-# INLINE aggFCompose' #-}
 
 -- this is all much clearer when everything uses the same semiring for coefficients
 aggFCompose :: (FiniteSet b, SR.Semiring q) => AggF q b a -> AggF q c b -> AggF q c a
 aggFCompose = aggFCompose' SR.times
+{-# INLINEABLE aggFCompose #-}
 
 aggFReduce :: (Eq a, SR.Semiring q) => AggF q a (a,a')
 aggFReduce = AggF $ \x (y, _) -> if x == y then SR.one else SR.zero
-
+{-# INLINEABLE aggFReduce #-}
 -- This is a (Haskell) category if we could constrain to (Eq, FiniteSet)
 
 -- productAggF SR.times identityAggF x = product SR.times x identityAggF
 
 aggListId :: SR.Semiring q => AggList q b b
 aggListId = AggList pure
-
+{-# INLINE aggListId #-}
 -- we should verify that functionalize identityAggList = identityAggF
 
 aggListProduct' :: (q -> r -> s) -> AggList q b a -> AggList r y x -> AggList s (b, y) (a, x)
@@ -347,9 +371,11 @@ aggListProduct' times aggLba aggLyx = AggList $ \(b, y) -> IndexedList $ do
   (qa, a) <- runAggList aggLba b
   (qx, x) <- runAggList aggLyx y
   return (qa `times` qx, (a, x))
+{-# INLINEABLE aggListProduct' #-}
 
 aggListProduct :: SR.Semiring q => AggList q b a -> AggList q y x -> AggList q (b, y) (a, x)
 aggListProduct = aggListProduct' SR.times
+{-# INLINEABLE aggListProduct #-}
 
 -- This is also doing a sum over intermediate b, but we don't need b to be Finite here since we
 -- get whichever bs have non-zero coefficient from the lists.
@@ -358,12 +384,15 @@ aggListCompose' times aggLba aggLcb = AggList $ \c -> IndexedList $ do
   (x1, b) <- runAggList aggLcb c
   (x2, a) <- runAggList aggLba b
   return (x2 `times` x1, a)
+{-# INLINEABLE aggListCompose' #-}
 
 aggListCompose :: SR.Semiring q =>  AggList q b a -> AggList q c b -> AggList q c a
 aggListCompose =  (<<<) -- aggListCompose' SR.times -- This is also Kleisli composition
+{-# INLINEABLE aggListCompose #-}
 
 aggListReduce :: forall q a a'.(Eq a, SR.Semiring q, FiniteSet a') => AggList q a (a, a')
 aggListReduce = AggList $ \x -> IndexedList $ (\y -> (SR.one, (x,y))) <$> Set.toList elements
+{-# INLINEABLE aggListReduce #-}
 
 {- This is already true from Star
 instance SR.Semiring q => Cat.Category (AggList q) where
@@ -383,18 +412,22 @@ pattern Collapse g <- P.Costar g where
 
 runCollapse :: Collapse q d c -> IndexedList q d -> c
 runCollapse = P.runCostar
+{-# INLINE runCollapse #-}
 
 foldCollapse :: FL.Fold (q, d) c -> Collapse q d c
 foldCollapse fld = Collapse $ FL.fold fld . getIndexedList
+{-# INLINE foldCollapse #-}
 
 dataFoldCollapse :: (q -> d -> d) -> FL.Fold d c -> Collapse q d c
 dataFoldCollapse action fld = Collapse $ FL.fold (FL.premap (uncurry action) fld) . getIndexedList
+{-# INLINEABLE dataFoldCollapse #-}
 
 dataFoldCollapseBool :: FL.Fold d c -> Collapse Bool d c
 dataFoldCollapseBool fld =
   let g (b, x) = b
       fld' = FL.prefilter g $ P.lmap snd fld -- Fold (Bool, d) c
   in foldCollapse fld'
+{-# INLINEABLE dataFoldCollapseBool #-}
 
 -- our data is going to need some way of being combined
 -- It often has monoid or group structure
@@ -402,20 +435,24 @@ data MonoidOps a = MonoidOps a (a -> a -> a)
 
 monoidOps :: Monoid a => MonoidOps a
 monoidOps = MonoidOps mempty (<>)
+{-# INLINE monoidOps #-}
 
 -- NB: This is only monoidal if the fold is associative:
 -- fold fld [fold fld [a,b], c] '==' fold fld [a, fold fld [b,c]]
 monoidOpsFromFold :: FL.Fold d d -> MonoidOps d
 monoidOpsFromFold fld = MonoidOps (FL.fold fld []) (\d1 d2 -> FL.fold fld [d1,d2])
+{-# INLINE monoidOpsFromFold #-}
 
 monoidFold :: MonoidOps d -> FL.Fold d d
 monoidFold (MonoidOps zero plus) = FL.Fold plus zero id
+{-# INLINEABLE monoidFold #-}
 
 data GroupOps a where
   GroupOps :: MonoidOps a -> (a -> a) -> GroupOps a
 
 groupOps :: G.Group a => GroupOps a
 groupOps = GroupOps monoidOps G.invert
+{-# INLINE groupOps #-}
 
 -- copied from Data.Group in groups
 pow :: Integral x => GroupOps m -> m -> x -> m
@@ -432,10 +469,11 @@ pow (GroupOps (MonoidOps zero plus) invert) x0 n0 = case compare n0 0 of
       | even n = g (x `plus` x) (n `quot` 2) c
       | n == 1 = x `plus` c
       | otherwise = g (x `plus` x) (n `quot` 2) (x `plus` c)
+{-# INLINE pow #-}
 
 groupCollapse :: GroupOps d -> Collapse Int d d
 groupCollapse gOps@(GroupOps mOps _ ) = dataFoldCollapse (flip $ pow gOps) (monoidFold mOps)
-
+{-# INLINEABLE groupCollapse #-}
 
 -- To use these with aggLists we have to functionalize the aggList
 aggFold :: Traversable f
@@ -446,6 +484,7 @@ aggFold :: Traversable f
 aggFold af collapse bs =
   let foldOne b = (b,) <$> foldToB af collapse b
   in traverse foldOne bs
+{-# INLINEABLE aggFold #-}
 
 foldToB :: AggF q b a
         -> Collapse q d c
@@ -454,13 +493,14 @@ foldToB :: AggF q b a
 foldToB aggFba collapse b =
   let weighted (a, d) = (runAggF aggFba b a, d)
   in FL.premap weighted $ fmap (runCollapse collapse . IndexedList) FL.list
-
+{-# INLINEABLE foldToB #-}
 
 aggFoldAll :: FiniteSet b
            => AggF q b a
            -> Collapse q d c
            -> FL.Fold (a,d) [(b,c)]
 aggFoldAll aggF collapse = aggFold aggF collapse (Set.toList elements)
+{-# INLINEABLE aggFoldAll #-}
 
 -- | Given a default value of d, and a collection of (b, d) where b is finite,
 -- this adds "rows" with that default to a collection which is missing some values of b.
@@ -468,6 +508,7 @@ addDefault :: forall b d. FiniteSet b
             => d
             -> FL.Fold (b,d) [(b,d)]
 addDefault d = aggFoldAll aggFId (foldCollapse (FL.Fold (\d (b,d') -> if b then d' else d) d id))
+{-# INLINEABLE addDefault #-}
 
 -- checked Folds
 aggFoldChecked :: Traversable f
@@ -477,6 +518,7 @@ aggFoldChecked :: Traversable f
                -> f b
                -> FL.FoldM AggE (a,d) (f (b,c))
 aggFoldChecked checkFold af collapse bs = fmap fst ((,) <$> FL.generalize (aggFold af collapse bs) <*> checkFold)
+{-# INLINEABLE aggFoldChecked #-}
 
 
 aggFoldAllChecked :: FiniteSet b
@@ -485,21 +527,26 @@ aggFoldAllChecked :: FiniteSet b
                   -> Collapse q d c
                   -> FL.FoldM AggE (a,d) [(b,c)]
 aggFoldAllChecked checkFold aggF collapse = aggFoldChecked checkFold  aggF collapse (Set.toList elements)
+{-# INLINEABLE aggFoldAllChecked #-}
 
 -- functions to build list aggregations
 aggList :: SR.Semiring q => [a] -> IndexedList q a
 aggList = IndexedList . fmap (SR.one, )
+{-# INLINE aggList #-}
 
 liftAggList :: SR.Semiring q => (b -> [a]) -> AggList q b a
 liftAggList f = AggList $ aggList . f
+{-# INLINE liftAggList #-}
 
 -- I think (Semiring q, Group q) should imply (Ring q)
 -- but the Haskell classes for all this are not in the same place
 aggDiff :: (SR.Semiring q, G.Group q) => a -> a -> IndexedList q a
 aggDiff a1 a2 = IndexedList [(SR.one, a1), (G.invert SR.one, a2)]
+{-# INLINEABLE aggDiff #-}
 
 aggDiffSum :: (SR.Semiring q, G.Group q) => a -> [a] -> IndexedList q a
 aggDiffSum a as = IndexedList ((SR.one, a) : Relude.firstF G.invert (getIndexedList $ aggList as))
+{-# INLINEABLE aggDiffSum #-}
 
 -- specializations to Vinyl
 -- this is weird.  But otherwise the other case doesn't work.
@@ -514,7 +561,7 @@ instance (V.KnownField t
       t <- Set.toAscList elements
       recR <- Set.toAscList elements
       return $ t F.&: recR
-
+  {-# INLINE elements #-}
 
 type AggFRec q b a = AggF q (F.Record b) (F.Record a)
 type AggListRec q b a = AggList q (F.Record b) (F.Record a)
@@ -522,9 +569,11 @@ type CollapseRec q d c = Collapse q (F.Record d) (F.Record c)
 
 toAggFRec :: forall q a b.(SR.Semiring q, V.KnownField b, V.KnownField a) => AggF q (V.Snd b) (V.Snd a) -> AggFRec q '[b] '[a]
 toAggFRec aggF = AggF $ \recB recA -> runAggF aggF (F.rgetField @b recB) (F.rgetField @a recA)
+{-# INLINEABLE toAggFRec #-}
 
 toAggListRec :: forall q a b.(V.KnownField b, V.KnownField a) => AggList q (V.Snd b) (V.Snd a) -> AggListRec q '[b] '[a]
 toAggListRec aggF = AggList $ \recB -> IndexedList $ (\(x, a) -> (x, a F.&: V.RNil)) <$> runAggList aggF (F.rgetField @b recB)
+{-# INLINEABLE toAggListRec #-}
 
 aggFProductRec'
   :: ( SR.Semiring s
@@ -539,6 +588,7 @@ aggFProductRec'
   -> AggFRec s (b V.++ y) (a V.++ x)
 aggFProductRec' times aggFba aggFyx =
   AggF $ \rby rax -> runAggF (aggFProduct' times aggFba aggFyx) (F.rcast rby, F.rcast rby) (F.rcast rax, F.rcast rax)
+{-# INLINE aggFProductRec' #-}
 
 aggFProductRec :: ( SR.Semiring q
                   , b F.⊆ (b V.++ y)
@@ -550,6 +600,7 @@ aggFProductRec :: ( SR.Semiring q
   -> AggFRec q y x
   -> AggFRec q (b V.++ y) (a V.++ x)
 aggFProductRec = aggFProductRec' SR.times
+{-# INLINEABLE aggFProductRec #-}
 
 aggFReduceRec :: forall q a a'.(SR.Semiring q
                                , Eq (F.Record a)
@@ -557,6 +608,7 @@ aggFReduceRec :: forall q a a'.(SR.Semiring q
                                , a' F.⊆ (a V.++ a'))
               => AggFRec q a (a V.++ a')
 aggFReduceRec = AggF $ \r r' -> runAggF aggFReduce r (F.rcast @a r', F.rcast @a' r')
+{-# INLINEABLE aggFReduceRec #-}
 
 aggListProductRec' :: ( b F.⊆ (b V.++ y)
                       , y F.⊆ (b V.++ y)
@@ -567,6 +619,7 @@ aggListProductRec' :: ( b F.⊆ (b V.++ y)
                    -> AggListRec s (b V.++ y) (a V.++ x)
 aggListProductRec' times aggLba aggLyx =
   AggList $ \r -> IndexedList $ (\(x, (a,b)) -> (x, V.rappend a b)) <$> runAggList (aggListProduct' times aggLba aggLyx) (F.rcast r, F.rcast r)
+{-# INLINE aggListProductRec' #-}
 
 aggListProductRec :: ( SR.Semiring q
                      , b F.⊆ (b V.++ y)
@@ -576,7 +629,7 @@ aggListProductRec :: ( SR.Semiring q
                    -> AggListRec q y x
                    -> AggListRec q (b V.++ y) (a V.++ x)
 aggListProductRec = aggListProductRec' SR.times
-
+{-# INLINEABLE aggListProductRec #-}
 
 aggListReduceRec ::  forall q a a'.(SR.Semiring q
                      ,Eq (F.Record a)
@@ -585,6 +638,7 @@ aggListReduceRec ::  forall q a a'.(SR.Semiring q
                      , FiniteSet (F.Record a'))
                  => AggListRec q a (a V.++ a')
 aggListReduceRec = AggList $ \r -> IndexedList $ (\(x, (r1, r2)) -> (x, r1 `V.rappend` r2)) <$> runAggList (aggListReduce @q @(F.Record a) @(F.Record a')) r
+{-# INLINEABLE aggListReduceRec #-}
 
 aggFoldRec :: ( Traversable f
               , a F.⊆ (a V.++ d)
@@ -597,6 +651,7 @@ aggFoldRec :: ( Traversable f
 aggFoldRec af collapse bs =
   let foldOne b = V.rappend b <$> FL.premap (\r -> (F.rcast r, F.rcast r)) (foldToB af collapse b)
   in traverse foldOne bs
+{-# INLINEABLE aggFoldRec #-}
 
 
 aggFoldAllRec :: (FiniteSet (F.Record b)
@@ -607,6 +662,7 @@ aggFoldAllRec :: (FiniteSet (F.Record b)
               -> CollapseRec q d c
               -> FL.Fold (F.Record (a V.++ d)) [F.Record (b V.++ c)]
 aggFoldAllRec aggF collapse = aggFoldRec aggF collapse (Set.toList elements)
+{-# INLINEABLE aggFoldAllRec #-}
 
 
 -- | Given a default value of d, and a collection of (b, d) where b is finite,
@@ -619,6 +675,7 @@ addDefaultRec :: forall bs ds.
             => F.Record ds
             -> FL.Fold (F.Record (bs V.++ ds)) [F.Record (bs V.++ ds)]
 addDefaultRec ds = P.dimap (\r -> (F.rcast @bs r, F.rcast @ds r)) (fmap $ uncurry V.rappend) $ addDefault ds
+{-# INLINEABLE addDefaultRec #-}
 
 -- checked Folds
 -- None missing
@@ -638,6 +695,7 @@ hasAllRec elements  = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rc
               <> show expected
               <> "; Got="
               <> show got
+{-# INLINEABLE hasAllRec #-}
 
 
 completeRec :: forall a rs.(FiniteSet (F.Record a)
@@ -646,6 +704,7 @@ completeRec :: forall a rs.(FiniteSet (F.Record a)
                            , a F.⊆ rs
                            ) => FL.FoldM AggE (F.Record rs) ()
 completeRec = hasAllRec @a elements
+{-# INLINEABLE completeRec #-}
 
 -- one row for each element of a
 hasOneOfEachRec :: forall a rs.( Ord (F.Record a)
@@ -662,6 +721,7 @@ hasOneOfEachRec elements = MR.postMapM check $ FL.generalize $ FL.premap (F.rcas
             <> show expected
             <> "; Got="
             <> show got
+{-# INLINEABLE hasOneOfEachRec #-}
 
 exactRec :: forall a rs.(FiniteSet (F.Record a)
                         , Ord (F.Record a)
@@ -669,6 +729,7 @@ exactRec :: forall a rs.(FiniteSet (F.Record a)
                         , a F.⊆ rs
                        ) => FL.FoldM AggE (F.Record rs) ()
 exactRec = hasOneOfEachRec @a elements
+{-# INLINEABLE exactRec #-}
 
 aggFoldCheckedRec :: (Traversable f
                      , a F.⊆ (a V.++ d)
@@ -682,6 +743,7 @@ aggFoldCheckedRec :: (Traversable f
 aggFoldCheckedRec checkFold af collapse bs = fmap fst ((,)
                                                        <$> FL.generalize (aggFoldRec af collapse bs)
                                                        <*> checkFold)
+{-# INLINEABLE aggFoldCheckedRec #-}
 
 
 aggFoldAllCheckedRec :: ( FiniteSet (F.Record b)
@@ -693,3 +755,4 @@ aggFoldAllCheckedRec :: ( FiniteSet (F.Record b)
                      -> CollapseRec q d c
                      -> FL.FoldM AggE (F.Record (a V.++ d)) [F.Record (b V.++ c)]
 aggFoldAllCheckedRec checkFold aggF collapse = aggFoldCheckedRec checkFold aggF collapse (Set.toList elements)
+{-# INLINEABLE aggFoldAllCheckedRec #-}

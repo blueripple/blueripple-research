@@ -64,6 +64,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Data.CensusTables as BRC
+import qualified BlueRipple.Data.CensusLoaders as BRL
 import qualified BlueRipple.Data.KeyedTables as BRK
 
 yamlAuthor :: T.Text
@@ -105,12 +106,13 @@ main = do
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
---      sexByAgeTD = BRC.sexByAge $ BRC.sexByAgePrefix DT.RA4_Black
---      prefixes = BRC.sexByAgePrefix DT.RA4_Asian
-      tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix --M.fromList $ fmap (\p -> (BRC.SexByAge, M.elems ) [(BRC.SexByAge, M.elems $ sexByAgeTD)]
+      tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix
   (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions censusFile)
-  vSexByAge <- K.knitEither $ traverse (BRK.consolidateTables BRC.sexByAge BRC.sexByAgePrefix) vTableRows
-  K.logLE K.Info $ show vSexByAge
+  vRaceBySexByAgeTRs <- K.knitEither $ traverse (BRK.consolidateTables BRC.sexByAge BRC.sexByAgePrefix) vTableRows
+  let fRaceBySexByAge = BRL.frameFromTableRows BRC.unCDPrefix BRL.raceBySexByAgeKeyRec 2018 vRaceBySexByAgeTRs
+
+  BR.logFrame fRaceBySexByAge
+--  K.logLE K.Info $ show vSexByAge
   return ()
 
 {-

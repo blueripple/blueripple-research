@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -15,15 +16,22 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.KeyedTables as KT
 import qualified BlueRipple.Data.CensusTables as BRC
---import qualified BlueRipple.Data.Keyed as K
+import qualified BlueRipple.Data.Keyed as BRK
 
+import qualified Control.Foldl as FL
 import qualified Data.Csv as CSV
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Frames                        as F
+import qualified Frames.Melt                        as F
 import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
+import qualified Frames.Transform as FT
+import qualified Frames.MapReduce as FMR
+import qualified Frames.Folds as FF
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vector as Vec
 
 sexByAgeKeyRec :: (DT.Sex, BRC.Age14) -> F.Record [BRC.Age14C, DT.SexC]
 sexByAgeKeyRec (s, a) = a F.&: s F.&: V.RNil
@@ -48,3 +56,53 @@ sexByEducationKeyRec (s, e) = s F.&: e F.&: V.RNil
 raceBySexByEducationKeyRec :: (DT.RaceAlone4, (DT.Sex, BRC.Education4)) -> F.Record [DT.SexC, BRC.Education4C, DT.RaceAlone4C]
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
+
+F.declareColumn "Count" ''Int
+
+
+raceBySexByAgeToASR4 :: BRK.AggFRec ([DT.SimpleAgeC, DT.SexC, DT.RaceAlone4]) ([BRC.Age14C, DT.SexC, DT.RaceAlone4C])
+raceBySexByAgeToASR4 =
+  let aggAge :: BRK.AggFRec '[BRC.Age14C] [DT.SimpleAge]
+      aggAge = BRK.toAggFRec $ BRK.AggF (\a14 sa -> a14 `elem` DT.simpleAgeFromAge5F sa >>= BRC.age14FromAge5F)
+      aggSex :: BRK.AggFRec '[DT.SexC] [DT.SexC]
+      aggSex = BRK.aggFId
+      aggRace :: BRK.AggFRec '[DT.RaceAlone4C] [DT.RaceAlone4C]
+  in  aggAge `BRK.aggFRecProduct` aggSex `BRK.aggFRecProduct` aggRace
+
+rekeyFrameF :: forall as bs cs.
+               (Ord (F.Record as)
+               , BRK.FiniteSet (F.Record cs)
+               , as F.⊆ ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+               , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+               , bs F.⊆ (bs V.++ '[Count])
+               , F.ElemOf (bs V.++ '[Count]) Count
+               , FI.RecVec  ('[BR.Year] V.++ as V.++ (cs V.++ '[Count]))
+               )
+            => BRK.AggFRec Bool cs bs
+           -> FL.Fold (F.Record ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))) (F.FrameRec ('[BR.Year] V.++ as V.++ (cs V.++ '[Count])))
+rekeyFrameF f =
+  let collapse :: BRK.CollapseRec Bool '[Count] '[Count]
+      collapse = BRK.dataFoldCollapseBool $ FF.foldAllConstrained @Num FL.sum
+  in  FMR.concatFold
+      $ FMR.mapReduceFold
+      FMR.noUnpack
+      (FMR.assignKeysAndData @('[BR.Year] V.++ as) @(bs V.++ '[Count]))
+      (FMR.makeRecsWithKey id
+        $ FMR.ReduceFold
+        $ const
+        $ BRK.aggFoldAllRec f collapse
+      )
+
+
+frameFromTableRows :: forall a b as bs. (FI.RecVec (as V.++ (bs V.++ '[Count])))
+                   => (a -> F.Record as)
+                   -> (b -> F.Record bs)
+                   -> Int
+                   -> Vec.Vector (KT.TableRow a (Map b Int))
+                   -> F.FrameRec ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+frameFromTableRows prefixToRec keyToRec year tableRows =
+  let mapToRows :: Map b Int -> [F.Record (bs V.++ '[Count])]
+      mapToRows = fmap (\(b, n) -> keyToRec b V.<+> (FT.recordSingleton @Count n)) . Map.toList
+      oneRow (KT.TableRow p m) = let x = year F.&: prefixToRec p in fmap (x `V.rappend`) $ mapToRows m
+      allRows = fmap oneRow tableRows
+  in F.toFrame $ concat $ Vec.toList allRows
