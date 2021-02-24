@@ -59,15 +59,15 @@ raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 
 F.declareColumn "Count" ''Int
 
-
-raceBySexByAgeToASR4 :: BRK.AggFRec ([DT.SimpleAgeC, DT.SexC, DT.RaceAlone4]) ([BRC.Age14C, DT.SexC, DT.RaceAlone4C])
+raceBySexByAgeToASR4 :: BRK.AggFRec Bool ([DT.SimpleAgeC, DT.SexC, DT.RaceAlone4C]) ([BRC.Age14C, DT.SexC, DT.RaceAlone4C])
 raceBySexByAgeToASR4 =
-  let aggAge :: BRK.AggFRec '[BRC.Age14C] [DT.SimpleAge]
-      aggAge = BRK.toAggFRec $ BRK.AggF (\a14 sa -> a14 `elem` DT.simpleAgeFromAge5F sa >>= BRC.age14FromAge5F)
-      aggSex :: BRK.AggFRec '[DT.SexC] [DT.SexC]
+  let aggAge :: BRK.AggFRec Bool '[DT.SimpleAgeC] '[BRC.Age14C]
+      aggAge = BRK.toAggFRec $ BRK.AggF (\sa a14 -> a14 `elem` (DT.simpleAgeFrom5F sa >>= BRC.age14FromAge5F))
+      aggSex :: BRK.AggFRec Bool '[DT.SexC] '[DT.SexC]
       aggSex = BRK.aggFId
-      aggRace :: BRK.AggFRec '[DT.RaceAlone4C] [DT.RaceAlone4C]
-  in  aggAge `BRK.aggFRecProduct` aggSex `BRK.aggFRecProduct` aggRace
+      aggRace :: BRK.AggFRec Bool '[DT.RaceAlone4C] '[DT.RaceAlone4C]
+      aggRace = BRK.aggFId
+  in  aggAge `BRK.aggFProductRec` aggSex `BRK.aggFProductRec` aggRace
 
 rekeyFrameF :: forall as bs cs.
                (Ord (F.Record as)

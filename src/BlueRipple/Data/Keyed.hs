@@ -47,6 +47,7 @@ module BlueRipple.Data.Keyed
   , mapIndex
   , functionalize
     -- * Combining Aggregations
+  , aggFId
   , aggFProduct'
   , aggFProduct
   , aggFCompose'
