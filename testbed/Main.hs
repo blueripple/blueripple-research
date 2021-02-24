@@ -105,6 +105,9 @@ main = do
 
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
+  ctbd <- K.ignoreCacheTimeM BRL.censusTablesByDistrict
+  BR.logFrame $ BRL.ageSexRace ctbd
+{-
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
       tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix
   (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions censusFile)
@@ -115,6 +118,7 @@ makeDoc = do
       fRaceBySexByAge = FL.fold (BRL.rekeyFrameF  @BRC.CDPrefixR BRL.raceBySexByAgeToASR4) fRaceBySexByAge'
   BR.logFrame fRaceBySexByAge
 --  K.logLE K.Info $ show vSexByAge
+-}
   return ()
 
 {-

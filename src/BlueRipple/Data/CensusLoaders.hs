@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -O0 #-}
 module BlueRipple.Data.CensusLoaders where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -90,11 +91,11 @@ censusTablesByDistrict  :: (K.KnitEffects r
 censusTablesByDistrict = do
   let fileByYear = [(2016, censusDataDir <> "/cd115Raw.csv"), (2018, censusDataDir <> "/cd116Raw.csv")]
       tableDescriptions = KT.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix
-                          <> KT.tableDescriptions BRC.sexByAge BRC.hispanicSexByAgePrefix
+                          <> KT.tableDescriptions BRC.sexByAge [BRC.hispanicSexByAgePrefix]
                           <> KT.allTableDescriptions BRC.sexByCitizenship BRC.sexByCitizenshipPrefix
-                          <> KT.tableDescriptions BRC.sexByCitizenship BRC.hispanicSexByCitizenshipPrefix
+                          <> KT.tableDescriptions BRC.sexByCitizenship [BRC.hispanicSexByCitizenshipPrefix]
                           <> KT.allTableDescriptions BRC.sexByEducation BRC.sexByEducationPrefix
-                          <> KT.tableDescriptions BRC.sexByEducation BRC.hispanicSexByEducationPrefix
+                          <> KT.tableDescriptions BRC.sexByEducation [BRC.hispanicSexByEducationPrefix]
       makeFrame year tableDF prefix keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (\tr -> KT.typeOneTable tableDF tr prefix) vTableRows
         return $ frameFromTableRows BRC.unCDPrefix keyRec year vTRs
@@ -120,8 +121,12 @@ censusTablesByDistrict = do
           fHispanicSexByCitizenship
           fRaceBySexByEducation
           fHispanicSexByEducation
-  dataDep <- traverse (K.fileDependency . toString . snd) fileByYear
-  K.retrieveOrMake "data/Census/tables.bin" dataDep $ const $ fmap mconcat $ traverse doOneYear fileByYear
+  dataDeps <- traverse (K.fileDependency . toString . snd) fileByYear
+  let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
+  K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/tables.bin" dataDep $ const $ do
+    tables <- traverse doOneYear fileByYear
+    neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
+    return $ sconcat neTables
 
 sexByAgeKeyRec :: (DT.Sex, BRC.Age14) -> F.Record [BRC.Age14C, DT.SexC]
 sexByAgeKeyRec (s, a) = a F.&: s F.&: V.RNil
