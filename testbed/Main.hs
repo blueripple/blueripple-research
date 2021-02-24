@@ -108,9 +108,11 @@ makeDoc = do
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
       tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix
   (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ BRK.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions censusFile)
+  K.logLE K.Info "Loaded and parsed CSV file"
   vRaceBySexByAgeTRs <- K.knitEither $ traverse (BRK.consolidateTables BRC.sexByAge BRC.sexByAgePrefix) vTableRows
-  let fRaceBySexByAge = BRL.frameFromTableRows BRC.unCDPrefix BRL.raceBySexByAgeKeyRec 2018 vRaceBySexByAgeTRs
-
+  K.logLE K.Info "merged and typed sexByAge tables"
+  let fRaceBySexByAge' = BRL.frameFromTableRows BRC.unCDPrefix BRL.raceBySexByAgeKeyRec 2018 vRaceBySexByAgeTRs
+      fRaceBySexByAge = FL.fold (BRL.rekeyFrameF  @BRC.CDPrefixR BRL.raceBySexByAgeToASR4) fRaceBySexByAge'
   BR.logFrame fRaceBySexByAge
 --  K.logLE K.Info $ show vSexByAge
   return ()
