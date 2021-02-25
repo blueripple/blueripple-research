@@ -103,10 +103,13 @@ censusTablesByDistrict = do
   let fileByYear = [(BRC.TY2016, censusDataDir <> "/cd115Raw.csv"), (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")]
       tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.tableDescriptions BRC.sexByAge [BRC.hispanicSexByAgePrefix ty]
+                             <> KT.tableDescriptions BRC.sexByAge [BRC.whiteNonHispanicSexByAgePrefix ty]
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
                              <> KT.tableDescriptions BRC.sexByCitizenship [BRC.hispanicSexByCitizenshipPrefix ty]
+                             <> KT.tableDescriptions BRC.sexByCitizenship [BRC.whiteNonHispanicSexByCitizenshipPrefix ty]
                              <> KT.allTableDescriptions BRC.sexByEducation (BRC.sexByEducationPrefix ty)
                              <> KT.tableDescriptions BRC.sexByEducation [BRC.hispanicSexByEducationPrefix ty]
+                             <> KT.tableDescriptions BRC.sexByEducation [BRC.whiteNonHispanicSexByEducationPrefix ty]
       makeFrame ty tableDF prefix keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (\tr -> KT.typeOneTable tableDF tr (prefix ty)) vTableRows
         return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs

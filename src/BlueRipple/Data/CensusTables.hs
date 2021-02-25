@@ -122,11 +122,12 @@ type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByEducation = (DT.Sex, Education4)
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
-data TableYear = TY2018 | TY2016
+data TableYear = TY2018 | TY2016 | TY2014
 
 tableYear :: TableYear -> Int
 tableYear TY2018 = 2018
 tableYear TY2016 = 2016
+tableYear TY2014 = 2014
 
 sexByAgePrefix :: TableYear -> DT.RaceAlone4 -> [NHGISPrefix]
 sexByAgePrefix TY2018 DT.RA4_White = [NHGISPrefix "AJ6O"]
@@ -137,14 +138,26 @@ sexByAgePrefix TY2016 DT.RA4_White = [NHGISPrefix "AGBT"]
 sexByAgePrefix TY2016 DT.RA4_Black = [NHGISPrefix "AGBU"]
 sexByAgePrefix TY2016 DT.RA4_Asian = [NHGISPrefix "AGBW"]
 sexByAgePrefix TY2016 DT.RA4_Other = NHGISPrefix <$> ["AGBV", "AGBX", "AGBY", "AGBZ"]
+sexByAgePrefix TY2014 DT.RA4_White = [NHGISPrefix "ABK1"]
+sexByAgePrefix TY2014 DT.RA4_Black = [NHGISPrefix "ABK2"]
+sexByAgePrefix TY2014 DT.RA4_Asian = [NHGISPrefix "ABK4"]
+sexByAgePrefix TY2014 DT.RA4_Other = NHGISPrefix <$> ["ABK3", "ABK5", "ABK6", "ABK7"]
+sexByAgePrefix TY2012 DT.RA4_White = [NHGISPrefix "Q2C"]
+sexByAgePrefix TY2012 DT.RA4_Black = [NHGISPrefix "Q2D"]
+sexByAgePrefix TY2012 DT.RA4_Asian = [NHGISPrefix "Q2F"]
+sexByAgePrefix TY2012 DT.RA4_Other = NHGISPrefix <$> ["Q2E", "Q2G", "Q2H", "Q2I"]
 
 hispanicSexByAgePrefix :: TableYear -> NHGISPrefix
 hispanicSexByAgePrefix TY2018 = NHGISPrefix "AJ6W"
 hispanicSexByAgePrefix TY2016 = NHGISPrefix "AGB1"
+hispanicSexByAgePrefix TY2014 = NHGISPrefix "ABK9"
+hispanicSexByAgePrefix TY2012 = NHGISPrefix "Q2K"
 
 whiteNonHispanicSexByAgePrefix :: TableYear -> NHGISPrefix
 whiteNonHispanicSexByAgePrefix TY2018 = NHGISPrefix "AJ6V"
 whiteNonHispanicSexByAgePrefix TY2016 = NHGISPrefix "AGB0"
+whiteNonHispanicSexByAgePrefix TY2014 = NHGISPrefix "ABK8"
+whiteNonHispanicSexByAgePrefix TY2012 = NHGISPrefix "Q2J"
 
 sexByAge :: NHGISPrefix -> Map (DT.Sex, Age14) Text
 sexByAge (NHGISPrefix p) =
@@ -186,16 +199,27 @@ sexByCitizenshipPrefix TY2018 DT.RA4_Other = NHGISPrefix <$> ["AJ7E", "AJ7G", "A
 sexByCitizenshipPrefix TY2016 DT.RA4_White = [NHGISPrefix "AGCH"]
 sexByCitizenshipPrefix TY2016 DT.RA4_Black = [NHGISPrefix "AGCI"]
 sexByCitizenshipPrefix TY2016 DT.RA4_Asian = [NHGISPrefix "AGCK"]
-sexByCitizenshipPrefix TY2016cccccc DT.RA4_Other = NHGISPrefix <$> ["AGCJ", "AGCL", "AGCM", "AGCN"]
+sexByCitizenshipPrefix TY2016 DT.RA4_Other = NHGISPrefix <$> ["AGCJ", "AGCL", "AGCM", "AGCN"]
+sexByCitizenshipPrefix TY2014 DT.RA4_White = [NHGISPrefix "ABLM"]
+sexByCitizenshipPrefix TY2014 DT.RA4_Black = [NHGISPrefix "ABLN"]
+sexByCitizenshipPrefix TY2014 DT.RA4_Asian = [NHGISPrefix "ABLP"]
+sexByCitizenshipPrefix TY2014 DT.RA4_Other = NHGISPrefix <$> ["ABLO", "ABLQ", "ABLR", "ABLS"]
+sexByCitizenshipPrefix TY2012 DT.RA4_White = [NHGISPrefix "Q20"]
+sexByCitizenshipPrefix TY2012 DT.RA4_Black = [NHGISPrefix "Q21"]
+sexByCitizenshipPrefix TY2012 DT.RA4_Asian = [NHGISPrefix "Q23"]
+sexByCitizenshipPrefix TY2012 DT.RA4_Other = NHGISPrefix <$> ["Q22", "Q24", "Q25", "Q26"]
 
 hispanicSexByCitizenshipPrefix :: TableYear -> NHGISPrefix
 hispanicSexByCitizenshipPrefix TY2018  = NHGISPrefix "AJ7K"
 hispanicSexByCitizenshipPrefix TY2016  = NHGISPrefix "AGCP"
+hispanicSexByCitizenshipPrefix TY2014  = NHGISPrefix "ABLU"
+hispanicSexByCitizenshipPrefix TY2012  = NHGISPrefix "Q28"
 
 whiteNonHispanicSexByCitizenshipPrefix :: TableYear -> NHGISPrefix
 whiteNonHispanicSexByCitizenshipPrefix TY2018 = NHGISPrefix "AJ7J"
 whiteNonHispanicSexByCitizenshipPrefix TY2016 = NHGISPrefix "AGCO"
-
+whiteNonHispanicSexByCitizenshipPrefix TY2014 = NHGISPrefix "ABLT"
+whiteNonHispanicSexByCitizenshipPrefix TY2012 = NHGISPrefix "Q27"
 
 sexByCitizenship :: NHGISPrefix -> Map (DT.Sex, Citizenship) Text
 sexByCitizenship (NHGISPrefix p) = Map.fromList [((DT.Male, Native), p <> "E009")
@@ -215,14 +239,26 @@ sexByEducationPrefix TY2016 DT.RA4_White = [NHGISPrefix "AGIF"]
 sexByEducationPrefix TY2016 DT.RA4_Black = [NHGISPrefix "AGIG"]
 sexByEducationPrefix TY2016 DT.RA4_Asian = [NHGISPrefix "AGII"]
 sexByEducationPrefix TY2016 DT.RA4_Other = NHGISPrefix <$> ["AGIH", "AGIJ", "AGIK", "AGIL"]
+sexByEducationPrefix TY2014 DT.RA4_White = [NHGISPrefix "ABRO"]
+sexByEducationPrefix TY2014 DT.RA4_Black = [NHGISPrefix "ABRP"]
+sexByEducationPrefix TY2014 DT.RA4_Asian = [NHGISPrefix "ABRR"]
+sexByEducationPrefix TY2014 DT.RA4_Other = NHGISPrefix <$> ["ABRQ", "ABRS", "ABRT", "ABRU"]
+sexByEducationPrefix TY2012 DT.RA4_White = [NHGISPrefix "Q80"]
+sexByEducationPrefix TY2012 DT.RA4_Black = [NHGISPrefix "Q81"]
+sexByEducationPrefix TY2012 DT.RA4_Asian = [NHGISPrefix "Q83""]
+sexByEducationPrefix TY2012 DT.RA4_Other = NHGISPrefix <$> ["Q82", "Q84", "Q85", "Q86"]
 
 hispanicSexByEducationPrefix :: TableYear -> NHGISPrefix
 hispanicSexByEducationPrefix TY2018  = NHGISPrefix "AKDI"
 hispanicSexByEducationPrefix TY2016  = NHGISPrefix "AGIN"
+hispanicSexByEducationPrefix TY2014  = NHGISPrefix "ABRW"
+hispanicSexByEducationPrefix TY2012  = NHGISPrefix "Q88"
 
 whiteNonHispanicSexByEducationPrefix :: TableYear -> NHGISPrefix
 whiteNonHispanicSexByEducationPrefix TY2018 = NHGISPrefix "AKDH"
 whiteNonHispanicSexByEducationPrefix TY2016 = NHGISPrefix "AGIM"
+whiteNonHispanicSexByEducationPrefix TY2014 = NHGISPrefix "ABRV"
+whiteNonHispanicSexByEducationPrefix TY2012 = NHGISPrefix "Q87"
 
 sexByEducation :: NHGISPrefix -> Map (DT.Sex, Education4) Text
 sexByEducation (NHGISPrefix p) = Map.fromList [((DT.Male, E4_NonHSGrad), p <> "E003")
