@@ -21,6 +21,7 @@ module BlueRipple.Model.House.ElectionResult where
 import Prelude hiding (pred)
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CCES as CCES
+import qualified BlueRipple.Data.CensusLoaders as Census
 --import qualified BlueRipple.Model.MRP as MRP
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -319,6 +320,104 @@ pumsReKey r =
 type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
+
+--
+{-
+prepCachedData2 ::forall r.
+  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+prepCachedData2 clearCache = do
+  censusData_C <- Census.censusTablesByDistrict
+  houseElections_C <- BR.houseElectionsWithIncumbency
+  senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
+  presByStateElections_C <- BR.presidentialElectionsWithIncumbency
+
+--  K.logLE K.Info $ "Senate "
+--  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
+  let houseDataDeps = (,,,,) <$> censusData_C <*> houseElections_C <*> senateElections_C <*> presByStateElections_C <*> countedCCES_C
+  when clearCache $ BR.clearIfPresentD "model/house/houseData2.bin"
+  BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(censusData, houseElex, senateElex, presElex, countedCCES) -> do
+    K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
+    K.logLE K.Diagnostic "Re-keying census data"
+
+    let cdDemographics = pumsMR @CDKeyR pumsByCD
+        stateDemographics = pumsMR @StateKeyR pumsByState
+        isYear year = (== year) . F.rgetField @BR.Year
+        afterYear year = (>= year) . F.rgetField @BR.Year
+        betweenYears earliest latest r = let y = F.rgetField @BR.Year r in y >= earliest && y <= latest
+        dVotes = F.rgetField @DVotes
+        rVotes = F.rgetField @RVotes
+        competitive r = dVotes r > 0 && rVotes r > 0
+        competitiveIn y r = isYear y r && competitive r
+        competitiveAfter y r = afterYear y r && competitive r
+        hasVoters r = F.rgetField @Surveyed r > 0
+        hasVotes r = F.rgetField @TVotes r > 0
+        hasDVotes r = F.rgetField @DVotes r > 0
+        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
+        fHouseElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
+        fSenateElex :: FL.FoldM (Either Text) (F.Record BR.SenateElectionColsI) (F.FrameRec (SenateRaceKeyR V.++ ElectionR))
+        fSenateElex = FL.prefilterM (return . betweenYears 2012 2018) $ FL.premapM (return . F.rcast) $ electionF @SenateRaceKeyR
+        fPresElex :: FL.FoldM (Either Text) (F.Record BR.PresidentialElectionColsI) (F.FrameRec (StateKeyR V.++ ElectionR))
+        fPresElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @StateKeyR
+
+    houseElectionResults <- K.knitEither $ FL.foldM fHouseElex houseElex
+    senateElectionResults <- K.knitEither $ FL.foldM fSenateElex senateElex
+    presElectionResults <- K.knitEither $ FL.foldM fPresElex presElex
+
+    let moreVotesThanPeople r = F.rgetField @PUMS.Citizens r < (F.rgetField @DVotes r + F.rgetField @RVotes r)
+
+    let (houseDemoAndElex, missinghElex) = FJ.leftJoinWithMissing @CDKeyR houseElectionResults cdDemographics
+    K.knitEither $ if null missinghElex
+                   then Right ()
+                   else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
+                        <> show missinghElex
+    let competitiveHouseElectionResults = F.rcast <$> F.filterFrame competitive houseDemoAndElex
+        mvtpH = F.filterFrame moreVotesThanPeople competitiveHouseElectionResults
+    _ <- K.knitEither $ if null mvtpH
+                        then Right ()
+                        else (Left $ "More votes than people in House Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpH))
+
+
+    let competitiveCDs = FL.fold (FL.premap (F.rcast @CDKeyR) FL.set) houseDemoAndElex
+        competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @CDKeyR r) competitiveCDs) countedCCES
+        toJoinWithCCES = fmap (F.rcast @(CDKeyR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile])) competitiveHouseElectionResults
+        (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @CDKeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
+    K.knitEither $ if null missingDemo
+                   then Right ()
+                   else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
+                        <> show missingDemo
+    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
+    let (senateDemoAndElex, missingsElex) = FJ.leftJoinWithMissing @StateKeyR senateElectionResults stateDemographics
+    K.knitEither $ if null missingsElex
+                   then Right ()
+                   else Left $ "Missing keys in left-join of demographics and senate election data in house model prep:"
+                        <> show missingsElex
+    let competitiveSenateElectionResults = F.rcast <$> F.filterFrame competitive senateDemoAndElex
+        mvtpS = F.filterFrame moreVotesThanPeople competitiveSenateElectionResults
+    _ <- K.knitEither $ if null mvtpS
+                        then Right ()
+                        else (Left $ "More votes than people in Senate Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpS))
+
+
+    let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR presElectionResults stateDemographics
+    K.knitEither $ if null missingpElex
+                   then Right ()
+                   else Left $ "Missing keys in left-join of demographics and presidential election data in house model prep:"
+                        <> show missingpElex
+
+    let competitivePresidentialElectionResults = F.rcast <$> F.filterFrame competitive presDemoAndElex
+        mvtpP = F.filterFrame moreVotesThanPeople competitivePresidentialElectionResults
+    _ <- K.knitEither $ if null mvtpP
+                        then Right ()
+                        else (Left $ "More votes than people in Presidential Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpP))
+
+    return $ HouseModelData
+      competitiveHouseElectionResults
+      competitiveSenateElectionResults
+      competitivePresidentialElectionResults
+      (fmap F.rcast ccesWithoutNullVotes)
+-}
+--
 
 prepCachedData ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)

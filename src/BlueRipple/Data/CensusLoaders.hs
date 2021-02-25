@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0 #-}
 module BlueRipple.Data.CensusLoaders where
 
@@ -27,6 +28,7 @@ import qualified Data.Set as Set
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vec
+import qualified Data.Vector.Generic as GVec
 import qualified Data.Serialize as S
 import qualified Flat
 import qualified Frames                        as F
@@ -40,25 +42,53 @@ import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
 F.declareColumn "Count" ''Int
 
+{-
+reKeyCensusTables :: BRK.AggF Bool a' a
+                  -> BRK.AggF Bool s' s
+                  -> BRK.AggF Bool e' e
+                  -> BRK.AggF Bool r' r
+                  -> BRK.AggF Bool c' c
+                  -> CensusTablesByCD a s e r c -> CensusTablesByCD a' s' e' r' c'
+reKeyCensusTables rkA rkS rkE rkR rkC =
+  let aggF_ASR = rkA `BRK.aggF`
+-}
+
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
 
-data CensusTablesByCD = CensusTablesByCD { ageSexRace :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC, DT.RaceAlone4C])
-                                         , hispanicAgeSex :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC])
-                                         , whiteNonHispanicAgeSex :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC])
-                                         , sexRaceCitizenShip :: F.FrameRec (CDRow [DT.SexC, DT.RaceAlone4C, BRC.CitizenshipC])
-                                         , hispanicSexCitizenship :: F.FrameRec (CDRow [DT.SexC, BRC.CitizenshipC])
-                                         , whiteNonHispanicSexCitizenship :: F.FrameRec (CDRow [DT.SexC, BRC.CitizenshipC])
-                                         , sexEducationRace :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C, DT.RaceAlone4C])
-                                         , hispanicSexEducation :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C])
-                                         , whiteNonHispanicSexEducation :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C])
-                                         } deriving (Generic)
+data CensusTablesByCD a s e r c
+  = CensusTablesByCD { ageSexRace :: F.FrameRec (CDRow [a, s, r])
+                     , hispanicAgeSex :: F.FrameRec (CDRow [a, s])
+                     , whiteNonHispanicAgeSex :: F.FrameRec (CDRow [a, s])
+                     , sexRaceCitizenShip :: F.FrameRec (CDRow [s, r, c])
+                     , hispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
+                     , whiteNonHispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
+                     , sexEducationRace :: F.FrameRec (CDRow [s, e, r])
+                     , hispanicSexEducation :: F.FrameRec (CDRow [s, e])
+                     , whiteNonHispanicSexEducation :: F.FrameRec (CDRow [s, e])
+                     } deriving (Generic)
 
-instance Semigroup CensusTablesByCD where
+instance Semigroup (CensusTablesByCD a s e r c) where
   (CensusTablesByCD a1 a2 a3 a4 a5 a6 a7 a8 a9) <> (CensusTablesByCD b1 b2 b3 b4 b5 b6 b7 b8 b9) =
     CensusTablesByCD (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
 
-instance S.Serialize CensusTablesByCD where
+instance (S.Serialize (V.Snd a)
+         , S.Serialize (V.Snd s)
+         , S.Serialize (V.Snd e)
+         , S.Serialize (V.Snd r)
+         , S.Serialize (V.Snd c)
+         , V.KnownField a
+         , V.KnownField s
+         , V.KnownField e
+         , V.KnownField r
+         , V.KnownField c
+         , GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a)
+         , GVec.Vector (FI.VectorFor (V.Snd s)) (V.Snd s)
+         , GVec.Vector (FI.VectorFor (V.Snd e)) (V.Snd e)
+         , GVec.Vector (FI.VectorFor (V.Snd r)) (V.Snd r)
+         , GVec.Vector (FI.VectorFor (V.Snd c)) (V.Snd c)
+         ) =>
+         S.Serialize (CensusTablesByCD a s e r c) where
   put (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
     S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6, FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)
   get = (\(sf1, sf2, sf3, sf4, sf5, sf6, sf7, sf8, sf9)
@@ -75,7 +105,23 @@ instance S.Serialize CensusTablesByCD where
         )
         <$> S.get
 
-instance Flat.Flat CensusTablesByCD where
+instance (Flat.Flat (V.Snd a)
+         , Flat.Flat (V.Snd s)
+         , Flat.Flat (V.Snd e)
+         , Flat.Flat (V.Snd r)
+         , Flat.Flat (V.Snd c)
+         , V.KnownField a
+         , V.KnownField s
+         , V.KnownField e
+         , V.KnownField r
+         , V.KnownField c
+         , GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a)
+         , GVec.Vector (FI.VectorFor (V.Snd s)) (V.Snd s)
+         , GVec.Vector (FI.VectorFor (V.Snd e)) (V.Snd e)
+         , GVec.Vector (FI.VectorFor (V.Snd r)) (V.Snd r)
+         , GVec.Vector (FI.VectorFor (V.Snd c)) (V.Snd c)
+         ) =>
+  Flat.Flat (CensusTablesByCD a s e r c) where
   size (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) n =
     Flat.size ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3), (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6), (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)) n
   encode (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
@@ -96,9 +142,11 @@ instance Flat.Flat CensusTablesByCD where
 
 type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
+type LoadedCensusTablesByCD = CensusTablesByCD BRC.Age14C DT.SexC BRC.Education4C DT.RaceAlone4C BRC.CitizenshipC
+
 censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
-                           => K.Sem r (K.ActionWithCacheTime r CensusTablesByCD)
+                           => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByCD)
 censusTablesByDistrict = do
   let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
                    , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
