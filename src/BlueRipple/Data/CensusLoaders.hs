@@ -45,19 +45,23 @@ censusDataDir = "../bigData/Census"
 
 data CensusTablesByCD = CensusTablesByCD { ageSexRace :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC, DT.RaceAlone4C])
                                          , hispanicAgeSex :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC])
+                                         , whiteNonHispanicAgeSex :: F.FrameRec (CDRow [BRC.Age14C, DT.SexC])
                                          , sexRaceCitizenShip :: F.FrameRec (CDRow [DT.SexC, DT.RaceAlone4C, BRC.CitizenshipC])
                                          , hispanicSexCitizenship :: F.FrameRec (CDRow [DT.SexC, BRC.CitizenshipC])
+                                         , whiteNonHispanicSexCitizenship :: F.FrameRec (CDRow [DT.SexC, BRC.CitizenshipC])
                                          , sexEducationRace :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C, DT.RaceAlone4C])
                                          , hispanicSexEducation :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C])
-                                         }
+                                         , whiteNonHispanicSexEducation :: F.FrameRec (CDRow [DT.SexC,  BRC.Education4C])
+                                         } deriving (Generic)
 
 instance Semigroup CensusTablesByCD where
-  (CensusTablesByCD a1 a2 a3 a4 a5 a6) <> (CensusTablesByCD b1 b2 b3 b4 b5 b6) =
-    CensusTablesByCD (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6)
+  (CensusTablesByCD a1 a2 a3 a4 a5 a6 a7 a8 a9) <> (CensusTablesByCD b1 b2 b3 b4 b5 b6 b7 b8 b9) =
+    CensusTablesByCD (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
 
 instance S.Serialize CensusTablesByCD where
-  put (CensusTablesByCD f1 f2 f3 f4 f5 f6) = S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6)
-  get = (\(sf1, sf2, sf3, sf4, sf5, sf6)
+  put (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
+    S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6, FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)
+  get = (\(sf1, sf2, sf3, sf4, sf5, sf6, sf7, sf8, sf9)
           -> CensusTablesByCD
              (FS.unSFrame sf1)
              (FS.unSFrame sf2)
@@ -65,13 +69,18 @@ instance S.Serialize CensusTablesByCD where
              (FS.unSFrame sf4)
              (FS.unSFrame sf5)
              (FS.unSFrame sf6)
+             (FS.unSFrame sf7)
+             (FS.unSFrame sf8)
+             (FS.unSFrame sf9)
         )
         <$> S.get
 
 instance Flat.Flat CensusTablesByCD where
-  size (CensusTablesByCD f1 f2 f3 f4 f5 f6) n = Flat.size (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6) n
-  encode (CensusTablesByCD f1 f2 f3 f4 f5 f6) = Flat.encode (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6)
-  decode = (\(sf1, sf2, sf3, sf4, sf5, sf6)
+  size (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) n =
+    Flat.size ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3), (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6), (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)) n
+  encode (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
+    Flat.encode ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3), (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6), (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9))
+  decode = (\((sf1, sf2, sf3), (sf4, sf5, sf6), (sf7, sf8, sf9))
              -> CensusTablesByCD
                 (FS.unSFrame sf1)
                 (FS.unSFrame sf2)
@@ -79,9 +88,11 @@ instance Flat.Flat CensusTablesByCD where
                 (FS.unSFrame sf4)
                 (FS.unSFrame sf5)
                 (FS.unSFrame sf6)
+                (FS.unSFrame sf7)
+                (FS.unSFrame sf8)
+                (FS.unSFrame sf9)
            )
            <$> Flat.decode
-
 
 type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
@@ -89,38 +100,44 @@ censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
                            => K.Sem r (K.ActionWithCacheTime r CensusTablesByCD)
 censusTablesByDistrict = do
-  let fileByYear = [(2016, censusDataDir <> "/cd115Raw.csv"), (2018, censusDataDir <> "/cd116Raw.csv")]
-      tableDescriptions = KT.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix
-                          <> KT.tableDescriptions BRC.sexByAge [BRC.hispanicSexByAgePrefix]
-                          <> KT.allTableDescriptions BRC.sexByCitizenship BRC.sexByCitizenshipPrefix
-                          <> KT.tableDescriptions BRC.sexByCitizenship [BRC.hispanicSexByCitizenshipPrefix]
-                          <> KT.allTableDescriptions BRC.sexByEducation BRC.sexByEducationPrefix
-                          <> KT.tableDescriptions BRC.sexByEducation [BRC.hispanicSexByEducationPrefix]
-      makeFrame year tableDF prefix keyRec vTableRows = do
-        vTRs <- K.knitEither $ traverse (\tr -> KT.typeOneTable tableDF tr prefix) vTableRows
-        return $ frameFromTableRows BRC.unCDPrefix keyRec year vTRs
-      makeConsolidatedFrame year tableDF prefixF keyRec vTableRows = do
-        vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF prefixF) vTableRows
-        return $ frameFromTableRows BRC.unCDPrefix keyRec year vTRs
-      doOneYear (year, f) = do
-        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.CDPrefix tableDescriptions $ toString f)
-        K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show year <> "."
+  let fileByYear = [(BRC.TY2016, censusDataDir <> "/cd115Raw.csv"), (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")]
+      tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
+                             <> KT.tableDescriptions BRC.sexByAge [BRC.hispanicSexByAgePrefix ty]
+                             <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
+                             <> KT.tableDescriptions BRC.sexByCitizenship [BRC.hispanicSexByCitizenshipPrefix ty]
+                             <> KT.allTableDescriptions BRC.sexByEducation (BRC.sexByEducationPrefix ty)
+                             <> KT.tableDescriptions BRC.sexByEducation [BRC.hispanicSexByEducationPrefix ty]
+      makeFrame ty tableDF prefix keyRec vTableRows = do
+        vTRs <- K.knitEither $ traverse (\tr -> KT.typeOneTable tableDF tr (prefix ty)) vTableRows
+        return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs
+      makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
+        vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
+        return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs
+      doOneYear (ty, f) = do
+        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.CDPrefix (tableDescriptions ty) $ toString f)
+        K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
-        fRaceBySexByAge <- makeConsolidatedFrame year BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
-        fHispanicSexByAge <- makeFrame year BRC.sexByAge BRC.hispanicSexByAgePrefix sexByAgeKeyRec vTableRows
+        fRaceBySexByAge <- makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
+        fHispanicSexByAge <- makeFrame ty BRC.sexByAge BRC.hispanicSexByAgePrefix sexByAgeKeyRec vTableRows
+        fWhiteNonHispanicSexByAge <- makeFrame ty BRC.sexByAge BRC.whiteNonHispanicSexByAgePrefix sexByAgeKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Citizenship Tables..."
-        fRaceBySexByCitizenship <- makeConsolidatedFrame year BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
-        fHispanicSexByCitizenship <- makeFrame year BRC.sexByCitizenship BRC.hispanicSexByCitizenshipPrefix sexByCitizenshipKeyRec vTableRows
+        fRaceBySexByCitizenship <- makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
+        fHispanicSexByCitizenship <- makeFrame ty BRC.sexByCitizenship BRC.hispanicSexByCitizenshipPrefix sexByCitizenshipKeyRec vTableRows
+        fWhiteNonHispanicSexByCitizenship <- makeFrame ty BRC.sexByCitizenship BRC.whiteNonHispanicSexByCitizenshipPrefix sexByCitizenshipKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
-        fRaceBySexByEducation <- makeConsolidatedFrame year BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
-        fHispanicSexByEducation <- makeFrame year BRC.sexByEducation BRC.hispanicSexByEducationPrefix sexByEducationKeyRec vTableRows
+        fRaceBySexByEducation <- makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
+        fHispanicSexByEducation <- makeFrame ty BRC.sexByEducation BRC.hispanicSexByEducationPrefix sexByEducationKeyRec vTableRows
+        fWhiteNonHispanicSexByEducation <- makeFrame ty BRC.sexByEducation BRC.whiteNonHispanicSexByEducationPrefix sexByEducationKeyRec vTableRows
         return $ CensusTablesByCD
           fRaceBySexByAge
           fHispanicSexByAge
+          fWhiteNonHispanicSexByAge
           fRaceBySexByCitizenship
           fHispanicSexByCitizenship
+          fWhiteNonHispanicSexByCitizenship
           fRaceBySexByEducation
           fHispanicSexByEducation
+          fWhiteNonHispanicSexByEducation
   dataDeps <- traverse (K.fileDependency . toString . snd) fileByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/tables.bin" dataDep $ const $ do
