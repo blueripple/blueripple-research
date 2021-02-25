@@ -122,12 +122,13 @@ type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByEducation = (DT.Sex, Education4)
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
-data TableYear = TY2018 | TY2016 | TY2014
+data TableYear = TY2018 | TY2016 | TY2014 | TY2012
 
 tableYear :: TableYear -> Int
 tableYear TY2018 = 2018
 tableYear TY2016 = 2016
 tableYear TY2014 = 2014
+tableYear TY2012 = 2012
 
 sexByAgePrefix :: TableYear -> DT.RaceAlone4 -> [NHGISPrefix]
 sexByAgePrefix TY2018 DT.RA4_White = [NHGISPrefix "AJ6O"]
@@ -245,7 +246,7 @@ sexByEducationPrefix TY2014 DT.RA4_Asian = [NHGISPrefix "ABRR"]
 sexByEducationPrefix TY2014 DT.RA4_Other = NHGISPrefix <$> ["ABRQ", "ABRS", "ABRT", "ABRU"]
 sexByEducationPrefix TY2012 DT.RA4_White = [NHGISPrefix "Q80"]
 sexByEducationPrefix TY2012 DT.RA4_Black = [NHGISPrefix "Q81"]
-sexByEducationPrefix TY2012 DT.RA4_Asian = [NHGISPrefix "Q83""]
+sexByEducationPrefix TY2012 DT.RA4_Asian = [NHGISPrefix "Q83"]
 sexByEducationPrefix TY2012 DT.RA4_Other = NHGISPrefix <$> ["Q82", "Q84", "Q85", "Q86"]
 
 hispanicSexByEducationPrefix :: TableYear -> NHGISPrefix
