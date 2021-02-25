@@ -100,7 +100,11 @@ censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
                            => K.Sem r (K.ActionWithCacheTime r CensusTablesByCD)
 censusTablesByDistrict = do
-  let fileByYear = [(BRC.TY2016, censusDataDir <> "/cd115Raw.csv"), (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")]
+  let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
+                   , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
+                   , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
+                   , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
+                   ]
       tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.tableDescriptions BRC.sexByAge [BRC.hispanicSexByAgePrefix ty]
                              <> KT.tableDescriptions BRC.sexByAge [BRC.whiteNonHispanicSexByAgePrefix ty]
