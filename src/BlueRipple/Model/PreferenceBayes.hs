@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# OPTIONS_GHC -Wno-deprecations #-}
 module BlueRipple.Model.PreferenceBayes
   (
     -- * MLE
@@ -255,6 +256,7 @@ logBinomialWithPrior votesAndTurnout demProbs =
 type Sample = VB.Vector Double
 type Chain = [Sample]
 
+-- TODO: withSystemRandom is deprecated in mwc-random but comes from "declarative" so would be a pain to fix.
 runMCMC
   :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
