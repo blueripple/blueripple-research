@@ -43,49 +43,54 @@ import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
 
 F.declareColumn "Count" ''Int
-
-
+F.declareColumn "SqMiles" ''Double
 
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
 
-data CensusTablesByCD a s e r c
-  = CensusTablesByCD { ageSexRace :: F.FrameRec (CDRow [a, s, r])
-                     , hispanicAgeSex :: F.FrameRec (CDRow [a, s])
-                     , whiteNonHispanicAgeSex :: F.FrameRec (CDRow [a, s])
-                     , sexRaceCitizenship :: F.FrameRec (CDRow [s, r, c])
-                     , hispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
-                     , whiteNonHispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
-                     , sexEducationRace :: F.FrameRec (CDRow [s, e, r])
-                     , hispanicSexEducation :: F.FrameRec (CDRow [s, e])
-                     , whiteNonHispanicSexEducation :: F.FrameRec (CDRow [s, e])
-                     } deriving (Generic)
+type CensusRow p ks = '[BR.Year] V.++ p V.++ ks V.++ '[Count]
 
-instance Semigroup (CensusTablesByCD a s e r c) where
-  (CensusTablesByCD a1 a2 a3 a4 a5 a6 a7 a8 a9) <> (CensusTablesByCD b1 b2 b3 b4 b5 b6 b7 b8 b9) =
-    CensusTablesByCD (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
+data CensusTables p a s e r c
+  = CensusTables { ageSexRace :: F.FrameRec (CensusRow p [a, s, r])
+                 , hispanicAgeSex :: F.FrameRec (CensusRow p [a, s])
+                 , whiteNonHispanicAgeSex :: F.FrameRec (CensusRow p [a, s])
+                 , sexRaceCitizenship :: F.FrameRec (CensusRow p [s, r, c])
+                 , hispanicSexCitizenship :: F.FrameRec (CensusRow p [s, c])
+                 , whiteNonHispanicSexCitizenship :: F.FrameRec (CensusRow p [s, c])
+                 , sexEducationRace :: F.FrameRec (CensusRow p [s, e, r])
+                 , hispanicSexEducation :: F.FrameRec (CensusRow p [s, e])
+                 , whiteNonHispanicSexEducation :: F.FrameRec (CensusRow p [s, e])
+                 } deriving (Generic)
 
-instance (S.Serialize (V.Snd a)
-         , S.Serialize (V.Snd s)
-         , S.Serialize (V.Snd e)
-         , S.Serialize (V.Snd r)
-         , S.Serialize (V.Snd c)
-         , V.KnownField a
-         , V.KnownField s
-         , V.KnownField e
-         , V.KnownField r
-         , V.KnownField c
-         , GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a)
-         , GVec.Vector (FI.VectorFor (V.Snd s)) (V.Snd s)
-         , GVec.Vector (FI.VectorFor (V.Snd e)) (V.Snd e)
-         , GVec.Vector (FI.VectorFor (V.Snd r)) (V.Snd r)
-         , GVec.Vector (FI.VectorFor (V.Snd c)) (V.Snd c)
+instance Semigroup (CensusTables p a s e r c) where
+  (CensusTables a1 a2 a3 a4 a5 a6 a7 a8 a9) <> (CensusTables b1 b2 b3 b4 b5 b6 b7 b8 b9) =
+    CensusTables (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4) (a5 <> b5) (a6 <> b6) (a7 <> b7) (a8 <> b8) (a9 <> b9)
+
+type FieldC s a = (s (V.Snd a), V.KnownField a, GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a))
+type KeysSC p ks = (V.RMap (CensusRow p ks)
+                  , FI.RecVec (CensusRow p ks)
+                  , FS.RecSerialize (CensusRow p ks)
+                  )
+
+instance (FieldC S.Serialize a
+         , FieldC S.Serialize s
+         , FieldC S.Serialize e
+         , FieldC S.Serialize r
+         , FieldC S.Serialize c
+         , KeysSC p [a, s, r]
+         , KeysSC p [a, s]
+         , KeysSC p [s, r]
+         , KeysSC p [s, r]
+         , KeysSC p [s, r, c]
+         , KeysSC p [s, c]
+         , KeysSC p [s, e]
+         , KeysSC p [s, e, r]
          ) =>
-         S.Serialize (CensusTablesByCD a s e r c) where
-  put (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
+         S.Serialize (CensusTables p a s e r c) where
+  put (CensusTables f1 f2 f3 f4 f5 f6 f7 f8 f9) =
     S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5, FS.SFrame f6, FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)
   get = (\(sf1, sf2, sf3, sf4, sf5, sf6, sf7, sf8, sf9)
-          -> CensusTablesByCD
+          -> CensusTables
              (FS.unSFrame sf1)
              (FS.unSFrame sf2)
              (FS.unSFrame sf3)
@@ -98,29 +103,36 @@ instance (S.Serialize (V.Snd a)
         )
         <$> S.get
 
-instance (Flat.Flat (V.Snd a)
-         , Flat.Flat (V.Snd s)
-         , Flat.Flat (V.Snd e)
-         , Flat.Flat (V.Snd r)
-         , Flat.Flat (V.Snd c)
-         , V.KnownField a
-         , V.KnownField s
-         , V.KnownField e
-         , V.KnownField r
-         , V.KnownField c
-         , GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a)
-         , GVec.Vector (FI.VectorFor (V.Snd s)) (V.Snd s)
-         , GVec.Vector (FI.VectorFor (V.Snd e)) (V.Snd e)
-         , GVec.Vector (FI.VectorFor (V.Snd r)) (V.Snd r)
-         , GVec.Vector (FI.VectorFor (V.Snd c)) (V.Snd c)
+type KeysFC p ks = (V.RMap (CensusRow p ks)
+                  , FI.RecVec (CensusRow p ks)
+                  , FS.RecFlat (CensusRow p ks)
+                  )
+
+instance (FieldC Flat.Flat a
+         , FieldC Flat.Flat s
+         , FieldC Flat.Flat e
+         , FieldC Flat.Flat r
+         , FieldC Flat.Flat c
+         , KeysFC p [a, s, r]
+         , KeysFC p [a, s]
+         , KeysFC p [s, r]
+         , KeysFC p [s, r]
+         , KeysFC p [s, r, c]
+         , KeysFC p [s, c]
+         , KeysFC p [s, e]
+         , KeysFC p [s, e, r]
          ) =>
-  Flat.Flat (CensusTablesByCD a s e r c) where
-  size (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) n =
-    Flat.size ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3), (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6), (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)) n
-  encode (CensusTablesByCD f1 f2 f3 f4 f5 f6 f7 f8 f9) =
-    Flat.encode ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3), (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6), (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9))
+  Flat.Flat (CensusTables p a s e r c) where
+  size (CensusTables f1 f2 f3 f4 f5 f6 f7 f8 f9) n =
+    Flat.size ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3)
+              , (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6),
+                (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9)) n
+  encode (CensusTables f1 f2 f3 f4 f5 f6 f7 f8 f9) =
+    Flat.encode ((FS.SFrame f1, FS.SFrame f2, FS.SFrame f3)
+                , (FS.SFrame f4, FS.SFrame f5, FS.SFrame f6)
+                , (FS.SFrame f7, FS.SFrame f8, FS.SFrame f9))
   decode = (\((sf1, sf2, sf3), (sf4, sf5, sf6), (sf7, sf8, sf9))
-             -> CensusTablesByCD
+             -> CensusTables
                 (FS.unSFrame sf1)
                 (FS.unSFrame sf2)
                 (FS.unSFrame sf3)
@@ -133,9 +145,10 @@ instance (Flat.Flat (V.Snd a)
            )
            <$> Flat.decode
 
-type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
+--type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
-type LoadedCensusTablesByCD = CensusTablesByCD BRC.Age14C DT.SexC BRC.Education4C DT.RaceAlone4C BRC.CitizenshipC
+type LoadedCensusTablesByCD
+  = CensusTables BRC.CDPrefixR BRC.Age14C DT.SexC BRC.Education4C DT.RaceAlone4C BRC.CitizenshipC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
@@ -176,7 +189,7 @@ censusTablesByDistrict = do
         fRaceBySexByEducation <- makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
         fHispanicSexByEducation <- makeFrame ty BRC.sexByEducation BRC.hispanicSexByEducationPrefix sexByEducationKeyRec vTableRows
         fWhiteNonHispanicSexByEducation <- makeFrame ty BRC.sexByEducation BRC.whiteNonHispanicSexByEducationPrefix sexByEducationKeyRec vTableRows
-        return $ CensusTablesByCD
+        return $ CensusTables
           fRaceBySexByAge
           fHispanicSexByAge
           fWhiteNonHispanicSexByAge
@@ -217,6 +230,20 @@ raceBySexByEducationKeyRec :: (DT.RaceAlone4, (DT.Sex, BRC.Education4)) -> F.Rec
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 
+aggregateCensusTableByPrefix :: forall ks p p'.
+                                (Ord (F.Record (p' V.++ ks))
+                                , p F.⊆ (BR.Year ': (p' V.++ ks))
+                                , p F.⊆ (BR.Year ': (p V.++ ks V.++ '[Count]))
+                                , F.RDeleteAll p (BR.Year ': ((p V.++ ks) V.++ '[Count]))  F.⊆ (BR.Year ': ((p V.++ ks) V.++ '[Count]))
+                                , (p' V.++ ks) F.⊆ (F.RDeleteAll p (BR.Year ': ((p V.++ ks) V.++ '[Count]))) V.++ p'
+                                 )
+                                => (F.Record p -> F.Record p')
+                               -> FL.Fold (F.Record (CensusRow p ks)) (F.FrameRec (CensusRow p' ks))
+aggregateCensusTableByPrefix mapP = FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    (FMR.Unpack $ pure @[] . FT.transform mapP)
+                                    (FMR.assignKeysAndData @(BR.Year ': (p' V.++ ks)) @'[Count])
+                                    (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
 
 raceBySexByAgeToASR4 :: BRK.AggFRec Bool ([DT.SimpleAgeC, DT.SexC, DT.RaceAlone4C]) ([BRC.Age14C, DT.SexC, DT.RaceAlone4C])
 raceBySexByAgeToASR4 =
@@ -230,32 +257,29 @@ raceBySexByAgeToASR4 =
 
 type RekeyFrameC as bs cs = (Ord (F.Record as)
                             , BRK.FiniteSet (F.Record cs)
-                            , as F.⊆ ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
-                            , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+                            , as F.⊆ ('[BR.Year] V.++ as V.++ bs V.++ '[Count])
+                            , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ bs V.++ '[Count])
+                            , ((as V.++ cs) V.++ '[Count]) F.⊆ (BR.Year ': (as V.++ (cs V.++ '[Count])))
                             , bs F.⊆ (bs V.++ '[Count])
                             , F.ElemOf (bs V.++ '[Count]) Count
-                            , FI.RecVec  ('[BR.Year] V.++ as V.++ (cs V.++ '[Count]))
+                            , FI.RecVec  (as V.++ (cs V.++ '[Count]))
                             )
 
 rekeyFrameF :: forall as bs cs. RekeyFrameC as bs cs
-{-}               (Ord (F.Record as)
-               , BRK.FiniteSet (F.Record cs)
-               , as F.⊆ ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
-               , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
-               , bs F.⊆ (bs V.++ '[Count])
-               , F.ElemOf (bs V.++ '[Count]) Count
-               , FI.RecVec  ('[BR.Year] V.++ as V.++ (cs V.++ '[Count]))
-               ) -}
             => BRK.AggFRec Bool cs bs
-           -> FL.Fold (F.Record ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))) (F.FrameRec ('[BR.Year] V.++ as V.++ (cs V.++ '[Count])))
+           -> FL.Fold (F.Record (CensusRow as bs)) --'[BR.Year] V.++ as V.++ bs V.++ '[Count]))
+           (F.FrameRec (CensusRow as cs)) -- '[BR.Year] V.++ as V.++ (cs V.++ '[Count])))
 rekeyFrameF f =
   let collapse :: BRK.CollapseRec Bool '[Count] '[Count]
       collapse = BRK.dataFoldCollapseBool $ FF.foldAllConstrained @Num FL.sum
-  in  FMR.concatFold
+  in
+      FMR.concatFold
+--      $ fmap (fmap F.rcast)
       $ FMR.mapReduceFold
       FMR.noUnpack
       (FMR.assignKeysAndData @('[BR.Year] V.++ as) @(bs V.++ '[Count]))
-      (FMR.makeRecsWithKey id
+      (fmap (fmap (F.rcast @(CensusRow as cs)))
+        $ FMR.makeRecsWithKey id
         $ FMR.ReduceFold
         $ const
         $ BRK.aggFoldAllRec f collapse
@@ -275,8 +299,15 @@ frameFromTableRows prefixToRec keyToRec year tableRows =
       allRows = fmap oneRow tableRows
   in F.toFrame $ concat $ Vec.toList allRows
 
+type RekeyFieldC a = (V.KnownField a
+                     , BRK.FiniteSet (V.Snd a)
+                     , Ord (V.Snd a)
+                     , GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a)
+                     )
 
-rekeyCensusTables :: (F.ElemOf [a', s'] s'
+
+rekeyCensusTables :: forall p a s e r c a' s' e' r' c'.
+                     (F.ElemOf [a', s'] s'
                      ,F.ElemOf [a, s] s
                      ,F.ElemOf [a', s', r'] r'
                      ,F.ElemOf [a', s', r'] s'
@@ -296,35 +327,25 @@ rekeyCensusTables :: (F.ElemOf [a', s'] s'
                      ,F.ElemOf [s', e', r'] e'
                      ,F.ElemOf [s, e, r] r
                      ,F.ElemOf [s, e, r] e
-                     , V.KnownField a'
-                     , V.KnownField s'
-                     , V.KnownField e'
-                     , V.KnownField r'
-                     , BRK.FiniteSet (V.Snd a')
-                     , BRK.FiniteSet (V.Snd s')
-                     , BRK.FiniteSet (V.Snd e')
-                     , BRK.FiniteSet (V.Snd r')
-                     , Ord (V.Snd a')
-                     , Ord (V.Snd s')
-                     , Ord (V.Snd e')
-                     , Ord (V.Snd r')
-                     , RekeyFrameC BRC.CDPrefixR [a, s, r] [a', s', r']
-                     , RekeyFrameC BRC.CDPrefixR [a, s] [a', s']
-                     , RekeyFrameC BRC.CDPrefixR [s, r, c] [s', r', c']
-                     , RekeyFrameC BRC.CDPrefixR [s, c] [s', c']
-                     , RekeyFrameC BRC.CDPrefixR [s, e, r] [s', e', c']
-                     , RekeyFrameC BRC.CDPrefixR [s, e] [s', e']
-                     , GVec.Vector (FI.VectorFor (V.Snd s')) (V.Snd s')
-                     , GVec.Vector (FI.VectorFor (V.Snd e')) (V.Snd e')
-                     , GVec.Vector (FI.VectorFor (V.Snd r')) (V.Snd r')
+                     , RekeyFieldC a'
+                     , RekeyFieldC s'
+                     , RekeyFieldC e'
+                     , RekeyFieldC r'
+                     , Ord (F.Record p)
+                     , RekeyFrameC p [a, s, r] [a', s', r']
+                     , RekeyFrameC p [a, s] [a', s']
+                     , RekeyFrameC p [s, r, c] [s', r', c']
+                     , RekeyFrameC p [s, c] [s', c']
+                     , RekeyFrameC p [s, e, r] [s', e', r']
+                     , RekeyFrameC p [s, e] [s', e']
                      )
                   => BRK.AggFRec Bool '[a'] '[a]
                   -> BRK.AggFRec Bool '[s'] '[s]
                   -> BRK.AggFRec Bool '[e'] '[e]
                   -> BRK.AggFRec Bool '[r'] '[r]
                   -> BRK.AggFRec Bool '[c'] '[c]
-                  -> CensusTablesByCD a s e r c
-                  -> CensusTablesByCD a' s' e' r' c'
+                  -> CensusTables p a s e r c
+                  -> CensusTables p a' s' e' r' c'
 rekeyCensusTables rkA rkS rkE rkR rkC ct =
   let aggF_AS = rkA `BRK.aggFProductRec` rkS
       aggF_ASR = aggF_AS `BRK.aggFProductRec` rkR
@@ -332,13 +353,13 @@ rekeyCensusTables rkA rkS rkE rkR rkC ct =
       aggF_SC = rkS `BRK.aggFProductRec` rkC
       aggF_SE = rkS `BRK.aggFProductRec` rkE
       aggF_SER = rkS `BRK.aggFProductRec` rkE `BRK.aggFProductRec` rkR
-  in CensusTablesByCD
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_ASR) $ ageSexRace ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ hispanicAgeSex ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ whiteNonHispanicAgeSex ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SRC) $ sexRaceCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ hispanicSexCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ whiteNonHispanicSexCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SER) $ sexEducationRace ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ hispanicSexEducation ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ whiteNonHispanicSexEducation ct)
+  in CensusTables
+     (FL.fold (rekeyFrameF @p aggF_ASR) $ ageSexRace ct)
+     (FL.fold (rekeyFrameF @p aggF_AS) $ hispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @p aggF_AS) $ whiteNonHispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @p aggF_SRC) $ sexRaceCitizenship ct)
+     (FL.fold (rekeyFrameF @p aggF_SC) $ hispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @p aggF_SC) $ whiteNonHispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @p aggF_SER) $ sexEducationRace ct)
+     (FL.fold (rekeyFrameF @p aggF_SE) $ hispanicSexEducation ct)
+     (FL.fold (rekeyFrameF @p aggF_SE) $ whiteNonHispanicSexEducation ct)
