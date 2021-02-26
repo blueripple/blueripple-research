@@ -40,18 +40,65 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
+
 F.declareColumn "Count" ''Int
 
-{-
-reKeyCensusTables :: BRK.AggF Bool a' a
-                  -> BRK.AggF Bool s' s
-                  -> BRK.AggF Bool e' e
-                  -> BRK.AggF Bool r' r
-                  -> BRK.AggF Bool c' c
-                  -> CensusTablesByCD a s e r c -> CensusTablesByCD a' s' e' r' c'
-reKeyCensusTables rkA rkS rkE rkR rkC =
-  let aggF_ASR = rkA `BRK.aggF`
--}
+
+reKeyCensusTables :: (F.ElemOf [a', s'] s'
+                     ,F.ElemOf [a, s] s
+                     ,F.ElemOf [a', s', r'] r'
+                     ,F.ElemOf [a', s', r'] s'
+                     ,F.ElemOf [a, s, r] r
+                     ,F.ElemOf [a, s, r] s
+                     ,F.ElemOf [s', r'] r'
+                     ,F.ElemOf [s, r] r
+                     ,F.ElemOf [s', r', c'] c'
+                     ,F.ElemOf [s', r', c'] r'
+                     ,F.ElemOf [s, r, c] c
+                     ,F.ElemOf [s, r, c] r
+                     ,F.ElemOf [s', c'] c'
+                     ,F.ElemOf [s, c] c
+                     ,F.ElemOf [s', e'] e'
+                     ,F.ElemOf [s, e] e
+                     ,F.ElemOf [s', e', r'] r'
+                     ,F.ElemOf [s', e', r'] e'
+                     ,F.ElemOf [s, e, r] r
+                     ,F.ElemOf [s, e, r] e
+                     , V.KnownField a'
+                     , V.KnownField s'
+                     , V.KnownField r'
+                     , BRK.FiniteSet (V.Snd a')
+                     , BRK.FiniteSet (V.Snd s')
+                     , BRK.FiniteSet (V.Snd r')
+                     , Ord (V.Snd r')
+                     , Ord (V.Snd s')
+                     , Ord (V.Snd a')
+
+                     )
+                  => BRK.AggFRec Bool '[a'] '[a]
+                  -> BRK.AggFRec Bool '[s'] '[s]
+                  -> BRK.AggFRec Bool '[e'] '[e]
+                  -> BRK.AggFRec Bool '[r'] '[r]
+                  -> BRK.AggFRec Bool '[c'] '[c]
+                  -> CensusTablesByCD a s e r c
+                  -> CensusTablesByCD a' s' e' r' c'
+reKeyCensusTables rkA rkS rkE rkR rkC ct =
+  let aggF_AS = rkA `BRK.aggFProductRec` rkS
+      aggF_ASR = aggF_AS `BRK.aggFProductRec` rkR
+      aggF_SRC = rkS `BRK.aggFProductRec` rkR `BRK.aggFProductRec` rkC
+      aggF_SC = rkS `BRK.aggFProductRec` rkC
+      aggF_SE = rkS `BRK.aggFProductRec` rkE
+      aggF_SER = rkS `BRK.aggFProductRec` rkE `BRK.aggFProductRec` rkR
+  in CensusTablesByCD
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_ASR) $ ageSexRace ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ hispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ whiteNonHispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SRC) $ sexRaceCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ hispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ whiteNonHispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SER) $ sexEducationRace ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ hispanicSexEducation ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ whiteNonHispanicSexEducation ct)
 
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
@@ -60,7 +107,7 @@ data CensusTablesByCD a s e r c
   = CensusTablesByCD { ageSexRace :: F.FrameRec (CDRow [a, s, r])
                      , hispanicAgeSex :: F.FrameRec (CDRow [a, s])
                      , whiteNonHispanicAgeSex :: F.FrameRec (CDRow [a, s])
-                     , sexRaceCitizenShip :: F.FrameRec (CDRow [s, r, c])
+                     , sexRaceCitizenship :: F.FrameRec (CDRow [s, r, c])
                      , hispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
                      , whiteNonHispanicSexCitizenship :: F.FrameRec (CDRow [s, c])
                      , sexEducationRace :: F.FrameRec (CDRow [s, e, r])
