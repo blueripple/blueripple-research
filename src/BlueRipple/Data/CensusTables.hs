@@ -76,6 +76,23 @@ age14FromAge5F DT.A5F_25To44 = [A14_25To29, A14_30To34, A14_35To44]
 age14FromAge5F DT.A5F_45To64 = [A14_45To54, A14_55To64]
 age14FromAge5F DT.A5F_65AndOver = [A14_65To74, A14_75To84, A14_85AndOver]
 
+age14ToAge5F :: Age14 -> DT.Age5F
+age14ToAge5F A14_Under5 = DT.A5F_Under18
+age14ToAge5F A14_5To9 = DT.A5F_Under18
+age14ToAge5F A14_10To14 = DT.A5F_Under18
+age14ToAge5F A14_15To17 = DT.A5F_Under18
+age14ToAge5F A14_18To19 = DT.A5F_18To24
+age14ToAge5F A14_20To24 = DT.A5F_18To24
+age14ToAge5F A14_25To29 = DT.A5F_25To44
+age14ToAge5F A14_30To34 = DT.A5F_25To44
+age14ToAge5F A14_35To44 = DT.A5F_25To44
+age14ToAge5F A14_45To54 = DT.A5F_45To64
+age14ToAge5F A14_55To64 = DT.A5F_45To64
+age14ToAge5F A14_65To74 = DT.A5F_65AndOver
+age14ToAge5F A14_75To84 = DT.A5F_65AndOver
+age14ToAge5F A14_85AndOver = DT.A5F_65AndOver
+
+
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
@@ -97,6 +114,11 @@ citizenshipFromIsCitizen :: Bool -> [Citizenship]
 citizenshipFromIsCitizen True = [Native, Naturalized]
 citizenshipFromIsCitizen False = [NonCitizen]
 
+citizenshipToIsCitizen :: Citizenship -> Bool
+citizenshipToIsCitizen Native = True
+citizenshipToIsCitizen Naturalized = True
+citizenshipToIsCitizen NonCitizen = False
+
 data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize Education4
 instance B.Binary Education4
@@ -114,6 +136,10 @@ education4FromCollegeGrad :: DT.CollegeGrad -> [Education4]
 education4FromCollegeGrad DT.NonGrad = [E4_NonHSGrad, E4_HSGrad, E4_SomeCollege]
 education4FromCollegeGrad DT.Grad = [E4_CollegeGrad]
 
+education4ToCollegeGrad :: Education4 -> DT.CollegeGrad
+education4ToCollegeGrad E4_CollegeGrad = DT.Grad
+education4ToCollegeGrad _ = DT.NonGrad
+
 data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving (Show, Eq, Ord)
 
 type family CensusTableKey (c :: CensusTable) :: Type where
@@ -123,6 +149,8 @@ type family CensusTableKey (c :: CensusTable) :: Type where
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
 data TableYear = TY2018 | TY2016 | TY2014 | TY2012
+
+
 
 tableYear :: TableYear -> Int
 tableYear TY2018 = 2018

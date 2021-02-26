@@ -52,10 +52,10 @@ source-repository-package
 --  location: https://github.com/adamConnerSax/knit-haskell
 --  tag: ae9b22c9e0184c4965289dd9ff8d148e172d9872
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-map-reduce
---  tag: 0e4409a4861e31e915b457a37fc359814ab781c6
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-map-reduce
+  tag: 1fbb72b90364449b24dfde70b9fce2576da27191
 
 source-repository-package
   type: git
