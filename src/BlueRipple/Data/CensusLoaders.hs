@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -44,61 +45,6 @@ import qualified Knit.Report as K
 F.declareColumn "Count" ''Int
 
 
-reKeyCensusTables :: (F.ElemOf [a', s'] s'
-                     ,F.ElemOf [a, s] s
-                     ,F.ElemOf [a', s', r'] r'
-                     ,F.ElemOf [a', s', r'] s'
-                     ,F.ElemOf [a, s, r] r
-                     ,F.ElemOf [a, s, r] s
-                     ,F.ElemOf [s', r'] r'
-                     ,F.ElemOf [s, r] r
-                     ,F.ElemOf [s', r', c'] c'
-                     ,F.ElemOf [s', r', c'] r'
-                     ,F.ElemOf [s, r, c] c
-                     ,F.ElemOf [s, r, c] r
-                     ,F.ElemOf [s', c'] c'
-                     ,F.ElemOf [s, c] c
-                     ,F.ElemOf [s', e'] e'
-                     ,F.ElemOf [s, e] e
-                     ,F.ElemOf [s', e', r'] r'
-                     ,F.ElemOf [s', e', r'] e'
-                     ,F.ElemOf [s, e, r] r
-                     ,F.ElemOf [s, e, r] e
-                     , V.KnownField a'
-                     , V.KnownField s'
-                     , V.KnownField r'
-                     , BRK.FiniteSet (V.Snd a')
-                     , BRK.FiniteSet (V.Snd s')
-                     , BRK.FiniteSet (V.Snd r')
-                     , Ord (V.Snd r')
-                     , Ord (V.Snd s')
-                     , Ord (V.Snd a')
-
-                     )
-                  => BRK.AggFRec Bool '[a'] '[a]
-                  -> BRK.AggFRec Bool '[s'] '[s]
-                  -> BRK.AggFRec Bool '[e'] '[e]
-                  -> BRK.AggFRec Bool '[r'] '[r]
-                  -> BRK.AggFRec Bool '[c'] '[c]
-                  -> CensusTablesByCD a s e r c
-                  -> CensusTablesByCD a' s' e' r' c'
-reKeyCensusTables rkA rkS rkE rkR rkC ct =
-  let aggF_AS = rkA `BRK.aggFProductRec` rkS
-      aggF_ASR = aggF_AS `BRK.aggFProductRec` rkR
-      aggF_SRC = rkS `BRK.aggFProductRec` rkR `BRK.aggFProductRec` rkC
-      aggF_SC = rkS `BRK.aggFProductRec` rkC
-      aggF_SE = rkS `BRK.aggFProductRec` rkE
-      aggF_SER = rkS `BRK.aggFProductRec` rkE `BRK.aggFProductRec` rkR
-  in CensusTablesByCD
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_ASR) $ ageSexRace ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ hispanicAgeSex ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ whiteNonHispanicAgeSex ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SRC) $ sexRaceCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ hispanicSexCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ whiteNonHispanicSexCitizenship ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SER) $ sexEducationRace ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ hispanicSexEducation ct)
-     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ whiteNonHispanicSexEducation ct)
 
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
@@ -282,15 +228,24 @@ raceBySexByAgeToASR4 =
       aggRace = BRK.aggFId
   in  aggAge `BRK.aggFProductRec` aggSex `BRK.aggFProductRec` aggRace
 
-rekeyFrameF :: forall as bs cs.
-               (Ord (F.Record as)
+type RekeyFrameC as bs cs = (Ord (F.Record as)
+                            , BRK.FiniteSet (F.Record cs)
+                            , as F.⊆ ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+                            , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
+                            , bs F.⊆ (bs V.++ '[Count])
+                            , F.ElemOf (bs V.++ '[Count]) Count
+                            , FI.RecVec  ('[BR.Year] V.++ as V.++ (cs V.++ '[Count]))
+                            )
+
+rekeyFrameF :: forall as bs cs. RekeyFrameC as bs cs
+{-}               (Ord (F.Record as)
                , BRK.FiniteSet (F.Record cs)
                , as F.⊆ ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
                , (bs V.++ '[Count]) F.⊆  ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))
                , bs F.⊆ (bs V.++ '[Count])
                , F.ElemOf (bs V.++ '[Count]) Count
                , FI.RecVec  ('[BR.Year] V.++ as V.++ (cs V.++ '[Count]))
-               )
+               ) -}
             => BRK.AggFRec Bool cs bs
            -> FL.Fold (F.Record ('[BR.Year] V.++ as V.++ (bs V.++ '[Count]))) (F.FrameRec ('[BR.Year] V.++ as V.++ (cs V.++ '[Count])))
 rekeyFrameF f =
@@ -319,3 +274,71 @@ frameFromTableRows prefixToRec keyToRec year tableRows =
       oneRow (KT.TableRow p m) = let x = year F.&: prefixToRec p in fmap (x `V.rappend`) $ mapToRows m
       allRows = fmap oneRow tableRows
   in F.toFrame $ concat $ Vec.toList allRows
+
+
+rekeyCensusTables :: (F.ElemOf [a', s'] s'
+                     ,F.ElemOf [a, s] s
+                     ,F.ElemOf [a', s', r'] r'
+                     ,F.ElemOf [a', s', r'] s'
+                     ,F.ElemOf [a, s, r] r
+                     ,F.ElemOf [a, s, r] s
+                     ,F.ElemOf [s', r'] r'
+                     ,F.ElemOf [s, r] r
+                     ,F.ElemOf [s', r', c'] c'
+                     ,F.ElemOf [s', r', c'] r'
+                     ,F.ElemOf [s, r, c] c
+                     ,F.ElemOf [s, r, c] r
+                     ,F.ElemOf [s', c'] c'
+                     ,F.ElemOf [s, c] c
+                     ,F.ElemOf [s', e'] e'
+                     ,F.ElemOf [s, e] e
+                     ,F.ElemOf [s', e', r'] r'
+                     ,F.ElemOf [s', e', r'] e'
+                     ,F.ElemOf [s, e, r] r
+                     ,F.ElemOf [s, e, r] e
+                     , V.KnownField a'
+                     , V.KnownField s'
+                     , V.KnownField e'
+                     , V.KnownField r'
+                     , BRK.FiniteSet (V.Snd a')
+                     , BRK.FiniteSet (V.Snd s')
+                     , BRK.FiniteSet (V.Snd e')
+                     , BRK.FiniteSet (V.Snd r')
+                     , Ord (V.Snd a')
+                     , Ord (V.Snd s')
+                     , Ord (V.Snd e')
+                     , Ord (V.Snd r')
+                     , RekeyFrameC BRC.CDPrefixR [a, s, r] [a', s', r']
+                     , RekeyFrameC BRC.CDPrefixR [a, s] [a', s']
+                     , RekeyFrameC BRC.CDPrefixR [s, r, c] [s', r', c']
+                     , RekeyFrameC BRC.CDPrefixR [s, c] [s', c']
+                     , RekeyFrameC BRC.CDPrefixR [s, e, r] [s', e', c']
+                     , RekeyFrameC BRC.CDPrefixR [s, e] [s', e']
+                     , GVec.Vector (FI.VectorFor (V.Snd s')) (V.Snd s')
+                     , GVec.Vector (FI.VectorFor (V.Snd e')) (V.Snd e')
+                     , GVec.Vector (FI.VectorFor (V.Snd r')) (V.Snd r')
+                     )
+                  => BRK.AggFRec Bool '[a'] '[a]
+                  -> BRK.AggFRec Bool '[s'] '[s]
+                  -> BRK.AggFRec Bool '[e'] '[e]
+                  -> BRK.AggFRec Bool '[r'] '[r]
+                  -> BRK.AggFRec Bool '[c'] '[c]
+                  -> CensusTablesByCD a s e r c
+                  -> CensusTablesByCD a' s' e' r' c'
+rekeyCensusTables rkA rkS rkE rkR rkC ct =
+  let aggF_AS = rkA `BRK.aggFProductRec` rkS
+      aggF_ASR = aggF_AS `BRK.aggFProductRec` rkR
+      aggF_SRC = rkS `BRK.aggFProductRec` rkR `BRK.aggFProductRec` rkC
+      aggF_SC = rkS `BRK.aggFProductRec` rkC
+      aggF_SE = rkS `BRK.aggFProductRec` rkE
+      aggF_SER = rkS `BRK.aggFProductRec` rkE `BRK.aggFProductRec` rkR
+  in CensusTablesByCD
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_ASR) $ ageSexRace ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ hispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_AS) $ whiteNonHispanicAgeSex ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SRC) $ sexRaceCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ hispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SC) $ whiteNonHispanicSexCitizenship ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SER) $ sexEducationRace ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ hispanicSexEducation ct)
+     (FL.fold (rekeyFrameF @BRC.CDPrefixR aggF_SE) $ whiteNonHispanicSexEducation ct)

@@ -21,11 +21,12 @@ module BlueRipple.Model.House.ElectionResult where
 import Prelude hiding (pred)
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CCES as CCES
+import qualified BlueRipple.Data.CensusTables as Census
 import qualified BlueRipple.Data.CensusLoaders as Census
---import qualified BlueRipple.Model.MRP as MRP
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
@@ -322,11 +323,21 @@ type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 --
-{-
+type HouseModelCensusTables = Census.CensusTablesByCD DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
 prepCachedData2 ::forall r.
-  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
 prepCachedData2 clearCache = do
-  censusData_C <- Census.censusTablesByDistrict
+  censusDataRaw_C <- Census.censusTablesByDistrict
+  let rkA :: BRK.AggFRec Bool '[DT.SimpleAgeC] '[Census.Age14C]
+        = BRK.toAggFRec $ BRK.AggF (\sa a14 -> a14 `elem` (DT.simpleAgeFrom5F sa >>= Census.age14FromAge5F))
+      rkE :: BRK.AggFRec Bool '[DT.CollegeGradC] '[Census.Education4C]
+        = BRK.toAggFRec $ BRK.AggF (\cg e4 -> e4 `elem` Census.education4FromCollegeGrad cg)
+      rkC :: BRK.AggFRec Bool '[DT.IsCitizen] '[Census.CitizenshipC]
+        = BRK.toAggFRec $ BRK.AggF (\b c -> c `elem` Census.citizenshipFromIsCitizen b)
+  censusData_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensus.bin" censusDataRaw_C
+                  $ return . Census.rekeyCensusTables rkA BRK.aggFId rkE BRK.aggFId rkC
+  return ()
+{-
   houseElections_C <- BR.houseElectionsWithIncumbency
   senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
@@ -339,7 +350,6 @@ prepCachedData2 clearCache = do
   BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(censusData, houseElex, senateElex, presElex, countedCCES) -> do
     K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
     K.logLE K.Diagnostic "Re-keying census data"
-
     let cdDemographics = pumsMR @CDKeyR pumsByCD
         stateDemographics = pumsMR @StateKeyR pumsByState
         isYear year = (== year) . F.rgetField @BR.Year
