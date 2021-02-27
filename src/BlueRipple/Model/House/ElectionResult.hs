@@ -323,20 +323,26 @@ type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 --
+
 type HouseModelCensusTables = Census.CensusTables Census.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
 prepCachedData2 ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
 prepCachedData2 clearCache = do
+  let f :: Census.CensusTable Census.CDPrefixR Census.Age14C DT.SexC Census.Education4C DT.RaceAlone4C Census.CitizenshipC
+        -> Census.CensusTable Census.CDPrefixR DT.SimpleAge DT.SexC DT.CollegeGrad DT.RaceAlone4C DT.IsCitizen
+      f = Census.rekeyCensusTables
+          (DT.age5FToSimple . Census.age14ToAge5F)
+          id
+          Census.education4ToCollegeGrad
+          id
+          Census.citizenshipToIsCitizen
+      g :: Census.CensusTable '[BR.StateFips, Census.SqMiles] DT.SimpleAge DT.SexC DT.CollegeGrad DT.RaceAlone4C DT.IsCitizen
+      g = Census.aggregateCensusTableByPrefix (F.rcast @[BR.StateFips, Census.SqMiles])
   censusDataRaw_C <- Census.censusTablesByDistrict
-  let rkA :: BRK.AggFRec Bool '[DT.SimpleAgeC] '[Census.Age14C]
-        = BRK.toAggFRec $ BRK.AggF (\sa a14 -> a14 `elem` (DT.simpleAgeFrom5F sa >>= Census.age14FromAge5F))
-      rkE :: BRK.AggFRec Bool '[DT.CollegeGradC] '[Census.Education4C]
-        = BRK.toAggFRec $ BRK.AggF (\cg e4 -> e4 `elem` Census.education4FromCollegeGrad cg)
-      rkC :: BRK.AggFRec Bool '[DT.IsCitizen] '[Census.CitizenshipC]
-        = BRK.toAggFRec $ BRK.AggF (\b c -> c `elem` Census.citizenshipFromIsCitizen b)
-  censusData_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensus.bin" censusDataRaw_C
-                  $ return . Census.rekeyCensusTables rkA BRK.aggFId rkE BRK.aggFId rkC
+  censusDataByCD_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensus.bin" censusDataRaw_C
+                      $ return . f
   return ()
+
 {-
   houseElections_C <- BR.houseElectionsWithIncumbency
   senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency

@@ -103,9 +103,19 @@ main = do
       K.writeAndMakePathLT "testbed.html" htmlAsText
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
+
+
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
-  ctbd <- K.ignoreCacheTimeM BRL.censusTablesByDistrict
+  ctbd' <- K.ignoreCacheTimeM BRL.censusTablesByDistrict
+  let ctbd :: BRL.CensusTables BRC.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+        = BRL.rekeyCensusTables -- @(BR.Year ': BRC.CDPrefixR)
+          (DT.age5FToSimple . BRC.age14ToAge5F)
+          id
+          BRC.education4ToCollegeGrad
+          id -- @DT.RaceAlone4)
+          BRC.citizenshipToIsCitizen
+          ctbd'
   BR.logFrame $ BRL.ageSexRace ctbd
 {-
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
