@@ -324,8 +324,8 @@ type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.P
 
 --
 
-type HouseModelCensusTablesByCD = Census.CensusTables Census.CDPrefixR DT.Age5FC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
-type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips, Census.SqMiles] DT.Age5FC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+type HouseModelCensusTablesByCD = Census.CensusTables Census.CDPrefixR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
+type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips, Census.SqMiles] DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
 
 prepCachedData2 ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
@@ -348,17 +348,18 @@ prepCachedData2 clearCache = do
 
   let count = F.rgetField @Census.Count
       countRatio n m = realToFrac n / realToFrac m
+      allR = [Census.R_White, Census.R_Black, Census.R_Asian, Census.R_Other]
+      fAllR = FL.prefilter ((`elem` allR) . F.rgetField @Census.RaceEthnicityC) $ FL.premap count FL.sum
       age5F = F.rgetField @DT.Age5FC
-      fAll = FL.premap count FL.sum
-      f18To45 = FL.prefilter ((`elem` [DT.A5F_18To24, DT.A5F_25To44]) . age5F) fAll
-      fASR :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, DT.RaceAlone4C, Census.Count]) (F.Record '[FracUnder45])
-      fASR = (\n m -> countRatio n m F.&: V.RNil) <$> f18To45 <*> fAll
+      f18To45 = FL.prefilter ((`elem` [DT.A5F_18To24, DT.A5F_25To44]) . age5F) fAllR
+      fASR :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracUnder45])
+      fASR = (\n m -> countRatio n m F.&: V.RNil) <$> f18To45 <*> fAllR
       grad = F.rgetField @DT.CollegeGradC
-      fGrad = FL.prefilter ((== DT.Grad) . grad) fAll
-      fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, Census.Count]) (F.Record '[FracGrad])
-      fSER = (\n m -> countRatio n m F.&: V.RNil) <$> fGrad <*> fAll
-      sex = F.rgetField @DT.Sex
-      fFemCit = FL.prefilter ((== DT.Female) . sex) fAll
+      fGrad = FL.prefilter ((== DT.Grad) . grad) fAllR
+      fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracGrad])
+      fSER = (\n m -> countRatio n m F.&: V.RNil) <$> fGrad <*> fAllR
+      sex = F.rgetField @DT.SexC
+      fFemCit = FL.prefilter ((== DT.Female) . sex) fAllR
 
   return ()
 
