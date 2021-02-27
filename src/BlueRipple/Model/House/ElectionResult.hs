@@ -347,14 +347,18 @@ prepCachedData2 clearCache = do
                          $ \c -> K.logLE K.Diagnostic "Cache out of date. Aggregating districts to state level." >> return (g c)
 
   let count = F.rgetField @Census.Count
-      fASRTable :: FL.Fold (CensusRow p [DT.Age5FC, DT.SexC, DT.RaceAlone4C]) (F.FrameRec (BR.Year ': p V.++ [FracUnder45]))
-      fASRTable =
-        let age = F.rgetField @DT.Age5FC
-            f18To45 = FL.filter (`elem` [DT.A5F_18To24, DT.A5F_25To44] . age5F) $ FL.premap count FL.sum
-            dataFld :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, DT.RaceAlone4C]) (F.Record [FracUnder45])
-            dataFld = (\x -> x F.&: V.RNil) <$> f18To45
-        in FMR.concatFold
-           $ FMR.mapReduceFold FMR.noUnpack (FMR.assignKeysAndData @(BR.Year ': p)) (FMR.foldAndAddKey dataFld)
+      countRatio n m = realToFrac n / realToFrac m
+      age5F = F.rgetField @DT.Age5FC
+      fAll = FL.premap count FL.sum
+      f18To45 = FL.prefilter ((`elem` [DT.A5F_18To24, DT.A5F_25To44]) . age5F) fAll
+      fASR :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, DT.RaceAlone4C, Census.Count]) (F.Record '[FracUnder45])
+      fASR = (\n m -> countRatio n m F.&: V.RNil) <$> f18To45 <*> fAll
+      grad = F.rgetField @DT.CollegeGradC
+      fGrad = FL.prefilter ((== DT.Grad) . grad) fAll
+      fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, Census.Count]) (F.Record '[FracGrad])
+      fSER = (\n m -> countRatio n m F.&: V.RNil) <$> fGrad <*> fAll
+      sex = F.rgetField @DT.Sex
+      fFemCit = FL.prefilter ((== DT.Female) . sex) fAll
 
   return ()
 

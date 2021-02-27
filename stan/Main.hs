@@ -203,7 +203,7 @@ testHouseModel = do
                              ,FV.LabeledCol "WhiteHispanic/Hispanic" BRE.pumsHispanicWhiteFraction
                              ,FV.LabeledCol "% Black" (F.rgetField @BRE.FracBlack)
                              ,FV.LabeledCol "% Asian" (F.rgetField @BRE.FracAsian)
-                             ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
+--                             ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
                              ,FV.LabeledCol "Density" (F.rgetField @DT.PopPerSqMile)
                              ,FV.LabeledCol "Incumbency" (realToFrac . F.rgetField @BRE.Incumbency)
                              ,FV.LabeledCol "Turnout" turnout
