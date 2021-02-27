@@ -324,8 +324,8 @@ type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.P
 
 --
 
-type HouseModelCensusTablesByCD = Census.CensusTables Census.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
-type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips, Census.SqMiles] DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+type HouseModelCensusTablesByCD = Census.CensusTables Census.CDPrefixR DT.Age5FC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips, Census.SqMiles] DT.Age5FC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
 
 prepCachedData2 ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
@@ -333,7 +333,7 @@ prepCachedData2 clearCache = do
   K.logLE K.Info "Loading census data (and rekeying if cache is out of date)..."
   let f :: Census.LoadedCensusTablesByCD -> HouseModelCensusTablesByCD
       f = Census.rekeyCensusTables
-          (DT.age5FToSimple . Census.age14ToAge5F)
+          Census.age14ToAge5F
           id
           Census.education4ToCollegeGrad
           id
@@ -345,6 +345,16 @@ prepCachedData2 clearCache = do
                       $ \c -> K.logLE K.Diagnostic "Cache out of date. Rekeying demographic types." >> return (f c)
   censusDataByState_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensusByState.bin" censusDataByCD_C
                          $ \c -> K.logLE K.Diagnostic "Cache out of date. Aggregating districts to state level." >> return (g c)
+
+  let count = F.rgetField @Census.Count
+      fASRTable :: FL.Fold (CensusRow p [DT.Age5FC, DT.SexC, DT.RaceAlone4C]) (F.FrameRec (BR.Year ': p V.++ [FracUnder45]))
+      fASRTable =
+        let age = F.rgetField @DT.Age5FC
+            f18To45 = FL.filter (`elem` [DT.A5F_18To24, DT.A5F_25To44] . age5F) $ FL.premap count FL.sum
+            dataFld :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, DT.RaceAlone4C]) (F.Record [FracUnder45])
+            dataFld = (\x -> x F.&: V.RNil) <$> f18To45
+        in FMR.concatFold
+           $ FMR.mapReduceFold FMR.noUnpack (FMR.assignKeysAndData @(BR.Year ': p)) (FMR.foldAndAddKey dataFld)
 
   return ()
 
