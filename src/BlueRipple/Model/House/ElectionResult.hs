@@ -324,23 +324,28 @@ type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.P
 
 --
 
-type HouseModelCensusTables = Census.CensusTables Census.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+type HouseModelCensusTablesByCD = Census.CensusTables Census.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips, Census.SqMiles] DT.SimpleAgeC DT.SexC DT.CollegeGradC DT.RaceAlone4C DT.IsCitizen
+
 prepCachedData2 ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
 prepCachedData2 clearCache = do
-  let f :: Census.CensusTable Census.CDPrefixR Census.Age14C DT.SexC Census.Education4C DT.RaceAlone4C Census.CitizenshipC
-        -> Census.CensusTable Census.CDPrefixR DT.SimpleAge DT.SexC DT.CollegeGrad DT.RaceAlone4C DT.IsCitizen
+  K.logLE K.Info "Loading census data (and rekeying if cache is out of date)..."
+  let f :: Census.LoadedCensusTablesByCD -> HouseModelCensusTablesByCD
       f = Census.rekeyCensusTables
           (DT.age5FToSimple . Census.age14ToAge5F)
           id
           Census.education4ToCollegeGrad
           id
           Census.citizenshipToIsCitizen
-      g :: Census.CensusTable '[BR.StateFips, Census.SqMiles] DT.SimpleAge DT.SexC DT.CollegeGrad DT.RaceAlone4C DT.IsCitizen
-      g = Census.aggregateCensusTableByPrefix (F.rcast @[BR.StateFips, Census.SqMiles])
+      g :: HouseModelCensusTablesByCD -> HouseModelCensusTablesByState
+      g = Census.aggregateCensusTablesByPrefix (F.rcast @[BR.StateFips, Census.SqMiles])
   censusDataRaw_C <- Census.censusTablesByDistrict
-  censusDataByCD_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensus.bin" censusDataRaw_C
-                      $ return . f
+  censusDataByCD_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensusByCD.bin" censusDataRaw_C
+                      $ \c -> K.logLE K.Diagnostic "Cache out of date. Rekeying demographic types." >> return (f c)
+  censusDataByState_C <- K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "model/house/rekeyedCensusByState.bin" censusDataByCD_C
+                         $ \c -> K.logLE K.Diagnostic "Cache out of date. Aggregating districts to state level." >> return (g c)
+
   return ()
 
 {-

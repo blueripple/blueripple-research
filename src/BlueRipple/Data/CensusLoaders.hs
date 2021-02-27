@@ -44,7 +44,6 @@ import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
 
 F.declareColumn "Count" ''Int
-F.declareColumn "SqMiles" ''Double
 
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
@@ -231,16 +230,40 @@ raceBySexByEducationKeyRec :: (DT.RaceAlone4, (DT.Sex, BRC.Education4)) -> F.Rec
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 
-aggregateCensusTableByPrefix :: forall ks p p'.(FA.AggregateC ks p p' '[Count]
-                                               , ((ks V.++ p) V.++ '[Count]) F.⊆ CensusRow p ks
-                                               , F.ElemOf ((ks V.++ p) V.++ '[Count]) BR.Year
-                                               , F.ElemOf ((ks V.++ p') V.++ '[Count]) BR.Year
-                                               , ((p' V.++ ks) V.++ '[Count]) F.⊆ ((ks V.++ p') V.++ '[Count])
-                                               )
-                                => (F.Record p -> F.Record p')
-                               -> FL.Fold (F.Record (CensusRow p ks)) (F.FrameRec (CensusRow p' ks))
-aggregateCensusTableByPrefix mapP =
-  K.dimap F.rcast (fmap F.rcast) $ FA.aggregateFold @ks @p @p' @'[Count] mapP (FF.foldAllConstrained @Num FL.sum)
+type AggregateByPrefixC ks p p' = (FA.AggregateC (BR.Year ': ks) p p' '[Count]
+                                  , ((ks V.++ p) V.++ '[Count]) F.⊆ CensusRow p ks
+                                  , ((p' V.++ ks) V.++ '[Count]) F.⊆ (BR.Year ': ((ks V.++ p') V.++ '[Count]))
+                                  )
+
+aggregateCensusTableByPrefixF :: forall ks p p'. AggregateByPrefixC ks p p'
+                              => (F.Record p -> F.Record p')
+                              -> FL.Fold (F.Record (CensusRow p ks)) (F.FrameRec (CensusRow p' ks))
+aggregateCensusTableByPrefixF mapP =
+  K.dimap F.rcast (fmap F.rcast) $ FA.aggregateFold @(BR.Year ': ks) @p @p' @'[Count] mapP (FF.foldAllConstrained @Num FL.sum)
+
+aggregateCensusTablesByPrefix :: forall p p' a s e r c.
+                                 ( AggregateByPrefixC [a, s, r] p p'
+                                 , AggregateByPrefixC [a, s] p p'
+                                 , AggregateByPrefixC [s, r, c] p p'
+                                 , AggregateByPrefixC [s, c] p p'
+                                 , AggregateByPrefixC [s, e, r] p p'
+                                 , AggregateByPrefixC [s, e] p p'
+                                 )
+                              => (F.Record p -> F.Record p')
+                              -> CensusTables p a s e r c
+                              -> CensusTables p' a s e r c
+aggregateCensusTablesByPrefix f (CensusTables t1 t2 t3 t4 t5 t6 t7 t8 t9) =
+  CensusTables
+  (FL.fold (aggregateCensusTableByPrefixF @[a, s, r] f) t1)
+  (FL.fold (aggregateCensusTableByPrefixF @[a, s] f) t2)
+  (FL.fold (aggregateCensusTableByPrefixF @[a, s] f) t3)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, r, c] f) t4)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, c] f) t5)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, c] f) t6)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, e, r] f) t7)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, e] f) t8)
+  (FL.fold (aggregateCensusTableByPrefixF @[s, e] f) t9)
+
 
 
 frameFromTableRows :: forall a b as bs. (FI.RecVec (as V.++ (bs V.++ '[Count])))
