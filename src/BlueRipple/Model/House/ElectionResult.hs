@@ -348,8 +348,10 @@ prepCachedData2 clearCache = do
 
   let count = F.rgetField @Census.Count
       countRatio n m = realToFrac n / realToFrac m
+      -- to count all people in any table we add up all the race categories
+      raceEthnicity =  F.rgetField @Census.RaceEthnicityC
       allR = [Census.R_White, Census.R_Black, Census.R_Asian, Census.R_Other]
-      fAllR = FL.prefilter ((`elem` allR) . F.rgetField @Census.RaceEthnicityC) $ FL.premap count FL.sum
+      fAllR = FL.prefilter ((`elem` allR) . raceEthnicity) $ FL.premap count FL.sum
       age5F = F.rgetField @DT.Age5FC
       f18To45 = FL.prefilter ((`elem` [DT.A5F_18To24, DT.A5F_25To44]) . age5F) fAllR
       fASR :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracUnder45])
@@ -358,8 +360,21 @@ prepCachedData2 clearCache = do
       fGrad = FL.prefilter ((== DT.Grad) . grad) fAllR
       fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracGrad])
       fSER = (\n m -> countRatio n m F.&: V.RNil) <$> fGrad <*> fAllR
+      -- What we can count as % of citizens, we do, since we are modeling voter behavior
+      fAllCit = FL.prefilter (F.rgetField @DT.IsCitizen) fAllR
       sex = F.rgetField @DT.SexC
       fFemCit = FL.prefilter ((== DT.Female) . sex) fAllR
+      fWhiteCit = FL.prefilter ((== Census.R_White) . raceEthnicity) fAllCit
+      fBlackCit = FL.prefilter ((== Census.R_Black) . raceEthnicity) fAllCit
+      fAsianCit = FL.prefilter ((== Census.R_Asian) . raceEthnicity) fAllCit
+      fOtherCit = FL.prefilter ((== Census.R_Other) . raceEthnicity) fAllCit
+      fHispCit = FL.prefilter ((== Census.E_Hispanic) . raceEthnicity) fAllCit
+      fWNHCit = FL.prefilter ((== Census.E_WhiteNonHispanic) . raceEthnicity) fAllCit
+      fNWHCit = (-) <$> fWhiteCit <*> fWNHCit
+      fWHCit = (-) <$> fHispCit <*> fNWHCit
+      fWHRatio = (\x y -> countRatio (x - y) x) <$> fWHCit <*> fHispCit
+--      fSRC :: FL.Fold (F.Record [DT.SexC, Census.RaceEthnicityC, DT.IsCitizen, Census.Count])
+--              (F.Record '[FracFemale, FracBlack, FracAsian, FracOther, FracWhiteNonHispanic, FracWhiteHispanic, FracNonWhiteHispanic])
 
   return ()
 
