@@ -35,18 +35,23 @@ import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 
 F.declareColumn "SqMiles" ''Double
 F.declareColumn "SqKm" ''Double
-
-type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, SqMiles, SqKm]
+F.declareColumn "PWPopPerSqMile" ''Double
+F.declareColumn "PerCapitaIncome" ''Double
+type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, PerCapitaIncome, SqMiles, SqKm]
 
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }
 newtype CDPrefix = CDPrefix { unCDPrefix :: F.Record CDPrefixR } deriving (Show)
-toCDPrefix :: Int -> Int -> Double -> Double -> CDPrefix
-toCDPrefix sf cd sm sk = CDPrefix $ sf F.&: cd F.&: sm F.&: sk F.&: V.RNil
+toCDPrefix :: Int -> Int -> Int -> Double -> Double -> Double -> Double -> Double -> CDPrefix
+toCDPrefix sf cd pop d pwd inc sm sk = CDPrefix $ sf F.&: cd F.&: pop F.&: d F.&: pwd F.&: inc F.&: sm F.&: sk F.&: V.RNil
 
 instance CSV.FromNamedRecord CDPrefix where
   parseNamedRecord r = toCDPrefix
                        <$> r .: "StateFIPS"
                        <*> r .: "CongressionalDistrict"
+                       <*> r .: "TotalPopulation"
+                       <*> r .: "PopPerSqMile"
+                       <*> r .: "pwPopPerSqMile"
+                       <*> r .: "PerCapitaIncome"
                        <*> r .: "SqMiles"
                        <*> r .: "SqKm"
 
