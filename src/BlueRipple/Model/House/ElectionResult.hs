@@ -373,12 +373,48 @@ prepCachedData2 clearCache = do
       fNWHCit = (-) <$> fWhiteCit <*> fWNHCit
       fWHCit = (-) <$> fHispCit <*> fNWHCit
       fWHRatio = (\x y -> countRatio (x - y) x) <$> fWHCit <*> fHispCit
---      fSRC :: FL.Fold (F.Record [DT.SexC, Census.RaceEthnicityC, DT.IsCitizen, Census.Count])
---              (F.Record '[FracFemale, FracBlack, FracAsian, FracOther, FracWhiteNonHispanic, FracWhiteHispanic, FracNonWhiteHispanic])
+      fSRC :: FL.Fold (F.Record [DT.SexC, Census.RaceEthnicityC, DT.IsCitizen, Census.Count])
+              (F.Record '[PUMS.Citizens, FracFemale, FracBlack, FracAsian, FracOther, FracWhiteNonHispanic, FracWhiteHispanic, FracNonWhiteHispanic])
+      fSRC = (\t n1 n2 n3 n4 n5 n6 n7 -> t
+                                         F.&: countRatio n1 t
+                                         F.&: countRatio n2 t
+                                         F.&: countRatio n3 t
+                                         F.&: countRatio n4 t
+                                         F.&: countRatio n5 t
+                                         F.&: countRatio n6 t
+                                         F.&: countRatio n7 t
+                                         F.&: V.RNil
+             ) <$> fAllCit <*> fFemCit <*> fBlackCit <*> fAsianCit <*> fOtherCit <*> fWNHCit <*> fWHCit <*> fNWHCit
 
+  cdDemographics <- BR.retrieveOrMakeFrame "model/House/cdDemographics.bin" censusDataByCD_C $ \censusByCD -> do
+    let fCit = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[BR.Year, BR.StateFips, BR.CongressionalDistrict, DT.PopPerSqMile, Census.PerCapitaIncome])
+               (FMR.foldAndAddKey fSRC)
+        frCit = FL.fold fCit (Census.sexRaceCitizenship censusByCD)
+        fAge = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[BR.Year, BR.StateFips, BR.CongressionalDistrict])
+               (FMR.foldAndAddKey fASR)
+        frAge = FL.fold fAge (Census.ageSexRace censusByCD)
+        fEd = FMR.concatFold
+              $ FMR.mapReduceFold
+              FMR.noUnpack
+              (FMR.assignKeysAndData @[BR.Year, BR.StateFips, BR.CongressionalDistrict])
+              (FMR.foldAndAddKey fSER)
+        frEd = FL.fold fEd (Census.sexEducationRace censusByCD)
+        (frDemo, missingA, missingB) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateFips, BR.CongressionalDistrict] frCit frAge frEd
+    unless (null missingA) $ K.knitError $ "Missing keys in demographic left join of citizenship to age in census tables: " <> show missingA
+    unless (null missingB) $ K.knitError $ "Missing keys in demographic left join of education to citizenship/age in census tables: " <> show missingB
+    -- TODO: add state abbreviations
+    return
+      $ fmap (F.rcast @([BR.Year, BR.StateFips, BR.CongressionalDistrict] V.++ DemographicsR)
+              . FT.retypeColumn @Census.PerCapitaIncome @DT.AvgIncome)
+      frDemo
   return ()
-
-{-
+  {-
   houseElections_C <- BR.houseElectionsWithIncumbency
   senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
