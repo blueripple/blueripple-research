@@ -108,7 +108,7 @@ main = do
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
   ctbd' <- K.ignoreCacheTimeM BRL.censusTablesByDistrict
-  let ctbd :: BRL.CensusTables BRC.CDPrefixR DT.SimpleAgeC DT.SexC DT.CollegeGradC BRC.RaceEthnicityC DT.IsCitizen
+  let ctbd :: BRL.CensusTables BRC.CDLocationR BRC.ExtensiveDataR DT.SimpleAgeC DT.SexC DT.CollegeGradC BRC.RaceEthnicityC DT.IsCitizen
         = BRL.rekeyCensusTables -- @(BR.Year ': BRC.CDPrefixR)
           (DT.age5FToSimple . BRC.age14ToAge5F)
           id -- DT.Sex

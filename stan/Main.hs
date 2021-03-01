@@ -119,6 +119,7 @@ testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
   houseData_C <- BRE.prepCachedData False
+  BRE.prepCachedData2 False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
