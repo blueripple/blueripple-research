@@ -47,40 +47,42 @@ F.declareColumn "Count" ''Int
 
 censusDataDir :: Text
 censusDataDir = "../bigData/Census"
+-- p is location prefix
+-- d is per-location data
+-- ks is table key
+type CensusRow p d ks = '[BR.Year] V.++ p V.++ d V.++ ks V.++ '[Count]
 
-type CensusRow p ks = '[BR.Year] V.++ p V.++ ks V.++ '[Count]
-
-data CensusTables p a s e r c
-  = CensusTables { ageSexRace :: F.FrameRec (CensusRow p [a, s, r])
-                 , sexRaceCitizenship :: F.FrameRec (CensusRow p [s, r, c])
-                 , sexEducationRace :: F.FrameRec (CensusRow p [s, e, r])
+data CensusTables p d a s e r c
+  = CensusTables { ageSexRace :: F.FrameRec (CensusRow p d [a, s, r])
+                 , sexRaceCitizenship :: F.FrameRec (CensusRow p d [s, r, c])
+                 , sexEducationRace :: F.FrameRec (CensusRow p d [s, e, r])
                  } deriving (Generic)
 
-instance Semigroup (CensusTables p a s e r c) where
+instance Semigroup (CensusTables p d a s e r c) where
   (CensusTables a1 a2 a3) <> (CensusTables b1 b2 b3) = CensusTables (a1 <> b1) (a2 <> b2) (a3 <> b3)
 
 type FieldC s a = (s (V.Snd a), V.KnownField a, GVec.Vector (FI.VectorFor (V.Snd a)) (V.Snd a))
-type KeysSC p ks = (V.RMap (CensusRow p ks)
-                  , FI.RecVec (CensusRow p ks)
-                  , FS.RecSerialize (CensusRow p ks)
-                  )
+type KeysSC p d ks = (V.RMap (CensusRow p d ks)
+                     , FI.RecVec (CensusRow p d ks)
+                     , FS.RecSerialize (CensusRow p d ks)
+                     )
 
 instance (FieldC S.Serialize a
          , FieldC S.Serialize s
          , FieldC S.Serialize e
          , FieldC S.Serialize r
          , FieldC S.Serialize c
-         , KeysSC p [a, s, r]
-         , KeysSC p [s, r, c]
-         , KeysSC p [s, e, r]
+         , KeysSC p d [a, s, r]
+         , KeysSC p d [s, r, c]
+         , KeysSC p d [s, e, r]
          ) =>
-         S.Serialize (CensusTables p a s e r c) where
+         S.Serialize (CensusTables p d a s e r c) where
   put (CensusTables f1 f2 f3) = S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3)
   get = (\(sf1, sf2, sf3) -> CensusTables (FS.unSFrame sf1) (FS.unSFrame sf2) (FS.unSFrame sf3)) <$> S.get
 
-type KeysFC p ks = (V.RMap (CensusRow p ks)
-                  , FI.RecVec (CensusRow p ks)
-                  , FS.RecFlat (CensusRow p ks)
+type KeysFC p d ks = (V.RMap (CensusRow p d ks)
+                  , FI.RecVec (CensusRow p d ks)
+                  , FS.RecFlat (CensusRow p d ks)
                   )
 
 instance (FieldC Flat.Flat a
@@ -88,11 +90,11 @@ instance (FieldC Flat.Flat a
          , FieldC Flat.Flat e
          , FieldC Flat.Flat r
          , FieldC Flat.Flat c
-         , KeysFC p [a, s, r]
-         , KeysFC p [s, r, c]
-         , KeysFC p [s, e, r]
+         , KeysFC p d [a, s, r]
+         , KeysFC p d [s, r, c]
+         , KeysFC p d [s, e, r]
          ) =>
-  Flat.Flat (CensusTables p a s e r c) where
+  Flat.Flat (CensusTables p d a s e r c) where
   size (CensusTables f1 f2 f3) n = Flat.size (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3) n
   encode (CensusTables f1 f2 f3) = Flat.encode (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3)
   decode = (\(sf1, sf2, sf3) -> CensusTables (FS.unSFrame sf1) (FS.unSFrame sf2) (FS.unSFrame sf3)) <$> Flat.decode
@@ -100,7 +102,7 @@ instance (FieldC Flat.Flat a
 --type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
 type LoadedCensusTablesByCD
-  = CensusTables BRC.CDPrefixR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC
+  = CensusTables BRC.CDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
@@ -166,25 +168,25 @@ raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Education4)) -> F
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 
-type AggregateByPrefixC ks p p' = (FA.AggregateC (BR.Year ': ks) p p' '[Count]
-                                  , ((ks V.++ p) V.++ '[Count]) F.⊆ CensusRow p ks
-                                  , ((p' V.++ ks) V.++ '[Count]) F.⊆ (BR.Year ': ((ks V.++ p') V.++ '[Count]))
-                                  )
+type AggregateByPrefixC ks ed p p'  = (FA.AggregateC (BR.Year ': ks) p p' (ed V.++ '[Count])
+                                      , ((ks V.++ p) V.++ (ed V.++ '[Count])) F.⊆ CensusRow p ed ks
+                                      , ((p' V.++ ks) V.++ (ed V.++ '[Count])) F.⊆ (BR.Year ': ((ks V.++ p') V.++ (ed V.++ '[Count])))
+                                      )
 
-aggregateCensusTableByPrefixF :: forall ks p p'. AggregateByPrefixC ks p p'
+aggregateCensusTableByPrefixF :: forall ks ed p p'. AggregateByPrefixC ks ed p p'
                               => (F.Record p -> F.Record p')
-                              -> FL.Fold (F.Record (CensusRow p ks)) (F.FrameRec (CensusRow p' ks))
+                              -> FL.Fold (F.Record (CensusRow p ed ks)) (F.FrameRec (CensusRow p' ed ks))
 aggregateCensusTableByPrefixF mapP =
-  K.dimap F.rcast (fmap F.rcast) $ FA.aggregateFold @(BR.Year ': ks) @p @p' @'[Count] mapP (FF.foldAllConstrained @Num FL.sum)
+  K.dimap F.rcast (fmap F.rcast) $ FA.aggregateFold @(BR.Year ': ks) @p @p' @(ed V.++ '[Count]) mapP (FF.foldAllConstrained @Num FL.sum)
 
 aggregateCensusTablesByPrefix :: forall p p' a s e r c.
-                                 ( AggregateByPrefixC [a, s, r] p p'
-                                 , AggregateByPrefixC [s, r, c] p p'
-                                 , AggregateByPrefixC [s, e, r] p p'
+                                 ( AggregateByPrefixC [a, s, r] BRC.ExtensiveDataR p p'
+                                 , AggregateByPrefixC [s, r, c] BRC.ExtensiveDataR p p'
+                                 , AggregateByPrefixC [s, e, r] BRC.ExtensiveDataR p p'
                                  )
                               => (F.Record p -> F.Record p')
-                              -> CensusTables p a s e r c
-                              -> CensusTables p' a s e r c
+                              -> CensusTables p BRC.ExtensiveDataR a s e r c
+                              -> CensusTables p' BRC.ExtensiveDataR a s e r c
 aggregateCensusTablesByPrefix f (CensusTables t1 t2 t3) =
   CensusTables
   (FL.fold (aggregateCensusTableByPrefixF @[a, s, r] f) t1)
@@ -204,7 +206,7 @@ frameFromTableRows prefixToRec keyToRec year tableRows =
       allRows = fmap oneRow tableRows
   in F.toFrame $ concat $ Vec.toList allRows
 
-rekeyCensusTables :: forall p a s e r c a' s' e' r' c'.
+rekeyCensusTables :: forall p ed a s e r c a' s' e' r' c'.
                      ( FA.CombineKeyAggregationsC '[a] '[a'] '[s] '[s']
                      , FA.CombineKeyAggregationsC '[s] '[s'] '[r] '[r']
                      , FA.CombineKeyAggregationsC '[a] '[a'] [s, r] [s', r']
@@ -214,9 +216,9 @@ rekeyCensusTables :: forall p a s e r c a' s' e' r' c'.
                      , FA.CombineKeyAggregationsC '[s] '[s'] '[e] '[e']
                      , FA.CombineKeyAggregationsC '[s] '[s'] [e, r] [e', r']
                      , FA.CombineKeyAggregationsC '[e] '[e'] '[r] '[r']
-                     , FA.AggregateC (BR.Year ': p) [a, s, r] [a', s', r'] '[Count]
-                     , FA.AggregateC (BR.Year ': p) [s, r, c] [s', r', c'] '[Count]
-                     , FA.AggregateC (BR.Year ': p) [s, e, r] [s', e', r'] '[Count]
+                     , FA.AggregateC (BR.Year ': p V.++ ed) [a, s, r] [a', s', r'] '[Count]
+                     , FA.AggregateC (BR.Year ': p V.++ ed) [s, r, c] [s', r', c'] '[Count]
+                     , FA.AggregateC (BR.Year ': p V.++ ed) [s, e, r] [s', e', r'] '[Count]
                      , V.KnownField a
                      , V.KnownField a'
                      , V.KnownField s
@@ -233,14 +235,14 @@ rekeyCensusTables :: forall p a s e r c a' s' e' r' c'.
                   -> (V.Snd e -> V.Snd e')
                   -> (V.Snd r -> V.Snd r')
                   -> (V.Snd c -> V.Snd c')
-                  -> CensusTables p a s e r c
-                  -> CensusTables p a' s' e' r' c'
+                  -> CensusTables p ed a s e r c
+                  -> CensusTables p ed a' s' e' r' c'
 rekeyCensusTables rkA rkS rkE rkR rkC ct =
   let rkASR ::FA.RecordKeyMap [a, s, r] [a', s', r'] = FA.keyMap rkA `FA.combineKeyAggregations` (FA.keyMap rkS `FA.combineKeyAggregations` FA.keyMap rkR)
       rkSRC :: FA.RecordKeyMap [s, r, c] [s', r', c'] = FA.keyMap rkS `FA.combineKeyAggregations` (FA.keyMap rkR `FA.combineKeyAggregations` FA.keyMap rkC)
       rkSER :: FA.RecordKeyMap [s, e, r] [s', e', r'] = FA.keyMap rkS `FA.combineKeyAggregations` (FA.keyMap rkE `FA.combineKeyAggregations` FA.keyMap rkR)
       sumCounts :: FL.Fold (F.Record '[Count]) (F.Record '[Count]) = FF.foldAllConstrained @Num FL.sum
   in CensusTables
-     (FL.fold (FA.aggregateFold @(BR.Year ': p) rkASR sumCounts) $ ageSexRace ct)
-     (FL.fold (FA.aggregateFold @(BR.Year ': p) rkSRC sumCounts) $ sexRaceCitizenship ct)
-     (FL.fold (FA.aggregateFold @(BR.Year ': p) rkSER sumCounts) $ sexEducationRace ct)
+     (FL.fold (FA.aggregateFold @(BR.Year ': p V.++ ed) rkASR sumCounts) $ ageSexRace ct)
+     (FL.fold (FA.aggregateFold @(BR.Year ': p V.++ ed) rkSRC sumCounts) $ sexRaceCitizenship ct)
+     (FL.fold (FA.aggregateFold @(BR.Year ': p V.++ ed) rkSER sumCounts) $ sexEducationRace ct)

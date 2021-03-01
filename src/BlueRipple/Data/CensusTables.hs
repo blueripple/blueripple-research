@@ -38,6 +38,8 @@ F.declareColumn "SqKm" ''Double
 F.declareColumn "PWPopPerSqMile" ''Double
 F.declareColumn "PerCapitaIncome" ''Double
 type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, PerCapitaIncome, SqMiles, SqKm]
+type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
+type ExtensiveDataR = [BR.Population, PerCapitaIncome, SqMiles]
 
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }
 newtype CDPrefix = CDPrefix { unCDPrefix :: F.Record CDPrefixR } deriving (Show)

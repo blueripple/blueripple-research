@@ -385,8 +385,9 @@ prepCachedData2 clearCache = do
                                          F.&: countRatio n7 t
                                          F.&: V.RNil
              ) <$> fAllCit <*> fFemCit <*> fBlackCit <*> fAsianCit <*> fOtherCit <*> fWNHCit <*> fWHCit <*> fNWHCit
-
-  cdDemographics <- BR.retrieveOrMakeFrame "model/House/cdDemographics.bin" censusDataByCD_C $ \censusByCD -> do
+  stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
+  let depsCD = (,) <$> censusDataByCD_C <*> stateAbbreviations_C
+  cdDemographics <- BR.retrieveOrMakeFrame "model/House/cdDemographics.bin" depsCD $ \(censusByCD, stateAbbr) -> do
     let fCit = FMR.concatFold
                $ FMR.mapReduceFold
                FMR.noUnpack
@@ -408,11 +409,44 @@ prepCachedData2 clearCache = do
         (frDemo, missingA, missingB) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateFips, BR.CongressionalDistrict] frCit frAge frEd
     unless (null missingA) $ K.knitError $ "Missing keys in demographic left join of citizenship to age in census tables: " <> show missingA
     unless (null missingB) $ K.knitError $ "Missing keys in demographic left join of education to citizenship/age in census tables: " <> show missingB
+    let (frDemoSA, missingSA) = FJ.leftJoinWithMissing @'[BR.StateFips] frDemo
+                                $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbr
     -- TODO: add state abbreviations
     return
-      $ fmap (F.rcast @([BR.Year, BR.StateFips, BR.CongressionalDistrict] V.++ DemographicsR)
+      $ fmap (F.rcast @(CDKeyR V.++ DemographicsR)
               . FT.retypeColumn @Census.PerCapitaIncome @DT.AvgIncome)
-      frDemo
+      frDemoSA
+  let depsState = (,) <$> censusDataByState_C <*> stateAbbreviations_C
+  stateDemographics <- BR.retrieveOrMakeFrame "model/House/stateDemographics.bin" depsState $ \(censusByState, stateAbbr) -> do
+    let fCit = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[BR.Year, BR.StateFips, DT.PopPerSqMile, Census.PerCapitaIncome])
+               (FMR.foldAndAddKey fSRC)
+        frCit = FL.fold fCit (Census.sexRaceCitizenship censusByState)
+        fAge = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[BR.Year, BR.StateFips])
+               (FMR.foldAndAddKey fASR)
+        frAge = FL.fold fAge (Census.ageSexRace censusByState)
+        fEd = FMR.concatFold
+              $ FMR.mapReduceFold
+              FMR.noUnpack
+              (FMR.assignKeysAndData @[BR.Year, BR.StateFips])
+              (FMR.foldAndAddKey fSER)
+        frEd = FL.fold fEd (Census.sexEducationRace censusByState)
+        (frDemo, missingA, missingB) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateFips, BR.CongressionalDistrict] frCit frAge frEd
+    unless (null missingA) $ K.knitError $ "Missing keys in demographic left join of citizenship to age in census tables: " <> show missingA
+    unless (null missingB) $ K.knitError $ "Missing keys in demographic left join of education to citizenship/age in census tables: " <> show missingB
+    let (frDemoSA, missingSA) = FJ.leftJoinWithMissing @'[BR.StateFips] frDemo
+                                $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbr
+    -- TODO: add state abbreviations
+    return
+      $ fmap (F.rcast @(StateKeyR V.++ DemographicsR)
+              . FT.retypeColumn @Census.PerCapitaIncome @DT.AvgIncome)
+      frDemoSA
+
   return ()
   {-
   houseElections_C <- BR.houseElectionsWithIncumbency
