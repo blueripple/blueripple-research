@@ -132,9 +132,9 @@ censusTablesByDistrict = do
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
         fRaceBySexByEducation <- makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
         return $ CensusTables
-          fRaceBySexByAge
-          fRaceBySexByCitizenship
-          fRaceBySexByEducation
+          (fmap F.rcast $ fRaceBySexByAge)
+          (fmap F.rcast $ fRaceBySexByCitizenship)
+          (fmap F.rcast $ fRaceBySexByEducation)
   dataDeps <- traverse (K.fileDependency . toString . snd) fileByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/tables.bin" dataDep $ const $ do
@@ -168,21 +168,24 @@ raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Education4)) -> F
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 
-type AggregateByPrefixC ks ed p p'  = (FA.AggregateC (BR.Year ': ks) p p' (ed V.++ '[Count])
-                                      , ((ks V.++ p) V.++ (ed V.++ '[Count])) F.⊆ CensusRow p ed ks
-                                      , ((p' V.++ ks) V.++ (ed V.++ '[Count])) F.⊆ (BR.Year ': ((ks V.++ p') V.++ (ed V.++ '[Count])))
+type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.ExtensiveDataR V.++ '[Count])
+                                   , ((ks V.++ p) V.++ (BRC.ExtensiveDataR V.++ '[Count])) F.⊆ CensusRow p BRC.ExtensiveDataR ks
+                                   , CensusRow p' BRC.ExtensiveDataR ks F.⊆ ((BR.Year ': (ks V.++ p')) V.++ (BRC.ExtensiveDataR V.++ '[Count]))
+--                                      , ((p' V.++ ks) V.++ (ed V.++ '[Count])) F.⊆ (BR.Year ': ((ks V.++ p') V.++ (ed V.++ '[Count])))
+--                                      , FF.ConstrainedFoldable Num (BRC.ExtensiveDataR V.++ '[Count])
                                       )
 
-aggregateCensusTableByPrefixF :: forall ks ed p p'. AggregateByPrefixC ks ed p p'
+aggregateCensusTableByPrefixF :: forall ks p p'. AggregateByPrefixC ks p p'
                               => (F.Record p -> F.Record p')
-                              -> FL.Fold (F.Record (CensusRow p ed ks)) (F.FrameRec (CensusRow p' ed ks))
+                              -> FL.Fold (F.Record (CensusRow p BRC.ExtensiveDataR ks)) (F.FrameRec (CensusRow p' BRC.ExtensiveDataR ks))
 aggregateCensusTableByPrefixF mapP =
-  K.dimap F.rcast (fmap F.rcast) $ FA.aggregateFold @(BR.Year ': ks) @p @p' @(ed V.++ '[Count]) mapP (FF.foldAllConstrained @Num FL.sum)
+  K.dimap F.rcast (fmap F.rcast)
+  $ FA.aggregateFold @(BR.Year ': ks) @p @p' @(BRC.ExtensiveDataR V.++ '[Count]) mapP (FF.foldAllConstrained @Num FL.sum)
 
 aggregateCensusTablesByPrefix :: forall p p' a s e r c.
-                                 ( AggregateByPrefixC [a, s, r] BRC.ExtensiveDataR p p'
-                                 , AggregateByPrefixC [s, r, c] BRC.ExtensiveDataR p p'
-                                 , AggregateByPrefixC [s, e, r] BRC.ExtensiveDataR p p'
+                                 ( AggregateByPrefixC [a, s, r] p p'
+                                 , AggregateByPrefixC [s, r, c] p p'
+                                 , AggregateByPrefixC [s, e, r] p p'
                                  )
                               => (F.Record p -> F.Record p')
                               -> CensusTables p BRC.ExtensiveDataR a s e r c
