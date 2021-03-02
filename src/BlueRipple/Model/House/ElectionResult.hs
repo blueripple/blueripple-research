@@ -368,8 +368,8 @@ prepCachedData2 clearCache = do
       fBlackCit = FL.prefilter ((== Census.R_Black) . raceEthnicity) fAllCit
       fAsianCit = FL.prefilter ((== Census.R_Asian) . raceEthnicity) fAllCit
       fOtherCit = FL.prefilter ((== Census.R_Other) . raceEthnicity) fAllCit
-      fHispCit = FL.prefilter ((== Census.E_Hispanic) . raceEthnicity) fAllCit
-      fWNHCit = FL.prefilter ((== Census.E_WhiteNonHispanic) . raceEthnicity) fAllCit
+      fHispCit = FL.prefilter ((== Census.E_Hispanic) . raceEthnicity) $ FL.premap count FL.sum
+      fWNHCit = FL.prefilter ((== Census.E_WhiteNonHispanic) . raceEthnicity) $ FL.premap count FL.sum
       fNWHCit = (-) <$> fWhiteCit <*> fWNHCit
       fWHCit = (-) <$> fHispCit <*> fNWHCit
       fWHRatio = (\x y -> countRatio (x - y) x) <$> fWHCit <*> fHispCit
