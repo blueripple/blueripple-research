@@ -134,6 +134,11 @@ type CCESDataR = CCESByCD V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 
+data DemographicSource = DS_1YRACSPUMS | DS_5YRACSTracts deriving (Show, Eq, Ord)
+demographicSourceLabel :: DemographicSource -> Text
+demographicSourceLabel DS_1YRACSPUMS = "ACS1P"
+demographicSourceLabel DS_5YRACSTracts = "ACS5T"
+
 data HouseModelData = HouseModelData { houseElectionData :: HouseElectionData
                                      , senateElectionData :: SenateElectionData
                                      , presidentialElectionData :: PresidentialElectionData
@@ -327,9 +332,9 @@ type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.P
 type HouseModelCensusTablesByCD = Census.CensusTables Census.CDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
 type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
 
-prepCachedData2 ::forall r.
-  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r () --(K.ActionWithCacheTime r HouseModelData)
-prepCachedData2 clearCache = do
+prepCachedDataTracts ::forall r.
+  (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+prepCachedDataTracts clearCache = do
   K.logLE K.Info "Loading census data (and rekeying if cache is out of date)..."
   let f :: Census.LoadedCensusTablesByCD -> HouseModelCensusTablesByCD
       f = Census.rekeyCensusTables
@@ -363,15 +368,15 @@ prepCachedData2 clearCache = do
       -- What we can count as % of citizens, we do, since we are modeling voter behavior
       fAllCit = FL.prefilter (F.rgetField @DT.IsCitizen) fAllR
       sex = F.rgetField @DT.SexC
-      fFemCit = FL.prefilter ((== DT.Female) . sex) fAllR
+      fFemCit = FL.prefilter ((== DT.Female) . sex) fAllCit
       fWhiteCit = FL.prefilter ((== Census.R_White) . raceEthnicity) fAllCit
       fBlackCit = FL.prefilter ((== Census.R_Black) . raceEthnicity) fAllCit
       fAsianCit = FL.prefilter ((== Census.R_Asian) . raceEthnicity) fAllCit
       fOtherCit = FL.prefilter ((== Census.R_Other) . raceEthnicity) fAllCit
-      fHispCit = FL.prefilter ((== Census.E_Hispanic) . raceEthnicity) $ FL.premap count FL.sum
-      fWNHCit = FL.prefilter ((== Census.E_WhiteNonHispanic) . raceEthnicity) $ FL.premap count FL.sum
-      fNWHCit = (-) <$> fWhiteCit <*> fWNHCit
-      fWHCit = (-) <$> fHispCit <*> fNWHCit
+      fHispCit = FL.prefilter ((== Census.E_Hispanic) . raceEthnicity) $ FL.prefilter (F.rgetField @DT.IsCitizen) $ FL.premap count FL.sum
+      fWNHCit = FL.prefilter ((== Census.E_WhiteNonHispanic) . raceEthnicity) $ FL.prefilter (F.rgetField @DT.IsCitizen) $ FL.premap count FL.sum
+      fWHCit = (-) <$> fWhiteCit <*> fWNHCit
+      fNWHCit = (-) <$> fHispCit <*> fWHCit
       fWHRatio = (\x y -> countRatio (x - y) x) <$> fWHCit <*> fHispCit
       fSRC :: FL.Fold (F.Record [DT.SexC, Census.RaceEthnicityC, DT.IsCitizen, Census.Count])
               (F.Record '[PUMS.Citizens, FracFemale, FracBlack, FracAsian, FracOther, FracWhiteNonHispanic, FracWhiteHispanic, FracNonWhiteHispanic])
@@ -394,7 +399,7 @@ prepCachedData2 clearCache = do
            $ FT.retypeColumn @Census.TotalIncome @DT.AvgIncome r)
   stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
   let depsCD = (,) <$> censusDataByCD_C <*> stateAbbreviations_C
-  cdDemographics_C <- BR.retrieveOrMakeFrame "model/House/cdDemographics.bin" depsCD $ \(censusByCD, stateAbbr) -> do
+  cdDemographics_C <- BR.retrieveOrMakeFrame "model/House/cdDemographicsT.bin" depsCD $ \(censusByCD, stateAbbr) -> do
     let fCit = FMR.concatFold
                $ FMR.mapReduceFold
                FMR.noUnpack
@@ -421,7 +426,7 @@ prepCachedData2 clearCache = do
     -- TODO: add state abbreviations
     return $ fmap (F.rcast @(CDKeyR V.++ DemographicsR) . fixRow) frDemoSA
   let depsState = (,) <$> censusDataByState_C <*> stateAbbreviations_C
-  stateDemographics_C <- BR.retrieveOrMakeFrame "model/House/stateDemographics.bin" depsState $ \(censusByState, stateAbbr) -> do
+  stateDemographics_C <- BR.retrieveOrMakeFrame "model/House/stateDemographicsT.bin" depsState $ \(censusByState, stateAbbr) -> do
     let fCit = FMR.concatFold
                $ FMR.mapReduceFold
                FMR.noUnpack
@@ -448,109 +453,21 @@ prepCachedData2 clearCache = do
     -- TODO: add state abbreviations
     return $ fmap (F.rcast @(StateKeyR V.++ DemographicsR) . fixRow) frDemoSA
   K.ignoreCacheTime stateDemographics_C >>= BR.logFrame
-  return ()
-  {-
-  houseElections_C <- BR.houseElectionsWithIncumbency
-  senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
-  presByStateElections_C <- BR.presidentialElectionsWithIncumbency
+  combineDemoAndElex clearCache  "model/house/tractHouseData.bin" cdDemographics_C stateDemographics_C
 
---  K.logLE K.Info $ "Senate "
---  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
-  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
-  let houseDataDeps = (,,,,) <$> censusData_C <*> houseElections_C <*> senateElections_C <*> presByStateElections_C <*> countedCCES_C
-  when clearCache $ BR.clearIfPresentD "model/house/houseData2.bin"
-  BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(censusData, houseElex, senateElex, presElex, countedCCES) -> do
-    K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
-    K.logLE K.Diagnostic "Re-keying census data"
-    let cdDemographics = pumsMR @CDKeyR pumsByCD
-        stateDemographics = pumsMR @StateKeyR pumsByState
-        isYear year = (== year) . F.rgetField @BR.Year
-        afterYear year = (>= year) . F.rgetField @BR.Year
-        betweenYears earliest latest r = let y = F.rgetField @BR.Year r in y >= earliest && y <= latest
-        dVotes = F.rgetField @DVotes
-        rVotes = F.rgetField @RVotes
-        competitive r = dVotes r > 0 && rVotes r > 0
-        competitiveIn y r = isYear y r && competitive r
-        competitiveAfter y r = afterYear y r && competitive r
-        hasVoters r = F.rgetField @Surveyed r > 0
-        hasVotes r = F.rgetField @TVotes r > 0
-        hasDVotes r = F.rgetField @DVotes r > 0
-        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
-        fHouseElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
-        fSenateElex :: FL.FoldM (Either Text) (F.Record BR.SenateElectionColsI) (F.FrameRec (SenateRaceKeyR V.++ ElectionR))
-        fSenateElex = FL.prefilterM (return . betweenYears 2012 2018) $ FL.premapM (return . F.rcast) $ electionF @SenateRaceKeyR
-        fPresElex :: FL.FoldM (Either Text) (F.Record BR.PresidentialElectionColsI) (F.FrameRec (StateKeyR V.++ ElectionR))
-        fPresElex = FL.prefilterM (return . afterYear 2012) $ FL.premapM (return . F.rcast) $ electionF @StateKeyR
-
-    houseElectionResults <- K.knitEither $ FL.foldM fHouseElex houseElex
-    senateElectionResults <- K.knitEither $ FL.foldM fSenateElex senateElex
-    presElectionResults <- K.knitEither $ FL.foldM fPresElex presElex
-
-    let moreVotesThanPeople r = F.rgetField @PUMS.Citizens r < (F.rgetField @DVotes r + F.rgetField @RVotes r)
-
-    let (houseDemoAndElex, missinghElex) = FJ.leftJoinWithMissing @CDKeyR houseElectionResults cdDemographics
-    K.knitEither $ if null missinghElex
-                   then Right ()
-                   else Left $ "Missing keys in left-join of demographics and house election data in house model prep:"
-                        <> show missinghElex
-    let competitiveHouseElectionResults = F.rcast <$> F.filterFrame competitive houseDemoAndElex
-        mvtpH = F.filterFrame moreVotesThanPeople competitiveHouseElectionResults
-    _ <- K.knitEither $ if null mvtpH
-                        then Right ()
-                        else (Left $ "More votes than people in House Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpH))
-
-
-    let competitiveCDs = FL.fold (FL.premap (F.rcast @CDKeyR) FL.set) houseDemoAndElex
-        competitiveCCES = F.filterFrame (\r -> Set.member (F.rcast @CDKeyR r) competitiveCDs) countedCCES
-        toJoinWithCCES = fmap (F.rcast @(CDKeyR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile])) competitiveHouseElectionResults
-        (ccesWithDD, missingDemo) = FJ.leftJoinWithMissing @CDKeyR toJoinWithCCES competitiveCCES --toJoinWithCCES
-    K.knitEither $ if null missingDemo
-                   then Right ()
-                   else Left $ "Missing keys in left-join of ccesByCD and demographic data in house model prep:"
-                        <> show missingDemo
-    let ccesWithoutNullVotes = F.filterFrame (\r -> hasVoters r && hasVotes r) ccesWithDD -- ICK.  This will bias our turnout model
-    let (senateDemoAndElex, missingsElex) = FJ.leftJoinWithMissing @StateKeyR senateElectionResults stateDemographics
-    K.knitEither $ if null missingsElex
-                   then Right ()
-                   else Left $ "Missing keys in left-join of demographics and senate election data in house model prep:"
-                        <> show missingsElex
-    let competitiveSenateElectionResults = F.rcast <$> F.filterFrame competitive senateDemoAndElex
-        mvtpS = F.filterFrame moreVotesThanPeople competitiveSenateElectionResults
-    _ <- K.knitEither $ if null mvtpS
-                        then Right ()
-                        else (Left $ "More votes than people in Senate Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpS))
-
-
-    let (presDemoAndElex, missingpElex) = FJ.leftJoinWithMissing @StateKeyR presElectionResults stateDemographics
-    K.knitEither $ if null missingpElex
-                   then Right ()
-                   else Left $ "Missing keys in left-join of demographics and presidential election data in house model prep:"
-                        <> show missingpElex
-
-    let competitivePresidentialElectionResults = F.rcast <$> F.filterFrame competitive presDemoAndElex
-        mvtpP = F.filterFrame moreVotesThanPeople competitivePresidentialElectionResults
-    _ <- K.knitEither $ if null mvtpP
-                        then Right ()
-                        else (Left $ "More votes than people in Presidential Results: " <> T.intercalate "\n" (show <$> FL.fold FL.list mvtpP))
-
-    return $ HouseModelData
-      competitiveHouseElectionResults
-      competitiveSenateElectionResults
-      competitivePresidentialElectionResults
-      (fmap F.rcast ccesWithoutNullVotes)
--}
 --
 
-prepCachedData ::forall r.
+prepCachedDataPUMS ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
-prepCachedData clearCache = do
+prepCachedDataPUMS clearCache = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
       pumsByCD :: F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec (CDKeyR V.++ PUMSDataR))
       pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup ((>= 2012) . F.rgetField @BR.Year) (pumsReKey . F.rcast) cdFromPUMA pums
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
-
+  cdDemographics_C <- BR.retrieveOrMakeFrame "model/house/pumsCDDemographics.bin" pumsByCD_C
+                     $ \x -> K.logLE K.Info "(re)building predictors from CD-level, PUMS-derived, demographics" >> (return $ pumsMR @CDKeyR x)
   let pumsByState :: F.FrameRec PUMS.PUMS -> F.FrameRec (StateKeyR V.++ PUMSDataR)
       pumsByState = fmap F.rcast
                     . FL.fold
@@ -559,7 +476,18 @@ prepCachedData clearCache = do
                     )
 
   pumsByState_C <- BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C (return . pumsByState)
+  stateDemographics_C <- BR.retrieveOrMakeFrame "model/house/pumsStateDemographics.bin" pumsByState_C
+                         $ \x -> K.logLE K.Info "(re)building predictors from state-level, PUMS-derived, demographics" >> (return $ pumsMR @StateKeyR x)
 
+  combineDemoAndElex clearCache "model/house/pumsHouseData.bin" cdDemographics_C stateDemographics_C
+
+combineDemoAndElex :: forall r. (K.KnitEffects r, BR.CacheEffects r)
+                   => Bool
+                   -> Text
+                   -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DemographicsR))
+                   -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DemographicsR))
+                   -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
+combineDemoAndElex clearCache cacheKey cdDemographics_C stateDemographics_C = do
   houseElections_C <- BR.houseElectionsWithIncumbency
   senateElections_C <- fmap (F.filterFrame (\r -> F.rgetField @BR.Stage r == "gen")) <$> BR.senateElectionsWithIncumbency
   presByStateElections_C <- BR.presidentialElectionsWithIncumbency
@@ -567,13 +495,11 @@ prepCachedData clearCache = do
 --  K.logLE K.Info $ "Senate "
 --  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
-  let houseDataDeps = (,,,,,) <$> pumsByCD_C <*> pumsByState_C <*> houseElections_C <*> senateElections_C <*> presByStateElections_C <*> countedCCES_C
-  when clearCache $ BR.clearIfPresentD "model/house/houseData.bin"
-  BR.retrieveOrMakeD "model/house/houseData.bin" houseDataDeps $ \(pumsByCD, pumsByState, houseElex, senateElex, presElex, countedCCES) -> do
-    K.logLE K.Info "ElectionData for election model out of date/unbuilt.  Loading demographic and election data and joining."
-    let cdDemographics = pumsMR @CDKeyR pumsByCD
-        stateDemographics = pumsMR @StateKeyR pumsByState
-        isYear year = (== year) . F.rgetField @BR.Year
+  let houseDataDeps = (,,,,,) <$> cdDemographics_C <*> stateDemographics_C <*> houseElections_C <*> senateElections_C <*> presByStateElections_C <*> countedCCES_C
+  when clearCache $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeD cacheKey houseDataDeps $ \(cdDemographics, stateDemographics, houseElex, senateElex, presElex, countedCCES) -> do
+    K.logLE K.Info "Election Data for election model out of date/unbuilt.  Loading demographic and election data and joining."
+    let isYear year = (== year) . F.rgetField @BR.Year
         afterYear year = (>= year) . F.rgetField @BR.Year
         betweenYears earliest latest r = let y = F.rgetField @BR.Year r in y >= earliest && y <= latest
         dVotes = F.rgetField @DVotes

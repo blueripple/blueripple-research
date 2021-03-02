@@ -13,6 +13,7 @@ TAGS
 bench/*.html
 report.html
 examples/html
+house_model
 *.prof
 *.hp
 *.hpp

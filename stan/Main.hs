@@ -118,8 +118,9 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedData False
-  BRE.prepCachedData2 False
+  houseData_C <- BRE.prepCachedDataTracts False
+  let demoSource = BRE.DS_5YRACSTracts
+--  BRE.prepCachedData2 False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
   K.newPandoc (K.PandocInfo "examine_predictors" $ one ("pagetitle","Examine Predictors")) $ do
@@ -204,7 +205,7 @@ testHouseModel = do
                              ,FV.LabeledCol "WhiteHispanic/Hispanic" BRE.pumsHispanicWhiteFraction
                              ,FV.LabeledCol "% Black" (F.rgetField @BRE.FracBlack)
                              ,FV.LabeledCol "% Asian" (F.rgetField @BRE.FracAsian)
---                             ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
+                             ,FV.LabeledCol "Avg. Income" (F.rgetField @DT.AvgIncome)
                              ,FV.LabeledCol "Density" (F.rgetField @DT.PopPerSqMile)
                              ,FV.LabeledCol "Incumbency" (realToFrac . F.rgetField @BRE.Incumbency)
                              ,FV.LabeledCol "Turnout" turnout
@@ -222,29 +223,29 @@ testHouseModel = do
 
   K.newPandoc
     (K.PandocInfo "compare_predictors" $ one ("pagetitle","Compare Predictors"))
-    $ comparePredictors False $ K.liftActionWithCacheTime houseData_C
+    $ comparePredictors False demoSource $ K.liftActionWithCacheTime houseData_C
 
   K.newPandoc
     (K.PandocInfo "compare_data_sets" $ one ("pagetitle","Compare Data Sets"))
-    $ compareData False $ K.liftActionWithCacheTime houseData_C
+    $ compareData False demoSource $ K.liftActionWithCacheTime houseData_C
 
   K.newPandoc
     (K.PandocInfo "compare_vote_totals" $ one ("pagetitle","Compare Vote Totals Across Races"))
-    $ examineVoteTotals False $ K.liftActionWithCacheTime houseData_C
+    $ examineVoteTotals False demoSource $ K.liftActionWithCacheTime houseData_C
 
   K.newPandoc
-    (K.PandocInfo "examine_turnout_gapss" $ one ("pagetitle","Turnout Gaps")) turnoutGaps
+    (K.PandocInfo "examine_turnout_gaps" $ one ("pagetitle","Turnout Gaps")) turnoutGaps
 
 
 {-
   K.newPandoc
     (K.PandocInfo "examine_fit" $ one ("pagetitle","Examine Fit"))
-    $ examineFit False $ K.liftActionWithCacheTime houseData_C
+    $ examineFit False demoSource $ K.liftActionWithCacheTime houseData_C
 -}
 {-
   K.newPandoc
     (K.PandocInfo "compare_models" $ one ("pagetitle","Compare Models"))
-    $ compareModels True $ K.liftActionWithCacheTime houseData_C
+    $ compareModels True demoSource $ K.liftActionWithCacheTime houseData_C
 -}
 
 writeCompareScript :: K.KnitEffects r => [SC.ModelRunnerConfig] -> Text -> K.Sem r ()
@@ -254,8 +255,8 @@ writeCompareScript configs compareScriptName = do
     $ SR.compareScript configs 10 Nothing
 
 examineVoteTotals :: forall r. (K.KnitOne r, BR.CacheEffects r)
-  => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-examineVoteTotals clearCached houseData_C = do
+  => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+examineVoteTotals clearCached ds houseData_C = do
   houseData <- K.ignoreCacheTime houseData_C
   -- Aggregate house votes by state to compare to senate and prez
   let houseVoteByStateF = FMR.concatFold
@@ -283,7 +284,7 @@ examineVoteTotals clearCached houseData_C = do
 
 --  BR.logFrame $ F.melt (Proxy :: Proxy '[BR.Year, BR.StateAbbreviation, ET.Office]) $ F.filterFrame ((==2018) . F.rgetField @BR.Year) fForChart
   _ <- K.addHvega Nothing Nothing
-       $ voteTotalChart "Turnout By Office" (FV.ViewConfig  200 30 2)
+       $ voteTotalChart ("Turnout By Office (" <> BRE.demographicSourceLabel ds <> ")") (FV.ViewConfig  200 30 2)
        $ (fForChartH <> fForChartS <> fForChartP)
   return ()
 
@@ -379,13 +380,13 @@ voteTotalChart title vc rows =
 
 
 compareModels :: forall r. (K.KnitOne r, BR.CacheEffects r)
-  => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
+  => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+compareModels clearCached ds houseData_C =  K.wrapPrefix "compareModels" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctNonWhite", "PctGrad"]
       modeledDataSets = S.fromList [BRE.HouseE]
       models =
-        [ ("betaBinomialInc", Nothing, modeledDataSets, BRE.HouseE, BRE.betaBinomialInc, 500)
-        , ("binomial", Nothing, modeledDataSets, BRE.HouseE, BRE.binomial, 500)
+        [ ("betaBinomialInc", Just $ BRE.demographicSourceLabel ds, modeledDataSets, BRE.HouseE, BRE.betaBinomialInc, 500)
+        , ("binomial", Just $ BRE.demographicSourceLabel ds, modeledDataSets, BRE.HouseE, BRE.binomial, 500)
         ]
       isYear x = (== x) . F.rgetField @BR.Year
       year = 2018
@@ -416,8 +417,8 @@ compareModels clearCached houseData_C =  K.wrapPrefix "compareModels" $ do
     (reverse $ sortOn (F.rgetField @SR.ELPD_Diff) $ FL.fold FL.list fLoo)
   return ()
 
-comparePredictors :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
-comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ do
+comparePredictors :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData  -> K.Sem r ()
+comparePredictors clearCached ds houseData_C = K.wrapPrefix "comparePredictors" $ do
   let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ,("IDEBHFAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
                    ,("IDEBHAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "PctAsian", "PctOther"])
@@ -436,12 +437,13 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
                    ,("IntOnly", [])
                    ]
       isYear y = (== y) . F.rgetField @BR.Year
+      extraLabel x = BRE.demographicSourceLabel ds <> "_" <> fst x
       year = 2018
       runOne x =
         BRE.runHouseModel
         clearCached
         (snd x)
-        ("betaBinomialInc", Just $ fst x, S.fromList [BRE.HouseE, BRE.SenateE], BRE.HouseE, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Just $ extraLabel x, S.fromList [BRE.HouseE, BRE.SenateE], BRE.HouseE, BRE.betaBinomialInc, 500)
         year
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear year))
                 . Optics.over #senateElectionData (F.filterFrame (isYear year))
@@ -465,8 +467,8 @@ comparePredictors clearCached houseData_C = K.wrapPrefix "comparePredictors" $ d
   return ()
 
 
-compareData :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
-compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
+compareData :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+compareData clearCached ds houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
       predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       presPredictors = List.filter (/= "Incumbency") predictors
@@ -482,7 +484,7 @@ compareData clearCached houseData_C =  K.wrapPrefix "compareData" $ do
         BRE.runHouseModel
         clearCached
         (if mds == S.fromList [BRE.PresidentialE] then presPredictors else predictors)
-        ("betaBinomialInc", Nothing, mds, cds, BRE.betaBinomialInc, 500)
+        ("betaBinomialInc", Just $ BRE.demographicSourceLabel ds, mds, cds, BRE.betaBinomialInc, 500)
         y
         (fmap (Optics.over #houseElectionData (F.filterFrame (isYear y))
                 . Optics.over #senateElectionData (F.filterFrame (isYear y))
@@ -588,10 +590,10 @@ modelChart title predOrder modelOrder vc t rows =
                        ]
    in FV.configuredVegaLite vc [FV.title title, facet, GV.specification spec, vlData]
 
-examineFit :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
-examineFit clearCached houseData_C =  K.wrapPrefix "examineFit" $ do
+examineFit :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
+examineFit clearCached ds houseData_C =  K.wrapPrefix "examineFit" $ do
   let predictors = ["Incumbency","PopPerSqMile","PctGrad", "PctNonWhite"]
-      model = ("betaBinomialInc", Nothing, S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
+      model = ("betaBinomialInc", Just $ BRE.demographicSourceLabel ds , S.fromList [BRE.HouseE], BRE.HouseE, BRE.betaBinomialInc, 500)
       isYear year = (== year) . F.rgetField @BR.Year
       year = 2018
       runOne x =
