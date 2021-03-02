@@ -118,8 +118,8 @@ type DShare = "DShare" F.:-> Double
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedDataTracts False
-  let demoSource = BRE.DS_5YRACSTracts
+  houseData_C <- BRE.prepCachedDataPUMS False
+  let demoSource = BRE.DS_1YRACSPUMS
 --  BRE.prepCachedData2 False
   hmd <- K.ignoreCacheTime houseData_C
   K.logLE K.Info "(predictors.html): Predictor & Predicted: Distributions & Correlations"
@@ -432,6 +432,7 @@ comparePredictors clearCached ds houseData_C = K.wrapPrefix "comparePredictors" 
                    ,("PctNonWhiteNH", ["PctNonWhiteNH"])
                    ,("Incumbency", ["Incumbency"])
                    ,("Density", ["PopPerSqMile"])
+                   ,("EducationW", ["PctWhiteGrad"])
                    ,("Education", ["PctGrad"])
                    ,("Income", ["AvgIncome"])
                    ,("IntOnly", [])

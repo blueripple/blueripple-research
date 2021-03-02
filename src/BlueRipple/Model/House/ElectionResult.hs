@@ -79,6 +79,7 @@ type FracNonWhiteHispanic = "FracNonWhiteHispanic" F.:-> Double
 type FracBlack = "FracBlack" F.:-> Double
 type FracAsian = "FracAsian" F.:-> Double
 type FracOther = "FracOther" F.:-> Double
+type FracWhiteGrad = "FracWhiteGrad" F.:-> Double -- fraction of white people who are college grads
 
 type FracCitizen = "FracCitizen" F.:-> Double
 
@@ -95,6 +96,7 @@ type DemographicsR =
   , FracBlack
   , FracAsian
   , FracOther
+  , FracWhiteGrad
   , DT.AvgIncome
   , DT.PopPerSqMile
   , PUMS.Citizens
@@ -116,6 +118,7 @@ type ElectionPredictorR = [FracUnder45
                           , FracBlack
                           , FracAsian
                           , FracOther
+                          , FracWhiteGrad
                           , DT.AvgIncome
                           , DT.PopPerSqMile]
 type HouseElectionDataR = CDKeyR V.++ DemographicsR V.++ ElectionR
@@ -207,6 +210,8 @@ pumsDataF =
       black r = race4A r == DT.RA4_Black
       asian r = race4A r == DT.RA4_Asian
       other r = race4A r == DT.RA4_Other
+      white r = race4A r == DT.RA4_White
+      whiteGrad r = (white r) && (F.rgetField @DT.CollegeGradC r == DT.Grad)
   in FF.sequenceRecFold $
      FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
      V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
@@ -217,6 +222,7 @@ pumsDataF =
      V.:& FF.toFoldRecord (fracF black)
      V.:& FF.toFoldRecord (fracF asian)
      V.:& FF.toFoldRecord (fracF other)
+     V.:& FF.toFoldRecord (intRatio <$> FL.prefilter whiteGrad citF <*> FL.prefilter white citF)
      V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
      V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
      V.:& FF.toFoldRecord citF
@@ -357,14 +363,16 @@ prepCachedDataTracts clearCache = do
       raceEthnicity =  F.rgetField @Census.RaceEthnicityC
       allR = [Census.R_White, Census.R_Black, Census.R_Asian, Census.R_Other]
       fAllR = FL.prefilter ((`elem` allR) . raceEthnicity) $ FL.premap count FL.sum
+      fAllW = FL.prefilter ((== Census.R_White) . raceEthnicity) $ FL.premap count FL.sum
       age5F = F.rgetField @DT.Age5FC
       f18To45 = FL.prefilter ((`elem` [DT.A5F_18To24, DT.A5F_25To44]) . age5F) fAllR
       fASR :: FL.Fold (F.Record [DT.Age5FC, DT.SexC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracUnder45])
       fASR = (\n m -> countRatio n m F.&: V.RNil) <$> f18To45 <*> fAllR
       grad = F.rgetField @DT.CollegeGradC
       fGrad = FL.prefilter ((== DT.Grad) . grad) fAllR
-      fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracGrad])
-      fSER = (\n m -> countRatio n m F.&: V.RNil) <$> fGrad <*> fAllR
+      fWhiteGrad = FL.prefilter (\r -> grad r == DT.Grad) fAllW
+      fSER :: FL.Fold (F.Record [DT.SexC, DT.CollegeGradC, Census.RaceEthnicityC, Census.Count]) (F.Record '[FracGrad, FracWhiteGrad])
+      fSER = (\n1 m1 n2 m2 -> countRatio n1 m1 F.&: countRatio n2 m2 F.&: V.RNil) <$> fGrad <*> fAllR <*> fWhiteGrad <*> fAllW
       -- What we can count as % of citizens, we do, since we are modeling voter behavior
       fAllCit = FL.prefilter (F.rgetField @DT.IsCitizen) fAllR
       sex = F.rgetField @DT.SexC
@@ -591,6 +599,7 @@ ccesW r = ccesWNH r || ccesWH r
 ccesNWH r = (F.rgetField @DT.Race5C r /= DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.Hispanic)
 ccesH r = ccesWH r || ccesNWH r
 ccesHWFrac = ccesWH
+ccesGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
 
 pumsWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
 pumsWhiteNH r = F.rgetField @FracWhiteNonHispanic r
@@ -603,7 +612,7 @@ predictorMap =
   let boolToNumber b = if b then 1 else 0
   in M.fromList [("PctUnder45",(F.rgetField @FracUnder45, boolToNumber . (== DT.Under) . F.rgetField @DT.SimpleAgeC))
                 ,("PctFemale",(F.rgetField @FracFemale, boolToNumber . (== DT.Female) . F.rgetField @DT.SexC))
-                ,("PctGrad",(F.rgetField @FracGrad, boolToNumber . (== DT.Grad) . F.rgetField @DT.CollegeGradC))
+                ,("PctGrad",(F.rgetField @FracGrad, boolToNumber . ccesGrad))
                 ,("PcWhiteNonHispanic", (F.rgetField @FracWhiteNonHispanic , boolToNumber . ccesWNH))
                 ,("PctWhite",(pumsWhite, boolToNumber . ccesW))
                 ,("PctNonWhiteNH", (\r -> 1 - pumsWhiteNH r, boolToNumber . not . ccesWNH))
@@ -615,6 +624,7 @@ predictorMap =
                 ,("PctBlack", (F.rgetField @FracBlack, boolToNumber . (== DT.R5_Black) . F.rgetField @DT.Race5C))
                 ,("PctAsian", (F.rgetField @FracAsian, boolToNumber . (== DT.R5_Asian) . F.rgetField @DT.Race5C))
                 ,("PctOther", (F.rgetField @FracOther, boolToNumber . (== DT.R5_Other) . F.rgetField @DT.Race5C))
+                ,("PctWhiteGrad", (F.rgetField @FracWhiteGrad, (\r -> boolToNumber $ (ccesW r && ccesGrad r))))
                 ,("AvgIncome",(F.rgetField @DT.AvgIncome, F.rgetField @DT.AvgIncome))
                 ,("PopPerSqMile",(F.rgetField @DT.PopPerSqMile, F.rgetField @DT.PopPerSqMile))
                 ,("Incumbency",(realToFrac . F.rgetField @Incumbency, realToFrac . F.rgetField @Incumbency))
