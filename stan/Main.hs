@@ -421,6 +421,7 @@ comparePredictors :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> BRE.D
 comparePredictors clearCached ds houseData_C = K.wrapPrefix "comparePredictors" $ do
   let predictors = [("IDRE",["Incumbency", "PopPerSqMile", "PctNonWhite", "PctGrad"])
                    ,("IDEBHFAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
+                   ,("IDEwBHFAO",["Incumbency", "PopPerSqMile", "PctWhiteGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"])
                    ,("IDEBHAO",["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "PctAsian", "PctOther"])
                    ,("IRE", ["Incumbency", "PctNonWhite", "PctGrad"])
                    ,("IDR", ["Incumbency", "PopPerSqMile", "PctNonWhite"])
@@ -471,7 +472,7 @@ comparePredictors clearCached ds houseData_C = K.wrapPrefix "comparePredictors" 
 compareData :: forall r. (K.KnitOne r, BR.CacheEffects r) => Bool -> BRE.DemographicSource -> K.ActionWithCacheTime r BRE.HouseModelData -> K.Sem r ()
 compareData clearCached ds houseData_C =  K.wrapPrefix "compareData" $ do
   let --predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctNonWhite"]
-      predictors = ["Incumbency", "PopPerSqMile", "PctGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
+      predictors = ["Incumbency", "PopPerSqMile", "PctWhiteGrad", "PctBlack", "PctHispanic", "HispanicWhiteFraction", "PctAsian", "PctOther"]
       presPredictors = List.filter (/= "Incumbency") predictors
       years = [2012, 2014, 2016, 2018]
       presYears = [2012, 2016]
