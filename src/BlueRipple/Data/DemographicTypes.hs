@@ -538,17 +538,7 @@ type PctOfPovertyLine = "PctOfPovertyLine" F.:-> Double
 type PctUnderPovertyLine = "PctUnderPovertyLine" F.:-> Double
 type PctUnder2xPovertyLine = "PctUnder2xPovertyLine" F.:-> Double
 
-data CensusRegion = NewEngland
-                  | MiddleAtlantic
-                  | EastNorthCentral
-                  | WestNorthCentral
-                  | SouthAtlantic
-                  | EastSouthCentral
-                  | WestSouthCentral
-                  | Mountain
-                  | Pacific
-                  | UnknownRegion
-                  deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+data CensusRegion = Northeast | Midwest | South | West | OtherRegion deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
 
 instance S.Serialize CensusRegion
 instance B.Binary CensusRegion
@@ -563,6 +553,42 @@ type instance FI.VectorFor CensusRegion = UVec.Vector
 
 type CensusRegionC = "CensusRegion" F.:-> CensusRegion
 
+data CensusDivision = NewEngland
+                    | MiddleAtlantic
+                    | EastNorthCentral
+                    | WestNorthCentral
+                    | SouthAtlantic
+                    | EastSouthCentral
+                    | WestSouthCentral
+                    | Mountain
+                    | Pacific
+                    | OtherDivision
+                  deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+
+instance S.Serialize CensusDivision
+instance B.Binary CensusDivision
+instance Flat.Flat CensusDivision
+instance Grouping CensusDivision
+instance K.FiniteSet CensusDivision
+derivingUnbox "CensusDivision"
+  [t|CensusDivision -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor CensusDivision = UVec.Vector
+
+type CensusDivisionC = "CensusDivision" F.:-> CensusDivision
+
+censusDivisionToRegion :: CensusDivision -> CensusRegion
+censusDivisionToRegion NewEngland = Northeast
+censusDivisionToRegion MiddleAtlantic = Northeast
+censusDivisionToRegion EastNorthCentral = Midwest
+censusDivisionToRegion WestNorthCentral = Midwest
+censusDivisionToRegion SouthAtlantic = South
+censusDivisionToRegion EastSouthCentral = South
+censusDivisionToRegion WestSouthCentral = South
+censusDivisionToRegion Mountain = West
+censusDivisionToRegion Pacific = West
+censusDivisionToRegion Other = Other
 
 type PopPerSqMile = "PopPerSqMile" F.:-> Double
 

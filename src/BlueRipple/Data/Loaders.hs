@@ -229,7 +229,41 @@ simpleASRTurnoutLoader = do
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
-stateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV) Nothing Nothing id Nothing "stateAbbr.sbin"
+stateAbbrCrosswalkLoader = do
+  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime $ (DataSets $ toText BR.statesCSV)
+  BR.retrieveOrMakeFrame "data/stateAbbr.bin" cachedDataPath $ \dp -> do
+    fRaw <- frameLoader dp Nothing Nothing id
+    K.knitEither $ F.toFrame <$> traverse parseCensusCols $ FL.fold FL.list fRaw
+
+parseCensusRegion :: T.Text -> Either Text DT.CensusRegion
+parseCensusRegion "Northeast" = Right DT.Northeast
+parseCensusRegion "Midwest" = Right DT.Midwest
+parseCensusRegion "South" = Right DT.South
+parseCensusRegion "West" = Right DT.West
+parseCensusRegion "OtherRegion" = Right DT.OtherRegion
+parseCensusRegion x = Left $ "Unparsed census region: " <> x
+
+parseCensusDivision :: T.Text -> Either Text DT.CensusDivision
+parseCensusDivision "NewEngland" = Right DT.NewEngland
+parseCensusDivision "MiddleAtlantic" = Right DT.MiddleAtlantic
+parseCensusDivision "EastNorthCentral" = Right DT.EastNorthCentral
+parseCensusDivision "WestNorthCentral" = Right DT.WestNorthCentral
+parseCensusDivision "SouthAtlantic" = Right DT.SouthAtlantic
+parseCensusDivision "EastSouthCentral" = Right DT.EastSouthCentral
+parseCensusDivision "WestSouthCentral" = Right DT.WestSouthCentral
+parseCensusDivision "Mountain" = Right DT.Mountain
+parseCensusDivision "Pacific" = Right DT.Pacific
+parseCensusDivision "OtherDivision" = Right DT.OtherDivision
+parseCensusDivision x = Left $ "Unparsed census division: " <> x
+
+
+parseCensusCols :: BR.States -> Either Text (F.Record [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC])
+parseCensusCols r = do
+  region <- parseCensusRegion $ F.rgetField @BR.Region r
+  division <- parseCensusDivision $ F.rgetField @BR.Division r
+  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] `V.rappend` (region F.&: division F.&: V.RNil)
+
+
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 

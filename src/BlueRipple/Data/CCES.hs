@@ -97,6 +97,9 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESEduc
                      , CCESRace
                      , CCESHispanic -- 1 for yes, 2 for no.  Missing is no. hispanic race + no = hispanic.  any race + yes = hispanic (?)
+                     , CCESCitizen
+                     , CCESFaminc
+                     , CCESEmploy
                      , CCESPid3
                      , CCESPid7
                      , CCESPid3Leaner
