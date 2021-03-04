@@ -108,15 +108,16 @@ main = do
 makeDoc :: forall r. (K.KnitOne r,  BR.CacheEffects r) => K.Sem r ()
 makeDoc = do
   ctbd' <- K.ignoreCacheTimeM BRL.censusTablesByDistrict
-  let ctbd :: BRL.CensusTables BRC.CDLocationR BRC.ExtensiveDataR DT.SimpleAgeC DT.SexC DT.CollegeGradC BRC.RaceEthnicityC DT.IsCitizen
+  let ctbd :: BRL.CensusTables BRC.CDLocationR BRC.ExtensiveDataR DT.SimpleAgeC DT.SexC DT.CollegeGradC BRC.RaceEthnicityC DT.IsCitizen BRC.EmploymentC
         = BRL.rekeyCensusTables -- @(BR.Year ': BRC.CDPrefixR)
           (DT.age5FToSimple . BRC.age14ToAge5F)
           id -- DT.Sex
           BRC.education4ToCollegeGrad
           id -- @BRC.RaceEthnicity
           BRC.citizenshipToIsCitizen
+          id
           ctbd'
-  BR.logFrame $ BRL.ageSexRace ctbd
+  BR.logFrame $ BRL.sexRaceEmployment ctbd
 {-
   let censusFile = "../GeoData/output_data/US_2018_cd116/cd116Raw.csv"
       tableDescriptions = BRK.allTableDescriptions BRC.sexByAge BRC.sexByAgePrefix

@@ -38,6 +38,7 @@ F.declareColumn "SqKm" ''Double
 F.declareColumn "PWPopPerSqMile" ''Double
 F.declareColumn "PerCapitaIncome" ''Double
 F.declareColumn "TotalIncome" ''Double
+
 type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
 type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome]
@@ -101,7 +102,6 @@ age14ToAge5F A14_65To74 = DT.A5F_65AndOver
 age14ToAge5F A14_75To84 = DT.A5F_65AndOver
 age14ToAge5F A14_85AndOver = DT.A5F_65AndOver
 
-
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
@@ -163,12 +163,27 @@ derivingUnbox "RaceEthnicity"
 type instance FI.VectorFor RaceEthnicity = UVec.Vector
 type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
 
+data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+instance S.Serialize Employment
+instance B.Binary Employment
+instance Flat.Flat Employment
+instance Grouping Employment
+instance K.FiniteSet Employment
+derivingUnbox "Employment"
+  [t|Employment -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Employment = UVec.Vector
+type EmploymentC = "Employment" F.:-> Employment
+
+{-
 data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving (Show, Eq, Ord)
 
 type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByAge = (DT.Sex, Age14)
   CensusTableKey 'SexByCitizenship = (DT.Sex, Citizenship)
   CensusTableKey 'SexByEducation = (DT.Sex, Education4)
+-}
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
 data TableYear = TY2018 | TY2016 | TY2014 | TY2012
@@ -178,6 +193,58 @@ tableYear TY2018 = 2018
 tableYear TY2016 = 2016
 tableYear TY2014 = 2014
 tableYear TY2012 = 2012
+
+sexByAgeByEmploymentPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByAgeByEmploymentPrefix TY2018 R_White = [NHGISPrefix "AKJD"]
+sexByAgeByEmploymentPrefix TY2018 R_Black = [NHGISPrefix "AKJE"]
+sexByAgeByEmploymentPrefix TY2018 R_Asian = [NHGISPrefix "AKJG"]
+sexByAgeByEmploymentPrefix TY2018 R_Other = NHGISPrefix <$> ["AKJF", "AKJH", "AKJI", "AKJJ"]
+sexByAgeByEmploymentPrefix TY2018 E_Hispanic = [NHGISPrefix "AKJL"]
+sexByAgeByEmploymentPrefix TY2018 E_WhiteNonHispanic = [NHGISPrefix "AKJK"]
+sexByAgeByEmploymentPrefix TY2016 R_White = [NHGISPrefix "AGOJ"]
+sexByAgeByEmploymentPrefix TY2016 R_Black = [NHGISPrefix "AGOK"]
+sexByAgeByEmploymentPrefix TY2016 R_Asian = [NHGISPrefix "AGOM"]
+sexByAgeByEmploymentPrefix TY2016 R_Other = NHGISPrefix <$> ["AGOL", "AGON", "AGOO", "AGOP"]
+sexByAgeByEmploymentPrefix TY2016 E_Hispanic = [NHGISPrefix "AGOR"]
+sexByAgeByEmploymentPrefix TY2016 E_WhiteNonHispanic = [NHGISPrefix "AGOQ"]
+sexByAgeByEmploymentPrefix TY2014 R_White = [NHGISPrefix "ABWZ"]
+sexByAgeByEmploymentPrefix TY2014 R_Black = [NHGISPrefix "ABW0"]
+sexByAgeByEmploymentPrefix TY2014 R_Asian = [NHGISPrefix "ABWZ"]
+sexByAgeByEmploymentPrefix TY2014 R_Other = NHGISPrefix <$> ["ABW1", "ABW3", "ABW4", "ABW5"]
+sexByAgeByEmploymentPrefix TY2014 E_Hispanic = [NHGISPrefix "ABW7"]
+sexByAgeByEmploymentPrefix TY2014 E_WhiteNonHispanic = [NHGISPrefix "ABW6"]
+sexByAgeByEmploymentPrefix TY2012 R_White = [NHGISPrefix "REA"]
+sexByAgeByEmploymentPrefix TY2012 R_Black = [NHGISPrefix "REB"]
+sexByAgeByEmploymentPrefix TY2012 R_Asian = [NHGISPrefix "RED"]
+sexByAgeByEmploymentPrefix TY2012 R_Other = NHGISPrefix <$> ["REC", "REE", "REF", "REG"]
+sexByAgeByEmploymentPrefix TY2012 E_Hispanic = [NHGISPrefix "REI"]
+sexByAgeByEmploymentPrefix TY2012 E_WhiteNonHispanic = [NHGISPrefix "REH"]
+
+data EmpAge = EA_16To64 | EA_65AndOver deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+derivingUnbox "EmpAge"
+  [t|EmpAge -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor EmpAge = UVec.Vector
+type EmpAgeC = "EmpAge" F.:-> EmpAge
+
+sexByAgeByEmployment :: NHGISPrefix -> Map (DT.Sex, EmpAge, Employment) Text
+sexByAgeByEmployment (NHGISPrefix p) =
+  Map.fromList [((DT.Male, EA_16To64, E_ArmedForces), p <> "E005")
+               ,((DT.Male, EA_16To64, E_CivEmployed), p <> "E007")
+               ,((DT.Male, EA_16To64, E_CivUnemployed), p <> "E008")
+               ,((DT.Male, EA_16To64, E_NotInLaborForce), p <> "E009")
+               ,((DT.Female, EA_16To64, E_ArmedForces), p <> "E018")
+               ,((DT.Female, EA_16To64, E_CivEmployed), p <> "E020")
+               ,((DT.Female, EA_16To64, E_CivUnemployed), p <> "E021")
+               ,((DT.Female, EA_16To64, E_NotInLaborForce), p <> "E022")
+               ,((DT.Male, EA_65AndOver, E_CivEmployed), p <> "E012")
+               ,((DT.Male, EA_65AndOver, E_CivUnemployed), p <> "E013")
+               ,((DT.Male, EA_65AndOver, E_NotInLaborForce), p <> "E014")
+               ,((DT.Female, EA_65AndOver, E_CivEmployed), p <> "E025")
+               ,((DT.Female, EA_65AndOver, E_CivUnemployed), p <> "E026")
+               ,((DT.Female, EA_65AndOver, E_NotInLaborForce), p <> "E027")
+               ]
 
 sexByAgePrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
 sexByAgePrefix TY2018 R_White = [NHGISPrefix "AJ6O"]

@@ -117,7 +117,7 @@ typeOneTable' tableDescription rtr@(TableRow _ cm) tableKey = do
   let description = tableDescription tableKey
       typedMap = mapCompose countMap description
   if Map.size typedMap /= Map.size description
-    then Left $ "Mismatch when composing maps: counts=" <> show countMap <> "; description=" <> show description
+    then Left $ "Mismatch when composing maps for tableKey=" <> show tableKey <> "; counts=" <> show countMap <> "; description=" <> show description
     else Right typedMap
 
 typeOneTable :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (TableRow a (Map c Int))

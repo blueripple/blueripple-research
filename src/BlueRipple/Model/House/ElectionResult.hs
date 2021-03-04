@@ -335,8 +335,10 @@ type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.P
 
 --
 
-type HouseModelCensusTablesByCD = Census.CensusTables Census.CDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
-type HouseModelCensusTablesByState = Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen
+type HouseModelCensusTablesByCD =
+  Census.CensusTables Census.CDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
+type HouseModelCensusTablesByState =
+  Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
@@ -349,6 +351,7 @@ prepCachedDataTracts clearCache = do
           Census.education4ToCollegeGrad
           id
           Census.citizenshipToIsCitizen
+          id
       g :: HouseModelCensusTablesByCD -> HouseModelCensusTablesByState
       g = Census.aggregateCensusTablesByPrefix (F.rcast @'[BR.StateFips])
   censusDataRaw_C <- Census.censusTablesByDistrict
