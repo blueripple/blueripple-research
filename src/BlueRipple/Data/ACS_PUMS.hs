@@ -155,8 +155,8 @@ pumsRowsLoaderAdults :: (K.KnitEffects r, BR.CacheEffects r)
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= BR.A5F_Under18) . F.rgetField @BR.Age5FC))
 
 type PUMABucket = [BR.Age5FC, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
-type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusRegionC, BR.PUMA]
-type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.PUMA]
+type PUMADesc = [BR.Year, BR.StateFIPS, BR.CensusDivisionC, BR.PUMA]
+type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, BR.CensusDivisionC, BR.PUMA]
 
 pumsCountF_old :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountF_old = fmap F.toFrame
@@ -310,7 +310,7 @@ pumsRollupF keepIf mapKeys =
   in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 
-type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusRegionC, BR.CongressionalDistrict]
+type CDDescWA = [BR.StateFIPS, BR.StateAbbreviation, BR.CensusDivisionC, BR.CongressionalDistrict]
 type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
 pumsCDRollup
  :: forall ks r
@@ -491,7 +491,7 @@ type NonCitizens = "NonCitizens" F.:-> Int
 type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
                    , BR.StateFIPS
-                   , BR.CensusRegionC
+                   , BR.CensusDivisionC
                    , BR.PUMA
                    , BR.CensusMetroC
                    , BR.PopPerSqMile
@@ -512,7 +512,7 @@ type PUMS_Typed = '[ BR.Year
 
 type PUMS_Counted = '[BR.Year
                      , BR.StateFIPS
-                     , BR.CensusRegionC
+                     , BR.CensusDivisionC
                      , BR.PUMA
                      , BR.Age5FC
                      , BR.SexC
@@ -537,7 +537,7 @@ type PUMS_Counted = '[BR.Year
 type PUMS = '[BR.Year
              , BR.StateFIPS
              , BR.StateAbbreviation
-             , BR.CensusRegionC
+             , BR.CensusDivisionC
              , BR.PUMA
              , BR.PctInMetro
              , BR.PopPerSqMile
@@ -561,8 +561,12 @@ type PUMS = '[BR.Year
 
 
 regionF :: FL.Fold BR.CensusRegion BR.CensusRegion
-regionF = FL.lastDef BR.UnknownRegion
+regionF = FL.lastDef BR.OtherRegion
 {-# INLINE regionF #-}
+
+divisionF :: FL.Fold BR.CensusDivision BR.CensusDivision
+divisionF = FL.lastDef BR.OtherDivision
+{-# INLINE divisionF #-}
 
 asPct :: Double -> Double -> Double
 asPct x y = 100 * x / y
@@ -789,8 +793,8 @@ intToSpeaksEnglish n
   | otherwise             = BR.SE_No
 
 
-intToCensusRegion :: Int -> BR.CensusRegion
-intToCensusRegion n
+intToCensusDivision :: Int -> BR.CensusDivision
+intToCensusDivision n
   | n == 11 = BR.NewEngland
   | n == 12 = BR.MiddleAtlantic
   | n == 21 = BR.EastNorthCentral
@@ -800,7 +804,7 @@ intToCensusRegion n
   | n == 33 = BR.WestSouthCentral
   | n == 41 = BR.Mountain
   | n == 42 = BR.Pacific
-  | otherwise = BR.UnknownRegion
+  | otherwise = BR.OtherDivision
 
 intToCensusMetro :: Int -> BR.CensusMetro
 intToCensusMetro n
@@ -825,7 +829,7 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addOneFromOne @BR.PUMSHISPAN @BR.HispC intToHisp)
             . (FT.addName  @BR.PUMSSTATEFIP @BR.StateFIPS)
             . (FT.addName @BR.PUMSPUMA @BR.PUMA)
-            . (FT.addOneFromOne @BR.PUMSREGION @BR.CensusRegionC intToCensusRegion)
+            . (FT.addOneFromOne @BR.PUMSREGION @BR.CensusDivisionC intToCensusDivision)
             . (FT.addOneFromOne @BR.PUMSMETRO @BR.CensusMetroC intToCensusMetro)
             . (FT.addName @BR.PUMSDENSITY @BR.PopPerSqMile)
             . (FT.addName @BR.PUMSYEAR @BR.Year)
@@ -847,7 +851,7 @@ transformPUMSRow' r =
   F.rgetField @BR.PUMSYEAR r
   F.&: F.rgetField @BR.PUMSPERWT r
   F.&: F.rgetField @BR.PUMSSTATEFIP r
-  F.&: (intToCensusRegion $ F.rgetField @BR.PUMSREGION r)
+  F.&: (intToCensusDivision $ F.rgetField @BR.PUMSREGION r)
   F.&: F.rgetField @BR.PUMSPUMA r
   F.&: (intToCensusMetro $ F.rgetField @BR.PUMSMETRO r)
   F.&: F.rgetField @BR.PUMSDENSITY r

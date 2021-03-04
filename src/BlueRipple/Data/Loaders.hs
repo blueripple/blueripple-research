@@ -228,12 +228,12 @@ simpleASRTurnoutLoader = do
 
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC]))
 stateAbbrCrosswalkLoader = do
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime $ (DataSets $ toText BR.statesCSV)
   BR.retrieveOrMakeFrame "data/stateAbbr.bin" cachedDataPath $ \dp -> do
     fRaw <- frameLoader dp Nothing Nothing id
-    K.knitEither $ F.toFrame <$> traverse parseCensusCols $ FL.fold FL.list fRaw
+    K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
 
 parseCensusRegion :: T.Text -> Either Text DT.CensusRegion
 parseCensusRegion "Northeast" = Right DT.Northeast
@@ -261,7 +261,7 @@ parseCensusCols :: BR.States -> Either Text (F.Record [BR.StateName, BR.StateFIP
 parseCensusCols r = do
   region <- parseCensusRegion $ F.rgetField @BR.Region r
   division <- parseCensusDivision $ F.rgetField @BR.Division r
-  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] `V.rappend` (region F.&: division F.&: V.RNil)
+  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] r `V.rappend` (region F.&: division F.&: V.RNil)
 
 
 

@@ -588,7 +588,7 @@ censusDivisionToRegion EastSouthCentral = South
 censusDivisionToRegion WestSouthCentral = South
 censusDivisionToRegion Mountain = West
 censusDivisionToRegion Pacific = West
-censusDivisionToRegion Other = Other
+censusDivisionToRegion OtherDivision = OtherRegion
 
 type PopPerSqMile = "PopPerSqMile" F.:-> Double
 
