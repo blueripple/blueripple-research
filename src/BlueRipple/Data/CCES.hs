@@ -401,53 +401,49 @@ type ByCCESPredictors = '[StateAbbreviation, DT.SimpleAgeC, DT.SexC, DT.CollegeG
 
 
 --
+countDVotesF
+  :: forall vc cs
+  . (Ord (F.Record cs)
+    , FI.RecVec (cs V.++ BR.CountCols)
+    , F.ElemOf CCES_MRP vc
+    , V.KnownField vc
+    , V.Snd vc ~ ET.PartyT
+    )
+  => (F.Record CCES_MRP -> F.Record cs)
+  -> Int
+  -> FMR.Fold (F.Record CCES_MRP) (F.FrameRec (cs V.++ BR.CountCols))
+countDVotesF getKeys y =
+  BR.weightedCountFold
+  getKeys
+  (F.rcast @[vc, CCESWeightCumulative])
+  (\r ->
+     (F.rgetField @BR.Year r == y)
+     && (F.rgetField @vc r `elem` [ET.Republican, ET.Democratic])
+  )
+  ((== ET.Democratic) . F.rgetField @vc)
+  (F.rgetField @CCESWeightCumulative)
+
+{-
 countDemHouseVotesF
   :: forall cs
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
-    , cs F.⊆ CCES_MRP
-    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
-    , F.ElemOf (cs V.++ CCES_MRP) HouseVoteParty
-    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => Int
   -> FMR.Fold
   (F.Record CCES_MRP)
-  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
-countDemHouseVotesF y =
-  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
-    @'[HouseVoteParty, CCESWeightCumulative]
-    (\r ->
-      (F.rgetField @BR.Year r == y)
-        && (F.rgetField @HouseVoteParty r `elem` [ET.Republican, ET.Democratic])
-    )
-    ((== ET.Democratic) . F.rgetField @HouseVoteParty)
-    (F.rgetField @CCESWeightCumulative)
-
+  (F.FrameRec (cs V.++ BR.CountCols))
+countDemHouseVotesF = countDVotesF @HouseVoteParty
 
 countDemPres2008VotesF
   :: forall cs
   . (Ord (F.Record cs)
     , FI.RecVec (cs V.++ BR.CountCols)
-    , cs F.⊆ ('[BR.StateAbbreviation] V.++ cs V.++ CCES_MRP)
-    , cs F.⊆ CCES_MRP
-    , F.ElemOf (cs V.++ CCES_MRP) Pres2008VoteParty
-    , F.ElemOf (cs V.++ CCES_MRP) CCESWeightCumulative
     )
   => FMR.Fold
   (F.Record CCES_MRP)
-  (F.FrameRec ('[BR.StateAbbreviation] V.++ cs V.++ BR.CountCols))
-countDemPres2008VotesF =
-  BR.weightedCountFold @('[BR.StateAbbreviation] V.++ cs) @CCES_MRP
-    @'[Pres2008VoteParty, CCESWeightCumulative]
-    (\r ->
-      (F.rgetField @BR.Year r == 2008)
-        && (      F.rgetField @Pres2008VoteParty r
-           `elem` [ET.Republican, ET.Democratic]
-           )
-    )
-    ((== ET.Democratic) . F.rgetField @Pres2008VoteParty)
-    (F.rgetField @CCESWeightCumulative)
+  (F.FrameRec (cs V.++ BR.CountCols))
+countDemPres2008VotesF = countDVotesF @Pres2008VoteParty 2008
 
 countDemPres2012VotesF
   :: forall cs
@@ -496,3 +492,4 @@ countDemPres2016VotesF =
     )
     ((== ET.Democratic) . F.rgetField @Pres2016VoteParty)
     (F.rgetField @CCESWeightCumulative)
+-}

@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -17,6 +18,7 @@ import qualified Data.Maybe as Maybe
 
 import qualified Data.Text as T
 import qualified Frames as F
+import qualified Frames.InCore as FI
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
@@ -168,13 +170,27 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
                <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
                <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5))
 
-countCCESASER5 :: K.KnitEffects r => ET.OfficeT -> Int -> F.FrameRec CCES.CCES_MRP -> K.Sem r (F.FrameRec (CCES_CountRow DT.CatColsASER5))
-countCCESASER5 office year ccesMRP = do
+count :: forall ks r.
+              (K.KnitEffects r
+              , Ord (F.Record ks)
+              , FI.RecVec (ks V.++ BR.CountCols)
+              , ks F.⊆ CCES.CCES_MRP
+              )
+      => (F.Record CCES.CCES_MRP -> F.Record ks)
+      -> ET.OfficeT
+      -> Int
+      -> F.FrameRec CCES.CCES_MRP
+      -> K.Sem r (F.FrameRec (ks V.++ BR.CountCols))
+count getKey office year ccesMRP = do
   countFold <- K.knitEither $ case (office, year) of
-    (ET.President, 2008) -> Right $ CCES.countDemPres2008VotesF @DT.CatColsASER5
-    (ET.President, 2012) -> Right $ CCES.countDemPres2012VotesF @DT.CatColsASER5
-    (ET.President, 2016) -> Right $ CCES.countDemPres2016VotesF @DT.CatColsASER5
-    (ET.House, y) -> Right $  CCES.countDemHouseVotesF @DT.CatColsASER5 y
+    (ET.President, 2008) ->
+      Right $ CCES.countDVotesF @CCES.Pres2008VoteParty getKey 2008
+    (ET.President, 2012) ->
+      Right $ CCES.countDVotesF @CCES.Pres2012VoteParty getKey 2012
+    (ET.President, 2016) ->
+      Right $ CCES.countDVotesF @CCES.Pres2016VoteParty getKey 2016
+    (ET.House, y) ->
+      Right $  CCES.countDVotesF @CCES.HouseVoteParty getKey y
     _ -> Left $ show office <> "/" <> show year <> " not available."
   let counted = FL.fold countFold ccesMRP
   return counted
@@ -199,7 +215,8 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
   let toPredict :: F.FrameRec ('[BR.StateAbbreviation] V.++ DT.CatColsASER5)
       toPredict = F.toFrame [ s F.&: cat | s <- allStatesL, cat <- DT.allCatKeysASER5]
   cces_C <- CCES.ccesDataLoader
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C
+                 $ count (F.rcast @(BR.StateAbbreviation ': DT.CatColsASER5)) office year
   let stancConfig = (SM.makeDefaultStancConfig (toString $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
                 <$> SM.makeDefaultModelRunnerConfig
@@ -237,7 +254,8 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
       countCacheKey = "data/stan/cces/stateVotesASER5_" <> officeYearT <> ".bin"
   cces_C <- CCES.ccesDataLoader
   K.logLE K.Diagnostic "Finished loading (cached) CCES data"
-  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C $ countCCESASER5 office year
+  ccesASER5_C <- BR.retrieveOrMakeFrame countCacheKey cces_C
+                 $ count (F.rcast  @(BR.StateAbbreviation ': DT.CatColsASER5)) office year
   let stancConfig = (SM.makeDefaultStancConfig $ toString $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
                 <$> SM.makeDefaultModelRunnerConfig

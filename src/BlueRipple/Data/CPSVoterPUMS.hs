@@ -364,9 +364,7 @@ cpsCountVotersByStateF
   :: forall ks.
   (Ord (F.Record ks)
   , FI.RecVec (ks V.++ BRCF.CountCols)
-  , F.ElemOf (ks V.++ CPSVoterPUMS) CPSVoterPUMSWeight
-  , F.ElemOf (ks V.++ CPSVoterPUMS) BR.VotedYNC
-  , ks F.⊆ ('[BR.StateAbbreviation] V.++ ks V.++ CPSVoterPUMS)
+  , ks F.⊆ CPSVoterPUMS
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
   -> Int -- year
@@ -379,11 +377,9 @@ cpsCountVotersByStateF getCatKey year =
       citizen r = F.rgetField @BR.IsCitizen r
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
-  in BRCF.weightedCountFoldGeneral
-     @('[BR.StateAbbreviation] V.++ ks)
-     @_
-     @[BR.VotedYNC, CPSVoterPUMSWeight]
-     (\r -> F.rcast @'[BR.StateAbbreviation] r `V.rappend` getCatKey r)
+  in BRCF.weightedCountFold
+     (F.rcast @(BR.StateAbbreviation ': ks))
+     (F.rcast @[BR.VotedYNC, CPSVoterPUMSWeight])
      includeRow
      voted
      (F.rgetField @CPSVoterPUMSWeight)
@@ -392,10 +388,7 @@ cpsCountVotersByCDF
   :: forall ks.
   (Ord (F.Record ks)
   , FI.RecVec (ks V.++ BRCF.CountCols)
-  , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) CPSVoterPUMSWeight
-  , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.VotedYNC
-  , F.ElemOf (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])) BR.CountyWeight
-  , ks F.⊆ ([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ (ks V.++ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])))
+  , ks F.⊆ (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])
   )
   => (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
   -> Int -- year
@@ -409,11 +402,9 @@ cpsCountVotersByCDF getCatKey year =
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
       wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
-  in BRCF.weightedCountFoldGeneral
-     @([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks)
-     @_
-     @[BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
-     (\r -> F.rcast @[BR.StateAbbreviation, BR.CongressionalDistrict] r `V.rappend` getCatKey r)
+  in BRCF.weightedCountFold
+     (F.rcast @([BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks))
+     (F.rcast  @[BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
      includeRow
      voted
      wgt

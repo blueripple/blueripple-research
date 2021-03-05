@@ -72,7 +72,7 @@ weightedBinomialFold testRow weightRow =
       <*> wSuccessesF
       <*> meanWeightF
       <*> varWeightF
-
+{-
 weightedCountFold
   :: forall k r d
    . (Ord (F.Record k)
@@ -91,21 +91,20 @@ weightedCountFold {- filterData testData weightData-} = weightedCountFoldGeneral
     (FMR.assignKeysAndData @k)
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
 -}
-
-weightedCountFoldGeneral
+-}
+weightedCountFold
   :: forall k r d
    . (Ord (F.Record k)
      , FI.RecVec (k V.++ CountCols)
-     , k F.⊆ (k V.++ r)
-     , d F.⊆ (k V.++ r)
      )
   => (F.Record r -> F.Record k)
+  -> (F.Record r -> F.Record d)
   -> (F.Record r -> Bool) -- ^ include this row?
   -> (F.Record d -> Bool) -- ^ success ?
   -> (F.Record d -> Double) -- ^ weight
   -> FL.Fold (F.Record r) (F.FrameRec (k V.++ CountCols))
-weightedCountFoldGeneral getKey filterData testData weightData =
-  FL.prefilter filterData $ FMR.concatFold $ FMR.mapReduceFold
-    (MR.Unpack $ \r ->  [getKey r `V.rappend` r])
-    (FMR.assignKeysAndData @k @d)
+weightedCountFold getKey getData filterRow testData weightData =
+  FL.prefilter filterRow $ FMR.concatFold $ FMR.mapReduceFold
+    FMR.noUnpack
+    (FMR.Assign $ \r ->  (getKey r, getData r))
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
