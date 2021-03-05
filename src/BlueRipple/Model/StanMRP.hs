@@ -55,16 +55,16 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import Data.String.Here (here)
 
-type CountRow ks =  ks V.++ BR.CountCols
 
-type CCESDataWrangler ks b = SC.DataWrangler
-                             (F.FrameRec (CountRow ks))
-                             b
-                             (F.FrameRec ks)
+data MRP_DataWrangler as bs b where
+  MRP_ModelSubset :: (bs F.⊆ as) => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) -> MRP_DataWrangler as bs b
+  MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) ->  MRP_DataWrangler as as b
 
 
-ccesDataWrangler2 :: CCESDataWrangler ks (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
+mrpDataWrangler :: Text -> MRP_DataWrangler as bs ()
+mrpDataWrangler cacheDir = MRP_DataWrangler
+                  $ SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> cacheDir <> "stan/index" <> SC.mrcOutputPrefix c <> ".bin") f g where
+
   enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
@@ -594,51 +594,3 @@ binomialASER5_v7_GQLLBlock = [here|
     log_lik[g] =  binomial_logit_lpmf(D_votes[g] | Total_votes[g], alpha + X[g] * beta + dot_product(XI[g], betaState[state[g]]));
   }
 |]
-
-
-  ---
-
-  ccesDataWrangler :: CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
-  enumSexF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SexC)
-  enumAgeF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
-  enumEducationF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.CollegeGradC)
-  enumRaceF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.Race5C)
-  enumStateF = SJ.enumerateField id (SJ.enumerate 1) (F.rgetField @BR.StateAbbreviation)
-  enumCategoryF = SJ.enumerateField show (SJ.enumerate 1) (F.rcast @DT.CatColsASER5)
-  -- do outer enumeration fold for indices
-  f cces = ((toState, fmap FS.toS toCategory), makeJsonE) where
-    enumF = (,,,,,)
-      <$> enumSexF
-      <*> enumAgeF
-      <*> enumEducationF
-      <*> enumRaceF
-      <*> enumStateF
-      <*> enumCategoryF
-    ((sexF, toSex)
-      , (ageF, toAge)
-      , (educationF, toEducation)
-      , (raceF, toRace)
-      , (stateF, toState)
-      , (categoryF, toCategory)) = FL.fold enumF cces
-    makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
-      dataF = SJ.namedF "G" FL.length
-              <> SJ.constDataF "J_state" (IM.size toState)
-              <> SJ.constDataF "J_sex" (IM.size toSex)
-              <> SJ.constDataF "J_age" (IM.size toAge)
-              <> SJ.constDataF "J_educ" (IM.size toEducation)
-              <> SJ.constDataF "J_race" (IM.size toRace)
-              <> SJ.valueToPairF "sex" sexF
-              <> SJ.valueToPairF "age" ageF
-              <> SJ.valueToPairF "education" educationF
-              <> SJ.valueToPairF "race" raceF
-              <> SJ.valueToPairF "category" categoryF
-              <> SJ.valueToPairF "state" stateF
-              <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
-              <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF $ F.rgetField @BR.Count)
-  g (toState, toCategory) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
-    toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
-    toCategoryIndexM c = M.lookup c$ SJ.flipIntIndex (fmap FS.fromS toCategory)
-    predictF = SJ.namedF "M" FL.length
-               <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
-               <> SJ.valueToPairF "predict_Category" (SJ.jsonArrayMF (toCategoryIndexM . F.rcast @DT.CatColsASER5))
