@@ -13,13 +13,13 @@ category:            Numeric
 build-type:          Simple
 extra-source-files:
 data-dir: data
-data-files: images/WWCV_Tweet.png
+--data-files: images/WWCV_Tweet.png
 
 common deps
   build-depends: base >= 4.11.1.0
                , array
                , blaze-html
-               , blueripple-data-sets
+               , blueripple-data-sets >= 0.2.0.0
                , binary
                , cereal >= 0.5.7 && < 0.6
                , cereal-text >= 0.1.0 && < 0.2

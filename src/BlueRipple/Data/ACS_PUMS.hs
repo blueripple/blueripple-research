@@ -73,16 +73,7 @@ import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.Transform     as FStreamly
-{-
-import qualified Frames.Visualization.VegaLite.Data as FV
-import qualified Graphics.Vega.VegaLite        as GV
 
-import qualified Data.IndexedSet               as IS
-import qualified Numeric.GLM.ProblemTypes      as GLM
-import qualified Numeric.GLM.ModelTypes      as GLM
-import qualified Numeric.GLM.Predict            as GLM
-import qualified Numeric.LinearAlgebra         as LA
--}
 import           Data.Hashable                  ( Hashable )
 import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic, Rep )
@@ -100,17 +91,6 @@ import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified System.Clock
 import GHC.TypeLits (Symbol)
 import Data.Kind (Type)
-
-{-
-class StrictRecord rs where
-  forceRec :: F.Record rs -> F.Record rs
-
-instance StrictRecord '[] where
-  forceRec = id
-
-instance (V.KnownField t, StrictRecord rs) => StrictRecord (t ': rs) where
-  forceRec (t V.:& rs) = t `seq` (t V.:& forceRec rs)
--}
 
 typedPUMSRowsLoader' :: (K.KnitEffects r, BR.CacheEffects r)
                      => BR.DataPath
@@ -211,10 +191,8 @@ pumsLoader'
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS))
 pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
---  cachedDataPath <- K.liftKnit $ BR.dataPathWithCacheTime dataPath
   cachedPums <- pumsRowsLoader' dataPath mRawCacheKey filterTypedM
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedPums
---  fmap (fmap F.toFrame . K.runCachedStream Streamly.toList)
   BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pums) -> do
       K.logLE K.Diagnostic "Loading state abbreviation crosswalk."
       let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
@@ -225,15 +203,12 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
                 abbrM = M.lookup fips abbrFromFIPS
                 addAbbr r abbr = abbr F.&: r
             in fmap (addAbbr r) abbrM
---      allRowsF <- K.streamlyToKnit $ FStreamly.inCoreAoS pumsStream --fileToFixedS
       let numRows = FL.fold FL.length pums
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
       K.logLE K.Diagnostic $ "Finished loading " <> show numRows <> " rows to Frame.  " <> show numYoung <> " under 18. Counting..."
---      countedF <- K.streamlyToKnit $ FL.foldM pumsCountStreamlyF pums
       countedF <- K.streamlyToKnit $ pumsCount pums
       let numCounted = FL.fold FL.length countedF
       K.logLE K.Diagnostic $ "Finished counting. " <> show numCounted <> " rows of counts.  Adding state abbreviations..."
---      let withAbbrevsF = F.toFrame $ fmap (F.rcast @PUMS) $ catMaybes $ fmap addStateAbbreviation $ countedL
       let withAbbrevsF = F.rcast @PUMS <$> FStreamly.mapMaybe addStateAbbreviation countedF
           numFinal = FL.fold FL.length withAbbrevsF
       K.logLE K.Diagnostic $ "Finished stateAbbreviations. Lost " <> show (numCounted - numFinal) <> " rows due to unrecognized state FIPS."

@@ -82,7 +82,7 @@ data DataPath = DataSets T.Text | LocalData T.Text
 
 getPath :: DataPath -> IO FilePath
 getPath dataPath = case dataPath of
-  DataSets fp -> liftIO $ BR.usePath (toString fp)
+  DataSets fp -> liftIO $ BR.dataPath (toString fp)
   LocalData fp -> return (toString fp)
 
 -- if the file is local, use modTime

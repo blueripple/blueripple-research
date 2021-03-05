@@ -226,14 +226,20 @@ simpleASRTurnoutLoader = do
     cachedASR_Turnout
     make
 
+rawStateAbbrCrosswalkLoader ::
+  (K.KnitEffects r, BR.CacheEffects r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.Frame BR.States))
+rawStateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV) Nothing Nothing id Nothing "statesRaw.bin"
+{-# INLINEABLE rawStateAbbrCrosswalkLoader #-}
+
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC]))
 stateAbbrCrosswalkLoader = do
-  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime $ (DataSets $ toText BR.statesCSV)
-  BR.retrieveOrMakeFrame "data/stateAbbr.bin" cachedDataPath $ \dp -> do
-    fRaw <- frameLoader dp Nothing Nothing id
+  statesRaw_C <- rawStateAbbrCrosswalkLoader
+  BR.retrieveOrMakeFrame "data/stateAbbr.bin" statesRaw_C $ \fRaw ->
     K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
+{-# INLINEABLE stateAbbrCrosswalkLoader #-}
 
 parseCensusRegion :: T.Text -> Either Text DT.CensusRegion
 parseCensusRegion "Northeast" = Right DT.Northeast
