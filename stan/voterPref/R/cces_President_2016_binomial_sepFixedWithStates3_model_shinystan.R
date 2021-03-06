@@ -1,8 +1,16 @@
 library(rstan)
 library(shinystan)
+library(rjson)
 
-setwd("/Users/adam/BlueRipple/research/stan/voterPref")
+sink(stderr())
 print("Loading csv output.  Might take a minute or two...")
-stanFit <- read_stan_csv(c("output/cces_President_2016_binomial_sepFixedWithStates3_model_1.csv","output/cces_President_2016_binomial_sepFixedWithStates3_model_2.csv","output/cces_President_2016_binomial_sepFixedWithStates3_model_3.csv","output/cces_President_2016_binomial_sepFixedWithStates3_model_4.csv"))
+sink()
+
+stanFit <- read_stan_csv(c("stan/voterPref/output/cces_President_2016_binomial_sepFixedWithStates3_model_1.csv","stan/voterPref/output/cces_President_2016_binomial_sepFixedWithStates3_model_2.csv","stan/voterPref/output/cces_President_2016_binomial_sepFixedWithStates3_model_3.csv","stan/voterPref/output/cces_President_2016_binomial_sepFixedWithStates3_model_4.csv"))
+jsonData <- fromJSON(file = "stan/voterPref/data/cces_President_2016_v2.json")
+D_votes <- jsonData $ D_votes
+sink(stderr())
 print("Launching shinystan....")
+sink()
+
 launch_shinystan(stanFit)

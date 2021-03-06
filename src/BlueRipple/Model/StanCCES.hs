@@ -63,7 +63,9 @@ type CCESDataWrangler ks b = SC.DataWrangler
                              (F.FrameRec ks)
 
 
-ccesDataWrangler2 :: CCESDataWrangler ks (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
+type StateASER5 = BR.StateAbbreviation ': DT.CatColsASER5
+
+ccesDataWrangler2 :: CCESDataWrangler StateASER5 (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
 ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
   enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
@@ -96,8 +98,8 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
 extractResults :: Int
                -> ET.OfficeT
                -> CS.StanSummary
-               -> F.FrameRec (CCES_KeyRow DT.CatColsASER5)
-               -> Either T.Text (F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]))
+               -> F.FrameRec StateASER5
+               -> Either T.Text (F.FrameRec (StateASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]))
 extractResults year office summary toPredict = do
    predictProbs <- fmap CS.mean <$> SP.parse1D "predicted" (CS.paramStats summary)
    let yoRec :: F.Record '[BR.Year, ET.Office] = year F.&: office F.&: V.RNil
@@ -107,13 +109,13 @@ extractResults year office summary toPredict = do
    return $ F.toFrame $ uncurry makeRow <$> zip (FL.fold FL.list toPredict) (FL.fold FL.list predictProbs)
 
 comparePredictions ::  K.KnitEffects r
-                   => F.FrameRec (CCES_KeyRow DT.CatColsASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
-                   -> F.FrameRec (CCES_CountRow DT.CatColsASER5)
+                   => F.FrameRec (StateASER5 V.++ '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref])
+                   -> F.FrameRec (CountRow StateASER5)
                    -> K.Sem r ()
 comparePredictions predictions input = do
   joined <- K.knitEither
             $ either (Left. show) Right
-            $ FJ.leftJoinE @(CCES_KeyRow DT.CatColsASER5) input predictions
+            $ FJ.leftJoinE @StateASER5 input predictions
   let p = F.rgetField @ET.DemPref
       n = F.rgetField @BR.Count
       s = realToFrac . round @_ @Int . F.rgetField @BR.WeightedSuccesses
@@ -151,12 +153,12 @@ count getKey office year ccesMRP = do
   return counted
 
 prefASER5_MR :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
-             => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
+             => (T.Text, CCESDataWrangler StateASER5 b)
              -> (T.Text, SB.StanModel)
              -> ET.OfficeT
              -> Int
              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec
-                                                  (CCES_KeyRow DT.CatColsASER5
+                                                  (StateASER5
                                                     V.++
                                                     '[BR.Year, ET.Office, ET.DemVPV, BR.DemPref]
                                                   )))
@@ -198,7 +200,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
 
 
 prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
-                 => (T.Text, CCESDataWrangler DT.CatColsASER5 b)
+                 => (T.Text, CCESDataWrangler StateASER5 b)
                  -> (T.Text, SB.StanModel)
                  -> ET.OfficeT
                  -> Int
@@ -597,8 +599,8 @@ binomialASER5_v7_GQLLBlock = [here|
 
 
   ---
-
-  ccesDataWrangler :: CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
+{-
+ccesDataWrangler :: CCESDataWrangler DT.CatColsASER5  (IM.IntMap T.Text, IM.IntMap (F.Rec FS.SElField DT.CatColsASER5))
 ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
   enumSexF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SexC)
   enumAgeF = SJ.enumerateField show (SJ.enumerate 1) (F.rgetField @DT.SimpleAgeC)
@@ -642,3 +644,4 @@ ccesDataWrangler = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/in
     predictF = SJ.namedF "M" FL.length
                <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
                <> SJ.valueToPairF "predict_Category" (SJ.jsonArrayMF (toCategoryIndexM . F.rcast @DT.CatColsASER5))
+-}

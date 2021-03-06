@@ -60,6 +60,32 @@ data MRP_DataWrangler as bs b where
   MRP_ModelSubset :: (bs F.⊆ as) => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) -> MRP_DataWrangler as bs b
   MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) ->  MRP_DataWrangler as as b
 
+data Group bs =
+  Group { g_name :: Text -- for data and variable naming
+        , g_Index :: F.Record bs -> Int -- from this we'll get data vector as well dtermine group size for binary handling
+        }
+
+
+{-
+data GroupIntercept bs = GroupIntercept { gi_name :: Text
+                                        , gi_index :: F.Record bs -> Int
+                                        }
+
+data GroupSlope bs = GroupSlope { gs_name :: Text
+                                , gs_index :: Int
+                                , gs_FixedEffectName :: Text
+                                }
+-}
+data MRP_Model bs =
+  MRP_Model
+  {
+    mm_name :: Text -- we'll need this for unique file names
+  , mm_effectIndex :: Map Text Int -- map from effect name to column in fixed effect matrix
+  , mm_fixedEffects :: F.Record bs -> Vec.Vector Double
+  , mm_Groups :: [Group bs]
+--  , mm_groupIntercepts :: [GroupIntercept bs]
+--  , mm_groupSlopes :: [GroupSlope bs]
+  }
 
 mrpDataWrangler :: Text -> MRP_DataWrangler as bs ()
 mrpDataWrangler cacheDir = MRP_DataWrangler

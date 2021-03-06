@@ -106,7 +106,8 @@ main = do
           }
 --  let pureMTseed = PureMT.pureMT 1
   --
-  resE <- K.knitHtmls knitConfig testHouseModel
+--  resE <- K.knitHtmls knitConfig testHouseModel
+  resE <- K.knitHtmls knitConfig testCCESPref
   case resE of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "house_model" namedDocs
@@ -703,9 +704,10 @@ fitScatter2 title vc rows =
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, transform [], enc [], mark, dat]
 
-testCCESPref :: forall r. (K.KnitOne r, BR.CacheEffects r, K.Member RandomFu r) => K.Sem r ()
-testCCESPref = do
+testCCESPref :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
+testCCESPref =   K.newPandoc (K.PandocInfo "test CCES MRP" $ one ("pagetitle","Test CCES MRP")) $ do
   K.logLE K.Info "Stan model fit for 2016 presidential votes:"
+{-
   stan_allBuckets <-
     K.ignoreCacheTimeM $
       BRS.prefASER5_MR
@@ -713,7 +715,7 @@ testCCESPref = do
         ("binomial_allBuckets", BRS.model_BinomialAllBuckets)
         ET.President
         2016
-
+-}
   stan_sepFixedWithStates <-
     K.ignoreCacheTimeM $
       BRS.prefASER5_MR
@@ -730,8 +732,8 @@ testCCESPref = do
         ET.President
         2016
 
-  K.logLE K.Info $ "allBuckets vs sepFixedWithStates3"
-  let compList = zip (FL.fold FL.list stan_allBuckets) $ fmap (F.rgetField @ET.DemPref) $ FL.fold FL.list stan_sepFixedWithStates3
+  K.logLE K.Info $ "sepFixedWithStates vs sepFixedWithStates3"
+  let compList = zip (FL.fold FL.list stan_sepFixedWithStates) $ fmap (F.rgetField @ET.DemPref) $ FL.fold FL.list stan_sepFixedWithStates3
   K.logLE K.Info $ T.intercalate "\n" . fmap (T.pack . show) $ compList
 
 --  BRS.prefASER5_MR_Loo ("v1", BRS.ccesDataWrangler) ("binomial_allBuckets", BRS.model_BinomialAllBuckets) ET.President 2016

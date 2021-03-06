@@ -32,6 +32,7 @@ GA.html
 stan.html
 /stan/house/*
 /stan/voterPref/*
+stan/voterPref/*
 stan/*/output
 stan/*/data
 stan/*/*_model
@@ -44,3 +45,4 @@ georgia/stan
 /*.html
 /*.csv
 /*.xlsx
+/*.eventlog
