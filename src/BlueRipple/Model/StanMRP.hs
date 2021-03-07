@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,8 +13,9 @@
 module BlueRipple.Model.StanMRP where
 
 import qualified Control.Foldl as FL
+import qualified Data.Aeson as A
 import qualified Data.IntMap.Strict as IM
-import qualified Data.Map as M
+import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
 import qualified Data.Text as T
@@ -30,13 +32,7 @@ import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
 
-import qualified BlueRipple.Data.DataFrames as BR
-import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Data.CountFolds as BR
-import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.Keyed as BK
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
@@ -65,11 +61,11 @@ data MRP_DataWrangler as bs b where
 
 data MRPData f predRow datRow psRow where
   MRData :: Traversable f => f row -> MRPData f row row ()
-  MRPData :: Traversable f => f datRow -> f psRow -> (datRow -> predRow) -> (psRow -> predRow) -> MRPData f predRow modRow psRow
+  MRPData :: Traversable f => f datRow -> f psRow -> (datRow -> predRow) -> (psRow -> predRow) -> MRPData f predRow datRow psRow
 
 modeledDataRows :: MRPData f predRow datRow psRow -> f datRow
-modeledDataRows (MPRData modeledRows _ _ _)  = modeledRows
-modeledDataRows (MRData modelRows) = modeledRows
+modeledDataRows (MRData modeledRows) = modeledRows
+modeledDataRows (MRPData modeledRows _ _ _)  = modeledRows
 
 modelToPred :: MRPData f predRow datRow psRow -> (datRow -> predRow)
 modelToPred (MRData _) = id
@@ -77,20 +73,29 @@ modelToPred (MRPData _ _ f _) = f
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
-type StanBuilderEnv row = StanBuilderEnv { groupIndices :: Map Text (IntIndex row) }
-type StanBuilderM row a = ExceptT Text (Reader (StanBuilderEnv row)) a
+data StanBuilderEnv row = StanBuilderEnv { env_groupIndices :: Map Text (IntIndex row) }
+
+newtype StanBuilderM row a = StanBuilderM { unStanBuilderM :: ExceptT Text (Reader (StanBuilderEnv row)) a }
+  deriving (Functor, Applicative, Monad, MonadReader (StanBuilderEnv row))
 
 runStanBuilder :: StanBuilderEnv row -> StanBuilderM row a -> Either Text a
-runStanBuilder e = fmap (usingReader e) . runExceptT
+runStanBuilder e = usingReader e . runExceptT . unStanBuilderM
 
-stanBuildError :: Text -> StanBuilderM ()
-stanBuildError t = ExceptT (pure $ Left t)
+stanBuildError :: Text -> StanBuilderM row a
+stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
-getEnv :: StanBuilderM row (StanBuilderEnv row)
-getEnv =
+askEnv :: StanBuilderM row (StanBuilderEnv row)
+askEnv = ask
 
-getIndex :: Group row -> StanBuilderM row IntIndex
-getIndex = do
+asksEnv :: (StanBuilderEnv row -> a) -> StanBuilderM row a
+asksEnv = asks
+
+getIndex :: Group row -> StanBuilderM row (IntIndex row)
+getIndex g = do
+  indexMap <- asksEnv env_groupIndices
+  case (Map.lookup (groupName g) indexMap) of
+    Nothing -> stanBuildError $ "No group index found for group with name=\"" <> (groupName g) <> "\""
+    Just i -> return i
 
 
 data Group row where
@@ -101,20 +106,20 @@ groupName :: Group row -> Text
 groupName (EnumeratedGroup n _) = n
 groupName (LabeledGroup n _) = n
 
-groupIndex :: Foldable f => Group row -> f row -> Index row
-groupIndex (EnumeratedGroup _ i) _ = f
+groupIndex :: Foldable f => Group row -> f row -> IntIndex row
+groupIndex (EnumeratedGroup _ i) _ = i
 groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
 
-groupDataFold :: Foldable f => Group row -> StanBuilderM (StanJSONF row A.Series)
-groupDataFold predRows g = do
+groupDataFold :: Group row -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupDataFold g = do
+  let name = groupName g
+  IntIndex indexSize indexM <- getIndex g
+  return
+    $ SJ.constDataF ("J_" <> name) indexSize
+    <> SJ.valueToPairF name (SJ.jsonArrayMF indexM)
 
-  SJ.constDataF ("J_" <> name) indexSize <> SJ.namedF name (SJ.jsonArrayMF indexM)
-  where
-    name = groupName g
-    Index indexSize indexM = groupIndex g predRows
-
-groupsModelDataFold :: (Foldable f, Functor f, Foldable g) => g row -> f (Group row) -> StanJSONF row A.Series
-groupsModelDataFold rows = foldMap . fmap (groupDataFold rows)
+groupsDataFold :: Traversable f => f (Group row) -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupsDataFold  = fmap (foldMap id) . traverse groupDataFold
 
 data Binomial_MRP_Model predRow modelRow =
   Binomial_MRP_Model
@@ -126,26 +131,29 @@ data Binomial_MRP_Model predRow modelRow =
   , bmm_Success :: modelRow -> Int
   }
 
-buildEnv :: Binomial_MRP_Model predRow modelRow -> MRPData f predRow datRow psRow -> StanBuilderEnv predRow
+buildEnv :: Traversable f => Binomial_MRP_Model predRow modelRow -> MRPData f predRow datRow psRow -> StanBuilderEnv predRow
 buildEnv model dat = StanBuilderEnv groupIndexMap
   where
-    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (modeledDataRows dat))) (bmm_Groups model)
+    f = modelToPred dat
+    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (f <$> modeledDataRows dat))) (bmm_Groups model)
 
 type PostStratificationWeight psRow = psRow -> Double
 
 binomialMRPModelDataFold :: Foldable g
                          => Binomial_MRP_Model predRow modeledRow
                          -> MRPData g predRow modeledRow psRow
-                         -> StanBuilderM (StanJSONF modeledRow A.Series)
-binomialMRPModelDataFold model dat =
-  SJ.constDataF "N" numRows
-  <> SJ.namedF "X" (SJ.jsonArrayF (bmm_FixedEffects model . modelToPred))
-  <> FL.premap (modelToPred dat) $ groupsDataFold rows (bmm_Groups model)
-  <> SJ.namedF "Total" (SJ.jsonArrayF (bmm_Total model))
-  <> SJ.namedF "Success" (SJ.jsonArrayF (bmm_Success model))
+                         -> StanBuilderM row (SJ.StanJSONF modeledRow A.Series)
+binomialMRPModelDataFold model dat = do
+  fGD <- groupsDataFold (bmm_Groups model)
+  return
+    $ SJ.constDataF "N" FL.length
+    <> SJ.valueToPairF "X" (SJ.jsonArrayF (bmm_FixedEffects model . modelToPred dat))
+    <> FL.premapM (return . modelToPred dat) fGD
+    <> SJ.valueToPairF "Total" (SJ.jsonArrayF (bmm_Total model))
+    <> SJ.valueToPairF "Success" (SJ.jsonArrayF (bmm_Success model))
 
 --binomialMRPPostStratification
-
+{-
 mrpDataWrangler :: Text -> MRP_Model -> MRP_DataWrangler as bs ()
 mrpDataWrangler cacheDir model =
   MRP_DataWrangler
@@ -311,7 +319,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just 1000)
                 (Just stancConfig)
   SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
-
+-}
 
 model_BinomialAllBuckets :: SB.StanModel
 model_BinomialAllBuckets = SB.StanModel
