@@ -37,7 +37,6 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.CountFolds as BR
 import qualified BlueRipple.Data.CCES as CCES
---import qualified BlueRipple.Model.CCES_MRP_Analysis as CCES
 import qualified BlueRipple.Data.Keyed as BK
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
@@ -57,39 +56,60 @@ import Data.String.Here (here)
 
 
 data MRP_DataWrangler as bs b where
-  MRP_ModelSubset :: (bs F.⊆ as) => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) -> MRP_DataWrangler as bs b
-  MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) ->  MRP_DataWrangler as as b
+  MRP_ModelSubset :: (bs F.⊆ as)
+    => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
+    -> MRP_DataWrangler as bs b
+  MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
+               ->  MRP_DataWrangler as as b
 
-data Group a where
-  Group :: (Enum a )
-  Group { g_name :: Text -- for data and variable naming
-        , g_Index :: F.Record bs -> Int -- from this we'll get data vector as well determine group size for binary handling
-        }
+data Index row = Index { i_Size :: Int, i_Index :: row -> Int }
 
+data Group row where
+  EnumeratedGroup :: Text -> Index row -> Group row
+  LabeledGroup :: Text -> FL.Fold row (Index row) -> Group row
 
-{-
-data GroupIntercept bs = GroupIntercept { gi_name :: Text
-                                        , gi_index :: F.Record bs -> Int
-                                        }
+groupName :: Group row -> Text
+groupName (EnumeratedGroup n _) = n
+groupName (LabeledGroup n _) = n
 
-data GroupSlope bs = GroupSlope { gs_name :: Text
-                                , gs_index :: Int
-                                , gs_FixedEffectName :: Text
-                                }
--}
-data MRP_Model bs =
-  MRP_Model
+groupIndex :: Foldable f => Group row -> f row -> Index row
+groupIndex (EnumeratedGroup _ i) _ = f
+groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
+
+groupDataFold :: Foldable f => f row -> Group row -> StanJSONF row A.Series
+groupDataFold rows g = SJ.constDataF ("J_" <> name) length <> SJ.namedF name (SJ.jsonArrayF index)
+  where
+    name = groupName g
+    Index length index = groupIndex g rows
+
+groupsDataFold :: (Foldable f, Functor f, Foldable g) => g rows -> f (Group row) -> StanJSONF row A.Series
+groupsDataFold rows = foldMap . fmap (groupDataFold rows)
+
+data Binomial_MRP_Model row =
+  Binomial_MRP_Model
   {
-    mm_name :: Text -- we'll need this for (unique) file names
---  , mm_effectIndex :: Map Text Int -- map from effect name to column in fixed effect matrix
-  , mm_fixedEffects :: F.Record bs -> Vec.Vector Double
-  , mm_Groups :: [Group bs]
---  , mm_groupIntercepts :: [GroupIntercept bs]
---  , mm_groupSlopes :: [GroupSlope bs]
+    bmm_Name :: Text -- we'll need this for (unique) file names
+  , bmm_FixedEffects :: row -> Vec.Vector Double
+  , bmm_Groups :: [Group row]
+  , bmm_Total :: row -> Int
+  , bmm_Success :: row -> Int
   }
 
-groupEncoding :: Group bs -> F.FrameRec bs -> SJ.Encoding Int (F.Record bs)
-groupEncoding (Group _ f) = (Just . f, )
+-- thse rows can be different
+data PostStratification psRow datRow =
+  PostStratification
+  {
+    ps_Project :: psRow -> datRow
+  ,
+  }
+
+binomialMRPModelDataFold :: Foldable g => Binomial_MRP_Model row -> g (Group row) -> StanJSONF row A.Series
+binomialMRPModelDataFold model rows =
+  SJ.constDataF "N" numRows
+  <> SJ.namedF "X" (SJ.jsonArrayF (bmm_FixedEffects model))
+  <> groupsDataFold rows (bmm_Groups model)
+  <> SJ.namedF "Total" (SJ.jsonArrayF (bmm_Total model))
+  <> SJ.namedF "Success" (SJ.jsonArrayF (bmm_Success model))
 
 mrpDataWrangler :: Text -> MRP_Model -> MRP_DataWrangler as bs ()
 mrpDataWrangler cacheDir model =

@@ -100,7 +100,6 @@ frameToStanJSONEncoding stanJSONF = fmap A.pairs . frameToStanJSONSeries stanJSO
 frameToStanJSONSeries :: Foldable f => StanJSONF row A.Series -> f row -> Either T.Text A.Series
 frameToStanJSONSeries = FL.foldM
 
-
 -- once we have folds for each piece of data, we use this to combine and get one fold for the data object
 jsonObject :: (Foldable f, Foldable g) => f (StanJSONF row A.Series) -> g row -> Either T.Text A.Encoding
 jsonObject frameToSeriesFs rows = A.pairs <$> FL.foldM (jsonObjectF frameToSeriesFs) rows
@@ -163,7 +162,6 @@ jsonArrayMF toMA = FL.FoldM step init extract where
 
 valueToPairF :: T.Text -> StanJSONF row A.Value -> StanJSONF row A.Series
 valueToPairF name = fmap (name A..=)
-
 
 enumerate :: Ord a => Int -> IntEncoderF a
 enumerate start = FL.Fold step init done where
