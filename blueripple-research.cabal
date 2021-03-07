@@ -186,6 +186,7 @@ library
                  , BlueRipple.Data.CCESPath
                  , BlueRipple.Data.CCESFrame
                  , BlueRipple.Data.CCES
+                 , BlueRipple.Model.StanMRP
                  , BlueRipple.Model.StanCCES
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.TurnoutAdjustment

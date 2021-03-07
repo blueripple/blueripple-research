@@ -20,7 +20,6 @@ recProduct = SJ.Product (uncurry V.rappend) (V.rcast @a) (V.rcast @b)
 toRecEncoding :: forall t a k.(V.KnownField t, V.Snd t ~ a) => SJ.Encoding k a -> SJ.Encoding k (F.Record '[t])
 toRecEncoding (tok, fromk) = (tok . F.rgetField @t, fmap (F.&: V.RNil) fromk)
 
-
 composeRecEncodings ::  (Ord k3
                         , a F.⊆ (a V.++ b)
                         , b F.⊆ (a V.++ b)

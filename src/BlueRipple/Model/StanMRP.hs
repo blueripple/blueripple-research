@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC  -O0 #-}
 
-module BlueRipple.Model.StanCCES where
+module BlueRipple.Model.StanMRP where
 
 import qualified Control.Foldl as FL
 import qualified Data.IntMap.Strict as IM
@@ -60,9 +60,10 @@ data MRP_DataWrangler as bs b where
   MRP_ModelSubset :: (bs F.⊆ as) => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) -> MRP_DataWrangler as bs b
   MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as) ->  MRP_DataWrangler as as b
 
-data Group bs =
+data Group a where
+  Group :: (Enum a )
   Group { g_name :: Text -- for data and variable naming
-        , g_Index :: F.Record bs -> Int -- from this we'll get data vector as well dtermine group size for binary handling
+        , g_Index :: F.Record bs -> Int -- from this we'll get data vector as well determine group size for binary handling
         }
 
 
@@ -79,21 +80,26 @@ data GroupSlope bs = GroupSlope { gs_name :: Text
 data MRP_Model bs =
   MRP_Model
   {
-    mm_name :: Text -- we'll need this for unique file names
-  , mm_effectIndex :: Map Text Int -- map from effect name to column in fixed effect matrix
+    mm_name :: Text -- we'll need this for (unique) file names
+--  , mm_effectIndex :: Map Text Int -- map from effect name to column in fixed effect matrix
   , mm_fixedEffects :: F.Record bs -> Vec.Vector Double
   , mm_Groups :: [Group bs]
 --  , mm_groupIntercepts :: [GroupIntercept bs]
 --  , mm_groupSlopes :: [GroupSlope bs]
   }
 
-mrpDataWrangler :: Text -> MRP_DataWrangler as bs ()
-mrpDataWrangler cacheDir = MRP_DataWrangler
-                  $ SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> cacheDir <> "stan/index" <> SC.mrcOutputPrefix c <> ".bin") f g where
+groupEncoding :: Group bs -> F.FrameRec bs -> SJ.Encoding Int (F.Record bs)
+groupEncoding (Group _ f) = (Just . f, )
 
-  enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
-  encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
-  encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
+mrpDataWrangler :: Text -> MRP_Model -> MRP_DataWrangler as bs ()
+mrpDataWrangler cacheDir model =
+  MRP_DataWrangler
+  $ SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> cacheDir <> "stan/index" <> SC.mrcOutputPrefix c <> ".bin") f g
+  where
+
+    enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
+    encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
+    encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
   encodeEducation = SF.toRecEncoding @DT.CollegeGradC $ SJ.dummyEncodeEnum @DT.CollegeGrad
   encodeRace = SF.toRecEncoding @DT.Race5C $ SJ.dummyEncodeEnum @DT.Race5
   encodeCatCols :: SJ.Encoding SJ.IntVec (F.Record DT.CatColsASER5)
