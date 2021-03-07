@@ -54,19 +54,48 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import Data.String.Here (here)
 
-
+{-
 data MRP_DataWrangler as bs b where
   MRP_ModelSubset :: (bs F.⊆ as)
     => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
     -> MRP_DataWrangler as bs b
   MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
                ->  MRP_DataWrangler as as b
+-}
 
-data Index row = Index { i_Size :: Int, i_Index :: row -> Int }
+data MRPData f predRow datRow psRow where
+  MRData :: Traversable f => f row -> MRPData f row row ()
+  MRPData :: Traversable f => f datRow -> f psRow -> (datRow -> predRow) -> (psRow -> predRow) -> MRPData f predRow modRow psRow
+
+modeledDataRows :: MRPData f predRow datRow psRow -> f datRow
+modeledDataRows (MPRData modeledRows _ _ _)  = modeledRows
+modeledDataRows (MRData modelRows) = modeledRows
+
+modelToPred :: MRPData f predRow datRow psRow -> (datRow -> predRow)
+modelToPred (MRData _) = id
+modelToPred (MRPData _ _ f _) = f
+
+data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
+
+type StanBuilderEnv row = StanBuilderEnv { groupIndices :: Map Text (IntIndex row) }
+type StanBuilderM row a = ExceptT Text (Reader (StanBuilderEnv row)) a
+
+runStanBuilder :: StanBuilderEnv row -> StanBuilderM row a -> Either Text a
+runStanBuilder e = fmap (usingReader e) . runExceptT
+
+stanBuildError :: Text -> StanBuilderM ()
+stanBuildError t = ExceptT (pure $ Left t)
+
+getEnv :: StanBuilderM row (StanBuilderEnv row)
+getEnv =
+
+getIndex :: Group row -> StanBuilderM row IntIndex
+getIndex = do
+
 
 data Group row where
-  EnumeratedGroup :: Text -> Index row -> Group row
-  LabeledGroup :: Text -> FL.Fold row (Index row) -> Group row
+  EnumeratedGroup :: Text -> IntIndex row -> Group row
+  LabeledGroup :: Text -> FL.Fold row (IntIndex row) -> Group row
 
 groupName :: Group row -> Text
 groupName (EnumeratedGroup n _) = n
@@ -76,40 +105,46 @@ groupIndex :: Foldable f => Group row -> f row -> Index row
 groupIndex (EnumeratedGroup _ i) _ = f
 groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
 
-groupDataFold :: Foldable f => f row -> Group row -> StanJSONF row A.Series
-groupDataFold rows g = SJ.constDataF ("J_" <> name) length <> SJ.namedF name (SJ.jsonArrayF index)
+groupDataFold :: Foldable f => Group row -> StanBuilderM (StanJSONF row A.Series)
+groupDataFold predRows g = do
+
+  SJ.constDataF ("J_" <> name) indexSize <> SJ.namedF name (SJ.jsonArrayMF indexM)
   where
     name = groupName g
-    Index length index = groupIndex g rows
+    Index indexSize indexM = groupIndex g predRows
 
-groupsDataFold :: (Foldable f, Functor f, Foldable g) => g rows -> f (Group row) -> StanJSONF row A.Series
-groupsDataFold rows = foldMap . fmap (groupDataFold rows)
+groupsModelDataFold :: (Foldable f, Functor f, Foldable g) => g row -> f (Group row) -> StanJSONF row A.Series
+groupsModelDataFold rows = foldMap . fmap (groupDataFold rows)
 
-data Binomial_MRP_Model row =
+data Binomial_MRP_Model predRow modelRow =
   Binomial_MRP_Model
   {
     bmm_Name :: Text -- we'll need this for (unique) file names
-  , bmm_FixedEffects :: row -> Vec.Vector Double
-  , bmm_Groups :: [Group row]
-  , bmm_Total :: row -> Int
-  , bmm_Success :: row -> Int
+  , bmm_FixedEffects :: predRow -> Vec.Vector Double
+  , bmm_Groups :: [Group predRow]
+  , bmm_Total :: modelRow -> Int
+  , bmm_Success :: modelRow -> Int
   }
 
--- thse rows can be different
-data PostStratification psRow datRow =
-  PostStratification
-  {
-    ps_Project :: psRow -> datRow
-  ,
-  }
+buildEnv :: Binomial_MRP_Model predRow modelRow -> MRPData f predRow datRow psRow -> StanBuilderEnv predRow
+buildEnv model dat = StanBuilderEnv groupIndexMap
+  where
+    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (modeledDataRows dat))) (bmm_Groups model)
 
-binomialMRPModelDataFold :: Foldable g => Binomial_MRP_Model row -> g (Group row) -> StanJSONF row A.Series
-binomialMRPModelDataFold model rows =
+type PostStratificationWeight psRow = psRow -> Double
+
+binomialMRPModelDataFold :: Foldable g
+                         => Binomial_MRP_Model predRow modeledRow
+                         -> MRPData g predRow modeledRow psRow
+                         -> StanBuilderM (StanJSONF modeledRow A.Series)
+binomialMRPModelDataFold model dat =
   SJ.constDataF "N" numRows
-  <> SJ.namedF "X" (SJ.jsonArrayF (bmm_FixedEffects model))
-  <> groupsDataFold rows (bmm_Groups model)
+  <> SJ.namedF "X" (SJ.jsonArrayF (bmm_FixedEffects model . modelToPred))
+  <> FL.premap (modelToPred dat) $ groupsDataFold rows (bmm_Groups model)
   <> SJ.namedF "Total" (SJ.jsonArrayF (bmm_Total model))
   <> SJ.namedF "Success" (SJ.jsonArrayF (bmm_Success model))
+
+--binomialMRPPostStratification
 
 mrpDataWrangler :: Text -> MRP_Model -> MRP_DataWrangler as bs ()
 mrpDataWrangler cacheDir model =
