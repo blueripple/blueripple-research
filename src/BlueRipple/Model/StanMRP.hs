@@ -97,7 +97,6 @@ getIndex g = do
     Nothing -> stanBuildError $ "No group index found for group with name=\"" <> (groupName g) <> "\""
     Just i -> return i
 
-
 data Group row where
   EnumeratedGroup :: Text -> IntIndex row -> Group row
   LabeledGroup :: Text -> FL.Fold row (IntIndex row) -> Group row
@@ -110,21 +109,29 @@ groupIndex :: Foldable f => Group row -> f row -> IntIndex row
 groupIndex (EnumeratedGroup _ i) _ = i
 groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
 
-groupDataFold :: Group row -> StanBuilderM row (SJ.StanJSONF row A.Series)
-groupDataFold g = do
+groupSizeFold :: Group row -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupSizeFold g = do
   let name = groupName g
   IntIndex indexSize indexM <- getIndex g
-  return
-    $ SJ.constDataF ("J_" <> name) indexSize
-    <> SJ.valueToPairF name (SJ.jsonArrayMF indexM)
+  return $ SJ.constDataF ("J_" <> name) indexSize
 
-groupsDataFold :: Traversable f => f (Group row) -> StanBuilderM row (SJ.StanJSONF row A.Series)
-groupsDataFold  = fmap (foldMap id) . traverse groupDataFold
+groupDataFold :: Text -> Group row -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupDataFold suffix g = do
+  let name = groupName g
+  IntIndex indexSize indexM <- getIndex g
+  return $ SJ.valueToPairF (name <> suffix) (SJ.jsonArrayMF indexM)
+
+groupsDataFold :: Traversable f => Text -> f (Group row) -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupsDataFold suffix = fmap (foldMap id) . traverse (groupDataFold suffix)
+
+groupsSizeFold :: Traversable f => f (Group row) -> StanBuilderM row (SJ.StanJSONF row A.Series)
+groupsSizeFold  = fmap (foldMap id) . traverse groupSizeFold
 
 data Binomial_MRP_Model predRow modelRow =
   Binomial_MRP_Model
   {
     bmm_Name :: Text -- we'll need this for (unique) file names
+  , bmm_nFixedEffects :: Int
   , bmm_FixedEffects :: predRow -> Vec.Vector Double
   , bmm_Groups :: [Group predRow]
   , bmm_Total :: modelRow -> Int
@@ -139,18 +146,63 @@ buildEnv model dat = StanBuilderEnv groupIndexMap
 
 type PostStratificationWeight psRow = psRow -> Double
 
+mrpModelDataFold  :: Foldable g
+                  => Binomial_MRP_Model predRow modeledRow
+                  -> MRPData g predRow modeledRow psRow
+                  -> StanBuilderM predRow (SJ.StanJSONF modeledRow A.Series)
+mrpModelDataFold model dat = do
+  fGS <- groupsSizeFold (bmm_Groups model)
+  fGD <- groupsDataFold "" (bmm_Groups model)
+  return
+    $ SJ.namedF "N" FL.length
+    <> SJ.valueToPairF "X" (SJ.jsonArrayF (bmm_FixedEffects model . modelToPred dat))
+    <> FL.premapM (return . modelToPred dat) fGS
+    <> FL.premapM (return . modelToPred dat) fGD
+
 binomialMRPModelDataFold :: Foldable g
                          => Binomial_MRP_Model predRow modeledRow
                          -> MRPData g predRow modeledRow psRow
-                         -> StanBuilderM row (SJ.StanJSONF modeledRow A.Series)
+                         -> StanBuilderM predRow (SJ.StanJSONF modeledRow A.Series)
 binomialMRPModelDataFold model dat = do
-  fGD <- groupsDataFold (bmm_Groups model)
+  mrpDataFold <- mrpModelDataFold model dat
   return
-    $ SJ.constDataF "N" FL.length
-    <> SJ.valueToPairF "X" (SJ.jsonArrayF (bmm_FixedEffects model . modelToPred dat))
-    <> FL.premapM (return . modelToPred dat) fGD
+    $  mrpDataFold
     <> SJ.valueToPairF "Total" (SJ.jsonArrayF (bmm_Total model))
     <> SJ.valueToPairF "Success" (SJ.jsonArrayF (bmm_Success model))
+
+-- This assumes we have added the sizes in the Model Data fold
+poststratificationDataFold :: Foldable g
+                           => Binomial_MRP_Model predRow modeledRow
+                           -> MRPData g predRow modeledRow psRow
+                           -> PostStratificationWeight psRow
+                           -> StanBuilderM predRow (SJ.StanJSONF psRow A.Series)
+poststratificationDataFold _ (MRData _) _ = return mempty
+poststratificationDataFold model (MRPData _ psRows _ psToPred) psWeight = do
+  fGD <- groupsDataFold "ps" (bmm_Groups model)
+  return
+    $ SJ.namedF "M" FL.length
+    <> SJ.valueToPairF "XP" (SJ.jsonArrayF (bmm_FixedEffects model . psToPred))
+    <> FL.premapM (return . psToPred) fGD
+    <> SJ.valueToPairF "PW" (SJ.jsonArrayF psWeight)
+
+mrpModelDataBlock :: Foldable g
+                  => Binomial_MRP_Model predRow modeledRow
+                  -> MRPData g predRow modeledRow psRow
+                  -> StanBuilderM predRow SB.DataBlock
+mrpModelDataBlock model dat = do
+  indexMap <- asksEnv env_groupIndices
+  let nRows = FL.fold FL.length (modeledDataRows dat)
+      groupSize x = "int J_" <> fst x <> ";"
+      groupIndex x = "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "[" <> show nRows <> "];"
+  return
+    $ "int N;\n"
+    <> "real X[" <> show nRows <> ", " <> show (bmm_nFixedEffects model) <> "];\n"
+    <> (T.intercalate "\n" $ fmap groupSize $ Map.toList indexMap) <> "\n"
+    <> (T.intercalate "\n" $ fmap groupIndex $ Map.toList indexMap) <> "\n"
+    <> "int <lower=1> Total[" <> show nRows <> "];\n"
+    <> "int <lower=0> Success[" <> show nRows <> "];\n"
+
+
 
 --binomialMRPPostStratification
 {-
