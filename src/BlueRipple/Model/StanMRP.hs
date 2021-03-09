@@ -15,6 +15,7 @@ module BlueRipple.Model.StanMRP where
 
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
+import qualified Data.Array as Array
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
@@ -89,7 +90,30 @@ type LLData f modeledRows predRows = ProjectableRows f modeledRows predRows
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
-data StanBuilderEnv row = StanBuilderEnv { env_groupIndices :: Map Text (IntIndex row) }
+data StanBuilderEnv row = StanBuilderEnv { env_groupIndices :: Map Text (IntIndex row)
+
+data StanBlock = SBData
+               | SBTransformedData
+               | SBParameters
+               | SBTransformedParameters
+               | SBModel
+               | SBGeneratedQuantities deriving (Show, Eq, Ord, Enum, Bounded, A.Ix)
+
+data WithIndent = WithIndent Text Int
+
+data StanCode = StanCode { curBlock :: StanBlock
+                         , blocks :: (Array.Array StanBlocks WithIndent)
+                         }
+
+setBlock :: StanBlock -> StanCode -> StanCode
+setBlock b (StanCode _ blocks) = StanCode b blocks
+
+addLine :: Text -> StanCode -> StanCode
+addLine t (StanCode b blocks) =
+  let (WithIndent curCode curIndent) = blocks Array.! b
+      newCode = curCode <> T.replicate curIndent " " <> t
+  in StanCode b (blocks Array.// [(b,newCode)])
+
 
 newtype StanBuilderM row a = StanBuilderM { unStanBuilderM :: ExceptT Text (Reader (StanBuilderEnv row)) a }
   deriving (Functor, Applicative, Monad, MonadReader (StanBuilderEnv row))
@@ -161,7 +185,7 @@ data Binomial_MRP_Model predRow modelRow =
   , bmm_Success :: modelRow -> Int
   }
 
-buildEnv :: Traversable f => Binomial_MRP_Model predRow modelRow -> MRData f modeledRow predRow  -> StanBuilderEnv predRow
+buildEnv :: Binomial_MRP_Model predRow modelRow -> MRData f modeledRow predRow  -> StanBuilderEnv predRow
 buildEnv model modelDat = StanBuilderEnv groupIndexMap
   where
     groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) (bmm_Groups model)
@@ -263,41 +287,46 @@ mrpDataWrangler model (MRPData modeled mPS mLL) prjModeled mPSFunctions = do
 stanLine :: Text -> Text
 stanLine x = x <> ";\n"
 
-labeledDataBlockForRows :: Binomial_MRP_Model predRow modeledRow -> Text -> Text -> StanBuilderM predRow Text
-labeledDataBlockForRows model csPrefix suffix = do
+groupSizesBlock :: StanBuilderM predRow Text
+groupSizesBlock = do
+  indexMap <- asksEnv env_groupIndices
+  let groupSize x = stanLine $ "int J_" <> fst x
+  return $ mconcat (fmap groupSize $ Map.toList indexMap)
+
+labeledDataBlockForRows :: Binomial_MRP_Model predRow modeledRow -> Text -> StanBuilderM predRow Text
+labeledDataBlockForRows model suffix = do
    indexMap <- asksEnv env_groupIndices
-   let groupSize x = stanLine $ "int " <> csPrefix <> fst x
-       groupIndex x = stanLine $ "int<lower=1, upper=" <> csPrefix <> fst x <> "> " <> fst x <> "[N" <> suffix <> "]"
+   let groupIndex x = stanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "[N" <> suffix <> "]"
    return
      $ stanLine ("int N" <> suffix)
      <> if (bmm_nFixedEffects model > 0) then stanLine ("real X" <> suffix <> "[K, N" <> suffix <> "]") else ""
-     <> mconcat (fmap groupSize $ Map.toList indexMap)
      <> mconcat (fmap groupIndex $ Map.toList indexMap)
 
 mrpDataBlock :: Foldable g
              => Binomial_MRP_Model predRow modeledRow
-             -> Text
              -> Maybe Text
              -> Maybe Text
              -> StanBuilderM predRow SB.DataBlock
-mrpDataBlock model catSizePrefix mPSSuffix mLLSuffix = do
+mrpDataBlock model mPSSuffix mLLSuffix = do
   modelRows <- do
-    predRows <- labeledDataBlockForRows model catSizePrefix "m"
+    groupSizeRows <- groupSizesBlock
+    predRows <- labeledDataBlockForRows model "m"
     return
-      $ predRows
+      $ groupSizeRows
+      <> if bmm_nFixedEffects model > 0 then stanLine ("int K") else ""
+      <> predRows
       <> stanLine ("int <lower=0> Tm[Nm]")
       <> stanLine ("int <lower=0> Sm[Nm]")
-
   psRows <- case mPSSuffix of
     Nothing -> return ""
     Just psSuffix -> do
-      predRows <- labeledDataBlockForRows model catSizePrefix psSuffix
+      predRows <- labeledDataBlockForRows model psSuffix
       return $ predRows <> stanLine ("vector<lower=0>[N" <> psSuffix <> "]")
 
   llRows <- case mLLSuffix of
     Nothing -> return ""
     Just llSuffix -> do
-      predRows <- labeledDataBlockForRows model catSizePrefix llSuffix
+      predRows <- labeledDataBlockForRows model llSuffix
       return
         $ predRows
         <> stanLine ("int <lower=0> T" <> llSuffix <> "[N" <> llSuffix <> "]")
@@ -305,14 +334,14 @@ mrpDataBlock model catSizePrefix mPSSuffix mLLSuffix = do
   return
     $ stanLine ("int K") <> modelRows <> psRows <> llRows
 
-mrpParametersBlock :: Text -> StanBuilderM predRow SB.ParametersBlock
-mrpParametersBlock csPrefix  = do
+mrpParametersBlock :: StanBuilderM predRow SB.ParametersBlock
+mrpParametersBlock = do
   indexMap <- asksEnv env_groupIndices
   let binaryParameter x = stanLine $ "real eps_" <> fst x
       nonBinaryParameter x =
         let n = fst x
         in stanLine ("real<lower=0> sigma_" <> n)
-           <> stanLine ("vector<multiplier = sigma_" <> n <> ">[" <> csPrefix <> n <> "] beta_" <> n)
+           <> stanLine ("vector<multiplier = sigma_" <> n <> ">[J_" <> n <> "] beta_" <> n)
       groupParameter x = if (i_Size $ snd x) == 2
                          then binaryParameter x
                          else nonBinaryParameter x
@@ -343,12 +372,12 @@ mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = do
 -- we need to general log_lik using modeled or given data
 -- we maybe need to generate poststratifications of given data
 {-
-mrpGeneratedQuantitiesBlock :: Binomial_MRP_Model predRow modeledRow
-                            -> Maybe Text
-                            -> Maybe Text
-                            -> StanBuilderM predRow SB.GeneratedQuantitiesBlock
-mrpGeneratedQuantitiesBlock model mPSSuffix mLLSuffix = do
+mrpLogLikStanCode :: Binomial_MRP_Model predRow modeledRow
+                  -> Maybe Text
+                  -> StanBuilderM predRow SB.GeneratedQuantitiesBlock
+mrpLogLikStanCode model mLLSuffix = do
   indexMap <- asksEnv env_groupIndices
+  let suffix = fromMaybe "m" mLLSuffix
 -}
 
 
