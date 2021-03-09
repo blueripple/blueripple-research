@@ -1,12 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Stan.ModelBuilder where
 
 import Prelude hiding (All)
+import qualified Data.Array as Array
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Clock as Time
@@ -38,6 +41,86 @@ data StanModel = StanModel
     genLogLikelihoodBlock :: GeneratedQuantitiesBlock
   }
   deriving (Show, Eq, Ord)
+
+data StanBlock = SBData
+               | SBTransformedData
+               | SBParameters
+               | SBTransformedParameters
+               | SBModel
+               | SBGeneratedQuantities deriving (Show, Eq, Ord, Enum, Bounded, Array.Ix)
+
+data WithIndent = WithIndent Text Int
+
+data StanCode = StanCode { curBlock :: StanBlock
+                         , blocks :: Array.Array StanBlock WithIndent
+                         }
+
+emptyStanCode :: StanCode
+emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
+
+newtype StanBuilderM env a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State StanCode)) a }
+  deriving (Functor, Applicative, Monad, MonadReader env, MonadState StanCode)
+
+runStanBuilder :: env -> StanBuilderM env a -> Either Text (StanCode, a)
+runStanBuilder e sb = res where
+  (resE, sc) = flip runState emptyStanCode . flip runReaderT e . runExceptT $ unStanBuilderM sb
+  res = fmap (sc,) resE
+
+stanBuildError :: Text -> StanBuilderM row a
+stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
+
+askEnv :: StanBuilderM env env
+askEnv = ask
+
+asksEnv :: (env -> a) -> StanBuilderM env a
+asksEnv = asks
+
+setBlock' :: StanBlock -> StanCode -> StanCode
+setBlock' b (StanCode _ blocks) = StanCode b blocks
+
+setBlock :: StanBlock -> StanBuilderM env ()
+setBlock = modify . setBlock'
+
+getBlock :: StanBuilderM env StanBlock
+getBlock = do
+  (StanCode b _) <- get
+  return b
+
+addLine' :: Text -> StanCode -> StanCode
+addLine' t (StanCode b blocks) =
+  let (WithIndent curCode curIndent) = blocks Array.! b
+      newCode = curCode <> T.replicate curIndent " " <> t
+  in StanCode b (blocks Array.// [(b, WithIndent newCode curIndent)])
+
+addLine :: Text -> StanBuilderM env ()
+addLine = modify . addLine'
+
+addStanLine :: Text -> StanBuilderM env ()
+addStanLine t = addLine $ t <> ";\n"
+
+indent :: Int -> StanCode -> StanCode
+indent n (StanCode b blocks) =
+  let (WithIndent curCode curIndent) = blocks Array.! b
+  in StanCode b (blocks Array.// [(b, WithIndent curCode (curIndent + n))])
+
+-- code inserted here will be indented n extra spaces
+indented :: Int -> StanBuilderM env a -> StanBuilderM env a
+indented n m = do
+  modify (indent n)
+  x <- m
+  modify (indent $ negate n)
+  return x
+
+stanIndented :: StanBuilderM env a -> StanBuilderM env a
+stanIndented = indented 2
+
+inBlock :: StanBlock -> StanBuilderM env a -> StanBuilderM env a
+inBlock b m = do
+  oldBlock <- getBlock
+  setBlock b
+  x <- m
+  setBlock oldBlock
+  return x
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
