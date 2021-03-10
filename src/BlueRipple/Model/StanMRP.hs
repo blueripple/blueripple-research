@@ -85,14 +85,36 @@ projectedRows :: ProjectableRows f rowA rowB -> f rowB
 projectedRows = projectableRows . projectRows
 
 type MRData f modeledRows predRows = ProjectableRows f modeledRows predRows
-type PSData f psRows predRows = ProjectableRows f psRows predRows
+type PSData f psRows predRows =
 type LLData f modeledRows predRows = ProjectableRows f modeledRows predRows
+
+data PostStratification k psRow predRow =
+  PostStratification
+  {
+    psPrj :: psRow -> predRow
+  , psWeight ::  psRow -> Double
+  , psGroupKey :: psRow -> k
+  }
+
+postStratificationIntIndex :: Foldable f => PostStratification psRow predRow -> f psRow -> IntIndex psRow
+postStratificationIntIndex (PostStratification rows _ g) = groupIndex g (projectableRows rows)
+
+data EncodePS k psRow = EncodePS
+
+buildPSRows :: Foldable f => PostStratification psRow predRow -> f psRow -> ([]
+
+
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
-data StanBuilderEnv row = StanBuilderEnv { env_groupIndices :: Map Text (IntIndex row) }
+data MRPBuilderEnv predRow  =
+  StanBuilderEnv
+  {
+    sbe_groupIndices :: Map Text (IntIndex predRow)
+--  , sbe_Model :: Binomial_MRP_Model predRow modelRow
+  }
 
-type MRPBuilderM row = SB.StanBuilderM (StanBuilderEnv row)
+type MRPBuilderM a = SB.StanBuilderM (MRPBuilderEnv a)
 
 getIndex :: Group row -> MRPBuilderM row (IntIndex row)
 getIndex g = do
@@ -100,6 +122,9 @@ getIndex g = do
   case (Map.lookup (groupName g) indexMap) of
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> (groupName g) <> "\""
     Just i -> return i
+
+getIndexes :: MRPBuilderM row (Map Text (IntIndex row))
+getIndexes = SB.asksEnv sbe_groupIndices
 
 data Group row where
   EnumeratedGroup :: Text -> IntIndex row -> Group row
@@ -226,7 +251,7 @@ mrpDataWrangler :: (Foldable f, Functor f)
                 => Binomial_MRP_Model predRow modeledRow
                 -> MRPData f predRow modeledRow psRow
                 -> (modeledRow -> predRow)
-                -> Maybe (psRow -> predRow, PostStratificationWeight psRow)
+                -> Maybe (psRow -> predRow, psRow -> Double, Group psRow)
                 -> MRPBuilderM predRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) () ())
 mrpDataWrangler model (MRPData modeled mPS mLL) prjModeled mPSFunctions = do
   modelDataFold <- mrModelDataJSONFold model (ProjectableRows modeled prjModeled)

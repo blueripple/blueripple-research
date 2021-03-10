@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Stan.JSON where
 
 import Prelude hiding (Product)
@@ -9,7 +10,10 @@ import qualified Control.Foldl as FL
 import qualified Control.Exception as X
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
+import qualified Data.Array as Array
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.List as List
+import Data.List.Extra (nubOrd)
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
@@ -172,3 +176,39 @@ enumerate start = FL.Fold step init done where
     mapToInt = M.fromList keyedList
     toIntM a = M.lookup a mapToInt
     fromInt = IM.fromList $ fmap (\(a,b) -> (b,a)) keyedList
+
+
+mSize :: [[Int]] -> Maybe Int
+mSize x =
+  let ls = nubOrd $ fmap length x
+  in case ls of
+    [n] -> Just n
+    _ -> Nothing
+
+addDefault :: Show a => a -> [(Int,Int)] -> [([Int], a)] -> Either Text [([Int], a)]
+addDefault d bounds xs = do
+  n <- case mSize $ fmap fst xs of
+         Nothing -> Left $ "Index Lists are different sizes in addDefault: " <> show xs
+         Just n -> Right n
+  when (length bounds /= n) $ Left $ "Given bounds " <> show bounds <> " are is a different length than the index lists."
+  let lBounds = fmap (\(a,b) -> [a..b]) bounds
+      dIndexed = zip (sequence lBounds) $ repeat d -- the "sequence" is just the list monad doing its thing, but wow.
+  return $ M.toAscList $ M.union (M.fromList xs) (M.fromList dIndexed)
+
+indexedToNested :: Show a => [([Int], a)] -> Either Text [([Int], [a])]
+indexedToNested xs = do
+  n <- case mSize $ fmap fst xs of
+         Nothing -> Left $ "Index Lists are different sizes in indexedToNested: " <> show xs
+         Just n -> Right n
+  when (n == 0) $ Left $ "indexedToNested called with empty index lists"
+  let mNeXs = traverse (\(is, y) -> fmap (, y) $ nonEmpty is) xs
+  case mNeXs of
+    Nothing -> Left $ "Unexpected empty list after check.  This shouldn't happen!"
+    Just neXs -> do
+      let x2s = fmap (\(neI, y) -> (init neI, last neI, y)) neXs
+          f (x, _, _) (y, _, _) = x == y
+          x3s = List.groupBy f x2s
+          g xs = let (nI, _, _) = List.head xs in (nI, fmap snd $ sortOn fst $ fmap (\(_, y, z) -> (y, z)) xs)
+      return $ fmap g x3s
+
+newtype IndexedMatrix a = IndexedMatrix { unIndexedMatrix :: [([Int], a)] }
