@@ -7,6 +7,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC  -O0 #-}
@@ -21,18 +22,14 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
 import qualified Data.Text as T
-import qualified Frames as F
-import qualified Frames.InCore as FI
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import Flat.Instances.Vector()
 import Flat.Instances.Containers()
 
-import qualified Frames.MapReduce as FMR
-import qualified Frames.Serialize as FS
-import qualified Frames.Transform as FT
-import qualified Frames.SimpleJoins as FJ
+import Frames.MapReduce (postMapM)
+import qualified Control.MapReduce as MR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed as BK
@@ -52,14 +49,6 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import Data.String.Here (here)
 
-{-
-data MRP_DataWrangler as bs b where
-  MRP_ModelSubset :: (bs F.⊆ as)
-    => SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
-    -> MRP_DataWrangler as bs b
-  MRP_ModelAll :: SC.DataWrangler (F.FrameRec (as V.++ BR.CountCols)) b (F.FrameRec as)
-               ->  MRP_DataWrangler as as b
--}
 
 data ProjectableRows f rowA rowB where
   ProjectableRows :: Functor f => f rowA -> (rowA -> rowB) -> ProjectableRows f rowA rowB
@@ -85,7 +74,7 @@ projectedRows :: ProjectableRows f rowA rowB -> f rowB
 projectedRows = projectableRows . projectRows
 
 type MRData f modeledRows predRows = ProjectableRows f modeledRows predRows
-type PSData f psRows predRows =
+type PSData f psRows predRows = ProjectableRows f psRows predRows
 type LLData f modeledRows predRows = ProjectableRows f modeledRows predRows
 
 data PostStratification k psRow predRow =
@@ -96,14 +85,7 @@ data PostStratification k psRow predRow =
   , psGroupKey :: psRow -> k
   }
 
-postStratificationIntIndex :: Foldable f => PostStratification psRow predRow -> f psRow -> IntIndex psRow
-postStratificationIntIndex (PostStratification rows _ g) = groupIndex g (projectableRows rows)
-
-data EncodePS k psRow = EncodePS
-
-buildPSRows :: Foldable f => PostStratification psRow predRow -> f psRow -> ([]
-
-
+--data EncodePS k psRow = EncodePS
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
@@ -118,7 +100,7 @@ type MRPBuilderM a = SB.StanBuilderM (MRPBuilderEnv a)
 
 getIndex :: Group row -> MRPBuilderM row (IntIndex row)
 getIndex g = do
-  indexMap <- SB.asksEnv env_groupIndices
+  indexMap <- SB.asksEnv sbe_groupIndices
   case (Map.lookup (groupName g) indexMap) of
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> (groupName g) <> "\""
     Just i -> return i
@@ -174,7 +156,7 @@ data Binomial_MRP_Model predRow modelRow =
   , bmm_Success :: modelRow -> Int
   }
 
-buildEnv :: Foldable f => Binomial_MRP_Model predRow modelRow -> MRData f modeledRow predRow  -> StanBuilderEnv predRow
+buildEnv :: Foldable f => Binomial_MRP_Model predRow modelRow -> MRData f modeledRow predRow  -> MRPBuilderEnv predRow
 buildEnv model modelDat = StanBuilderEnv groupIndexMap
   where
     groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) (bmm_Groups model)
@@ -216,14 +198,64 @@ mrModelDataJSONFold model modelDat = do
     <> SJ.valueToPairF "Total" (SJ.jsonArrayF $ bmm_Total model)
     <> SJ.valueToPairF "Success" (SJ.jsonArrayF $ bmm_Success model)
 
-mrPSDataJSONFold :: ()
+predRowsToIndexed :: (Num a, Show a)
+                  => Binomial_MRP_Model predRow modelRow
+                  -> MRPBuilderM predRow (FL.FoldM (Either Text) (predRow, a) (SJ.Indexed a))
+predRowsToIndexed model = do
+  indexMap <- SB.asksEnv sbe_groupIndices
+  let groups = bmm_Groups model
+  indexes <- maybe
+             (SB.stanBuildError "Error looking up a group name in ModelBuilderEnv")
+             return
+             $ traverse (flip Map.lookup indexMap) $ fmap groupName groups
+  let bounds = zip (repeat 1) $ fmap i_Size indexes
+      indexers = fmap i_Index indexes
+      toIndices x = maybe (Left "Indexer error when building psRow fold") Right $ traverse ($x) indexers
+      f (pr, a) = fmap (,a) $ toIndices pr
+  return $ postMapM (\x -> traverse f x >>= SJ.prepareIndexed 0 bounds) $ FL.generalize FL.list
+
+
+psRowsFld' :: Ord k
+          => Binomial_MRP_Model predRow modelRow
+          -> PostStratification k psRow predRow
+          -> MRPBuilderM predRow (FL.FoldM (Either Text) psRow [(k, (Vec.Vector Double, SJ.Indexed Double))])
+psRowsFld' model (PostStratification prj wgt key) = do
+  toIndexedFld <- FL.premapM (return . snd) <$> predRowsToIndexed model
+  let fixedEffectsFld = postMapM (maybe (Left "Empty group in psRowsFld?") Right)
+                        $ FL.generalize
+                        $ FL.premap fst FL.last
+      innerFld = (,) <$> fixedEffectsFld <*> toIndexedFld
+  return
+    $ MR.mapReduceFoldM
+    (MR.generalizeUnpack MR.noUnpack)
+    (MR.generalizeAssign $ MR.assign key $ \psRow -> let pr = prj psRow in (bmm_FixedEffects model pr, (pr, wgt psRow)))
+    (MR.foldAndLabelM innerFld (,))
+
+psRowsFld :: Ord k
+          => Binomial_MRP_Model predRow modelRow
+          -> PostStratification k psRow predRow
+          -> MRPBuilderM predRow (FL.FoldM (Either Text) psRow [(k, Int, Vec.Vector Double, SJ.Indexed Double)])
+psRowsFld model ps = do
+  fld' <- psRowsFld' model ps
+  let f (n, (k, (v, i))) = (k, n, v, i)
+      g  = fmap f . zip [1..]
+  return $ postMapM (return . g) fld'
+
+psRowsJSONFld :: SJ.StanJSONF (k, Int, Vec.Vector Double, SJ.Indexed Double) A.Series
+psRowsJSONFld =
+  SJ.namedF "Nps" FL.length
+  <> SJ.valueToPairF "Xps" (SJ.jsonArrayF $ \(_, _, v, _) -> v)
+  <> SJ.valueToPairF "PS" (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
+
+
+mrPSDataJSONFold :: Ord k
                  => Binomial_MRP_Model predRow modeledRow
-                 -> PSData f psRow predRow
-                 -> PostStratificationWeight psRow
+                 -> PostStratification k psRow predRow
                  -> MRPBuilderM predRow (SJ.StanJSONF psRow A.Series)
-mrPSDataJSONFold model psDat psWeight = do
-  psDataF <- predDataJSONFold "ps" model psDat
-  return $ psDataF <> SJ.valueToPairF "PW" (SJ.jsonArrayF psWeight)
+mrPSDataJSONFold model psFuncs = do
+  psDataF <- psRowsFld model psFuncs
+  return $ postMapM (FL.foldM psRowsJSONFld) psDataF
+
 
 mrLLDataJSONFold :: ()
                  => Binomial_MRP_Model predRow modeledRow
@@ -251,23 +283,23 @@ mrpDataWrangler :: (Foldable f, Functor f)
                 => Binomial_MRP_Model predRow modeledRow
                 -> MRPData f predRow modeledRow psRow
                 -> (modeledRow -> predRow)
-                -> Maybe (psRow -> predRow, psRow -> Double, Group psRow)
+                -> Maybe (PostStratification k psRow predRow)
                 -> MRPBuilderM predRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) () ())
 mrpDataWrangler model (MRPData modeled mPS mLL) prjModeled mPSFunctions = do
   modelDataFold <- mrModelDataJSONFold model (ProjectableRows modeled prjModeled)
-  psDataFold <- case mPS of
-    Nothing -> return mempty
-    Just ps -> case mPSFunctions of
-      Nothing -> SB.stanBuildError "PostStratification data given but post-stratification functions unset."
-      Just (prj, wgt) -> mrPSDataJSONFold model (ProjectableRows ps prj) wgt
+--  psDataFold <- case mPS of
+--    Nothing -> return mempty
+--    Just ps -> case mPSFunctions of
+--      Nothing -> SB.stanBuildError "PostStratification data given but post-stratification functions unset."
+--      Just ps -> mrPSDataJSONFold model ps (ProjectableRows ps prj) wgt
   llDataFold <- case mLL of
     Nothing -> return mempty
     Just ll -> mrLLDataJSONFold model (ProjectableRows ll prjModeled)
   let makeDataJsonE (MRPData modeled mPS mLL) = do
         modeledJSON <- SJ.frameToStanJSONSeries modelDataFold modeled
-        psJSON <- maybe (Right mempty) (SJ.frameToStanJSONSeries psDataFold) mPS
+--        psJSON <- maybe (Right mempty) (SJ.frameToStanJSONSeries psDataFold) mPS
         llJSON <- maybe (Right mempty) (SJ.frameToStanJSONSeries llDataFold) mLL
-        return $ modeledJSON <> psJSON <> llJSON
+        return $ modeledJSON <> {- psJSON <> -} llJSON
       f _ = ((), makeDataJsonE)
   return $ SC.Wrangle SC.NoIndex f
 
@@ -276,13 +308,13 @@ bFixedEffects model = bmm_nFixedEffects model > 0
 
 groupSizesBlock :: MRPBuilderM predRow ()
 groupSizesBlock = do
-  indexMap <- SB.asksEnv env_groupIndices
+  indexMap <- SB.asksEnv sbe_groupIndices
   let groupSize x = SB.addStanLine $ "int J_" <> fst x
   traverse_ groupSize $ Map.toList indexMap
 
 labeledDataBlockForRows :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow ()
 labeledDataBlockForRows model suffix = do
-   indexMap <- SB.asksEnv env_groupIndices
+   indexMap <- SB.asksEnv sbe_groupIndices
    let groupIndex x = SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "[N" <> suffix <> "]"
    SB.addStanLine $ "int N" <> suffix
    when (bFixedEffects model) $ SB.addStanLine ("real X" <> suffix <> "[K, N" <> suffix <> "]")
@@ -313,7 +345,7 @@ mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
 
 mrpParametersBlock :: Binomial_MRP_Model predRow modeledRow -> MRPBuilderM predRow ()
 mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
-  indexMap <- SB.asksEnv env_groupIndices
+  indexMap <- SB.asksEnv sbe_groupIndices
   let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
       nonBinaryParameter x = do
         let n = fst x
@@ -328,7 +360,7 @@ mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
 
 mrpModelBlock :: Binomial_MRP_Model predRow modeledRow -> Double -> Double -> Double -> MRPBuilderM predRow ()
 mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = do
-  indexMap <- SB.asksEnv env_groupIndices
+  indexMap <- SB.asksEnv sbe_groupIndices
   let binaryPrior x = SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
       nonBinaryPrior x = do
         SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
