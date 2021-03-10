@@ -19,6 +19,7 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
 
 import Data.Vector.Serialize()
+import qualified Data.Vector as BVec
 import qualified Data.Vector.Generic as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified VectorBuilder.Builder as VB
@@ -195,7 +196,78 @@ addDefault d bounds xs = do
       dIndexed = zip (sequence lBounds) $ repeat d -- the "sequence" is just the list monad doing its thing, but wow.
   return $ M.toAscList $ M.union (M.fromList xs) (M.fromList dIndexed)
 
-indexedToNested :: Show a => [([Int], a)] -> Either Text [([Int], [a])]
+data Matrix a = Element a | Dimension (Matrix (BVec.Vector a)) deriving (Show)
+
+instance (A.ToJSON a) => A.ToJSON (Matrix a) where
+  toJSON (Element a) = A.toJSON a
+  toJSON (Dimension m) = A.toJSON m
+
+indexedToMatrix :: Show a => a -> [(Int, Int)] -> [([Int],a)] -> Either Text (Matrix a)
+indexedToMatrix _ _ [([],x)] = Right $ Element x
+indexedToMatrix d bounds indexed = do
+  x <- addDefault d bounds indexed
+  return $ unsparse x --catMatrices (map unsparse (unsparse1 x))
+
+catMatrices :: [Matrix a] -> Matrix a
+catMatrices es@(Element _:_) = Dimension (Element $ BVec.fromList [e | Element e <- es])
+catMatrices ms@(Dimension _:_) = Dimension (catMatrices [m | Dimension m <- ms])
+catMatrices [] = error "catMatrices called with empty list"
+
+--catVecMatrices :: BVec.Vector (Matrix a)
+
+-- given a sparse n-dimensional matrix, sorted,
+-- turn the outermost index into dense vector
+unsparse1 :: [([Int],a)] -> [[([Int],a)]]
+unsparse1 pairs = go 0 pairs
+  where go _ [] = []
+        go i pairs = let (now,rest) = break (\((j:_),_) -> i/=j) pairs
+                     in strip now : go (i+1) rest
+        strip = map (\((_:is),x) -> (is,x))
+
+unsparse :: [([Int],a)] -> Matrix a
+unsparse [([],x)] = Element x
+unsparse pairs = catMatrices (map unsparse (unsparse1 pairs))
+
+
+
+
+
+
+
+
+{-
+
+toElement :: Matrix a -> a
+toElement (Element a) = a
+toElement (Dimension m) = toElement m
+
+indexedToMatrix :: Show a => [([Int], a)] -> Either Text (Matrix a)
+indexedToMatrix xs = do
+  n <- case mSize $ fmap fst xs of
+         Nothing -> Left $ "Index Lists are different sizes in indexedToNested: " <> show xs
+         Just n -> Right n
+  let go :: Int -> [([Int], Matrix a)] -> Either [([Int], Matrix a)]
+      go n ixed = do
+        when (n == 0) $ do
+          neIxed <- maybe (Left "Empty list result at 0 index in indexedToMatrix") Right $ nonEmpty ixed
+          if length neIxed == 1
+            then return $ Right $ snd $ head neIxed
+            else Left "list of length >1 in 0 index case in indexedToMatrix"
+        let mNeXs = traverse (\(is, y) -> fmap (, y) $ nonEmpty is) xs
+        case mNeXs of
+          Nothing -> Left $ "Unexpected empty list after check.  This shouldn't happen!"
+          Just neXs -> do
+            let x2s = fmap (\(neI, y) -> (init neI, last neI, y)) neXs
+                f (x, _, _) (y, _, _) = x == y
+                x3s = List.groupBy f x2s
+                g xs =
+                  let (nI, _, _) = List.head xs
+                  in (nI, Matrix $ BVec.fromList $ fmap (toElement . snd) $ sortOn fst $ fmap (\(_, y, z) -> (y, z)) xs)
+            return $ fmap g x3s >>= go (n - 1)
+    in go n $ fmap (\(ixs, a) -> (ixs, Element a)) xs
+
+
+indexedToNested :: Show a => [([Int], a)] -> Either Text [([Int], BVec.Vector a)]
 indexedToNested xs = do
   n <- case mSize $ fmap fst xs of
          Nothing -> Left $ "Index Lists are different sizes in indexedToNested: " <> show xs
@@ -208,7 +280,23 @@ indexedToNested xs = do
       let x2s = fmap (\(neI, y) -> (init neI, last neI, y)) neXs
           f (x, _, _) (y, _, _) = x == y
           x3s = List.groupBy f x2s
-          g xs = let (nI, _, _) = List.head xs in (nI, fmap snd $ sortOn fst $ fmap (\(_, y, z) -> (y, z)) xs)
+          g xs = let (nI, _, _) =
+                       List.head xs in (nI, BVec.fromList $ fmap snd $ sortOn fst $ fmap (\(_, y, z) -> (y, z)) xs)
       return $ fmap g x3s
 
 newtype IndexedMatrix a = IndexedMatrix { unIndexedMatrix :: [([Int], a)] }
+
+instance A.ToJSON (IndexedMatrix a) where
+  toJSON (IndexedMatrix im) =
+    let go x = case mSize $ fmap fst x of
+                 Nothing -> Left "Bad indices given to toJSON :: IndexedMatrix"
+                 Just n -> if n == 0
+                           then case length x of
+                                  1 -> Right $ snd $ List.head x
+                                  _ -> Left $ "reducing IndexedMatrix to nested form in toJSON"
+                           else indexedToNested x >>= go
+        resE = go im
+    in case resE of
+      Left err -> error err
+      Right v -> A.toJSON v
+-}
