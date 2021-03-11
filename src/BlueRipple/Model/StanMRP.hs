@@ -18,6 +18,7 @@ import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
 import qualified Data.Array as Array
 import qualified Data.IntMap.Strict as IM
+import Data.List.Extra (nubOrd)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
@@ -245,8 +246,12 @@ psRowsJSONFld :: SJ.StanJSONF (k, Int, Vec.Vector Double, SJ.Indexed Double) A.S
 psRowsJSONFld =
   SJ.namedF "Nps" FL.length
   <> SJ.valueToPairF "Xps" (SJ.jsonArrayF $ \(_, _, v, _) -> v)
-  <> SJ.valueToPairF "PS" (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
+  <> SJ.valueToPairF "Wps" (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
 
+mrPSKeyMapFld ::  Ord k
+           => PostStratification k psRow predRow
+           -> FL.Fold psRow (IM.IntMap k)
+mrPSKeyMapFld ps = fmap (IM.fromList . zip [1..] . sort . nubOrd . fmap (psGroupKey ps)) FL.list
 
 mrPSDataJSONFold :: Ord k
                  => Binomial_MRP_Model predRow modeledRow
@@ -254,8 +259,8 @@ mrPSDataJSONFold :: Ord k
                  -> MRPBuilderM predRow (SJ.StanJSONF psRow A.Series)
 mrPSDataJSONFold model psFuncs = do
   psDataF <- psRowsFld model psFuncs
+--  let fld = (,) <$> FL.generalize mrPSKeyMapFld <*> psRowsJSONFld
   return $ postMapM (FL.foldM psRowsJSONFld) psDataF
-
 
 mrLLDataJSONFold :: ()
                  => Binomial_MRP_Model predRow modeledRow
@@ -279,29 +284,31 @@ data MRPData f predRow modeledRow psRow =
 ntMRPData :: (forall a.f a -> g a) -> MRPData f j k l -> MRPData g j k l
 ntMRPData h (MRPData mod mPS mLL) = MRPData (h mod) (h <$> mPS) (h <$> mLL)
 
-mrpDataWrangler :: (Foldable f, Functor f)
+mrpDataWrangler :: (Foldable f, Functor f, Ord k)
                 => Binomial_MRP_Model predRow modeledRow
                 -> MRPData f predRow modeledRow psRow
                 -> (modeledRow -> predRow)
                 -> Maybe (PostStratification k psRow predRow)
-                -> MRPBuilderM predRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) () ())
+                -> MRPBuilderM predRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) (IM.IntMap k) ())
 mrpDataWrangler model (MRPData modeled mPS mLL) prjModeled mPSFunctions = do
   modelDataFold <- mrModelDataJSONFold model (ProjectableRows modeled prjModeled)
---  psDataFold <- case mPS of
---    Nothing -> return mempty
---    Just ps -> case mPSFunctions of
---      Nothing -> SB.stanBuildError "PostStratification data given but post-stratification functions unset."
---      Just ps -> mrPSDataJSONFold model ps (ProjectableRows ps prj) wgt
+  psDataFold <- case mPS of
+    Nothing -> return mempty
+    Just ps -> case mPSFunctions of
+      Nothing -> SB.stanBuildError "PostStratification data given but post-stratification functions unset."
+      Just ps -> mrPSDataJSONFold model ps
   llDataFold <- case mLL of
     Nothing -> return mempty
     Just ll -> mrLLDataJSONFold model (ProjectableRows ll prjModeled)
+  let psKeyMapFld = maybe mempty mrPSKeyMapFld mPSFunctions
   let makeDataJsonE (MRPData modeled mPS mLL) = do
         modeledJSON <- SJ.frameToStanJSONSeries modelDataFold modeled
---        psJSON <- maybe (Right mempty) (SJ.frameToStanJSONSeries psDataFold) mPS
+        psJSON <- maybe (Right mempty) (FL.foldM psDataFold) mPS
         llJSON <- maybe (Right mempty) (SJ.frameToStanJSONSeries llDataFold) mLL
-        return $ modeledJSON <> {- psJSON <> -} llJSON
-      f _ = ((), makeDataJsonE)
-  return $ SC.Wrangle SC.NoIndex f
+        return $ modeledJSON <> psJSON <>  llJSON
+      psKeyMap = maybe mempty (FL.fold psKeyMapFld)
+      f (MRPData _ mPS _) = (psKeyMap mPS, makeDataJsonE)
+  return $ SC.Wrangle SC.TransientIndex f
 
 bFixedEffects :: Binomial_MRP_Model predRow modeledRow -> Bool
 bFixedEffects model = bmm_nFixedEffects model > 0
