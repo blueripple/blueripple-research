@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,6 +11,7 @@ module Stan.ModelBuilder where
 
 import Prelude hiding (All)
 import qualified Data.Array as Array
+import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Clock as Time
@@ -54,6 +56,15 @@ data WithIndent = WithIndent Text Int
 data StanCode = StanCode { curBlock :: StanBlock
                          , blocks :: Array.Array StanBlock WithIndent
                          }
+
+stanCodeToStanModel :: StanCode -> StanModel
+stanCodeToStanModel (StanCode _ a) = StanModel
+                                     (a Array.! SBData)
+                                     (a Array.! SBTransformedData)
+                                     (a Array.! SBParameters)
+                                     (a Array.! SBTransformedParameters)
+                                     (a Array.! SBModel)
+                                     (a Array.! SBData)
 
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
@@ -111,6 +122,19 @@ indented n m = do
   modify (indent $ negate n)
   return x
 
+bracketed :: Int -> StanBuilderM env a -> StanBuilderM env a
+bracketed n m = do
+  addLine " {"
+  x <- indented n m
+  addLine "}\n"
+  return x
+
+stanForLoop :: Text -> Maybe Text -> Text -> (Text -> StanBuilderM env a) -> StanBuilderM env a
+stanForLoop counter mStart end loopF = do
+  let start = fromMaybe "1" mStart
+  addLine $ "for (" <> counter <> "= " <> start <> ":" <> end <> ")"
+  bracketed 2 $ loopF counter
+
 stanIndented :: StanBuilderM env a -> StanBuilderM env a
 stanIndented = indented 2
 
@@ -121,6 +145,47 @@ inBlock b m = do
   x <- m
   setBlock oldBlock
   return x
+
+data VectorContext = Vectorized | NonVectorized Text
+
+data StanModelTerm where
+  Scalar :: Text -> StanModelTerm
+  Vectored :: Text -> StanModelTerm
+  Indexed :: Text -> Text -> StanModelTerm
+
+printTerm :: Map Text Text -> VectorContext -> StanModelTerm -> Maybe Text
+printTerm _ _ (Scalar t) = Just t
+printTerm _ Vectorized (Vectored n) = Just n
+printTerm _ (NonVectorized i) (Vectored n) = Just $ n <> "[" <> i <> "]"
+printTerm indexMap _ (Indexed k t) = (\i -> t <> "[" <> i <> "]") <$> Map.lookup k indexMap
+
+data StanExpr where
+  NullE :: StanExpr
+  TermE :: StanModelTerm -> StanExpr --StanModelTerm
+  BinOpE :: Text -> StanExpr -> StanExpr -> StanExpr
+  FunctionE :: Text -> [StanExpr] -> StanExpr
+  GroupE :: StanExpr -> StanExpr
+
+printExpr :: Map Text Text -> VectorContext -> StanExpr -> Maybe Text
+printExpr _ _ NullE = Just ""
+printExpr im vc (TermE t) = printTerm im vc t
+printExpr im vc (BinOpE o l r) = (\l' r' -> l' <> " " <> o <> " " <> r') <$> printExpr im vc l <*> printExpr im vc r
+printExpr im vc (FunctionE f es) = (\es' -> f <> "(" <> T.intercalate ", " es' <> ")") <$> traverse (printExpr im vc) es
+printExpr im vc (GroupE e) = (\e' -> "(" <> e' <> ")") <$> printExpr im vc e
+
+printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env StanExpr -> StanBuilderM env Text
+printExprM context im vc me = do
+  e <- me
+  case printExpr im vc e of
+    Nothing -> stanBuildError $ context <> ": Missing index while constructing model expression"
+    Just t -> return t
+
+multiOp :: Text -> [StanExpr] -> StanExpr
+multiOp o es = go o NullE es where
+  go o e [] = e
+  go o e (x : xs) = go o (BinOpE o e x) xs
+
+
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
