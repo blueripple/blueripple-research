@@ -110,7 +110,8 @@ main = do
 --  let pureMTseed = PureMT.pureMT 1
   --
 --  resE <- K.knitHtmls knitConfig testHouseModel
-  resE <- K.knitHtmls knitConfig testCCESPref
+  resE <- K.knitHtmls knitConfig testStanMRP
+
   case resE of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "house_model" namedDocs
@@ -128,13 +129,15 @@ testStanMRP = do
       stateEnumF = FL.premap (F.rgetField @BR.StateAbbreviation)
                    $ MRP.intEncoderFoldToIntIndexFold
                    $ SJ.enumerate 1
-      groups = [MRP.EnumeratedGroup "Incumbency" (MRP.IntIndex 2 $ Just . F.rgetField @BRE.Incumbency)
-               ,MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
---               ,MRP.LabeledGroup "State" stateEnumF
-               ]
+      groups =
+        [
+          MRP.EnumeratedGroup "Incumbency" (MRP.IntIndex 2 $ Just . F.rgetField @BRE.Incumbency)
+--        , MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
+--        , MRP.LabeledGroup "State" stateEnumF
+        ]
       model = MRP.Binomial_MRP_Model
               "testMRP"
-              1
+              0
               (Vector.singleton . F.rgetField @DT.PopPerSqMile)
               groups
               (F.rcast @BRE.CCESDataR)

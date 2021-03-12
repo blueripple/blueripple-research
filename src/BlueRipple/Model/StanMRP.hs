@@ -400,15 +400,18 @@ bFixedEffects model = bmm_nFixedEffects model > 0
 groupSizesBlock :: MRPBuilderM predRow ()
 groupSizesBlock = do
   indexMap <- SB.asksEnv sbe_groupIndices
-  let groupSize x = SB.addStanLine $ "int J_" <> fst x
+  let groupSize x = SB.addStanLine $ "int<lower=2> J_" <> fst x
   traverse_ groupSize $ Map.toList indexMap
 
 labeledDataBlockForRows :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow ()
 labeledDataBlockForRows model suffix = do
    indexMap <- SB.asksEnv sbe_groupIndices
-   let groupIndex x = SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "[N" <> suffix <> "]"
-   SB.addStanLine $ "int N" <> suffix
-   when (bFixedEffects model) $ SB.addStanLine ("matrix X" <> suffix <> "[N" <> suffix <> ",K]")
+   let groupIndex x = if i_Size (snd x) == 2
+                      then SB.addStanLine $ "int<lower=1, upper=2> " <> fst x <> "[N" <> suffix <> "]"
+--                      then SB.addStanLine $ "int<lower=1, upper=2>[N" <> suffix <> "] " <> fst x
+                      else SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "[N" <> suffix <> "]"
+   SB.addStanLine $ "int<lower=1> N" <> suffix
+   when (bFixedEffects model) $ SB.addStanLine $ "matrix[N" <> suffix <> ", K] X" <> suffix
    traverse_ groupIndex $ Map.toList indexMap
 
 mrpDataBlock :: Binomial_MRP_Model predRow modeledRow
@@ -417,23 +420,23 @@ mrpDataBlock :: Binomial_MRP_Model predRow modeledRow
              -> MRPBuilderM predRow ()
 mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
   groupSizesBlock
-  when (bFixedEffects model) $ SB.addStanLine "int K"
+  when (bFixedEffects model) $ SB.addStanLine "int<lower=1> K"
   labeledDataBlockForRows model "m"
-  SB.addStanLine $ "int <lower=0> Tm[Nm]"
-  SB.addStanLine $ "int <lower=0> Sm[Nm]"
+  SB.addStanLine $ "int<lower=0> Tm[Nm]"
+  SB.addStanLine $ "int<lower=0> Sm[Nm]"
   case mPSSuffix of
     Nothing -> return ()
     Just psSuffix -> do
       SB.addStanLine $ "int N" <> psSuffix
-      when (bFixedEffects model) $ SB.addStanLine $ "matrix X" <> psSuffix <> "[N" <> psSuffix <> ",K]"
+      when (bFixedEffects model) $ SB.addStanLine $ "matrix[N" <> psSuffix <> ", K] X" <> psSuffix
       groupUpperBounds <- T.intercalate "," . fmap (show . i_Size) <$> groupOrderedIntIndexes model
       SB.addStanLine $ "real<lower=0>[" <> groupUpperBounds <> "]" <> "W[N" <> psSuffix <> "]" -- real[2,2,4] W[Nps];
   case mLLSuffix of
     Nothing -> return ()
     Just llSuffix -> do
       labeledDataBlockForRows model llSuffix
-      SB.addStanLine $ "int <lower=0> T" <> llSuffix <> "[N" <> llSuffix <> "]"
-      SB.addStanLine $ "int <lower=0> S" <> llSuffix <> "[N" <> llSuffix <> "]"
+      SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] T" <> llSuffix
+      SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] S" <> llSuffix
 
 mrpParametersBlock :: Binomial_MRP_Model predRow modeledRow -> MRPBuilderM predRow ()
 mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
@@ -455,16 +458,18 @@ modelExpr :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRo
 modelExpr model suffix = do
   indexMap <- SB.asksEnv sbe_groupIndices
   let labeled x = x <> suffix
-      binaryGroupExpr x = let n = fst x in SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
-      nonBinaryGroupExpr x = let n = fst x in SB.Indexed n $ "beta_" <> n
+      binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
+      nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
       eX = SB.TermE $ SB.Vectored $ labeled "X"
       eBeta = SB.TermE $ SB.Scalar "beta"
       eXBeta = SB.BinOpE "*" eX eBeta
-      eGroups = SB.multiOp "+" $ fmap (SB.TermE . groupExpr) $ Map.toList indexMap
-      eTerms = if bFixedEffects model then [eAlpha, eXBeta, eGroups] else [eAlpha, eGroups]
-  return $ SB.multiOp "+" eTerms
+      lXBetaExpr = if bFixedEffects model then [eXBeta] else []
+      lGroupsExpr = maybe [] pure
+                    $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList indexMap
+  let neTerms = eAlpha :| (lXBetaExpr <> lGroupsExpr)
+  return $ SB.multiOp "+" neTerms
 
 mrpModelBlock :: Binomial_MRP_Model predRow modeledRow -> Double -> Double -> Double -> MRPBuilderM predRow ()
 mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ do
@@ -477,6 +482,7 @@ mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBMod
                      then binaryPrior x
                      else nonBinaryPrior x
   modelTerms <- SB.printExprM "mrpModelBlock" (Map.mapWithKey const indexMap) SB.Vectorized $ modelExpr model "m"
+  SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
   when (bFixedEffects model) $ SB.addStanLine $ "beta ~ normal(0," <> show priorSDBeta <> ")"
   traverse groupPrior $ Map.toList indexMap
   SB.addStanLine $ "Sm ~ binomial_logit(Tm, " <> modelTerms <> ")"
@@ -491,7 +497,8 @@ mrpLogLikStanCode model mLLSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
   let suffix = fromMaybe "m" mLLSuffix -- we use model data unless a different suffix is provided
   SB.addStanLine $ "vector [N" <> suffix <> "] log_lik"
   SB.stanForLoop "n" Nothing ("N" <> suffix) $ \_ -> do
-    modelTerms <- SB.printExprM "mrpLogLikStanCode" (Map.mapWithKey const indexMap) (SB.NonVectorized "n") $ modelExpr model suffix
+    let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
+    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr model suffix
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S" <> suffix <> "[n]| T" <> suffix <> "[n], " <> modelTerms <> ")"
 
 

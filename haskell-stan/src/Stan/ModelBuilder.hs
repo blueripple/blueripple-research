@@ -131,7 +131,7 @@ indented n m = do
 
 bracketed :: Int -> StanBuilderM env a -> StanBuilderM env a
 bracketed n m = do
-  addLine " {"
+  addLine " {\n"
   x <- indented n m
   addLine "}\n"
   return x
@@ -139,7 +139,7 @@ bracketed n m = do
 stanForLoop :: Text -> Maybe Text -> Text -> (Text -> StanBuilderM env a) -> StanBuilderM env a
 stanForLoop counter mStart end loopF = do
   let start = fromMaybe "1" mStart
-  addLine $ "for (" <> counter <> "= " <> start <> ":" <> end <> ")"
+  addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
   bracketed 2 $ loopF counter
 
 stanIndented :: StanBuilderM env a -> StanBuilderM env a
@@ -167,17 +167,20 @@ printTerm _ (NonVectorized i) (Vectored n) = Just $ n <> "[" <> i <> "]"
 printTerm indexMap _ (Indexed k t) = (\i -> t <> "[" <> i <> "]") <$> Map.lookup k indexMap
 
 data StanExpr where
-  NullE :: StanExpr
+--  NullE :: StanExpr
   TermE :: StanModelTerm -> StanExpr --StanModelTerm
   BinOpE :: Text -> StanExpr -> StanExpr -> StanExpr
   FunctionE :: Text -> [StanExpr] -> StanExpr
+  VectorFunctionE :: Text -> StanExpr -> StanExpr -- function to add when the context is vectorized
   GroupE :: StanExpr -> StanExpr
 
 printExpr :: Map Text Text -> VectorContext -> StanExpr -> Maybe Text
-printExpr _ _ NullE = Just ""
+--printExpr _ _ NullE = Just ""
 printExpr im vc (TermE t) = printTerm im vc t
 printExpr im vc (BinOpE o l r) = (\l' r' -> l' <> " " <> o <> " " <> r') <$> printExpr im vc l <*> printExpr im vc r
 printExpr im vc (FunctionE f es) = (\es' -> f <> "(" <> T.intercalate ", " es' <> ")") <$> traverse (printExpr im vc) es
+printExpr im Vectorized (VectorFunctionE f e) = (\e' -> f <> "(" <>  e' <> ")") <$> printExpr im Vectorized e
+printExpr im vc@(NonVectorized _) (VectorFunctionE f e) = printExpr im vc e
 printExpr im vc (GroupE e) = (\e' -> "(" <> e' <> ")") <$> printExpr im vc e
 
 printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env StanExpr -> StanBuilderM env Text
@@ -187,16 +190,18 @@ printExprM context im vc me = do
     Nothing -> stanBuildError $ context <> ": Missing index while constructing model expression"
     Just t -> return t
 
-multiOp :: Text -> [StanExpr] -> StanExpr
-multiOp o es = go o NullE es where
-  go o e [] = e
+multiOp :: Text -> NonEmpty StanExpr -> StanExpr
+multiOp o es = foldl' (BinOpE o) (head es) (tail es)
+{-
+  go o Nothing es where
+  go o me [] = e
   go o e (x : xs) = go o (BinOpE o e x) xs
-
+-}
 
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
-  let section h b = h <> " {\n" <> b <> "\n}\n"
+  let section h b = h <> " {\n" <> b <> "}\n"
       maybeSection h = maybe "" (section h)
    in section "data" (dataBlock sm)
         <> maybeSection "transformed data" (transformedDataBlockM sm)
