@@ -20,10 +20,12 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.TableUtils as BR
+import qualified Stan.JSON as SJ
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
@@ -36,6 +38,7 @@ import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl.CoRec as V
+import qualified Data.Vector as Vector
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.MapReduce as FMR
@@ -115,6 +118,38 @@ main = do
 
 type PctTurnout = "PctTurnout" F.:-> Double
 type DShare = "DShare" F.:-> Double
+
+testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
+testStanMRP = do
+  K.logLE K.Info "Data prep..."
+  houseData_C <- BRE.prepCachedDataPUMS False
+  let demoSource = BRE.DS_1YRACSPUMS
+      mrpData_C = fmap (\hd -> MRP.MRPData (BRE.ccesData hd) Nothing Nothing) houseData_C
+      stateEnumF = FL.premap (F.rgetField @BR.StateAbbreviation)
+                   $ MRP.intEncoderFoldToIntIndexFold
+                   $ SJ.enumerate 1
+      groups = [MRP.EnumeratedGroup "Incumbency" (MRP.IntIndex 2 $ Just . F.rgetField @BRE.Incumbency)
+               ,MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
+--               ,MRP.LabeledGroup "State" stateEnumF
+               ]
+      model = MRP.Binomial_MRP_Model
+              "testMRP"
+              1
+              (Vector.singleton . F.rgetField @DT.PopPerSqMile)
+              groups
+              (F.rcast @BRE.CCESDataR)
+              (F.rgetField @BRE.TVotes)
+              (F.rgetField @BRE.DVotes)
+  MRP.runMRPModel @()
+    False
+    (Just "stan/mrp/cces")
+    "test"
+    model
+    Nothing
+    Nothing
+    "testData"
+    mrpData_C
+    Nothing
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
