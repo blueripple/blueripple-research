@@ -49,7 +49,8 @@ data StanBlock = SBData
                | SBParameters
                | SBTransformedParameters
                | SBModel
-               | SBGeneratedQuantities deriving (Show, Eq, Ord, Enum, Bounded, Array.Ix)
+               | SBGeneratedQuantities
+               | SBLogLikelihood deriving (Show, Eq, Ord, Enum, Bounded, Array.Ix)
 
 data WithIndent = WithIndent Text Int
 
@@ -57,14 +58,20 @@ data StanCode = StanCode { curBlock :: StanBlock
                          , blocks :: Array.Array StanBlock WithIndent
                          }
 
+
 stanCodeToStanModel :: StanCode -> StanModel
-stanCodeToStanModel (StanCode _ a) = StanModel
-                                     (a Array.! SBData)
-                                     (a Array.! SBTransformedData)
-                                     (a Array.! SBParameters)
-                                     (a Array.! SBTransformedParameters)
-                                     (a Array.! SBModel)
-                                     (a Array.! SBData)
+stanCodeToStanModel (StanCode _ a) =
+  StanModel
+  (g $ a Array.! SBData)
+  (f . g  $ a Array.! SBTransformedData)
+  (g $ a Array.! SBParameters)
+  (f . g $ a Array.! SBTransformedParameters)
+  (g $ a Array.! SBModel)
+  (f . g $ a Array.! SBGeneratedQuantities)
+  (g $ a Array.! SBLogLikelihood)
+  where
+    f x = if x == "" then Nothing else Just x
+    g (WithIndent t _) = t
 
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
