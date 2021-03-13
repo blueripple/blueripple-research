@@ -125,26 +125,35 @@ testStanMRP = do
   K.logLE K.Info "Data prep..."
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
-      mrpData_C = fmap (\hd -> MRP.MRPData (BRE.ccesData hd) Nothing Nothing) houseData_C
+      toCCESData hd = F.toFrame $ take 500 $ FL.fold FL.list $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
+  ccesData <- toCCESData <$> K.ignoreCacheTime houseData_C
+  let shouldBeEmpty = F.filterFrame (\r -> F.rgetField @BRE.DVotes r > F.rgetField @BRE.TVotes r) ccesData
+  when (FL.fold FL.length shouldBeEmpty > 0) $ do
+    K.logLE K.Info "More D votes than votes! "
+    BR.logFrame shouldBeEmpty
+    K.knitError ""
+  let mrpData_C = fmap (\hd -> MRP.MRPData (toCCESData hd) Nothing Nothing) houseData_C
       stateEnumF = FL.premap (F.rgetField @BR.StateAbbreviation)
                    $ MRP.intEncoderFoldToIntIndexFold
                    $ SJ.enumerate 1
       groups =
         [
-          MRP.EnumeratedGroup "Incumbency" (MRP.IntIndex 2 $ Just . F.rgetField @BRE.Incumbency)
---        , MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
+--           MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
 --        , MRP.LabeledGroup "State" stateEnumF
         ]
+      fixedEffs r = Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r]
       model = MRP.Binomial_MRP_Model
               "testMRP"
-              0
-              (Vector.singleton . F.rgetField @DT.PopPerSqMile)
+              1
+              fixedEffs
               groups
               (F.rcast @BRE.CCESDataR)
               (F.rgetField @BRE.TVotes)
               (F.rgetField @BRE.DVotes)
+  mrpData <- K.ignoreCacheTime mrpData_C
+  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ MRP.modeled mrpData) <> " people surveyed in mrpData.modeled"
   MRP.runMRPModel @()
-    False
+    True
     (Just "stan/mrp/cces")
     "test"
     model
@@ -152,7 +161,7 @@ testStanMRP = do
     Nothing
     "testData"
     mrpData_C
-    Nothing
+    (Just 100)
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do

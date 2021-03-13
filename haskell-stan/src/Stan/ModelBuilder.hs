@@ -142,6 +142,16 @@ stanForLoop counter mStart end loopF = do
   addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
   bracketed 2 $ loopF counter
 
+data StanPrintable = StanLiteral Text | StanExpression Text
+
+stanPrint :: [StanPrintable] -> StanBuilderM env ()
+stanPrint ps =
+  let f x = case x of
+        StanLiteral x -> "\"" <> x <> "\""
+        StanExpression x -> x
+  in addStanLine $ "print(" <> T.intercalate ", " (fmap f ps) <> ")"
+
+
 stanIndented :: StanBuilderM env a -> StanBuilderM env a
 stanIndented = indented 2
 
