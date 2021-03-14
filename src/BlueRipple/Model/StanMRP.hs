@@ -97,7 +97,7 @@ runMRPModel clearCache mWorkDir modelName model mPSFunctions mLLSuffix dataName 
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
     (Just $ dataName <> ".json")
     (Just $ outputLabel)
-    1
+    4
     (Just nSamples)
     (Just nSamples)
     (Just stancConfig)
@@ -447,13 +447,13 @@ mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
                          then binaryParameter x
                          else nonBinaryParameter x
   SB.addStanLine "real alpha"
-  when (bFixedEffects model) $ SB.addStanLine "vector[K] beta"
+--  when (bFixedEffects model) $ SB.addStanLine "vector[K] beta"
   traverse_ groupParameter $ Map.toList indexMap
 
 
 -- alpha + X * beta + beta_age[age] + ...
-modelExpr :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow SB.StanExpr
-modelExpr model suffix = do
+modelExpr :: Bool -> Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow SB.StanExpr
+modelExpr thinQR model suffix = do
   indexMap <- SB.asksEnv sbe_groupIndices
   let labeled x = x <> suffix
       binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
@@ -463,10 +463,15 @@ modelExpr model suffix = do
       eQ = SB.TermE $ SB.Vectored $ "Q" <> suffix <> "_ast"
       eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> suffix
       eQTheta = SB.BinOpE "*" eQ eTheta
-      lQThetaExpr = if bFixedEffects model then [eQTheta] else []
+      eX = SB.TermE $ SB.Vectored $ "X" <> suffix
+      eBeta = SB.TermE $ SB.Scalar $ "betaX" <> suffix
+      eXBeta = SB.BinOpE "*" eX eBeta
+      lFEExpr = if bFixedEffects model
+                then (if thinQR then [eQTheta] else [eXBeta])
+                else []
       lGroupsExpr = maybe [] pure
                     $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList indexMap
-  let neTerms = eAlpha :| (lQThetaExpr <> lGroupsExpr)
+  let neTerms = eAlpha :| (lFEExpr <> lGroupsExpr)
   return $ SB.multiOp "+" neTerms
 
 mrpModelBlock :: Binomial_MRP_Model predRow modeledRow -> Double -> Double -> Double -> MRPBuilderM predRow ()
@@ -480,19 +485,11 @@ mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBMod
                      then binaryPrior x
                      else nonBinaryPrior x
   let im = Map.mapWithKey (\k _ -> k <> "_m") indexMap
-  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr model "m"
+  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True model "m"
   SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
-  when (bFixedEffects model) $ SB.addStanLine $ "beta ~ normal(0," <> show priorSDBeta <> ")"
+  when (bFixedEffects model) $ SB.addStanLine $ "thetaXm ~ normal(0," <> show priorSDBeta <> ")"
   traverse groupPrior $ Map.toList indexMap
---  SB.stanPrint [SB.StanLiteral "alpha=", SB.StanExpression "alpha"]
---  SB.stanPrint [SB.StanLiteral "beta=", SB.StanExpression "beta"]
---  SB.stanPrint [SB.StanLiteral "target before=", SB.StanExpression "target()"]
   SB.addStanLine $ "Sm ~ binomial_logit(Tm, " <> modelTerms <> ")"
---  SB.stanPrint [SB.StanLiteral "target after=", SB.StanExpression "target()"]
---  SB.addStanLine $ "print(\"alpha \",alpha)"
---  SB.addStanLine $ "print(\"beta \",beta)"
-
--- we need to general log_lik using modeled or given data
 
 mrpLogLikStanCode :: Binomial_MRP_Model predRow modeledRow
                   -> Maybe Text
@@ -503,9 +500,8 @@ mrpLogLikStanCode model mLLSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
   SB.addStanLine $ "vector [N" <> suffix <> "] log_lik"
   SB.stanForLoop "n" Nothing ("N" <> suffix) $ \_ -> do
     let im = Map.mapWithKey (\k _ -> k <> "_" <> suffix <> "[n]") indexMap -- we need to index the groups.
-    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr model suffix
+    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr False model suffix
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S" <> suffix <> "[n]| T" <> suffix <> "[n], " <> modelTerms <> ")"
-
 
 mrpPSStanCode :: forall predRow modeledRow.
                  Binomial_MRP_Model predRow modeledRow
@@ -519,7 +515,7 @@ mrpPSStanCode model mPSSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
           groupCounters = fmap ("n_" <>) groupNames
           im = Map.fromList $ zip groupNames groupCounters
           inner = do
-            modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ modelExpr model suffix
+            modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ modelExpr False model suffix
             SB.addStanLine $ "real p<lower=0, upper=1> = inv_logit(" <> modelTerms <> ")"
             SB.addStanLine $ "ps[n] += p * W" <> suffix <> "[n][" <> T.intercalate "," groupCounters <> "]"
           makeLoops :: [Text] -> MRPBuilderM predRow ()

@@ -161,7 +161,7 @@ testStanMRP = do
     Nothing
     "testData"
     mrpData_C
-    (Just 100)
+    (Just 1000)
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
