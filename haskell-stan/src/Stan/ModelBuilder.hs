@@ -151,6 +151,24 @@ stanPrint ps =
         StanExpression x -> x
   in addStanLine $ "print(" <> T.intercalate ", " (fmap f ps) <> ")"
 
+fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env ()
+fixedEffectsQR matrix suffix rows cols = do
+  let ri = "R" <> suffix <> "_ast_inverse"
+  inBlock SBData $ addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix <> suffix
+  inBlock SBParameters $ addStanLine $ "vector[" <> cols <> "] theta" <> matrix <> suffix
+  inBlock SBTransformedData $ do
+    let q = "Q" <> suffix <> "_ast"
+        r = "R" <> suffix <> "_ast"
+    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> q
+    addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> r
+    addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> ri
+    addStanLine $ q <> " = qr_thin_Q(" <> matrix <> suffix <> ") * sqrt(" <> rows <> " - 1)"
+    addStanLine $ r <> " = qr_thin_R(" <> matrix <> suffix <> ") / sqrt(" <> rows <> " - 1)"
+    addStanLine $ ri <> " = inverse(" <> r <> ")"
+  inBlock SBTransformedParameters $ do
+    addStanLine $ "vector[" <> cols <> "] beta" <> matrix <> suffix
+    addStanLine $ "beta" <> matrix <> suffix <> " = " <> ri <> " * theta" <> matrix <> suffix
+
 
 stanIndented :: StanBuilderM env a -> StanBuilderM env a
 stanIndented = indented 2
@@ -162,6 +180,9 @@ inBlock b m = do
   x <- m
   setBlock oldBlock
   return x
+
+
+
 
 data VectorContext = Vectorized | NonVectorized Text
 
@@ -202,11 +223,8 @@ printExprM context im vc me = do
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (BinOpE o) (head es) (tail es)
-{-
-  go o Nothing es where
-  go o me [] = e
-  go o e (x : xs) = go o (BinOpE o e x) xs
--}
+
+
 
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text

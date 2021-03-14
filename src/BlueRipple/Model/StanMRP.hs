@@ -405,10 +405,8 @@ labeledDataBlockForRows model suffix = do
   indexMap <- SB.asksEnv sbe_groupIndices
   let groupIndex x = if i_Size (snd x) == 2
                      then SB.addStanLine $ "int<lower=1, upper=2> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
---                      then SB.addStanLine $ "int<lower=1, upper=2>[N" <> suffix <> "] " <> fst x
                      else SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
   SB.addStanLine $ "int<lower=1> N" <> suffix
-  when (bFixedEffects model) $ SB.addStanLine $ "matrix[N" <> suffix <> ", K] X" <> suffix
   traverse_ groupIndex $ Map.toList indexMap
 
 mrpDataBlock :: Binomial_MRP_Model predRow modeledRow
@@ -419,6 +417,7 @@ mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
   groupSizesBlock
   when (bFixedEffects model) $ SB.addStanLine "int<lower=1> K"
   labeledDataBlockForRows model "m"
+  when (bFixedEffects model) $ SB.fixedEffectsQR "X" "m" "Nm" "K" --SB.addStanLine $ "matrix[N" <> suffix <> ", K] X" <> suffix
   SB.addStanLine $ "int<lower=1> Tm[Nm]"
   SB.addStanLine $ "int<lower=0> Sm[Nm]"
   case mPSSuffix of
@@ -432,6 +431,7 @@ mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
     Nothing -> return ()
     Just llSuffix -> do
       labeledDataBlockForRows model llSuffix
+      SB.addStanLine $ "matrix[N" <> llSuffix <>  ", K] X"<> llSuffix
       SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] T" <> llSuffix
       SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] S" <> llSuffix
 
@@ -450,10 +450,6 @@ mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
   when (bFixedEffects model) $ SB.addStanLine "vector[K] beta"
   traverse_ groupParameter $ Map.toList indexMap
 
--- standardize (and center??) the fixed effects
-mrpTransformedParametersBlock :: Binomial_MRP_Model predRow modeledRow -> MRPBuilderM predRow ()
-mrpTransformedParametersBlock model = SB.inBlock SB.SBParameters $ do
-
 
 -- alpha + X * beta + beta_age[age] + ...
 modelExpr :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow SB.StanExpr
@@ -464,13 +460,13 @@ modelExpr model suffix = do
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
-      eX = SB.TermE $ SB.Vectored $ labeled "X"
-      eBeta = SB.TermE $ SB.Scalar "beta"
-      eXBeta = SB.BinOpE "*" eX eBeta
-      lXBetaExpr = if bFixedEffects model then [eXBeta] else []
+      eQ = SB.TermE $ SB.Vectored $ "Q" <> suffix <> "_ast"
+      eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> suffix
+      eQTheta = SB.BinOpE "*" eQ eTheta
+      lQThetaExpr = if bFixedEffects model then [eQTheta] else []
       lGroupsExpr = maybe [] pure
                     $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList indexMap
-  let neTerms = eAlpha :| (lXBetaExpr <> lGroupsExpr)
+  let neTerms = eAlpha :| (lQThetaExpr <> lGroupsExpr)
   return $ SB.multiOp "+" neTerms
 
 mrpModelBlock :: Binomial_MRP_Model predRow modeledRow -> Double -> Double -> Double -> MRPBuilderM predRow ()
@@ -488,11 +484,11 @@ mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBMod
   SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
   when (bFixedEffects model) $ SB.addStanLine $ "beta ~ normal(0," <> show priorSDBeta <> ")"
   traverse groupPrior $ Map.toList indexMap
-  SB.stanPrint [SB.StanLiteral "alpha=", SB.StanExpression "alpha"]
-  SB.stanPrint [SB.StanLiteral "beta=", SB.StanExpression "beta"]
-  SB.stanPrint [SB.StanLiteral "target before=", SB.StanExpression "target()"]
+--  SB.stanPrint [SB.StanLiteral "alpha=", SB.StanExpression "alpha"]
+--  SB.stanPrint [SB.StanLiteral "beta=", SB.StanExpression "beta"]
+--  SB.stanPrint [SB.StanLiteral "target before=", SB.StanExpression "target()"]
   SB.addStanLine $ "Sm ~ binomial_logit(Tm, " <> modelTerms <> ")"
-  SB.stanPrint [SB.StanLiteral "target after=", SB.StanExpression "target()"]
+--  SB.stanPrint [SB.StanLiteral "target after=", SB.StanExpression "target()"]
 --  SB.addStanLine $ "print(\"alpha \",alpha)"
 --  SB.addStanLine $ "print(\"beta \",beta)"
 
