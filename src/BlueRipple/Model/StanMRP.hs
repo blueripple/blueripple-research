@@ -18,9 +18,11 @@ import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
 import qualified Data.Array as Array
 import qualified Data.IntMap.Strict as IM
+import qualified Data.List as List
 import Data.List.Extra (nubOrd)
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
+import qualified Data.Set as Set
 
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
@@ -63,6 +65,7 @@ runMRPModel :: forall k psRow modeledRow predRow f r.
             => Bool
             -> Maybe Text
             -> Text
+            -> [Group predRow]
             -> Binomial_MRP_Model predRow modeledRow
             -> Maybe (PostStratification k psRow predRow)
             -> Maybe Text
@@ -70,18 +73,19 @@ runMRPModel :: forall k psRow modeledRow predRow f r.
             -> K.ActionWithCacheTime r (MRPData f predRow modeledRow psRow)
             -> Maybe Int
             -> K.Sem r ()
-runMRPModel clearCache mWorkDir modelName model mPSFunctions mLLSuffix dataName mrpData_C mNSamples =
+runMRPModel clearCache mWorkDir modelName groups model mPSFunctions mLLSuffix dataName mrpData_C mNSamples =
   K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
   K.logLE K.Info "Building dataWrangler and model code"
   mrpData <- K.ignoreCacheTime mrpData_C
-  let builderEnv = buildEnv model $ ProjectableRows (modeled mrpData) (bmm_PrjPred model)
+  let builderEnv = buildEnv groups model $ ProjectableRows (modeled mrpData) (bmm_PrjPred model)
       mPSSuffix = fmap (const "ps") mPSFunctions
   (stanCode, dataWrangler) <- K.knitEither $ SB.runStanBuilder builderEnv $ do
-    mrpDataBlock model mPSSuffix mLLSuffix
-    mrpParametersBlock model
-    mrpModelBlock model 2 2 1
-    mrpGeneratedQuantitiesBlock model mPSSuffix mLLSuffix
-    mrpDataWrangler model mrpData mPSFunctions
+    checkEnv
+    mrpDataBlock mPSSuffix mLLSuffix
+    mrpParametersBlock
+    mrpModelBlock 2 2 1
+    mrpGeneratedQuantitiesBlock mPSSuffix mLLSuffix
+    mrpDataWrangler mrpData mPSFunctions
   K.logLE K.Info "Running..."
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
       outputLabel = modelName <> "_" <> dataName
@@ -166,23 +170,26 @@ data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 intEncoderFoldToIntIndexFold :: SJ.IntEncoderF row -> FL.Fold row (IntIndex row)
 intEncoderFoldToIntIndexFold = fmap (\(f, km) -> IntIndex (IM.size km) f)
 
-data MRPBuilderEnv predRow  =
+data MRPBuilderEnv predRow modeledRow =
   StanBuilderEnv
   {
     sbe_groupIndices :: Map Text (IntIndex predRow)
---  , sbe_Model :: Binomial_MRP_Model predRow modelRow
+  , sbe_Model :: Binomial_MRP_Model predRow modeledRow
   }
 
-type MRPBuilderM a = SB.StanBuilderM (MRPBuilderEnv a)
+type MRPBuilderM a b = SB.StanBuilderM (MRPBuilderEnv a b)
 
-getIndex :: Group row -> MRPBuilderM row (IntIndex row)
-getIndex g = do
+getModel ::  MRPBuilderM predRow modeledRow (Binomial_MRP_Model predRow modeledRow)
+getModel = SB.asksEnv sbe_Model
+
+getIndex :: GroupName -> MRPBuilderM predRow modeledRow (IntIndex predRow)
+getIndex gn = do
   indexMap <- SB.asksEnv sbe_groupIndices
-  case (Map.lookup (groupName g) indexMap) of
-    Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> (groupName g) <> "\""
+  case (Map.lookup gn indexMap) of
+    Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
     Just i -> return i
 
-getIndexes :: MRPBuilderM row (Map Text (IntIndex row))
+getIndexes :: MRPBuilderM predRow modeledRow (Map Text (IntIndex predRow))
 getIndexes = SB.asksEnv sbe_groupIndices
 
 data Group row where
@@ -197,136 +204,211 @@ groupIndex :: Foldable f => Group row -> f row -> IntIndex row
 groupIndex (EnumeratedGroup _ i) _ = i
 groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
 
-groupSizeJSONFold :: Text -> Group row -> MRPBuilderM row (SJ.StanJSONF row A.Series)
-groupSizeJSONFold prefix g = do
-  let name = groupName g
-  IntIndex indexSize indexM <- getIndex g
-  return $ SJ.constDataF (prefix <> name) indexSize
+groupSizeJSONFold :: Text -> GroupName -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series)
+groupSizeJSONFold prefix gn = do
+  IntIndex indexSize indexM <- getIndex gn
+  return $ SJ.constDataF (prefix <> gn) indexSize
 
-groupDataJSONFold :: Text -> Group row -> MRPBuilderM row (SJ.StanJSONF row A.Series)
-groupDataJSONFold suffix g = do
-  let name = groupName g
-  IntIndex indexSize indexM <- getIndex g
-  return $ SJ.valueToPairF (name <> "_" <> suffix) (SJ.jsonArrayMF indexM)
+groupDataJSONFold :: Text -> GroupName -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series)
+groupDataJSONFold suffix gn = do
+  IntIndex indexSize indexM <- getIndex gn
+  return $ SJ.valueToPairF (gn <> "_" <> suffix) (SJ.jsonArrayMF indexM)
 
 groupsJSONFold :: Traversable f
-               => (Text -> Group row -> MRPBuilderM row (SJ.StanJSONF row A.Series))
+               => (Text -> GroupName -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series))
                -> Text
-               -> f (Group row)
-               -> MRPBuilderM row (SJ.StanJSONF row A.Series)
+               -> f Text
+               -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series)
 groupsJSONFold groupFold t =  fmap (foldMap id) . traverse (groupFold t)
 
-groupsDataJSONFold :: Traversable f => Text -> f (Group row) -> MRPBuilderM row (SJ.StanJSONF row A.Series)
+groupsDataJSONFold :: Traversable f => Text -> f GroupName -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series)
 groupsDataJSONFold = groupsJSONFold groupDataJSONFold
 
-groupsSizeFold :: Traversable f => f (Group row) -> MRPBuilderM row (SJ.StanJSONF row A.Series)
+groupsSizeFold :: Traversable f => f GroupName -> MRPBuilderM predRow modeledRow (SJ.StanJSONF predRow A.Series)
 groupsSizeFold = groupsJSONFold groupSizeJSONFold "J_"
 
-data Binomial_MRP_Model predRow modelRow =
+type GroupName = Text
+
+data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
+
+data Binomial_MRP_Model predRow modeledRow =
   Binomial_MRP_Model
   {
     bmm_Name :: Text -- we'll need this for (unique) file names
-  , bmm_nFixedEffects :: Int
-  , bmm_FixedEffects :: predRow -> Vec.Vector Double
-  , bmm_Groups :: [Group predRow]
-  , bmm_PrjPred :: modelRow -> predRow
-  , bmm_Total :: modelRow -> Int
-  , bmm_Success :: modelRow -> Int
+  , bmm_FixedEffects :: Maybe (FixedEffects predRow) -- in case there are row-level fixed effects
+  , bmm_FEGroups :: Map GroupName (FixedEffects predRow)
+  , bmm_MRGroups :: Set.Set GroupName
+  , bmm_PrjPred :: modeledRow -> predRow
+  , bmm_Total :: modeledRow -> Int
+  , bmm_Success :: modeledRow -> Int
   }
 
-buildEnv :: Foldable f => Binomial_MRP_Model predRow modelRow -> MRData f modeledRow predRow  -> MRPBuilderEnv predRow
-buildEnv model modelDat = StanBuilderEnv groupIndexMap
+buildEnv :: Foldable f => [Group predRow] -> Binomial_MRP_Model predRow modeledRow -> MRData f modeledRow predRow  -> MRPBuilderEnv predRow modeledRow
+buildEnv groups model modelDat = StanBuilderEnv groupIndexMap model
   where
-    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) (bmm_Groups model)
+    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) groups
+
+usedGroupNames :: MRPBuilderM predRow modeledRow (Set.Set GroupName)
+usedGroupNames = do
+  model <- getModel
+  return $ foldl' (\s gn -> Set.insert gn s) (bmm_MRGroups model) $ Map.keys $ bmm_FEGroups model
+
+checkEnv :: MRPBuilderM predRow modeledRow ()
+checkEnv = do
+  model <- getModel
+  allGroupNames <- Map.keys <$> getIndexes
+  let allFEGroupNames = fmap fst $ Map.toList $ bmm_FEGroups model
+      allMRGroupNames = Set.toAscList $ bmm_MRGroups model
+      hasAllFEGroups = List.isSubsequenceOf allFEGroupNames  allGroupNames
+      hasAllMRGroups = List.isSubsequenceOf allMRGroupNames  allGroupNames
+  when (not hasAllFEGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". FEGroups=" <> show allFEGroupNames
+  when (not hasAllMRGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". MRGroups=" <> show allMRGroupNames
+  return ()
 
 type PostStratificationWeight psRow = psRow -> Double
 
-mrGroupJSONFold :: () --Foldable g
-                    => Binomial_MRP_Model predRow modeledRow
-                    -> MRData g modeledRow predRow
-                    -> MRPBuilderM predRow (SJ.StanJSONF modeledRow A.Series)
-mrGroupJSONFold model modelDat = do
-   fGS <- groupsSizeFold (bmm_Groups model)
-   return $ FL.premapM (return . projectRow modelDat) fGS
+-- The returned fold produces the "J_<GroupName>" data
+mrGroupJSONFold :: MRData g modeledRow predRow
+                -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
+mrGroupJSONFold modelDat = do
+  groupNames <- Set.toList <$> usedGroupNames
+  fGS <- groupsSizeFold groupNames
+  return $ FL.premapM (return . projectRow modelDat) fGS
 
+
+-- This fold produces:
+-- the length of the projectable data
+-- the group indexes for this data
 predDataJSONFold :: Text
-                 -> Binomial_MRP_Model predRow modeledRow
-                 -> ProjectableRows f row predRow
-                 -> MRPBuilderM predRow (SJ.StanJSONF row A.Series)
-predDataJSONFold label model rows = do
-  fGD <- groupsDataJSONFold label (bmm_Groups model)
+                 -> ProjectableRows f modeledRow predRow
+                 -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
+predDataJSONFold label rows = do
+  model <- getModel
+  groupNames <- Set.toList <$> usedGroupNames
+  fGD <- groupsDataJSONFold label groupNames
   let labeled t = t <> label
   return
     $ SJ.namedF (labeled "N") FL.length
-    <> (if (bmm_nFixedEffects model > 0) then SJ.valueToPairF (labeled "X") (SJ.jsonArrayF (bmm_FixedEffects model . projectRow rows)) else mempty)
+--    <> (if (bmm_nFixedEffects model > 0) then SJ.valueToPairF (labeled "X") (SJ.jsonArrayF (bmm_FixedEffects model . projectRow rows)) else mempty)
     <> FL.premapM (return . projectRow rows) fGD
 
-mrModelDataJSONFold  :: Binomial_MRP_Model predRow modeledRow
-                     -> MRData g modeledRow predRow
-                     -> MRPBuilderM predRow (SJ.StanJSONF modeledRow A.Series)
-mrModelDataJSONFold model modelDat = do
-  sizesF <- mrGroupJSONFold model modelDat
-  predDataF <- predDataJSONFold "m" model modelDat
+-- for one fixed effect level (all or group), produce K (columns) and the matrix of predictors
+mrFixedEffectFold :: Maybe Text
+                  -> ProjectableRows f modeledRow predRow
+                  -> Maybe GroupName
+                  -> FixedEffects predRow
+                  -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
+mrFixedEffectFold mLabel rows mGN (FixedEffects n vecF) = do
+  case mGN of
+    Just gn -> do
+      (IntIndex _ mIntF) <- getIndex gn
+      let h =  MR.postMapM (maybe (Left "Foldl.last returned Nothing") Right) . FL.generalize
+          labeled t = maybe (t <> "_" <> gn) (\l -> t <> "_" <> l <> "_" <> gn) mLabel
+          indexedDataToJSONSeries = (labeled "X" A..=) . A.toJSON . Vec.fromList . fmap snd . List.sortOn fst
+          mFld =
+            MR.mapReduceFoldM
+            (MR.UnpackM $ \x -> maybe (Left "Missing group index when constructing a FixedEffect matrix fold") (\n -> Right [(n, x)]) $ mIntF x)
+            (MR.generalizeAssign $ MR.Assign id)
+            (MR.ReduceFoldM $ \k -> fmap (\d -> (k, vecF d)) $ h FL.last)
+      return $ if n > 0
+               then SJ.constDataF (labeled "K") n <> (fmap indexedDataToJSONSeries $ FL.premapM (return . projectRow rows) mFld)
+               else mempty
+    Nothing -> do
+      let labeled t = maybe t (\l -> t <> "_" <> l) mLabel
+      return $ if n > 0
+               then SJ.constDataF (labeled "K") n
+                    <> SJ.valueToPairF (labeled "X") (SJ.jsonArrayF (vecF . projectRow rows))
+               else mempty
+
+mrModelDataJSONFold  :: MRData g modeledRow predRow
+                     -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
+mrModelDataJSONFold modelDat = do
+  model <- getModel
+  sizesF <- mrGroupJSONFold modelDat
+  predDataF <- predDataJSONFold "m" modelDat
+  allFEFld <- maybe (return mempty) (\fe -> mrFixedEffectFold Nothing modelDat Nothing fe) $ bmm_FixedEffects model
+  groupFEFld <- fmap mconcat <$> traverse (\(gn, fe) -> mrFixedEffectFold Nothing modelDat (Just gn) fe) $ Map.toList $ bmm_FEGroups model
   return
-    $ (if (bmm_nFixedEffects model > 0) then SJ.constDataF "K" (bmm_nFixedEffects model) else mempty)
-    <> sizesF
+    $ sizesF
     <> predDataF
+    <> allFEFld
+    <> groupFEFld
     <> SJ.valueToPairF "Tm" (SJ.jsonArrayF $ bmm_Total model)
     <> SJ.valueToPairF "Sm" (SJ.jsonArrayF $ bmm_Success model)
 
-groupOrderedIntIndexes :: Binomial_MRP_Model predRow modelRow
-                    -> MRPBuilderM predRow [IntIndex predRow]
-groupOrderedIntIndexes model = do
-  indexMap <- SB.asksEnv sbe_groupIndices
-  let groups = bmm_Groups model
+mrGroupOrderedIntIndexes :: MRPBuilderM predRow modeledRow [IntIndex predRow]
+mrGroupOrderedIntIndexes = do
+  model <- getModel
+  indexMap <- getIndexes
+  let groupNames = Set.toAscList $ bmm_MRGroups model
   maybe
     (SB.stanBuildError "Error looking up a group name in ModelBuilderEnv")
     return
-    $ traverse (flip Map.lookup indexMap) $ fmap groupName groups
+    $ traverse (flip Map.lookup indexMap) groupNames
+
+feGroupOrderedIntIndexes :: MRPBuilderM predRow modeledRow [IntIndex predRow]
+feGroupOrderedIntIndexes = do
+  model <- getModel
+  indexMap <- getIndexes
+  let groupNames = fmap fst $ Map.toAscList $ bmm_FEGroups model
+  maybe
+    (SB.stanBuildError "Error looking up a group name in ModelBuilderEnv")
+    return
+    $ traverse (flip Map.lookup indexMap) groupNames
+
+
+groupOrderedIntIndexes :: MRPBuilderM predRow modeledRow [IntIndex predRow]
+groupOrderedIntIndexes = do
+  fe <- feGroupOrderedIntIndexes
+  mr <- mrGroupOrderedIntIndexes
+  return $ fe ++ mr
 
 predRowsToIndexed :: (Num a, Show a)
-                  => Binomial_MRP_Model predRow modelRow
-                  -> MRPBuilderM predRow (FL.FoldM (Either Text) (predRow, a) (SJ.Indexed a))
-predRowsToIndexed model = do
-  indexes <- groupOrderedIntIndexes model
+                  => MRPBuilderM predRow modeledRow (FL.FoldM (Either Text) (predRow, a) (SJ.Indexed a))
+predRowsToIndexed = do
+  indexes <- groupOrderedIntIndexes
   let bounds = zip (repeat 1) $ fmap i_Size indexes
       indexers = fmap i_Index indexes
       toIndices x = maybe (Left "Indexer error when building psRow fold") Right $ traverse ($x) indexers
       f (pr, a) = fmap (,a) $ toIndices pr
   return $ postMapM (\x -> traverse f x >>= SJ.prepareIndexed 0 bounds) $ FL.generalize FL.list
 
+
 psRowsFld' :: Ord k
-          => Binomial_MRP_Model predRow modelRow
-          -> PostStratification k psRow predRow
-          -> MRPBuilderM predRow (FL.FoldM (Either Text) psRow [(k, (Vec.Vector Double, SJ.Indexed Double))])
-psRowsFld' model (PostStratification prj wgt key) = do
-  toIndexedFld <- FL.premapM (return . snd) <$> predRowsToIndexed model
+          => PostStratification k psRow predRow
+          -> MRPBuilderM predRow modeledRow (FL.FoldM (Either Text) psRow [(k, (Vec.Vector Double, SJ.Indexed Double))])
+psRowsFld' (PostStratification prj wgt key) = do
+  model <- getModel
+  toIndexedFld <- FL.premapM (return . snd) <$> predRowsToIndexed
   let fixedEffectsFld = postMapM (maybe (Left "Empty group in psRowsFld?") Right)
                         $ FL.generalize
                         $ FL.premap fst FL.last
       innerFld = (,) <$> fixedEffectsFld <*> toIndexedFld
+      h pr = case bmm_FixedEffects model of
+        Nothing -> Vec.empty
+        Just (FixedEffects _ f) -> f pr
   return
     $ MR.mapReduceFoldM
     (MR.generalizeUnpack MR.noUnpack)
-    (MR.generalizeAssign $ MR.assign key $ \psRow -> let pr = prj psRow in (bmm_FixedEffects model pr, (pr, wgt psRow)))
+    (MR.generalizeAssign $ MR.assign key $ \psRow -> let pr = prj psRow in (h pr, (pr, wgt psRow)))
     (MR.foldAndLabelM innerFld (,))
 
 psRowsFld :: Ord k
-          => Binomial_MRP_Model predRow modelRow
-          -> PostStratification k psRow predRow
-          -> MRPBuilderM predRow (FL.FoldM (Either Text) psRow [(k, Int, Vec.Vector Double, SJ.Indexed Double)])
-psRowsFld model ps = do
-  fld' <- psRowsFld' model ps
+          => PostStratification k psRow predRow
+          -> MRPBuilderM predRow modeledRow (FL.FoldM (Either Text) psRow [(k, Int, Vec.Vector Double, SJ.Indexed Double)])
+psRowsFld ps = do
+  fld' <- psRowsFld' ps
   let f (n, (k, (v, i))) = (k, n, v, i)
       g  = fmap f . zip [1..]
   return $ postMapM (return . g) fld'
 
-psRowsJSONFld :: Text -> SJ.StanJSONF (k, Int, Vec.Vector Double, SJ.Indexed Double) A.Series
-psRowsJSONFld psSuffix =
+psRowsJSONFld :: Text -> MRPBuilderM modeledRow predRow (SJ.StanJSONF (k, Int, Vec.Vector Double, SJ.Indexed Double) A.Series)
+psRowsJSONFld psSuffix = do
+  hasRowLevelFE <- isJust . bmm_FixedEffects <$> getModel
   let labeled x = x <> psSuffix
-  in SJ.namedF (labeled "N") FL.length
-     <> SJ.valueToPairF (labeled "X") (SJ.jsonArrayF $ \(_, _, v, _) -> v)
-     <> SJ.valueToPairF (labeled "W") (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
+  return $ SJ.namedF (labeled "N") FL.length
+    <> (if hasRowLevelFE then SJ.valueToPairF (labeled "X") (SJ.jsonArrayF $ \(_, _, v, _) -> v) else mempty)
+    <> SJ.valueToPairF (labeled "W") (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
 
 mrPSKeyMapFld ::  Ord k
            => PostStratification k psRow predRow
@@ -334,21 +416,19 @@ mrPSKeyMapFld ::  Ord k
 mrPSKeyMapFld ps = fmap (IM.fromList . zip [1..] . sort . nubOrd . fmap (psGroupKey ps)) FL.list
 
 mrPSDataJSONFold :: Ord k
-                 => Binomial_MRP_Model predRow modeledRow
-                 -> PostStratification k psRow predRow
+                 => PostStratification k psRow predRow
                  -> Text
-                 -> MRPBuilderM predRow (SJ.StanJSONF psRow A.Series)
-mrPSDataJSONFold model psFuncs psSuffix = do
-  psDataF <- psRowsFld model psFuncs
---  let fld = (,) <$> FL.generalize mrPSKeyMapFld <*> psRowsJSONFld
-  return $ postMapM (FL.foldM $ psRowsJSONFld psSuffix) psDataF
+                 -> MRPBuilderM predRow modeledRow (SJ.StanJSONF psRow A.Series)
+mrPSDataJSONFold psFuncs psSuffix = do
+  psRowsJSONFld' <- psRowsJSONFld psSuffix
+  psDataF <- psRowsFld psFuncs
+  return $ postMapM (FL.foldM psRowsJSONFld') psDataF
 
-mrLLDataJSONFold :: ()
-                 => Binomial_MRP_Model predRow modeledRow
-                 -> LLData f modeledRow predRow
-                 -> MRPBuilderM predRow (SJ.StanJSONF modeledRow A.Series)
-mrLLDataJSONFold model llDat = do
-  predDatF <- predDataJSONFold "ll" model llDat
+mrLLDataJSONFold :: LLData f modeledRow predRow
+                 -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
+mrLLDataJSONFold llDat = do
+  model <- getModel
+  predDatF <- predDataJSONFold "ll" llDat
   return
     $ predDatF
     <> SJ.valueToPairF "Total" (SJ.jsonArrayF $ bmm_Total model)
@@ -367,20 +447,20 @@ ntMRPData h (MRPData mod mPS mLL) = MRPData (h mod) (h <$> mPS) (h <$> mLL)
 
 mrpDataWrangler :: forall k psRow f predRow modeledRow.
                    (Foldable f, Functor f, Ord k)
-                => Binomial_MRP_Model predRow modeledRow
-                -> MRPData f predRow modeledRow psRow
+                => MRPData f predRow modeledRow psRow
                 -> Maybe (PostStratification k psRow predRow)
-                -> MRPBuilderM predRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) (IM.IntMap k) ())
-mrpDataWrangler model (MRPData modeled mPS mLL) mPSFunctions = do
-  modelDataFold <- mrModelDataJSONFold model (ProjectableRows modeled $ bmm_PrjPred model)
+                -> MRPBuilderM predRow modeledRow (SC.DataWrangler (MRPData f predRow modeledRow psRow) (IM.IntMap k) ())
+mrpDataWrangler (MRPData modeled mPS mLL) mPSFunctions = do
+  model <- getModel
+  modelDataFold <- mrModelDataJSONFold (ProjectableRows modeled $ bmm_PrjPred model)
   psDataFold <- case mPS of
     Nothing -> return mempty
     Just ps -> case mPSFunctions of
       Nothing -> SB.stanBuildError "PostStratification data given but post-stratification functions unset."
-      Just ps -> mrPSDataJSONFold model ps "ps"
+      Just ps -> mrPSDataJSONFold ps "ps"
   llDataFold <- case mLL of
     Nothing -> return mempty
-    Just ll -> mrLLDataJSONFold model (ProjectableRows ll $ bmm_PrjPred model)
+    Just ll -> mrLLDataJSONFold (ProjectableRows ll $ bmm_PrjPred model)
   let psKeyMapFld = maybe mempty mrPSKeyMapFld mPSFunctions
   let makeDataJsonE (MRPData modeled mPS mLL) = do
         modeledJSON <- SJ.frameToStanJSONSeries modelDataFold modeled
@@ -391,17 +471,19 @@ mrpDataWrangler model (MRPData modeled mPS mLL) mPSFunctions = do
       f (MRPData _ mPS _) = (psKeyMap mPS, makeDataJsonE)
   return $ SC.Wrangle SC.TransientIndex f
 
+-- HERE
+
 bFixedEffects :: Binomial_MRP_Model predRow modeledRow -> Bool
 bFixedEffects model = bmm_nFixedEffects model > 0
 
-groupSizesBlock :: MRPBuilderM predRow ()
+groupSizesBlock :: MRPBuilderM predRow modeledRow ()
 groupSizesBlock = do
   indexMap <- SB.asksEnv sbe_groupIndices
   let groupSize x = SB.addStanLine $ "int<lower=2> J_" <> fst x
   traverse_ groupSize $ Map.toList indexMap
 
-labeledDataBlockForRows :: Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow ()
-labeledDataBlockForRows model suffix = do
+labeledDataBlockForRows :: Text -> MRPBuilderM predRow modeledRow ()
+labeledDataBlockForRows suffix = do
   indexMap <- SB.asksEnv sbe_groupIndices
   let groupIndex x = if i_Size (snd x) == 2
                      then SB.addStanLine $ "int<lower=1, upper=2> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
@@ -409,14 +491,14 @@ labeledDataBlockForRows model suffix = do
   SB.addStanLine $ "int<lower=1> N" <> suffix
   traverse_ groupIndex $ Map.toList indexMap
 
-mrpDataBlock :: Binomial_MRP_Model predRow modeledRow
+mrpDataBlock :: Maybe Text
              -> Maybe Text
-             -> Maybe Text
-             -> MRPBuilderM predRow ()
-mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
+             -> MRPBuilderM predRow modeledRow ()
+mrpDataBlock mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
+  model <- getModel
   groupSizesBlock
   when (bFixedEffects model) $ SB.addStanLine "int<lower=1> K"
-  labeledDataBlockForRows model "m"
+  labeledDataBlockForRows "m"
   when (bFixedEffects model) $ SB.fixedEffectsQR "X" "m" "Nm" "K" --SB.addStanLine $ "matrix[N" <> suffix <> ", K] X" <> suffix
   SB.addStanLine $ "int<lower=1> Tm[Nm]"
   SB.addStanLine $ "int<lower=0> Sm[Nm]"
@@ -425,18 +507,18 @@ mrpDataBlock model mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
     Just psSuffix -> do
       SB.addStanLine $ "int N" <> psSuffix
       when (bFixedEffects model) $ SB.addStanLine $ "matrix[N" <> psSuffix <> ", K] X" <> psSuffix
-      groupUpperBounds <- T.intercalate "," . fmap (show . i_Size) <$> groupOrderedIntIndexes model
+      groupUpperBounds <- T.intercalate "," . fmap (show . i_Size) <$> groupOrderedIntIndexes
       SB.addStanLine $ "real<lower=0>[" <> groupUpperBounds <> "]" <> "W[N" <> psSuffix <> "]" -- real[2,2,4] W[Nps];
   case mLLSuffix of
     Nothing -> return ()
     Just llSuffix -> do
-      labeledDataBlockForRows model llSuffix
+      labeledDataBlockForRows llSuffix
       SB.addStanLine $ "matrix[N" <> llSuffix <>  ", K] X"<> llSuffix
       SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] T" <> llSuffix
       SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] S" <> llSuffix
 
-mrpParametersBlock :: Binomial_MRP_Model predRow modeledRow -> MRPBuilderM predRow ()
-mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
+mrpParametersBlock :: MRPBuilderM predRow modeledRow ()
+mrpParametersBlock = SB.inBlock SB.SBParameters $ do
   indexMap <- SB.asksEnv sbe_groupIndices
   let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
       nonBinaryParameter x = do
@@ -447,13 +529,13 @@ mrpParametersBlock model = SB.inBlock SB.SBParameters $ do
                          then binaryParameter x
                          else nonBinaryParameter x
   SB.addStanLine "real alpha"
---  when (bFixedEffects model) $ SB.addStanLine "vector[K] beta"
   traverse_ groupParameter $ Map.toList indexMap
 
 
 -- alpha + X * beta + beta_age[age] + ...
-modelExpr :: Bool -> Binomial_MRP_Model predRow modeledRow -> Text -> MRPBuilderM predRow SB.StanExpr
-modelExpr thinQR model suffix = do
+modelExpr :: Bool -> Text -> MRPBuilderM predRow modeledRow SB.StanExpr
+modelExpr thinQR suffix = do
+  model <- getModel
   indexMap <- SB.asksEnv sbe_groupIndices
   let labeled x = x <> suffix
       binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
@@ -474,8 +556,9 @@ modelExpr thinQR model suffix = do
   let neTerms = eAlpha :| (lFEExpr <> lGroupsExpr)
   return $ SB.multiOp "+" neTerms
 
-mrpModelBlock :: Binomial_MRP_Model predRow modeledRow -> Double -> Double -> Double -> MRPBuilderM predRow ()
-mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ do
+mrpModelBlock :: Double -> Double -> Double -> MRPBuilderM predRow modeledRow ()
+mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ do
+  model <- getModel
   indexMap <- SB.asksEnv sbe_groupIndices
   let binaryPrior x = SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
       nonBinaryPrior x = do
@@ -485,29 +568,29 @@ mrpModelBlock model priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBMod
                      then binaryPrior x
                      else nonBinaryPrior x
   let im = Map.mapWithKey (\k _ -> k <> "_m") indexMap
-  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True model "m"
+  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True "m"
   SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
   when (bFixedEffects model) $ SB.addStanLine $ "thetaXm ~ normal(0," <> show priorSDBeta <> ")"
   traverse groupPrior $ Map.toList indexMap
   SB.addStanLine $ "Sm ~ binomial_logit(Tm, " <> modelTerms <> ")"
 
-mrpLogLikStanCode :: Binomial_MRP_Model predRow modeledRow
-                  -> Maybe Text
-                  -> MRPBuilderM predRow ()
-mrpLogLikStanCode model mLLSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
+mrpLogLikStanCode :: Maybe Text
+                  -> MRPBuilderM predRow modeledRow ()
+mrpLogLikStanCode mLLSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
+  model <- getModel
   indexMap <- SB.asksEnv sbe_groupIndices
   let suffix = fromMaybe "m" mLLSuffix -- we use model data unless a different suffix is provided
   SB.addStanLine $ "vector [N" <> suffix <> "] log_lik"
   SB.stanForLoop "n" Nothing ("N" <> suffix) $ \_ -> do
     let im = Map.mapWithKey (\k _ -> k <> "_" <> suffix <> "[n]") indexMap -- we need to index the groups.
-    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr False model suffix
+    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr False suffix
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S" <> suffix <> "[n]| T" <> suffix <> "[n], " <> modelTerms <> ")"
 
 mrpPSStanCode :: forall predRow modeledRow.
-                 Binomial_MRP_Model predRow modeledRow
-              -> Maybe Text
-              -> MRPBuilderM predRow ()
-mrpPSStanCode model mPSSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
+                 Maybe Text
+              -> MRPBuilderM predRow modeledRow ()
+mrpPSStanCode mPSSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
+  model <- getModel
   case mPSSuffix of
     Nothing -> return ()
     Just suffix -> do
@@ -515,22 +598,21 @@ mrpPSStanCode model mPSSuffix = SB.inBlock SB.SBGeneratedQuantities $ do
           groupCounters = fmap ("n_" <>) groupNames
           im = Map.fromList $ zip groupNames groupCounters
           inner = do
-            modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ modelExpr False model suffix
+            modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ modelExpr False suffix
             SB.addStanLine $ "real p<lower=0, upper=1> = inv_logit(" <> modelTerms <> ")"
             SB.addStanLine $ "ps[n] += p * W" <> suffix <> "[n][" <> T.intercalate "," groupCounters <> "]"
-          makeLoops :: [Text] -> MRPBuilderM predRow ()
+          makeLoops :: [Text] -> MRPBuilderM predRow modeledRow ()
           makeLoops []  = inner
           makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("J_" <> x) $ const $ makeLoops xs
       SB.addStanLine $ "vector [N" <> suffix <> "] ps"
       SB.stanForLoop "n" Nothing ("N" <> suffix) $ const $ makeLoops groupNames
 
-mrpGeneratedQuantitiesBlock :: Binomial_MRP_Model predRow modeledRow
+mrpGeneratedQuantitiesBlock :: Maybe Text
                             -> Maybe Text
-                            -> Maybe Text
-                            -> MRPBuilderM predRow ()
-mrpGeneratedQuantitiesBlock model mPSSuffix mLLSuffix = do
-  mrpPSStanCode model mPSSuffix
-  mrpLogLikStanCode model mLLSuffix
+                            -> MRPBuilderM predRow modeledRow ()
+mrpGeneratedQuantitiesBlock mPSSuffix mLLSuffix = do
+  mrpPSStanCode mPSSuffix
+  mrpLogLikStanCode mLLSuffix
 
 
 

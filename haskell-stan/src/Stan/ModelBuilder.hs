@@ -154,7 +154,9 @@ stanPrint ps =
 fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env ()
 fixedEffectsQR matrix suffix rows cols = do
   let ri = "R" <> suffix <> "_ast_inverse"
-  inBlock SBData $ addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix <> suffix
+  inBlock SBData $ do
+    addStanLine $ "int K" <> suffix
+    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix <> suffix
   inBlock SBParameters $ addStanLine $ "vector[" <> cols <> "] theta" <> matrix <> suffix
   inBlock SBTransformedData $ do
     let q = "Q" <> suffix <> "_ast"
