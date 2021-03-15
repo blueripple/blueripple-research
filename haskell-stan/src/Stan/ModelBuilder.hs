@@ -1,9 +1,13 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -15,14 +19,28 @@ import Prelude hiding (All)
 import qualified Control.Foldl as Foldl
 import qualified Data.Aeson as Aeson
 import qualified Data.Array as Array
+import qualified Data.Dependent.HashMap as DHash
+import qualified Data.Dependent.Sum as DSum
+import qualified Data.GADT.Compare as GADT
+import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Proxy as Proxy
+import qualified Data.Some as Some
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+--import Data.Typeable (typeOf, (:~:)(..))
+--import Data.Type.Equality (TestEquality(..),apply, (:~~:)(..))
 import qualified Data.Time.Clock as Time
 import qualified Data.Vector as Vector
+import qualified Data.Hashable as Hashable
 import qualified Say
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
+import qualified Type.Reflection as Reflection
+
+
+--Constraints.deriveArgDict ''RowTypeTag
+
 
 type DataBlock = T.Text
 
@@ -83,6 +101,57 @@ emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (
 
 initialBuilderState :: BuilderState d
 initialBuilderState = BuilderState mempty emptyStanCode
+
+data JSONSeriesFold row where
+  JSONSeriesFold :: Stan.StanJSONF row Aeson.Series -> JSONSeriesFold row
+
+instance Semigroup (JSONSeriesFold row) where
+  (JSONSeriesFold a) <> (JSONSeriesFold b) = JSONSeriesFold (a <> b)
+
+
+-- key for dependepent map.
+data RowTypeTag d f row where
+  RowTypeTag :: (Typeable d, Typeable f, Typeable row) => Text -> (d -> f row) -> RowTypeTag d f row
+
+-- we need the empty constructors here to bring in the Typeable constraints in the GADT
+instance GADT.GEq (RowTypeTag d f) where
+  geq rta@(RowTypeTag n1 _) rtb@(RowTypeTag n2 _) =
+    case Reflection.eqTypeRep (Reflection.typeOf rta) (Reflection.typeOf rtb) of
+      Just Reflection.HRefl -> if (n1 == n2) then Just Reflection.Refl else Nothing
+      _ -> Nothing
+
+instance Hashable.Hashable (Some.Some (RowTypeTag d f)) where
+  hash (Some.Some (RowTypeTag n _)) = Hashable.hash n
+  hashWithSalt m (Some.Some (RowTypeTag n _)) = Hashable.hashWithSalt m n
+
+-- the key is a name for the data-set.  The tag carries the toDataSet function
+type JSONBuilder d f = DSum.DSum (RowTypeTag d f) JSONSeriesFold
+type JSONBuilderDHM d f = DHash.DHashMap (RowTypeTag d f) JSONSeriesFold
+
+--type JSONBuilderMap = D
+lookupBuilder :: RowTypeTag d f row -> [JSONBuilder d f] -> ([JSONBuilder d f],[JSONBuilder d f])
+lookupBuilder rtt = List.break (\(rtt' DSum.:=> _) -> Some.Some rtt' == Some.Some rtt)
+
+{-
+addFold :: (Typeable d, Typeable f, Typeable row) => (d -> f row) -> Stan.StanJSONF row Aeson.Series -> [JSONBuilder d f] -> [JSONBuilder d f]
+addFold f fld bldrs =
+  let rtt = RowTypeTag f
+      (exists, rest) = lookupBuilder rtt bldrs
+  in case exists of
+    [] -> (rtt DSum.:=> JSONSeriesFold fld) : rest
+    ((rtt' DSum.:=> JSONSeriesFold fld') : []) -> (rtt DSum.:=> JSONSeriesFold (fld' <> fld)) : rest
+    _ -> error "Multiple JSONBuilders for one row type"
+-}
+{-
+addFold :: Text -> (d -> f row) -> Stan.StanJSONF row Aeson.Series -> JSONBuilderDMap d f -> JSONBuilderDMap d f
+addFold dataSetName toDataSet fld jbm =
+  case Map.lookup dataSetName jbm of
+    Nothing -> Map.insert dataSetName ((RowTypeTag toDataSet) DSum.:=> (JSONSeriesFold fld)) jbm
+    Just (rtt DSum.:=> (JSONSeriesFold fld')) -> Map.insert dataSetName (rtt DSum.:=> (JSONSeriesFold $ fld' <> fld))jbm
+
+data JSONBuilder d f = JSONBuilder { names :: Set Text, builders :: JSONBuilderDMap d f }
+
+-}
 
 data BuilderState a = BuilderState { jsonBuilder :: !(Map Text (a -> Either Text Aeson.Series)), code :: !StanCode }
 
