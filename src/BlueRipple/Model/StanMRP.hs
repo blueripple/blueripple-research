@@ -325,7 +325,7 @@ mrModelDataJSONFold  :: MRData g modeledRow predRow
 mrModelDataJSONFold modelDat = do
   model <- getModel
   sizesF <- mrGroupJSONFold modelDat
-  predDataF <- predDataJSONFold "m" modelDat
+  predDataF <- predDataJSONFold "" modelDat
   allFEFld <- maybe (return mempty) (\fe -> mrFixedEffectFold Nothing modelDat Nothing fe) $ bmm_FixedEffects model
   groupFEFld <- fmap mconcat <$> traverse (\(gn, fe) -> mrFixedEffectFold Nothing modelDat (Just gn) fe) $ Map.toList $ bmm_FEGroups model
   return
@@ -333,8 +333,8 @@ mrModelDataJSONFold modelDat = do
     <> predDataF
     <> allFEFld
     <> groupFEFld
-    <> SJ.valueToPairF "Tm" (SJ.jsonArrayF $ bmm_Total model)
-    <> SJ.valueToPairF "Sm" (SJ.jsonArrayF $ bmm_Success model)
+    <> SJ.valueToPairF "T" (SJ.jsonArrayF $ bmm_Total model)
+    <> SJ.valueToPairF "S" (SJ.jsonArrayF $ bmm_Success model)
 
 mrGroupOrderedIntIndexes :: MRPBuilderM predRow modeledRow [IntIndex predRow]
 mrGroupOrderedIntIndexes = do
@@ -426,13 +426,13 @@ mrPSDataJSONFold psFuncs psSuffix = do
 
 mrLLDataJSONFold :: LLData f modeledRow predRow
                  -> MRPBuilderM predRow modeledRow (SJ.StanJSONF modeledRow A.Series)
-mrLLDataJSONFold llDat = do
+mrLLDataJSONFold psSuffix llDat = do
   model <- getModel
   predDatF <- predDataJSONFold "ll" llDat
   return
     $ predDatF
-    <> SJ.valueToPairF "Total" (SJ.jsonArrayF $ bmm_Total model)
-    <> SJ.valueToPairF "Success" (SJ.jsonArrayF $ bmm_Success model)
+    <> SJ.valueToPairF "Tll" (SJ.jsonArrayF $ bmm_Total model)
+    <> SJ.valueToPairF "Sll" (SJ.jsonArrayF $ bmm_Success model)
 
 data MRPData f predRow modeledRow psRow =
   MRPData
@@ -471,55 +471,82 @@ mrpDataWrangler (MRPData modeled mPS mLL) mPSFunctions = do
       f (MRPData _ mPS _) = (psKeyMap mPS, makeDataJsonE)
   return $ SC.Wrangle SC.TransientIndex f
 
--- HERE
+usedIndexes :: MRPBuilderM predRow modeledRow (Map GroupName (IntIndex predRow))
+usedIndexes = do
+  indexMap <- SB.asksEnv sbe_groupIndices
+  groupNames <- usedGroupNames
+  return Map.restrictKeys indexMap groupNames
 
-bFixedEffects :: Binomial_MRP_Model predRow modeledRow -> Bool
-bFixedEffects model = bmm_nFixedEffects model > 0
+mrIndexes :: MRPBuilderM predRow modeledRow (Map GroupName (IntIndex predRow))
+mrIndexes = do
+  indexMap <- SB.asksEnv sbe_groupIndices
+  groupNames <- mrGroupNames
+  return Map.restrictKeys indexMap groupNames
+
+feIndexes :: MRPBuilderM predRow modeledRow (Map GroupName (IntIndex predRow))
+feIndexes = do
+  indexMap <- SB.asksEnv sbe_groupIndices
+  groupNames <- feGroupNames
+  return Map.restrictKeys indexMap groupNames
+
 
 groupSizesBlock :: MRPBuilderM predRow modeledRow ()
 groupSizesBlock = do
-  indexMap <- SB.asksEnv sbe_groupIndices
+  ui <- usedIndexes
   let groupSize x = SB.addStanLine $ "int<lower=2> J_" <> fst x
-  traverse_ groupSize $ Map.toList indexMap
+  traverse_ groupSize $ Map.toList ui
 
 labeledDataBlockForRows :: Text -> MRPBuilderM predRow modeledRow ()
 labeledDataBlockForRows suffix = do
-  indexMap <- SB.asksEnv sbe_groupIndices
-  let groupIndex x = if i_Size (snd x) == 2
+  ui <- usedIndexes
+  let groupIndex x = SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
+{-
+        if i_Size (snd x) == 2
                      then SB.addStanLine $ "int<lower=1, upper=2> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
                      else SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
+-}
   SB.addStanLine $ "int<lower=1> N" <> suffix
-  traverse_ groupIndex $ Map.toList indexMap
+  traverse_ groupIndex $ Map.toList ui
 
-mrpDataBlock :: Maybe Text
-             -> Maybe Text
+mrpDataBlock :: Bool
+             -> Bool
              -> MRPBuilderM predRow modeledRow ()
-mrpDataBlock mPSSuffix mLLSuffix = SB.inBlock SB.SBData $ do
+mrpDataBlock postStratify diffLL = SB.inBlock SB.SBData $ do
   model <- getModel
   groupSizesBlock
-  when (bFixedEffects model) $ SB.addStanLine "int<lower=1> K"
   labeledDataBlockForRows "m"
-  when (bFixedEffects model) $ SB.fixedEffectsQR "X" "m" "Nm" "K" --SB.addStanLine $ "matrix[N" <> suffix <> ", K] X" <> suffix
-  SB.addStanLine $ "int<lower=1> Tm[Nm]"
-  SB.addStanLine $ "int<lower=0> Sm[Nm]"
-  case mPSSuffix of
+  case bmm_FixedEffects model of
+    Just fe ->  SB.fixedEffectsQR "" "X" "N" "K"
     Nothing -> return ()
-    Just psSuffix -> do
-      SB.addStanLine $ "int N" <> psSuffix
-      when (bFixedEffects model) $ SB.addStanLine $ "matrix[N" <> psSuffix <> ", K] X" <> psSuffix
+  let doGroupFE (gn, fe) = do
+        let suffix = "_" <> gn
+        SB.addStanLine $ "int<lower=1> N" <> suffix
+        SB.fixedEffectsQR suffix ("X" <> suffix) ("N" <> suffix) ("K" <> suffix)
+  traverse_ doGroupFE $ Map.toList $ bmm_FEGroups model
+  SB.addStanLine $ "int<lower=1> T[N]"
+  SB.addStanLine $ "int<lower=0> S[N]"
+  case postStratify of
+    False -> return ()
+    True -> do
+      SB.addStanLine $ "int<lower=0> Nps"
+      case bmm_FixedEffects model of
+        Just fe -> SB.addStanLine $ "matrix[Nps, K] Xps"
+        Nothing -> return ()
       groupUpperBounds <- T.intercalate "," . fmap (show . i_Size) <$> groupOrderedIntIndexes
-      SB.addStanLine $ "real<lower=0>[" <> groupUpperBounds <> "]" <> "W[N" <> psSuffix <> "]" -- real[2,2,4] W[Nps];
-  case mLLSuffix of
-    Nothing -> return ()
-    Just llSuffix -> do
-      labeledDataBlockForRows llSuffix
-      SB.addStanLine $ "matrix[N" <> llSuffix <>  ", K] X"<> llSuffix
-      SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] T" <> llSuffix
-      SB.addStanLine $ "int <lower=0>[N" <> llSuffix <> "] S" <> llSuffix
+      SB.addStanLine $ "real<lower=0>[" <> groupUpperBounds <> "]" <> "W[Nps]" -- real[2,2,4] W[Nps];
+  case diffLL of
+    False -> return ()
+    True -> do
+      labeledDataBlockForRows "ll"
+      case bmm_FixedEffects model of
+        Just fe -> SB.addStanLine $ "matrix[Nll, K] Xll"
+        Nothing -> return ()
+      SB.addStanLine $ "int <lower=0>[Nll] Tll"
+      SB.addStanLine $ "int <lower=0>[Nll] Sll"
 
 mrpParametersBlock :: MRPBuilderM predRow modeledRow ()
 mrpParametersBlock = SB.inBlock SB.SBParameters $ do
-  indexMap <- SB.asksEnv sbe_groupIndices
+  ui <- usedIndexes
   let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
       nonBinaryParameter x = do
         let n = fst x
@@ -529,27 +556,29 @@ mrpParametersBlock = SB.inBlock SB.SBParameters $ do
                          then binaryParameter x
                          else nonBinaryParameter x
   SB.addStanLine "real alpha"
-  traverse_ groupParameter $ Map.toList indexMap
+  traverse_ groupParameter $ Map.toList ui
 
 
 -- alpha + X * beta + beta_age[age] + ...
 modelExpr :: Bool -> Text -> MRPBuilderM predRow modeledRow SB.StanExpr
 modelExpr thinQR suffix = do
   model <- getModel
-  indexMap <- SB.asksEnv sbe_groupIndices
+  feIndexMap <- feIndexes
+  mrIndexMap <- mrIndexes
+--- HERE
   let labeled x = x <> suffix
       binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
-      eQ = SB.TermE $ SB.Vectored $ "Q" <> suffix <> "_ast"
-      eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> suffix
-      eQTheta = SB.BinOpE "*" eQ eTheta
-      eX = SB.TermE $ SB.Vectored $ "X" <> suffix
-      eBeta = SB.TermE $ SB.Scalar $ "betaX" <> suffix
-      eXBeta = SB.BinOpE "*" eX eBeta
+      eQ s = SB.TermE $ SB.Vectored $ "Q" <> s <> "_ast"
+      eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> s
+      eQTheta s = SB.BinOpE "*" (eQ s) (eTheta s)
+      eX s = SB.TermE $ SB.Vectored $ "X" <> s
+      eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> s
+      eXBeta s = SB.BinOpE "*" (eX s) (eBeta s)
       lFEExpr = if bFixedEffects model
-                then (if thinQR then [eQTheta] else [eXBeta])
+                then (if thinQR then [eQTheta ""] else [eXBeta ""])
                 else []
       lGroupsExpr = maybe [] pure
                     $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList indexMap

@@ -9,12 +9,17 @@
 
 module Stan.ModelBuilder where
 
+import qualified Stan.JSON as Stan
+
 import Prelude hiding (All)
+import qualified Control.Foldl as Foldl
+import qualified Data.Aeson as Aeson
 import qualified Data.Array as Array
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Clock as Time
+import qualified Data.Vector as Vector
 import qualified Say
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
@@ -76,32 +81,90 @@ stanCodeToStanModel (StanCode _ a) =
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
 
-newtype StanBuilderM env a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State StanCode)) a }
-  deriving (Functor, Applicative, Monad, MonadReader env, MonadState StanCode)
+initialBuilderState :: BuilderState d
+initialBuilderState = BuilderState mempty emptyStanCode
 
-runStanBuilder :: env -> StanBuilderM env a -> Either Text (StanCode, a)
+data BuilderState a = BuilderState { jsonBuilder :: !(Map Text (a -> Either Text Aeson.Series)), code :: !StanCode }
+
+newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d))) a }
+  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d))
+
+runStanBuilder :: env -> StanBuilderM env d a -> Either Text (BuilderState d, a)
 runStanBuilder e sb = res where
-  (resE, sc) = flip runState emptyStanCode . flip runReaderT e . runExceptT $ unStanBuilderM sb
-  res = fmap (sc,) resE
+  (resE, bs) = flip runState initialBuilderState . flip runReaderT e . runExceptT $ unStanBuilderM sb
+  res = fmap (bs,) resE
 
-stanBuildError :: Text -> StanBuilderM row a
+stanBuildError :: Text -> StanBuilderM row d a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
-askEnv :: StanBuilderM env env
+askEnv :: StanBuilderM env d env
 askEnv = ask
 
-asksEnv :: (env -> a) -> StanBuilderM env a
+asksEnv :: (env -> a) -> StanBuilderM env d a
 asksEnv = asks
+
+addJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
+addJsonBuilder' jsonB (BuilderState jsonB' sc) = BuilderState (jsonB' <> jsonB) sc
+
+updateJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
+updateJsonBuilder' jsonB (BuilderState _ sc) = BuilderState jsonB sc
+
+addJsonBuilder :: Map Text (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
+addJsonBuilder = modify . addJsonBuilder'
+
+addJson :: Text -> (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
+addJson name makeSeries = do
+  bs <- get
+  let jbMap = jsonBuilder bs
+  case Map.lookup name jbMap of
+    Nothing -> put $ updateJsonBuilder' (Map.insert name makeSeries jbMap) bs
+    Just _ -> stanBuildError $ "\"" <> name <> "\" duplicated in jsonBuilderMap."
+
+-- things like lengths may often be re-added
+-- maybe work on a cleaner way...
+addJsonUnchecked :: Text -> (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
+addJsonUnchecked name makeSeries = do
+  bs <- get
+  let jbMap = jsonBuilder bs
+  put $ updateJsonBuilder' (Map.insert name makeSeries jbMap) bs
+
+
+addFixedIntJson :: Text -> Int -> StanBuilderM env d ()
+addFixedIntJson name n = addJson name (const $ Right $ name Aeson..= n)
+
+-- These get re-added each time something adds a column built from the data-set.
+-- But we only need it once per data set.
+addLengthJson :: Foldable f => Text -> (d -> f a) -> StanBuilderM env d ()
+addLengthJson name toDataSet = addJsonUnchecked name (Foldl.foldM (Stan.namedF name Foldl.length) . toDataSet)
+
+addColumnJson :: Aeson.ToJSON x => Foldable f => Text -> Text -> (d -> f a) -> (a -> x) -> StanBuilderM env d ()
+addColumnJson name suffix toDataSet toX = do
+  addLengthJson ("N" <> suffix) toDataSet
+  addJson (name <> suffix) (Foldl.foldM (Stan.valueToPairF name $ Stan.jsonArrayF toX) . toDataSet)
+
+add2dMatrixJson :: Foldable f => Text -> Text -> Int -> (d -> f a) -> (a -> Vector.Vector Double) -> StanBuilderM env d ()
+add2dMatrixJson name suffix cols toDataSet vecF = do
+  addFixedIntJson ("K" <> suffix) cols
+  addColumnJson name suffix toDataSet vecF
+
+
+
+
+modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d
+modifyCode' f (BuilderState jb sc) = BuilderState jb (f sc)
+
+modifyCode :: (StanCode -> StanCode) -> StanBuilderM env d ()
+modifyCode f = modify $ modifyCode' f
 
 setBlock' :: StanBlock -> StanCode -> StanCode
 setBlock' b (StanCode _ blocks) = StanCode b blocks
 
-setBlock :: StanBlock -> StanBuilderM env ()
-setBlock = modify . setBlock'
+setBlock :: StanBlock -> StanBuilderM env d ()
+setBlock = modifyCode . setBlock'
 
-getBlock :: StanBuilderM env StanBlock
+getBlock :: StanBuilderM env d StanBlock
 getBlock = do
-  (StanCode b _) <- get
+  (BuilderState _ (StanCode b _)) <- get
   return b
 
 addLine' :: Text -> StanCode -> StanCode
@@ -110,10 +173,10 @@ addLine' t (StanCode b blocks) =
       newCode = curCode <> T.replicate curIndent " " <> t
   in StanCode b (blocks Array.// [(b, WithIndent newCode curIndent)])
 
-addLine :: Text -> StanBuilderM env ()
-addLine = modify . addLine'
+addLine :: Text -> StanBuilderM env d ()
+addLine = modifyCode . addLine'
 
-addStanLine :: Text -> StanBuilderM env ()
+addStanLine :: Text -> StanBuilderM env d ()
 addStanLine t = addLine $ t <> ";\n"
 
 indent :: Int -> StanCode -> StanCode
@@ -122,21 +185,21 @@ indent n (StanCode b blocks) =
   in StanCode b (blocks Array.// [(b, WithIndent curCode (curIndent + n))])
 
 -- code inserted here will be indented n extra spaces
-indented :: Int -> StanBuilderM env a -> StanBuilderM env a
+indented :: Int -> StanBuilderM env d a -> StanBuilderM env d a
 indented n m = do
-  modify (indent n)
+  modifyCode (indent n)
   x <- m
-  modify (indent $ negate n)
+  modifyCode (indent $ negate n)
   return x
 
-bracketed :: Int -> StanBuilderM env a -> StanBuilderM env a
+bracketed :: Int -> StanBuilderM env d a -> StanBuilderM env d a
 bracketed n m = do
   addLine " {\n"
   x <- indented n m
   addLine "}\n"
   return x
 
-stanForLoop :: Text -> Maybe Text -> Text -> (Text -> StanBuilderM env a) -> StanBuilderM env a
+stanForLoop :: Text -> Maybe Text -> Text -> (Text -> StanBuilderM env d a) -> StanBuilderM env d a
 stanForLoop counter mStart end loopF = do
   let start = fromMaybe "1" mStart
   addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
@@ -144,47 +207,44 @@ stanForLoop counter mStart end loopF = do
 
 data StanPrintable = StanLiteral Text | StanExpression Text
 
-stanPrint :: [StanPrintable] -> StanBuilderM env ()
+stanPrint :: [StanPrintable] -> StanBuilderM d env ()
 stanPrint ps =
   let f x = case x of
         StanLiteral x -> "\"" <> x <> "\""
         StanExpression x -> x
   in addStanLine $ "print(" <> T.intercalate ", " (fmap f ps) <> ")"
 
-fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env ()
-fixedEffectsQR matrix suffix rows cols = do
-  let ri = "R" <> suffix <> "_ast_inverse"
+fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM d env ()
+fixedEffectsQR thinSuffix matrix rows cols = do
+  let ri = "R" <> thinSuffix <> "_ast_inverse"
   inBlock SBData $ do
-    addStanLine $ "int K" <> suffix
-    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix <> suffix
-  inBlock SBParameters $ addStanLine $ "vector[" <> cols <> "] theta" <> matrix <> suffix
+    addStanLine $ "int<lower=1> " <> cols
+    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix
+  inBlock SBParameters $ addStanLine $ "vector[" <> cols <> "] theta" <> matrix
   inBlock SBTransformedData $ do
-    let q = "Q" <> suffix <> "_ast"
-        r = "R" <> suffix <> "_ast"
+    let q = "Q" <> thinSuffix <> "_ast"
+        r = "R" <> thinSuffix <> "_ast"
     addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> q
     addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> r
     addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> ri
-    addStanLine $ q <> " = qr_thin_Q(" <> matrix <> suffix <> ") * sqrt(" <> rows <> " - 1)"
-    addStanLine $ r <> " = qr_thin_R(" <> matrix <> suffix <> ") / sqrt(" <> rows <> " - 1)"
+    addStanLine $ q <> " = qr_thin_Q(" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
+    addStanLine $ r <> " = qr_thin_R(" <> matrix <> ") / sqrt(" <> rows <> " - 1)"
     addStanLine $ ri <> " = inverse(" <> r <> ")"
   inBlock SBTransformedParameters $ do
-    addStanLine $ "vector[" <> cols <> "] beta" <> matrix <> suffix
-    addStanLine $ "beta" <> matrix <> suffix <> " = " <> ri <> " * theta" <> matrix <> suffix
+    addStanLine $ "vector[" <> cols <> "] beta" <> matrix
+    addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
 
 
-stanIndented :: StanBuilderM env a -> StanBuilderM env a
+stanIndented :: StanBuilderM env d a -> StanBuilderM env d a
 stanIndented = indented 2
 
-inBlock :: StanBlock -> StanBuilderM env a -> StanBuilderM env a
+inBlock :: StanBlock -> StanBuilderM env d a -> StanBuilderM env d a
 inBlock b m = do
   oldBlock <- getBlock
   setBlock b
   x <- m
   setBlock oldBlock
   return x
-
-
-
 
 data VectorContext = Vectorized | NonVectorized Text
 
@@ -216,7 +276,7 @@ printExpr im Vectorized (VectorFunctionE f e) = (\e' -> f <> "(" <>  e' <> ")") 
 printExpr im vc@(NonVectorized _) (VectorFunctionE f e) = printExpr im vc e
 printExpr im vc (GroupE e) = (\e' -> "(" <> e' <> ")") <$> printExpr im vc e
 
-printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env StanExpr -> StanBuilderM env Text
+printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env d StanExpr -> StanBuilderM env d Text
 printExprM context im vc me = do
   e <- me
   case printExpr im vc e of
@@ -225,9 +285,6 @@ printExprM context im vc me = do
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (BinOpE o) (head es) (tail es)
-
-
-
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
