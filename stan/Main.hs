@@ -138,15 +138,17 @@ testStanMRP = do
                    $ SJ.enumerate 1
       groups =
         [
---           MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
---        , MRP.LabeledGroup "State" stateEnumF
+          MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
+        , MRP.LabeledGroup "State" stateEnumF
         ]
-      fixedEffs r = Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r]
+      feGroups = M.fromList []
+      mrGroups = S.fromList []
+      fixedEffs = MRP.FixedEffects 1 (\r -> Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r])
       model = MRP.Binomial_MRP_Model
               "testMRP"
-              1
-              fixedEffs
-              groups
+              (Just fixedEffs)
+              feGroups
+              mrGroups
               (F.rcast @BRE.CCESDataR)
               (F.rgetField @BRE.TVotes)
               (F.rgetField @BRE.DVotes)

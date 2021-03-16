@@ -6,9 +6,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Stan.ModelBuilder where
@@ -107,116 +109,112 @@ data JSONSeriesFold row where
 instance Semigroup (JSONSeriesFold row) where
   (JSONSeriesFold a) <> (JSONSeriesFold b) = JSONSeriesFold (a <> b)
 
+-- f is existential here.  We supply the choice when we construct a ToFoldable
+data ToFoldable d row where
+  ToFoldable :: Foldable f => (d -> f row) -> ToFoldable d row
 
 -- key for dependepent map.
-data RowTypeTag d f row where
-  RowTypeTag :: (Typeable d, Typeable f, Typeable row) => Text -> (d -> f row) -> RowTypeTag d f row
+data RowTypeTag d row where
+  RowTypeTag :: (Typeable d, Typeable row) => Text -> ToFoldable d row -> RowTypeTag d row
+--  RowTypeTag :: (Typeable d, Typeable row) => Text -> (forall f. Foldable f => d -> f row) -> RowTypeTag d row
 
 -- we need the empty constructors here to bring in the Typeable constraints in the GADT
-instance GADT.GEq (RowTypeTag d f) where
+instance GADT.GEq (RowTypeTag f) where
   geq rta@(RowTypeTag n1 _) rtb@(RowTypeTag n2 _) =
     case Reflection.eqTypeRep (Reflection.typeOf rta) (Reflection.typeOf rtb) of
       Just Reflection.HRefl -> if (n1 == n2) then Just Reflection.Refl else Nothing
       _ -> Nothing
 
-instance Hashable.Hashable (Some.Some (RowTypeTag d f)) where
+instance Hashable.Hashable (Some.Some (RowTypeTag d)) where
   hash (Some.Some (RowTypeTag n _)) = Hashable.hash n
   hashWithSalt m (Some.Some (RowTypeTag n _)) = Hashable.hashWithSalt m n
 
 -- the key is a name for the data-set.  The tag carries the toDataSet function
-type JSONBuilder d f = DSum.DSum (RowTypeTag d f) JSONSeriesFold
-type JSONBuilderDHM d f = DHash.DHashMap (RowTypeTag d f) JSONSeriesFold
+type JSONBuilder d = DSum.DSum (RowTypeTag d) JSONSeriesFold
+type JSONBuilderDHM d = DHash.DHashMap (RowTypeTag d) JSONSeriesFold
 
 
-addFoldToDBuilder :: (Typeable d, Typeable f, Typeable row) => Text -> (d -> f row) -> Stan.StanJSONF row Aeson.Series -> JSONBuilderDHM d f -> JSONBuilderDHM d f
+addFoldToDBuilder :: (Typeable d, Typeable row, Foldable f)
+                  => Text -> (d -> f row) -> Stan.StanJSONF row Aeson.Series -> JSONBuilderDHM d -> JSONBuilderDHM d
 addFoldToDBuilder t f fld jbm =
-  let rtt = (RowTypeTag t f)
+  let rtt = (RowTypeTag t (ToFoldable f))
   in case DHash.lookup rtt jbm of
     Nothing -> DHash.insert rtt (JSONSeriesFold fld) jbm
     Just (JSONSeriesFold fld') -> DHash.insert rtt (JSONSeriesFold $ fld' <> fld) jbm
 
 
-buildJSONSeries :: forall d f. Foldable f => JSONBuilderDHM d f -> d -> Either Text Aeson.Series
+buildJSONSeries :: forall d f. JSONBuilderDHM d -> d -> Either Text Aeson.Series
 buildJSONSeries jbm d =
-  let foldOne :: JSONBuilder d f -> Either Text Aeson.Series
-      foldOne ((RowTypeTag _ h) DSum.:=> (JSONSeriesFold fld)) = Foldl.foldM fld (h d)
+  let foldOne :: JSONBuilder d -> Either Text Aeson.Series
+      foldOne ((RowTypeTag _ (ToFoldable h)) DSum.:=> (JSONSeriesFold fld)) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList jbm)
 
 
-data JSONBuilderState d f = JSONBuilderState { usedNames :: Set Text, builders :: JSONBuilderDHM d f}
+data JSONBuilderState d = JSONBuilderState { usedNames :: Set Text, builders :: JSONBuilderDHM d }
 
-data BuilderState d f = BuilderState { jsonBuilder :: JSONBuilderState d f, code :: !StanCode }
+data BuilderState d = BuilderState { jsonBuilder :: JSONBuilderState d, code :: !StanCode }
 
-initialBuilderState :: BuilderState d f
+initialBuilderState :: BuilderState d
 initialBuilderState = BuilderState (JSONBuilderState Set.empty DHash.empty) emptyStanCode
 
+newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d))) a }
+  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d))
 
-newtype StanBuilderM env d f a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d f))) a }
-  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d f))
-
-runStanBuilder :: env -> StanBuilderM env d f a -> Either Text (BuilderState d f, a)
+runStanBuilder :: env -> StanBuilderM env d a -> Either Text (BuilderState d, a)
 runStanBuilder e sb = res where
   (resE, bs) = flip runState initialBuilderState . flip runReaderT e . runExceptT $ unStanBuilderM sb
   res = fmap (bs,) resE
 
-stanBuildError :: Text -> StanBuilderM row d f a
+stanBuildError :: Text -> StanBuilderM row d a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
-askEnv :: StanBuilderM env d f env
+askEnv :: StanBuilderM env d env
 askEnv = ask
 
-asksEnv :: (env -> a) -> StanBuilderM env d f a
+asksEnv :: (env -> a) -> StanBuilderM env d a
 asksEnv = asks
-
-{-
---addJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
---addJsonBuilder' jsonB (BuilderState jsonB' sc) = BuilderState (jsonB' <> jsonB) sc
-
-updateJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
-updateJsonBuilder' jsonB (BuilderState _ sc) = BuilderState jsonB sc
-
-addJsonBuilder :: Map Text (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
-addJsonBuilder = modify . addJsonBuilder'
--}
 
 data DataSet d f row = DataSet Text (d -> f row)
 
-addJson :: DataSet d f row -> Text -> Stan.StanJSONF row Aeson.Series -> StanBuilderM env d f ()
+nullDataSet :: DataSet d Identity ()
+nullDataSet = DataSet "Null" (const $ Identity ())
+
+addJson :: (Typeable d, Typeable row, Foldable f) => DataSet d f row -> Text -> Stan.StanJSONF row Aeson.Series -> StanBuilderM env d ()
 addJson (DataSet dName toDataSet) name fld = do
   (BuilderState (JSONBuilderState un jbs) code) <- get
   when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
   let newBS = addFoldToDBuilder dName toDataSet fld jbs
-  return $ BuilderState (JSONBuilderState (Set.insert name un) newBS) code
+  put $ BuilderState (JSONBuilderState (Set.insert name un) newBS) code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
-addJsonUnchecked :: Text -> (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
-addJsonUnchecked name makeSeries = do
-  bs <- get
-  let jbMap = jsonBuilder bs
-  put $ updateJsonBuilder' (Map.insert name makeSeries jbMap) bs
+addJsonUnchecked :: (Typeable d, Typeable row, Foldable f) => DataSet d f row -> Text -> Stan.StanJSONF row Aeson.Series -> StanBuilderM env d ()
+addJsonUnchecked (DataSet dName toDataSet) name fld = do
+  (BuilderState (JSONBuilderState un jbs) code) <- get
+  if Set.member name un
+    then return ()
+    else (do
+             let newBS = addFoldToDBuilder dName toDataSet fld jbs
+             put $ BuilderState (JSONBuilderState (Set.insert name un) newBS) code
+         )
 
-
-addFixedIntJson :: Text -> Int -> StanBuilderM env d ()
-addFixedIntJson name n = addJson name (const $ Right $ name Aeson..= n)
+addFixedIntJson :: Typeable d => Text -> Int -> StanBuilderM env d ()
+addFixedIntJson name n = addJson nullDataSet name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: Foldable f => Text -> (d -> f a) -> StanBuilderM env d ()
-addLengthJson name toDataSet = addJsonUnchecked name (Foldl.foldM (Stan.namedF name Foldl.length) . toDataSet)
+addLengthJson :: (Typeable d, Foldable f, Typeable a) => DataSet d f a -> Text -> StanBuilderM env d ()
+addLengthJson dataSet name = addJsonUnchecked dataSet name (Stan.namedF name Foldl.length)
 
-addColumnJson :: Aeson.ToJSON x => Foldable f => Text -> Text -> (d -> f a) -> (a -> x) -> StanBuilderM env d ()
-addColumnJson name suffix toDataSet toX = do
-  addLengthJson ("N" <> suffix) toDataSet
-  addJson (name <> suffix) (Foldl.foldM (Stan.valueToPairF name $ Stan.jsonArrayF toX) . toDataSet)
+addColumnJson :: (Typeable d, Typeable a, Aeson.ToJSON x) => Foldable f => DataSet d f a -> Text -> Text -> (a -> x) -> StanBuilderM env d ()
+addColumnJson dataSet name suffix toX = do
+  addLengthJson dataSet ("N" <> suffix)
+  addJson dataSet (name <> suffix) (Stan.valueToPairF name $ Stan.jsonArrayF toX)
 
-add2dMatrixJson :: Foldable f => Text -> Text -> Int -> (d -> f a) -> (a -> Vector.Vector Double) -> StanBuilderM env d ()
-add2dMatrixJson name suffix cols toDataSet vecF = do
+add2dMatrixJson :: (Typeable d, Typeable a, Foldable f) => DataSet d f a -> Text -> Text -> Int -> (a -> Vector.Vector Double) -> StanBuilderM env d ()
+add2dMatrixJson dataSet name suffix cols vecF = do
   addFixedIntJson ("K" <> suffix) cols
-  addColumnJson name suffix toDataSet vecF
-
-
-
+  addColumnJson dataSet name suffix vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d
 modifyCode' f (BuilderState jb sc) = BuilderState jb (f sc)
