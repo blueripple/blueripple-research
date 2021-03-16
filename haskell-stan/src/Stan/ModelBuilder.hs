@@ -25,6 +25,7 @@ import qualified Data.GADT.Compare as GADT
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Proxy as Proxy
+import qualified Data.Set as Set
 import qualified Data.Some as Some
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -99,8 +100,6 @@ stanCodeToStanModel (StanCode _ a) =
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
 
-initialBuilderState :: BuilderState d
-initialBuilderState = BuilderState mempty emptyStanCode
 
 data JSONSeriesFold row where
   JSONSeriesFold :: Stan.StanJSONF row Aeson.Series -> JSONSeriesFold row
@@ -128,66 +127,66 @@ instance Hashable.Hashable (Some.Some (RowTypeTag d f)) where
 type JSONBuilder d f = DSum.DSum (RowTypeTag d f) JSONSeriesFold
 type JSONBuilderDHM d f = DHash.DHashMap (RowTypeTag d f) JSONSeriesFold
 
---type JSONBuilderMap = D
-lookupBuilder :: RowTypeTag d f row -> [JSONBuilder d f] -> ([JSONBuilder d f],[JSONBuilder d f])
-lookupBuilder rtt = List.break (\(rtt' DSum.:=> _) -> Some.Some rtt' == Some.Some rtt)
 
-{-
-addFold :: (Typeable d, Typeable f, Typeable row) => (d -> f row) -> Stan.StanJSONF row Aeson.Series -> [JSONBuilder d f] -> [JSONBuilder d f]
-addFold f fld bldrs =
-  let rtt = RowTypeTag f
-      (exists, rest) = lookupBuilder rtt bldrs
-  in case exists of
-    [] -> (rtt DSum.:=> JSONSeriesFold fld) : rest
-    ((rtt' DSum.:=> JSONSeriesFold fld') : []) -> (rtt DSum.:=> JSONSeriesFold (fld' <> fld)) : rest
-    _ -> error "Multiple JSONBuilders for one row type"
--}
-{-
-addFold :: Text -> (d -> f row) -> Stan.StanJSONF row Aeson.Series -> JSONBuilderDMap d f -> JSONBuilderDMap d f
-addFold dataSetName toDataSet fld jbm =
-  case Map.lookup dataSetName jbm of
-    Nothing -> Map.insert dataSetName ((RowTypeTag toDataSet) DSum.:=> (JSONSeriesFold fld)) jbm
-    Just (rtt DSum.:=> (JSONSeriesFold fld')) -> Map.insert dataSetName (rtt DSum.:=> (JSONSeriesFold $ fld' <> fld))jbm
+addFoldToDBuilder :: (Typeable d, Typeable f, Typeable row) => Text -> (d -> f row) -> Stan.StanJSONF row Aeson.Series -> JSONBuilderDHM d f -> JSONBuilderDHM d f
+addFoldToDBuilder t f fld jbm =
+  let rtt = (RowTypeTag t f)
+  in case DHash.lookup rtt jbm of
+    Nothing -> DHash.insert rtt (JSONSeriesFold fld) jbm
+    Just (JSONSeriesFold fld') -> DHash.insert rtt (JSONSeriesFold $ fld' <> fld) jbm
 
-data JSONBuilder d f = JSONBuilder { names :: Set Text, builders :: JSONBuilderDMap d f }
 
--}
+buildJSONSeries :: forall d f. Foldable f => JSONBuilderDHM d f -> d -> Either Text Aeson.Series
+buildJSONSeries jbm d =
+  let foldOne :: JSONBuilder d f -> Either Text Aeson.Series
+      foldOne ((RowTypeTag _ h) DSum.:=> (JSONSeriesFold fld)) = Foldl.foldM fld (h d)
+  in mconcat <$> (traverse foldOne $ DHash.toList jbm)
 
-data BuilderState a = BuilderState { jsonBuilder :: !(Map Text (a -> Either Text Aeson.Series)), code :: !StanCode }
 
-newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d))) a }
-  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d))
+data JSONBuilderState d f = JSONBuilderState { usedNames :: Set Text, builders :: JSONBuilderDHM d f}
 
-runStanBuilder :: env -> StanBuilderM env d a -> Either Text (BuilderState d, a)
+data BuilderState d f = BuilderState { jsonBuilder :: JSONBuilderState d f, code :: !StanCode }
+
+initialBuilderState :: BuilderState d f
+initialBuilderState = BuilderState (JSONBuilderState Set.empty DHash.empty) emptyStanCode
+
+
+newtype StanBuilderM env d f a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d f))) a }
+  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d f))
+
+runStanBuilder :: env -> StanBuilderM env d f a -> Either Text (BuilderState d f, a)
 runStanBuilder e sb = res where
   (resE, bs) = flip runState initialBuilderState . flip runReaderT e . runExceptT $ unStanBuilderM sb
   res = fmap (bs,) resE
 
-stanBuildError :: Text -> StanBuilderM row d a
+stanBuildError :: Text -> StanBuilderM row d f a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
-askEnv :: StanBuilderM env d env
+askEnv :: StanBuilderM env d f env
 askEnv = ask
 
-asksEnv :: (env -> a) -> StanBuilderM env d a
+asksEnv :: (env -> a) -> StanBuilderM env d f a
 asksEnv = asks
 
-addJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
-addJsonBuilder' jsonB (BuilderState jsonB' sc) = BuilderState (jsonB' <> jsonB) sc
+{-
+--addJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
+--addJsonBuilder' jsonB (BuilderState jsonB' sc) = BuilderState (jsonB' <> jsonB) sc
 
 updateJsonBuilder' :: Map Text (d -> Either Text Aeson.Series) -> BuilderState d -> BuilderState d
 updateJsonBuilder' jsonB (BuilderState _ sc) = BuilderState jsonB sc
 
 addJsonBuilder :: Map Text (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
 addJsonBuilder = modify . addJsonBuilder'
+-}
 
-addJson :: Text -> (d -> Either Text Aeson.Series) -> StanBuilderM env d ()
-addJson name makeSeries = do
-  bs <- get
-  let jbMap = jsonBuilder bs
-  case Map.lookup name jbMap of
-    Nothing -> put $ updateJsonBuilder' (Map.insert name makeSeries jbMap) bs
-    Just _ -> stanBuildError $ "\"" <> name <> "\" duplicated in jsonBuilderMap."
+data DataSet d f row = DataSet Text (d -> f row)
+
+addJson :: DataSet d f row -> Text -> Stan.StanJSONF row Aeson.Series -> StanBuilderM env d f ()
+addJson (DataSet dName toDataSet) name fld = do
+  (BuilderState (JSONBuilderState un jbs) code) <- get
+  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
+  let newBS = addFoldToDBuilder dName toDataSet fld jbs
+  return $ BuilderState (JSONBuilderState (Set.insert name un) newBS) code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
