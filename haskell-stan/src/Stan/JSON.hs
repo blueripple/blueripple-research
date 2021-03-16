@@ -16,6 +16,7 @@ import qualified Data.List as List
 import Data.List.Extra (nubOrd)
 import qualified Data.Map.Strict as M
 import qualified Data.IntMap.Strict as IM
+import qualified Data.Set as Set
 import qualified Data.Text as T
 
 import Data.Vector.Serialize()

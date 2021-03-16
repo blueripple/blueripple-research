@@ -174,6 +174,19 @@ data PostStratification k psRow predRow =
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
+intIndexFold :: Ord a => Int -> FL.Fold a (IntIndex a)
+intIndexFold start =  FL.Fold step init done where
+  step s a = Set.insert a s
+  init = Set.empty
+  done s = IntIndex (Set.size s) toIntM where
+    keyedList = zip (Set.toList s) [start..]
+    mapToInt = Map.fromList keyedList
+    toIntM a = Map.lookup a mapToInt
+
+contramapIntIndexFold :: (b -> a) -> FL.Fold a (IntIndex a) -> FL.Fold b (IntIndex b)
+contramapIntIndexFold f fld = fmap g $ FL.premap f fld where
+  g (IntIndex n h) = IntIndex n (h . f)
+
 intEncoderFoldToIntIndexFold :: SJ.IntEncoderF row -> FL.Fold row (IntIndex row)
 intEncoderFoldToIntIndexFold = fmap (\(f, km) -> IntIndex (IM.size km) f)
 
@@ -219,7 +232,7 @@ groupSizeJSONFold prefix gn = do
 groupDataJSONFold :: Text -> GroupName -> MRPBuilderM f predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
 groupDataJSONFold suffix gn = do
   IntIndex indexSize indexM <- getIndex gn
-  return $ SJ.valueToPairF (gn <> "_" <> suffix) (SJ.jsonArrayMF indexM)
+  return $ SJ.valueToPairF (gn <> SB.underscoredIf suffix) (SJ.jsonArrayMF indexM)
 
 groupsJSONFold :: Traversable f
                => (Text -> GroupName -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series))
@@ -504,7 +517,7 @@ groupSizesBlock = do
 labeledDataBlockForRows :: Text -> MRPBuilderM f predRow modeledRow psRow ()
 labeledDataBlockForRows suffix = do
   ui <- usedIndexes
-  let groupIndex x = SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
+  let groupIndex x = SB.addStanLine $ "int<lower=1, upper=J_" <> fst x <> "> " <> fst x <> SB.underscoredIf suffix <> "[N" <> suffix <> "]"
 {-
         if i_Size (snd x) == 2
                      then SB.addStanLine $ "int<lower=1, upper=2> " <> fst x <> "_" <> suffix <> "[N" <> suffix <> "]"
@@ -519,7 +532,7 @@ mrpDataBlock :: Bool
 mrpDataBlock postStratify diffLL = SB.inBlock SB.SBData $ do
   model <- getModel
   groupSizesBlock
-  labeledDataBlockForRows "m"
+  labeledDataBlockForRows ""
   case bmm_FixedEffects model of
     Just fe ->  SB.fixedEffectsQR "" "X" "N" "K"
     Nothing -> return ()
@@ -551,7 +564,7 @@ mrpDataBlock postStratify diffLL = SB.inBlock SB.SBData $ do
 
 mrpParametersBlock :: MRPBuilderM f predRow modeledRow psRow ()
 mrpParametersBlock = SB.inBlock SB.SBParameters $ do
-  ui <- usedIndexes
+  ui <- mrIndexes
   let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
       nonBinaryParameter x = do
         let n = fst x
@@ -574,11 +587,11 @@ modelExpr thinQR suffix = do
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
-      eQ s = SB.TermE $ SB.Vectored $ "Q" <> s <> "_ast"
-      eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> s
+      eQ s = SB.TermE $ SB.Vectored $ "Q" <> SB.underscoredIf s <> "_ast"
+      eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> SB.underscoredIf s
       eQTheta s = SB.BinOpE "*" (eQ s) (eTheta s)
-      eX s = SB.TermE $ SB.Vectored $ "X" <> s
-      eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> s
+      eX s = SB.TermE $ SB.Vectored $ "X" <> SB.underscoredIf s
+      eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> SB.underscoredIf s
       eXBeta s = SB.BinOpE "*" (eX s) (eBeta s)
       feExpr s = if thinQR then eQTheta s else eXBeta s
       feGroupsExpr = fmap feExpr $ Map.keys $ bmm_FEGroups model
@@ -602,14 +615,14 @@ mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ d
       groupPrior x = if (i_Size $ snd x) == 2
                      then binaryPrior x
                      else nonBinaryPrior x
-      fePrior x = SB.addStanLine $ "thetaX" <> x <> " ~ normal(0," <> show priorSDBeta <> ")"
-  let im = Map.mapWithKey (\k _ -> k <> "_m") indexMap
-  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True "m"
+      fePrior x = SB.addStanLine $ "thetaX" <> SB.underscoredIf x <> " ~ normal(0," <> show priorSDBeta <> ")"
+  let im = Map.mapWithKey const indexMap
+  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True ""
   SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
   when (isJust $ bmm_FixedEffects model) $ fePrior ""
   traverse_ fePrior $ Map.keys $ bmm_FEGroups model
   mrIndexes >>= traverse_ groupPrior . Map.toList
-  SB.addStanLine $ "Sm ~ binomial_logit(Tm, " <> modelTerms <> ")"
+  SB.addStanLine $ "S ~ binomial_logit(T, " <> modelTerms <> ")"
 
 mrpLogLikStanCode :: Bool
                   -> MRPBuilderM f predRow modeledRow psRow ()
@@ -619,7 +632,7 @@ mrpLogLikStanCode difLL = SB.inBlock SB.SBGeneratedQuantities $ do
   let suffix = if difLL then "ll" else "" -- we use model data unless a different suffix is provided
   SB.addStanLine $ "vector [N" <> suffix <> "] log_lik"
   SB.stanForLoop "n" Nothing ("N" <> suffix) $ \_ -> do
-    let im = Map.mapWithKey (\k _ -> k <> "_" <> suffix <> "[n]") indexMap -- we need to index the groups.
+    let im = Map.mapWithKey (\k _ -> k <> SB.underscoredIf suffix <> "[n]") indexMap -- we need to index the groups.
     modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr False suffix
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S" <> suffix <> "[n]| T" <> suffix <> "[n], " <> modelTerms <> ")"
 

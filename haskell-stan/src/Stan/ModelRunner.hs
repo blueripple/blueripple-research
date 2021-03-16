@@ -223,7 +223,7 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
           K.logLE K.Info $ "Finished chain " <> show chainIndex
     res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ -> do
       K.logLE K.Info "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
---      K.logLE K.Info $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
+      K.logLE K.Diagnostic $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
       maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneChain [1 .. (SC.mrcNumChains config)])
     K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."

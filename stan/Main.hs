@@ -125,7 +125,7 @@ testStanMRP = do
   K.logLE K.Info "Data prep..."
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
-      toCCESData hd = F.toFrame $ take 500 $ FL.fold FL.list $ F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
+      toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
   ccesData <- toCCESData <$> K.ignoreCacheTime houseData_C
   let shouldBeEmpty = F.filterFrame (\r -> F.rgetField @BRE.DVotes r > F.rgetField @BRE.TVotes r) ccesData
   when (FL.fold FL.length shouldBeEmpty > 0) $ do
@@ -133,20 +133,21 @@ testStanMRP = do
     BR.logFrame shouldBeEmpty
     K.knitError ""
   let mrpData_C = fmap (\hd -> MRP.MRPData (toCCESData hd) Nothing Nothing) houseData_C
-      stateEnumF = FL.premap (F.rgetField @BR.StateAbbreviation)
-                   $ MRP.intEncoderFoldToIntIndexFold
-                   $ SJ.enumerate 1
+      stateEnumF =  MRP.contramapIntIndexFold (F.rgetField @BR.StateAbbreviation) $ MRP.intIndexFold 1
+      district r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
+      districtEnumF = MRP.contramapIntIndexFold district $ MRP.intIndexFold 1
       groups =
         [
           MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
         , MRP.LabeledGroup "State" stateEnumF
+        , MRP.LabeledGroup "CD" districtEnumF
         ]
-      feGroups = M.fromList []
-      mrGroups = S.fromList []
+      feGroups = M.fromList [("CD", MRP.FixedEffects 1 (\r -> Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r]))]
+      mrGroups = S.fromList ["Race"]
       fixedEffs = MRP.FixedEffects 1 (\r -> Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r])
       model = MRP.Binomial_MRP_Model
               "testMRP"
-              (Just fixedEffs)
+              Nothing --(Just fixedEffs)
               feGroups
               mrGroups
               (F.rcast @BRE.CCESDataR)
@@ -158,9 +159,10 @@ testStanMRP = do
     True
     (Just "stan/mrp/cces")
     "test"
+    groups
     model
     Nothing
-    Nothing
+    False
     "testData"
     mrpData_C
     (Just 1000)

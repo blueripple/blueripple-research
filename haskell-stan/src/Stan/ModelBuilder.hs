@@ -280,6 +280,9 @@ stanPrint ps =
         StanExpression x -> x
   in addStanLine $ "print(" <> T.intercalate ", " (fmap f ps) <> ")"
 
+underscoredIf :: Text -> Text
+underscoredIf t = if T.null t then "" else "_" <> t
+
 fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM d env ()
 fixedEffectsQR thinSuffix matrix rows cols = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
