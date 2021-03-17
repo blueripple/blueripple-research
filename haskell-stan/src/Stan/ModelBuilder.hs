@@ -131,36 +131,40 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
   hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
   hashWithSalt m (Some.Some (GroupTypeTag n)) = hashWithSalt m n
 
-data MakeIndex r k = GivenIndex (k -> Int) | FoldToIndex (Foldl.Fold r (k -> Maybe Int))
-newtype IndexMap k = IndexMap (k -> Maybe Int)
+data MakeIndex r k = GivenIndex (k -> Int) (r -> k) | FoldToIndex (Foldl.Fold r (k -> Maybe Int)) (r -> k)
+data IndexMap r k = IndexMap (k -> Maybe Int) (r -> k)
 
-makeIndexMap :: Foldable f => MakeIndex r k -> f r -> IndexMap k
-makeIndexMap (GivenIndex g) _ = IndexMap $ Just . g
-makeIndexMap (FoldToIndex fld) rs = IndexMap $ Foldl.fold fld rs
+makeIndexMap :: Foldable f => MakeIndex r k -> f r -> IndexMap r k
+makeIndexMap (GivenIndex g h) _ = IndexMap (Just . g) h
+makeIndexMap (FoldToIndex fld h) rs = IndexMap (Foldl.fold fld rs) h
+
+makeEnumeratedMakeIndex :: (r -> k) -> MakeIndex r k
+makeEnumeratedMakeIndex h = undefined
+
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
-type GroupIndexDHM = DHash.DHashMap GroupTypeTag IndexMap
+type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
 
-makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> GroupIndexDHM
+makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> GroupIndexDHM r
 makeMainIndexes makerMap rs = DHash.map (\m -> makeIndexMap m rs) makerMap
 
-data RowInfo d row = RowInfo { toFoldable :: ToFoldable d row
-                             , jsonSeries :: JSONSeriesFold row
-                             , indexMaker :: GroupIndexDHM -> Maybe (row -> Maybe Int) }
+data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
+                             , jsonSeries :: JSONSeriesFold r
+                             , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int) }
 
-initialRowInfo :: forall d r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r
+initialRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
 initialRowInfo tf groupName keyF = RowInfo tf mempty im where
-  im :: GroupIndexDHM -> Maybe (r -> Maybe Int)
+  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
     Nothing -> Nothing
-    Just (IndexMap h) -> Just (h . keyF)
+    Just (IndexMap h _) -> Just (h . keyF)
 
 --emptyRowInfo :: RowInfo r
 --emptyRowInfo = RowInfo mempty mempty
 
 -- key for dependepent map.
-data RowTypeTag d row where
-  ModeledRowTag :: (Typeable d, Typeable row) => RowTypeTag d row
-  RowTypeTag :: (Typeable d, Typeable row) => Text -> RowTypeTag d row
+data RowTypeTag d r where
+  ModeledRowTag :: (Typeable d, Typeable r) => RowTypeTag d r
+  RowTypeTag :: (Typeable d, Typeable r) => Text -> RowTypeTag d r
 
 dsName :: RowTypeTag d r -> Text
 dsName ModeledRowTag = "modeled"
@@ -184,36 +188,36 @@ instance Hashable.Hashable (Some.Some (RowTypeTag d)) where
   hashWithSalt m (Some.Some (RowTypeTag n)) = hashWithSalt m n
 
 -- the key is a name for the data-set.  The tag carries the toDataSet function
-type RowBuilder d = DSum.DSum (RowTypeTag d) (RowInfo d)
-type RowBuilderDHM d = DHash.DHashMap (RowTypeTag d) (RowInfo d)
+type RowBuilder d r0 = DSum.DSum (RowTypeTag d) (RowInfo d r0)
+type RowBuilderDHM d r0 = DHash.DHashMap (RowTypeTag d) (RowInfo d r0)
 
-initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d
+initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
 initialRowBuilders toModeled = DHash.singleton ModeledRowTag (RowInfo (ToFoldable toModeled) mempty (const Nothing))
 
-addFoldToDBuilder :: forall d row.(Typeable d, Typeable row)
+addFoldToDBuilder :: forall d r0 r.(Typeable d, Typeable r)
                   => Text
-                  -> Stan.StanJSONF row Aeson.Series
-                  -> RowBuilderDHM d
-                  -> Maybe (RowBuilderDHM d)
+                  -> Stan.StanJSONF r Aeson.Series
+                  -> RowBuilderDHM d r0
+                  -> Maybe (RowBuilderDHM d r0)
 addFoldToDBuilder t fld rbm =
-  let rtt = RowTypeTag @d @row t
+  let rtt = RowTypeTag @d @r t
   in case DHash.lookup rtt rbm of
     Nothing -> Nothing --DHash.insert rtt (RowInfo (JSONSeriesFold fld) (const Nothing)) rbm
     Just (RowInfo tf (JSONSeriesFold fld') gi)
       -> Just $ DHash.insert rtt (RowInfo tf (JSONSeriesFold $ fld' <> fld) gi) rbm
 
 
-buildJSONSeries :: forall d f. RowBuilderDHM d -> d -> Either Text Aeson.Series
+buildJSONSeries :: forall d r0 f. RowBuilderDHM d r0 -> d -> Either Text Aeson.Series
 buildJSONSeries rbm d =
-  let foldOne :: RowBuilder d -> Either Text Aeson.Series
+  let foldOne :: RowBuilder d r0 -> Either Text Aeson.Series
       foldOne ((RowTypeTag _ ) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld) _)) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
 
-data DataBuilderState d modeledRow
+data DataBuilderState d r0
   = DataBuilderState { usedNames :: Set Text
-                     , indexMakers :: GroupIndexMakerDHM modeledRow
-                     , builders :: RowBuilderDHM d
+                     , indexMakers :: GroupIndexMakerDHM r0
+                     , builders :: RowBuilderDHM d r0
                     }
 
 buildJSON :: forall d r.(Typeable d, Typeable r) => DataBuilderState d r -> d -> Either Text Aeson.Series
