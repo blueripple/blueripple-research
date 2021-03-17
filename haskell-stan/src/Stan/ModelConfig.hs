@@ -67,6 +67,8 @@ data ResultAction r a b p c where
   SkipSummary :: (p -> K.ActionWithCacheTime r (a, b) -> K.Sem r c) -> ResultAction r a b p c
   DoNothing :: ResultAction r a b c ()
 
+emptyResult :: ResultAction r a b p ()
+emptyResult = SkipSummary $ \_ _ -> return ()
 
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp

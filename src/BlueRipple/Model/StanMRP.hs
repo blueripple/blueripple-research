@@ -135,6 +135,82 @@ data MRPData f predRow modeledRow psRow =
   , logLikelihood :: Maybe (f modeledRow) -- if this is Nothing, we use the modeled data instead
   }
 
+buildMRPDataAndModel :: [Group predRow]
+                     -> Binomial_MRP_Model predRow modeledRow
+                     -> MRData modeledRow predRow
+                     -> Maybe (PostStratification k psRow predRow)
+                     -> Bool
+                     -> (Binomial_MRP_Model predRow modeledRow ->
+                         Maybe (PostStratification k psRow predRow) ->
+                         Bool ->
+                         SB.StanBuilderM (MRPBuilderEnv predRow modeledRow) a (SC.DataWrangler a b ())
+                        )
+                     -> (SC.DataWrangler a b (), StanCode)
+buildMRPDataAndModel groups model mrData mPSFunctions difLL makeBuilderM =
+  let builderEnv = buildEnv groups model mrData
+      builder = makeBuilderM model mPSFunctions difLL
+
+
+runMRPModel2 :: -- forall k psRow modeledRow predRow f r.
+               (K.KnitEffects r
+               , BR.CacheEffects r
+               , Foldable f
+               , Functor f
+               , Ord k
+               , Flat.Flat k)
+            => Bool
+            -> Maybe Text
+            -> Text
+            -> Text
+            -> SC.DataWrangler a b ()
+            -> SB.StanCode
+            -> Text
+            -> SC.ResultAction r a b () c
+            -> K.ActionWithCacheTime r a
+            -> Maybe Int
+            -> K.Sem r ()
+runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples =
+  K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
+  K.logLE K.Info "Running..."
+  let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
+      outputLabel = modelName <> "_" <> dataName
+      nSamples = fromMaybe 1000 mNSamples
+      stancConfig =
+        (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
+  stanConfig <-
+    SC.setSigFigs 4
+    . SC.noLogOfSummary
+    <$> SM.makeDefaultModelRunnerConfig
+    workDir
+    (modelName <> "_model")
+    (Just (SB.All, SB.stanCodeToStanModel stanCode))
+    (Just $ dataName <> ".json")
+    (Just $ outputLabel)
+    4
+    (Just nSamples)
+    (Just nSamples)
+    (Just stancConfig)
+  let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
+  when clearCache $ do
+    K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
+    BR.clearIfPresentD resultCacheKey
+  modelDep <- SM.modelCacheTime stanConfig
+  K.logLE K.Diagnostic $ "modelDep: " <> show (K.cacheTime modelDep)
+  K.logLE K.Diagnostic $ "houseDataDep: " <> show (K.cacheTime mrpData_C)
+  let dataModelDep = const <$> modelDep <*> data_C
+      getResults s () inputAndIndex_C = return ()
+      unwraps = [SR.UnwrapNamed ppName ppName]
+  res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
+    K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
+    SM.runModel @BR.SerializerC @BR.CacheData
+      stanConfig
+      (SM.Both unwraps)
+      dataWrangler
+      resultAction
+      ()
+      mrpData_C
+  return ()
+
 data ProjectableRows f rowA rowB where
   ProjectableRows :: Functor f => f rowA -> (rowA -> rowB) -> ProjectableRows f rowA rowB
   ProjectedRows :: Functor f => f row -> ProjectableRows f row row
