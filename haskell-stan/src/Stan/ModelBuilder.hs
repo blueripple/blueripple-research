@@ -12,6 +12,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder where
 
@@ -103,7 +104,6 @@ stanCodeToStanModel (StanCode _ a) =
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
 
-
 data JSONSeriesFold row where
   JSONSeriesFold :: Stan.StanJSONF row Aeson.Series -> JSONSeriesFold row
 
@@ -112,7 +112,6 @@ instance Semigroup (JSONSeriesFold row) where
 
 instance Monoid (JSONSeriesFold row) where
   mempty = JSONSeriesFold $ pure mempty
-
 
 -- f is existential here.  We supply the choice when we *construct* a ToFoldable
 data ToFoldable d row where
@@ -131,12 +130,12 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
   hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
   hashWithSalt m (Some.Some (GroupTypeTag n)) = hashWithSalt m n
 
-data MakeIndex r k = GivenIndex (k -> Int) (r -> k) | FoldToIndex (Foldl.Fold r (k -> Maybe Int)) (r -> k)
-data IndexMap r k = IndexMap (k -> Maybe Int) (r -> k)
+data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Maybe Int)) (r0 -> k)
+data IndexMap r0 k = IndexMap Int (k -> Maybe Int) (r0 -> Maybe Int)
 
 makeIndexMap :: Foldable f => MakeIndex r k -> f r -> IndexMap r k
-makeIndexMap (GivenIndex g h) _ = IndexMap (Just . g) h
-makeIndexMap (FoldToIndex fld h) rs = IndexMap (Foldl.fold fld rs) h
+makeIndexMap (GivenIndex n g h) _ = IndexMap n (Just . g) (Just . g . h)
+makeIndexMap (FoldToIndex fld h) rs = let (n, g) = Foldl.fold fld rs in IndexMap n g (g . h)
 
 makeEnumeratedMakeIndex :: (r -> k) -> MakeIndex r k
 makeEnumeratedMakeIndex h = undefined
@@ -149,14 +148,14 @@ makeMainIndexes makerMap rs = DHash.map (\m -> makeIndexMap m rs) makerMap
 
 data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
                              , jsonSeries :: JSONSeriesFold r
-                             , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int) }
+                             , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int) }
 
 initialRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
 initialRowInfo tf groupName keyF = RowInfo tf mempty im where
-  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int)
+  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
     Nothing -> Nothing
-    Just (IndexMap h _) -> Just (h . keyF)
+    Just (IndexMap _ h g) -> Just (h . keyF, g)
 
 --emptyRowInfo :: RowInfo r
 --emptyRowInfo = RowInfo mempty mempty
@@ -220,22 +219,25 @@ data DataBuilderState d r0
                      , builders :: RowBuilderDHM d r0
                     }
 
-buildJSON :: forall d r.(Typeable d, Typeable r) => DataBuilderState d r -> d -> Either Text Aeson.Series
+buildJSON :: forall d r0 .(Typeable d, Typeable r0) => DataBuilderState d r0 -> d -> Either Text Aeson.Series
 buildJSON dbs d = do
   let fm t = maybe (Left t) Right
-  (RowInfo (ToFoldable toModeled) (JSONSeriesFold jsonF) _) <- fm "Failed to find ModeledRowTag in DataBuilderState!"
-                                                               $ DHash.lookup ModeledRowTag (builders dbs)
+  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) _) <- fm "Failed to find ModeledRowTag in DataBuilderState!"
+                                                                      $ DHash.lookup ModeledRowTag (builders dbs)
   let modeled = toModeled d
-  modeledSeries <- Foldl.foldM jsonF modeled
   let gim = makeMainIndexes (indexMakers dbs) modeled
-      rowSeries (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
-        indexF <- fm ("Failed to build indexing function for " <> dsName rtt) $ getIndexF gim
+      buildRowJSON :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> Either Text (Aeson.Series, Stan.StanJSONF r0 Aeson.Series)
+      buildRowJSON (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
+        (rowIndexF, modelRowIndexF) <- fm ("Failed to build indexing function for " <> dsName rtt) $ getIndexF gim
         let rowData = toData d
         asIntMap <- fm ("key in dataset (" <> dsName rtt <> ") missing from index.")
-                    $ Foldl.foldM (Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ indexF r) (return IntMap.empty) return) rowData
-        Foldl.foldM jsonF asIntMap
-  allRowSeries <- mconcat <$> (traverse rowSeries $ DHash.toList $ DHash.delete (ModeledRowTag @d @r) $ builders dbs)
-  return $ modeledSeries <> allRowSeries
+                    $ Foldl.foldM (Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return) rowData
+        let indexFold = Stan.valueToPairF (dsName rtt) (Stan.jsonArrayMF modelRowIndexF)
+        rowS <- Foldl.foldM jsonF asIntMap
+        return (rowS, indexFold)
+  (allRowSeries, indexFolds) <- unzip <$> traverse buildRowJSON (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) $ builders dbs)
+  modeledSeries <- Foldl.foldM (modeledJsonF <> mconcat indexFolds) modeled
+  return $ modeledSeries <> (mconcat allRowSeries)
 
 data BuilderState d modeledRow = BuilderState { dataBuilder :: !(DataBuilderState d modeledRow)
                                               , code :: !StanCode
@@ -256,6 +258,9 @@ runStanBuilder e toModeled sb = res where
 
 stanBuildError :: Text -> StanBuilderM env d modeldRow a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
+
+
+
 
 askEnv :: StanBuilderM env d modeledRow env
 askEnv = ask
