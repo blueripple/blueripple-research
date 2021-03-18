@@ -117,6 +117,10 @@ instance Monoid (JSONSeriesFold row) where
 data ToFoldable d row where
   ToFoldable :: Foldable f => (d -> f row) -> ToFoldable d row
 
+data ToMFoldable d row where
+  ToMFoldable :: Foldable f => (d -> Maybe (f row)) -> ToMFoldable d row
+
+
 data GroupTypeTag k where
   GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
 
@@ -130,32 +134,54 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
   hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
   hashWithSalt m (Some.Some (GroupTypeTag n)) = hashWithSalt m n
 
+data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
+
 data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Maybe Int)) (r0 -> k)
-data IndexMap r0 k = IndexMap Int (k -> Maybe Int) (r0 -> Maybe Int)
+data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Maybe Int)
 
-makeIndexMap :: Foldable f => MakeIndex r k -> f r -> IndexMap r k
-makeIndexMap (GivenIndex n g h) _ = IndexMap n (Just . g) (Just . g . h)
-makeIndexMap (FoldToIndex fld h) rs = let (n, g) = Foldl.fold fld rs in IndexMap n g (g . h)
+makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
+makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (Just . g . h)) (Just . g)
+makeIndexMapF (FoldToIndex fld h) = fmap (\(n, g) -> IndexMap (IntIndex n (g . h)) g) fld
+--  let (n, g) = Foldl.fold fld rs in IndexMap (IntIndex n (g . h)) g
 
-makeEnumeratedMakeIndex :: (r -> k) -> MakeIndex r k
-makeEnumeratedMakeIndex h = undefined
+makeIndexFromEnum :: forall k r.(Enum k, Bounded k) => (r -> k) -> MakeIndex r k
+makeIndexFromEnum h = GivenIndex (1 + eMax - eMin) index h where
+  index k = 1 + (fromEnum k - eMin)
+  eMin = fromEnum $ minBound @k
+  eMax = fromEnum $ maxBound @k
+
+makeIndexByCounting :: Ord k => (r -> k) -> MakeIndex r k
+makeIndexByCounting h = FoldToIndex (Foldl.premap h $ indexFold 1) h
+
+indexFold :: Ord k => Int -> Foldl.Fold k (Int, k -> Maybe Int)
+indexFold start =  Foldl.Fold step init done where
+  step s k = Set.insert k s
+  init = Set.empty
+  done s = (Set.size s, toIntM) where
+    keyedList = zip (Set.toList s) [start..]
+    mapToInt = Map.fromList keyedList
+    toIntM k = Map.lookup k mapToInt
 
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
 
-makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> GroupIndexDHM r
-makeMainIndexes makerMap rs = DHash.map (\m -> makeIndexMap m rs) makerMap
+makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r, Map Text (IntIndex r))
+makeMainIndexes makerMap rs = (dhm, gm) where
+  dhmF = DHash.traverse makeIndexMapF makerMap -- so we only fold once to make all the indices
+  dhm = Foldl.fold dhmF rs
+  namedIntIndex (GroupTypeTag n DSum.:=> IndexMap ii _) = (n, ii)
+  gm = Map.fromList $ namedIntIndex <$> DHash.toList dhm
 
 data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
-                             , jsonSeries :: JSONSeriesFold r
-                             , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int) }
+                              , jsonSeries :: JSONSeriesFold r
+                              , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int) }
 
 initialRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
 initialRowInfo tf groupName keyF = RowInfo tf mempty im where
   im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
     Nothing -> Nothing
-    Just (IndexMap _ h g) -> Just (h . keyF, g)
+    Just (IndexMap (IntIndex _ h) g) -> Just (g . keyF, h)
 
 --emptyRowInfo :: RowInfo r
 --emptyRowInfo = RowInfo mempty mempty
@@ -205,68 +231,136 @@ addFoldToDBuilder t fld rbm =
     Just (RowInfo tf (JSONSeriesFold fld') gi)
       -> Just $ DHash.insert rtt (RowInfo tf (JSONSeriesFold $ fld' <> fld) gi) rbm
 
-
 buildJSONSeries :: forall d r0 f. RowBuilderDHM d r0 -> d -> Either Text Aeson.Series
 buildJSONSeries rbm d =
   let foldOne :: RowBuilder d r0 -> Either Text Aeson.Series
       foldOne ((RowTypeTag _ ) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld) _)) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
-
-data DataBuilderState d r0
-  = DataBuilderState { usedNames :: Set Text
-                     , indexMakers :: GroupIndexMakerDHM r0
-                     , builders :: RowBuilderDHM d r0
-                    }
-
-buildJSON :: forall d r0 .(Typeable d, Typeable r0) => DataBuilderState d r0 -> d -> Either Text Aeson.Series
-buildJSON dbs d = do
+buildJSON :: forall env d r0 .(Typeable d, Typeable r0) => d -> StanBuilderM env d r0 Aeson.Series
+buildJSON d = do
   let fm t = maybe (Left t) Right
-  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) _) <- fm "Failed to find ModeledRowTag in DataBuilderState!"
-                                                                      $ DHash.lookup ModeledRowTag (builders dbs)
+  rbs <- rowBuilders <$> get
+  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) _) <- case DHash.lookup ModeledRowTag rbs of
+    Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
+    Just x -> return x
+  gim <- asks $ groupIndexByType . groupEnv
   let modeled = toModeled d
-  let gim = makeMainIndexes (indexMakers dbs) modeled
-      buildRowJSON :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> Either Text (Aeson.Series, Stan.StanJSONF r0 Aeson.Series)
+      buildRowJSON :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (Aeson.Series, Stan.StanJSONF r0 Aeson.Series)
       buildRowJSON (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
-        (rowIndexF, modelRowIndexF) <- fm ("Failed to build indexing function for " <> dsName rtt) $ getIndexF gim
+        (rowIndexF, modelRowIndexF) <- case getIndexF gim of
+          Nothing -> stanBuildError ("Failed to build indexing function for " <> dsName rtt)
+          Just x -> return x
         let rowData = toData d
-        asIntMap <- fm ("key in dataset (" <> dsName rtt <> ") missing from index.")
-                    $ Foldl.foldM (Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return) rowData
+            mAsIntMap = Foldl.foldM (Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return) rowData
+        asIntMap <- case mAsIntMap of
+          Nothing -> stanBuildError ("key in dataset (" <> dsName rtt <> ") missing from index.")
+          Just x -> return x
         let indexFold = Stan.valueToPairF (dsName rtt) (Stan.jsonArrayMF modelRowIndexF)
-        rowS <- Foldl.foldM jsonF asIntMap
+        rowS <- case Foldl.foldM jsonF asIntMap of
+          Left err -> stanBuildError err
+          Right x -> return x
         return (rowS, indexFold)
-  (allRowSeries, indexFolds) <- unzip <$> traverse buildRowJSON (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) $ builders dbs)
-  modeledSeries <- Foldl.foldM (modeledJsonF <> mconcat indexFolds) modeled
+  (allRowSeries, indexFolds) <- unzip <$> traverse buildRowJSON (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
+  modeledSeries <- case Foldl.foldM (modeledJsonF <> mconcat indexFolds) modeled of
+    Left err -> stanBuildError err
+    Right x -> return x
   return $ modeledSeries <> (mconcat allRowSeries)
 
-data BuilderState d modeledRow = BuilderState { dataBuilder :: !(DataBuilderState d modeledRow)
-                                              , code :: !StanCode
-                                              }
+data JSONRowFold d r = JSONRowFold (ToMFoldable d r) (Stan.StanJSONF r Aeson.Series)
+
+--instance Semigroup (JSONRowFold d r) where
+--  (JSONRowFold tm a) <> (JSONRowFold _ b) = JSONRowFold tm (a <> b)
+
+buildJSONFromRows :: d -> DHash.DHashMap (RowTypeTag d) (JSONRowFold d) -> Either Text Aeson.Series
+buildJSONFromRows d rowFoldMap = do
+  let toSeriesOne (Some.Some (JSONRowFold (ToMFoldable f) fld)) = case f d of
+        Nothing -> Left ""
+        Just x -> Foldl.foldM fld x
+  fmap mconcat $ traverse toSeriesOne $ DHash.elems rowFoldMap
+
+
+buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap (RowTypeTag d) (JSONRowFold d))
+buildJSONF = do
+  let fm t = maybe (Left t) Right
+  rbs <- rowBuilders <$> get
+  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) im) <- case DHash.lookup ModeledRowTag rbs of
+    Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
+    Just x -> return x
+  gim <- asks $ groupIndexByType . groupEnv
+--  let modeled = toModeled d
+  let buildRowJSONFolds :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (DSum.DSum (RowTypeTag d) (JSONRowFold d), Stan.StanJSONF r0 Aeson.Series)
+      buildRowJSONFolds (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
+        (rowIndexF, modelRowIndexF) <- case getIndexF gim of
+          Nothing -> stanBuildError ("Failed to build indexing function for " <> dsName rtt)
+          Just x -> return x
+        let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
+            indexFold = Stan.valueToPairF (dsName rtt) (Stan.jsonArrayMF modelRowIndexF)
+        return (rtt DSum.:=> JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF, indexFold)
+  (allRowDSums, indexFolds) <- unzip <$> traverse buildRowJSONFolds (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
+  let modeledDSum = ModeledRowTag DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) (modeledJsonF <> mconcat indexFolds)
+  return $ DHash.fromList $ modeledDSum : allRowDSums --modeledSeries <> (mconcat allRowSeries)
+
+
+data BuilderState d r0 = BuilderState { usedNames :: !(Set Text)
+                                      , rowBuilders :: !(RowBuilderDHM d r0)
+                                      , code :: !StanCode
+                                      }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState (DataBuilderState Set.empty DHash.empty $ initialRowBuilders toModeled) emptyStanCode
+initialBuilderState toModeled = BuilderState Set.empty (initialRowBuilders toModeled) emptyStanCode
 
-newtype StanBuilderM env d modeledRow a
-  = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d modeledRow))) a }
-  deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d modeledRow))
+newtype StanGroupBuilderM r0 a
+  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
+  deriving (Functor, Applicative, Monad, MonadState (GroupIndexMakerDHM r0))
 
-runStanBuilder :: (Typeable d, Typeable modeledRow, Foldable f)
-               => env -> (d -> f modeledRow) -> StanBuilderM env d modeledRow a -> Either Text (BuilderState d modeledRow, a)
-runStanBuilder e toModeled sb = res where
-  (resE, bs) = flip runState (initialBuilderState toModeled) . flip runReaderT e . runExceptT $ unStanBuilderM sb
+data GroupEnv r0 = GroupEnv { groupIndexByType :: GroupIndexDHM r0
+                            , groupIndexByName :: Map Text (IntIndex r0)
+                            }
+stanGroupBuildError :: Text -> StanGroupBuilderM r0 a
+stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
+
+addGroup :: forall r0 k.Typeable k => Text -> MakeIndex r0 k -> StanGroupBuilderM r0 ()
+addGroup gName mkIndex = do
+  let gtt = GroupTypeTag @k gName
+  gim <- get
+  case DHash.lookup gtt gim of
+    Nothing -> put $ DHash.insert gtt mkIndex gim
+    Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> gName <> "\") at the same type as one already in group index builder map"
+
+runStanGroupBuilder :: Foldable f => StanGroupBuilderM r0 () -> f r0 -> Either Text (GroupEnv r0)
+runStanGroupBuilder sgb rs =
+  let (resE, gmi) = flip runState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
+      (byType, byName) = makeMainIndexes gmi rs
+  in fmap (const $ GroupEnv byType byName) resE
+
+data StanEnv env r0 = StanEnv { userEnv :: !env, groupEnv :: !(GroupEnv r0) }
+
+newtype StanBuilderM env d r0 a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT (StanEnv env r0) (State (BuilderState d r0))) a }
+                                deriving (Functor, Applicative, Monad, MonadReader (StanEnv env r0), MonadState (BuilderState d r0))
+
+askUserEnv :: StanBuilderM env d r0 env
+askUserEnv = asks userEnv
+
+askGroupEnv :: StanBuilderM env d r0 (GroupEnv r0)
+askGroupEnv = asks groupEnv
+
+runStanBuilder' :: (Typeable d, Typeable r0, Foldable f)
+               => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
+runStanBuilder' userEnv ge toModeled sb = res where
+  (resE, bs) = flip runState (initialBuilderState toModeled) . flip runReaderT (StanEnv userEnv ge) . runExceptT $ unStanBuilderM sb
   res = fmap (bs,) resE
 
-stanBuildError :: Text -> StanBuilderM env d modeldRow a
+runStanBuilder :: (Foldable f, Typeable d, Typeable r0)
+               => d -> (d -> f r0) -> env -> StanGroupBuilderM r0 () -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
+runStanBuilder d toModeled userEnv sgb sb =
+  let eGE = runStanGroupBuilder sgb (toModeled d)
+  in case eGE of
+    Left err -> Left $ "Error running group builder: " <> err
+    Right ge -> runStanBuilder' userEnv ge toModeled sb
+
+stanBuildError :: Text -> StanBuilderM env d r0 a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
-
-
-
-
-askEnv :: StanBuilderM env d modeledRow env
-askEnv = ask
-
-asksEnv :: (env -> a) -> StanBuilderM env d modeledRow a
-asksEnv = asks
 
 data DataSet d f row = DataSet Text (d -> f row)
 
@@ -277,14 +371,14 @@ addJson :: (Typeable d, Typeable row, Foldable f)
         => DataSet d f row
         -> Text
         -> Stan.StanJSONF row Aeson.Series
-        -> StanBuilderM env d modeledRow ()
+        -> StanBuilderM env d r0 ()
 addJson (DataSet dName toDataSet) name fld = do
-  (BuilderState (DataBuilderState un ims rbs) code) <- get
+  (BuilderState un rbs code) <- get
   when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
   newBS <- case addFoldToDBuilder dName fld rbs of
     Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dName <> ")"
     Just x -> return x
-  put $ BuilderState (DataBuilderState (Set.insert name un) ims newBS) code
+  put $ BuilderState (Set.insert name un)  newBS code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
@@ -292,48 +386,49 @@ addJsonUnchecked :: (Typeable d, Typeable row, Foldable f)
                  => DataSet d f row
                  -> Text
                  -> Stan.StanJSONF row Aeson.Series
-                 -> StanBuilderM env d modeledRow ()
+                 -> StanBuilderM env d r0 ()
 addJsonUnchecked (DataSet dName _) name fld = do
-  (BuilderState (DataBuilderState un ims rbs) code) <- get
+  (BuilderState un rbs code) <- get
   if Set.member name un
     then return ()
     else (do
              newBS <-  case addFoldToDBuilder dName fld rbs of
                Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dName <> ")"
                Just x -> return x
-             put $ BuilderState (DataBuilderState (Set.insert name un) ims newBS) code
+             put $ BuilderState (Set.insert name un) newBS code
          )
 
-addFixedIntJson :: Typeable d => Text -> Int -> StanBuilderM env d modeledRow ()
+addFixedIntJson :: Typeable d => Text -> Int -> StanBuilderM env d r0 ()
 addFixedIntJson name n = addJson nullDataSet name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d, Foldable f, Typeable a) => DataSet d f a -> Text -> StanBuilderM env d modeledRow ()
+addLengthJson :: (Typeable d, Foldable f, Typeable a) => DataSet d f a -> Text -> StanBuilderM env d r0 ()
 addLengthJson dataSet name = addJsonUnchecked dataSet name (Stan.namedF name Foldl.length)
 
 addColumnJson :: (Typeable d, Typeable a, Aeson.ToJSON x, Foldable f)
-              => DataSet d f a -> Text -> Text -> (a -> x) -> StanBuilderM env d modeledRow ()
+              => DataSet d f a -> Text -> Text -> (a -> x) -> StanBuilderM env d r0 ()
 addColumnJson dataSet name suffix toX = do
   addLengthJson dataSet ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
   addJson dataSet fullName (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
 
 addColumnMJson :: (Typeable d, Typeable a, Aeson.ToJSON x, Foldable f)
-              => DataSet d f a -> Text -> Text -> (a -> Maybe x) -> StanBuilderM env d modeledRow ()
+              => DataSet d f a -> Text -> Text -> (a -> Maybe x) -> StanBuilderM env d r0 ()
 addColumnMJson dataSet name suffix toMX = do
   addLengthJson dataSet ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
   addJson dataSet fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
 
 
-add2dMatrixJson :: (Typeable d, Typeable a, Foldable f) => DataSet d f a -> Text -> Text -> Int -> (a -> Vector.Vector Double) -> StanBuilderM env d modeledRow ()
+add2dMatrixJson :: (Typeable d, Typeable a, Foldable f)
+                => DataSet d f a -> Text -> Text -> Int -> (a -> Vector.Vector Double) -> StanBuilderM env d r0 ()
 add2dMatrixJson dataSet name suffix cols vecF = do
   addFixedIntJson ("K" <> suffix) cols
   addColumnJson dataSet name suffix vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d r -> BuilderState d r
-modifyCode' f (BuilderState jb sc) = BuilderState jb (f sc)
+modifyCode' f bs = let newCode = f $ code bs in bs { code = newCode }
 
 modifyCode :: (StanCode -> StanCode) -> StanBuilderM env d r ()
 modifyCode f = modify $ modifyCode' f
@@ -346,7 +441,7 @@ setBlock = modifyCode . setBlock'
 
 getBlock :: StanBuilderM env d r StanBlock
 getBlock = do
-  (BuilderState _ (StanCode b _)) <- get
+  (BuilderState _ _ (StanCode b _)) <- get
   return b
 
 addLine' :: Text -> StanCode -> StanCode
@@ -389,7 +484,7 @@ stanForLoop counter mStart end loopF = do
 
 data StanPrintable = StanLiteral Text | StanExpression Text
 
-stanPrint :: [StanPrintable] -> StanBuilderM d env r ()
+stanPrint :: [StanPrintable] -> StanBuilderM env d r ()
 stanPrint ps =
   let f x = case x of
         StanLiteral x -> "\"" <> x <> "\""
@@ -399,7 +494,7 @@ stanPrint ps =
 underscoredIf :: Text -> Text
 underscoredIf t = if T.null t then "" else "_" <> t
 
-fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM d env r ()
+fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env d r ()
 fixedEffectsQR thinSuffix matrix rows cols = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
   inBlock SBData $ do
