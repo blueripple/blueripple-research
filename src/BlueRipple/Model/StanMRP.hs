@@ -17,6 +17,8 @@ module BlueRipple.Model.StanMRP where
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
 import qualified Data.Array as Array
+import qualified Data.Dependent.HashMap as DHash
+import qualified Data.Dependent.Sum as DSum
 import qualified Data.IntMap.Strict as IM
 import qualified Data.List as List
 import Data.List.Extra (nubOrd)
@@ -137,8 +139,8 @@ data MRPData f predRow modeledRow psRow =
 
 buildDataWranglerAndCode :: (Typeable d, Typeable predRow)
                          => SB.StanGroupBuilderM predRow ()
-                         -> Binomial_MRP_Model predRow modeledRow
-                         -> SB.StanBuilderM (Binomial_MRP_Model predRow modeledRow) d predRow ()
+                         -> Binomial_MRP_Model d predRow modeledRow
+                         -> SB.StanBuilderM (Binomial_MRP_Model d predRow modeledRow) d predRow ()
                          -> d
                          -> SB.ToFoldable d predRow --MRData modeledRow predRow
                          -> Either Text (SC.DataWrangler d () (), SB.StanCode)
@@ -247,39 +249,11 @@ data PostStratification k psRow predRow =
   , psGroupKey :: psRow -> k
   }
 
---data EncodePS k psRow = EncodePS
+type MRPBuilderM f predRow modeledRow psRow = BuilderM predRow modeledRow (MRPData f predRow modeledRow psRow)
 
+type BuilderM predRow modeledRow d = SB.StanBuilderM (Binomial_MRP_Model d predRow modeledRow) d predRow
 
-{-
-intIndexFold :: Ord a => Int -> FL.Fold a (IntIndex a)
-intIndexFold start =  FL.Fold step init done where
-  step s a = Set.insert a s
-  init = Set.empty
-  done s = IntIndex (Set.size s) toIntM where
-    keyedList = zip (Set.toList s) [start..]
-    mapToInt = Map.fromList keyedList
-    toIntM a = Map.lookup a mapToInt
-
-contramapIntIndexFold :: (b -> a) -> FL.Fold a (IntIndex a) -> FL.Fold b (IntIndex b)
-contramapIntIndexFold f fld = fmap g $ FL.premap f fld where
-  g (IntIndex n h) = IntIndex n (h . f)
-
-intEncoderFoldToIntIndexFold :: SJ.IntEncoderF row -> FL.Fold row (IntIndex row)
-intEncoderFoldToIntIndexFold = fmap (\(f, km) -> IntIndex (IM.size km) f)
--}
-{-
-data MRPBuilderEnv predRow modeledRow =
-  MRPBuilderEnv
-  {
-    sbe_Model :: Binomial_MRP_Model predRow modeledRow
-  }
--}
-
-type MRPBuilderM f predRow modeledRow psRow = SB.StanBuilderM (Binomial_MRP_Model predRow modeledRow) (MRPData f predRow modeledRow psRow) predRow
-
-type BuilderM predRow modeledRow d = SB.StanBuilderM (Binomial_MRP_Model predRow modeledRow) d predRow
-
-getModel ::  BuilderM predRow modeledRow d (Binomial_MRP_Model predRow modeledRow)
+getModel ::  BuilderM predRow modeledRow d (Binomial_MRP_Model d predRow modeledRow)
 getModel = SB.askUserEnv
 
 getIndexes :: BuilderM predRow modeledRow d (Map Text (SB.IntIndex predRow))
@@ -292,51 +266,25 @@ getIndex gn = do
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
     Just i -> return i
 
-{-
-data Group row where
-  EnumeratedGroup :: Text -> SB.IntIndex row -> Group row
-  LabeledGroup :: Text -> FL.Fold row (IntIndex row) -> Group row
-
-groupName :: Group row -> Text
-groupName (EnumeratedGroup n _) = n
-groupName (LabeledGroup n _) = n
-
-groupIndex :: Foldable f => Group row -> f row -> IntIndex row
-groupIndex (EnumeratedGroup _ i) _ = i
-groupIndex (LabeledGroup _ fld) rows = FL.fold fld rows
--}
-
--- size of group in modeled data. E.g., "J_age"
-groupSizeM :: Typeable d => GroupName -> BuilderM predRow modeledRow d ()
-groupSizeM gn = do
+-- basic group in modeled data. E.g., "J_age"
+-- JSON for group indices are produced automatically
+groupM :: Typeable d => GroupName -> BuilderM predRow modeledRow d ()
+groupM gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
-  SB.addFixedIntJson ("J_" <> gn) indexSize
-  SB.addStanLine $ "int<lower=2> J_" <> gn
+  SB.addFixedIntJson ("N_" <> gn) indexSize -- JSON: {J_Age : 2}
+  SB.inBlock SB.SBData $ do
+    SB.addStanLine $ "int<lower=2> N_" <> gn -- Code: int<lower=2> J_Age;
+    SB.addStanLine $ "int<lower=1, upper=N_" <> gn <> "> " <> gn; -- Code: int<lower=1, upper=J_Age> Age;
+
+allGroupsM :: Typeable d => BuilderM predRow modeledRow d ()
+allGroupsM = usedGroupNames >>= traverse_ groupM . Set.toList
 
 groupSizeJSONFold :: Text -> GroupName -> MRPBuilderM f predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
 groupSizeJSONFold prefix gn = do
   SB.IntIndex indexSize indexM <- getIndex gn
   return $ SJ.constDataF (prefix <> gn) indexSize
 
--- e.g., int N; int Age[N];
--- JSON for group indices are produced automatically
-groupIndexM :: (Typeable d, Typeable row, Foldable f)
-            => SB.DataSet d f row
-            -> (row -> Maybe Int)
-            -> GroupName
-            -> BuilderM predRow modeledRow d ()
-groupIndexM ds@(SB.DataSet dsName _) indexM gn = do
-  SB.addStanLine $ "int<lower=1> N" <> SB.underscoredIf dsName
-  SB.addStanLine $ "int<lower=1, upper=J_" <> gn <> "> " <> gn <> SB.underscoredIf dsName
-
-predGroupIndexM :: (Typeable d, Typeable predRow, Foldable f)
-                => SB.DataSet d f predRow
-                -> GroupName
-                -> BuilderM predRow modeledRow d ()
-predGroupIndexM ds gn = do
-  SB.IntIndex indexSize indexM <- getIndex gn
-  groupIndexM ds indexM gn
-
+{-
 groupDataJSONFold :: Text -> GroupName -> MRPBuilderM f predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
 groupDataJSONFold suffix gn = do
   SB.IntIndex indexSize indexM <- getIndex gn
@@ -354,17 +302,18 @@ groupsDataJSONFold = groupsJSONFold groupDataJSONFold
 
 groupsSizeFold :: Traversable f => f GroupName -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
 groupsSizeFold = groupsJSONFold groupSizeJSONFold "J_"
+-}
 
 type GroupName = Text
 
 data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
 
-data Binomial_MRP_Model predRow modeledRow =
+data Binomial_MRP_Model d predRow modeledRow =
   Binomial_MRP_Model
   {
     bmm_Name :: Text -- we'll need this for (unique) file names
-  , bmm_FixedEffects :: Maybe (FixedEffects predRow) -- in case there are row-level fixed effects
-  , bmm_FEGroups :: Map GroupName (FixedEffects predRow)
+--  , bmm_FixedEffects :: Maybe (FixedEffects predRow) -- in case there are row-level fixed effects
+  , bmm_FixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
   , bmm_MRGroups :: Set.Set GroupName
   , bmm_PrjPred :: modeledRow -> predRow
   , bmm_Total :: modeledRow -> Int
@@ -376,17 +325,25 @@ buildEnv groups model modelDat = StanBuilderEnv groupIndexMap model
   where
     groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) groups
 -}
-usedGroupNames :: MRPBuilderM f predRow modeledRow psRow (Set.Set GroupName)
+feGroupNames :: BuilderM predRow modeledRow d (Set.Set GroupName)
+feGroupNames = do
+  feMap <- bmm_FixedEffects <$> getModel
+  let feGroupMap = DHash.delete SB.ModeledRowTag feMap
+      getName (rtt DSum.:=> _) = SB.dsName rtt
+  return $ Set.fromList $ fmap getName $ DHash.toList feGroupMap
+
+usedGroupNames :: BuilderM predRow modeledRow d (Set.Set GroupName)
 usedGroupNames = do
   model <- getModel
-  return $ foldl' (\s gn -> Set.insert gn s) (bmm_MRGroups model) $ Map.keys $ bmm_FEGroups model
+  feGNames <- feGroupNames
+  return $ foldl' (\s gn -> Set.insert gn s) (bmm_MRGroups model) feGNames
 
 checkEnv :: MRPBuilderM f predRow modeledRow psRow ()
 checkEnv = do
   model <- getModel
   allGroupNames <- Map.keys <$> getIndexes
-  let allFEGroupNames = fmap fst $ Map.toList $ bmm_FEGroups model
-      allMRGroupNames = Set.toAscList $ bmm_MRGroups model
+  allFEGroupNames <- Set.toList <$> feGroupNames
+  let allMRGroupNames = Set.toAscList $ bmm_MRGroups model
       hasAllFEGroups = List.isSubsequenceOf allFEGroupNames  allGroupNames
       hasAllMRGroups = List.isSubsequenceOf allMRGroupNames  allGroupNames
   when (not hasAllFEGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". FEGroups=" <> show allFEGroupNames
@@ -394,7 +351,7 @@ checkEnv = do
   return ()
 
 type PostStratificationWeight psRow = psRow -> Double
-
+{-}
 -- The returned fold produces the "J_<GroupName>" data
 mrGroupJSONFold :: MRData g modeledRow predRow
                 -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF modeledRow A.Series)
@@ -402,7 +359,18 @@ mrGroupJSONFold modelDat = do
   groupNames <- Set.toList <$> usedGroupNames
   fGS <- groupsSizeFold groupNames
   return $ FL.premapM (return . projectRow modelDat) fGS
+-}
+fixedEffectsM :: SB.RowTypeTag d row -> FixedEffects row -> BuilderM predRow modeledRow d ()
+fixedEffectsM rtt (FixedEffects n vecF) = do
+  let suffix = SB.underscoredIf $ SB.dsSuffix rtt
+  SB.addFixedIntJson ("K" <> suffix) n -- JSON for K
+  SB.add2dMatrixJson  rtt "X" suffix n vecF -- JSON for matrix
+  SB.fixedEffectsQR suffix ("X" <> suffix) ("N" <> suffix) ("K" <> suffix) -- code for data, parameters and transformed parameters
 
+allFixedEffects :: BuilderM predRow modeledRow d ()
+allFixedEffects = do
+  _ <- (getModel >>= DHash.traverseWithKey fixedEffectsM . bmm_FixedEffects)
+  return ()
 
 -- This fold produces:
 -- the length of the projectable data

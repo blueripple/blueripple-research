@@ -195,6 +195,11 @@ dsName :: RowTypeTag d r -> Text
 dsName ModeledRowTag = "modeled"
 dsName (RowTypeTag n) = n
 
+dsSuffix :: RowTypeTag d r -> Text
+dsSuffix ModeledRowTag = ""
+dsSuffix (RowTypeTag n) = n
+
+
 -- we need the empty constructors here to bring in the Typeable constraints in the GADT
 instance GADT.GEq (RowTypeTag f) where
   geq a@(ModeledRowTag) b@(ModeledRowTag) =
@@ -217,16 +222,25 @@ type RowBuilder d r0 = DSum.DSum (RowTypeTag d) (RowInfo d r0)
 type RowBuilderDHM d r0 = DHash.DHashMap (RowTypeTag d) (RowInfo d r0)
 
 initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
-initialRowBuilders toModeled = DHash.singleton ModeledRowTag (RowInfo (ToFoldable toModeled) mempty (const Nothing))
+initialRowBuilders toModeled = DHash.fromList [ModeledRowTag
+                                                DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const Nothing))
+                                              ,(RowTypeTag @_ @() "Null")
+                                                DSum.:=> (RowInfo (ToFoldable (const $ Identity ())) mempty (const $ Just (const Nothing, const Nothing)))
+                                              ]
+
+--data DataSet d f r = DataSet (RowTypeTag d r) (d -> f r)
+
+
+nullDataSetTag :: Typeable d => RowTypeTag d ()
+nullDataSetTag = RowTypeTag "Null"
 
 addFoldToDBuilder :: forall d r0 r.(Typeable d, Typeable r)
-                  => Text
+                  => RowTypeTag d r
                   -> Stan.StanJSONF r Aeson.Series
                   -> RowBuilderDHM d r0
                   -> Maybe (RowBuilderDHM d r0)
-addFoldToDBuilder t fld rbm =
-  let rtt = RowTypeTag @d @r t
-  in case DHash.lookup rtt rbm of
+addFoldToDBuilder rtt fld rbm =
+  case DHash.lookup rtt rbm of
     Nothing -> Nothing --DHash.insert rtt (RowInfo (JSONSeriesFold fld) (const Nothing)) rbm
     Just (RowInfo tf (JSONSeriesFold fld') gi)
       -> Just $ DHash.insert rtt (RowInfo tf (JSONSeriesFold $ fld' <> fld) gi) rbm
@@ -345,6 +359,17 @@ askUserEnv = asks userEnv
 askGroupEnv :: StanBuilderM env d r0 (GroupEnv r0)
 askGroupEnv = asks groupEnv
 
+addDataSetBuilder :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
+addDataSetBuilder name toFoldable toKey = do
+  let rtt = RowTypeTag name
+  (BuilderState un rbs c) <- get
+  case DHash.lookup rtt rbs of
+    Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
+    Nothing -> do
+      let rowInfo = initialRowInfo toFoldable name toKey
+          newBS = DHash.insert rtt rowInfo rbs
+      put (BuilderState un newBS c)
+
 runStanBuilder' :: (Typeable d, Typeable r0, Foldable f)
                => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
 runStanBuilder' userEnv ge toModeled sb = res where
@@ -362,70 +387,66 @@ runStanBuilder d toModeled userEnv sgb sb =
 stanBuildError :: Text -> StanBuilderM env d r0 a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
-data DataSet d f row = DataSet Text (d -> f row)
 
-nullDataSet :: DataSet d Identity ()
-nullDataSet = DataSet "Null" (const $ Identity ())
-
-addJson :: (Typeable d, Typeable row, Foldable f)
-        => DataSet d f row
+addJson :: (Typeable d, Typeable r)
+        => RowTypeTag d r
         -> Text
-        -> Stan.StanJSONF row Aeson.Series
+        -> Stan.StanJSONF r Aeson.Series
         -> StanBuilderM env d r0 ()
-addJson (DataSet dName toDataSet) name fld = do
+addJson rtt name fld = do
   (BuilderState un rbs code) <- get
   when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
-  newBS <- case addFoldToDBuilder dName fld rbs of
-    Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dName <> ")"
+  newBS <- case addFoldToDBuilder rtt fld rbs of
+    Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
   put $ BuilderState (Set.insert name un)  newBS code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
-addJsonUnchecked :: (Typeable d, Typeable row, Foldable f)
-                 => DataSet d f row
+addJsonUnchecked :: (Typeable d, Typeable r)
+                 => RowTypeTag d r
                  -> Text
-                 -> Stan.StanJSONF row Aeson.Series
+                 -> Stan.StanJSONF r Aeson.Series
                  -> StanBuilderM env d r0 ()
-addJsonUnchecked (DataSet dName _) name fld = do
+addJsonUnchecked rtt name fld = do
   (BuilderState un rbs code) <- get
   if Set.member name un
     then return ()
     else (do
-             newBS <-  case addFoldToDBuilder dName fld rbs of
-               Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dName <> ")"
+             newBS <-  case addFoldToDBuilder rtt fld rbs of
+               Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
                Just x -> return x
              put $ BuilderState (Set.insert name un) newBS code
          )
 
 addFixedIntJson :: Typeable d => Text -> Int -> StanBuilderM env d r0 ()
-addFixedIntJson name n = addJson nullDataSet name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
+addFixedIntJson name n = addJson nullDataSetTag name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d, Foldable f, Typeable a) => DataSet d f a -> Text -> StanBuilderM env d r0 ()
-addLengthJson dataSet name = addJsonUnchecked dataSet name (Stan.namedF name Foldl.length)
+addLengthJson :: (Typeable d, Typeable r) => RowTypeTag d r -> Text -> StanBuilderM env d r0 ()
+addLengthJson rtt name = addJsonUnchecked rtt name (Stan.namedF name Foldl.length)
 
-addColumnJson :: (Typeable d, Typeable a, Aeson.ToJSON x, Foldable f)
-              => DataSet d f a -> Text -> Text -> (a -> x) -> StanBuilderM env d r0 ()
-addColumnJson dataSet name suffix toX = do
-  addLengthJson dataSet ("N" <> underscoredIf suffix)
+addColumnJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
+              => RowTypeTag d r -> Text -> Text -> (r -> x) -> StanBuilderM env d r0 ()
+addColumnJson rtt name suffix toX = do
+  addLengthJson rtt ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
-  addJson dataSet fullName (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
+  addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
 
-addColumnMJson :: (Typeable d, Typeable a, Aeson.ToJSON x, Foldable f)
-              => DataSet d f a -> Text -> Text -> (a -> Maybe x) -> StanBuilderM env d r0 ()
-addColumnMJson dataSet name suffix toMX = do
-  addLengthJson dataSet ("N" <> underscoredIf suffix)
+addColumnMJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
+              => RowTypeTag d r -> Text -> Text -> (r -> Maybe x) -> StanBuilderM env d r0 ()
+addColumnMJson rtt name suffix toMX = do
+  addLengthJson rtt ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
-  addJson dataSet fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
+  addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
 
 
-add2dMatrixJson :: (Typeable d, Typeable a, Foldable f)
-                => DataSet d f a -> Text -> Text -> Int -> (a -> Vector.Vector Double) -> StanBuilderM env d r0 ()
-add2dMatrixJson dataSet name suffix cols vecF = do
+add2dMatrixJson :: (Typeable d, Typeable r)
+                => RowTypeTag d r -> Text -> Text -> Int -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
+add2dMatrixJson rtt name suffix cols vecF = do
   addFixedIntJson ("K" <> suffix) cols
-  addColumnJson dataSet name suffix vecF
+  addColumnJson rtt name suffix vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d r -> BuilderState d r
 modifyCode' f bs = let newCode = f $ code bs in bs { code = newCode }
