@@ -135,19 +135,20 @@ data MRPData f predRow modeledRow psRow =
   }
 
 
-buildDataWranglerAndCode :: SB.StanGroupBuilderM predRow ()
+buildDataWranglerAndCode :: (Typeable d, Typeable predRow)
+                         => SB.StanGroupBuilderM predRow ()
                          -> Binomial_MRP_Model predRow modeledRow
                          -> SB.StanBuilderM (Binomial_MRP_Model predRow modeledRow) d predRow ()
                          -> d
                          -> SB.ToFoldable d predRow --MRData modeledRow predRow
-                         -> Either Text (SC.DataWrangler a b (), StanCode)
-buildMRPDataAndModel groupM model builderM d toFoldablePred =
+                         -> Either Text (SC.DataWrangler d () (), SB.StanCode)
+buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldablePred) =
   let builderWithWrangler = do
         _ <- builderM
         jsonRowBuilders <- SB.buildJSONF
-        return $ SC.Wrangle SC.TransientIndex $ \d -> ((), SB.buildJSONFromRows d jsonRowBuilders)
+        return $ SC.Wrangle SC.TransientIndex $ \d -> ((), flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldablePred model groupM builderWithWrangler
-  in fmap (\(BuilderState _ _ c, dw) -> (dw, c)) resE
+  in fmap (\(SB.BuilderState _ _ c, dw) -> (dw, c)) resE
 
 
 runMRPModel2 :: -- forall k psRow modeledRow predRow f r.
@@ -495,8 +496,8 @@ predRowsToIndexed :: (Num a, Show a)
                   => MRPBuilderM f predRow modeledRow psRow (FL.FoldM (Either Text) (predRow, a) (SJ.Indexed a))
 predRowsToIndexed = do
   indexes <- fmap snd <$> groupOrderedIntIndexes
-  let bounds = zip (repeat 1) $ fmap i_Size indexes
-      indexers = fmap i_Index indexes
+  let bounds = zip (repeat 1) $ fmap SB.i_Size indexes
+      indexers = fmap SB.i_Index indexes
       toIndices x = maybe (Left "Indexer error when building psRow fold") Right $ traverse ($x) indexers
       f (pr, a) = fmap (,a) $ toIndices pr
   return $ postMapM (\x -> traverse f x >>= SJ.prepareIndexed 0 bounds) $ FL.generalize FL.list
@@ -562,10 +563,8 @@ mrLLDataJSONFold llDat = do
     <> SJ.valueToPairF "Tll" (SJ.jsonArrayF $ bmm_Total model)
     <> SJ.valueToPairF "Sll" (SJ.jsonArrayF $ bmm_Success model)
 
-
-
 ntMRPData :: (forall a.f a -> g a) -> MRPData f j k l -> MRPData g j k l
-ntMRPData h (MRPData mod mPS mLL) = MRPData (h mod) (h <$> mPS) (h <$> mLL)
+ntMRPData h (MRPData mod mPS) = MRPData (h mod) (h <$> mPS)
 
 {-
 mrpDataWrangler :: forall k psRow f predRow modeledRow.
@@ -658,7 +657,7 @@ mrpDataBlock postStratify diffLL = SB.inBlock SB.SBData $ do
       case bmm_FixedEffects model of
         Just fe -> SB.addStanLine $ "matrix[Nps, K] Xps"
         Nothing -> return ()
-      groupUpperBounds <- T.intercalate "," . fmap (show . i_Size . snd) <$> groupOrderedIntIndexes
+      groupUpperBounds <- T.intercalate "," . fmap (show . SB.i_Size . snd) <$> groupOrderedIntIndexes
       SB.addStanLine $ "real<lower=0>[" <> groupUpperBounds <> "]" <> "W[Nps]" -- real[2,2,4] W[Nps];
   case diffLL of
     False -> return ()
@@ -678,7 +677,7 @@ mrpParametersBlock = SB.inBlock SB.SBParameters $ do
         let n = fst x
         SB.addStanLine ("real<lower=0> sigma_" <> n)
         SB.addStanLine ("vector<multiplier = sigma_" <> n <> ">[J_" <> n <> "] beta_" <> n)
-      groupParameter x = if (i_Size $ snd x) == 2
+      groupParameter x = if (SB.i_Size $ snd x) == 2
                          then binaryParameter x
                          else nonBinaryParameter x
   SB.addStanLine "real alpha"
@@ -693,7 +692,7 @@ modelExpr thinQR suffix = do
   let labeled x = x <> suffix
       binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
-      groupExpr x = if (i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
+      groupExpr x = if (SB.i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
       eQ s = SB.TermE $ SB.Vectored $ "Q" <> SB.underscoredIf s <> "_ast"
       eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> SB.underscoredIf s
@@ -720,7 +719,7 @@ mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ d
       nonBinaryPrior x = do
         SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
         SB.addStanLine $ "sigma_" <> fst x <> " ~ normal(0, " <> show priorSDSigmas <> ")"
-      groupPrior x = if (i_Size $ snd x) == 2
+      groupPrior x = if (SB.i_Size $ snd x) == 2
                      then binaryPrior x
                      else nonBinaryPrior x
       fePrior x = SB.addStanLine $ "thetaX" <> SB.underscoredIf x <> " ~ normal(0," <> show priorSDBeta <> ")"
