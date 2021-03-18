@@ -318,13 +318,14 @@ groupSizeJSONFold prefix gn = do
   SB.IntIndex indexSize indexM <- getIndex gn
   return $ SJ.constDataF (prefix <> gn) indexSize
 
+-- e.g., int N; int Age[N];
+-- JSON for group indices are produced automatically
 groupIndexM :: (Typeable d, Typeable row, Foldable f)
             => SB.DataSet d f row
             -> (row -> Maybe Int)
             -> GroupName
             -> BuilderM predRow modeledRow d ()
 groupIndexM ds@(SB.DataSet dsName _) indexM gn = do
-  SB.addColumnJson ds gn dsName indexM
   SB.addStanLine $ "int<lower=1> N" <> SB.underscoredIf dsName
   SB.addStanLine $ "int<lower=1, upper=J_" <> gn <> "> " <> gn <> SB.underscoredIf dsName
 
