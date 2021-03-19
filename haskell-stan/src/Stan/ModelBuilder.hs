@@ -33,8 +33,6 @@ import qualified Data.Set as Set
 import qualified Data.Some as Some
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
---import Data.Typeable (typeOf, (:~:)(..))
---import Data.Type.Equality (TestEquality(..),apply, (:~~:)(..))
 import qualified Data.Time.Clock as Time
 import qualified Data.Vector as Vector
 import qualified Data.Hashable as Hashable
@@ -42,10 +40,6 @@ import qualified Say
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
-
-
---Constraints.deriveArgDict ''RowTypeTag
-
 
 type DataBlock = T.Text
 
@@ -222,17 +216,7 @@ type RowBuilder d r0 = DSum.DSum (RowTypeTag d) (RowInfo d r0)
 type RowBuilderDHM d r0 = DHash.DHashMap (RowTypeTag d) (RowInfo d r0)
 
 initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
-initialRowBuilders toModeled = DHash.fromList [ModeledRowTag
-                                                DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const Nothing))
-                                              ,(RowTypeTag @_ @() "Null")
-                                                DSum.:=> (RowInfo (ToFoldable (const $ Identity ())) mempty (const $ Just (const Nothing, const Nothing)))
-                                              ]
-
---data DataSet d f r = DataSet (RowTypeTag d r) (d -> f r)
-
-
-nullDataSetTag :: Typeable d => RowTypeTag d ()
-nullDataSetTag = RowTypeTag "Null"
+initialRowBuilders toModeled = DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const Nothing))]
 
 addFoldToDBuilder :: forall d r0 r.(Typeable d)
                   => RowTypeTag d r
@@ -251,47 +235,14 @@ buildJSONSeries rbm d =
       foldOne ((RowTypeTag _ ) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld) _)) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
-buildJSON :: forall env d r0 .(Typeable d, Typeable r0) => d -> StanBuilderM env d r0 Aeson.Series
-buildJSON d = do
-  let fm t = maybe (Left t) Right
-  rbs <- rowBuilders <$> get
-  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) _) <- case DHash.lookup ModeledRowTag rbs of
-    Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
-    Just x -> return x
-  gim <- asks $ groupIndexByType . groupEnv
-  let modeled = toModeled d
-      buildRowJSON :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (Aeson.Series, Stan.StanJSONF r0 Aeson.Series)
-      buildRowJSON (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
-        (rowIndexF, modelRowIndexF) <- case getIndexF gim of
-          Nothing -> stanBuildError ("Failed to build indexing function for " <> dsName rtt)
-          Just x -> return x
-        let rowData = toData d
-            mAsIntMap = Foldl.foldM (Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return) rowData
-        asIntMap <- case mAsIntMap of
-          Nothing -> stanBuildError ("key in dataset (" <> dsName rtt <> ") missing from index.")
-          Just x -> return x
-        let indexFold = Stan.valueToPairF (dsName rtt) (Stan.jsonArrayMF modelRowIndexF)
-        rowS <- case Foldl.foldM jsonF asIntMap of
-          Left err -> stanBuildError err
-          Right x -> return x
-        return (rowS, indexFold)
-  (allRowSeries, indexFolds) <- unzip <$> traverse buildRowJSON (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
-  modeledSeries <- case Foldl.foldM (modeledJsonF <> mconcat indexFolds) modeled of
-    Left err -> stanBuildError err
-    Right x -> return x
-  return $ modeledSeries <> (mconcat allRowSeries)
-
 data JSONRowFold d r = JSONRowFold (ToMFoldable d r) (Stan.StanJSONF r Aeson.Series)
-
---instance Semigroup (JSONRowFold d r) where
---  (JSONRowFold tm a) <> (JSONRowFold _ b) = JSONRowFold tm (a <> b)
 
 buildJSONFromRows :: d -> DHash.DHashMap (RowTypeTag d) (JSONRowFold d) -> Either Text Aeson.Series
 buildJSONFromRows d rowFoldMap = do
-  let toSeriesOne (Some.Some (JSONRowFold (ToMFoldable f) fld)) = case f d of
-        Nothing -> Left ""
+  let toSeriesOne (rtt DSum.:=> JSONRowFold (ToMFoldable f) fld) = case f d of
+        Nothing -> Left $ "ToMFoldable produced Nothing in buildJSONFromRows for dataSet=" <> dsName rtt
         Just x -> Foldl.foldM fld x
-  fmap mconcat $ traverse toSeriesOne $ DHash.elems rowFoldMap
+  fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
 
 buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap (RowTypeTag d) (JSONRowFold d))
@@ -302,17 +253,18 @@ buildJSONF = do
     Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
     Just x -> return x
   gim <- asks $ groupIndexByType . groupEnv
---  let modeled = toModeled d
-  let buildRowJSONFolds :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (DSum.DSum (RowTypeTag d) (JSONRowFold d), Stan.StanJSONF r0 Aeson.Series)
+  let buildIndexJSONFold :: DSum.DSum GroupTypeTag (IndexMap r0) -> Stan.StanJSONF r0 Aeson.Series
+      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex _ mIntF) _)) = Stan.valueToPairF gName (Stan.jsonArrayMF mIntF)
+      buildRowJSONFolds :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (DSum.DSum (RowTypeTag d) (JSONRowFold d))
       buildRowJSONFolds (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
-        (rowIndexF, modelRowIndexF) <- case getIndexF gim of
+        (rowIndexF, _) <- case getIndexF gim of
           Nothing -> stanBuildError ("Failed to build indexing function for " <> dsName rtt)
           Just x -> return x
         let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
-            indexFold = Stan.valueToPairF (dsName rtt) (Stan.jsonArrayMF modelRowIndexF)
-        return (rtt DSum.:=> JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF, indexFold)
-  (allRowDSums, indexFolds) <- unzip <$> traverse buildRowJSONFolds (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
-  let modeledDSum = ModeledRowTag DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) (modeledJsonF <> mconcat indexFolds)
+        return (rtt DSum.:=> JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF)
+  allRowDSums <- traverse buildRowJSONFolds (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
+  let indexFolds = mconcat $ fmap buildIndexJSONFold $ DHash.toList gim
+      modeledDSum = ModeledRowTag DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) (modeledJsonF <> indexFolds)
   return $ DHash.fromList $ modeledDSum : allRowDSums --modeledSeries <> (mconcat allRowSeries)
 
 
@@ -419,8 +371,8 @@ addJsonUnchecked rtt name fld = do
              put $ BuilderState (Set.insert name un) newBS code
          )
 
-addFixedIntJson :: Typeable d => Text -> Int -> StanBuilderM env d r0 ()
-addFixedIntJson name n = addJson nullDataSetTag name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
+addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Int -> StanBuilderM env d r0 ()
+addFixedIntJson name n = addJson (ModeledRowTag @_ @r0) name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
@@ -442,10 +394,10 @@ addColumnMJson rtt name suffix toMX = do
   addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
 
 
-add2dMatrixJson :: (Typeable d)
+add2dMatrixJson :: (Typeable d, Typeable r0)
                 => RowTypeTag d r -> Text -> Text -> Int -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
 add2dMatrixJson rtt name suffix cols vecF = do
-  addFixedIntJson ("K" <> suffix) cols
+  addFixedIntJson ("K" <> underscoredIf suffix) cols
   addColumnJson rtt name suffix vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d r -> BuilderState d r

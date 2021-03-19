@@ -82,9 +82,6 @@ buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
 
 runMRPModel2 :: (K.KnitEffects r
                , BR.CacheEffects r
-               , Foldable f
-               , Functor f
-               , Ord k
                , Flat.Flat c
                , Flat.Flat b
                )
@@ -193,15 +190,15 @@ getIndex gn = do
 
 -- basic group in modeled data. E.g., "J_age"
 -- JSON for group indices are produced automatically
-groupM :: Typeable d => GroupName -> BuilderM modeledRow d ()
+groupM :: (Typeable d, Typeable r) => GroupName -> BuilderM r d ()
 groupM gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   SB.addFixedIntJson ("N_" <> gn) indexSize -- JSON: {J_Age : 2}
   SB.inBlock SB.SBData $ do
     SB.addStanLine $ "int<lower=2> N_" <> gn -- Code: int<lower=2> J_Age;
-    SB.addStanLine $ "int<lower=1, upper=N_" <> gn <> "> " <> gn; -- Code: int<lower=1, upper=J_Age> Age;
+    SB.addStanLine $ "int<lower=1, upper=N_" <> gn <> "> " <> gn <> "[N]" -- Code: int<lower=1, upper=N_Age> Age[N];
 
-allGroupsM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
+allGroupsM :: (Typeable d, Typeable r) => BuilderM r d ()
 allGroupsM = usedGroupNames >>= traverse_ groupM . Set.toList
 
 {-
@@ -245,6 +242,18 @@ data Binomial_MRP_Model d modeledRow =
   , bmm_Total :: modeledRow -> Int
   , bmm_Success :: modeledRow -> Int
   }
+
+emptyFixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
+emptyFixedEffects = DHash.empty
+
+addFixedEffects :: forall r d. SB.RowTypeTag d r
+                -> FixedEffects r
+                -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
+                -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
+addFixedEffects rtt fe dhm = DHash.insert rtt fe dhm
+
+
+
 {-
 buildEnv :: Foldable f => [Group predRow] -> Binomial_MRP_Model predRow modeledRow -> MRData f modeledRow predRow  -> MRPBuilderEnv predRow modeledRow
 buildEnv groups model modelDat = StanBuilderEnv groupIndexMap model
@@ -286,18 +295,19 @@ mrGroupJSONFold modelDat = do
   fGS <- groupsSizeFold groupNames
   return $ FL.premapM (return . projectRow modelDat) fGS
 -}
-fixedEffectsM :: forall d r modeledRow.(Typeable d)
-              => SB.RowTypeTag d r -> FixedEffects r -> BuilderM modeledRow d ()
+fixedEffectsM :: forall d r r0.(Typeable d, Typeable r0)
+              => SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
 fixedEffectsM rtt (FixedEffects n vecF) = do
-  let suffix = SB.underscoredIf $ SB.dsSuffix rtt
-  SB.addFixedIntJson ("K" <> suffix) n -- JSON for K
+  let suffix = SB.dsSuffix rtt
+      uSuffix = SB.underscoredIf suffix
+--  SB.addFixedIntJson ("K" <> suffix) n -- JSON for K -- added automatically when the matrix is added
   SB.add2dMatrixJson  rtt "X" suffix n vecF -- JSON for matrix
-  SB.fixedEffectsQR suffix ("X" <> suffix) ("N" <> suffix) ("K" <> suffix) -- code for data, parameters and transformed parameters
+  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for data, parameters and transformed parameters
 
-allFixedEffectsM :: forall modeledRow d. Typeable d => BuilderM modeledRow d ()
+allFixedEffectsM :: forall r d. (Typeable d, Typeable r) => BuilderM r d ()
 allFixedEffectsM = do
   model <- getModel
-  let f :: Typeable d => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM modeledRow d ()
+  let f :: (Typeable d, Typeable r) => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM r d ()
       f (rtt DHash.:=> fe) = fixedEffectsM rtt fe
   traverse_ f $ DHash.toList $ bmm_FixedEffects model
 
@@ -536,12 +546,12 @@ labeledDataBlockForRows suffix = do
 dataBlockM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
 dataBlockM = do
   model <- getModel
-  SB.inBlock SB.SBData $ SB.addLine $ "int<lower=0> N"
+  SB.inBlock SB.SBData $ SB.addStanLine $ "int<lower=0> N"
   allGroupsM
   allFixedEffectsM
   SB.inBlock SB.SBData $ do
-    SB.addLine "int<lower=1> T[N]"
-    SB.addLine "int<lower=0> S[N]"
+    SB.addStanLine "int<lower=1> T[N]"
+    SB.addStanLine "int<lower=0> S[N]"
     SB.addColumnJson SB.ModeledRowTag "T" "" (bmm_Total model)
     SB.addColumnJson SB.ModeledRowTag "S" "" (bmm_Success model)
 
@@ -590,7 +600,7 @@ mrParametersBlock = SB.inBlock SB.SBParameters $ do
       nonBinaryParameter x = do
         let n = fst x
         SB.addStanLine ("real<lower=0> sigma_" <> n)
-        SB.addStanLine ("vector<multiplier = sigma_" <> n <> ">[J_" <> n <> "] beta_" <> n)
+        SB.addStanLine ("vector<multiplier = sigma_" <> n <> ">[N_" <> n <> "] beta_" <> n)
       groupParameter x = if (SB.i_Size $ snd x) == 2
                          then binaryParameter x
                          else nonBinaryParameter x
@@ -608,10 +618,14 @@ modelExpr thinQR suffix = do
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (SB.i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
-      eQ s = SB.TermE $ SB.Vectored $ "Q" <> SB.underscoredIf s <> "_ast"
+      eQ s = if T.null s
+             then SB.TermE $ SB.Vectored $ "Q_ast"
+             else SB.TermE $ SB.Vectored $ "Q" <> SB.underscoredIf s <> "_ast[" <> s <> "]"
       eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> SB.underscoredIf s
       eQTheta s = SB.BinOpE "*" (eQ s) (eTheta s)
-      eX s = SB.TermE $ SB.Vectored $ "X" <> SB.underscoredIf s
+      eX s = if T.null s
+             then SB.TermE $ SB.Vectored $ "X"
+             else SB.TermE $ SB.Vectored $ "X" <> SB.underscoredIf s <> "[" <> s <> "]"
       eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> SB.underscoredIf s
       eXBeta s = SB.BinOpE "*" (eX s) (eBeta s)
       feExpr s = if thinQR then eQTheta s else eXBeta s

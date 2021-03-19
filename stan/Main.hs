@@ -70,6 +70,7 @@ import Optics.Operators
 import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 import qualified Stan.ModelConfig as SC
+import qualified Stan.ModelBuilder as SB
 import qualified Stan.RScriptBuilder as SR
 import qualified Text.Blaze.Html5              as BH
 
@@ -120,51 +121,55 @@ main = do
 type PctTurnout = "PctTurnout" F.:-> Double
 type DShare = "DShare" F.:-> Double
 
+districtKey :: F.Record BRE.CCESDataR -> Text
+districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
+
+testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESDataR) ()
+testGroupBuilder = do
+  SB.addGroup "CD" $ SB.makeIndexByCounting districtKey
+  SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
+  SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+
+testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
+testDataAndCodeBuilder = do
+  SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey -- ??
+  MRP.dataBlockM
+  MRP.mrParametersBlock
+  MRP.mrpModelBlock 1 1 2
+  MRP.mrpGeneratedQuantitiesBlock False
+
+testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
+testModel = MRP.Binomial_MRP_Model
+            "test"
+            (MRP.addFixedEffects @(F.Record BRE.CCESDataR)
+              (SB.RowTypeTag "CD")
+              (MRP.FixedEffects 1 (\r -> Vector.fromList $ [F.rgetField @DT.PopPerSqMile r]))
+              $ MRP.emptyFixedEffects)
+            (S.fromList ["Race"])
+            (F.rgetField @BRE.TVotes)
+            (F.rgetField @BRE.DVotes)
+
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
       toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
-  ccesData <- toCCESData <$> K.ignoreCacheTime houseData_C
-  let shouldBeEmpty = F.filterFrame (\r -> F.rgetField @BRE.DVotes r > F.rgetField @BRE.TVotes r) ccesData
-  when (FL.fold FL.length shouldBeEmpty > 0) $ do
-    K.logLE K.Info "More D votes than votes! "
-    BR.logFrame shouldBeEmpty
-    K.knitError ""
-  let mrpData_C = fmap (\hd -> MRP.MRPData (toCCESData hd) Nothing Nothing) houseData_C
-      stateEnumF =  MRP.contramapIntIndexFold (F.rgetField @BR.StateAbbreviation) $ MRP.intIndexFold 1
-      district r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
-      districtEnumF = MRP.contramapIntIndexFold district $ MRP.intIndexFold 1
-      groups =
-        [
-          MRP.EnumeratedGroup "Race" (MRP.IntIndex 5 $ Just . (+1) . fromEnum . F.rgetField @DT.Race5C)
-        , MRP.LabeledGroup "State" stateEnumF
-        , MRP.LabeledGroup "CD" districtEnumF
-        ]
-      feGroups = M.fromList [("CD", MRP.FixedEffects 1 (\r -> Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r]))]
-      mrGroups = S.fromList ["Race"]
-      fixedEffs = MRP.FixedEffects 1 (\r -> Vector.fromList [{-realToFrac $ F.rgetField @BRE.Incumbency r,-} F.rgetField @DT.PopPerSqMile r])
-      model = MRP.Binomial_MRP_Model
-              "testMRP"
-              Nothing --(Just fixedEffs)
-              feGroups
-              mrGroups
-              (F.rcast @BRE.CCESDataR)
-              (F.rgetField @BRE.TVotes)
-              (F.rgetField @BRE.DVotes)
-  mrpData <- K.ignoreCacheTime mrpData_C
-  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ MRP.modeled mrpData) <> " people surveyed in mrpData.modeled"
-  MRP.runMRPModel @()
+  let ccesData_C =  fmap toCCESData houseData_C
+  ccesData <- K.ignoreCacheTime ccesData_C
+  K.logLE K.Info "Building json data wrangler and model code..."
+  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
+  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ ccesData) <> " people surveyed in mrpData.modeled"
+  MRP.runMRPModel2
     True
     (Just "stan/mrp/cces")
     "test"
-    groups
-    model
-    Nothing
-    False
-    "testData"
-    mrpData_C
+    "test"
+    dw
+    stanCode
+    "S"
+    SC.DoNothing
+    ccesData_C
     (Just 1000)
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
