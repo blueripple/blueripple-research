@@ -124,6 +124,9 @@ type DShare = "DShare" F.:-> Double
 districtKey :: F.Record BRE.CCESDataR -> Text
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 
+districtPredictors r = Vector.fromList $ [F.rgetField @DT.PopPerSqMile r
+                                         , realToFrac $F.rgetField @BRE.Incumbency r]
+
 testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESDataR) ()
 testGroupBuilder = do
   SB.addGroup "CD" $ SB.makeIndexByCounting districtKey
@@ -135,7 +138,7 @@ testDataAndCodeBuilder = do
   SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey -- ??
   MRP.dataBlockM
   MRP.mrParametersBlock
-  MRP.mrpModelBlock 1 1 2
+  MRP.mrpModelBlock 1 1 2 0.0001
   MRP.mrpGeneratedQuantitiesBlock False
 
 testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
@@ -143,7 +146,7 @@ testModel = MRP.Binomial_MRP_Model
             "test"
             (MRP.addFixedEffects @(F.Record BRE.CCESDataR)
               (SB.RowTypeTag "CD")
-              (MRP.FixedEffects 1 (\r -> Vector.fromList $ [F.rgetField @DT.PopPerSqMile r]))
+              (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
             (S.fromList ["Race"])
             (F.rgetField @BRE.TVotes)

@@ -610,11 +610,11 @@ mrParametersBlock = SB.inBlock SB.SBParameters $ do
 
 -- alpha + X * beta + beta_age[age] + ...
 modelExpr :: Bool -> Text -> BuilderM modeledRow d SB.StanExpr
-modelExpr thinQR suffix = do
+modelExpr thinQR _ = do
   model <- getModel
   mrIndexMap <- mrIndexes
-  let labeled x = x <> suffix
-      binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
+--  let labeled x = x <> suffix
+  let binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (SB.i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
       eAlpha = SB.TermE $ SB.Scalar "alpha"
@@ -638,15 +638,17 @@ modelExpr thinQR suffix = do
   let neTerms = eAlpha :| (feGroupsExpr <> lMRGroupsExpr)
   return $ SB.multiOp "+" neTerms
 
-mrpModelBlock :: Double -> Double -> Double -> BuilderM modeledRow d ()
-mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas = SB.inBlock SB.SBModel $ do
+mrpModelBlock :: Double -> Double -> Double -> Double -> BuilderM modeledRow d ()
+mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas sumSigma = SB.inBlock SB.SBModel $ do
   model <- getModel
   mrGroupIndexes <- mrIndexes
   indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
-  let binaryPrior x = SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
+  let binaryPrior x = do
+        SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
       nonBinaryPrior x = do
         SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
         SB.addStanLine $ "sigma_" <> fst x <> " ~ normal(0, " <> show priorSDSigmas <> ")"
+        SB.addStanLine $ "sum(beta_" <> fst x <> ") ~ normal(0, " <> show sumSigma <> ")"
       groupPrior x = if (SB.i_Size $ snd x) == 2
                      then binaryPrior x
                      else nonBinaryPrior x
@@ -696,7 +698,14 @@ mrpPSStanCode doPS = SB.inBlock SB.SBGeneratedQuantities $ do
 mrpGeneratedQuantitiesBlock :: Bool
                             -> BuilderM modeledRow d ()
 mrpGeneratedQuantitiesBlock doPS = do
---  mrpPSStanCode doPS
+  SB.inBlock SB.SBGeneratedQuantities $ do
+--    mrGroupIndexes <- mrIndexes
+    indexMap <- getIndexes
+    let im = Map.mapWithKey const indexMap
+    model_terms <- SB.printExprM "yPred (Generated Quantities)" im SB.Vectorized $ modelExpr False ""
+    SB.addStanLine $ "vector<lower=0, upper=1>[N] yPred = inv_logit(" <> model_terms <> ")"
+    SB.addStanLine $ "real<lower=0> SPred[N]" --" = yPred * to_vector(T)"
+    SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine "SPred[n] = yPred[n] * T[n]"
   mrpLogLikStanCode
 
 
