@@ -234,7 +234,7 @@ initialRowBuilders toModeled = DHash.fromList [ModeledRowTag
 nullDataSetTag :: Typeable d => RowTypeTag d ()
 nullDataSetTag = RowTypeTag "Null"
 
-addFoldToDBuilder :: forall d r0 r.(Typeable d, Typeable r)
+addFoldToDBuilder :: forall d r0 r.(Typeable d)
                   => RowTypeTag d r
                   -> Stan.StanJSONF r Aeson.Series
                   -> RowBuilderDHM d r0
@@ -388,7 +388,7 @@ stanBuildError :: Text -> StanBuilderM env d r0 a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
 
-addJson :: (Typeable d, Typeable r)
+addJson :: (Typeable d)
         => RowTypeTag d r
         -> Text
         -> Stan.StanJSONF r Aeson.Series
@@ -403,7 +403,7 @@ addJson rtt name fld = do
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
-addJsonUnchecked :: (Typeable d, Typeable r)
+addJsonUnchecked :: (Typeable d)
                  => RowTypeTag d r
                  -> Text
                  -> Stan.StanJSONF r Aeson.Series
@@ -424,10 +424,10 @@ addFixedIntJson name n = addJson nullDataSetTag name (Stan.constDataF name n) --
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d, Typeable r) => RowTypeTag d r -> Text -> StanBuilderM env d r0 ()
+addLengthJson :: (Typeable d) => RowTypeTag d r -> Text -> StanBuilderM env d r0 ()
 addLengthJson rtt name = addJsonUnchecked rtt name (Stan.namedF name Foldl.length)
 
-addColumnJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
+addColumnJson :: (Typeable d, Aeson.ToJSON x)
               => RowTypeTag d r -> Text -> Text -> (r -> x) -> StanBuilderM env d r0 ()
 addColumnJson rtt name suffix toX = do
   addLengthJson rtt ("N" <> underscoredIf suffix)
@@ -442,7 +442,7 @@ addColumnMJson rtt name suffix toMX = do
   addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
 
 
-add2dMatrixJson :: (Typeable d, Typeable r)
+add2dMatrixJson :: (Typeable d)
                 => RowTypeTag d r -> Text -> Text -> Int -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
 add2dMatrixJson rtt name suffix cols vecF = do
   addFixedIntJson ("K" <> suffix) cols
