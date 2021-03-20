@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -8,7 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
-{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
+--{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module BlueRipple.Utilities.KnitUtils where
 
@@ -16,14 +17,18 @@ import qualified Control.Arrow as Arrow
 import qualified Control.Exception as EX
 import qualified Control.Foldl as FL
 import qualified Control.Monad.Except as X
+import qualified Control.Monad.Primitive as Prim
 import qualified Data.ByteString as BS
+import qualified Data.IntSet as IntSet
 import qualified Data.Map as M
+import qualified Data.Sequence as Seq
 import qualified Data.Serialize as S
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
 import qualified Data.Time.Format as Time
+import qualified Data.Vector as Vector
 import qualified Data.Vinyl as V
 import qualified Flat
 import qualified Flat.Encoder as Flat
@@ -49,6 +54,7 @@ import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
 import qualified System.Directory as System
 import qualified System.IO.Error as SE
+import qualified System.Random.MWC as MWC
 import qualified Text.Blaze.Colonnade as BC
 import qualified Text.Blaze.Html.Renderer.Text as B
 import qualified Text.Blaze.Html5 as BH
@@ -154,7 +160,7 @@ retrieveOrMakeFrame ::
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs)) -- inner action does deserialization. But we may not need to, so we defer
 retrieveOrMakeFrame key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrame (key=" <> key <> ")") $
-    K.retrieveOrMakeTransformed fromFrame toFrame key cachedDeps action
+    K.retrieveOrMakeTransformed @SerializerC @CacheData fromFrame toFrame key cachedDeps action
 
 retrieveOrMakeFrameAnd ::
   ( K.KnitEffects r,
@@ -172,7 +178,7 @@ retrieveOrMakeFrameAnd key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeFrameAnd (key=" <> key <> ")") $ do
     let toFirst = first fromFrame
         fromFirst = first toFrame
-    K.retrieveOrMakeTransformed toFirst fromFirst key cachedDeps action
+    K.retrieveOrMakeTransformed  @SerializerC @CacheData toFirst fromFirst key cachedDeps action
 
 retrieveOrMake2Frames ::
   ( K.KnitEffects r,
@@ -192,7 +198,7 @@ retrieveOrMake2Frames key cachedDeps action =
   let from (f1, f2) = (toFrame f1, toFrame f2)
       to (s1, s2) = (fromFrame s1, fromFrame s2)
    in K.wrapPrefix ("BlueRipple.retrieveOrMake2Frames (key=" <> key <> ")") $
-        K.retrieveOrMakeTransformed to from key cachedDeps action
+        K.retrieveOrMakeTransformed  @SerializerC @CacheData to from key cachedDeps action
 
 retrieveOrMake3Frames ::
   ( K.KnitEffects r,
@@ -215,7 +221,7 @@ retrieveOrMake3Frames key cachedDeps action =
   let from (f1, f2, f3) = (toFrame f1, toFrame f2, toFrame f3)
       to (s1, s2, s3) = (fromFrame s1, fromFrame s2, fromFrame s3)
    in K.wrapPrefix ("BlueRipple.retrieveOrMake3Frames (key=" <> key <> ")") $
-        K.retrieveOrMakeTransformed to from key cachedDeps action
+        K.retrieveOrMakeTransformed  @SerializerC @CacheData to from key cachedDeps action
 
 retrieveOrMakeRecList ::
   ( K.KnitEffects r,
@@ -230,21 +236,15 @@ retrieveOrMakeRecList ::
   K.Sem r (K.ActionWithCacheTime r [F.Record rs])
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")") $
-    K.retrieveOrMakeTransformed (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
+    K.retrieveOrMakeTransformed  @SerializerC @CacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
 clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
-clearIfPresentD = K.clearIfPresent @T.Text @_
+clearIfPresentD = K.clearIfPresent @T.Text @CacheData
 
 type SerializerC = Flat.Flat
 type RecSerializerC rs = FS.RecFlat rs
 
-{-
-type SerializerC = S.Serialize --Flat.Flat
-type RecSerializerC rs = FS.RecSerialize rs --FS.RecFlat rs
--}
-
 type CacheData = BS.ByteString
---type CacheEffects r = K.CacheEffects SerializerC KS.DefaultCacheData T.Text r
 type CacheEffects r = K.CacheEffects SerializerC CacheData T.Text r
 
 fromFrame = FS.SFrame
@@ -258,40 +258,22 @@ flatSerializeDict =
   id
   id
   (fromIntegral . BS.length)
-
-{-
-flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
-flatSerializeDict =
-  KS.SerializeDict
-  Flat.flat
-  (first (KS.SerializationError . show) . Flat.unflat)
-  Streamly.ByteString.toArray
-  Streamly.ByteString.fromArray
-  (fromIntegral . Streamly.Array.length)
--}
---decodeExceptionToSerializtionError :: Flat.Decode
-
-{-
-data FlatBldr = FlatBldr !Flat.NumBits !Flat.Encoding
-
-instance Semigroup FlatBldr where
-  (FlatBldr n1 e1) <> (FlatBldr n2 e2) = FlatBldr (n1 + n2) (e1 <> e2)
-
-instance Monoid FlatBldr where
-  mempty = FlatBldr 0 mempty
+{-# INLINEABLE flatSerializeDict #-}
 
 
-flatSerializeDict :: KS.SerializeDict Flat.Flat KS.DefaultCacheData
-flatSerializeDict =
-  let bOrd bs = if BS.null bs then KS.Done else KS.Bytes bs
-      flatPut a = let pa = Flat.postAligned a in FlatBldr (Flat.getSize pa) (Flat.encode pa)
-      flatGet bs = first (KS.SerializationError . show) $ (second bOrd <$> FS.flatPartialDecoder (Flat.postAlignedDecoder Flat.decode) bs)
-      filler = Flat.FillerEnd
-  in KS.SerializeDict
-     flatPut
-     flatGet
---     (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
-     (\(FlatBldr nb e)  -> Streamly.ByteString.toArray $ Flat.strictEncoder nb e)
-     Streamly.ByteString.fromArray
-     (fromIntegral . Streamly.Array.length)
--}
+sampleFrame :: (FI.RecVec rs, Prim.PrimMonad m) => Word32 -> Int -> F.FrameRec rs -> m (F.FrameRec rs)
+sampleFrame seed n rows = do
+  gen <- MWC.initialize (Vector.singleton seed)
+  F.toFrame <$> sample (FL.fold FL.list rows) n gen
+
+sample :: Prim.PrimMonad m => [a] -> Int -> MWC.Gen (Prim.PrimState m) -> m [a]
+sample ys size = go 0 (l - 1) (Seq.fromList ys) where
+    l = length ys
+    go !n !i xs g | n >= size = return $! (toList . Seq.drop (l - size)) xs
+                  | otherwise = do
+                      j <- MWC.uniformR (0, i) g
+                      let toI  = xs `Seq.index` j
+                          toJ  = xs `Seq.index` i
+                          next = (Seq.update i toI . Seq.update j toJ) xs
+                      go (n + 1) (i - 1) next g
+{-# INLINEABLE sample #-}

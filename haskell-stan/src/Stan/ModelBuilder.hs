@@ -267,14 +267,30 @@ buildJSONF = do
       modeledDSum = ModeledRowTag DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) (modeledJsonF <> indexFolds)
   return $ DHash.fromList $ modeledDSum : allRowDSums --modeledSeries <> (mconcat allRowSeries)
 
+type StanName = Text
+data StanDim = NamedDim StanName | GivenDim Int deriving (Show, Eq, Ord)
 
-data BuilderState d r0 = BuilderState { usedNames :: !(Set Text)
+dimToText :: StanDim -> Text
+dimToText (NamedDim t) = t
+dimToText (GivenDim n) = show n
+
+
+data StanType = StanInt
+              | StanReal
+              | StanArray [StanDim] StanType
+              | StanVector StanDim
+              | StanMatrix (StanDim, StanDim) deriving (Show, Eq, Ord)
+
+
+--data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord)
+
+data BuilderState d r0 = BuilderState { declaredVars :: !(Map StanName StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
                                       , code :: !StanCode
                                       }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState Set.empty (initialRowBuilders toModeled) emptyStanCode
+initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) emptyStanCode
 
 newtype StanGroupBuilderM r0 a
   = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
@@ -339,29 +355,80 @@ runStanBuilder d toModeled userEnv sgb sb =
 stanBuildError :: Text -> StanBuilderM env d r0 a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
+declare :: StanName -> StanType -> StanBuilderM env d r0 ()
+declare sn st = do
+  (BuilderState declared rbs c) <- get
+  case Map.lookup sn declared of
+    Nothing -> put $ BuilderState (Map.insert sn st declared) rbs c
+    Just dt -> if dt == st
+               then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
+               else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
+
+stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
+stanDeclare sn st sc = do
+  declare sn st
+  let typeToCode :: StanName -> StanType -> Text -> Text
+      typeToCode sn st sc = case st of
+        StanInt -> "int" <> sc <> " " <> sn
+        StanReal -> "real" <> sc <> " " <> sn
+        StanArray dims st' -> typeToCode sn st' sc <> "[" <> T.intercalate "," (dimToText <$> dims) <> "]"
+        StanVector dim -> "vector" <> sc <> "[" <> dimToText dim <> "] " <> sn
+        StanMatrix (dimR, dimC) -> "matrix" <> sc <> "[" <> dimToText dimR <> "," <> dimToText dimC <> "] " <> sn
+  let dimsToCheck st = case st of
+        StanVector d -> [d]
+        StanMatrix (d1, d2) -> [d1, d2]
+        StanArray dims st' -> dimsToCheck st' ++ dims
+        _ -> []
+  let checkDim d = case d of
+        NamedDim t -> checkName t
+        GivenDim _ -> return ()
+  traverse_ checkDim $ dimsToCheck st
+  addStanLine $ typeToCode sn st sc
+
+checkName :: StanName -> StanBuilderM env d r0 ()
+checkName sn = do
+  declared <- declaredVars <$> get
+  case Map.lookup sn declared of
+    Nothing -> stanBuildError $ "name check failed for " <> show sn <> ". Missing declaration?"
+    _ -> return ()
+
+isDeclared :: StanName -> StanBuilderM env d r0 Bool
+isDeclared sn  = do
+  declared <- declaredVars <$> get
+  case Map.lookup sn declared of
+    Nothing -> return False
+    Just _  -> return True
 
 addJson :: (Typeable d)
         => RowTypeTag d r
+        -> StanName
+        -> StanType
         -> Text
         -> Stan.StanJSONF r Aeson.Series
         -> StanBuilderM env d r0 ()
-addJson rtt name fld = do
-  (BuilderState un rbs code) <- get
-  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
+addJson rtt name st sc fld = do
+  inBlock SBData $ stanDeclare name st sc
+  (BuilderState dn rbs code) <- get
+--  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
   newBS <- case addFoldToDBuilder rtt fld rbs of
     Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
-  put $ BuilderState (Set.insert name un)  newBS code
+  put $ BuilderState dn  newBS code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
 addJsonUnchecked :: (Typeable d)
                  => RowTypeTag d r
+                 -> StanName
+                 -> StanType
                  -> Text
                  -> Stan.StanJSONF r Aeson.Series
                  -> StanBuilderM env d r0 ()
-addJsonUnchecked rtt name fld = do
-  (BuilderState un rbs code) <- get
+addJsonUnchecked rtt name st sc fld = do
+  alreadyDeclared <- isDeclared name
+  when (not alreadyDeclared) $ addJson rtt name st sc fld
+{-
+    (BuilderState dn rbs code) <- get
   if Set.member name un
     then return ()
     else (do
@@ -370,35 +437,66 @@ addJsonUnchecked rtt name fld = do
                Just x -> return x
              put $ BuilderState (Set.insert name un) newBS code
          )
+-}
 
-addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Int -> StanBuilderM env d r0 ()
-addFixedIntJson name n = addJson (ModeledRowTag @_ @r0) name (Stan.constDataF name n) -- const $ Right $ name Aeson..= n)
+addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 ()
+addFixedIntJson name mLower n = addJson (ModeledRowTag @_ @r0) name StanInt sc (Stan.constDataF name n) where
+  sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
 addLengthJson :: (Typeable d) => RowTypeTag d r -> Text -> StanBuilderM env d r0 ()
-addLengthJson rtt name = addJsonUnchecked rtt name (Stan.namedF name Foldl.length)
+addLengthJson rtt name = addJsonUnchecked rtt name StanInt "<lower=1>" (Stan.namedF name Foldl.length)
+
+nameSuffixMsg :: StanName -> Text -> Text
+nameSuffixMsg n s = "name=\"" <> show n <> "\" suffix=\"" <> s <> "\""
 
 addColumnJson :: (Typeable d, Aeson.ToJSON x)
-              => RowTypeTag d r -> Text -> Text -> (r -> x) -> StanBuilderM env d r0 ()
-addColumnJson rtt name suffix toX = do
+              => RowTypeTag d r
+              -> Text
+              -> Text
+              -> StanType
+              -> Text
+              -> (r -> x) -> StanBuilderM env d r0 ()
+addColumnJson rtt name suffix st sc toX = do
+  case st of
+    StanInt -> stanBuildError $ "StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
+    StanReal -> stanBuildError $ "StanReal (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
+    _ -> return ()
   addLengthJson rtt ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
-  addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
+  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
 
 addColumnMJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
-              => RowTypeTag d r -> Text -> Text -> (r -> Maybe x) -> StanBuilderM env d r0 ()
-addColumnMJson rtt name suffix toMX = do
+              => RowTypeTag d r
+               -> Text
+               -> Text
+               -> StanType
+               -> Text
+               -> (r -> Maybe x)
+               -> StanBuilderM env d r0 ()
+addColumnMJson rtt name suffix st sc toMX = do
+  case st of
+    StanInt -> stanBuildError $ "StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
+    StanReal -> stanBuildError $ "StanReal (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
+    _ -> return ()
   addLengthJson rtt ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
-  addJson rtt fullName (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
+  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
 
 
 add2dMatrixJson :: (Typeable d, Typeable r0)
-                => RowTypeTag d r -> Text -> Text -> Int -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
-add2dMatrixJson rtt name suffix cols vecF = do
-  addFixedIntJson ("K" <> underscoredIf suffix) cols
-  addColumnJson rtt name suffix vecF
+                => RowTypeTag d r
+                -> Text
+                -> Text
+                -> Text
+                -> StanDim
+                -> Int
+                -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
+add2dMatrixJson rtt name suffix sc rowDim cols vecF = do
+  let colName = "K" <> underscoredIf suffix
+  addFixedIntJson colName Nothing cols
+  addColumnJson rtt name suffix (StanMatrix (rowDim, NamedDim colName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d r -> BuilderState d r
 modifyCode' f bs = let newCode = f $ code bs in bs { code = newCode }
@@ -470,21 +568,27 @@ underscoredIf t = if T.null t then "" else "_" <> t
 fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env d r ()
 fixedEffectsQR thinSuffix matrix rows cols = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
-  inBlock SBData $ do
-    addStanLine $ "int<lower=1> " <> cols
-    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix
-  inBlock SBParameters $ addStanLine $ "vector[" <> cols <> "] theta" <> matrix
+--  inBlock SBData $ do
+--    addStanLine $ "int<lower=1> " <> cols
+--    addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> matrix
+  inBlock SBParameters $ stanDeclare ("theta" <> matrix) (StanVector $ NamedDim cols) "" --addStanLine $ "vector[" <> cols <> "] theta" <> matrix
   inBlock SBTransformedData $ do
     let q = "Q" <> thinSuffix <> "_ast"
         r = "R" <> thinSuffix <> "_ast"
+    stanDeclare q (StanMatrix (NamedDim rows, NamedDim cols)) ""
+    stanDeclare r (StanMatrix (NamedDim cols, NamedDim cols)) ""
+    stanDeclare ri (StanMatrix (NamedDim cols, NamedDim cols)) ""
+{-
     addStanLine $ "matrix[" <> rows <> ", " <> cols <> "] " <> q
     addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> r
     addStanLine $ "matrix[" <> cols <> ", " <> cols <> "] " <> ri
+-}
     addStanLine $ q <> " = qr_thin_Q(" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
     addStanLine $ r <> " = qr_thin_R(" <> matrix <> ") / sqrt(" <> rows <> " - 1)"
     addStanLine $ ri <> " = inverse(" <> r <> ")"
   inBlock SBTransformedParameters $ do
-    addStanLine $ "vector[" <> cols <> "] beta" <> matrix
+    stanDeclare ("beta" <> matrix) (StanVector $ NamedDim cols) ""
+--    addStanLine $ "vector[" <> cols <> "] beta" <> matrix
     addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
 
 
@@ -538,6 +642,12 @@ printExprM context im vc me = do
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (BinOpE o) (head es) (tail es)
+
+--data StanPrior = NormalPrior Double Double | CauchyPrior Double Double | NoPrior
+--addPrior :: StanName -> StanPrior -> StanBuilderM env d r ()
+
+
+
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =

@@ -148,7 +148,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["Race"])
+            (S.fromList ["Sex"])
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 
@@ -158,7 +158,7 @@ testStanMRP = do
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
       toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
-  let ccesData_C =  fmap toCCESData houseData_C
+      ccesData_C = K.wctBind (K.liftKnit @IO . BR.sampleFrame 1 500) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
   ccesData <- K.ignoreCacheTime ccesData_C
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
