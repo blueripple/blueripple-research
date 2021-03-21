@@ -73,8 +73,8 @@ buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          -> Either Text (SC.DataWrangler d () (), SB.StanCode)
 buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
-        _ <- builderM
         jsonRowBuilders <- SB.buildJSONF
+        _ <- builderM
         return $ SC.Wrangle SC.TransientIndex $ \d -> ((), flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable model groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ c, dw) -> (dw, c)) resE
@@ -194,38 +194,9 @@ groupM :: (Typeable d, Typeable r) => GroupName -> BuilderM r d ()
 groupM gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   SB.addFixedIntJson ("N_" <> gn) (Just 2) indexSize -- JSON: {N_Age : 2}
-  SB.inBlock SB.SBData $ do
---    SB.addStanLine $ "int<lower=2> N_" <> gn -- Code: int<lower=2> J_Age;
-    SB.addStanLine $ "int<lower=1, upper=N_" <> gn <> "> " <> gn <> "[N]" -- Code: int<lower=1, upper=N_Age> Age[N];
 
 allGroupsM :: (Typeable d, Typeable r) => BuilderM r d ()
 allGroupsM = usedGroupNames >>= traverse_ groupM . Set.toList
-
-{-
-groupSizeJSONFold :: Text -> GroupName -> MRPBuilderM f modeledRow psRow (SJ.StanJSONF modeledRow A.Series)
-groupSizeJSONFold prefix gn = do
-  SB.IntIndex indexSize indexM <- getIndex gn
-  return $ SJ.constDataF (prefix <> gn) indexSize
-
-
-groupDataJSONFold :: Text -> GroupName -> MRPBuilderM f predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
-groupDataJSONFold suffix gn = do
-  SB.IntIndex indexSize indexM <- getIndex gn
-  return $ SJ.valueToPairF (gn <> SB.underscoredIf suffix) (SJ.jsonArrayMF indexM)
-
-groupsJSONFold :: Traversable f
-               => (Text -> GroupName -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series))
-               -> Text
-               -> f Text
-               -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
-groupsJSONFold groupFold t =  fmap (foldMap id) . traverse (groupFold t)
-
-groupsDataJSONFold :: Traversable f => Text -> f GroupName -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
-groupsDataJSONFold = groupsJSONFold groupDataJSONFold
-
-groupsSizeFold :: Traversable f => f GroupName -> MRPBuilderM g predRow modeledRow psRow (SJ.StanJSONF predRow A.Series)
-groupsSizeFold = groupsJSONFold groupSizeJSONFold "J_"
--}
 
 type GroupName = Text
 
@@ -235,10 +206,8 @@ data Binomial_MRP_Model d modeledRow =
   Binomial_MRP_Model
   {
     bmm_Name :: Text -- we'll need this for (unique) file names
---  , bmm_FixedEffects :: Maybe (FixedEffects predRow) -- in case there are row-level fixed effects
   , bmm_FixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
   , bmm_MRGroups :: Set.Set GroupName
---  , bmm_PrjPred :: modeledRow -> predRow
   , bmm_Total :: modeledRow -> Int
   , bmm_Success :: modeledRow -> Int
   }
@@ -252,14 +221,6 @@ addFixedEffects :: forall r d. SB.RowTypeTag d r
                 -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
 addFixedEffects rtt fe dhm = DHash.insert rtt fe dhm
 
-
-
-{-
-buildEnv :: Foldable f => [Group predRow] -> Binomial_MRP_Model predRow modeledRow -> MRData f modeledRow predRow  -> MRPBuilderEnv predRow modeledRow
-buildEnv groups model modelDat = StanBuilderEnv groupIndexMap model
-  where
-    groupIndexMap = Map.fromList $ fmap (\g -> (groupName g, groupIndex g (projectedRows modelDat))) groups
--}
 feGroupNames :: forall modeledRow d. (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Set.Set GroupName)
 feGroupNames = do
   feMap <- bmm_FixedEffects <$> getModel
@@ -292,9 +253,8 @@ fixedEffectsM :: forall d r r0.(Typeable d, Typeable r0)
 fixedEffectsM rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
---  SB.addFixedIntJson ("K" <> suffix) n -- JSON for K -- added automatically when the matrix is added
-  SB.add2dMatrixJson rtt "X" suffix "" (SB.NamedDim $ "N" <> uSuffix) n vecF -- JSON for matrix
-  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for data, parameters and transformed parameters
+  SB.add2dMatrixJson rtt "X" suffix "" (SB.NamedDim $ "N" <> uSuffix) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
 
 allFixedEffectsM :: forall r d. (Typeable d, Typeable r) => BuilderM r d ()
 allFixedEffectsM = do
@@ -370,8 +330,8 @@ mrIndexes = do
 dataBlockM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
 dataBlockM = do
   model <- getModel
-  SB.inBlock SB.SBData $ SB.addStanLine $ "int<lower=0> N"
-  allGroupsM
+--  SB.inBlock SB.SBData $ SB.addStanLine $ "int<lower=0> N"
+--  allGroupsM
   allFixedEffectsM
   SB.inBlock SB.SBData $ do
 --    SB.addStanLine "int<lower=1> T[N]"
@@ -385,7 +345,7 @@ mrParametersBlock = SB.inBlock SB.SBParameters $ do
   let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
       nonBinaryParameter x = do
         let n = fst x
-        SB.stanDeclare ("sigma" <> n) SB.StanReal "<lower=0>"
+        SB.stanDeclare ("sigma_" <> n) SB.StanReal "<lower=0>"
         SB.stanDeclare ("beta_" <> n) (SB.StanVector $ SB.NamedDim ("N_" <> n)) ("<multiplier=sigma_" <> n <> ">")
 --        SB.addStanLine ("real<lower=0> sigma_" <> n)
 --        SB.addStanLine ("vector<multiplier = sigma_" <> n <> ">[N_" <> n <> "] beta_" <> n)
