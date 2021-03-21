@@ -124,7 +124,7 @@ type DShare = "DShare" F.:-> Double
 districtKey :: F.Record BRE.CCESDataR -> Text
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 
-districtPredictors r = Vector.fromList $ [F.rgetField @DT.PopPerSqMile r
+districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
 testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESDataR) ()
@@ -133,6 +133,7 @@ testGroupBuilder = do
   SB.addGroup "State" $ SB.makeIndexByCounting $ F.rgetField @BR.StateAbbreviation
   SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
 testDataAndCodeBuilder = do
@@ -149,7 +150,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["State"])
+            (S.fromList ["Education", "Sex", "Race"])
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 

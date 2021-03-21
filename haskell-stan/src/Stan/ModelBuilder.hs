@@ -244,16 +244,19 @@ buildJSONFromRows d rowFoldMap = do
         Just x -> Foldl.foldM fld x
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
+addGroupIndexes :: (Typeable d, Typeable r0) => StanBuilderM env d r0 ()
+addGroupIndexes = do
+  let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
+      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _)) = do
+        addFixedIntJson' ("N_" <> gName) (Just 2) gSize
+        addColumnMJson ModeledRowTag gName "" (StanArray [NamedDim "N"] StanInt) "<lower=1>" mIntF
+  gim <- asks $ groupIndexByType . groupEnv
+  traverse_ buildIndexJSONFold $ DHash.toList gim
 
 buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap (RowTypeTag d) (JSONRowFold d))
 buildJSONF = do
   let fm t = maybe (Left t) Right
   gim <- asks $ groupIndexByType . groupEnv
-  let buildIndexJSONFold :: DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 () --Stan.StanJSONF r0 Aeson.Series)
-      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _)) = do
-        addFixedIntJson' ("N_" <> gName) (Just 2) gSize
-        addColumnMJson ModeledRowTag gName "" (StanArray [NamedDim "N"] StanInt) "<lower=1>" mIntF
-  traverse_ buildIndexJSONFold $ DHash.toList gim
   rbs <- rowBuilders <$> get
   (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) im) <- case DHash.lookup ModeledRowTag rbs of
     Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
@@ -266,7 +269,6 @@ buildJSONF = do
         let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
         return (rtt DSum.:=> JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF)
   allRowDSums <- traverse buildRowJSONFolds (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
---  let indexFolds = mconcat $ fmap buildIndexJSONFold $ DHash.toList gim
   let modeledDSum = ModeledRowTag @d @r0 DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) modeledJsonF -- <> indexFolds)
   return $ DHash.fromList $ modeledDSum : allRowDSums --modeledSeries <> (mconcat allRowSeries)
 
@@ -573,11 +575,16 @@ fixedEffectsQR thinSuffix matrix rows cols = do
   inBlock SBTransformedData $ do
     let q = "Q" <> thinSuffix <> "_ast"
         r = "R" <> thinSuffix <> "_ast"
+    stanDeclare ("mean_" <> matrix) (StanVector (NamedDim cols)) ""
+    stanDeclare ("centered_" <> matrix) (StanMatrix (NamedDim rows, NamedDim cols)) ""
+    stanForLoop "k" Nothing cols $ const $ do
+      addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
+      addStanLine $ "centered_" <> matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
     stanDeclare q (StanMatrix (NamedDim rows, NamedDim cols)) ""
     stanDeclare r (StanMatrix (NamedDim cols, NamedDim cols)) ""
     stanDeclare ri (StanMatrix (NamedDim cols, NamedDim cols)) ""
-    addStanLine $ q <> " = qr_thin_Q(" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
-    addStanLine $ r <> " = qr_thin_R(" <> matrix <> ") / sqrt(" <> rows <> " - 1)"
+    addStanLine $ q <> " = qr_thin_Q(centered_" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
+    addStanLine $ r <> " = qr_thin_R(centered_" <> matrix <> ") / sqrt(" <> rows <> " - 1)"
     addStanLine $ ri <> " = inverse(" <> r <> ")"
   inBlock SBTransformedParameters $ do
     stanDeclare ("beta" <> matrix) (StanVector $ NamedDim cols) ""

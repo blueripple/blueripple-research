@@ -73,8 +73,9 @@ buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          -> Either Text (SC.DataWrangler d () (), SB.StanCode)
 buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
-        jsonRowBuilders <- SB.buildJSONF
+        SB.addGroupIndexes
         _ <- builderM
+        jsonRowBuilders <- SB.buildJSONF
         return $ SC.Wrangle SC.TransientIndex $ \d -> ((), flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable model groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ c, dw) -> (dw, c)) resE
@@ -334,8 +335,6 @@ dataBlockM = do
 --  allGroupsM
   allFixedEffectsM
   SB.inBlock SB.SBData $ do
---    SB.addStanLine "int<lower=1> T[N]"
---    SB.addStanLine "int<lower=0> S[N]"
     SB.addColumnJson SB.ModeledRowTag "T" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=1>" (bmm_Total model)
     SB.addColumnJson SB.ModeledRowTag "S" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=0>" (bmm_Success model)
 
@@ -347,13 +346,10 @@ mrParametersBlock = SB.inBlock SB.SBParameters $ do
         let n = fst x
         SB.stanDeclare ("sigma_" <> n) SB.StanReal "<lower=0>"
         SB.stanDeclare ("beta_" <> n) (SB.StanVector $ SB.NamedDim ("N_" <> n)) ("<multiplier=sigma_" <> n <> ">")
---        SB.addStanLine ("real<lower=0> sigma_" <> n)
---        SB.addStanLine ("vector<multiplier = sigma_" <> n <> ">[N_" <> n <> "] beta_" <> n)
       groupParameter x = if (SB.i_Size $ snd x) == 2
                          then binaryParameter x
                          else nonBinaryParameter x
   SB.stanDeclare "alpha" SB.StanReal ""
---  SB.addStanLine "real alpha"
   traverse_ groupParameter $ Map.toList ui
 
 
@@ -362,7 +358,6 @@ modelExpr :: Bool -> Text -> BuilderM modeledRow d SB.StanExpr
 modelExpr thinQR _ = do
   model <- getModel
   mrIndexMap <- mrIndexes
---  let labeled x = x <> suffix
   let binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
       nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
       groupExpr x = if (SB.i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
@@ -373,15 +368,12 @@ modelExpr thinQR _ = do
       eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> SB.underscoredIf s
       eQTheta s = SB.BinOpE "*" (eQ s) (eTheta s)
       eX s = if T.null s
-             then SB.TermE $ SB.Vectored $ "X"
-             else SB.TermE $ SB.Vectored $ "X" <> SB.underscoredIf s <> "[" <> s <> "]"
+             then SB.TermE $ SB.Vectored $ "centered_X"
+             else SB.TermE $ SB.Vectored $ "centered_X" <> SB.underscoredIf s <> "[" <> s <> "]"
       eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> SB.underscoredIf s
       eXBeta s = SB.BinOpE "*" (eX s) (eBeta s)
       feExpr s = if thinQR then eQTheta s else eXBeta s
       feGroupsExpr = fmap (\(DHash.Some rtt) -> feExpr $ SB.dsSuffix rtt) $ DHash.keys $ bmm_FixedEffects model
---      lFEExpr = if (isJust $ bmm_FixedEffects model)
---                then feExpr "" : feGroupsExpr
---                else feGroupsExpr
       lMRGroupsExpr = maybe [] pure
                       $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList $ mrIndexMap
   let neTerms = eAlpha :| (feGroupsExpr <> lMRGroupsExpr)
@@ -393,18 +385,18 @@ mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas sumSigma = SB.inBlock SB.SB
   mrGroupIndexes <- mrIndexes
   indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
   let binaryPrior x = do
-        SB.addStanLine $ "eps_" <> fst x <> " ~ cauchy(0, " <> show priorSDAlpha <> ")"
+        SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
       nonBinaryPrior x = do
-        SB.addStanLine $ "beta_" <> fst x <> " ~ cauchy(0, sigma_" <> fst x <> ")"
-        SB.addStanLine $ "sigma_" <> fst x <> " ~ cauchy(0, " <> show priorSDSigmas <> ")"
-        SB.addStanLine $ "sum(beta_" <> fst x <> ") ~ cauchy(0, " <> show sumSigma <> ")"
+        SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
+        SB.addStanLine $ "sigma_" <> fst x <> " ~ normal(0, " <> show priorSDSigmas <> ")"
+        SB.addStanLine $ "sum(beta_" <> fst x <> ") ~ normal(0, " <> show sumSigma <> ")"
       groupPrior x = if (SB.i_Size $ snd x) == 2
                      then binaryPrior x
                      else nonBinaryPrior x
-      fePrior x = SB.addStanLine $ "thetaX" <> SB.underscoredIf x <> " ~ cauchy(0," <> show priorSDBeta <> ")"
+      fePrior x = SB.addStanLine $ "thetaX" <> SB.underscoredIf x <> " ~ normal(0," <> show priorSDBeta <> ")"
   let im = Map.mapWithKey const indexMap
   modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True ""
-  SB.addStanLine $ "alpha ~ cauchy(0," <> show priorSDAlpha <> ")"
+  SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
 --  when (isJust $ bmm_FixedEffects model) $ fePrior ""
   traverse_ (\(DHash.Some rtt) -> fePrior  $ SB.dsSuffix rtt) $ DHash.keys $ bmm_FixedEffects model
   mrIndexes >>= traverse_ groupPrior . Map.toList
