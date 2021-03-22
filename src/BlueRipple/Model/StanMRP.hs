@@ -189,12 +189,16 @@ getIndex gn = do
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
     Just i -> return i
 
--- basic group in modeled data. E.g., "J_age"
--- JSON for group indices are produced automatically
+-- Basic group declarations and Json are produced automatically
 groupM :: (Typeable d, Typeable r) => GroupName -> BuilderM r d ()
 groupM gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
-  SB.addFixedIntJson ("N_" <> gn) (Just 2) indexSize -- JSON: {N_Age : 2}
+  when (indexSize >= 2) $ do
+    SB.inBlock SB.SBTransformedData $ do
+      SB.stanDeclare (gn <> "_weights") (SB.StanVector $ SB.NamedDim $ "N_" <> gn) "<lower=0>"
+      SB.stanForLoop "g" Nothing ("N_" <> gn) $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
+      SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine $ gn <> "_weights[" <> gn <> "[n]] += 1"
+      SB.addStanLine $ gn <> "_weights /= N"
 
 allGroupsM :: (Typeable d, Typeable r) => BuilderM r d ()
 allGroupsM = usedGroupNames >>= traverse_ groupM . Set.toList
@@ -331,8 +335,7 @@ mrIndexes = do
 dataBlockM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
 dataBlockM = do
   model <- getModel
---  SB.inBlock SB.SBData $ SB.addStanLine $ "int<lower=0> N"
---  allGroupsM
+  allGroupsM
   allFixedEffectsM
   SB.inBlock SB.SBData $ do
     SB.addColumnJson SB.ModeledRowTag "T" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=1>" (bmm_Total model)
@@ -389,7 +392,7 @@ mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas sumSigma = SB.inBlock SB.SB
       nonBinaryPrior x = do
         SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
         SB.addStanLine $ "sigma_" <> fst x <> " ~ normal(0, " <> show priorSDSigmas <> ")"
-        SB.addStanLine $ "sum(beta_" <> fst x <> ") ~ normal(0, " <> show sumSigma <> ")"
+        SB.addStanLine $ "dot_product(beta_" <> fst x <> ", " <> fst x <> "_weights) ~ normal(0, " <> show sumSigma <> ")"
       groupPrior x = if (SB.i_Size $ snd x) == 2
                      then binaryPrior x
                      else nonBinaryPrior x
@@ -397,7 +400,6 @@ mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas sumSigma = SB.inBlock SB.SB
   let im = Map.mapWithKey const indexMap
   modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True ""
   SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
---  when (isJust $ bmm_FixedEffects model) $ fePrior ""
   traverse_ (\(DHash.Some rtt) -> fePrior  $ SB.dsSuffix rtt) $ DHash.keys $ bmm_FixedEffects model
   mrIndexes >>= traverse_ groupPrior . Map.toList
   SB.addStanLine $ "S ~ binomial_logit(T, " <> modelTerms <> ")"

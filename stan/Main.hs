@@ -140,7 +140,7 @@ testDataAndCodeBuilder = do
   SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey -- ??
   MRP.dataBlockM
   MRP.mrParametersBlock
-  MRP.mrpModelBlock 1 1 2 0.0001
+  MRP.mrpModelBlock 3 3 5 0.001
   MRP.mrpGeneratedQuantitiesBlock False
 
 testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
