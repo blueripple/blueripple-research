@@ -167,6 +167,13 @@ type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
 data RowMap r k = RowMap (r -> k)
 type GroupRowMap r = DHash.DHashMap GroupTypeTag (RowMap r)
 
+emptyGroupRowMap :: GroupRowMap r
+emptyGroupRowMap = DHash.empty
+
+addRowMap :: Typeable k => Text -> (r -> k) -> GroupRowMap r -> GroupRowMap r
+addRowMap t f grm = DHash.insert (GroupTypeTag t) (RowMap f) grm
+
+
 makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r, Map Text (IntIndex r))
 makeMainIndexes makerMap rs = (dhm, gm) where
   dhmF = DHash.traverse makeIndexMapF makerMap -- so we only fold once to make all the indices
@@ -396,6 +403,7 @@ declare sn st = do
                then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
 
+-- FIX: array nesting is handled wrong
 stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
 stanDeclare sn st sc = do
   declare sn st
@@ -403,7 +411,7 @@ stanDeclare sn st sc = do
       typeToCode sn st sc = case st of
         StanInt -> "int" <> sc <> " " <> sn
         StanReal -> "real" <> sc <> " " <> sn
-        StanArray dims st' -> typeToCode sn st' sc <> "[" <> T.intercalate "," (dimToText <$> dims) <> "]"
+        StanArray dims st' -> typeToCode sn st' sc <> "[" <> T.intercalate "," (dimToText <$> dims) <> "]" --
         StanVector dim -> "vector" <> sc <> "[" <> dimToText dim <> "] " <> sn
         StanMatrix (dimR, dimC) -> "matrix" <> sc <> "[" <> dimToText dimR <> "," <> dimToText dimC <> "] " <> sn
   let dimsToCheck st = case st of

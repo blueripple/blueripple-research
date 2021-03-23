@@ -346,7 +346,7 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
   -- "int<lower=0> N_PS_xxx;" number of post-stratified results
-  SB.addJson (SB.RowTypeTag namedPS) namedPS SB.StanInt "<lower=0>"
+  SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
     $ SJ.valueToPairF ("N_" <> namedPS)
     $ fmap (A.toJSON . Set.size)
     $ FL.premapM (maybe (Left "PS length fold failed due to indexing issue in r -> Maybe Int") Right . keyF)
@@ -355,7 +355,7 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
-      weightArrayType = SB.StanArray groupDims (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
+      weightArrayType = SB.StanArray ((SB.NamedDim $ "N_" <> namedPS) : groupDims) SB.StanReal -- (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Maybe (r -> Maybe [Int]) --[r -> Maybe Int]
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
@@ -389,7 +389,7 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
         im = Map.fromList $ zip ugNames groupCounters
         inner = do
           modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
-          SB.addStanLine $ "real p<lower=0, upper=1> = inv_logit(" <> modelTerms <> ")"
+          SB.addStanLine $ "real  p = inv_logit(" <> modelTerms <> ")"
           SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
