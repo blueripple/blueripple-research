@@ -115,9 +115,11 @@ data ToFoldable d row where
 data ToMFoldable d row where
   ToMFoldable :: Foldable f => (d -> Maybe (f row)) -> ToMFoldable d row
 
-
 data GroupTypeTag k where
   GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
+
+taggedGroupName :: GroupTypeTag k -> Text
+taggedGroupName (GroupTypeTag n) = n
 
 instance GADT.GEq GroupTypeTag where
   geq gta@(GroupTypeTag n1) gtb@(GroupTypeTag n2) =
@@ -133,6 +135,7 @@ data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
 
 data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Maybe Int)) (r0 -> k)
 data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Maybe Int)
+
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
 makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (Just . g . h)) (Just . g)
@@ -160,6 +163,10 @@ indexFold start =  Foldl.Fold step init done where
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
 
+-- For post-stratification
+data RowMap r k = RowMap (r -> k)
+type GroupRowMap r = DHash.DHashMap GroupTypeTag (RowMap r)
+
 makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r, Map Text (IntIndex r))
 makeMainIndexes makerMap rs = (dhm, gm) where
   dhmF = DHash.traverse makeIndexMapF makerMap -- so we only fold once to make all the indices
@@ -169,16 +176,20 @@ makeMainIndexes makerMap rs = (dhm, gm) where
 
 data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
                               , jsonSeries :: JSONSeriesFold r
-                              , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int) }
+                              , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int) }
 
-initialRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
-initialRowInfo tf groupName keyF = RowInfo tf mempty im where
-  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int, r0 -> Maybe Int)
+indexedRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
+indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
+  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
-    Nothing -> Nothing
-    Just (IndexMap (IntIndex _ h) g) -> Just (g . keyF, h)
+             Nothing -> Nothing
+             Just (IndexMap (IntIndex _ h) g) -> Just (g . keyF) --, h)
 
---emptyRowInfo :: RowInfo r
+
+unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
+unIndexedRowInfo tf groupName  = RowInfo tf mempty (const Nothing)
+
+  --emptyRowInfo :: RowInfo r
 --emptyRowInfo = RowInfo mempty mempty
 
 -- key for dependepent map.
@@ -217,7 +228,7 @@ type RowBuilder d r0 = DSum.DSum (RowTypeTag d) (RowInfo d r0)
 type RowBuilderDHM d r0 = DHash.DHashMap (RowTypeTag d) (RowInfo d r0)
 
 initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
-initialRowBuilders toModeled = DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const Nothing))]
+initialRowBuilders toModeled = DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const $ Nothing))]
 
 addFoldToDBuilder :: forall d r0 r.(Typeable d)
                   => RowTypeTag d r
@@ -256,22 +267,16 @@ addGroupIndexes = do
 
 buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap (RowTypeTag d) (JSONRowFold d))
 buildJSONF = do
-  let fm t = maybe (Left t) Right
   gim <- asks $ groupIndexByType . groupEnv
   rbs <- rowBuilders <$> get
-  (RowInfo (ToFoldable toModeled) (JSONSeriesFold modeledJsonF) im) <- case DHash.lookup ModeledRowTag rbs of
-    Nothing -> stanBuildError "Failed to find ModeledRowTag in DataBuilderState!"
-    Just x -> return x
-  let buildRowJSONFolds :: DSum.DSum (RowTypeTag d) (RowInfo d r0) -> StanBuilderM env d r0 (DSum.DSum (RowTypeTag d) (JSONRowFold d))
-      buildRowJSONFolds (rtt DSum.:=> (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF)) = do
-        (rowIndexF, _) <- case getIndexF gim of
-          Nothing -> stanBuildError ("Failed to build indexing function for " <> dsName rtt)
-          Just x -> return x
-        let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
-        return (rtt DSum.:=> JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF)
-  allRowDSums <- traverse buildRowJSONFolds (DHash.toList $ DHash.delete (ModeledRowTag @d @r0) rbs)
-  let modeledDSum = ModeledRowTag @d @r0 DSum.:=> JSONRowFold (ToMFoldable $ Just . toModeled) modeledJsonF -- <> indexFolds)
-  return $ DHash.fromList $ modeledDSum : allRowDSums --modeledSeries <> (mconcat allRowSeries)
+  let buildRowJSONFolds :: RowInfo d r0 r -> StanBuilderM env d r0 (JSONRowFold d r)
+      buildRowJSONFolds (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF) = do
+        case getIndexF gim of
+          Just rowIndexF -> do
+            let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
+            return $ JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF
+          Nothing -> return $ JSONRowFold (ToMFoldable $ Just . toData) jsonF
+  DHash.traverse buildRowJSONFolds rbs
 
 type StanName = Text
 data StanDim = NamedDim StanName | GivenDim Int deriving (Show, Eq, Ord)
@@ -343,14 +348,25 @@ getModelExpr = do
     Nothing -> stanBuildError "getModelExpr called but no model terms are present"
     Just ne -> return $ multiOp "+" ne
 
-addDataSetBuilder :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
-addDataSetBuilder name toFoldable toKey = do
+addIndexedDataSet :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
+addIndexedDataSet name toFoldable toKey = do
   let rtt = RowTypeTag name
   (BuilderState vars rowBuilders modelExprs code) <- get
   case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
-      let rowInfo = initialRowInfo toFoldable name toKey
+      let rowInfo = indexedRowInfo toFoldable name toKey
+          newRowBuilders = DHash.insert rtt rowInfo rowBuilders
+      put (BuilderState vars newRowBuilders modelExprs code)
+
+addUnIndexedDataSet :: (Typeable r, Typeable d) => Text -> ToFoldable d r -> StanBuilderM env d r0 ()
+addUnIndexedDataSet name toFoldable = do
+  let rtt = RowTypeTag name
+  (BuilderState vars rowBuilders modelExprs code) <- get
+  case DHash.lookup rtt rowBuilders of
+    Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
+    Nothing -> do
+      let rowInfo = unIndexedRowInfo toFoldable name
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars newRowBuilders modelExprs code)
 

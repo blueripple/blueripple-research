@@ -273,7 +273,7 @@ checkEnv = do
   when (not hasAllMRGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". MRGroups=" <> show allMRGroupNames
   return ()
 
-type PostStratificationWeight psRow = psRow -> Double
+--type PostStratificationWeight psRow = psRow -> Double
 
 fixedEffects :: forall d r r0.(Typeable d, Typeable r0)
               => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
@@ -305,6 +305,100 @@ intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   SB.addModelTerm $ SB.TermE $ SB.Scalar "alpha"
+
+-- TODO: order groups differently than the order coming from the built in group sets??
+addPostStratification :: (Typeable d, Typeable r0, Typeable r)
+                      => SB.StanName
+                      -> SB.ToFoldable d r
+                      -> SB.GroupRowMap r
+                      -> (r -> Double)
+                      -> (Maybe (SB.GroupTypeTag k))
+                      -> BuilderM r0 d ()
+addPostStratification name toFoldable groupMaps weightF mPSGroup = do
+  -- check that all model groups in environment are accounted for in PS groups
+  let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
+  allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
+  usedGNames <- usedGroupNames
+  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` usedGNames) $ allGroups
+  when (DHash.size (usedGroups `DHash.intersection` groupMaps) /= DHash.size usedGroups)
+    $ SB.stanBuildError
+    $ "A group used for modeling is missing from post-stratification specification!"
+    <> "Modeling groups: " <> showNames usedGroups
+    <> "PS Groups: " <> showNames groupMaps
+  when (DHash.size (groupMaps `DHash.intersection` allGroups) /= DHash.size groupMaps)
+    $ SB.stanBuildError
+    $ "A group in the PS Groups is not present in the set of groups known to the model builder."
+    <> "PS Groups: " <> showNames groupMaps
+    <> "Model Builder groups: " <> showNames allGroups
+  -- keyF :: r -> Maybe Int
+  keyF <- case mPSGroup of
+            Nothing -> return $ const $ Just 1
+            Just gtt -> case DHash.lookup gtt allGroups of
+              Nothing -> SB.stanBuildError
+                $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                <> ") is not present in Builder groups: " <> showNames allGroups
+              Just (SB.IndexMap _ mIntF) -> case DHash.lookup gtt groupMaps of
+                Nothing -> SB.stanBuildError
+                  $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                  <> " is not in PS groups: "  <> showNames groupMaps
+                Just (SB.RowMap h) -> return $ mIntF . h
+  -- add the data set
+  let namedPS = "PS_" <> name
+  SB.addUnIndexedDataSet namedPS toFoldable
+  -- "int<lower=0> N_PS_xxx;" number of post-stratified results
+  SB.addJson (SB.RowTypeTag namedPS) namedPS SB.StanInt "<lower=0>"
+    $ SJ.valueToPairF ("N_" <> namedPS)
+    $ fmap (A.toJSON . Set.size)
+    $ FL.premapM (maybe (Left "PS length fold failed due to indexing issue in r -> Maybe Int") Right . keyF)
+    $ FL.generalize FL.set
+  let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
+      ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
+      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
+      groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
+      weightArrayType = SB.StanArray groupDims (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
+  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Maybe (r -> Maybe [Int]) --[r -> Maybe Int]
+      indexList grm gim =
+        let mCompose (gtt DSum.:=> SB.RowMap rTok) =
+              case DHash.lookup gtt gim of
+                Nothing -> Nothing
+                Just (SB.IndexMap _ kToMaybeInt) -> Just (kToMaybeInt . rTok)
+            g :: [r -> Maybe Int] -> r -> Maybe [Int]
+            g fs r = traverse ($r) fs
+        in fmap g $ traverse mCompose $ DHash.toList grm
+  indexF <- case indexList usedGroupMaps allGroups of
+    Nothing -> SB.stanBuildError "Error producing PostStratification weight indexing function."
+    Just x -> return x
+  -- "real[N_G1, N_G2, ...] PS_xxx_wgt[N_PS_xxx];"  weight matrices for each PS result
+  let innerF r = case indexF r of
+        Nothing -> Left "Error during post-stratification weight fold when applying group index function. index out of range?"
+        Just ls -> Right (ls, weightF r)
+      assignM r = case keyF r of
+        Nothing -> Left "Error during post-stratification weight fold when indexing PS rows to result groups."
+        Just l -> Right (l, r)
+      toIndexed x = SJ.prepareIndexed 0 groupBounds x
+      reduceF = postMapM (\x -> traverse innerF x >>= toIndexed) $ FL.generalize FL.list
+      fldM = MR.mapReduceFoldM
+             (MR.generalizeUnpack MR.noUnpack)
+             (MR.AssignM assignM)
+             (MR.ReduceFoldM $ const reduceF)
+  SB.addJson (SB.RowTypeTag namedPS) (namedPS <> "_wgts") weightArrayType ""
+    $ SJ.valueToPairF (namedPS <> "_wgts")
+    $ fmap A.toJSON fldM
+  SB.inBlock SB.SBGeneratedQuantities $ do
+    let groupCounters = fmap ("n_" <>) $ ugNames
+        im = Map.fromList $ zip ugNames groupCounters
+        inner = do
+          modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
+          SB.addStanLine $ "real p<lower=0, upper=1> = inv_logit(" <> modelTerms <> ")"
+          SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
+        makeLoops [] = inner
+        makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
+    SB.stanDeclare namedPS (SB.StanVector $ SB.NamedDim $ "N_" <> namedPS) ""
+    SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ makeLoops ugNames
+
+
+
+
 
 {-
 psRowsFld' :: Ord k

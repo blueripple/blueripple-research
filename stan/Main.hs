@@ -138,7 +138,7 @@ testGroupBuilder = do
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
 testDataAndCodeBuilder = do
-  SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey
+  SB.addIndexedDataSet "CD" (SB.ToFoldable id) districtKey
   MRP.intercept "alpha" 2
   MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
