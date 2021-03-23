@@ -137,11 +137,13 @@ testGroupBuilder = do
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
 testDataAndCodeBuilder = do
-  SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey -- ??
-  MRP.dataBlockM
-  MRP.mrParametersBlock
-  MRP.mrpModelBlock 3 3 5 0.001
-  MRP.mrpGeneratedQuantitiesBlock False
+  SB.addDataSetBuilder "CD" (SB.ToFoldable id) districtKey
+  MRP.intercept "alpha" 2
+  MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
+  MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
+  MRP.dataBlockM -- adds dataBlock entries for the count data
+  MRP.mrpMainModelTerm -- adds main model term
+  MRP.mrpGeneratedQuantitiesBlock False -- adds log_lik and predicted counts
 
 testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
 testModel = MRP.Binomial_MRP_Model
@@ -150,7 +152,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["Education", "Sex", "Race"])
+            (S.fromList ["Education", "Sex", "Race", "State"])
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 
@@ -160,7 +162,7 @@ testStanMRP = do
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
       toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
-      ccesData_C = K.wctBind (K.liftKnit @IO . BR.sampleFrame 1 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
+      ccesData_C = {- K.wctBind (K.liftKnit @IO . BR.sampleFrame 1 1000) $ -} fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
   ccesData <- K.ignoreCacheTime ccesData_C
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
@@ -176,6 +178,7 @@ testStanMRP = do
     SC.DoNothing
     ccesData_C
     (Just 1000)
+    (Just 0.9)
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do

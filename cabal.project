@@ -23,7 +23,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hs-cmdstan
-  tag: d1c89df5a648dd15799612f0d2947699f2ebb457
+  tag: fe4a0cd8ab7548b64eaf5000c0f28b151b75522e
 
 --source-repository-package
 --  type: git

@@ -185,6 +185,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
                 4
                 (Just 1000)
                 (Just 1000)
+                Nothing
                 (Just stancConfig)
   let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> "_" <> modelName <> ".bin"
   modelDep <- SM.modelCacheTime stanConfig
@@ -224,6 +225,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 4
                 (Just 1000)
                 (Just 1000)
+                Nothing
                 (Just stancConfig)
   SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
 

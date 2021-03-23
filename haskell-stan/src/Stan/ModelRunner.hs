@@ -22,7 +22,6 @@ import CmdStan
   )
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
-import Control.Monad (when)
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import qualified Data.ByteString.Lazy as BL
@@ -32,7 +31,6 @@ import qualified Data.Text.IO as T
 import qualified Knit.Effect.AtomicCache as K (cacheTime)
 import qualified Knit.Report as K
 import qualified Polysemy as P
-import qualified Relude.Extra as Relude
 import qualified Say
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelConfig as SC
@@ -52,9 +50,10 @@ makeDefaultModelRunnerConfig ::
   Int ->
   Maybe Int ->
   Maybe Int ->
+  Maybe Double ->
   Maybe CS.StancConfig ->
   K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM adaptDeltaM stancConfigM = do
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
   case modelM of
@@ -74,7 +73,8 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
           { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS),
             CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix chainIndex),
             CS.numSamples = numSamplesM,
-            CS.numWarmup = numWarmupM
+            CS.numWarmup = numWarmupM,
+            CS.adaptDelta = adaptDeltaM
           }
   let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) [1 .. numChains]
   stanSummaryConfig <-
@@ -90,6 +90,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       (T.pack datFileS)
       outputFilePrefix
       numChains
+      adaptDeltaM
       True
 
 modelCacheTime :: forall r. (K.KnitEffects r)
@@ -248,7 +249,8 @@ runModel config rScriptsToWrite dataWrangler makeResult toPredict cachedA = K.wr
                    ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
                    stanOutput_C -- this only is here to carry the timing to compare the output file with
                    (const $ makeSummaryFromCSVs)
-      summary <- K.ignoreCacheTime summary_C
+      summaryE <- K.ignoreCacheTime summary_C
+      summary <- K.knitEither $ first toText $ summaryE
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
         Say.say $ toText (CS.unparsed summary)

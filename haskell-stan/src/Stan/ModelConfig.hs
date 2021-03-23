@@ -26,6 +26,7 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcDatFile :: T.Text
   , mrcOutputPrefix :: T.Text
   , mrcNumChains :: Int
+  , mrcAdaptDelta :: Maybe Double
   , mrcLogSummary :: Bool
   }
 

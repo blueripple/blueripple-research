@@ -78,7 +78,7 @@ buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
         jsonRowBuilders <- SB.buildJSONF
         return $ SC.Wrangle SC.TransientIndex $ \d -> ((), flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable model groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ c, dw) -> (dw, c)) resE
+  in fmap (\(SB.BuilderState _ _ _ c, dw) -> (dw, c)) resE
 
 
 runMRPModel2 :: (K.KnitEffects r
@@ -96,8 +96,9 @@ runMRPModel2 :: (K.KnitEffects r
             -> SC.ResultAction r a b () c
             -> K.ActionWithCacheTime r a
             -> Maybe Int
+            -> Maybe Double
             -> K.Sem r ()
-runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples =
+runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta =
   K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
   K.logLE K.Info "Running..."
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
@@ -117,6 +118,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
     4
     (Just nSamples)
     (Just nSamples)
+    mAdaptDelta
     (Just stancConfig)
   let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
   when clearCache $ do
@@ -189,19 +191,39 @@ getIndex gn = do
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
     Just i -> return i
 
--- Basic group declarations and Json are produced automatically
-groupM :: (Typeable d, Typeable r) => GroupName -> BuilderM r d ()
-groupM gn = do
+-- Basic group declarations, indexes and Json are produced automatically
+mrGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d ()
+mrGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
-  when (indexSize >= 2) $ do
-    SB.inBlock SB.SBTransformedData $ do
-      SB.stanDeclare (gn <> "_weights") (SB.StanVector $ SB.NamedDim $ "N_" <> gn) "<lower=0>"
-      SB.stanForLoop "g" Nothing ("N_" <> gn) $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
-      SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine $ gn <> "_weights[" <> gn <> "[n]] += 1"
-      SB.addStanLine $ gn <> "_weights /= N"
+  when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
+  let binaryGroup = do
+        SB.addModelTerm $ SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ "{eps_" <> gn <> ", -eps_" <> gn <> "}"
+        SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
+        SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
+  let nonBinaryGroup = do
+        SB.addModelTerm $ SB.TermE . SB.Indexed gn $ "beta_" <> gn
+        SB.inBlock SB.SBTransformedData $ do
+          SB.stanDeclare (gn <> "_weights") (SB.StanVector $ SB.NamedDim $ "N_" <> gn) "<lower=0>"
+          SB.stanForLoop "g" Nothing ("N_" <> gn) $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
+          SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine $ gn <> "_weights[" <> gn <> "[n]] += 1"
+          SB.addStanLine $ gn <> "_weights /= N"
+        SB.inBlock SB.SBParameters $ do
+          SB.stanDeclare ("sigma_" <> gn) SB.StanReal "<lower=0>"
+--          SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ("<multiplier=sigma_" <> gn <> ">")
+          SB.stanDeclare ("beta_raw_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
+        SB.inBlock SB.SBTransformedParameters $ do
+          SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
+          SB.addStanLine $ "beta_" <> gn <> " = sigma_" <> gn <> " * beta_raw_" <> gn
+        SB.inBlock SB.SBModel $ do
+          SB.addStanLine $ "beta_raw_" <> gn <> " ~ normal(0, 1)" --" sigma_" <> gn <> ")"
+          SB.addStanLine $ "sigma_" <> gn <> " ~ normal(0, " <> show nonBinarySD <> ")"
+          SB.addStanLine $ "dot_product(beta_" <> gn <> ", " <> gn <> "_weights) ~ normal(0, " <> show sumGroupSD <> ")"
+  if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-allGroupsM :: (Typeable d, Typeable r) => BuilderM r d ()
-allGroupsM = usedGroupNames >>= traverse_ groupM . Set.toList
+allMRGroups :: (Typeable d, Typeable r) => Double -> Double -> Double -> BuilderM r d ()
+allMRGroups binarySD nonBinarySD sumGroupSD = do
+  mrGroupNames <- bmm_MRGroups <$> getModel
+  traverse_ (mrGroup binarySD nonBinarySD sumGroupSD) mrGroupNames
 
 type GroupName = Text
 
@@ -253,20 +275,36 @@ checkEnv = do
 
 type PostStratificationWeight psRow = psRow -> Double
 
-fixedEffectsM :: forall d r r0.(Typeable d, Typeable r0)
-              => SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
-fixedEffectsM rtt (FixedEffects n vecF) = do
+fixedEffects :: forall d r r0.(Typeable d, Typeable r0)
+              => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
+fixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
   SB.add2dMatrixJson rtt "X" suffix "" (SB.NamedDim $ "N" <> uSuffix) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
+  -- model
+  SB.inBlock SB.SBModel $ SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
+  let eQ = SB.TermE $ SB.Vectored $ if T.null suffix then "Q_ast" else  "Q" <> uSuffix <> "_ast[" <> suffix <> "]"
+      eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> uSuffix
+      eQTheta = SB.BinOpE "*" eQ eTheta
+      eX = SB.TermE $ SB.Vectored $ if T.null suffix then "centered_X" else "centered_X" <> uSuffix <> "[" <> suffix <> "]"
+      eBeta = SB.TermE $ SB.Scalar $ "betaX" <> uSuffix
+      eXBeta = SB.BinOpE "*" eX eBeta
+      feExpr = if thinQR then eQTheta else eXBeta
+  SB.addModelTerm feExpr
 
-allFixedEffectsM :: forall r d. (Typeable d, Typeable r) => BuilderM r d ()
-allFixedEffectsM = do
+allFixedEffects :: forall r d. (Typeable d, Typeable r) => Bool -> Double -> BuilderM r d ()
+allFixedEffects thinQR fePriorSD = do
   model <- getModel
   let f :: (Typeable d, Typeable r) => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM r d ()
-      f (rtt DHash.:=> fe) = fixedEffectsM rtt fe
+      f (rtt DHash.:=> fe) = (fixedEffects thinQR fePriorSD) rtt fe
   traverse_ f $ DHash.toList $ bmm_FixedEffects model
+
+intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d ()
+intercept iName alphaPriorSD = do
+  SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
+  SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+  SB.addModelTerm $ SB.TermE $ SB.Scalar "alpha"
 
 {-
 psRowsFld' :: Ord k
@@ -335,84 +373,25 @@ mrIndexes = do
 dataBlockM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
 dataBlockM = do
   model <- getModel
-  allGroupsM
-  allFixedEffectsM
   SB.inBlock SB.SBData $ do
     SB.addColumnJson SB.ModeledRowTag "T" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=1>" (bmm_Total model)
     SB.addColumnJson SB.ModeledRowTag "S" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=0>" (bmm_Success model)
 
-mrParametersBlock :: BuilderM modeledRow d ()
-mrParametersBlock = SB.inBlock SB.SBParameters $ do
-  ui <- mrIndexes
-  let binaryParameter x = SB.addStanLine $ "real eps_" <> fst x
-      nonBinaryParameter x = do
-        let n = fst x
-        SB.stanDeclare ("sigma_" <> n) SB.StanReal "<lower=0>"
-        SB.stanDeclare ("beta_" <> n) (SB.StanVector $ SB.NamedDim ("N_" <> n)) ("<multiplier=sigma_" <> n <> ">")
-      groupParameter x = if (SB.i_Size $ snd x) == 2
-                         then binaryParameter x
-                         else nonBinaryParameter x
-  SB.stanDeclare "alpha" SB.StanReal ""
-  traverse_ groupParameter $ Map.toList ui
-
-
--- alpha + X * beta + beta_age[age] + ...
-modelExpr :: Bool -> Text -> BuilderM modeledRow d SB.StanExpr
-modelExpr thinQR _ = do
-  model <- getModel
-  mrIndexMap <- mrIndexes
-  let binaryGroupExpr x = let n = fst x in SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed n $ "{eps_" <> n <> ", -eps_" <> n <> "}"
-      nonBinaryGroupExpr x = let n = fst x in SB.TermE . SB.Indexed n $ "beta_" <> n
-      groupExpr x = if (SB.i_Size $ snd x) == 2 then binaryGroupExpr x else nonBinaryGroupExpr x
-      eAlpha = SB.TermE $ SB.Scalar "alpha"
-      eQ s = if T.null s
-             then SB.TermE $ SB.Vectored $ "Q_ast"
-             else SB.TermE $ SB.Vectored $ "Q" <> SB.underscoredIf s <> "_ast[" <> s <> "]"
-      eTheta s = SB.TermE $ SB.Scalar $ "thetaX" <> SB.underscoredIf s
-      eQTheta s = SB.BinOpE "*" (eQ s) (eTheta s)
-      eX s = if T.null s
-             then SB.TermE $ SB.Vectored $ "centered_X"
-             else SB.TermE $ SB.Vectored $ "centered_X" <> SB.underscoredIf s <> "[" <> s <> "]"
-      eBeta s = SB.TermE $ SB.Scalar $ "betaX" <> SB.underscoredIf s
-      eXBeta s = SB.BinOpE "*" (eX s) (eBeta s)
-      feExpr s = if thinQR then eQTheta s else eXBeta s
-      feGroupsExpr = fmap (\(DHash.Some rtt) -> feExpr $ SB.dsSuffix rtt) $ DHash.keys $ bmm_FixedEffects model
-      lMRGroupsExpr = maybe [] pure
-                      $ viaNonEmpty (SB.multiOp "+" . fmap groupExpr) $ Map.toList $ mrIndexMap
-  let neTerms = eAlpha :| (feGroupsExpr <> lMRGroupsExpr)
-  return $ SB.multiOp "+" neTerms
-
-mrpModelBlock :: Double -> Double -> Double -> Double -> BuilderM modeledRow d ()
-mrpModelBlock priorSDAlpha priorSDBeta priorSDSigmas sumSigma = SB.inBlock SB.SBModel $ do
-  model <- getModel
-  mrGroupIndexes <- mrIndexes
-  indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
-  let binaryPrior x = do
-        SB.addStanLine $ "eps_" <> fst x <> " ~ normal(0, " <> show priorSDAlpha <> ")"
-      nonBinaryPrior x = do
-        SB.addStanLine $ "beta_" <> fst x <> " ~ normal(0, sigma_" <> fst x <> ")"
-        SB.addStanLine $ "sigma_" <> fst x <> " ~ normal(0, " <> show priorSDSigmas <> ")"
-        SB.addStanLine $ "dot_product(beta_" <> fst x <> ", " <> fst x <> "_weights) ~ normal(0, " <> show sumSigma <> ")"
-      groupPrior x = if (SB.i_Size $ snd x) == 2
-                     then binaryPrior x
-                     else nonBinaryPrior x
-      fePrior x = SB.addStanLine $ "thetaX" <> SB.underscoredIf x <> " ~ normal(0," <> show priorSDBeta <> ")"
+mrpMainModelTerm :: BuilderM modeledRow d ()
+mrpMainModelTerm = SB.inBlock SB.SBModel $ do
+  indexMap <- getIndexes
   let im = Map.mapWithKey const indexMap
-  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized $ modelExpr True ""
-  SB.addStanLine $ "alpha ~ normal(0," <> show priorSDAlpha <> ")"
-  traverse_ (\(DHash.Some rtt) -> fePrior  $ SB.dsSuffix rtt) $ DHash.keys $ bmm_FixedEffects model
-  mrIndexes >>= traverse_ groupPrior . Map.toList
+  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized SB.getModelExpr
   SB.addStanLine $ "S ~ binomial_logit(T, " <> modelTerms <> ")"
 
 mrpLogLikStanCode :: BuilderM modeledRow d ()
 mrpLogLikStanCode = SB.inBlock SB.SBGeneratedQuantities $ do
   model <- getModel
   indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
---  let suffix = if difLL then "ll" else "" -- we use model data unless a different suffix is provided
   SB.addStanLine $ "vector [N] log_lik"
   SB.stanForLoop "n" Nothing "N" $ \_ -> do
     let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
-    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ modelExpr False ""
+    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
 {-
@@ -442,10 +421,9 @@ mrpGeneratedQuantitiesBlock :: Bool
                             -> BuilderM modeledRow d ()
 mrpGeneratedQuantitiesBlock doPS = do
   SB.inBlock SB.SBGeneratedQuantities $ do
---    mrGroupIndexes <- mrIndexes
     indexMap <- getIndexes
     let im = Map.mapWithKey const indexMap
-    model_terms <- SB.printExprM "yPred (Generated Quantities)" im SB.Vectorized $ modelExpr False ""
+    model_terms <- SB.printExprM "yPred (Generated Quantities)" im SB.Vectorized SB.getModelExpr
     SB.addStanLine $ "vector<lower=0, upper=1>[N] yPred = inv_logit(" <> model_terms <> ")"
     SB.addStanLine $ "real<lower=0> SPred[N]" --" = yPred * to_vector(T)"
     SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine "SPred[n] = yPred[n] * T[n]"

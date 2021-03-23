@@ -29,6 +29,7 @@ import qualified Data.IntMap.Strict as IntMap
 import qualified Data.List as List
 import qualified Data.Map.Strict as Map
 import qualified Data.Proxy as Proxy
+import qualified Data.Sequence as Seq
 import qualified Data.Set as Set
 import qualified Data.Some as Some
 import qualified Data.Text as T
@@ -288,11 +289,12 @@ data StanType = StanInt
 
 data BuilderState d r0 = BuilderState { declaredVars :: !(Map StanName StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
+                                      , modelExprs :: !(Seq.Seq StanExpr)
                                       , code :: !StanCode
                                       }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) emptyStanCode
+initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Seq.empty emptyStanCode
 
 newtype StanGroupBuilderM r0 a
   = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
@@ -329,16 +331,28 @@ askUserEnv = asks userEnv
 askGroupEnv :: StanBuilderM env d r0 (GroupEnv r0)
 askGroupEnv = asks groupEnv
 
+addModelTerm :: StanExpr -> StanBuilderM env d r0 ()
+addModelTerm e = do
+  BuilderState vars rowBuilders modelExprs code <- get
+  put $ BuilderState vars rowBuilders (modelExprs Seq.|> e) code
+
+getModelExpr :: StanBuilderM env d r0 StanExpr
+getModelExpr = do
+  exprSeq <- modelExprs <$> get
+  case nonEmpty $ Foldl.fold Foldl.list $ exprSeq of
+    Nothing -> stanBuildError "getModelExpr called but no model terms are present"
+    Just ne -> return $ multiOp "+" ne
+
 addDataSetBuilder :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
 addDataSetBuilder name toFoldable toKey = do
   let rtt = RowTypeTag name
-  (BuilderState un rbs c) <- get
-  case DHash.lookup rtt rbs of
+  (BuilderState vars rowBuilders modelExprs code) <- get
+  case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
       let rowInfo = initialRowInfo toFoldable name toKey
-          newBS = DHash.insert rtt rowInfo rbs
-      put (BuilderState un newBS c)
+          newRowBuilders = DHash.insert rtt rowInfo rowBuilders
+      put (BuilderState vars newRowBuilders modelExprs code)
 
 runStanBuilder' :: (Typeable d, Typeable r0, Foldable f)
                => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
@@ -359,9 +373,9 @@ stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
 declare :: StanName -> StanType -> StanBuilderM env d r0 ()
 declare sn st = do
-  (BuilderState declared rbs c) <- get
-  case Map.lookup sn declared of
-    Nothing -> put $ BuilderState (Map.insert sn st declared) rbs c
+  (BuilderState vars rowBuilders modelExprs code) <- get
+  case Map.lookup sn vars of
+    Nothing -> put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code
     Just dt -> if dt == st
                then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
@@ -418,12 +432,12 @@ addJson :: (Typeable d)
         -> StanBuilderM env d r0 ()
 addJson rtt name st sc fld = do
   inBlock SBData $ stanDeclare name st sc
-  (BuilderState dn rbs code) <- get
+  (BuilderState declared rowBuilders modelExprs code) <- get
 --  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
-  newBS <- case addFoldToDBuilder rtt fld rbs of
+  newRowBuilders <- case addFoldToDBuilder rtt fld rowBuilders of
     Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
-  put $ BuilderState dn  newBS code
+  put $ BuilderState declared newRowBuilders modelExprs code
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
@@ -515,7 +529,7 @@ setBlock = modifyCode . setBlock'
 
 getBlock :: StanBuilderM env d r StanBlock
 getBlock = do
-  (BuilderState _ _ (StanCode b _)) <- get
+  (BuilderState _ _ _ (StanCode b _)) <- get
   return b
 
 addLine' :: Text -> StanCode -> StanCode
