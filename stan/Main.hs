@@ -134,6 +134,7 @@ testGroupBuilder = do
   SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
 testDataAndCodeBuilder = do
@@ -152,7 +153,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["Education", "Sex", "Race", "State"])
+            (S.fromList ["Education", "Sex", "State", "Age"])
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 
@@ -162,7 +163,7 @@ testStanMRP = do
   houseData_C <- BRE.prepCachedDataPUMS False
   let demoSource = BRE.DS_1YRACSPUMS
       toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
-      ccesData_C = {- K.wctBind (K.liftKnit @IO . BR.sampleFrame 1 1000) $ -} fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
+      ccesData_C = KC.wctBind (K.liftKnit @IO . BR.sampleFrame 2 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
   ccesData <- K.ignoreCacheTime ccesData_C
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
