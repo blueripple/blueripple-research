@@ -284,10 +284,10 @@ fixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.TermE $ SB.Vectored $ if T.null suffix then "Q_ast" else  "Q" <> uSuffix <> "_ast[" <> suffix <> "]"
+  let eQ = SB.TermE $ if T.null suffix then SB.Vectored "Q_ast" else SB.Indexed suffix ("Q" <> uSuffix <> "_ast") --[" <> suffix <> "]"
       eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> uSuffix
       eQTheta = SB.BinOpE "*" eQ eTheta
-      eX = SB.TermE $ SB.Vectored $ if T.null suffix then "centered_X" else "centered_X" <> uSuffix <> "[" <> suffix <> "]"
+      eX = SB.TermE $ if T.null suffix then SB.Vectored "centered_X" else SB.Indexed suffix ("centered_X" <> uSuffix) -- <> "[" <> suffix <> "]"
       eBeta = SB.TermE $ SB.Scalar $ "betaX" <> uSuffix
       eXBeta = SB.BinOpE "*" eX eBeta
       feExpr = if thinQR then eQTheta else eXBeta
@@ -320,16 +320,18 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   usedGNames <- usedGroupNames
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` usedGNames) $ allGroups
-  when (DHash.size (usedGroups `DHash.intersection` groupMaps) /= DHash.size usedGroups)
+  when (DHash.size (DHash.difference usedGroups groupMaps) /= 0)
     $ SB.stanBuildError
     $ "A group used for modeling is missing from post-stratification specification!"
     <> "Modeling groups: " <> showNames usedGroups
     <> "PS Groups: " <> showNames groupMaps
-  when (DHash.size (groupMaps `DHash.intersection` allGroups) /= DHash.size groupMaps)
+  when (DHash.size (DHash.difference groupMaps allGroups) /= 0)
     $ SB.stanBuildError
-    $ "A group in the PS Groups is not present in the set of groups known to the model builder."
-    <> "PS Groups: " <> showNames groupMaps
-    <> "Model Builder groups: " <> showNames allGroups
+    $ "A group(s) in the PS Groups is not present in the set of groups known to the model builder."
+    <> "Unknown=" <> showNames (DHash.difference groupMaps allGroups) <> "; "
+    <> "PS Groups=" <> showNames groupMaps <> "; "
+    <> "Model Builder groups=" <> showNames allGroups
+    <> "If this error appears entirely mysterious, try checking the types of your group key functions."
   -- keyF :: r -> Maybe Int
   keyF <- case mPSGroup of
             Nothing -> return $ const $ Just 1
@@ -393,7 +395,8 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
           SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
-    SB.stanDeclare namedPS (SB.StanVector $ SB.NamedDim $ "N_" <> namedPS) ""
+    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
+    SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ makeLoops ugNames
 
 

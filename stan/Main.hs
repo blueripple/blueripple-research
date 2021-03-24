@@ -138,6 +138,7 @@ testGroupBuilder = do
 
 psGroupRowMap :: SB.GroupRowMap (F.Record BRE.CCESDataR)
 psGroupRowMap = SB.addRowMap "CD" districtKey
+                $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                 $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
                 $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
@@ -149,7 +150,7 @@ testDataAndCodeBuilder = do
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
-  MRP.addPostStratification "A" (SB.ToFoldable id) psGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) Nothing
+  MRP.addPostStratification "A" (SB.ToFoldable id) psGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) (Just $ SB.GroupTypeTag @Text "State")
   MRP.mrpGeneratedQuantitiesBlock False -- adds log_lik and predicted counts
 
 testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
@@ -159,7 +160,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["Education", "State"])
+            (S.fromList ["Education", "Sex"])
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 
