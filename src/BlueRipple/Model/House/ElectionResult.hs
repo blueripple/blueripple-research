@@ -717,7 +717,7 @@ dataSetRows hmd CCES = FL.fold FL.length $ ccesData hmd
 houseDataWrangler :: ModeledDataSets -> DataSet -> [Text] -> HouseDataWrangler
 houseDataWrangler mds cds predictors = SC.Wrangle SC.NoIndex f
   where
-    f _ = ((), makeDataJsonE)
+    f _ = (Right (), makeDataJsonE)
     numDataSets :: Int = Set.size mds --if mw == UseBoth then 2 else 1
     makeDataJsonE hmd = do
       -- 0 based index of cds set in Set.toAscList mds

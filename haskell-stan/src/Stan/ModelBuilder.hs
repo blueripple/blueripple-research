@@ -173,7 +173,7 @@ emptyGroupRowMap = DHash.empty
 addRowMap :: Typeable k => Text -> (r -> k) -> GroupRowMap r -> GroupRowMap r
 addRowMap t f grm = DHash.insert (GroupTypeTag t) (RowMap f) grm
 
-data DataToIntMap d k = DataToIntMap (d -> IntMap k)
+data DataToIntMap d k = DataToIntMap (d -> Either Text (IntMap k))
 type GroupIntMapBuilders d = DHash.DHashMap GroupTypeTag (DataToIntMap d)
 type GroupIntMaps = DHash.DHashMap GroupTypeTag IntMap.IntMap
 
@@ -182,7 +182,7 @@ emptyIntMapBuilders = DHash.empty
 
 addIntMapBuilder :: forall d k. Typeable k
                  => Text
-                 -> (d -> IntMap.IntMap k)
+                 -> (d -> Either Text (IntMap.IntMap k))
                  -> GroupIntMapBuilders d
                  -> Either Text (GroupIntMapBuilders d)
 addIntMapBuilder labeledGroupName imF gm =
@@ -192,8 +192,8 @@ addIntMapBuilder labeledGroupName imF gm =
     Just _ -> Left $ taggedGroupName gtt <> " already exists in Index DHM"
 
 
-buildIntMaps :: GroupIntMapBuilders d -> d -> GroupIntMaps
-buildIntMaps bldrs d = DHash.map (\(DataToIntMap f) -> f d) bldrs
+buildIntMaps :: GroupIntMapBuilders d -> d -> Either Text GroupIntMaps
+buildIntMaps bldrs d = DHash.traverse (\(DataToIntMap f) -> f d) bldrs
 
 makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r, Map Text (IntIndex r))
 makeMainIndexes makerMap rs = (dhm, gm) where
@@ -399,7 +399,7 @@ addUnIndexedDataSet name toFoldable = do
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars newRowBuilders modelExprs code ims)
 
-addIndexIntMap :: Typeable k => Text -> (d -> IntMap k) -> StanBuilderM env d r0 ()
+addIndexIntMap :: Typeable k => Text -> (d -> Either Text (IntMap k)) -> StanBuilderM env d r0 ()
 addIndexIntMap iName imF = do
   (BuilderState vars rowBuilders modelExprs code ims) <- get
   case addIntMapBuilder iName imF ims of

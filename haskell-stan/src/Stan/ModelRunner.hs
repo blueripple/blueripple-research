@@ -128,7 +128,7 @@ wrangleDataWithoutPredictions :: forall st cd a b r.
   -> SC.DataWrangler a b ()
   -> SC.Cacheable st b
   -> K.ActionWithCacheTime r a
-  -> K.Sem r (K.ActionWithCacheTime r b)
+  -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
 wrangleDataWithoutPredictions config dw cb a = wrangleData @st @cd config dw cb a ()
 
 wrangleData :: forall st cd a b p r.
@@ -141,12 +141,12 @@ wrangleData :: forall st cd a b p r.
   -> SC.Cacheable st b
   -> K.ActionWithCacheTime r a
   -> p
-  -> K.Sem r (K.ActionWithCacheTime r b)
+  -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
 wrangleData config (SC.Wrangle indexType indexAndEncoder) cb cachedA _ = do
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
-      b_C = fmap fst indexAndEncoder_C
+      eb_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex @st @cd config indexType cb b_C
+  index_C <- manageIndex @st @cd config indexType cb eb_C
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
   updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
@@ -157,16 +157,17 @@ wrangleData config (SC.Wrangle indexType indexAndEncoder) cb cachedA _ = do
 
 wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeToPredict) cb cachedA p = do
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
-      b_C = fmap fst indexAndEncoder_C
+      eb_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex @st @cd config indexType cb b_C
+  index_C <- manageIndex @st @cd config indexType cb eb_C
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
       jsonDeps = (,) <$> newJSON_C <*> index_C
-  updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, b) -> do
+  updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, eb) -> do
     K.logLE K.Diagnostic $ "existing json (" <> show (jsonFP config) <> ") appears older than cached data."
+--    b <- K.knitEither eb
     dataEncoding <- K.knitEither e
-    toPredictEncoding <- K.knitEither $ encodeToPredict b p
+    toPredictEncoding <- K.knitEither $ encodeToPredict eb p
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
 
@@ -178,9 +179,9 @@ manageIndex :: forall st cd b r.
   => SC.ModelRunnerConfig
   -> SC.DataIndexerType b
   -> SC.Cacheable st b
-  -> K.ActionWithCacheTime r b
-  -> K.Sem r (K.ActionWithCacheTime r b)
-manageIndex config dataIndexer cb bFromA_C = do
+  -> K.ActionWithCacheTime r (Either T.Text b)
+  -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
+manageIndex config dataIndexer cb ebFromA_C = do
   case dataIndexer of
     SC.CacheableIndex indexCacheKey ->
       case cb of
@@ -189,9 +190,9 @@ manageIndex config dataIndexer cb bFromA_C = do
           when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
             K.logLE K.Diagnostic $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
             K.clearIfPresent @Text @cd (indexCacheKey config)
-          K.retrieveOrMake @st @cd (indexCacheKey config) bFromA_C return
+          K.retrieveOrMake @st @cd (indexCacheKey config) ebFromA_C return
         _ -> K.knitError "Cacheable index type provided but b is Uncacheable."
-    _ -> return bFromA_C
+    _ -> return ebFromA_C
 
 jsonFP :: SC.ModelRunnerConfig -> FilePath
 jsonFP config = SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.unpack $ SC.mrcDatFile config
@@ -201,7 +202,6 @@ jsonFP config = SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.un
 runModel :: forall st cd a b p c r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
---  , st b
   )
   => SC.ModelRunnerConfig
   -> RScripts

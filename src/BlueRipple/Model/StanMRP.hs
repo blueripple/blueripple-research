@@ -85,7 +85,6 @@ buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
 runMRPModel2 :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
-               , Flat.Flat b
                )
             => Bool
             -> Maybe Text
@@ -308,15 +307,22 @@ intercept iName alphaPriorSD = do
   SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   SB.addModelTerm $ SB.TermE $ SB.Scalar "alpha"
 
+buildIntMapBuilderF :: (k -> Maybe Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
+buildIntMapBuilderF mIntF keyF = FL.FoldM step (return IM.empty) return where
+  step im r = case mIntF $ keyF r of
+    Nothing -> Left "Indexing error when trying to build IntMap index"
+    Just n -> Right $ IM.insert n (keyF r) im
+
+
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable d, Typeable r0, Typeable r)
+addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       => SB.StanName
                       -> SB.ToFoldable d r
                       -> SB.GroupRowMap r
                       -> (r -> Double)
                       -> (Maybe (SB.GroupTypeTag k))
                       -> BuilderM r0 d ()
-addPostStratification name toFoldable groupMaps weightF mPSGroup = do
+addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
@@ -335,17 +341,21 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
     <> "Model Builder groups=" <> showNames allGroups
     <> "If this error appears entirely mysterious, try checking the types of your group key functions."
   -- keyF :: r -> Maybe Int
-  keyF <- case mPSGroup of
-            Nothing -> return $ const $ Just 1
-            Just gtt -> case DHash.lookup gtt allGroups of
-              Nothing -> SB.stanBuildError
-                $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                <> ") is not present in Builder groups: " <> showNames allGroups
-              Just (SB.IndexMap _ mIntF) -> case DHash.lookup gtt groupMaps of
-                Nothing -> SB.stanBuildError
-                  $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                  <> " is not in PS groups: "  <> showNames groupMaps
-                Just (SB.RowMap h) -> return $ mIntF . h
+  intKeyF <- case mPSGroup of
+               Nothing -> return $ const $ Just 1
+               Just gtt -> case DHash.lookup gtt allGroups of
+                 Nothing -> SB.stanBuildError
+                            $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                            <> ") is not present in Builder groups: " <> showNames allGroups
+                 Just (SB.IndexMap _ mIntF) -> case DHash.lookup gtt groupMaps of
+                   Nothing -> SB.stanBuildError
+                              $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                              <> " is not in PS groups: "  <> showNames groupMaps
+                   Just (SB.RowMap h) -> do
+                     SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF mIntF h) . rowsF)
+                     return $ mIntF . h
+  -- index builder
+
   -- add the data set
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
@@ -353,7 +363,7 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
   SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
     $ SJ.valueToPairF ("N_" <> namedPS)
     $ fmap (A.toJSON . Set.size)
-    $ FL.premapM (maybe (Left "PS length fold failed due to indexing issue in r -> Maybe Int") Right . keyF)
+    $ FL.premapM (maybe (Left "PS length fold failed due to indexing issue in r -> Maybe Int") Right . intKeyF)
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
@@ -377,7 +387,7 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
   let innerF r = case indexF r of
         Nothing -> Left "Error during post-stratification weight fold when applying group index function. index out of range?"
         Just ls -> Right (ls, weightF r)
-      assignM r = case keyF r of
+      assignM r = case intKeyF r of
         Nothing -> Left "Error during post-stratification weight fold when indexing PS rows to result groups."
         Just l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x

@@ -77,7 +77,7 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
                   $ SF.composeIntVecRecEncodings encodeSex
                   $ SF.composeIntVecRecEncodings encodeEducation encodeRace
   (catColsIndexer, toCatCols) = encodeCatCols
-  f cces = ((toState, fmap FS.toS toCatCols), makeJsonE) where
+  f cces = (Right (toState, fmap FS.toS toCatCols), makeJsonE) where
     (stateM, toState) = FL.fold enumStateF cces
     k = SJ.vecEncodingLength encodeCatCols
     makeJsonE x = SJ.frameToStanJSONSeries dataF cces where
@@ -88,11 +88,15 @@ ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/i
               <> SJ.valueToPairF "state" (SJ.jsonArrayMF (stateM . F.rgetField @BR.StateAbbreviation))
               <> SJ.valueToPairF "D_votes" (SJ.jsonArrayF (round @_ @Int . F.rgetField @BR.WeightedSuccesses))
               <> SJ.valueToPairF "Total_votes" (SJ.jsonArrayF (F.rgetField @BR.Count))
-  g (toState, _) toPredict = SJ.frameToStanJSONSeries predictF toPredict where
-    toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
-    predictF = SJ.namedF "M" FL.length
-               <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
-               <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5))
+  g indexE toPredict =
+    case indexE of
+      Left err -> Left err
+      Right (toState, _) ->
+        SJ.frameToStanJSONSeries predictF toPredict where
+        toStateIndexM sa = M.lookup sa $ SJ.flipIntIndex toState
+        predictF = SJ.namedF "M" FL.length
+                   <> SJ.valueToPairF "predict_State" (SJ.jsonArrayMF (toStateIndexM . F.rgetField @BR.StateAbbreviation))
+                   <> SJ.valueToPairF "predict_X" (SJ.jsonArrayMF (catColsIndexer . F.rcast @DT.CatColsASER5))
 
 
 extractResults :: Int
