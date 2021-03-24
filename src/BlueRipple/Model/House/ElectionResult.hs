@@ -987,6 +987,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, mds, cds, model, nSa
       stanConfig
       (SM.Both unwraps)
       (houseDataWrangler mds cds predictors)
+      SC.UnCacheable
       (SC.UseSummary getResults)
       ()
       houseDataForYear_C

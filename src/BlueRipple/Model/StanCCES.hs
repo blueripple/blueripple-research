@@ -197,7 +197,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
         return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel @BR.SerializerC @BR.CacheData stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler (SC.UseSummary getResults) toPredict ccesASER5_C
+    SM.runModel @BR.SerializerC @BR.CacheData stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler SC.Cacheable (SC.UseSummary getResults) toPredict ccesASER5_C
 
 
 prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
@@ -227,7 +227,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just 1000)
                 Nothing
                 (Just stancConfig)
-  SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.DoNothing () ccesASER5_C
+  SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.Cacheable SC.DoNothing () ccesASER5_C
 
 
 model_BinomialAllBuckets :: SB.StanModel

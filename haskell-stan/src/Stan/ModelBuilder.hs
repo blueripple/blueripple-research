@@ -173,6 +173,27 @@ emptyGroupRowMap = DHash.empty
 addRowMap :: Typeable k => Text -> (r -> k) -> GroupRowMap r -> GroupRowMap r
 addRowMap t f grm = DHash.insert (GroupTypeTag t) (RowMap f) grm
 
+data DataToIntMap d k = DataToIntMap (d -> IntMap k)
+type GroupIntMapBuilders d = DHash.DHashMap GroupTypeTag (DataToIntMap d)
+type GroupIntMaps = DHash.DHashMap GroupTypeTag IntMap.IntMap
+
+emptyIntMapBuilders :: GroupIntMapBuilders d
+emptyIntMapBuilders = DHash.empty
+
+addIntMapBuilder :: forall d k. Typeable k
+                 => Text
+                 -> (d -> IntMap.IntMap k)
+                 -> GroupIntMapBuilders d
+                 -> Either Text (GroupIntMapBuilders d)
+addIntMapBuilder labeledGroupName imF gm =
+  let gtt = GroupTypeTag @k labeledGroupName
+  in case DHash.lookup gtt gm of
+    Nothing -> Right $ DHash.insert (GroupTypeTag labeledGroupName) (DataToIntMap imF) gm
+    Just _ -> Left $ taggedGroupName gtt <> " already exists in Index DHM"
+
+
+buildIntMaps :: GroupIntMapBuilders d -> d -> GroupIntMaps
+buildIntMaps bldrs d = DHash.map (\(DataToIntMap f) -> f d) bldrs
 
 makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r, Map Text (IntIndex r))
 makeMainIndexes makerMap rs = (dhm, gm) where
@@ -303,10 +324,11 @@ data BuilderState d r0 = BuilderState { declaredVars :: !(Map StanName StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
                                       , modelExprs :: !(Seq.Seq StanExpr)
                                       , code :: !StanCode
+                                      , indexes :: !(GroupIntMapBuilders d)
                                       }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Seq.empty emptyStanCode
+initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Seq.empty emptyStanCode emptyIntMapBuilders
 
 newtype StanGroupBuilderM r0 a
   = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
@@ -345,8 +367,8 @@ askGroupEnv = asks groupEnv
 
 addModelTerm :: StanExpr -> StanBuilderM env d r0 ()
 addModelTerm e = do
-  BuilderState vars rowBuilders modelExprs code <- get
-  put $ BuilderState vars rowBuilders (modelExprs Seq.|> e) code
+  BuilderState vars rowBuilders modelExprs code ims <- get
+  put $ BuilderState vars rowBuilders (modelExprs Seq.|> e) code ims
 
 getModelExpr :: StanBuilderM env d r0 StanExpr
 getModelExpr = do
@@ -358,24 +380,31 @@ getModelExpr = do
 addIndexedDataSet :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
 addIndexedDataSet name toFoldable toKey = do
   let rtt = RowTypeTag name
-  (BuilderState vars rowBuilders modelExprs code) <- get
+  (BuilderState vars rowBuilders modelExprs code ims) <- get
   case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
       let rowInfo = indexedRowInfo toFoldable name toKey
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
-      put (BuilderState vars newRowBuilders modelExprs code)
+      put (BuilderState vars newRowBuilders modelExprs code ims)
 
 addUnIndexedDataSet :: (Typeable r, Typeable d) => Text -> ToFoldable d r -> StanBuilderM env d r0 ()
 addUnIndexedDataSet name toFoldable = do
   let rtt = RowTypeTag name
-  (BuilderState vars rowBuilders modelExprs code) <- get
+  (BuilderState vars rowBuilders modelExprs code ims) <- get
   case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
       let rowInfo = unIndexedRowInfo toFoldable name
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
-      put (BuilderState vars newRowBuilders modelExprs code)
+      put (BuilderState vars newRowBuilders modelExprs code ims)
+
+addIndexIntMap :: Typeable k => Text -> (d -> IntMap k) -> StanBuilderM env d r0 ()
+addIndexIntMap iName imF = do
+  (BuilderState vars rowBuilders modelExprs code ims) <- get
+  case addIntMapBuilder iName imF ims of
+    Left err -> stanBuildError err
+    Right x -> put $ BuilderState vars rowBuilders modelExprs code x
 
 runStanBuilder' :: (Typeable d, Typeable r0, Foldable f)
                => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
@@ -396,22 +425,24 @@ stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
 declare :: StanName -> StanType -> StanBuilderM env d r0 ()
 declare sn st = do
-  (BuilderState vars rowBuilders modelExprs code) <- get
+  (BuilderState vars rowBuilders modelExprs code ims) <- get
   case Map.lookup sn vars of
-    Nothing -> put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code
+    Nothing -> put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code ims
     Just dt -> if dt == st
                then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
 
--- FIX: array nesting is handled wrong
 stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
 stanDeclare sn st sc = do
   declare sn st
+  let dimsToText x = "[" <> T.intercalate ", " (dimToText <$> x) <> "]"
   let typeToCode :: StanName -> StanType -> Text -> Text
       typeToCode sn st sc = case st of
         StanInt -> "int" <> sc <> " " <> sn
         StanReal -> "real" <> sc <> " " <> sn
-        StanArray dims st' -> typeToCode sn st' sc <> "[" <> T.intercalate "," (dimToText <$> dims) <> "]" --
+        StanArray dims st' -> case st' of
+          StanArray iDims st'' -> typeToCode sn (StanArray (dims ++ iDims) st'') sc
+          _ -> typeToCode sn st' sc <> dimsToText dims
         StanVector dim -> "vector" <> sc <> "[" <> dimToText dim <> "] " <> sn
         StanMatrix (dimR, dimC) -> "matrix" <> sc <> "[" <> dimToText dimR <> "," <> dimToText dimC <> "] " <> sn
   let dimsToCheck st = case st of
@@ -424,6 +455,7 @@ stanDeclare sn st sc = do
         GivenDim _ -> return ()
   traverse_ checkDim $ dimsToCheck st
   addStanLine $ typeToCode sn st sc
+
 
 checkName :: StanName -> StanBuilderM env d r0 ()
 checkName sn = do
@@ -456,12 +488,12 @@ addJson :: (Typeable d)
         -> StanBuilderM env d r0 ()
 addJson rtt name st sc fld = do
   inBlock SBData $ stanDeclare name st sc
-  (BuilderState declared rowBuilders modelExprs code) <- get
+  (BuilderState declared rowBuilders modelExprs code ims) <- get
 --  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
   newRowBuilders <- case addFoldToDBuilder rtt fld rowBuilders of
     Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
-  put $ BuilderState declared newRowBuilders modelExprs code
+  put $ BuilderState declared newRowBuilders modelExprs code ims
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
@@ -553,7 +585,7 @@ setBlock = modifyCode . setBlock'
 
 getBlock :: StanBuilderM env d r StanBlock
 getBlock = do
-  (BuilderState _ _ _ (StanCode b _)) <- get
+  (BuilderState _ _ _ (StanCode b _) _) <- get
   return b
 
 addLine' :: Text -> StanCode -> StanCode

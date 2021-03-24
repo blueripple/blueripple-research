@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -10,7 +11,7 @@ module Stan.ModelConfig where
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
-
+import qualified Data.Constraint as Constraint
 import qualified Knit.Report as K
 import qualified Knit.Effect.Serialize            as K
 import qualified Data.Aeson.Encoding as A
@@ -28,6 +29,7 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcNumChains :: Int
   , mrcAdaptDelta :: Maybe Double
   , mrcLogSummary :: Bool
+  , mrcRunDiagnose :: Bool
   }
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
@@ -36,11 +38,20 @@ setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryCon
 noLogOfSummary :: ModelRunnerConfig -> ModelRunnerConfig
 noLogOfSummary sc = sc { mrcLogSummary = False }
 
+noDiagnose :: ModelRunnerConfig -> ModelRunnerConfig
+noDiagnose sc = sc { mrcRunDiagnose = False }
+
 -- produce indexes and json producer from the data as well as a data-set to predict.
 data DataIndexerType (b :: Type) where
   NoIndex :: DataIndexerType ()
   TransientIndex :: DataIndexerType b
   CacheableIndex :: (ModelRunnerConfig -> T.Text) -> DataIndexerType b
+
+-- pattern matching on the first brings the constraint into scope
+-- This allows us to choose to not have the constraint unless we need it.
+data Cacheable st b where
+  Cacheable :: st b => Cacheable st b
+  UnCacheable :: Cacheable st b
 
 data DataWrangler a b p where
   Wrangle :: DataIndexerType b -> (a -> (b, a -> Either T.Text A.Series)) -> DataWrangler a b ()

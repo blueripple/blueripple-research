@@ -70,15 +70,16 @@ buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          -> SB.StanBuilderM (Binomial_MRP_Model d modeledRow) d modeledRow ()
                          -> d
                          -> SB.ToFoldable d modeledRow --MRData modeledRow predRow
-                         -> Either Text (SC.DataWrangler d () (), SB.StanCode)
+                         -> Either Text (SC.DataWrangler d SB.GroupIntMaps (), SB.StanCode)
 buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
         SB.addGroupIndexes
         _ <- builderM
         jsonRowBuilders <- SB.buildJSONF
-        return $ SC.Wrangle SC.TransientIndex $ \d -> ((), flip SB.buildJSONFromRows jsonRowBuilders)
+        intMapBuilders <- SB.indexes <$> get
+        return $ SC.Wrangle SC.TransientIndex $ \d -> (SB.buildIntMaps intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable model groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ _ c, dw) -> (dw, c)) resE
+  in fmap (\(SB.BuilderState _ _ _ c _, dw) -> (dw, c)) resE
 
 
 runMRPModel2 :: (K.KnitEffects r
@@ -136,6 +137,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
       stanConfig
       (SM.Both unwraps)
       dataWrangler
+      SC.UnCacheable -- we cannot use a Cacheable index here
       resultAction
       ()
       data_C
@@ -357,7 +359,8 @@ addPostStratification name toFoldable groupMaps weightF mPSGroup = do
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
-      weightArrayType = SB.StanArray ((SB.NamedDim $ "N_" <> namedPS) : groupDims) SB.StanReal -- (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
+--      weightArrayType = SB.StanArray ((SB.NamedDim $ "N_" <> namedPS) : groupDims) SB.StanReal -- (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
+      weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> namedPS] $ SB.StanArray groupDims SB.StanReal
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Maybe (r -> Maybe [Int]) --[r -> Maybe Int]
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =

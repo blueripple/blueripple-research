@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega ../data-sets
+packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega ../data-sets ~/DataScience/hs-cmdstan
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -20,10 +20,10 @@ source-repository-package
   subdir: generic-optics
 
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/hs-cmdstan
-  tag: fe4a0cd8ab7548b64eaf5000c0f28b151b75522e
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/hs-cmdstan
+--  tag: fe4a0cd8ab7548b64eaf5000c0f28b151b75522e
 
 --source-repository-package
 --  type: git
