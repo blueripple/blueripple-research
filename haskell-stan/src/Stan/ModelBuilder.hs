@@ -177,6 +177,12 @@ data DataToIntMap d k = DataToIntMap (d -> Either Text (IntMap k))
 type GroupIntMapBuilders d = DHash.DHashMap GroupTypeTag (DataToIntMap d)
 type GroupIntMaps = DHash.DHashMap GroupTypeTag IntMap.IntMap
 
+getGroupIndex :: forall k. Typeable k => Text -> GroupIntMaps -> Either Text (IntMap k)
+getGroupIndex name groupIndexes =
+  case DHash.lookup (GroupTypeTag @k name) groupIndexes of
+    Nothing -> Left $ "\"" <> name <> "\" not found in GroupIndexes"
+    Just im -> Right im
+
 emptyIntMapBuilders :: GroupIntMapBuilders d
 emptyIntMapBuilders = DHash.empty
 

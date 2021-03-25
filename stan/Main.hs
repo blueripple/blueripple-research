@@ -29,6 +29,7 @@ import qualified Stan.JSON as SJ
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
+import qualified Data.IntMap as IM
 import qualified Data.Map as M
 import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Semigroup as Semigroup
@@ -71,6 +72,8 @@ import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.Parameters as SP
+import qualified CmdStan as CS
 import qualified Stan.RScriptBuilder as SR
 import qualified Text.Blaze.Html5              as BH
 
@@ -150,7 +153,7 @@ testDataAndCodeBuilder = do
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
-  MRP.addPostStratification "A" (SB.ToFoldable id) psGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) (Just $ SB.GroupTypeTag @Text "State")
+  MRP.addPostStratification "Sex" (SB.ToFoldable id) psGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) (Just $ SB.GroupTypeTag @DT.Sex "Sex")
   MRP.mrpGeneratedQuantitiesBlock False -- adds log_lik and predicted counts
 
 testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
@@ -164,6 +167,21 @@ testModel = MRP.Binomial_MRP_Model
             (F.rgetField @BRE.TVotes)
             (F.rgetField @BRE.DVotes)
 
+indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
+indexStanResults im v = do
+  when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
+  return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
+
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Sex [Double])
+extractTestResults = SC.UseSummary f where
+  f summary _ aAndEb_C = do
+    let eb_C = fmap snd aAndEb_C
+    eb <- K.ignoreCacheTime eb_C
+    groupIndexes <- K.knitEither eb
+    sexIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "A" groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
+    K.knitEither $ indexStanResults sexIndexIM vResults
+
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
@@ -175,18 +193,19 @@ testStanMRP = do
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ ccesData) <> " people surveyed in mrpData.modeled"
-  MRP.runMRPModel2
-    True
-    (Just "stan/mrp/cces")
-    "test"
-    "test"
-    dw
-    stanCode
-    "S"
-    SC.DoNothing
-    ccesData_C
-    (Just 1000)
-    (Just 0.9)
+  res <- MRP.runMRPModel2
+         True
+         (Just "stan/mrp/cces")
+         "test"
+         "test"
+         dw
+         stanCode
+         "S"
+         extractTestResults
+         ccesData_C
+         (Just 1000)
+         (Just 0.9)
+  K.logLE K.Info $ "results: " <> show res
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
