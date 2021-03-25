@@ -178,7 +178,7 @@ extractTestResults = SC.UseSummary f where
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    sexIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "A" groupIndexes
+    sexIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "Sex" groupIndexes
     vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
     K.knitEither $ indexStanResults sexIndexIM vResults
 
@@ -193,8 +193,8 @@ testStanMRP = do
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ ccesData) <> " people surveyed in mrpData.modeled"
-  res <- MRP.runMRPModel2
-         True
+  res_C <- MRP.runMRPModel2
+         False
          (Just "stan/mrp/cces")
          "test"
          "test"
@@ -205,6 +205,7 @@ testStanMRP = do
          ccesData_C
          (Just 1000)
          (Just 0.9)
+  res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()

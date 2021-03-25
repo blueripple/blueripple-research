@@ -97,7 +97,7 @@ runMRPModel2 :: (K.KnitEffects r
             -> K.ActionWithCacheTime r a
             -> Maybe Int
             -> Maybe Double
-            -> K.Sem r ()
+            -> K.Sem r (K.ActionWithCacheTime r c)
 runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta =
   K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
   K.logLE K.Info "Running..."
@@ -130,7 +130,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
   let dataModelDep = const <$> modelDep <*> data_C
       getResults s () inputAndIndex_C = return ()
       unwraps = [SR.UnwrapNamed ppName ppName]
-  res_C <- BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
+  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
     SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
@@ -140,7 +140,6 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
       resultAction
       ()
       data_C
-  return ()
 
 data ProjectableRows f rowA rowB where
   ProjectableRows :: Functor f => f rowA -> (rowA -> rowB) -> ProjectableRows f rowA rowB
@@ -340,7 +339,7 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mP
     <> "PS Groups=" <> showNames groupMaps <> "; "
     <> "Model Builder groups=" <> showNames allGroups
     <> "If this error appears entirely mysterious, try checking the types of your group key functions."
-  -- keyF :: r -> Maybe Int
+
   intKeyF <- case mPSGroup of
                Nothing -> return $ const $ Just 1
                Just gtt -> case DHash.lookup gtt allGroups of
@@ -354,9 +353,7 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mP
                    Just (SB.RowMap h) -> do
                      SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF mIntF h) . rowsF)
                      return $ mIntF . h
-  -- index builder
-
-  -- add the data set
+  -- add the data set for the json builders
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
   -- "int<lower=0> N_PS_xxx;" number of post-stratified results
@@ -369,7 +366,6 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mP
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
---      weightArrayType = SB.StanArray ((SB.NamedDim $ "N_" <> namedPS) : groupDims) SB.StanReal -- (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal)
       weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> namedPS] $ SB.StanArray groupDims SB.StanReal
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Maybe (r -> Maybe [Int]) --[r -> Maybe Int]
       indexList grm gim =
