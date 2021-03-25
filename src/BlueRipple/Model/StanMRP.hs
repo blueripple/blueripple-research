@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
@@ -312,6 +313,7 @@ buildIntMapBuilderF mIntF keyF = FL.FoldM step (return IM.empty) return where
     Nothing -> Left "Indexing error when trying to build IntMap index"
     Just n -> Right $ IM.insert n (keyF r) im
 
+data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
@@ -319,40 +321,32 @@ addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       -> SB.ToFoldable d r
                       -> SB.GroupRowMap r
                       -> (r -> Double)
+                      -> PostStratificationType
                       -> (Maybe (SB.GroupTypeTag k))
                       -> BuilderM r0 d ()
-addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mPSGroup = do
+addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   usedGNames <- usedGroupNames
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` usedGNames) $ allGroups
-  when (DHash.size (DHash.difference usedGroups groupMaps) /= 0)
-    $ SB.stanBuildError
-    $ "A group used for modeling is missing from post-stratification specification!"
-    <> "Modeling groups: " <> showNames usedGroups
-    <> "PS Groups: " <> showNames groupMaps
-  when (DHash.size (DHash.difference groupMaps allGroups) /= 0)
-    $ SB.stanBuildError
-    $ "A group(s) in the PS Groups is not present in the set of groups known to the model builder."
-    <> "Unknown=" <> showNames (DHash.difference groupMaps allGroups) <> "; "
-    <> "PS Groups=" <> showNames groupMaps <> "; "
-    <> "Model Builder groups=" <> showNames allGroups
-    <> "If this error appears entirely mysterious, try checking the types of your group key functions."
-
-  intKeyF <- case mPSGroup of
-               Nothing -> return $ const $ Just 1
-               Just gtt -> case DHash.lookup gtt allGroups of
-                 Nothing -> SB.stanBuildError
-                            $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                            <> ") is not present in Builder groups: " <> showNames allGroups
-                 Just (SB.IndexMap _ mIntF) -> case DHash.lookup gtt groupMaps of
-                   Nothing -> SB.stanBuildError
-                              $ "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                              <> " is not in PS groups: "  <> showNames groupMaps
-                   Just (SB.RowMap h) -> do
-                     SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF mIntF h) . rowsF)
-                     return $ mIntF . h
+      checkGroupSubset n1 n2 gs1 gs2 = do
+        let gDiff = DHash.difference gs1 gs2
+        when (DHash.size gDiff /= 0)
+          $ SB.stanBuildError
+          $ n1 <> "(" <> showNames gs1 <> ") is not a subset of "
+          <> n2 <> "(" <> showNames gs2 <> ")."
+          <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
+          <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
+  checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
+  checkGroupSubset "PS Spec" "All Groups" groupMaps allGroups
+  intKeyF <- flip (maybe (return $ const $ Just 1)) mPSGroup $ \gtt -> do
+    let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                       <> ") is not present in Builder groups: " <> tGrps
+    SB.IndexMap _ mIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
+    SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
+    SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF mIntF h) . rowsF)
+    return $ mIntF . h
   -- add the data set for the json builders
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
@@ -400,69 +394,17 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF mP
         im = Map.fromList $ zip ugNames groupCounters
         inner = do
           modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
-          SB.addStanLine $ "real  p = inv_logit(" <> modelTerms <> ")"
+          SB.addStanLine $ "real p = inv_logit(" <> modelTerms <> ")"
+          when (psType == PSShare) $ SB.addStanLine $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
           SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
     SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
     SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
-    SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ makeLoops ugNames
-
-
-
-
-
-{-
-psRowsFld' :: Ord k
-          => PostStratification k psRow predRow
-          -> MRPBuilderM f predRow modeledRow psRow (FL.FoldM (Either Text) psRow [(k, (Vec.Vector Double, SJ.Indexed Double))])
-psRowsFld' (PostStratification prj wgt key) = do
-  model <- getModel
-  toIndexedFld <- FL.premapM (return . snd) <$> predRowsToIndexed
-  let fixedEffectsFld = postMapM (maybe (Left "Empty group in psRowsFld?") Right)
-                        $ FL.generalize
-                        $ FL.premap fst FL.last
-      innerFld = (,) <$> fixedEffectsFld <*> toIndexedFld
-      h pr = case bmm_FixedEffects model of
-        Nothing -> Vec.empty
-        Just (FixedEffects _ f) -> f pr
-  return
-    $ MR.mapReduceFoldM
-    (MR.generalizeUnpack MR.noUnpack)
-    (MR.generalizeAssign $ MR.assign key $ \psRow -> let pr = prj psRow in (h pr, (pr, wgt psRow)))
-    (MR.foldAndLabelM innerFld (,))
-
-psRowsFld :: Ord k
-          => PostStratification k psRow predRow
-          -> MRPBuilderM f predRow modeledRow psRow (FL.FoldM (Either Text) psRow [(k, Int, Vec.Vector Double, SJ.Indexed Double)])
-psRowsFld ps = do
-  fld' <- psRowsFld' ps
-  let f (n, (k, (v, i))) = (k, n, v, i)
-      g  = fmap f . zip [1..]
-  return $ postMapM (return . g) fld'
-
-psRowsJSONFld :: Text -> MRPBuilderM f modeledRow predRow psRow (SJ.StanJSONF (k, Int, Vec.Vector Double, SJ.Indexed Double) A.Series)
-psRowsJSONFld psSuffix = do
-  hasRowLevelFE <- isJust . bmm_FixedEffects <$> getModel
-  let labeled x = x <> psSuffix
-  return $ SJ.namedF (labeled "N") FL.length
-    <> (if hasRowLevelFE then SJ.valueToPairF (labeled "X") (SJ.jsonArrayF $ \(_, _, v, _) -> v) else mempty)
-    <> SJ.valueToPairF (labeled "W") (SJ.jsonArrayF $ \(_, _, _, ix) -> ix)
-
-mrPSKeyMapFld ::  Ord k
-           => PostStratification k psRow predRow
-           -> FL.Fold psRow (IM.IntMap k)
-mrPSKeyMapFld ps = fmap (IM.fromList . zip [1..] . sort . nubOrd . fmap (psGroupKey ps)) FL.list
-
-mrPSDataJSONFold :: Ord k
-                 => PostStratification k psRow predRow
-                 -> Text
-                 -> MRPBuilderM f predRow modeledRow psRow (SJ.StanJSONF psRow A.Series)
-mrPSDataJSONFold psFuncs psSuffix = do
-  psRowsJSONFld' <- psRowsJSONFld psSuffix
-  psDataF <- psRowsFld psFuncs
-  return $ postMapM (FL.foldM psRowsJSONFld') psDataF
--}
+    SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
+      when (psType == PSShare) $ SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
+      makeLoops ugNames
+      when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
 
 usedIndexes :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Map GroupName (SB.IntIndex modeledRow))
 usedIndexes = do
@@ -499,29 +441,6 @@ mrpLogLikStanCode = SB.inBlock SB.SBGeneratedQuantities $ do
     let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
     modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
-
-{-
-mrpPSStanCode :: forall f predRow modeledRow psRow.
-                 Bool
-              -> MRPBuilderM f predRow modeledRow psRow ()
-mrpPSStanCode doPS = SB.inBlock SB.SBGeneratedQuantities $ do
-  model <- getModel
-  groupNames <- fmap fst <$> groupOrderedIntIndexes
-  if doPS then (do
-                   let groupCounters = fmap ("n_" <>) $ groupNames
-                       im = Map.fromList $ zip groupNames groupCounters
-                       inner = do
-                         modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ modelExpr False "ps"
-                         SB.addStanLine $ "real p<lower=0, upper=1> = inv_logit(" <> modelTerms <> ")"
-                         SB.addStanLine $ "ps[n] += p * Wps[n][" <> T.intercalate "," groupCounters <> "]"
-                       makeLoops :: [Text] -> MRPBuilderM f predRow modeledRow psRow ()
-                       makeLoops []  = inner
-                       makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("J_" <> x) $ const $ makeLoops xs
-                   SB.addStanLine $ "vector [Nps] ps"
-                   SB.stanForLoop "n" Nothing "Nps" $ const $ makeLoops groupNames
-               )
-    else return ()
--}
 
 mrpGeneratedQuantitiesBlock :: Bool
                             -> BuilderM modeledRow d ()

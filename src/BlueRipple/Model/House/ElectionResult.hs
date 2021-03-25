@@ -130,6 +130,7 @@ type SenateElectionData = F.FrameRec SenateElectionDataR
 type PresidentialElectionDataR = StateKeyR V.++ DemographicsR V.++ ElectionR
 type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 
+
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type CCESByCD = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, Surveyed, TVotes, DVotes]
@@ -147,6 +148,8 @@ data HouseModelData = HouseModelData { houseElectionData :: HouseElectionData
                                      , presidentialElectionData :: PresidentialElectionData
                                      , ccesData :: CCESData
                                      } deriving (Generic)
+
+
 
 houseRaceKey :: F.Record HouseElectionDataR -> F.Record CDKeyR
 houseRaceKey = F.rcast
@@ -168,6 +171,32 @@ instance Flat.Flat HouseModelData where
   decode = (\(h, s, p, c) -> HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
 
 type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens]
+
+type PUMSByCDR = CDKeyR V.++ PUMSDataR
+type PUMSByCD = F.FrameRec PUMSByCDR
+
+type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome] V.++ ElectionR
+
+data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCD
+                               , pumsRows :: F.FrameRec PUMSByCDR
+                               , districtRows :: F.FrameRec DistrictDataR
+                               , allCategoriesRows :: F.FrameRec ('[BR.Year] V.++ CCESPredictorR)
+                               }
+
+ccesAndPUMSForYear :: Int -> CCESAndPUMS -> CCESAndPUMS
+ccesAndPUMSForYear y (CCESAndPUMS cces pums dist cats) =
+  let f :: (FI.RecVec rs, F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
+      f = F.filterFrame ((== y) . F.rgetField @BR.Year)
+  in CCESAndPUMS (f cces) (f pums) (f dist) (f cats)
+
+instance S.Serialize CCESAndPUMS where
+  put (CCESAndPUMS cces pums dist cats) = S.put (FS.SFrame cces, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats)
+  get = (\(cces, pums, dist, cats) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame pums) (FS.unSFrame dist) (FS.unSFrame cats)) <$> S.get
+
+instance Flat.Flat CCESAndPUMS where
+  size (CCESAndPUMS cces pums dist cats) n = Flat.size (FS.SFrame cces, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats) n
+  encode (CCESAndPUMS cces pums dist cats) = Flat.encode (FS.SFrame cces, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats)
+  decode = (\(cces, pums, dist, cats) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame pums) (FS.unSFrame dist) (FS.unSFrame cats)) <$> Flat.decode
 
 pumsMR :: forall ks f m.(Foldable f
                         , Ord (F.Record ks)
@@ -333,12 +362,80 @@ type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
---
-
 type HouseModelCensusTablesByCD =
   Census.CensusTables Census.CDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
 type HouseModelCensusTablesByState =
   Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
+
+prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
+prepCCESAndPums clearCache = do
+  pums_C <- PUMS.pumsLoaderAdults
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  let earliest year = (>= year) . F.rgetField @BR.Year
+      pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
+      pumsByCD :: F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec PUMSByCDR)
+      pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest 2012) (pumsReKey . F.rcast) cdFromPUMA pums
+  pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
+  houseElections_C <- BR.houseElectionsWithIncumbency
+  let deps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> houseElections_C
+      cacheKey = "model/house/CCESAndPUMS.bin"
+  when clearCache $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeD cacheKey deps $ \(cces, pumsByCD, houseElections) -> do
+    -- get Density and avg income from PUMS and combine with election data for the district level data
+    let diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
+        diInnerFold =
+          let cit = F.rgetField @PUMS.Citizens
+              citF = FL.premap cit FL.sum
+              citWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
+          in (\d i -> d F.&: i F.&: V.RNil) <$> citWeightedSumF (F.rgetField @DT.PopPerSqMile) <*> citWeightedSumF (F.rgetField @DT.AvgIncome)
+        diFold :: FL.Fold (F.Record PUMSByCDR) (F.FrameRec (CDKeyR V.++  [DT.PopPerSqMile, DT.AvgIncome]))
+        diFold = FMR.concatFold
+                 $ FMR.mapReduceFold
+                 FMR.noUnpack
+                 (FMR.assignKeysAndData @CDKeyR)
+                 (FMR.foldAndAddKey diInnerFold)
+        diByCD = FL.fold diFold pumsByCD
+        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
+        fHouseElex = FL.prefilterM (return . earliest 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
+    flattenedHouseData <- K.knitEither $ FL.foldM fHouseElex houseElections
+    let fhdPlusDC = flattenedHouseData
+                    <> F.toFrame [ 2012 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2014 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2016 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2018 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
+                                 ]
+    let (districtData, missing) = FJ.leftJoinWithMissing @CDKeyR diByCD fhdPlusDC --flattenedHouseData
+    when (not $ null missing) $ K.knitError $ "Missing keys in join of density/income data and election data: " <> show missing
+  -- categories!
+    let sortedMedian :: RealFrac a => [a] -> Either Text a
+        sortedMedian xs
+          | null xs = Left "Attempt to take median of an empty list!"
+          | odd len = Right $ xs List.!! mid
+          | otherwise = Right $ evenMedian where
+              len = length xs
+              mid = len `div` 2
+              evenMedian = (xs List.!! mid + xs List.!! (mid+1)) / 2
+        median = sortedMedian . List.sort
+        medianF :: [F.Record [DT.PopPerSqMile, DT.AvgIncome]] -> Either Text (F.Record [DT.PopPerSqMile, DT.AvgIncome])
+        medianF xs = do
+          medianD <- median $ fmap (F.rgetField @DT.PopPerSqMile) $ xs
+          medianI <- median $ fmap (F.rgetField @DT.AvgIncome) $ xs
+          return $ medianD F.&: medianI F.&: V.RNil
+        mDIFold = FMR.mapReduceFoldM
+                  (FMR.generalizeUnpack FMR.noUnpack)
+                  (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.Year] @[DT.PopPerSqMile, DT.AvgIncome])
+                  (FMR.ReduceFoldM $ \k -> fmap (k `V.rappend`) $ FMR.postMapM medianF $ FL.generalize FL.list)
+    medians <- K.knitEither $ FL.foldM mDIFold diByCD
+    let cats :: [F.Record ([DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ [BR.Year, DT.PopPerSqMile, DT.AvgIncome])]
+          = [(a F.&: s F.&: e F.&: r F.&: eth F.&: meds) |
+             meds <- medians,
+             a <- [minBound..],
+             s <- [minBound..],
+             e <- [minBound..],
+             r <- [minBound..],
+             eth <- [minBound..]]
+    return $ CCESAndPUMS cces pumsByCD districtData (F.toFrame $ fmap F.rcast $ cats)
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)

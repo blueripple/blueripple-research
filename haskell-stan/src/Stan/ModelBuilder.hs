@@ -430,7 +430,7 @@ stanBuildError :: Text -> StanBuilderM env d r0 a
 stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
 
 stanBuildMaybe :: Text -> Maybe a -> StanBuilderM env d r0 a
-stanBuildMaybe msg = maybe (stanBuildError a) return
+stanBuildMaybe msg = maybe (stanBuildError msg) return
 
 stanBuildEither :: Either Text a -> StanBuilderM ev d r0 a
 stanBuildEither = either stanBuildError return

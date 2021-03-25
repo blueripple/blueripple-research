@@ -124,13 +124,13 @@ main = do
 type PctTurnout = "PctTurnout" F.:-> Double
 type DShare = "DShare" F.:-> Double
 
-districtKey :: F.Record BRE.CCESDataR -> Text
+--districtKey :: F.Record BRE.CCESByCD -> Text
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 
 districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
-testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESDataR) ()
+testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCD) ()
 testGroupBuilder = do
   SB.addGroup "CD" $ SB.makeIndexByCounting districtKey
   SB.addGroup "State" $ SB.makeIndexByCounting $ F.rgetField @BR.StateAbbreviation
@@ -139,24 +139,24 @@ testGroupBuilder = do
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
-psGroupRowMap :: SB.GroupRowMap (F.Record BRE.CCESDataR)
+psGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 psGroupRowMap = SB.addRowMap "CD" districtKey
                 $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                 $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
                 $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
-testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESDataR) (F.FrameRec BRE.CCESDataR) ()
+testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCD) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
-  SB.addIndexedDataSet "CD" (SB.ToFoldable id) districtKey
+  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   MRP.intercept "alpha" 2
   MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
-  MRP.addPostStratification "Sex" (SB.ToFoldable id) psGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) (Just $ SB.GroupTypeTag @DT.Sex "Sex")
+  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.pumsRows) psGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
   MRP.mrpGeneratedQuantitiesBlock False -- adds log_lik and predicted counts
 
-testModel :: MRP.Binomial_MRP_Model (F.FrameRec BRE.CCESDataR) (F.Record BRE.CCESDataR)
+testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCD)
 testModel = MRP.Binomial_MRP_Model
             "test"
             (MRP.addFixedEffects @(F.Record BRE.CCESDataR)
@@ -164,8 +164,8 @@ testModel = MRP.Binomial_MRP_Model
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
             (S.fromList ["Education", "Sex"])
+            (F.rgetField @BRE.Surveyed)
             (F.rgetField @BRE.TVotes)
-            (F.rgetField @BRE.DVotes)
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
 indexStanResults im v = do
@@ -185,16 +185,16 @@ extractTestResults = SC.UseSummary f where
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
-  houseData_C <- BRE.prepCachedDataPUMS False
-  let demoSource = BRE.DS_1YRACSPUMS
-      toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
-      ccesData_C = KC.wctBind (K.liftKnit @IO . BR.sampleFrame 2 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
-  ccesData <- K.ignoreCacheTime ccesData_C
+  data_C <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
+  let --demoSource = BRE.DS_1YRACSPUMS
+--      toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
+--    ccesData_C = KC.wctBind (K.liftKnit @IO . BR.sampleFrame 2 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
+  dat <- K.ignoreCacheTime data_C
   K.logLE K.Info "Building json data wrangler and model code..."
-  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder ccesData (SB.ToFoldable id)
-  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ ccesData) <> " people surveyed in mrpData.modeled"
+  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
+  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel2
-         False
+         True
          (Just "stan/mrp/cces")
          "test"
          "test"
@@ -202,7 +202,7 @@ testStanMRP = do
          stanCode
          "S"
          extractTestResults
-         ccesData_C
+         data_C
          (Just 1000)
          (Just 0.9)
   res <- K.ignoreCacheTime res_C
