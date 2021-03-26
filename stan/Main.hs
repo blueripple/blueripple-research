@@ -139,11 +139,17 @@ testGroupBuilder = do
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
+race5FromPUMS :: F.Record BRE.PUMSByCDR -> DT.Race5
+race5FromPUMS r =
+  let race4A = F.rgetField @DT.RaceAlone4C r
+      hisp = F.rgetField @DT.HispC r
+  in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
-                    $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
+pumsPSGroupRowMap = SB.addRowMap "Race" race5FromPUMS
+                    $ SB.emptyGroupRowMap
+--                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
+--                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "CD" (const "NY-21")
@@ -153,25 +159,26 @@ catsPSGroupRowMap = SB.addRowMap @Text "CD" (const "NY-21")
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCD) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
-  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+--  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   MRP.intercept "alpha" 2
   MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
---  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.pumsRows) pumsPSGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
-  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
+  MRP.addPostStratification "Race" (SB.ToFoldable BRE.pumsRows) pumsPSGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
+--  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.mrpPosteriorPrediction
 --  MRP.logLikelihood
 
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCD)
 testModel = MRP.Binomial_MRP_Model
             "test"
-            (MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
-              (SB.RowTypeTag "CD")
-              (MRP.FixedEffects 2 districtPredictors)
-              $ MRP.emptyFixedEffects)
-            (S.fromList ["Sex"])
+            MRP.emptyFixedEffects
+--            (MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
+--              (SB.RowTypeTag "CD")
+--              (MRP.FixedEffects 2 districtPredictors)
+--              $ MRP.emptyFixedEffects)
+            (S.fromList ["Race"])
             (F.rgetField @BRE.Surveyed)
             (F.rgetField @BRE.TVotes)
 
@@ -180,15 +187,15 @@ indexStanResults im v = do
   when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Sex [Double])
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Race5 [Double])
 extractTestResults = SC.UseSummary f where
   f summary _ aAndEb_C = do
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    sexIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "Sex" groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
-    K.knitEither $ indexStanResults sexIndexIM vResults
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Race5 "Race" groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Race" (CS.paramStats summary)
+    K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
 subSampleCCES seed samples (BRE.CCESAndPUMS cces pums dist cats) = do
@@ -199,12 +206,16 @@ testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
   data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
-  let data_C = KC.wctBind (subSampleCCES 3 2000) $ data_C'
-  let --demoSource = BRE.DS_1YRACSPUMS
---      toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
---    ccesData_C = KC.wctBind (K.liftKnit @IO . BR.sampleFrame 2 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
+  let data_C = {- KC.wctBind (subSampleCCES 3 2000) $ -} data_C'
   dat <- K.ignoreCacheTime data_C
-  BR.logFrame $ F.filterFrame ((== "DC") . F.rgetField @BR.StateAbbreviation) $ BRE.districtRows dat
+  let popFilter r = True --F.rgetField @DT.Race5C r == DT.R5_Black
+      surveyedF = FL.prefilter popFilter $ FL.premap (F.rgetField @BRE.Surveyed) FL.sum
+      votedF = FL.prefilter popFilter $ FL.premap (F.rgetField @BRE.TVotes) FL.sum
+      turnoutF = (/) <$> fmap realToFrac votedF <*> fmap realToFrac surveyedF
+      femaleTurnoutF = FL.prefilter ((== DT.Female) . F.rgetField @DT.SexC) turnoutF
+      maleTurnoutF = FL.prefilter ((== DT.Male) . F.rgetField @DT.SexC) turnoutF
+      (ft, mt) = FL.fold ((,) <$> femaleTurnoutF <*> maleTurnoutF) $ BRE.ccesRows dat
+  K.logLE K.Info $ "In (subsampled) CCES data (Female Turnout, Male Turnout) " <> show (ft, mt)
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
