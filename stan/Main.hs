@@ -171,7 +171,7 @@ testModel = MRP.Binomial_MRP_Model
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
-            (S.fromList ["Education", "Sex"])
+            (S.fromList ["Sex"])
             (F.rgetField @BRE.Surveyed)
             (F.rgetField @BRE.TVotes)
 
