@@ -110,6 +110,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
   stanConfig <-
     SC.setSigFigs 4
     . SC.noLogOfSummary
+--    . SC.noDiagnose
     <$> SM.makeDefaultModelRunnerConfig
     workDir
     (modelName <> "_model")
@@ -432,8 +433,8 @@ mrpMainModelTerm = SB.inBlock SB.SBModel $ do
   modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized SB.getModelExpr
   SB.addStanLine $ "S ~ binomial_logit(T, " <> modelTerms <> ")"
 
-mrpLogLikStanCode :: BuilderM modeledRow d ()
-mrpLogLikStanCode = SB.inBlock SB.SBGeneratedQuantities $ do
+mrpLogLikelihood :: BuilderM modeledRow d ()
+mrpLogLikelihood = SB.inBlock SB.SBGeneratedQuantities $ do
   model <- getModel
   indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
   SB.addStanLine $ "vector [N] log_lik"
@@ -442,14 +443,12 @@ mrpLogLikStanCode = SB.inBlock SB.SBGeneratedQuantities $ do
     modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
     SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
-mrpGeneratedQuantitiesBlock :: Bool
-                            -> BuilderM modeledRow d ()
-mrpGeneratedQuantitiesBlock doPS = do
+mrpPosteriorPrediction :: BuilderM modeledRow d ()
+mrpPosteriorPrediction  = do
   SB.inBlock SB.SBGeneratedQuantities $ do
     indexMap <- getIndexes
     let im = Map.mapWithKey const indexMap
-    model_terms <- SB.printExprM "yPred (Generated Quantities)" im SB.Vectorized SB.getModelExpr
-    SB.addStanLine $ "vector<lower=0, upper=1>[N] yPred = inv_logit(" <> model_terms <> ")"
-    SB.addStanLine $ "real<lower=0> SPred[N]" --" = yPred * to_vector(T)"
-    SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine "SPred[n] = yPred[n] * T[n]"
-  mrpLogLikStanCode
+    model_terms <- SB.printExprM "SPred (Generated Quantities)" im SB.Vectorized SB.getModelExpr
+--    SB.addStanLine $ "vector<lower=0, upper=1>[N] yPred = inv_logit(" <> model_terms <> ")"
+    SB.addStanLine $ "vector<lower=0>[N] SPred =  to_vector(T) .* inv_logit(" <> model_terms <> ")"
+--    SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine "SPred[n] = yPred[n] * T[n]"

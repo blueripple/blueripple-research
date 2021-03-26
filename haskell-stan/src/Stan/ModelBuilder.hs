@@ -309,9 +309,10 @@ buildJSONF = do
       buildRowJSONFolds (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF) = do
         case getIndexF gim of
           Right rowIndexF -> do
-            let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
---            let intMapF = Foldl.Fold (\im r -> either (const im) (\n -> IntMap.insert n r im) $ rowIndexF r) IntMap.empty id
-            return $ JSONRowFold (ToEFoldable $ Foldl.foldM intMapF . toData) jsonF
+--            let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
+            -- FE data can have rows which are not in model.  We just ignore them
+            let intMapF = Foldl.Fold (\im r -> either (const im) (\n -> IntMap.insert n r im) $ rowIndexF r) IntMap.empty id
+            return $ JSONRowFold (ToEFoldable $ Right . Foldl.fold intMapF . toData) jsonF
           Left _ -> return $ JSONRowFold (ToEFoldable $ Right . toData) jsonF
   DHash.traverse buildRowJSONFolds rbs
 

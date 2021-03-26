@@ -139,11 +139,17 @@ testGroupBuilder = do
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
-psGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-psGroupRowMap = SB.addRowMap "CD" districtKey
-                $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-                $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-                $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
+pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
+pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
+                    $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
+                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
+
+catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
+catsPSGroupRowMap = SB.addRowMap @Text "CD" (const "NY-21")
+                    $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
+
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCD) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
@@ -153,8 +159,10 @@ testDataAndCodeBuilder = do
   MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
-  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.pumsRows) psGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
-  MRP.mrpGeneratedQuantitiesBlock False -- adds log_lik and predicted counts
+--  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.pumsRows) pumsPSGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
+  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
+--  MRP.mrpPosteriorPrediction
+--  MRP.logLikelihood
 
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCD)
 testModel = MRP.Binomial_MRP_Model
@@ -182,14 +190,21 @@ extractTestResults = SC.UseSummary f where
     vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
     K.knitEither $ indexStanResults sexIndexIM vResults
 
+subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
+subSampleCCES seed samples (BRE.CCESAndPUMS cces pums dist cats) = do
+  subSampledCCES <- K.liftKnit @IO $ BR.sampleFrame seed samples cces
+  return $ BRE.CCESAndPUMS subSampledCCES pums dist cats
+
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
-  data_C <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
+  data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
+  let data_C = KC.wctBind (subSampleCCES 3 2000) $ data_C'
   let --demoSource = BRE.DS_1YRACSPUMS
 --      toCCESData hd = F.filterFrame ((== 2018) . F.rgetField @BR.Year) $ BRE.ccesData hd
 --    ccesData_C = KC.wctBind (K.liftKnit @IO . BR.sampleFrame 2 1000) $ fmap toCCESData houseData_C -- NB: this must be fixed seed otherwise we may get diff samples
   dat <- K.ignoreCacheTime data_C
+  BR.logFrame $ F.filterFrame ((== "DC") . F.rgetField @BR.StateAbbreviation) $ BRE.districtRows dat
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"

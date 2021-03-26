@@ -176,12 +176,12 @@ type PUMSByCDR = CDKeyR V.++ PUMSDataR
 type PUMSByCD = F.FrameRec PUMSByCDR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome] V.++ ElectionR
-
+type AllCatR = '[BR.Year] V.++ CCESPredictorR
 data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCD
                                , pumsRows :: F.FrameRec PUMSByCDR
                                , districtRows :: F.FrameRec DistrictDataR
-                               , allCategoriesRows :: F.FrameRec ('[BR.Year] V.++ CCESPredictorR)
-                               }
+                               , allCategoriesRows :: F.FrameRec AllCatR
+                               } deriving (Generic)
 
 ccesAndPUMSForYear :: Int -> CCESAndPUMS -> CCESAndPUMS
 ccesAndPUMSForYear y (CCESAndPUMS cces pums dist cats) =
@@ -381,9 +381,13 @@ prepCCESAndPums clearCache = do
   let deps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> houseElections_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeD cacheKey deps $ \(cces, pumsByCD, houseElections) -> do
+  BR.retrieveOrMakeD cacheKey deps $ \(cces, pums, houseElections) -> do
     -- get Density and avg income from PUMS and combine with election data for the district level data
-    let diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
+    let fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
+                     then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+                     else r
+        pumsCDFixed = fmap fixDC_CD pums
+        diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens
               citF = FL.premap cit FL.sum
@@ -395,15 +399,15 @@ prepCCESAndPums clearCache = do
                  FMR.noUnpack
                  (FMR.assignKeysAndData @CDKeyR)
                  (FMR.foldAndAddKey diInnerFold)
-        diByCD = FL.fold diFold pumsByCD
+        diByCD = FL.fold diFold pumsCDFixed
         fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
         fHouseElex = FL.prefilterM (return . earliest 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
     flattenedHouseData <- K.knitEither $ FL.foldM fHouseElex houseElections
     let fhdPlusDC = flattenedHouseData
-                    <> F.toFrame [ 2012 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2014 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2016 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2018 F.&: "DC" F.&: 98 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
+                    <> F.toFrame [ 2012 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2014 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2016 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
+                                   2018 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
                                  ]
     let (districtData, missing) = FJ.leftJoinWithMissing @CDKeyR diByCD fhdPlusDC --flattenedHouseData
     when (not $ null missing) $ K.knitError $ "Missing keys in join of density/income data and election data: " <> show missing
@@ -435,7 +439,7 @@ prepCCESAndPums clearCache = do
              e <- [minBound..],
              r <- [minBound..],
              eth <- [minBound..]]
-    return $ CCESAndPUMS cces pumsByCD districtData (F.toFrame $ fmap F.rcast $ cats)
+    return $ CCESAndPUMS cces pumsCDFixed districtData (F.toFrame $ fmap F.rcast $ cats)
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
