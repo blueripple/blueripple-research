@@ -307,11 +307,11 @@ intercept iName alphaPriorSD = do
   SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   SB.addModelTerm $ SB.TermE $ SB.Scalar "alpha"
 
-buildIntMapBuilderF :: (k -> Maybe Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
-buildIntMapBuilderF mIntF keyF = FL.FoldM step (return IM.empty) return where
-  step im r = case mIntF $ keyF r of
-    Nothing -> Left "Indexing error when trying to build IntMap index"
-    Just n -> Right $ IM.insert n (keyF r) im
+buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
+buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
+  step im r = case eIntF $ keyF r of
+    Left msg -> Left $ "Indexing error when trying to build IntMap index: " <> msg
+    Right n -> Right $ IM.insert n (keyF r) im
 
 data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
@@ -340,13 +340,13 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF ps
           <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
   checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
   checkGroupSubset "PS Spec" "All Groups" groupMaps allGroups
-  intKeyF <- flip (maybe (return $ const $ Just 1)) mPSGroup $ \gtt -> do
+  intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ mIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
+    SB.IndexMap _ eIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-    SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF mIntF h) . rowsF)
-    return $ mIntF . h
+    SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF eIntF h) . rowsF)
+    return $ eIntF . h
   -- add the data set for the json builders
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
@@ -354,32 +354,32 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF ps
   SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
     $ SJ.valueToPairF ("N_" <> namedPS)
     $ fmap (A.toJSON . Set.size)
-    $ FL.premapM (maybe (Left "PS length fold failed due to indexing issue in r -> Maybe Int") Right . intKeyF)
+    $ FL.premapM intKeyF
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
       weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> namedPS] $ SB.StanArray groupDims SB.StanReal
-  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Maybe (r -> Maybe [Int]) --[r -> Maybe Int]
+  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int]) --[r -> Maybe Int]
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
               case DHash.lookup gtt gim of
-                Nothing -> Nothing
-                Just (SB.IndexMap _ kToMaybeInt) -> Just (kToMaybeInt . rTok)
-            g :: [r -> Maybe Int] -> r -> Maybe [Int]
+                Nothing -> Left $ "Failed lookup of group=" <> SB.taggedGroupName gtt <> " in addPostStratification."
+                Just (SB.IndexMap _ kToEitherInt) -> Right (kToEitherInt . rTok)
+            g :: [r -> Either Text Int] -> r -> Either Text [Int]
             g fs r = traverse ($r) fs
         in fmap g $ traverse mCompose $ DHash.toList grm
   indexF <- case indexList usedGroupMaps allGroups of
-    Nothing -> SB.stanBuildError "Error producing PostStratification weight indexing function."
-    Just x -> return x
+    Left msg -> SB.stanBuildError $ "Error producing PostStratification weight indexing function: " <> msg
+    Right x -> return x
   -- "real[N_G1, N_G2, ...] PS_xxx_wgt[N_PS_xxx];"  weight matrices for each PS result
   let innerF r = case indexF r of
-        Nothing -> Left "Error during post-stratification weight fold when applying group index function. index out of range?"
-        Just ls -> Right (ls, weightF r)
+        Left msg -> Left $ "Error during post-stratification weight fold when applying group index function (index out of range?): " <> msg
+        Right ls -> Right (ls, weightF r)
       assignM r = case intKeyF r of
-        Nothing -> Left "Error during post-stratification weight fold when indexing PS rows to result groups."
-        Just l -> Right (l, r)
+        Left msg -> Left $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
+        Right l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x
       reduceF = postMapM (\x -> traverse innerF x >>= toIndexed) $ FL.generalize FL.list
       fldM = MR.mapReduceFoldM

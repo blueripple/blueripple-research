@@ -112,8 +112,8 @@ instance Monoid (JSONSeriesFold row) where
 data ToFoldable d row where
   ToFoldable :: Foldable f => (d -> f row) -> ToFoldable d row
 
-data ToMFoldable d row where
-  ToMFoldable :: Foldable f => (d -> Maybe (f row)) -> ToMFoldable d row
+data ToEFoldable d row where
+  ToEFoldable :: Foldable f => (d -> Either Text (f row)) -> ToEFoldable d row
 
 data GroupTypeTag k where
   GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
@@ -131,14 +131,14 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
   hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
   hashWithSalt m (Some.Some (GroupTypeTag n)) = hashWithSalt m n
 
-data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Maybe Int }
+data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Either Text Int }
 
-data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Maybe Int)) (r0 -> k)
-data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Maybe Int)
+data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Either Text Int)) (r0 -> k)
+data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Either Text Int)
 
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
-makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (Just . g . h)) (Just . g)
+makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (Right . g . h)) (Right . g)
 makeIndexMapF (FoldToIndex fld h) = fmap (\(n, g) -> IndexMap (IntIndex n (g . h)) g) fld
 --  let (n, g) = Foldl.fold fld rs in IndexMap (IntIndex n (g . h)) g
 
@@ -148,17 +148,17 @@ makeIndexFromEnum h = GivenIndex (1 + eMax - eMin) index h where
   eMin = fromEnum $ minBound @k
   eMax = fromEnum $ maxBound @k
 
-makeIndexByCounting :: Ord k => (r -> k) -> MakeIndex r k
-makeIndexByCounting h = FoldToIndex (Foldl.premap h $ indexFold 1) h
+makeIndexByCounting :: Ord k => (k -> Text) -> (r -> k) -> MakeIndex r k
+makeIndexByCounting printK h = FoldToIndex (Foldl.premap h $ indexFold printK 1) h
 
-indexFold :: Ord k => Int -> Foldl.Fold k (Int, k -> Maybe Int)
-indexFold start =  Foldl.Fold step init done where
+indexFold :: Ord k => (k -> Text) -> Int -> Foldl.Fold k (Int, k -> Either Text Int)
+indexFold printK start =  Foldl.Fold step init done where
   step s k = Set.insert k s
   init = Set.empty
-  done s = (Set.size s, toIntM) where
+  done s = (Set.size s, toIntE) where
     keyedList = zip (Set.toList s) [start..]
     mapToInt = Map.fromList keyedList
-    toIntM k = Map.lookup k mapToInt
+    toIntE k = maybe (Left $ "Lookup failed for \"" <> printK k <> "\"") Right $ Map.lookup k mapToInt
 
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
@@ -210,18 +210,19 @@ makeMainIndexes makerMap rs = (dhm, gm) where
 
 data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
                               , jsonSeries :: JSONSeriesFold r
-                              , indexMaker :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int) }
+                              , indexMaker :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int) }
 
 indexedRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
 indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
-  im :: GroupIndexDHM r0 -> Maybe (r -> Maybe Int)
+--  toEither g = maybe (Left $ "indexing function returned Nothing for group=" <> groupName) Right . g
+  im :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
-             Nothing -> Nothing
-             Just (IndexMap (IntIndex _ h) g) -> Just (g . keyF) --, h)
+             Nothing -> Left $ "indexedRowInfo: lookup of group=" <> groupName <> " failed."
+             Just (IndexMap (IntIndex _ h) g) -> Right (g . keyF)
 
 
 unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
-unIndexedRowInfo tf groupName  = RowInfo tf mempty (const Nothing)
+unIndexedRowInfo tf groupName  = RowInfo tf mempty (const $ Left $ groupName <> " is unindexed.")
 
   --emptyRowInfo :: RowInfo r
 --emptyRowInfo = RowInfo mempty mempty
@@ -262,7 +263,8 @@ type RowBuilder d r0 = DSum.DSum (RowTypeTag d) (RowInfo d r0)
 type RowBuilderDHM d r0 = DHash.DHashMap (RowTypeTag d) (RowInfo d r0)
 
 initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
-initialRowBuilders toModeled = DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const $ Nothing))]
+initialRowBuilders toModeled =
+  DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const $ Left $ "Modeled data set needs no index but one was asked for."))]
 
 addFoldToDBuilder :: forall d r0 r.(Typeable d)
                   => RowTypeTag d r
@@ -281,13 +283,13 @@ buildJSONSeries rbm d =
       foldOne ((RowTypeTag _ ) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld) _)) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
-data JSONRowFold d r = JSONRowFold (ToMFoldable d r) (Stan.StanJSONF r Aeson.Series)
+data JSONRowFold d r = JSONRowFold (ToEFoldable d r) (Stan.StanJSONF r Aeson.Series)
 
 buildJSONFromRows :: d -> DHash.DHashMap (RowTypeTag d) (JSONRowFold d) -> Either Text Aeson.Series
 buildJSONFromRows d rowFoldMap = do
-  let toSeriesOne (rtt DSum.:=> JSONRowFold (ToMFoldable f) fld) = case f d of
-        Nothing -> Left $ "ToMFoldable produced Nothing in buildJSONFromRows for dataSet=" <> dsName rtt
-        Just x -> Foldl.foldM fld x
+  let toSeriesOne (rtt DSum.:=> JSONRowFold (ToEFoldable f) fld) = case f d of
+        Left msg -> Left $ "Left in ToEFoldable for " <> dsName rtt <> ": " <> msg
+        Right x -> Foldl.foldM fld x
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
 addGroupIndexes :: (Typeable d, Typeable r0) => StanBuilderM env d r0 ()
@@ -306,10 +308,11 @@ buildJSONF = do
   let buildRowJSONFolds :: RowInfo d r0 r -> StanBuilderM env d r0 (JSONRowFold d r)
       buildRowJSONFolds (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF) = do
         case getIndexF gim of
-          Just rowIndexF -> do
+          Right rowIndexF -> do
             let intMapF = Foldl.FoldM (\im r -> fmap (\n -> IntMap.insert n r im) $ rowIndexF r) (return IntMap.empty) return
-            return $ JSONRowFold (ToMFoldable $ Foldl.foldM intMapF . toData) jsonF
-          Nothing -> return $ JSONRowFold (ToMFoldable $ Just . toData) jsonF
+--            let intMapF = Foldl.Fold (\im r -> either (const im) (\n -> IntMap.insert n r im) $ rowIndexF r) IntMap.empty id
+            return $ JSONRowFold (ToEFoldable $ Foldl.foldM intMapF . toData) jsonF
+          Left _ -> return $ JSONRowFold (ToEFoldable $ Right . toData) jsonF
   DHash.traverse buildRowJSONFolds rbs
 
 type StanName = Text
@@ -558,7 +561,7 @@ addColumnMJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
                -> Text
                -> StanType
                -> Text
-               -> (r -> Maybe x)
+               -> (r -> Either Text x)
                -> StanBuilderM env d r0 ()
 addColumnMJson rtt name suffix st sc toMX = do
   case st of
@@ -567,7 +570,7 @@ addColumnMJson rtt name suffix st sc toMX = do
     _ -> return ()
   addLengthJson rtt ("N" <> underscoredIf suffix)
   let fullName = name <> underscoredIf suffix
-  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayMF toMX)
+  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayEF toMX)
 
 
 add2dMatrixJson :: (Typeable d, Typeable r0)

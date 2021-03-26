@@ -166,6 +166,15 @@ jsonArrayMF toMA = FL.FoldM step init extract where
   init = Right mempty
   extract = Right . A.Array . VB.build
 
+jsonArrayEF :: A.ToJSON a => (row -> Either Text a) -> StanJSONF row A.Value
+jsonArrayEF toMA = FL.FoldM step init extract where
+  step vb r = case toMA r of
+    Left msg -> Left $ "Failed indexing in jsonArrayEF: " <> msg
+    Right a -> Right $ vb <> VB.singleton (A.toJSON a)
+  init = Right mempty
+  extract = Right . A.Array . VB.build
+
+
 valueToPairF :: T.Text -> StanJSONF row A.Value -> StanJSONF row A.Series
 valueToPairF name = fmap (name A..=)
 

@@ -132,8 +132,8 @@ districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqM
 
 testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCD) ()
 testGroupBuilder = do
-  SB.addGroup "CD" $ SB.makeIndexByCounting districtKey
-  SB.addGroup "State" $ SB.makeIndexByCounting $ F.rgetField @BR.StateAbbreviation
+  SB.addGroup "CD" $ SB.makeIndexByCounting show districtKey
+  SB.addGroup "State" $ SB.makeIndexByCounting show $ F.rgetField @BR.StateAbbreviation
   SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
@@ -159,7 +159,7 @@ testDataAndCodeBuilder = do
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCD)
 testModel = MRP.Binomial_MRP_Model
             "test"
-            (MRP.addFixedEffects @(F.Record BRE.CCESDataR)
+            (MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
               (SB.RowTypeTag "CD")
               (MRP.FixedEffects 2 districtPredictors)
               $ MRP.emptyFixedEffects)
