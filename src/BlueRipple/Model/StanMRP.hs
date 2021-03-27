@@ -98,8 +98,9 @@ runMRPModel2 :: (K.KnitEffects r
             -> K.ActionWithCacheTime r a
             -> Maybe Int
             -> Maybe Double
+            -> Maybe Int
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta =
+runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta mMaxTreeDepth =
   K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
   K.logLE K.Info "Running..."
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
@@ -121,6 +122,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
     (Just nSamples)
     (Just nSamples)
     mAdaptDelta
+    mMaxTreeDepth
     (Just stancConfig)
   let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
   when clearCache $ do
@@ -378,11 +380,13 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF ps
   let innerF r = case indexF r of
         Left msg -> Left $ "Error during post-stratification weight fold when applying group index function (index out of range?): " <> msg
         Right ls -> Right (ls, weightF r)
+      sumInnerFold :: Ord k => FL.Fold (k, Double) [(k, Double)]
+      sumInnerFold = MR.mapReduceFold MR.noUnpack (MR.Assign id) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
       assignM r = case intKeyF r of
         Left msg -> Left $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
         Right l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x
-      reduceF = postMapM (\x -> traverse innerF x >>= toIndexed) $ FL.generalize FL.list
+      reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed) $ FL.generalize FL.list
       fldM = MR.mapReduceFoldM
              (MR.generalizeUnpack MR.noUnpack)
              (MR.AssignM assignM)

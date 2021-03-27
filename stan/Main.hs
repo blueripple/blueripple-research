@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -25,33 +26,34 @@ import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.TableUtils as BR
-import qualified Stan.JSON as SJ
+--import qualified Stan.JSON as SJ
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map as M
-import qualified Data.Random.Source.PureMT as PureMT
+--import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
-import qualified Data.Vinyl.CoRec as V
+--import qualified Data.Vinyl.CoRec as V
 import qualified Data.Vector as Vector
 import qualified Frames as F
-import qualified Frames.Melt as F
+--import qualified Frames.Melt as F
+import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
-import qualified Frames.Table as FTable
+--import qualified Frames.Table as FTable
 import qualified Frames.Visualization.VegaLite.Correlation as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data as FV
+--import qualified Frames.Visualization.VegaLite.Data as FV
 
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
@@ -68,14 +70,14 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
 import qualified Optics
 import Optics.Operators
-import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
+--import Polysemy.RandomFu (RandomFu, runRandomIOPureMT)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.Parameters as SP
 import qualified CmdStan as CS
 import qualified Stan.RScriptBuilder as SR
-import qualified Text.Blaze.Html5              as BH
+--import qualified Text.Blaze.Html5              as BH
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -157,15 +159,26 @@ catsPSGroupRowMap = SB.addRowMap @Text "CD" (const "NY-21")
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
 
+ccesPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.CCESByCD)
+ccesPSGroupRowMap = SB.addRowMap "Race" (F.rgetField @DT.Race5C)$ SB.emptyGroupRowMap
+
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCD) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
 --  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   MRP.intercept "alpha" 2
   MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
-  MRP.allMRGroups 2 2 0.1 -- adds transformed data, parameters, priors, and model terms for all MR groups
+  MRP.allMRGroups 2 2 0.01 -- adds transformed data, parameters, priors, and model terms for all MR groups
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
-  MRP.addPostStratification "Race" (SB.ToFoldable BRE.pumsRows) pumsPSGroupRowMap (realToFrac . F.rgetField @PUMS.Citizens) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
+--  MRP.addPostStratification "Race" (SB.ToFoldable BRE.ccesRows) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
+
+  MRP.addPostStratification
+    "Race"
+    (SB.ToFoldable BRE.pumsRows)
+    pumsPSGroupRowMap
+    (realToFrac . F.rgetField @PUMS.Citizens)
+    MRP.PSShare
+    (Just $ SB.GroupTypeTag @DT.Race5 "Race")
 --  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.mrpPosteriorPrediction
 --  MRP.logLikelihood
@@ -202,10 +215,15 @@ subSampleCCES seed samples (BRE.CCESAndPUMS cces pums dist cats) = do
   subSampledCCES <- K.liftKnit @IO $ BR.sampleFrame seed samples cces
   return $ BRE.CCESAndPUMS subSampledCCES pums dist cats
 
+countInCategory :: Eq a => (F.Record rs -> Int) -> (F.Record rs -> a) -> [a] -> FL.Fold (F.Record rs) [(a, Int)]
+countInCategory count key as =
+  let countF a = fmap (a,) $ FL.prefilter ((== a) . key) $ FL.premap count FL.sum
+  in traverse countF as
+
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
-  data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
+  data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums True
   let data_C = {- KC.wctBind (subSampleCCES 3 2000) $ -} data_C'
   dat <- K.ignoreCacheTime data_C
   let popFilter r = True --F.rgetField @DT.Race5C r == DT.R5_Black
@@ -215,7 +233,11 @@ testStanMRP = do
       femaleTurnoutF = FL.prefilter ((== DT.Female) . F.rgetField @DT.SexC) turnoutF
       maleTurnoutF = FL.prefilter ((== DT.Male) . F.rgetField @DT.SexC) turnoutF
       (ft, mt) = FL.fold ((,) <$> femaleTurnoutF <*> maleTurnoutF) $ BRE.ccesRows dat
+      raceCountsCCES = FL.fold (countInCategory (F.rgetField @BRE.Surveyed) (F.rgetField @DT.Race5C) [(minBound :: DT.Race5)..]) $ BRE.ccesRows dat
+      raceCountsPUMS = FL.fold (countInCategory (F.rgetField @PUMS.Citizens) (F.rgetField @DT.RaceAlone4C) [(minBound :: DT.RaceAlone4)..]) $ BRE.pumsRows dat
   K.logLE K.Info $ "In (subsampled) CCES data (Female Turnout, Male Turnout) " <> show (ft, mt)
+  K.logLE K.Info $ "CCES Race counts: " <> show raceCountsCCES
+  K.logLE K.Info $ "PUMS Race counts: " <> show raceCountsPUMS
   K.logLE K.Info "Building json data wrangler and model code..."
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
@@ -230,7 +252,8 @@ testStanMRP = do
          extractTestResults
          data_C
          (Just 1000)
-         (Just 0.9)
+         (Just 0.99)
+         (Just 12)
   res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
 

@@ -51,9 +51,10 @@ makeDefaultModelRunnerConfig ::
   Maybe Int ->
   Maybe Int ->
   Maybe Double ->
+  Maybe Int ->
   Maybe CS.StancConfig ->
   K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM adaptDeltaM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
   case modelM of
@@ -74,7 +75,8 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
             CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix chainIndex),
             CS.numSamples = numSamplesM,
             CS.numWarmup = numWarmupM,
-            CS.adaptDelta = adaptDeltaM
+            CS.adaptDelta = adaptDeltaM,
+            CS.maxTreeDepth = maxTreeDepthM
           }
   let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) [1 .. numChains]
   stanSummaryConfig <-
@@ -91,6 +93,7 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
       outputFilePrefix
       numChains
       adaptDeltaM
+      maxTreeDepthM
       True
       True
 

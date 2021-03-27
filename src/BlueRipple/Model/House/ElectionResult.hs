@@ -1061,6 +1061,7 @@ runHouseModel clearCache predictors (modelName, mNameExtra, mds, cds, model, nSa
         (Just nSamples)
         (Just nSamples)
         Nothing
+        Nothing
         (Just stancConfig)
   let resultCacheKey = "house/model/stan/election_" <> outputLabel <> ".bin"
   when clearCache $ do

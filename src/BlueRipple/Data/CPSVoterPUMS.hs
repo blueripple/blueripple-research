@@ -153,7 +153,8 @@ type CPSVoterPUMS = '[ BR.Year
                      , BR.CountyFIPS
                      , BR.Age4C
                      , BR.SexC
-                     , BR.Race5C
+                     , BR.RaceAlone4C
+                     , BR.HispC
                      , BR.IsCitizen
                      , BR.CollegeGradC
                      , BR.InCollege
@@ -409,6 +410,8 @@ cpsCountVotersByCDF getCatKey year =
      voted
      wgt
 
+
+
 -- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
 -- NB: This needs to be done consistently with the demographics.
 -- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning
@@ -479,6 +482,18 @@ intToInCollege n = n == 4
 
 intToSex :: Int -> BR.Sex
 intToSex n = if n == 1 then BR.Male else BR.Female
+
+intToRaceAlone4 :: Int -> BR.RaceAlone4
+intToRaceAlone4 rN
+  | rN == 100 = BR.RA4_White
+  | rN == 200 = BR.RA4_Black
+  | rN == 651 = BR.RA4_Asian
+  | otherwise = BR.RA4_Other
+
+intToHisp :: Int -> BR.Hisp
+intToHisp hN
+  | (hN >= 100) && (hN <= 901) = BR.Hispanic
+  | otherwise = BR.NonHispanic
 
 intsToRace5 :: Int -> Int -> BR.Race5
 intsToRace5 hN rN
@@ -560,7 +575,8 @@ intToRegisteredYN n
 
 transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
 transformCPSVoterPUMSRow = F.rcast . addCols  where
-  addCols = (FT.addOneFrom @[BR.CPSHISPAN, BR.CPSRACE] @BR.Race5C intsToRace5)
+  addCols = (FT.addOneFromOne @BR.CPSRACE @BR.RaceAlone4C intToRaceAlone4)
+            . (FT.addOneFromOne @BR.CPSHISPAN @BR.HispC intToHisp)
             . (FT.addName @BR.CPSVOSUPPWT @CPSVoterPUMSWeight)
             . (FT.addName @BR.CPSCOUNTY @BR.CountyFIPS)
             . (FT.addName @BR.CPSSTATEFIP @BR.StateFIPS)
