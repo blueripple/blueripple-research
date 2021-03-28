@@ -24,6 +24,7 @@ import qualified Data.Vinyl.TypeLevel          as V
 
   -- map reduce folds for counting
 type Count = "Count" F.:-> Int
+type WeightedCount = "WeightedCount" F.:-> Double
 type Successes = "Successes" F.:-> Int
 type MeanWeight = "MeanWeight" F.:-> Double
 type VarWeight = "VarWeight" F.:-> Double
@@ -50,25 +51,26 @@ countFold testData = MR.mapReduceFold
   (FMR.assignKeysAndData @k)
   (FMR.foldAndAddKey $ binomialFold testData)
 
-type CountCols = '[Count, UnweightedSuccesses, WeightedSuccesses, MeanWeight, VarWeight]
+type CountCols = '[Count, UnweightedSuccesses, WeightedCount, WeightedSuccesses, MeanWeight, VarWeight]
 
 zeroCount :: F.Record CountCols
-zeroCount = 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
+zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil
 
 weightedBinomialFold
   :: (F.Record r -> Bool)
   -> (F.Record r -> Double)
   -> FL.Fold (F.Record r) (F.Record CountCols)
 weightedBinomialFold testRow weightRow =
-  let wSuccessesF =
-        FL.premap (\r -> if testRow r then weightRow r else 0) FL.sum
-      successesF  = FL.premap (\r -> if testRow r then 1 else 0) FL.sum
+  let wCountF = FL.premap weightRow FL.sum
+      wSuccessesF = FL.prefilter testRow wCountF
+      successesF  = FL.prefilter testRow FL.length
       meanWeightF = FL.premap weightRow FL.mean
       varWeightF  = FL.premap weightRow FL.variance
       f s ws mw = if mw < 1e-6 then realToFrac s else ws / mw -- if meanweight is 0 but
-  in  (\n s ws mw vw -> n F.&: s F.&: f s ws mw F.&: mw F.&: vw F.&: V.RNil)
+  in  (\n s wc ws mw vw -> n F.&: s F.&: wc F.&: f s ws mw F.&: mw F.&: vw F.&: V.RNil)
       <$> FL.length
       <*> successesF
+      <*> wCountF
       <*> wSuccessesF
       <*> meanWeightF
       <*> varWeightF

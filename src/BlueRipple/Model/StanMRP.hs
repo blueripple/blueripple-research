@@ -196,8 +196,8 @@ getIndex gn = do
     Just i -> return i
 
 -- Basic group declarations, indexes and Json are produced automatically
-mrGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d ()
-mrGroup binarySD nonBinarySD sumGroupSD gn = do
+addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d ()
+addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
@@ -227,7 +227,7 @@ mrGroup binarySD nonBinarySD sumGroupSD gn = do
 allMRGroups :: (Typeable d, Typeable r) => Double -> Double -> Double -> BuilderM r d ()
 allMRGroups binarySD nonBinarySD sumGroupSD = do
   mrGroupNames <- bmm_MRGroups <$> getModel
-  traverse_ (mrGroup binarySD nonBinarySD sumGroupSD) mrGroupNames
+  traverse_ (addMRGroup binarySD nonBinarySD sumGroupSD) mrGroupNames
 
 type GroupName = Text
 
@@ -243,14 +243,16 @@ data Binomial_MRP_Model d modeledRow =
   , bmm_Success :: modeledRow -> Int
   }
 
+
 emptyFixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
 emptyFixedEffects = DHash.empty
-
+{-
 addFixedEffects :: forall r d. SB.RowTypeTag d r
                 -> FixedEffects r
                 -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
                 -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
 addFixedEffects rtt fe dhm = DHash.insert rtt fe dhm
+-}
 
 feGroupNames :: forall modeledRow d. (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Set.Set GroupName)
 feGroupNames = do
@@ -279,9 +281,9 @@ checkEnv = do
 
 --type PostStratificationWeight psRow = psRow -> Double
 
-fixedEffects :: forall d r r0.(Typeable d, Typeable r0)
+addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
               => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
-fixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
+addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
   SB.add2dMatrixJson rtt "X" suffix "" (SB.NamedDim $ "N" <> uSuffix) n vecF -- JSON/code declarations for matrix
@@ -301,7 +303,7 @@ allFixedEffects :: forall r d. (Typeable d, Typeable r) => Bool -> Double -> Bui
 allFixedEffects thinQR fePriorSD = do
   model <- getModel
   let f :: (Typeable d, Typeable r) => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM r d ()
-      f (rtt DHash.:=> fe) = (fixedEffects thinQR fePriorSD) rtt fe
+      f (rtt DHash.:=> fe) = (addFixedEffects thinQR fePriorSD) rtt fe
   traverse_ f $ DHash.toList $ bmm_FixedEffects model
 
 intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d ()

@@ -132,8 +132,8 @@ districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField 
 districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
-testGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCD) ()
-testGroupBuilder = do
+ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
+ccesGroupBuilder = do
   SB.addGroup "CD" $ SB.makeIndexByCounting show districtKey
   SB.addGroup "State" $ SB.makeIndexByCounting show $ F.rgetField @BR.StateAbbreviation
   SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
@@ -159,15 +159,16 @@ catsPSGroupRowMap = SB.addRowMap @Text "CD" (const "NY-21")
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
 
-ccesPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.CCESByCD)
+ccesPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.CCESByCDR)
 ccesPSGroupRowMap = SB.addRowMap "Race" (F.rgetField @DT.Race5C)$ SB.emptyGroupRowMap
 
-testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCD) BRE.CCESAndPUMS ()
+testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCDR) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
 --  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   MRP.intercept "alpha" 2
-  MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
-  MRP.allMRGroups 2 2 0.01 -- adds transformed data, parameters, priors, and model terms for all MR groups
+--  MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
+  MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
+  MRP.addMRGroup 2 2 0.01 "Race"
   MRP.dataBlockM -- adds dataBlock entries for the count data
   MRP.mrpMainModelTerm -- adds main model term
 --  MRP.addPostStratification "Race" (SB.ToFoldable BRE.ccesRows) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
@@ -183,15 +184,11 @@ testDataAndCodeBuilder = do
 --  MRP.mrpPosteriorPrediction
 --  MRP.logLikelihood
 
-testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCD)
+testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCDR)
 testModel = MRP.Binomial_MRP_Model
             "test"
             MRP.emptyFixedEffects
---            (MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
---              (SB.RowTypeTag "CD")
---              (MRP.FixedEffects 2 districtPredictors)
---              $ MRP.emptyFixedEffects)
-            (S.fromList ["Race"])
+            (S.fromList [""])
             (F.rgetField @BRE.Surveyed)
             (F.rgetField @BRE.TVotes)
 
@@ -211,9 +208,9 @@ extractTestResults = SC.UseSummary f where
     K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
-subSampleCCES seed samples (BRE.CCESAndPUMS cces pums dist cats) = do
+subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist cats) = do
   subSampledCCES <- K.liftKnit @IO $ BR.sampleFrame seed samples cces
-  return $ BRE.CCESAndPUMS subSampledCCES pums dist cats
+  return $ BRE.CCESAndPUMS subSampledCCES cps pums dist cats
 
 countInCategory :: Eq a => (F.Record rs -> Int) -> (F.Record rs -> a) -> [a] -> FL.Fold (F.Record rs) [(a, Int)]
 countInCategory count key as =
@@ -239,7 +236,7 @@ testStanMRP = do
   K.logLE K.Info $ "CCES Race counts: " <> show raceCountsCCES
   K.logLE K.Info $ "PUMS Race counts: " <> show raceCountsPUMS
   K.logLE K.Info "Building json data wrangler and model code..."
-  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode testGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
+  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode ccesGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel2
          True
