@@ -26,12 +26,13 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsVoterPUMSElectoralWeightsByState
   , cpsVoterPUMSNationalElectoralWeights
   , cpsCountVotersByStateF
-  , cpsKeysToASE
-  , cpsKeysToASR
+--  , cpsKeysToASE
+--  , cpsKeysToASR
   , cpsKeysToASER
-  , cpsKeysToASER4
+--  , cpsKeysToASER4
   , cpsKeysToASER5
-  , cpsKeysToIdentity
+  , cpsKeysToASER4H
+--  , cpsKeysToIdentity
   , cpsPossibleVoter
   , cpsVoted
 
@@ -416,16 +417,50 @@ cpsCountVotersByCDF getCatKey year =
 -- NB: This needs to be done consistently with the demographics.
 -- We don't have this information for the preferences, at least not from CCES, so doing this amounts to assigning
 -- "in college" people to either Grad or NonGrad buckets in terms of voting pref.
-cpsKeysToASER5 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER5
+
+cpsKeysToASER5 :: Bool
+               -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
+               -> F.Record BR.CatColsASER5
 cpsKeysToASER5 addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+      ra4 =  F.rgetField @BR.RaceAlone4C r
+      h = F.rgetField @BR.HispC r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
+     F.&: BR.race5FromRaceAlone4AndHisp True ra4 h
+     F.&: V.RNil
+
+
+cpsKeysToASER4H :: Bool
+                -> F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
+                -> F.Record [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.RaceAlone4C, BR.HispC]
+cpsKeysToASER4H addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
   in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
      F.&: (F.rgetField @BR.SexC r)
      F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: F.rgetField @BR.Race5C r
+     F.&: F.rgetField @BR.RaceAlone4C r
+     F.&: F.rgetField @BR.HispC r
      F.&: V.RNil
 
+
+cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER
+cpsKeysToASER addInCollegeToGrads r =
+  let cg = F.rgetField @BR.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
+      ra4 =  F.rgetField @BR.RaceAlone4C r
+      h = F.rgetField @BR.HispC r
+  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
+     F.&: (F.rgetField @BR.SexC r)
+     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
+     F.&: (BR.simpleRaceFromRaceAlone4AndHisp True ra4 h)
+     F.&: V.RNil
+
+
+{-
 cpsKeysToASER4 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
 cpsKeysToASER4 addInCollegeToGrads r =
   let cg = F.rgetField @BR.CollegeGradC r
@@ -464,7 +499,7 @@ cpsKeysToASR r =
 
 cpsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record '[]
 cpsKeysToIdentity = const V.RNil
-
+-}
 -- we have to drop all records with age < 18
 intToAge4 :: Int -> BR.Age4
 intToAge4 n
