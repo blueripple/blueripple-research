@@ -244,6 +244,8 @@ data Binomial_MRP_Model d modeledRow =
   }
 
 
+
+
 emptyFixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
 emptyFixedEffects = DHash.empty
 {-

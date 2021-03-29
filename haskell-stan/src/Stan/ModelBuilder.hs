@@ -297,7 +297,8 @@ addGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
       buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _)) = do
         addFixedIntJson' ("N_" <> gName) (Just 2) gSize
-        addColumnMJson ModeledRowTag gName "" (StanArray [NamedDim "N"] StanInt) "<lower=1>" mIntF
+        _ <- addColumnMJson ModeledRowTag gName "" (StanArray [NamedDim "N"] StanInt) "<lower=1>" mIntF
+        return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
 
@@ -321,7 +322,7 @@ data StanDim = NamedDim StanName | GivenDim Int deriving (Show, Eq, Ord)
 
 dimToText :: StanDim -> Text
 dimToText (NamedDim t) = t
-dimToText (GivenDim n) = show n
+cdimToText (GivenDim n) = show n
 
 
 data StanType = StanInt
@@ -329,6 +330,8 @@ data StanType = StanInt
               | StanArray [StanDim] StanType
               | StanVector StanDim
               | StanMatrix (StanDim, StanDim) deriving (Show, Eq, Ord)
+
+data StanVar = StanVar StanName StanType
 
 data BuilderState d r0 = BuilderState { declaredVars :: !(Map StanName StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
@@ -368,6 +371,65 @@ data StanEnv env r0 = StanEnv { userEnv :: !env, groupEnv :: !(GroupEnv r0) }
 
 newtype StanBuilderM env d r0 a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT (StanEnv env r0) (State (BuilderState d r0))) a }
                                 deriving (Functor, Applicative, Monad, MonadReader (StanEnv env r0), MonadState (BuilderState d r0))
+
+data StanDist args where
+  StanDist :: (args -> StanExpr)
+           -> (args -> StanExpr)
+           -> (args -> StanExpr)
+           -> (args -> StanExpr)
+           -> StanDist args
+
+familySampleF :: StanDist args -> args -> StanExpr
+familySampleF (StanDist s _ _ _) = s
+
+familyLDF :: StanDist args -> args -> StanExpr
+familyLDF (StanDist _ ldf _ _) = ldf
+
+familyRNG :: StanDist args -> args -> StanExpr
+familyRNG (StanDist _ _ rng _) = rng
+
+familyExp :: StanDist args -> args -> StanExpr
+familyExp (StanDist _ _ _ e) = e
+
+binomialLogitDist :: StanDist (StanExpr, StanExpr)
+binomialLogitDist = StanDist sample lpdf rng expectation where
+  sample (eG, eP) = functionWithGivensE "binomial_logit" [eG] [eP]
+  lpdf (eG, eP) = functionE "binomial_logit_lpmf" [eG, eP]
+  rng (eG, eP) = functionE "binomial_rng" [eG, functionE "inv_logit" [eP]]
+  expectation (eG, eP) = eG `timesE` functionE "inv_logit" [eP]
+
+
+addIntData :: (Typeable d, Typeable r0)
+           => StanName
+           -> StanName
+           -> Maybe Int
+           -> Maybe Int
+           -> (r0 -> Int)
+           -> StanBuilderM env d r0 StanVar
+addIntData varName dimName mLower mUpper f = do
+  let stanType =  StanArray [NamedDim dimName] StanInt
+      bounds = case (mLower, mUpper) of
+                 (Nothing, Nothing) -> ""
+                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
+                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
+                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
+  addColumnJson ModeledRowTag varName "" stanType bounds f
+
+addCountData ::  (Typeable d, Typeable r0)
+             => StanName
+             -> StanName
+             -> (r0 -> Int)
+             -> StanBuilderM env d r0 StanVar
+addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
+
+
+--vectoredDistSampling :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
+--vectoredDistSampling lhs
+
+
+
+
+--addDataAndSamplingStatement :: StanDist args  ->
 
 askUserEnv :: StanBuilderM env d r0 env
 askUserEnv = asks userEnv
@@ -501,7 +563,7 @@ addJson :: (Typeable d)
         -> StanType
         -> Text
         -> Stan.StanJSONF r Aeson.Series
-        -> StanBuilderM env d r0 ()
+        -> StanBuilderM env d r0 StanVar
 addJson rtt name st sc fld = do
   inBlock SBData $ stanDeclare name st sc
   (BuilderState declared rowBuilders modelExprs code ims) <- get
@@ -510,6 +572,7 @@ addJson rtt name st sc fld = do
     Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
   put $ BuilderState declared newRowBuilders modelExprs code ims
+  return $ StanVar name st
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
@@ -519,22 +582,24 @@ addJsonUnchecked :: (Typeable d)
                  -> StanType
                  -> Text
                  -> Stan.StanJSONF r Aeson.Series
-                 -> StanBuilderM env d r0 ()
+                 -> StanBuilderM env d r0 StanVar
 addJsonUnchecked rtt name st sc fld = do
   alreadyDeclared <- isDeclared name
-  when (not alreadyDeclared) $ addJson rtt name st sc fld
+  if not alreadyDeclared
+    then addJson rtt name st sc fld
+    else return $ StanVar name st
 
-addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 ()
+addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 StanVar
 addFixedIntJson name mLower n = addJson (ModeledRowTag @_ @r0) name StanInt sc (Stan.constDataF name n) where
   sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
 
-addFixedIntJson' :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 ()
+addFixedIntJson' :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 StanVar
 addFixedIntJson' name mLower n = addJsonUnchecked (ModeledRowTag @_ @r0) name StanInt sc (Stan.constDataF name n) where
   sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d) => RowTypeTag d r -> Text -> StanBuilderM env d r0 ()
+addLengthJson :: (Typeable d) => RowTypeTag d r -> Text -> StanBuilderM env d r0 StanVar
 addLengthJson rtt name = addJsonUnchecked rtt name StanInt "<lower=1>" (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: StanName -> Text -> Text
@@ -546,7 +611,7 @@ addColumnJson :: (Typeable d, Aeson.ToJSON x)
               -> Text
               -> StanType
               -> Text
-              -> (r -> x) -> StanBuilderM env d r0 ()
+              -> (r -> x) -> StanBuilderM env d r0 StanVar
 addColumnJson rtt name suffix st sc toX = do
   case st of
     StanInt -> stanBuildError $ "StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
@@ -563,7 +628,7 @@ addColumnMJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
                -> StanType
                -> Text
                -> (r -> Either Text x)
-               -> StanBuilderM env d r0 ()
+               -> StanBuilderM env d r0 StanVar
 addColumnMJson rtt name suffix st sc toMX = do
   case st of
     StanInt -> stanBuildError $ "StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
@@ -581,7 +646,7 @@ add2dMatrixJson :: (Typeable d, Typeable r0)
                 -> Text
                 -> StanDim
                 -> Int
-                -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 ()
+                -> (r -> Vector.Vector Double) -> StanBuilderM env d r0 StanVar
 add2dMatrixJson rtt name suffix sc rowDim cols vecF = do
   let colName = "K" <> underscoredIf suffix
   addFixedIntJson colName Nothing cols
@@ -708,6 +773,42 @@ data StanExpr where
   FunctionE :: Text -> [StanExpr] -> StanExpr
   VectorFunctionE :: Text -> StanExpr -> StanExpr -- function to add when the context is vectorized
   GroupE :: StanExpr -> StanExpr
+  ArgsE :: [StanExpr] -> StanExpr
+
+
+termE :: StanModelTerm -> StanExpr
+termE = TermE
+
+binOpE :: Text -> StanExpr -> StanExpr -> StanExpr
+binOpE = BinOpE
+
+functionE :: Text -> [StanExpr] -> StanExpr
+functionE = FunctionE
+
+functionWithGivensE :: Text -> [StanExpr] -> [StanExpr] -> StanExpr
+functionWithGivensE fName gs as = functionE fName [binOpE "|" (argsE gs) (argsE as)]
+
+vectorFunctionE :: Text -> StanExpr -> StanExpr
+vectorFunctionE = VectorFunctionE
+
+groupE ::  StanExpr -> StanExpr
+groupE = GroupE
+
+argsE :: [StanExpr] -> StanExpr
+argsE = ArgsE
+
+eqE ::  StanExpr -> StanExpr -> StanExpr
+eqE = binOpE "="
+
+vectorSampleE :: StanExpr -> StanExpr -> StanExpr
+vectorSampleE = binOpE "~"
+
+plusE ::  StanExpr -> StanExpr -> StanExpr
+plusE = binOpE "+"
+
+timesE :: StanExpr -> StanExpr -> StanExpr
+timesE = binOpE "*"
+
 
 printExpr :: Map Text Text -> VectorContext -> StanExpr -> Maybe Text
 --printExpr _ _ NullE = Just ""
@@ -717,6 +818,8 @@ printExpr im vc (FunctionE f es) = (\es' -> f <> "(" <> T.intercalate ", " es' <
 printExpr im Vectorized (VectorFunctionE f e) = (\e' -> f <> "(" <>  e' <> ")") <$> printExpr im Vectorized e
 printExpr im vc@(NonVectorized _) (VectorFunctionE f e) = printExpr im vc e
 printExpr im vc (GroupE e) = (\e' -> "(" <> e' <> ")") <$> printExpr im vc e
+printExpr im vc (ArgsE es) = T.intercalate ", " <$> traverse (printExpr im vc) es
+
 
 printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env d r StanExpr -> StanBuilderM env d r Text
 printExprM context im vc me = do
