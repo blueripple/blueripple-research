@@ -196,16 +196,19 @@ getIndex gn = do
     Just i -> return i
 
 -- Basic group declarations, indexes and Json are produced automatically
-addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d ()
+addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d SB.StanExpr
 addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
-        SB.addModelTerm $ SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ "{eps_" <> gn <> ", -eps_" <> gn <> "}"
+        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ "{eps_" <> gn <> ", -eps_" <> gn <> "}"
+        SB.addModelTerm modelTerm
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
+        return modelTerm
   let nonBinaryGroup = do
-        SB.addModelTerm $ SB.TermE . SB.Indexed gn $ "beta_" <> gn
+        let modelTerm = SB.TermE . SB.Indexed gn $ "beta_" <> gn
+        SB.addModelTerm modelTerm
         SB.inBlock SB.SBTransformedData $ do
           SB.stanDeclare (gn <> "_weights") (SB.StanVector $ SB.NamedDim $ "N_" <> gn) "<lower=0>"
           SB.stanForLoop "g" Nothing ("N_" <> gn) $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
@@ -222,6 +225,7 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
           SB.addStanLine $ "beta_raw_" <> gn <> " ~ normal(0, 1)" --" sigma_" <> gn <> ")"
           SB.addStanLine $ "sigma_" <> gn <> " ~ normal(0, " <> show nonBinarySD <> ")"
           SB.addStanLine $ "dot_product(beta_" <> gn <> ", " <> gn <> "_weights) ~ normal(0, " <> show sumGroupSD <> ")"
+        return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
 allMRGroups :: (Typeable d, Typeable r) => Double -> Double -> Double -> BuilderM r d ()
@@ -282,9 +286,12 @@ checkEnv = do
   return ()
 
 --type PostStratificationWeight psRow = psRow -> Double
-
+-- returns
+-- 'X * beta' (or 'Q * theta') model term expression
+-- 'X * beta' and just 'beta' for post-stratification
+-- The latter is for use in post-stratification at fixed values of the fixed effects.
 addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
-              => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d ()
+              => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
@@ -300,19 +307,24 @@ addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
       eXBeta = SB.BinOpE "*" eX eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   SB.addModelTerm feExpr
+  return (feExpr, eXBeta, eBeta)
 
+{-
 allFixedEffects :: forall r d. (Typeable d, Typeable r) => Bool -> Double -> BuilderM r d ()
 allFixedEffects thinQR fePriorSD = do
   model <- getModel
   let f :: (Typeable d, Typeable r) => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM r d ()
       f (rtt DHash.:=> fe) = (addFixedEffects thinQR fePriorSD) rtt fe
   traverse_ f $ DHash.toList $ bmm_FixedEffects model
+-}
 
-intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d ()
+intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d SB.StanExpr
 intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
-  SB.addModelTerm $ SB.TermE $ SB.Scalar "alpha"
+  let modelTerm = SB.TermE $ SB.Scalar "alpha"
+  SB.addModelTerm modelTerm
+  return modelTerm
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
@@ -433,6 +445,7 @@ dataBlockM = do
   SB.inBlock SB.SBData $ do
     SB.addColumnJson SB.ModeledRowTag "T" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=1>" (bmm_Total model)
     SB.addColumnJson SB.ModeledRowTag "S" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=0>" (bmm_Success model)
+    return ()
 
 mrpMainModelTerm :: BuilderM modeledRow d ()
 mrpMainModelTerm = SB.inBlock SB.SBModel $ do

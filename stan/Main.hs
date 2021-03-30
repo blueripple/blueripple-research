@@ -164,15 +164,20 @@ ccesPSGroupRowMap = SB.addRowMap "Race" (F.rgetField @DT.Race5C)$ SB.emptyGroupR
 
 testDataAndCodeBuilder :: MRP.BuilderM (F.Record BRE.CCESByCDR) BRE.CCESAndPUMS ()
 testDataAndCodeBuilder = do
---  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-  MRP.intercept "alpha" 2
+  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+  vTotal <- SB.addCountData @(F.Record BRE.CCESByCDR) "T" "N" (F.rgetField @BRE.Surveyed)
+  vSucc <- SB.addCountData @(F.Record BRE.CCESByCDR) "S" "N" (F.rgetField @BRE.TVotes)
+  alphaE <- MRP.intercept "alpha" 2
 --  MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
-  MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
-  MRP.addMRGroup 2 2 0.01 "Race"
-  MRP.dataBlockM -- adds dataBlock entries for the count data
-  MRP.mrpMainModelTerm -- adds main model term
+  (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
+  gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
+  let logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gRaceE
+  SB.vectoredDistSampling SB.binomialLogitDist vSucc (vTotal, logitPE)
+  SB.generateLogLikelihood SB.binomialLogitDist vSucc (vTotal, logitPE)
+--  MRP.dataBlockM -- adds dataBlock entries for the count data
+--  MRP.mrpMainModelTerm -- adds main model term
 --  MRP.addPostStratification "Race" (SB.ToFoldable BRE.ccesRows) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
-
+{-
   MRP.addPostStratification
     "Race"
     (SB.ToFoldable BRE.pumsRows)
@@ -183,6 +188,7 @@ testDataAndCodeBuilder = do
 --  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.mrpPosteriorPrediction
 --  MRP.logLikelihood
+-}
 
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCDR)
 testModel = MRP.Binomial_MRP_Model

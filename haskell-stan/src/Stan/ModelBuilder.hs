@@ -373,16 +373,16 @@ newtype StanBuilderM env d r0 a = StanBuilderM { unStanBuilderM :: ExceptT Text 
                                 deriving (Functor, Applicative, Monad, MonadReader (StanEnv env r0), MonadState (BuilderState d r0))
 
 data StanDist args where
-  StanDist :: (args -> StanExpr)
-           -> (args -> StanExpr)
+  StanDist :: (StanVar -> args -> StanExpr)
+           -> (StanVar -> args -> StanExpr)
            -> (args -> StanExpr)
            -> (args -> StanExpr)
            -> StanDist args
 
-familySampleF :: StanDist args -> args -> StanExpr
+familySampleF :: StanDist args -> StanVar -> args -> StanExpr
 familySampleF (StanDist s _ _ _) = s
 
-familyLDF :: StanDist args -> args -> StanExpr
+familyLDF :: StanDist args -> StanVar -> args -> StanExpr
 familyLDF (StanDist _ ldf _ _) = ldf
 
 familyRNG :: StanDist args -> args -> StanExpr
@@ -391,12 +391,13 @@ familyRNG (StanDist _ _ rng _) = rng
 familyExp :: StanDist args -> args -> StanExpr
 familyExp (StanDist _ _ _ e) = e
 
-binomialLogitDist :: StanDist (StanExpr, StanExpr)
+binomialLogitDist :: StanDist (StanVar, StanExpr)
 binomialLogitDist = StanDist sample lpdf rng expectation where
-  sample (eG, eP) = functionWithGivensE "binomial_logit" [eG] [eP]
-  lpdf (eG, eP) = functionE "binomial_logit_lpmf" [eG, eP]
-  rng (eG, eP) = functionE "binomial_rng" [eG, functionE "inv_logit" [eP]]
-  expectation (eG, eP) = eG `timesE` functionE "inv_logit" [eP]
+  vecE (StanVar name _) = termE $ Vectored name
+  sample sV (tV, lpE) = vecE sV `vectorSampleE` functionE "binomial_logit" [vecE tV, lpE]
+  lpdf sV (tV, lpE) = functionWithGivensE "binomial_logit_lpmf" [vecE sV] [vecE tV, lpE]
+  rng (tV, lpE) = functionE "binomial_rng" [vecE tV, functionE "inv_logit" [lpE]]
+  expectation (tV, lpE) = vecE tV  `timesE` functionE "inv_logit" [lpE]
 
 
 addIntData :: (Typeable d, Typeable r0)
@@ -415,7 +416,7 @@ addIntData varName dimName mLower mUpper f = do
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
   addColumnJson ModeledRowTag varName "" stanType bounds f
 
-addCountData ::  (Typeable d, Typeable r0)
+addCountData :: forall r0 d env.(Typeable d, Typeable r0)
              => StanName
              -> StanName
              -> (r0 -> Int)
@@ -423,11 +424,30 @@ addCountData ::  (Typeable d, Typeable r0)
 addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
 
 
---vectoredDistSampling :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
---vectoredDistSampling lhs
+vectoredDistSampling :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
+vectoredDistSampling sDist sv@(StanVar lhsName _) args =  inBlock SBModel $ do
+  indexMap <- groupIndexByName <$> askGroupEnv
+  let im = Map.mapWithKey const indexMap
+      samplingE = familySampleF sDist sv args
+  samplingCode <- printExprM "mrpModelBlock" im Vectorized $ return samplingE
+  addStanLine samplingCode
 
+generateLogLikelihood :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
+generateLogLikelihood sDist sv@(StanVar lhsName _) args =  inBlock SBGeneratedQuantities $ do
+  indexMap <- groupIndexByName <$> askGroupEnv
+  stanDeclare "log_lik" (StanVector $ NamedDim "N") ""
+  stanForLoop "n" Nothing "N" $ \_ -> do
+    let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
+        lhsE = termE $ Vectored "log_lik"
+        rhsE = familyLDF sDist sv args
+        llE = lhsE `eqE` rhsE
+    llCode <- printExprM "mrpLogLikStanCode" im (NonVectorized "n") $ return llE
+    addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
-
+generatePosteriorPrediction :: StanDist args -> args -> StanBuilderM env d r0 ()
+generatePosteriorPrediction sDist args = inBlock SBGeneratedQuantities $ do
+  indexMap <- groupIndexByName <$> askGroupEnv
+  let im = Map.mapWithKey const indexMap
 
 --addDataAndSamplingStatement :: StanDist args  ->
 
@@ -719,19 +739,20 @@ stanPrint ps =
 underscoredIf :: Text -> Text
 underscoredIf t = if T.null t then "" else "_" <> t
 
-fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env d r ()
+fixedEffectsQR :: Text -> Text -> Text -> Text -> StanBuilderM env d r StanVar
 fixedEffectsQR thinSuffix matrix rows cols = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
+      q = "Q" <> thinSuffix <> "_ast"
+      r = "R" <> thinSuffix <> "_ast"
+      qMatrixType = StanMatrix (NamedDim rows, NamedDim cols)
   inBlock SBParameters $ stanDeclare ("theta" <> matrix) (StanVector $ NamedDim cols) "" --addStanLine $ "vector[" <> cols <> "] theta" <> matrix
   inBlock SBTransformedData $ do
-    let q = "Q" <> thinSuffix <> "_ast"
-        r = "R" <> thinSuffix <> "_ast"
     stanDeclare ("mean_" <> matrix) (StanVector (NamedDim cols)) ""
     stanDeclare ("centered_" <> matrix) (StanMatrix (NamedDim rows, NamedDim cols)) ""
     stanForLoop "k" Nothing cols $ const $ do
       addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
-      addStanLine $ "centered_" <> matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
-    stanDeclare q (StanMatrix (NamedDim rows, NamedDim cols)) ""
+      addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
+    stanDeclare q qMatrixType ""
     stanDeclare r (StanMatrix (NamedDim cols, NamedDim cols)) ""
     stanDeclare ri (StanMatrix (NamedDim cols, NamedDim cols)) ""
     addStanLine $ q <> " = qr_thin_Q(centered_" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
@@ -740,7 +761,8 @@ fixedEffectsQR thinSuffix matrix rows cols = do
   inBlock SBTransformedParameters $ do
     stanDeclare ("beta" <> matrix) (StanVector $ NamedDim cols) ""
     addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
-
+  let qMatrix = StanVar q qMatrixType
+  return qMatrix
 
 stanIndented :: StanBuilderM env d r a -> StanBuilderM env d r a
 stanIndented = indented 2
