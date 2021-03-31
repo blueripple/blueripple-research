@@ -26,7 +26,6 @@ import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.TableUtils as BR
---import qualified Stan.JSON as SJ
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
@@ -39,10 +38,8 @@ import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
---import qualified Data.Vinyl.CoRec as V
 import qualified Data.Vector as Vector
 import qualified Frames as F
---import qualified Frames.Melt as F
 import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
@@ -149,6 +146,7 @@ race5FromPUMS r =
 
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 pumsPSGroupRowMap = SB.addRowMap "Race" race5FromPUMS
+                    $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.emptyGroupRowMap
 --                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
 --                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
@@ -168,27 +166,28 @@ testDataAndCodeBuilder = do
   vTotal <- SB.addCountData @(F.Record BRE.CCESByCDR) "T" "N" (F.rgetField @BRE.Surveyed)
   vSucc <- SB.addCountData @(F.Record BRE.CCESByCDR) "S" "N" (F.rgetField @BRE.TVotes)
   alphaE <- MRP.intercept "alpha" 2
---  MRP.allFixedEffects True 2 -- adds transformed data, parameters, priors and model terms for all fixed effect groups
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
-  gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
-  let logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gRaceE
-  SB.vectoredDistSampling SB.binomialLogitDist vSucc (vTotal, logitPE)
-  SB.generateLogLikelihood SB.binomialLogitDist vSucc (vTotal, logitPE)
---  MRP.dataBlockM -- adds dataBlock entries for the count data
---  MRP.mrpMainModelTerm -- adds main model term
+  gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
+  let dist = SB.binomialLogitDist vSucc vTotal
+      logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gSexE
+  SB.sampleDistV dist logitPE
+  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
+--  SB.generateLogLikelihood dist logitPE
 --  MRP.addPostStratification "Race" (SB.ToFoldable BRE.ccesRows) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
-{-
+
   MRP.addPostStratification
-    "Race"
+    dist
+    logitPE
+    "Sex"
     (SB.ToFoldable BRE.pumsRows)
     pumsPSGroupRowMap
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
-    (Just $ SB.GroupTypeTag @DT.Race5 "Race")
+    (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.mrpPosteriorPrediction
 --  MRP.logLikelihood
--}
+
 
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCDR)
 testModel = MRP.Binomial_MRP_Model
@@ -209,7 +208,7 @@ extractTestResults = SC.UseSummary f where
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Race5 "Race" groupIndexes
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Race5 "Sex" groupIndexes
     vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Race" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 

@@ -70,7 +70,7 @@ buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          -> Binomial_MRP_Model d modeledRow
                          -> SB.StanBuilderM (Binomial_MRP_Model d modeledRow) d modeledRow ()
                          -> d
-                         -> SB.ToFoldable d modeledRow --MRData modeledRow predRow
+                         -> SB.ToFoldable d modeledRow
                          -> Either Text (SC.DataWrangler d SB.GroupIntMaps (), SB.StanCode)
 buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
@@ -336,14 +336,16 @@ data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
-                      => SB.StanName
+                      => SB.StanDist args
+                      -> args
+                      -> SB.StanName
                       -> SB.ToFoldable d r
                       -> SB.GroupRowMap r
                       -> (r -> Double)
                       -> PostStratificationType
                       -> (Maybe (SB.GroupTypeTag k))
                       -> BuilderM r0 d ()
-addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF psType mPSGroup = do
+addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
@@ -414,8 +416,10 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF ps
     let groupCounters = fmap ("n_" <>) $ ugNames
         im = Map.fromList $ zip ugNames groupCounters
         inner = do
-          modelTerms <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
-          SB.addStanLine $ "real p = inv_logit(" <> modelTerms <> ")"
+          let psExpE = SB.familyExp sDist args
+          expCode <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ return psExpE
+          SB.stanDeclareRHS "p" SB.StanReal "<lower=0, upper=1>" expCode
+--          SB.addStanLine $ "real p = inv_logit(" <> modelTerms <> ")"
           when (psType == PSShare) $ SB.addStanLine $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
           SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
         makeLoops [] = inner
@@ -423,7 +427,7 @@ addPostStratification name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF ps
     SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
     SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
-      when (psType == PSShare) $ SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
+      when (psType == PSShare) $ SB.stanDeclareRHS namedPS SB.StanReal "<lower=0>" "0" --SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
       makeLoops ugNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
 

@@ -373,16 +373,16 @@ newtype StanBuilderM env d r0 a = StanBuilderM { unStanBuilderM :: ExceptT Text 
                                 deriving (Functor, Applicative, Monad, MonadReader (StanEnv env r0), MonadState (BuilderState d r0))
 
 data StanDist args where
-  StanDist :: (StanVar -> args -> StanExpr)
-           -> (StanVar -> args -> StanExpr)
+  StanDist :: (args -> StanExpr)
+           -> (args -> StanExpr)
            -> (args -> StanExpr)
            -> (args -> StanExpr)
            -> StanDist args
 
-familySampleF :: StanDist args -> StanVar -> args -> StanExpr
+familySampleF :: StanDist args -> args -> StanExpr
 familySampleF (StanDist s _ _ _) = s
 
-familyLDF :: StanDist args -> StanVar -> args -> StanExpr
+familyLDF :: StanDist args -> args -> StanExpr
 familyLDF (StanDist _ ldf _ _) = ldf
 
 familyRNG :: StanDist args -> args -> StanExpr
@@ -391,13 +391,13 @@ familyRNG (StanDist _ _ rng _) = rng
 familyExp :: StanDist args -> args -> StanExpr
 familyExp (StanDist _ _ _ e) = e
 
-binomialLogitDist :: StanDist (StanVar, StanExpr)
-binomialLogitDist = StanDist sample lpdf rng expectation where
+binomialLogitDist :: StanVar -> StanVar -> StanDist StanExpr
+binomialLogitDist sV tV = StanDist sample lpdf rng expectation where
   vecE (StanVar name _) = termE $ Vectored name
-  sample sV (tV, lpE) = vecE sV `vectorSampleE` functionE "binomial_logit" [vecE tV, lpE]
-  lpdf sV (tV, lpE) = functionWithGivensE "binomial_logit_lpmf" [vecE sV] [vecE tV, lpE]
-  rng (tV, lpE) = functionE "binomial_rng" [vecE tV, functionE "inv_logit" [lpE]]
-  expectation (tV, lpE) = vecE tV  `timesE` functionE "inv_logit" [lpE]
+  sample lpE = vecE sV `vectorSampleE` functionE "binomial_logit" [vecE tV, lpE]
+  lpdf lpE = functionWithGivensE "binomial_logit_lpmf" [vecE sV] [vecE tV, lpE]
+  rng lpE = functionE "binomial_rng" [vecE tV, functionE "inv_logit" [lpE]]
+  expectation lpE = functionE "inv_logit" [lpE]
 
 
 addIntData :: (Typeable d, Typeable r0)
@@ -424,30 +424,36 @@ addCountData :: forall r0 d env.(Typeable d, Typeable r0)
 addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
 
 
-vectoredDistSampling :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
-vectoredDistSampling sDist sv@(StanVar lhsName _) args =  inBlock SBModel $ do
+sampleDistV :: StanDist args -> args -> StanBuilderM env d r0 ()
+sampleDistV sDist args =  inBlock SBModel $ do
   indexMap <- groupIndexByName <$> askGroupEnv
   let im = Map.mapWithKey const indexMap
-      samplingE = familySampleF sDist sv args
+      samplingE = familySampleF sDist args
   samplingCode <- printExprM "mrpModelBlock" im Vectorized $ return samplingE
   addStanLine samplingCode
 
-generateLogLikelihood :: StanDist args -> StanVar -> args -> StanBuilderM env d r0 ()
-generateLogLikelihood sDist sv@(StanVar lhsName _) args =  inBlock SBGeneratedQuantities $ do
+generateLogLikelihood :: StanDist args -> args -> StanBuilderM env d r0 ()
+generateLogLikelihood sDist args =  inBlock SBGeneratedQuantities $ do
   indexMap <- groupIndexByName <$> askGroupEnv
   stanDeclare "log_lik" (StanVector $ NamedDim "N") ""
   stanForLoop "n" Nothing "N" $ \_ -> do
     let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
         lhsE = termE $ Vectored "log_lik"
-        rhsE = familyLDF sDist sv args
+        rhsE = familyLDF sDist args
         llE = lhsE `eqE` rhsE
-    llCode <- printExprM "mrpLogLikStanCode" im (NonVectorized "n") $ return llE
+    llCode <- printExprM "log likelihood (in Generated Quantitites)" im (NonVectorized "n") $ return llE
     addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
-generatePosteriorPrediction :: StanDist args -> args -> StanBuilderM env d r0 ()
-generatePosteriorPrediction sDist args = inBlock SBGeneratedQuantities $ do
+
+generatePosteriorPrediction :: StanVar -> StanDist args -> args -> StanBuilderM env d r0 ()
+generatePosteriorPrediction (StanVar ppName ppType) sDist args = inBlock SBGeneratedQuantities $ do
   indexMap <- groupIndexByName <$> askGroupEnv
   let im = Map.mapWithKey const indexMap
+      rngE = familyRNG sDist args
+  rngCode <- printExprM "posterior prediction (in Generated Quantities)" im Vectorized $ return rngE
+  stanDeclareRHS ppName ppType "" rngCode
+--  addStanLine $ "vector[N] " <> ppName <> " = " <> rngCode
+
 
 --addDataAndSamplingStatement :: StanDist args  ->
 
@@ -530,8 +536,8 @@ declare sn st = do
                then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
 
-stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
-stanDeclare sn st sc = do
+stanDeclare' :: StanName -> StanType -> Text -> Maybe Text -> StanBuilderM env d r0 ()
+stanDeclare' sn st sc mRHS = do
   declare sn st
   let dimsToText x = "[" <> T.intercalate ", " (dimToText <$> x) <> "]"
   let typeToCode :: StanName -> StanType -> Text -> Text
@@ -552,7 +558,15 @@ stanDeclare sn st sc = do
         NamedDim t -> checkName t
         GivenDim _ -> return ()
   traverse_ checkDim $ dimsToCheck st
-  addStanLine $ typeToCode sn st sc
+  case mRHS of
+    Nothing -> addStanLine $ typeToCode sn st sc
+    Just rhs -> addStanLine $ typeToCode sn st sc <> " = " <> rhs
+
+stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
+stanDeclare sn st sc = stanDeclare' sn st sc Nothing
+
+stanDeclareRHS :: StanName -> StanType -> Text -> Text -> StanBuilderM env d r0 ()
+stanDeclareRHS sn st sc rhs = stanDeclare' sn st sc (Just rhs)
 
 
 checkName :: StanName -> StanBuilderM env d r0 ()
