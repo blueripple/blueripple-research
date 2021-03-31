@@ -796,11 +796,20 @@ data StanModelTerm where
   Vectored :: Text -> StanModelTerm
   Indexed :: Text -> Text -> StanModelTerm
 
-printTerm :: Map Text Text -> VectorContext -> StanModelTerm -> Maybe Text
-printTerm _ _ (Scalar t) = Just t
-printTerm _ Vectorized (Vectored n) = Just n
-printTerm _ (NonVectorized i) (Vectored n) = Just $ n <> "[" <> i <> "]"
-printTerm indexMap _ (Indexed k t) = (\i -> t <> "[" <> i <> "]") <$> Map.lookup k indexMap
+printTerm :: Map Text Text -> VectorContext -> StanModelTerm -> Either Text Text
+printTerm _ _ (Scalar t) = Right t
+printTerm _ Vectorized (Vectored n) = Right n
+printTerm _ (NonVectorized i) (Vectored n) = Right $ n <> "[" <> i <> "]"
+printTerm indexMap _ (Indexed k t) = (\i -> t <> "[" <> i <> "]")
+                                     <$> (maybe
+                                     (Left
+                                       $ "Failed to find key="
+                                       <> k
+                                       <> " in "
+                                       <> show indexMap
+                                       <> " when indexing an expression.")
+                                     Right
+                                     $ Map.lookup k indexMap)
 
 data StanExpr where
 --  NullE :: StanExpr
@@ -846,7 +855,7 @@ timesE :: StanExpr -> StanExpr -> StanExpr
 timesE = binOpE "*"
 
 
-printExpr :: Map Text Text -> VectorContext -> StanExpr -> Maybe Text
+printExpr :: Map Text Text -> VectorContext -> StanExpr -> Either Text Text
 --printExpr _ _ NullE = Just ""
 printExpr im vc (TermE t) = printTerm im vc t
 printExpr im vc (BinOpE o l r) = (\l' r' -> l' <> " " <> o <> " " <> r') <$> printExpr im vc l <*> printExpr im vc r
@@ -861,8 +870,8 @@ printExprM :: Text -> Map Text Text -> VectorContext -> StanBuilderM env d r Sta
 printExprM context im vc me = do
   e <- me
   case printExpr im vc e of
-    Nothing -> stanBuildError $ context <> ": Missing index while constructing model expression"
-    Just t -> return t
+    Right t -> return t
+    Left err -> stanBuildError err
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (BinOpE o) (head es) (tail es)

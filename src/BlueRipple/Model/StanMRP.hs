@@ -291,7 +291,11 @@ checkEnv = do
 -- 'X * beta' and just 'beta' for post-stratification
 -- The latter is for use in post-stratification at fixed values of the fixed effects.
 addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
-              => Bool -> Double -> SB.RowTypeTag d r -> FixedEffects r -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+                => Bool
+                -> Double
+                -> SB.RowTypeTag d r
+                -> FixedEffects r
+                -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
@@ -427,9 +431,10 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
     SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
     SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
-      when (psType == PSShare) $ SB.stanDeclareRHS namedPS SB.StanReal "<lower=0>" "0" --SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
+      let wsn = namedPS <> "_WgtSum"
+      when (psType == PSShare) $ SB.stanDeclareRHS wsn  SB.StanReal "<lower=0>" "0" --SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
       makeLoops ugNames
-      when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
+      when (psType == PSShare) $ SB.addStanLine $ wsn <> "[n] /= " <> namedPS <> "_WgtSum"
 
 usedIndexes :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Map GroupName (SB.IntIndex modeledRow))
 usedIndexes = do
