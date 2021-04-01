@@ -172,21 +172,19 @@ testDataAndCodeBuilder = do
       logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gSexE
   SB.sampleDistV dist logitPE
   SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
---  SB.generateLogLikelihood dist logitPE
---  MRP.addPostStratification "Race" (SB.ToFoldable BRE.ccesRows) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
+--  MRP.addPostStratification dist logitPE "Race" (SB.ToFoldable BRE.ccesRows) (Set.fromList ["CD", "Race"]) ccesPSGroupRowMap (realToFrac . F.rgetField @BRE.Surveyed) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Race5 "Race")
 
   MRP.addPostStratification
     dist
     logitPE
     "Sex"
     (SB.ToFoldable BRE.pumsRows)
+    (S.fromList ["CD", "Sex"])
     pumsPSGroupRowMap
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @DT.Sex "Sex")
---  MRP.addPostStratification "Sex" (SB.ToFoldable BRE.allCategoriesRows) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
---  MRP.mrpPosteriorPrediction
---  MRP.logLikelihood
+--  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCDR)

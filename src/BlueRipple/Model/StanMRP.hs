@@ -344,18 +344,19 @@ addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       -> args
                       -> SB.StanName
                       -> SB.ToFoldable d r
+                      -> Set.Set Text
                       -> SB.GroupRowMap r
                       -> (r -> Double)
                       -> PostStratificationType
                       -> (Maybe (SB.GroupTypeTag k))
                       -> BuilderM r0 d ()
-addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps weightF psType mPSGroup = do
+addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGroups groupMaps weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
-  usedGNames <- usedGroupNames
-  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` usedGNames) $ allGroups
-      checkGroupSubset n1 n2 gs1 gs2 = do
+--  usedGNames <- usedGroupNames
+  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
+  let checkGroupSubset n1 n2 gs1 gs2 = do
         let gDiff = DHash.difference gs1 gs2
         when (DHash.size gDiff /= 0)
           $ SB.stanBuildError
