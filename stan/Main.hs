@@ -145,7 +145,7 @@ race5FromPUMS r =
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-pumsPSGroupRowMap = SB.addRowMap "Race" race5FromPUMS
+pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.emptyGroupRowMap
 --                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
@@ -185,8 +185,7 @@ testDataAndCodeBuilder = do
     MRP.PSShare
     (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
-
-
+{-
 testModel :: MRP.Binomial_MRP_Model BRE.CCESAndPUMS (F.Record BRE.CCESByCDR)
 testModel = MRP.Binomial_MRP_Model
             "test"
@@ -194,20 +193,20 @@ testModel = MRP.Binomial_MRP_Model
             (S.fromList [""])
             (F.rgetField @BRE.Surveyed)
             (F.rgetField @BRE.TVotes)
-
+-}
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
 indexStanResults im v = do
   when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Race5 [Double])
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Sex [Double])
 extractTestResults = SC.UseSummary f where
   f summary _ aAndEb_C = do
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Race5 "Sex" groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Race" (CS.paramStats summary)
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "Sex" groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
@@ -239,10 +238,10 @@ testStanMRP = do
   K.logLE K.Info $ "CCES Race counts: " <> show raceCountsCCES
   K.logLE K.Info $ "PUMS Race counts: " <> show raceCountsPUMS
   K.logLE K.Info "Building json data wrangler and model code..."
-  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode ccesGroupBuilder testModel testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
+  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode ccesGroupBuilder () testDataAndCodeBuilder dat (SB.ToFoldable BRE.ccesRows)
   K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
-  res_C <- MRP.runMRPModel2
-         True
+  res_C <- MRP.runMRPModel
+         False
          (Just "stan/mrp/cces")
          "test"
          "test"

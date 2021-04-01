@@ -57,33 +57,36 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
 
+{-
 data MRPData f predRow modeledRow psRow =
   MRPData
   {
     modeled :: f modeledRow
   , postStratified ::Maybe (f psRow) -- if this is Nothing we don't do post-stratification
   }
-
+-}
 
 buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          => SB.StanGroupBuilderM modeledRow ()
-                         -> Binomial_MRP_Model d modeledRow
-                         -> SB.StanBuilderM (Binomial_MRP_Model d modeledRow) d modeledRow ()
+                         -> env
+                         -> SB.StanBuilderM env d modeledRow ()
                          -> d
                          -> SB.ToFoldable d modeledRow
                          -> Either Text (SC.DataWrangler d SB.GroupIntMaps (), SB.StanCode)
-buildDataWranglerAndCode groupM model builderM d (SB.ToFoldable toFoldable) =
+buildDataWranglerAndCode groupM env builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
         SB.addGroupIndexes
         _ <- builderM
         jsonRowBuilders <- SB.buildJSONF
         intMapBuilders <- SB.indexes <$> get
-        return $ SC.Wrangle SC.TransientIndex $ \d -> (SB.buildIntMaps intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
-      resE = SB.runStanBuilder d toFoldable model groupM builderWithWrangler
+        return
+          $ SC.Wrangle SC.TransientIndex
+          $ \d -> (SB.buildIntMaps intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
+      resE = SB.runStanBuilder d toFoldable env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ c _, dw) -> (dw, c)) resE
 
 
-runMRPModel2 :: (K.KnitEffects r
+runMRPModel :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
                )
@@ -100,7 +103,7 @@ runMRPModel2 :: (K.KnitEffects r
             -> Maybe Double
             -> Maybe Int
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta mMaxTreeDepth =
+runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta mMaxTreeDepth =
   K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
   K.logLE K.Info "Running..."
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
@@ -145,45 +148,7 @@ runMRPModel2 clearCache mWorkDir modelName dataName dataWrangler stanCode ppName
       ()
       data_C
 
-data ProjectableRows f rowA rowB where
-  ProjectableRows :: Functor f => f rowA -> (rowA -> rowB) -> ProjectableRows f rowA rowB
-  ProjectedRows :: Functor f => f row -> ProjectableRows f row row
-
-instance Functor (ProjectableRows f rowA) where
-  fmap h (ProjectableRows rs g) = ProjectableRows rs (h . g)
-  fmap h (ProjectedRows rs) = ProjectableRows rs h
-
-projectableRows :: ProjectableRows f rowA rowB -> f rowA
-projectableRows (ProjectableRows rs _) = rs
-projectableRows (ProjectedRows rs) = rs
-
-projectRow :: ProjectableRows f rowA rowB -> rowA -> rowB
-projectRow (ProjectableRows _ g) = g
-projectRow (ProjectedRows _) = id
-
-projectRows :: ProjectableRows f rowA rowB -> ProjectableRows f rowB rowB
-projectRows (ProjectableRows rs g) = ProjectedRows $ fmap g rs
-projectRows (ProjectedRows rs) = ProjectedRows rs
-
-projectedRows :: ProjectableRows f rowA rowB -> f rowB
-projectedRows = projectableRows . projectRows
-
-type MRData f modeledRows predRows = ProjectableRows f modeledRows predRows
-type PSData f psRows predRows = ProjectableRows f psRows predRows
-type LLData f modeledRows predRows = ProjectableRows f modeledRows predRows
-
-data PostStratification k psRow predRow =
-  PostStratification
-  {
-    psPrj :: psRow -> predRow
-  , psWeight ::  psRow -> Double
-  , psGroupKey :: psRow -> k
-  }
-
-type BuilderM modeledRow d = SB.StanBuilderM (Binomial_MRP_Model d modeledRow) d modeledRow
-
-getModel ::  BuilderM modeledRow d (Binomial_MRP_Model d modeledRow)
-getModel = SB.askUserEnv
+type BuilderM modeledRow d = SB.StanBuilderM () d modeledRow
 
 getIndexes :: BuilderM modeledRow d (Map Text (SB.IntIndex modeledRow))
 getIndexes = SB.groupIndexByName <$> SB.askGroupEnv
@@ -194,6 +159,15 @@ getIndex gn = do
   case (Map.lookup gn indexMap) of
     Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
     Just i -> return i
+
+-- TODO: Move to ModelBuilder
+intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d SB.StanExpr
+intercept iName alphaPriorSD = do
+  SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
+  SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+  let modelTerm = SB.TermE $ SB.Scalar "alpha"
+  SB.addModelTerm modelTerm
+  return modelTerm
 
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d SB.StanExpr
@@ -216,7 +190,6 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
           SB.addStanLine $ gn <> "_weights /= N"
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare ("sigma_" <> gn) SB.StanReal "<lower=0>"
---          SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ("<multiplier=sigma_" <> gn <> ">")
           SB.stanDeclare ("beta_raw_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
         SB.inBlock SB.SBTransformedParameters $ do
           SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
@@ -228,64 +201,13 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-allMRGroups :: (Typeable d, Typeable r) => Double -> Double -> Double -> BuilderM r d ()
-allMRGroups binarySD nonBinarySD sumGroupSD = do
-  mrGroupNames <- bmm_MRGroups <$> getModel
-  traverse_ (addMRGroup binarySD nonBinarySD sumGroupSD) mrGroupNames
-
 type GroupName = Text
 
 data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
 
-data Binomial_MRP_Model d modeledRow =
-  Binomial_MRP_Model
-  {
-    bmm_Name :: Text -- we'll need this for (unique) file names
-  , bmm_FixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
-  , bmm_MRGroups :: Set.Set GroupName
-  , bmm_Total :: modeledRow -> Int
-  , bmm_Success :: modeledRow -> Int
-  }
-
-
-
-
 emptyFixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
 emptyFixedEffects = DHash.empty
-{-
-addFixedEffects :: forall r d. SB.RowTypeTag d r
-                -> FixedEffects r
-                -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
-                -> DHash.DHashMap (SB.RowTypeTag d) FixedEffects
-addFixedEffects rtt fe dhm = DHash.insert rtt fe dhm
--}
 
-feGroupNames :: forall modeledRow d. (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Set.Set GroupName)
-feGroupNames = do
-  feMap <- bmm_FixedEffects <$> getModel
-  let feGroupMap = DHash.delete (SB.ModeledRowTag @d @modeledRow) feMap
-      getName (rtt DSum.:=> _) = SB.dsName rtt
-  return $ Set.fromList $ fmap getName $ DHash.toList feGroupMap
-
-usedGroupNames :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Set.Set GroupName)
-usedGroupNames = do
-  model <- getModel
-  feGNames <- feGroupNames
-  return $ foldl' (\s gn -> Set.insert gn s) (bmm_MRGroups model) feGNames
-
-checkEnv :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
-checkEnv = do
-  model <- getModel
-  allGroupNames <- Map.keys <$> getIndexes
-  allFEGroupNames <- Set.toList <$> feGroupNames
-  let allMRGroupNames = Set.toAscList $ bmm_MRGroups model
-      hasAllFEGroups = List.isSubsequenceOf allFEGroupNames  allGroupNames
-      hasAllMRGroups = List.isSubsequenceOf allMRGroupNames  allGroupNames
-  when (not hasAllFEGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". FEGroups=" <> show allFEGroupNames
-  when (not hasAllMRGroups) $ SB.stanBuildError $ "Missing group data! Given group data for " <> show allGroupNames <> ". MRGroups=" <> show allMRGroupNames
-  return ()
-
---type PostStratificationWeight psRow = psRow -> Double
 -- returns
 -- 'X * beta' (or 'Q * theta') model term expression
 -- 'X * beta' and just 'beta' for post-stratification
@@ -303,32 +225,17 @@ addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.TermE $ if T.null suffix then SB.Vectored "Q_ast" else SB.Indexed suffix ("Q" <> uSuffix <> "_ast") --[" <> suffix <> "]"
+  let eQ = SB.TermE
+           $ if T.null suffix then SB.Vectored "Q_ast" else SB.Indexed suffix ("Q" <> uSuffix <> "_ast")
       eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> uSuffix
       eQTheta = SB.BinOpE "*" eQ eTheta
-      eX = SB.TermE $ if T.null suffix then SB.Vectored "centered_X" else SB.Indexed suffix ("centered_X" <> uSuffix) -- <> "[" <> suffix <> "]"
+      eX = SB.TermE
+           $ if T.null suffix then SB.Vectored "centered_X" else SB.Indexed suffix ("centered_X" <> uSuffix)
       eBeta = SB.TermE $ SB.Scalar $ "betaX" <> uSuffix
       eXBeta = SB.BinOpE "*" eX eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   SB.addModelTerm feExpr
   return (feExpr, eXBeta, eBeta)
-
-{-
-allFixedEffects :: forall r d. (Typeable d, Typeable r) => Bool -> Double -> BuilderM r d ()
-allFixedEffects thinQR fePriorSD = do
-  model <- getModel
-  let f :: (Typeable d, Typeable r) => DSum.DSum (SB.RowTypeTag d) (FixedEffects) -> BuilderM r d ()
-      f (rtt DHash.:=> fe) = (addFixedEffects thinQR fePriorSD) rtt fe
-  traverse_ f $ DHash.toList $ bmm_FixedEffects model
--}
-
-intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d SB.StanExpr
-intercept iName alphaPriorSD = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
-  SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
-  let modelTerm = SB.TermE $ SB.Scalar "alpha"
-  SB.addModelTerm modelTerm
-  return modelTerm
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
@@ -376,7 +283,6 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
   -- add the data set for the json builders
   let namedPS = "PS_" <> name
   SB.addUnIndexedDataSet namedPS toFoldable
-  -- "int<lower=0> N_PS_xxx;" number of post-stratified results
   SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
     $ SJ.valueToPairF ("N_" <> namedPS)
     $ fmap (A.toJSON . Set.size)
@@ -399,17 +305,19 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
   indexF <- case indexList usedGroupMaps allGroups of
     Left msg -> SB.stanBuildError $ "Error producing PostStratification weight indexing function: " <> msg
     Right x -> return x
-  -- "real[N_G1, N_G2, ...] PS_xxx_wgt[N_PS_xxx];"  weight matrices for each PS result
   let innerF r = case indexF r of
         Left msg -> Left $ "Error during post-stratification weight fold when applying group index function (index out of range?): " <> msg
         Right ls -> Right (ls, weightF r)
       sumInnerFold :: Ord k => FL.Fold (k, Double) [(k, Double)]
       sumInnerFold = MR.mapReduceFold MR.noUnpack (MR.Assign id) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
       assignM r = case intKeyF r of
-        Left msg -> Left $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
+        Left msg -> Left
+                    $ "Error during post-stratification weight fold when indexing PS rows to result groups: "
+                    <> msg
         Right l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x
-      reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed) $ FL.generalize FL.list
+      reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed)
+                $ FL.generalize FL.list
       fldM = MR.mapReduceFoldM
              (MR.generalizeUnpack MR.noUnpack)
              (MR.AssignM assignM)
@@ -423,63 +331,18 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
         inner = do
           let psExpE = SB.familyExp sDist args
           expCode <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ return psExpE
-          SB.stanDeclareRHS "p" SB.StanReal "<lower=0, upper=1>" expCode
---          SB.addStanLine $ "real p = inv_logit(" <> modelTerms <> ")"
-          when (psType == PSShare) $ SB.addStanLine $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
-          SB.addStanLine $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
+          SB.stanDeclareRHS "p" SB.StanReal "" expCode
+          when (psType == PSShare)
+            $ SB.addStanLine
+            $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
+          SB.addStanLine
+            $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
     SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
     SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
       let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ SB.stanDeclareRHS wsn  SB.StanReal "<lower=0>" "0" --SB.addStanLine $ "real " <> namedPS <> "_WgtSum = 0"
+      when (psType == PSShare) $ SB.stanDeclareRHS wsn  SB.StanReal "" "0"
       makeLoops ugNames
-      when (psType == PSShare) $ SB.addStanLine $ wsn <> "[n] /= " <> namedPS <> "_WgtSum"
-
-usedIndexes :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d (Map GroupName (SB.IntIndex modeledRow))
-usedIndexes = do
-  indexMap <- getIndexes -- SB.asksEnv sbe_groupIndices
-  groupNames <- usedGroupNames
-  return $ Map.restrictKeys indexMap groupNames
-
-mrIndexes :: BuilderM modeledRow d (Map GroupName (SB.IntIndex modeledRow))
-mrIndexes = do
-  indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
-  groupNames <- bmm_MRGroups <$> getModel
-  return $ Map.restrictKeys indexMap groupNames
-
-dataBlockM :: (Typeable d, Typeable modeledRow) => BuilderM modeledRow d ()
-dataBlockM = do
-  model <- getModel
-  SB.inBlock SB.SBData $ do
-    SB.addColumnJson SB.ModeledRowTag "T" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=1>" (bmm_Total model)
-    SB.addColumnJson SB.ModeledRowTag "S" "" (SB.StanArray [SB.NamedDim "N"] SB.StanInt) "<lower=0>" (bmm_Success model)
-    return ()
-
-mrpMainModelTerm :: BuilderM modeledRow d ()
-mrpMainModelTerm = SB.inBlock SB.SBModel $ do
-  indexMap <- getIndexes
-  let im = Map.mapWithKey const indexMap
-  modelTerms <- SB.printExprM "mrpModelBlock" im SB.Vectorized SB.getModelExpr
-  SB.addStanLine $ "S ~ binomial_logit(T, " <> modelTerms <> ")"
-
-mrpLogLikelihood :: BuilderM modeledRow d ()
-mrpLogLikelihood = SB.inBlock SB.SBGeneratedQuantities $ do
-  model <- getModel
-  indexMap <- getIndexes --SB.asksEnv sbe_groupIndices
-  SB.addStanLine $ "vector [N] log_lik"
-  SB.stanForLoop "n" Nothing "N" $ \_ -> do
-    let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
-    modelTerms <- SB.printExprM "mrpLogLikStanCode" im (SB.NonVectorized "n") $ SB.getModelExpr
-    SB.addStanLine $ "log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
-
-mrpPosteriorPrediction :: BuilderM modeledRow d ()
-mrpPosteriorPrediction  = do
-  SB.inBlock SB.SBGeneratedQuantities $ do
-    indexMap <- getIndexes
-    let im = Map.mapWithKey const indexMap
-    model_terms <- SB.printExprM "SPred (Generated Quantities)" im SB.Vectorized SB.getModelExpr
---    SB.addStanLine $ "vector<lower=0, upper=1>[N] yPred = inv_logit(" <> model_terms <> ")"
-    SB.addStanLine $ "vector<lower=0>[N] SPred =  to_vector(T) .* inv_logit(" <> model_terms <> ")"
---    SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine "SPred[n] = yPred[n] * T[n]"
+      when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
