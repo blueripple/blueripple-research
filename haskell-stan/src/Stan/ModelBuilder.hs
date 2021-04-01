@@ -133,20 +133,28 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Either Text Int }
 
-data MakeIndex r0 k = GivenIndex Int (k -> Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Either Text Int)) (r0 -> k)
+data MakeIndex r0 k = GivenIndex Int (k -> Either Text Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Either Text Int)) (r0 -> k)
 data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Either Text Int)
 
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
-makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (Right . g . h)) (Right . g)
+makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (g . h)) g
 makeIndexMapF (FoldToIndex fld h) = fmap (\(n, g) -> IndexMap (IntIndex n (g . h)) g) fld
 --  let (n, g) = Foldl.fold fld rs in IndexMap (IntIndex n (g . h)) g
 
 makeIndexFromEnum :: forall k r.(Enum k, Bounded k) => (r -> k) -> MakeIndex r k
 makeIndexFromEnum h = GivenIndex (1 + eMax - eMin) index h where
-  index k = 1 + (fromEnum k - eMin)
+  index k = Right $ 1 + (fromEnum k - eMin)
   eMin = fromEnum $ minBound @k
   eMax = fromEnum $ maxBound @k
+
+makeIndexFromFoldable :: (Foldable f, Ord k) => (k -> Text) -> (r -> k) -> f k -> MakeIndex r k
+makeIndexFromFoldable printK h allKs = GivenIndex size index h where
+  asMap = Map.fromList $ zip (Foldl.fold Foldl.list allKs) [1..]
+  size = Map.size asMap
+  index k = case Map.lookup k asMap of
+    Just n -> Right n
+    Nothing -> Left $ "Index lookup failed for k=" <> printK k <> " in index built from foldable collection of k."
 
 makeIndexByCounting :: Ord k => (k -> Text) -> (r -> k) -> MakeIndex r k
 makeIndexByCounting printK h = FoldToIndex (Foldl.premap h $ indexFold printK 1) h
@@ -164,7 +172,7 @@ type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
 
 -- For post-stratification
-data RowMap r k = RowMap (r -> k)
+newtype RowMap r k = RowMap (r -> k)
 type GroupRowMap r = DHash.DHashMap GroupTypeTag (RowMap r)
 
 emptyGroupRowMap :: GroupRowMap r

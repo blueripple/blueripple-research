@@ -29,7 +29,7 @@ type Successes = "Successes" F.:-> Int
 type MeanWeight = "MeanWeight" F.:-> Double
 type VarWeight = "VarWeight" F.:-> Double
 type WeightedSuccesses = "WeightedSuccesses" F.:-> Double
-type UnweightedSuccesses =  "UnweightedSuccesses" F.:-> Int
+--type UnweightedSuccesses =  "UnweightedSuccesses" F.:-> Int
 
 binomialFold
   :: (F.Record r -> Bool) -> FL.Fold (F.Record r) (F.Record '[Count, Successes])
@@ -51,7 +51,7 @@ countFold testData = MR.mapReduceFold
   (FMR.assignKeysAndData @k)
   (FMR.foldAndAddKey $ binomialFold testData)
 
-type CountCols = '[Count, UnweightedSuccesses, WeightedCount, WeightedSuccesses, MeanWeight, VarWeight]
+type CountCols = '[Count, Successes, WeightedCount, WeightedSuccesses, MeanWeight, VarWeight]
 
 zeroCount :: F.Record CountCols
 zeroCount = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 1 F.&: 0 F.&: V.RNil

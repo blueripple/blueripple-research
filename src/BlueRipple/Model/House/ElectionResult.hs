@@ -354,6 +354,7 @@ ccesCountedDemHouseVotesByCD = do
 --  BR.clearIfPresentD "model/house/ccesByCD.bin"
   BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ ccesMR 2012
 
+
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
   let afterYear y r = F.rgetField @BR.Year r >= y
@@ -370,7 +371,24 @@ cpsCountedTurnoutByCD = do
             wgt
   cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
   BR.retrieveOrMakeFrame "model/house/cpsVByCD.bin" cpsRaw_C $ return . FL.fold fld
-
+{-
+cpsCountedTurnoutByState :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByStateR))
+cpsCountedTurnoutByState = do
+  let afterYear y r = F.rgetField @BR.Year r >= y
+      possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
+      citizen r = F.rgetField @DT.IsCitizen r
+      includeRow r = afterYear 2012 r &&  possible r && citizen r
+      voted r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
+      wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r
+      fld = BRCF.weightedCountFold @_ @CPS.CPSVoterPUMS
+            (\r -> F.rcast @StateKeyR r `V.rappend` CPS.cpsKeysToASER4H True (F.rcast r))
+            (F.rcast  @[ET.VotedYNC, CPS.CPSVoterPUMSWeight])
+            includeRow
+            voted
+            wgt
+  cpsRaw_C <- CPS.cpsVoterPUMSLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
+  BR.retrieveOrMakeFrame "model/house/cpsVByState.bin" cpsRaw_C $ return . FL.fold fld
+-}
 pumsReKey :: F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
           ->  F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 pumsReKey r =
@@ -413,6 +431,7 @@ prepCCESAndPums clearCache = do
                      then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
                      else r
         pumsCDFixed = fmap fixDC_CD pums
+        cpsVFixed = fmap fixDC_CD cpsVByCD
         diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens
@@ -465,7 +484,7 @@ prepCCESAndPums clearCache = do
              e <- [minBound..],
              r <- [minBound..],
              eth <- [minBound..]]
-    return $ CCESAndPUMS cces cpsVByCD pumsCDFixed districtData (F.toFrame $ fmap F.rcast $ cats)
+    return $ CCESAndPUMS cces cpsVFixed pumsCDFixed districtData (F.toFrame $ fmap F.rcast $ cats)
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
