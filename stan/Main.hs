@@ -139,9 +139,10 @@ ccesGroupBuilder = do
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
-cpsVGroupBuilder :: [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
-cpsVGroupBuilder districts = do
+cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
+cpsVGroupBuilder districts states = do
   SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
   SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
@@ -156,11 +157,13 @@ race5FromPUMS r =
 
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
+                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
+                    $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
+                    $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
+                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
                     $ SB.emptyGroupRowMap
---                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
---                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
 
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
@@ -177,11 +180,18 @@ dataAndCodeBuilder totalF succF = do
   vTotal <- SB.addCountData "T" "N" totalF
   vSucc <- SB.addCountData "S" "N" succF
   alphaE <- MRP.intercept "alpha" 2
-  (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
+  (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
+                            True
+                            2 -- prior
+                            (SB.RowTypeTag  "CD")
+                            (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
   gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
+  gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
+  gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
+  gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
   let dist = SB.binomialLogitDist vSucc vTotal
-      logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gSexE `SB.plusE` gRaceE
+      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE]
   SB.sampleDistV dist logitPE
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 
@@ -190,11 +200,11 @@ dataAndCodeBuilder totalF succF = do
     logitPE
     "Race"
     (SB.ToFoldable BRE.pumsRows)
-    (S.fromList ["CD", "Sex", "Race"])
+    (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     pumsPSGroupRowMap
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
-    (Just $ SB.GroupTypeTag @DT.RaceAlone4 "Race")
+    (Just $ SB.GroupTypeTag @Text "State")
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -248,7 +258,13 @@ testStanMRP = do
   K.logLE K.Info $ "CPSV districts: " <> show districtsinCPSV
   K.logLE K.Info "Building json data wrangler and model code..."
   let cpsVBuilder = dataAndCodeBuilder (round . F.rgetField @BRCF.WeightedCount) (round . F.rgetField @BRCF.WeightedSuccesses)
-      cpsVGroups = cpsVGroupBuilder $ FL.fold (FL.premap districtKey FL.list) $ BRE.districtRows dat
+      (districts, states) = FL.fold
+                            ((,)
+                              <$> (FL.premap districtKey FL.list)
+                              <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
+                            )
+                            $ BRE.districtRows dat
+      cpsVGroups = cpsVGroupBuilder districts states
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
@@ -263,7 +279,7 @@ testStanMRP = do
     data_C
     (Just 1000)
     (Just 0.99)
-    (Just 12)
+    Nothing
   res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
 
