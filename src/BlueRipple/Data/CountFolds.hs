@@ -67,7 +67,7 @@ weightedBinomialFold testRow weightRow =
       meanWeightF = FL.premap weightRow FL.mean
       varWeightF  = FL.premap weightRow FL.variance
       f s ws mw = if mw < 1e-6 then realToFrac s else ws / mw -- if meanweight is 0 but
-  in  (\n s wc ws mw vw -> n F.&: s F.&: wc F.&: f s ws mw F.&: mw F.&: vw F.&: V.RNil)
+  in  (\n s wc ws mw vw -> n F.&: s F.&: f n wc mw F.&: f s ws mw F.&: mw F.&: vw F.&: V.RNil)
       <$> FL.length
       <*> successesF
       <*> wCountF

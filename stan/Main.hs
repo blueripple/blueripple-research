@@ -157,6 +157,7 @@ race5FromPUMS r =
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+                    $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
                     $ SB.emptyGroupRowMap
 --                    $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
 --                    $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
@@ -178,21 +179,22 @@ dataAndCodeBuilder totalF succF = do
   alphaE <- MRP.intercept "alpha" 2
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR) True 2 (SB.RowTypeTag  "CD") (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
+  gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
   let dist = SB.binomialLogitDist vSucc vTotal
-      logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gSexE
+      logitPE = alphaE `SB.plusE` feCDE `SB.plusE` gSexE `SB.plusE` gRaceE
   SB.sampleDistV dist logitPE
-  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
+--  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 
   MRP.addPostStratification
     dist
     logitPE
-    "Sex"
+    "Race"
     (SB.ToFoldable BRE.pumsRows)
-    (S.fromList ["CD", "Sex"])
+    (S.fromList ["CD", "Sex", "Race"])
     pumsPSGroupRowMap
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
-    (Just $ SB.GroupTypeTag @DT.Sex "Sex")
+    (Just $ SB.GroupTypeTag @DT.RaceAlone4 "Race")
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -200,14 +202,14 @@ indexStanResults im v = do
   when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.Sex [Double])
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.RaceAlone4 [Double])
 extractTestResults = SC.UseSummary f where
   f summary _ aAndEb_C = do
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.Sex "Sex" groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Sex" (CS.paramStats summary)
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.RaceAlone4 "Race" groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Race" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
@@ -223,7 +225,7 @@ countInCategory count key as =
 testStanMRP :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testStanMRP = do
   K.logLE K.Info "Data prep..."
-  data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums True
+  data_C' <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
   let data_C = {- KC.wctBind (subSampleCCES 3 2000) $ -} data_C'
   dat <- K.ignoreCacheTime data_C
   let popFilter r = True --F.rgetField @DT.Race5C r == DT.R5_Black
@@ -245,23 +247,23 @@ testStanMRP = do
   K.logLE K.Info $ "PUMS Race counts: " <> show raceCountsPUMS
   K.logLE K.Info $ "CPSV districts: " <> show districtsinCPSV
   K.logLE K.Info "Building json data wrangler and model code..."
-  let cpsVBuilder = dataAndCodeBuilder (F.rgetField @BRCF.Count) (F.rgetField @BRCF.Successes)
+  let cpsVBuilder = dataAndCodeBuilder (round . F.rgetField @BRCF.WeightedCount) (round . F.rgetField @BRCF.WeightedSuccesses)
       cpsVGroups = cpsVGroupBuilder $ FL.fold (FL.premap districtKey FL.list) $ BRE.districtRows dat
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
-         True
-         (Just "stan/mrp/cpsV")
-         "test"
-         "test"
-         dw
-         stanCode
-         "S"
-         extractTestResults
-         data_C
-         (Just 1000)
-         (Just 0.99)
-         (Just 12)
+    True
+    (Just "stan/mrp/cpsV")
+    "test"
+    "test"
+    dw
+    stanCode
+    "S"
+    extractTestResults
+    data_C
+    (Just 1000)
+    (Just 0.99)
+    (Just 12)
   res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
 
