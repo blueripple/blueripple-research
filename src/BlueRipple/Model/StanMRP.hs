@@ -327,16 +327,19 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
     $ fmap A.toJSON fldM
   SB.inBlock SB.SBGeneratedQuantities $ do
     let groupCounters = fmap ("n_" <>) $ ugNames
-        im = Map.fromList $ zip ugNames groupCounters
+        indexMap' =  Map.fromList $ zip ugNames groupCounters
+        (indexMap, innerLoopNames) = case mPSGroup of
+          Nothing ->  (indexMap', Map.keys indexMap')
+          Just (SB.GroupTypeTag gn) -> (Map.insert gn "n" indexMap', Map.keys $ Map.delete gn indexMap')
         inner = do
           let psExpE = SB.familyExp sDist args
-          expCode <- SB.printExprM "mrpPSStanCode" im (SB.NonVectorized "n") $ return psExpE
+          expCode <- SB.printExprM "mrpPSStanCode" indexMap (SB.NonVectorized "n") $ return psExpE
           SB.stanDeclareRHS "p" SB.StanReal "" expCode
           when (psType == PSShare)
             $ SB.addStanLine
-            $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
+            $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
           SB.addStanLine
-            $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate "," groupCounters <> "]"
+            $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
     SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
@@ -344,5 +347,5 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
       let wsn = namedPS <> "_WgtSum"
       when (psType == PSShare) $ SB.stanDeclareRHS wsn  SB.StanReal "" "0"
-      makeLoops ugNames
+      makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"

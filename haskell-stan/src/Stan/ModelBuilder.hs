@@ -150,7 +150,7 @@ makeIndexFromEnum h = GivenIndex (1 + eMax - eMin) index h where
 
 makeIndexFromFoldable :: (Foldable f, Ord k) => (k -> Text) -> (r -> k) -> f k -> MakeIndex r k
 makeIndexFromFoldable printK h allKs = GivenIndex size index h where
-  asMap = Map.fromList $ zip (Foldl.fold Foldl.list allKs) [1..]
+  asMap = Map.fromList $ zip (ordNub $ Foldl.fold Foldl.list allKs) [1..]
   size = Map.size asMap
   index k = case Map.lookup k asMap of
     Just n -> Right n

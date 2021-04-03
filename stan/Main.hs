@@ -190,21 +190,23 @@ dataAndCodeBuilder totalF succF = do
   gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
   gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
   gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
+  gStateE <- MRP.addMRGroup 2 2 0.01 "State"
   let dist = SB.binomialLogitDist vSucc vTotal
-      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE]
+      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gStateE]
   SB.sampleDistV dist logitPE
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-
+{-
   MRP.addPostStratification
     dist
     logitPE
-    "Race"
+    "State"
     (SB.ToFoldable BRE.pumsRows)
     (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     pumsPSGroupRowMap
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
+-}
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -212,14 +214,14 @@ indexStanResults im v = do
   when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map DT.RaceAlone4 [Double])
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map Text [Double])
 extractTestResults = SC.UseSummary f where
   f summary _ aAndEb_C = do
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex @DT.RaceAlone4 "Race" groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_Race" (CS.paramStats summary)
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @Text "State" groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_State" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
@@ -250,12 +252,10 @@ testStanMRP = do
       raceCountsCPSV_W = FL.fold (countInCategory (F.rgetField @BRCF.WeightedCount) (F.rgetField @DT.RaceAlone4C) [(minBound :: DT.RaceAlone4)..]) $ BRE.cpsVRows dat
       raceCountsPUMS = FL.fold (countInCategory (F.rgetField @PUMS.Citizens) (F.rgetField @DT.RaceAlone4C) [(minBound :: DT.RaceAlone4)..]) $ BRE.pumsRows dat
       districtsinCPSV = FL.fold (FL.premap districtKey FL.set) $ BRE.cpsVRows dat
-  K.logLE K.Info $ "In (subsampled) CCES data (Female Turnout, Male Turnout) " <> show (ft, mt)
-  K.logLE K.Info $ "CCES Race counts: " <> show raceCountsCCES
+--  K.logLE K.Info $ "In (subsampled) CCES data (Female Turnout, Male Turnout) " <> show (ft, mt)
   K.logLE K.Info $ "CPS Race counts (Unweighted): " <> show raceCountsCPSV_UW
   K.logLE K.Info $ "CPS Race counts (Weighted): " <> show raceCountsCPSV_W
   K.logLE K.Info $ "PUMS Race counts: " <> show raceCountsPUMS
-  K.logLE K.Info $ "CPSV districts: " <> show districtsinCPSV
   K.logLE K.Info "Building json data wrangler and model code..."
   let cpsVBuilder = dataAndCodeBuilder (round . F.rgetField @BRCF.WeightedCount) (round . F.rgetField @BRCF.WeightedSuccesses)
       (districts, states) = FL.fold
@@ -268,7 +268,7 @@ testStanMRP = do
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
-    True
+    False
     (Just "stan/mrp/cpsV")
     "test"
     "test"
@@ -278,7 +278,7 @@ testStanMRP = do
     extractTestResults
     data_C
     (Just 1000)
-    (Just 0.99)
+    (Just 0.95)
     Nothing
   res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
