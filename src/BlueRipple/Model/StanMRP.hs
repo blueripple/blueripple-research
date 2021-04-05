@@ -49,6 +49,7 @@ import qualified Stan.Frames as SF
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
 import qualified System.Environment as Env
@@ -166,7 +167,6 @@ intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   let modelTerm = SB.TermE $ SB.Scalar "alpha"
-  SB.addModelTerm modelTerm
   return modelTerm
 
 -- Basic group declarations, indexes and Json are produced automatically
@@ -175,31 +175,38 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
-        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ "{eps_" <> gn <> ", -eps_" <> gn <> "}"
-        SB.addModelTerm modelTerm
+        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ bracketE [SB.termE $ "eps_" <> gn, SB.termE $ " -eps_" <> gn]
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm
   let nonBinaryGroup = do
         let modelTerm = SB.TermE . SB.Indexed gn $ "beta_" <> gn
-        SB.addModelTerm modelTerm
-        SB.inBlock SB.SBTransformedData $ do
-          SB.stanDeclare (gn <> "_weights") (SB.StanVector $ SB.NamedDim $ "N_" <> gn) "<lower=0>"
-          SB.stanForLoop "g" Nothing ("N_" <> gn) $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
-          SB.stanForLoop "n" Nothing "N" $ const $ SB.addStanLine $ gn <> "_weights[" <> gn <> "[n]] += 1"
-          SB.addStanLine $ gn <> "_weights /= N"
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare ("sigma_" <> gn) SB.StanReal "<lower=0>"
           SB.stanDeclare ("beta_raw_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
-        SB.inBlock SB.SBTransformedParameters $ do
-          SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
+        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+          bv <- SB.stanDeclare ("beta_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
           SB.addStanLine $ "beta_" <> gn <> " = sigma_" <> gn <> " * beta_raw_" <> gn
+          return bv
         SB.inBlock SB.SBModel $ do
-          SB.addStanLine $ "beta_raw_" <> gn <> " ~ normal(0, 1)" --" sigma_" <> gn <> ")"
           SB.addStanLine $ "sigma_" <> gn <> " ~ normal(0, " <> show nonBinarySD <> ")"
-          SB.addStanLine $ "dot_product(beta_" <> gn <> ", " <> gn <> "_weights) ~ normal(0, " <> show sumGroupSD <> ")"
+          SB.addStanLine $ "beta_raw_" <> gn <> " ~ normal(0, 1) "
+        SB.weightedSoftSumToZero betaVar gn "N" sumGroupSD
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
+
+{-
+addNestedMRGroup ::  (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> GroupName -> BuilderM r d SB.StanExpr
+addNestedMRGroup  binarySD nonBinarySD sumGroupSD outerGN innerGN = do
+  let suffix = "_" <> outerGN <> "_" <> innerGN
+      suffixed x = x <> suffix
+  (SB.IntIndex innerIndexSize _) <- getIndex innerGN
+  when (innerIndexSize < 2) $ SB.stanBuildError "inner index with size <2 in nestedMRGroup!"
+  let binaryNested = do
+        SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim $ "N_" <> outerGN)
+        SB.inBlock SB.SBModel $ SB.addStanLine $ suffixed "eps" <> " ~ normal(0, " <> show binarySD <> ")"
+        return $ SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed innerGN $ SB.bracketE "{" <> suffixed "eps" <> [""]"}"
+-}
 
 type GroupName = Text
 
@@ -234,7 +241,6 @@ addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
       eBeta = SB.TermE $ SB.Scalar $ "betaX" <> uSuffix
       eXBeta = SB.BinOpE "*" eX eBeta
       feExpr = if thinQR then eQTheta else eXBeta
-  SB.addModelTerm feExpr
   return (feExpr, eXBeta, eBeta)
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
@@ -247,21 +253,20 @@ data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
-                      => SB.StanDist args
-                      -> args
-                      -> SB.StanName
-                      -> SB.ToFoldable d r
-                      -> Set.Set Text
-                      -> SB.GroupRowMap r
-                      -> (r -> Double)
-                      -> PostStratificationType
-                      -> (Maybe (SB.GroupTypeTag k))
+                      => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
+                      -> args -- required args, e.g., total counts for binomial
+                      -> SB.StanName -- name for vars and
+                      -> SB.ToFoldable d r -- data-set from data-set structure
+                      -> SB.GroupRowMap r -- group mappings for PS data
+                      -> Set.Set Text -- subset of groups to loop over
+                      -> (r -> Double) -- PS weight
+                      -> PostStratificationType -- raw or share
+                      -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM r0 d ()
-addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGroups groupMaps weightF psType mPSGroup = do
+addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
---  usedGNames <- usedGroupNames
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
   let checkGroupSubset n1 n2 gs1 gs2 = do
         let gDiff = DHash.difference gs1 gs2
@@ -282,7 +287,7 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
     return $ eIntF . h
   -- add the data set for the json builders
   let namedPS = "PS_" <> name
-  SB.addUnIndexedDataSet namedPS toFoldable
+  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
   SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
     $ SJ.valueToPairF ("N_" <> namedPS)
     $ fmap (A.toJSON . Set.size)
@@ -346,6 +351,6 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) modelGrou
     SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
     SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
       let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ SB.stanDeclareRHS wsn  SB.StanReal "" "0"
+      when (psType == PSShare) $ (SB.stanDeclareRHS wsn  SB.StanReal "" "0" >> return ())
       makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"

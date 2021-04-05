@@ -238,6 +238,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
 
 model_BinomialAllBuckets :: SB.StanModel
 model_BinomialAllBuckets = SB.StanModel
+                           Nothing
                            binomialASER5_StateDataBlock
                            (Just binomialASER5_StateTransformedDataBlock)
                            binomialASER5_StateParametersBlock
@@ -248,6 +249,7 @@ model_BinomialAllBuckets = SB.StanModel
 
 model_v2 :: SB.StanModel
 model_v2 = SB.StanModel
+           Nothing
            binomialASER5_StateDataBlock
            (Just binomialASER5_StateTransformedDataBlock)
            binomialASER5_v2_StateParametersBlock
@@ -258,6 +260,7 @@ model_v2 = SB.StanModel
 
 model_v3 :: SB.StanModel
 model_v3 = SB.StanModel
+           Nothing
            binomialASER5_StateDataBlock
            (Just binomialASER5_StateTransformedDataBlock)
            binomialASER5_v3_ParametersBlock
@@ -268,6 +271,7 @@ model_v3 = SB.StanModel
 
 model_v4 :: SB.StanModel
 model_v4 = SB.StanModel
+           Nothing
            binomialASER5_v4_DataBlock
            Nothing
            binomialASER5_v4_ParametersBlock
@@ -279,6 +283,7 @@ model_v4 = SB.StanModel
 
 model_v5 :: SB.StanModel
 model_v5 = SB.StanModel
+           Nothing
            binomialASER5_v4_DataBlock
            Nothing
            binomialASER5_v5_ParametersBlock
@@ -289,6 +294,7 @@ model_v5 = SB.StanModel
 
 model_v6 :: SB.StanModel
 model_v6 = SB.StanModel
+           Nothing
            binomialASER5_v4_DataBlock
            (Just binomialASER5_v6_TransformedDataBlock)
            binomialASER5_v6_ParametersBlock
@@ -300,6 +306,7 @@ model_v6 = SB.StanModel
 
 model_v7 :: SB.StanModel
 model_v7 = SB.StanModel
+           Nothing
            binomialASER5_v4_DataBlock
            (Just binomialASER5_v6_TransformedDataBlock)
            binomialASER5_v7_ParametersBlock

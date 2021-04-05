@@ -183,8 +183,7 @@ dataAndCodeBuilder totalF succF = do
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
                             True
                             2 -- prior
-                            (SB.RowTypeTag  "CD")
-                            (MRP.FixedEffects 2 districtPredictors)
+                            (SB.RowTypeTag  "CD")                            (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
   gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
   gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
@@ -195,18 +194,18 @@ dataAndCodeBuilder totalF succF = do
       logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gStateE]
   SB.sampleDistV dist logitPE
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-{-
+
   MRP.addPostStratification
     dist
     logitPE
     "State"
     (SB.ToFoldable BRE.pumsRows)
-    (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     pumsPSGroupRowMap
+    (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
--}
+
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -268,7 +267,7 @@ testStanMRP = do
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
-    False
+    True
     (Just "stan/mrp/cpsV")
     "test"
     "test"

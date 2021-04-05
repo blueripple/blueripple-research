@@ -1141,30 +1141,32 @@ runHouseModel clearCache predictors (modelName, mNameExtra, mds, cds, model, nSa
   return (res_C, stanConfig)
 
 binomial :: SB.StanModel
-binomial =
-  SB.StanModel
-    dataBlock
-    (Just transformedDataBlock)
-    binomialParametersBlock
-    (Just binomialTransformedParametersBlock)
-    binomialModelBlock
-    (Just binomialGeneratedQuantitiesBlock)
-    binomialGQLLBlock
+binomial = SB.StanModel
+           Nothing
+           dataBlock
+           (Just transformedDataBlock)
+           binomialParametersBlock
+           (Just binomialTransformedParametersBlock)
+           binomialModelBlock
+           (Just binomialGeneratedQuantitiesBlock)
+           binomialGQLLBlock
 
 betaBinomial_v1 :: SB.StanModel
 betaBinomial_v1 =
   SB.StanModel
-    dataBlock
-    (Just transformedDataBlock)
-    betaBinomialParametersBlock
-    (Just betaBinomialTransformedParametersBlock)
-    betaBinomialModelBlock
-    (Just betaBinomialGeneratedQuantitiesBlock)
-    betaBinomialGQLLBlock
+  Nothing
+  dataBlock
+  (Just transformedDataBlock)
+  betaBinomialParametersBlock
+  (Just betaBinomialTransformedParametersBlock)
+  betaBinomialModelBlock
+  (Just betaBinomialGeneratedQuantitiesBlock)
+  betaBinomialGQLLBlock
 
 betaBinomialInc :: SB.StanModel
 betaBinomialInc =
   SB.StanModel
+  Nothing
   dataBlock
   (Just transformedDataBlock)
   betaBinomialIncParametersBlock
@@ -1176,6 +1178,7 @@ betaBinomialInc =
 betaBinomialInc2 :: SB.StanModel
 betaBinomialInc2 =
   SB.StanModel
+  Nothing
   dataBlock
   (Just transformedDataBlock)
   betaBinomialInc2ParametersBlock
@@ -1187,13 +1190,14 @@ betaBinomialInc2 =
 betaBinomialHS :: SB.StanModel
 betaBinomialHS =
   SB.StanModel
-    dataBlock
-    (Just transformedDataBlock)
-    betaBinomialHSParametersBlock
-    (Just betaBinomialTransformedParametersBlock)
-    betaBinomialHSModelBlock
-    (Just betaBinomialGeneratedQuantitiesBlock)
-    betaBinomialGQLLBlock
+  Nothing
+  dataBlock
+  (Just transformedDataBlock)
+  betaBinomialHSParametersBlock
+  (Just betaBinomialTransformedParametersBlock)
+  betaBinomialHSModelBlock
+  (Just betaBinomialGeneratedQuantitiesBlock)
+  betaBinomialGQLLBlock
 
 dataBlock :: SB.DataBlock
 dataBlock =

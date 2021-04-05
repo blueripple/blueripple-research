@@ -42,6 +42,8 @@ import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
 
+type FunctionsBlock = T.Text
+
 type DataBlock = T.Text
 
 type TransformedDataBlock = T.Text
@@ -57,7 +59,8 @@ type GeneratedQuantitiesBlock = T.Text
 data GeneratedQuantities = NoLL | OnlyLL | All
 
 data StanModel = StanModel
-  { dataBlock :: DataBlock,
+  { functionsBlock :: Maybe FunctionsBlock,
+    dataBlock :: DataBlock,
     transformedDataBlockM :: Maybe TransformedDataBlock,
     parametersBlock :: ParametersBlock,
     transformedParametersBlockM :: Maybe TransformedParametersBlock,
@@ -67,7 +70,8 @@ data StanModel = StanModel
   }
   deriving (Show, Eq, Ord)
 
-data StanBlock = SBData
+data StanBlock = SBFunctions
+               | SBData
                | SBTransformedData
                | SBParameters
                | SBTransformedParameters
@@ -85,6 +89,7 @@ data StanCode = StanCode { curBlock :: StanBlock
 stanCodeToStanModel :: StanCode -> StanModel
 stanCodeToStanModel (StanCode _ a) =
   StanModel
+  (f . g $ a Array.! SBFunctions)
   (g $ a Array.! SBData)
   (f . g  $ a Array.! SBTransformedData)
   (g $ a Array.! SBParameters)
@@ -343,13 +348,13 @@ data StanVar = StanVar StanName StanType
 
 data BuilderState d r0 = BuilderState { declaredVars :: !(Map StanName StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
-                                      , modelExprs :: !(Seq.Seq StanExpr)
+                                      , hasFunctions :: !(Set.Set Text)
                                       , code :: !StanCode
                                       , indexes :: !(GroupIntMapBuilders d)
                                       }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Seq.empty emptyStanCode emptyIntMapBuilders
+initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Set.empty emptyStanCode emptyIntMapBuilders
 
 newtype StanGroupBuilderM r0 a
   = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
@@ -453,7 +458,7 @@ generateLogLikelihood sDist args =  inBlock SBGeneratedQuantities $ do
     addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
 
-generatePosteriorPrediction :: StanVar -> StanDist args -> args -> StanBuilderM env d r0 ()
+generatePosteriorPrediction :: StanVar -> StanDist args -> args -> StanBuilderM env d r0 StanVar
 generatePosteriorPrediction (StanVar ppName ppType) sDist args = inBlock SBGeneratedQuantities $ do
   indexMap <- groupIndexByName <$> askGroupEnv
   let im = Map.mapWithKey const indexMap
@@ -471,10 +476,26 @@ askUserEnv = asks userEnv
 askGroupEnv :: StanBuilderM env d r0 (GroupEnv r0)
 askGroupEnv = asks groupEnv
 
+addFunctionsOnce :: Text -> StanBuilderM env d r0 () -> StanBuilderM env d r0 ()
+addFunctionsOnce functionsName fCode = do
+  (BuilderState vars rowBuilders fsNames code ims) <- get
+  case Set.member functionsName fsNames of
+    True -> return ()
+    False -> do
+      let newFunctionNames = Set.insert functionsName fsNames
+      fCode
+      put (BuilderState vars rowBuilders newFunctionNames code ims)
+
+
+
+
+
+{-
 addModelTerm :: StanExpr -> StanBuilderM env d r0 ()
 addModelTerm e = do
   BuilderState vars rowBuilders modelExprs code ims <- get
   put $ BuilderState vars rowBuilders (modelExprs Seq.|> e) code ims
+
 
 getModelExpr :: StanBuilderM env d r0 StanExpr
 getModelExpr = do
@@ -482,17 +503,18 @@ getModelExpr = do
   case nonEmpty $ Foldl.fold Foldl.list $ exprSeq of
     Nothing -> stanBuildError "getModelExpr called but no model terms are present"
     Just ne -> return $ multiOp "+" ne
+-}
 
 addIndexedDataSet :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
 addIndexedDataSet name toFoldable toKey = do
   let rtt = RowTypeTag name
-  (BuilderState vars rowBuilders modelExprs code ims) <- get
+  (BuilderState vars rowBuilders fsNames code ims) <- get
   case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
       let rowInfo = indexedRowInfo toFoldable name toKey
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
-      put (BuilderState vars newRowBuilders modelExprs code ims)
+      put (BuilderState vars newRowBuilders fsNames code ims)
 
 addUnIndexedDataSet :: (Typeable r, Typeable d) => Text -> ToFoldable d r -> StanBuilderM env d r0 ()
 addUnIndexedDataSet name toFoldable = do
@@ -544,7 +566,7 @@ declare sn st = do
                then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
 
-stanDeclare' :: StanName -> StanType -> Text -> Maybe Text -> StanBuilderM env d r0 ()
+stanDeclare' :: StanName -> StanType -> Text -> Maybe Text -> StanBuilderM env d r StanVar
 stanDeclare' sn st sc mRHS = do
   declare sn st
   let dimsToText x = "[" <> T.intercalate ", " (dimToText <$> x) <> "]"
@@ -569,11 +591,12 @@ stanDeclare' sn st sc mRHS = do
   case mRHS of
     Nothing -> addStanLine $ typeToCode sn st sc
     Just rhs -> addStanLine $ typeToCode sn st sc <> " = " <> rhs
+  return $ StanVar sn st
 
-stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 ()
+stanDeclare :: StanName -> StanType -> Text -> StanBuilderM env d r0 StanVar
 stanDeclare sn st sc = stanDeclare' sn st sc Nothing
 
-stanDeclareRHS :: StanName -> StanType -> Text -> Text -> StanBuilderM env d r0 ()
+stanDeclareRHS :: StanName -> StanType -> Text -> Text -> StanBuilderM env d r0 StanVar
 stanDeclareRHS sn st sc rhs = stanDeclare' sn st sc (Just rhs)
 
 
@@ -723,6 +746,11 @@ addLine = modifyCode . addLine'
 addStanLine :: Text -> StanBuilderM env d r ()
 addStanLine t = addLine $ t <> ";\n"
 
+declareStanFunction :: Text -> StanBuilderM env d r a -> StanBuilderM env d r a
+declareStanFunction declaration body = inBlock SBFunctions $ do
+  addLine declaration
+  bracketed 2 body
+
 indent :: Int -> StanCode -> StanCode
 indent n (StanCode b blocks) =
   let (WithIndent curCode curIndent) = blocks Array.! b
@@ -825,8 +853,9 @@ data StanExpr where
   BinOpE :: Text -> StanExpr -> StanExpr -> StanExpr
   FunctionE :: Text -> [StanExpr] -> StanExpr
   VectorFunctionE :: Text -> StanExpr -> StanExpr -- function to add when the context is vectorized
-  GroupE :: StanExpr -> StanExpr
+  GroupE :: Text -> Text -> StanExpr -> StanExpr
   ArgsE :: [StanExpr] -> StanExpr
+  ArrayE :: [StanExpr] -> StanExpr
 
 
 termE :: StanModelTerm -> StanExpr
@@ -844,11 +873,18 @@ functionWithGivensE fName gs as = functionE fName [binOpE "|" (argsE gs) (argsE 
 vectorFunctionE :: Text -> StanExpr -> StanExpr
 vectorFunctionE = VectorFunctionE
 
-groupE ::  StanExpr -> StanExpr
+groupE ::  Text -> Text -> StanExpr -> StanExpr
 groupE = GroupE
+
+parenE :: StanExpr -> StanExpr
+parenE = groupE "(" ")"
+
+bracketE :: StanExpr -> StanExpr
+bracketE = groupE "{" "}"
 
 argsE :: [StanExpr] -> StanExpr
 argsE = ArgsE
+
 
 eqE ::  StanExpr -> StanExpr -> StanExpr
 eqE = binOpE "="
@@ -870,7 +906,7 @@ printExpr im vc (BinOpE o l r) = (\l' r' -> l' <> " " <> o <> " " <> r') <$> pri
 printExpr im vc (FunctionE f es) = (\es' -> f <> "(" <> T.intercalate ", " es' <> ")") <$> traverse (printExpr im vc) es
 printExpr im Vectorized (VectorFunctionE f e) = (\e' -> f <> "(" <>  e' <> ")") <$> printExpr im Vectorized e
 printExpr im vc@(NonVectorized _) (VectorFunctionE f e) = printExpr im vc e
-printExpr im vc (GroupE e) = (\e' -> "(" <> e' <> ")") <$> printExpr im vc e
+printExpr im vc (GroupE ld rd e) = (\e' -> ld <> e' <> rd) <$> printExpr im vc e
 printExpr im vc (ArgsE es) = T.intercalate ", " <$> traverse (printExpr im vc) es
 
 
@@ -899,20 +935,21 @@ stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
   let section h b = h <> " {\n" <> b <> "}\n"
       maybeSection h = maybe "" (section h)
-   in section "data" (dataBlock sm)
-        <> maybeSection "transformed data" (transformedDataBlockM sm)
-        <> section "parameters" (parametersBlock sm)
-        <> maybeSection "transformed parameters" (transformedParametersBlockM sm)
-        <> section "model" (modelBlock sm)
-        <> case gq of
-          NoLL -> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
-          OnlyLL -> section "generated quantities" (genLogLikelihoodBlock sm)
-          All ->
-            section "generated quantities"
-            $ fromMaybe "" (generatedQuantitiesBlockM sm)
-            <> "\n"
-            <> genLogLikelihoodBlock sm
-            <> "\n"
+   in maybeSection "functions" (functionsBlock sm)
+      <> section "data" (dataBlock sm)
+      <> maybeSection "transformed data" (transformedDataBlockM sm)
+      <> section "parameters" (parametersBlock sm)
+      <> maybeSection "transformed parameters" (transformedParametersBlockM sm)
+      <> section "model" (modelBlock sm)
+      <> case gq of
+           NoLL -> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
+           OnlyLL -> section "generated quantities" (genLogLikelihoodBlock sm)
+           All ->
+             section "generated quantities"
+             $ fromMaybe "" (generatedQuantitiesBlockM sm)
+             <> "\n"
+             <> genLogLikelihoodBlock sm
+             <> "\n"
 
 modelFile :: T.Text -> T.Text
 modelFile modelNameT = modelNameT <> ".stan"

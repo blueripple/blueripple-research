@@ -104,12 +104,13 @@ library  haskell-stan
          , relude (Relude as Prelude
          , Relude.Extra)
   exposed-modules: Stan.JSON
-                  , Stan.Parameters
-                  , Stan.ModelConfig
-                  , Stan.ModelRunner
-                  , Stan.ModelBuilder
-                  , Stan.RScriptBuilder
-                  , Stan.Frames
+                 , Stan.Parameters
+                 , Stan.ModelConfig
+                 , Stan.ModelRunner
+                 , Stan.ModelBuilder
+                 , Stan.ModelBuilder.SumToZero
+                 , Stan.RScriptBuilder
+                 , Stan.Frames
   hs-source-dirs:   haskell-stan/src
   default-language: Haskell2010
 
