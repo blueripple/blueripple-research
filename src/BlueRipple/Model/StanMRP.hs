@@ -50,6 +50,7 @@ import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
+import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
 import qualified System.Environment as Env
@@ -175,7 +176,8 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
-        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed gn $ bracketE [SB.termE $ "eps_" <> gn, SB.termE $ " -eps_" <> gn]
+        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.bracketE $ SB.argsE [SB.termE $ SB.Indexed gn ("eps_" <> gn)
+                                                                                , SB.termE $ SB.Indexed gn (" -eps_" <> gn)]
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm

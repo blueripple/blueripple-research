@@ -91,6 +91,7 @@ library  haskell-stan
                , knit-haskell >= 0.9 && < 0.11
                , polysemy
                , process >= 1.6 && < 1.7
+               , recursion-schemes >= 5.1.2 && < 5.3
                , relude >=0.7.0 && < 0.8
                , say >= 0.1.0.1 && < 0.2
                , some >= 1.0.1 && < 1.1
@@ -108,6 +109,9 @@ library  haskell-stan
                  , Stan.ModelConfig
                  , Stan.ModelRunner
                  , Stan.ModelBuilder
+                 , Stan.ModelBuilder.BuildingBlocks
+                 , Stan.ModelBuilder.Distributions
+                 , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames
