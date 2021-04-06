@@ -22,28 +22,28 @@ import Prelude hiding (All)
 
 
 data StanDist args where
-  StanDist :: (args -> SME.StanExpr)
-           -> (args -> SME.StanExpr)
-           -> (args -> SME.StanExpr)
-           -> (args -> SME.StanExpr)
+  StanDist :: (SME.StanIndexKey -> args -> SME.StanExpr)
+           -> (SME.StanIndexKey -> args -> SME.StanExpr)
+           -> (SME.StanIndexKey -> args -> SME.StanExpr)
+           -> (SME.StanIndexKey -> args -> SME.StanExpr)
            -> StanDist args
 
-familySampleF :: StanDist args -> args -> SME.StanExpr
+familySampleF :: StanDist args -> SME.StanIndexKey -> args -> SME.StanExpr
 familySampleF (StanDist s _ _ _) = s
 
-familyLDF :: StanDist args -> args -> SME.StanExpr
+familyLDF :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
 familyLDF (StanDist _ ldf _ _) = ldf
 
-familyRNG :: StanDist args -> args -> SME.StanExpr
+familyRNG :: StanDist args -> SME.StanIndexKey -> args -> SME.StanExpr
 familyRNG (StanDist _ _ rng _) = rng
 
-familyExp :: StanDist args -> args -> SME.StanExpr
+familyExp :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
 familyExp (StanDist _ _ _ e) = e
 
 binomialLogitDist :: SME.StanVar -> SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist sV tV = StanDist sample lpdf rng expectation where
-  vecE (SME.StanVar name _) = SME.termE $ SME.Vectored name
-  sample lpE = vecE sV `SME.vectorSampleE` SME.functionE "binomial_logit" [vecE tV, lpE]
-  lpdf lpE = SME.functionWithGivensE "binomial_logit_lpmf" [vecE sV] [vecE tV, lpE]
-  rng lpE = SME.functionE "binomial_rng" [vecE tV, SME.functionE "inv_logit" [lpE]]
-  expectation lpE = SME.functionE "inv_logit" [lpE]
+  vec k (SME.StanVar name _) = SME.indexed k $ SME.name name
+  sample k lpE = vec k sV `SME.vectorSample` SME.function "binomial_logit" [vec k tV, lpE]
+  lpdf k lpE = SME.functionWithGivens "binomial_logit_lpmf" [vec k sV] [vec k tV, lpE]
+  rng k lpE = SME.function "binomial_rng" [vec k tV, SME.function "inv_logit" [lpE]]
+  expectation k lpE = SME.function "inv_logit" [lpE]

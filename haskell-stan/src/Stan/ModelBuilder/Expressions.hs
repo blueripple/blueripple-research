@@ -22,6 +22,7 @@ module Stan.ModelBuilder.Expressions where
 import Prelude hiding (All, group)
 import qualified Control.Foldl as Fold
 import qualified Data.Functor.Foldable as Rec
+import qualified Data.Functor.Foldable.Monadic as Rec
 import qualified Data.Functor.Foldable.TH as Rec
 
 import qualified Data.Fix as Fix
@@ -29,6 +30,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 
 type StanName = Text
+type StanIndexKey = Text
 data StanDim = NamedDim StanName | GivenDim Int deriving (Show, Eq, Ord)
 
 dimToText :: StanDim -> Text
@@ -43,31 +45,30 @@ data StanType = StanInt
 
 data StanVar = StanVar StanName StanType
 
-data VectorContext = Vectorized | NonVectorized Text deriving (Show, Eq)
-
 data StanExprF a where
-  ScalarF :: Text -> StanExprF a
-  IndexedF :: Text -> StanExprF a
-  ReIndexedF :: Text -> Text -> StanExprF a
+  BareF :: Text -> StanExprF a
+  IndexedF :: StanIndexKey -> a -> StanExprF a
+  WithIndexF :: a -> a -> StanExprF a
   BinOpF :: Text -> a -> a -> StanExprF a
   FunctionF :: Text -> [a] -> StanExprF a
   VectorFunctionF :: Text -> a -> StanExprF a -- function to add when the context is vectorized
   GroupF :: Text -> Text -> a -> StanExprF a
   ArgsF :: [a] -> StanExprF a
---  ArrayF :: [a] -> StanExprF a
   deriving (Show, Eq, Functor, Foldable, Traversable)
-
 
 type StanExpr = Fix.Fix StanExprF
 
 scalar :: Text -> StanExpr
-scalar = Fix.Fix . ScalarF
+scalar = Fix.Fix . BareF
 
-indexed :: Text -> StanExpr
-indexed = Fix.Fix . IndexedF
+name :: Text -> StanExpr
+name = Fix.Fix . BareF
 
-reIndexed :: Text -> Text -> StanExpr
-reIndexed k t = Fix.Fix $ ReIndexedF k t
+indexed :: StanIndexKey -> StanExpr -> StanExpr
+indexed k e = Fix.Fix $ IndexedF k e
+
+withIndex :: StanExpr -> StanExpr -> StanExpr
+withIndex e1 e2 = Fix.Fix $ WithIndexF e1 e2
 
 binOp :: Text -> StanExpr -> StanExpr -> StanExpr
 binOp op e1 e2 = Fix.Fix $ BinOpF op e1 e2
@@ -93,64 +94,72 @@ paren = group "(" ")"
 bracket :: StanExpr -> StanExpr
 bracket = group "{" "}"
 
---args :: [StanExpr] -> StanExpr
---args = Fix.Fix . ArgsE . fmap Fix.unFix
+eq ::  StanExpr -> StanExpr -> StanExpr
+eq = binOp "="
 
-eqE ::  StanExpr -> StanExpr -> StanExpr
-eqE = binOp "="
+vectorSample :: StanExpr -> StanExpr -> StanExpr
+vectorSample = binOp "~"
 
-vectorSampleE :: StanExpr -> StanExpr -> StanExpr
-vectorSampleE = binOp "~"
+plus ::  StanExpr -> StanExpr -> StanExpr
+plus = binOp "+"
 
-plusE ::  StanExpr -> StanExpr -> StanExpr
-plusE = binOp "+"
-
-timesE :: StanExpr -> StanExpr -> StanExpr
-timesE = binOp "*"
+times :: StanExpr -> StanExpr -> StanExpr
+times = binOp "*"
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
 
--- This is wild
-reIndexExpression :: Map Text Text -> StanExpr -> Either Text StanExpr
-reIndexExpression im = Rec.cata alg where
-  reIndex :: Map Text Text -> Text -> Text -> Either Text Text
-  reIndex im key term = case Map.lookup key im of
-    Nothing -> Left $ "re-indexing key \"" <> key <> "\" not found in index-map: " <> show im
-    Just i -> Right $ term <> "[" <> i <> "]"
-  alg :: StanExprF (Either Text StanExpr) -> Either Text StanExpr
-  alg (ReIndexedF k t) = case Map.lookup k im of
-    Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in index-map: " <> show im
-    Just i -> Right $ indexed $ t <> "[" <> i <> "]"
-  alg x = Fix.Fix <$> sequenceA x
+data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
+data VarBindingStore = VarBindingStore (Maybe StanIndexKey) (Map StanIndexKey StanExpr)
 
-printReIndexedExpr :: VectorContext -> StanExpr -> Text
-printReIndexedExpr vc = Rec.cata alg where
-  printVC :: VectorContext -> Text -> Text
-  printVC Vectorized t = t
-  printVC (NonVectorized i) t = t <> "[" <> i <> "]"
+vectorizingBindings :: StanIndexKey -> Map StanIndexKey StanExpr -> VarBindingStore
+vectorizingBindings vecIndex = VarBindingStore (Just vecIndex)
+
+fullyIndexedBindings :: Map StanIndexKey StanExpr -> VarBindingStore
+fullyIndexedBindings = VarBindingStore Nothing
+
+lookupBinding :: StanIndexKey -> VarBindingStore -> Maybe BindIndex
+lookupBinding k (VarBindingStore (Just vk) bm) =
+  if k == vk then Just NoIndex else IndexE <$> Map.lookup k bm
+lookupBinding k (VarBindingStore Nothing bm) = IndexE <$> Map.lookup k bm
+
+showKeys :: VarBindingStore -> Text
+showKeys (VarBindingStore mvk bms) =
+  maybe ("Non-vectorized") ("Vectorized over " <>) mvk
+  <> "Substution keys: " <> show (Map.keys bms)
+
+vectorized :: VarBindingStore -> Bool
+vectorized (VarBindingStore mvk _) = isJust mvk
+
+-- this is wild
+-- bind all indexes and do so recursively, from the top.  \
+-- So your indexes can have indexes.
+bindIndexes :: VarBindingStore -> StanExpr -> Either Text StanExpr
+bindIndexes vbs = Rec.anaM coalg  where
+  coalg :: StanExpr -> Either Text (StanExprF StanExpr)
+  coalg (Fix.Fix (IndexedF k e)) =
+    case lookupBinding k vbs of
+      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+      Just bi -> case bi of
+        NoIndex  -> Right $ Fix.unFix e
+        IndexE ei -> Right $ WithIndexF ei e
+  coalg x = Right $ Fix.unFix x
+
+-- as is this
+-- build up stan code recursively from the bottom
+-- should only be called after index binding
+printIndexedExpr :: Bool -> StanExpr -> Either Text Text
+printIndexedExpr vc = Rec.cataM alg where
   csArgs es = T.intercalate ", " es
-  alg :: StanExprF Text -> Text
-  alg (ScalarF t) = t
-  alg (IndexedF t) = printVC vc t
-  alg (ReIndexedF k t) = error "Should not call printExpr' before reIndexing" --printVC vc <$> reIndex im k t
-  alg (BinOpF op e1 e2) = e1 <> " " <> op <> " " <> e2
-  alg (FunctionF f es) = f <> "(" <> csArgs es <> ")"
-  alg (VectorFunctionF f e) = if vc == Vectorized then f <> "(" <> e <> ")" else e
-  alg (GroupF ld rd e) = ld <> e <> rd
-  alg (ArgsF es) = csArgs es
+  alg :: StanExprF Text -> Either Text Text
+  alg (BareF t) = Right t
+  alg (IndexedF _ _) = Left "Should not call printExpr' before binding indexes" --printVC vc <$> reIndex im k t
+  alg (WithIndexF ie e) = Right $ e <> "[" <> ie <> "]"
+  alg (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
+  alg (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
+  alg (VectorFunctionF f e) = Right $ if vc then f <> "(" <> e <> ")" else e
+  alg (GroupF ld rd e) = Right $ ld <> e <> rd
+  alg (ArgsF es) = Right $ csArgs es
 
-printExpr :: Map Text Text -> VectorContext -> StanExpr -> Either Text Text
-printExpr im vc expr = printReIndexedExpr vc <$> reIndexExpression im expr
-
-{-
-printExpr :: Map Text Text -> VectorContext -> StanExpr -> Either Text Text
---printExpr _ _ NullE = Just ""
-printExpr im vc (TermE t) = printTerm im vc t
-printExpr im vc (BinOpE o l r) = (\l' r' -> l' <> " " <> o <> " " <> r') <$> printExpr im vc l <*> printExpr im vc r
-printExpr im vc (FunctionE f es) = (\es' -> f <> "(" <> T.intercalate ", " es' <> ")") <$> traverse (printExpr im vc) es
-printExpr im Vectorized (VectorFunctionE f e) = (\e' -> f <> "(" <>  e' <> ")") <$> printExpr im Vectorized e
-printExpr im vc@(NonVectorized _) (VectorFunctionE f e) = printExpr im vc e
-printExpr im vc (GroupE ld rd e) = (\e' -> ld <> e' <> rd) <$> printExpr im vc e
-printExpr im vc (ArgsE es) = T.intercalate ", " <$> traverse (printExpr im vc) es
--}
+printExpr :: VarBindingStore -> StanExpr -> Either Text Text
+printExpr vbs expr = bindIndexes vbs expr >>= printIndexedExpr (vectorized vbs)

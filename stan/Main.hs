@@ -72,6 +72,8 @@ import Optics.Operators
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder.BuildingBlocks as SB
+--import qualified Stan
 import qualified Stan.Parameters as SP
 import qualified CmdStan as CS
 import qualified Stan.RScriptBuilder as SR

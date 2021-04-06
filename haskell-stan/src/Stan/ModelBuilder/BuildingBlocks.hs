@@ -61,12 +61,11 @@ generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
   SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "N") ""
   SB.stanForLoop "n" Nothing "N" $ \_ -> do
     let im = Map.mapWithKey (\k _ -> k <> "[n]") indexMap -- we need to index the groups.
-        lhsE = SME.termE $ SME.Vectored "log_lik"
+        lhsE = SME.indexed $ SME.name "log_lik"
         rhsE = SMD.familyLDF sDist args
-        llE = lhsE `SME.eqE` rhsE
+        llE = lhsE `SME.eq` rhsE
     llCode <- SB.printExprM "log likelihood (in Generated Quantitites)" im (SME.NonVectorized "n") $ return llE
     SB.addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
-
 
 generatePosteriorPrediction :: SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
 generatePosteriorPrediction (SME.StanVar ppName ppType) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
@@ -75,7 +74,6 @@ generatePosteriorPrediction (SME.StanVar ppName ppType) sDist args = SB.inBlock 
       rngE = SMD.familyRNG sDist args
   rngCode <- SB.printExprM "posterior prediction (in Generated Quantities)" im SME.Vectorized $ return rngE
   SB.stanDeclareRHS ppName ppType "" rngCode
---  addStanLine $ "vector[N] " <> ppName <> " = " <> rngCode
 
 fixedEffectsQR :: Text -> Text -> Text -> Text -> SB.StanBuilderM env d r SME.StanVar
 fixedEffectsQR thinSuffix matrix rows cols = do

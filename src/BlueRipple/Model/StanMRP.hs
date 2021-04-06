@@ -166,9 +166,10 @@ getIndex gn = do
 intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d SB.StanExpr
 intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
-  SB.inBlock SB.SBModel $ SB.addStanLine $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
-  let modelTerm = SB.TermE $ SB.Scalar "alpha"
-  return modelTerm
+  let alphaE = SB.name iName
+      interceptE = SB.binOp "~" alphaE $ SB.function "normal" [SB.scalar "0", SB.scalar $ show alphaPriorSD]
+  SB.printExprM "intercept" mempty SB.Vectorized (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+  return alphaE
 
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d SB.StanExpr
@@ -176,13 +177,16 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
-        let modelTerm = SB.VectorFunctionE "to_vector" $ SB.bracketE $ SB.argsE [SB.termE $ SB.Indexed gn ("eps_" <> gn)
-                                                                                , SB.termE $ SB.Indexed gn (" -eps_" <> gn)]
+        let modelTerm = SB.vectorFunction "to_vector"
+                        $ SB.reIndexed gn
+                        $ SB.bracket
+                        $ SB.args [SB.name ("eps_" <> gn)
+                                  , SB.name (" -eps_" <> gn)]
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm
   let nonBinaryGroup = do
-        let modelTerm = SB.TermE . SB.Indexed gn $ "beta_" <> gn
+        let modelTerm = SB.reIndexed gn $ SB.name $ "beta_" <> gn
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare ("sigma_" <> gn) SB.StanReal "<lower=0>"
           SB.stanDeclare ("beta_raw_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
@@ -234,14 +238,12 @@ addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.TermE
-           $ if T.null suffix then SB.Vectored "Q_ast" else SB.Indexed suffix ("Q" <> uSuffix <> "_ast")
-      eTheta = SB.TermE $ SB.Scalar $ "thetaX" <> uSuffix
-      eQTheta = SB.BinOpE "*" eQ eTheta
-      eX = SB.TermE
-           $ if T.null suffix then SB.Vectored "centered_X" else SB.Indexed suffix ("centered_X" <> uSuffix)
-      eBeta = SB.TermE $ SB.Scalar $ "betaX" <> uSuffix
-      eXBeta = SB.BinOpE "*" eX eBeta
+  let eQ = if T.null suffix then SB.indexed $ SB.name "Q_ast" else SB.reIndexed suffix $ SB.name ("Q" <> uSuffix <> "_ast")
+      eTheta = SB.name $ "thetaX" <> uSuffix
+      eQTheta = eQ `SB.times` eTheta
+      eX = if T.null suffix then SB.indexed $ SB.name "centered_X" else SB.reIndexed suffix $ SB.name ("centered_X" <> uSuffix)
+      eBeta = SB.name $ "betaX" <> uSuffix
+      eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, eXBeta, eBeta)
 
@@ -340,7 +342,7 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
           Just (SB.GroupTypeTag gn) -> (Map.insert gn "n" indexMap', Map.keys $ Map.delete gn indexMap')
         inner = do
           let psExpE = SB.familyExp sDist args
-          expCode <- SB.printExprM "mrpPSStanCode" indexMap (SB.NonVectorized "n") $ return psExpE
+          expCode <- SB.printExprM "mrpPSStanCode" indexMap SB.FullyIndexed $ return psExpE
           SB.stanDeclareRHS "p" SB.StanReal "" expCode
           when (psType == PSShare)
             $ SB.addStanLine
