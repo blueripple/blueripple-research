@@ -132,6 +132,9 @@ districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField 
 districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
+--acsWhite :: F.Record BRE.PUMSByCDR -> Bool
+ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
+
 ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
 ccesGroupBuilder = do
   SB.addGroup "CD" $ SB.makeIndexByCounting show districtKey
@@ -145,8 +148,9 @@ cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVB
 cpsVGroupBuilder districts states = do
   SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
-  SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
+--  SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
+  SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
+--  SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
@@ -161,8 +165,8 @@ pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
                     $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-                    $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
-                    $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
+                    $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
+--                    $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
                     $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
                     $ SB.emptyGroupRowMap
@@ -171,7 +175,6 @@ catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
-
 
 dataAndCodeBuilder :: Typeable modelRow
                        => (modelRow -> Int)
@@ -188,24 +191,23 @@ dataAndCodeBuilder totalF succF = do
                             cdDataRT
                             (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
-  gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
-  gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
+  gWhiteE <- MRP.addMRGroup 2 2 0.01 "White"
+--  gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
   gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
   gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
   gStateE <- MRP.addMRGroup 2 2 0.01 "State"
   let dist = SB.binomialLogitDist vSucc vTotal
-      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gStateE]
+      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE]
   SB.sampleDistV dist logitPE
-  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-
+--  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
+  SB.generateLogLikelihood dist logitPE
   acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
   MRP.addPostStratification
     dist
     logitPE
-    "State"
     acsDataRT
     pumsPSGroupRowMap
-    (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
+    (S.fromList ["CD", "Sex", "White","Age","Education"])
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
@@ -223,7 +225,7 @@ extractTestResults = SC.UseSummary f where
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex @Text "State" groupIndexes
+    psIndexIM <- K.knitEither $ SB.getGroupIndex @Text "ACS_State" groupIndexes
     vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 
@@ -271,7 +273,7 @@ testStanMRP = do
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
-    False
+    True
     (Just "stan/mrp/cpsV")
     "test"
     "test"

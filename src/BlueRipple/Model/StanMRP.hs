@@ -192,18 +192,34 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-{-
-addNestedMRGroup ::  (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> GroupName -> BuilderM r d SB.StanExpr
+
+addNestedMRGroup ::  (Typeable d, Typeable r)
+                 => Double
+                 -> Double
+                 -> Double
+                 -> GroupName -- e.g., sex
+                 -> GroupName -- e.g., state
+                 -> BuilderM r d SB.StanExpr
 addNestedMRGroup  binarySD nonBinarySD sumGroupSD outerGN innerGN = do
   let suffix = "_" <> outerGN <> "_" <> innerGN
       suffixed x = x <> suffix
   (SB.IntIndex innerIndexSize _) <- getIndex innerGN
-  when (innerIndexSize < 2) $ SB.stanBuildError "inner index with size <2 in nestedMRGroup!"
+  (SB.IntIndex outerIndexSize _) <- getIndex outerGN
+  when (outerIndexSize < 2) $ SB.stanBuildError "outer index with size <2 in nestedMRGroup!"
   let binaryNested = do
-        SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim $ "N_" <> outerGN)
-        SB.inBlock SB.SBModel $ SB.addStanLine $ suffixed "eps" <> " ~ normal(0, " <> show binarySD <> ")"
-        return $ SB.VectorFunctionE "to_vector" $ SB.TermE $ SB.Indexed innerGN $ SB.bracketE "{" <> suffixed "eps" <> [""]"}"
--}
+        SB.inBlock SB.SBParameters
+          $ SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim $ "N_" <> outerGN) ""
+        SB.inBlock SB.SBModel
+          $ SB.addStanLine $ suffixed "eps" <> " ~ normal(0, " <> show binarySD <> ")"
+        return $ SB.vectorFunction "to_vector"
+          $ SB.indexed outerGN
+          $ SB.bracket
+          $ SB.args [SB.indexed innerGN $ SB.name $ suffixed "eps"
+                    ,SB.indexed innerGN $ SB.name $ suffixed "-eps"
+                    ]
+      nonBinaryNested = undefined
+  if outerIndexSize == 2 then binaryNested else nonBinaryNested
+
 
 type GroupName = Text
 
@@ -250,7 +266,6 @@ data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
                       -> args -- required args, e.g., total counts for binomial
-                      -> SB.StanName -- name for vars and
                       -> SB.RowTypeTag d r
                       -> SB.GroupRowMap r -- group mappings for PS data
                       -> Set.Set Text -- subset of groups to loop over
@@ -258,9 +273,15 @@ addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM r0 d ()
-addPostStratification sDist args name rtt groupMaps modelGroups weightF psType mPSGroup = do
+addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
+      dsName = SB.dsName rtt
+      psGroupName = maybe "" SB.taggedGroupName mPSGroup
+      uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
+      psSuffix = dsName <> uPSGroupName
+      namedPS = "PS_" <> psSuffix
+      sizeName = "N_" <> psSuffix
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
   let checkGroupSubset n1 n2 gs1 gs2 = do
@@ -282,12 +303,10 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
                        <> ") is not present in Builder groups: " <> tGrps
     SB.IndexMap _ eIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-    SB.addIndexIntMap name (SB.applyToFoldableM (buildIntMapBuilderF eIntF h) toFoldable)
+    SB.addIndexIntMap psSuffix (SB.applyToFoldableM (buildIntMapBuilderF eIntF h) toFoldable)
     return $ eIntF . h
   -- add the data set for the json builders
-  let dsName = SB.dsName rtt
-      namedPS = "PS_" <> dsName <> "_" <> name
-      sizeName = "N_" <> dsName <> "_" <> name
+
 --  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
   SB.addJson rtt sizeName SB.StanInt "<lower=0>"
     $ SJ.valueToPairF sizeName
