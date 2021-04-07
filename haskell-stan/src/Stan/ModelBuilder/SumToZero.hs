@@ -94,10 +94,10 @@ weightedSoftSumToZero :: SB.StanVar -> Text -> Text -> Double -> SB.StanBuilderM
 weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector sd)) gn dSizeVar sumToZeroSD = do
   let gSize = SB.dimToText sd
   SB.inBlock SB.SBTransformedData $ do
-    SB.stanDeclareRHS (gn <> "_weights") (SB.StanVector sd) "<lower=0>" ("rep_vector(0," <> gSize <> ")")
+    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>" ("rep_vector(0," <> gSize <> ")")
 --    SB.stanForLoop "g" Nothing gSizeVar $ const $ SB.addStanLine $ gn <> "_weights[g] = 0"
-    SB.stanForLoop "n" Nothing dSizeVar $ const $ SB.addStanLine $ gn <> "_weights[" <> gn <> "[n]] += 1"
-    SB.addStanLine $ gn <> "_weights /= N"
+    SB.stanForLoop "n" Nothing dSizeVar $ const $ SB.addStanLine $ varName <> "_weights[" <> gn <> "[n]] += 1"
+    SB.addStanLine $ varName <> "_weights /= N"
 
   SB.inBlock SB.SBModel $ do
-    SB.addStanLine $ "dot_product(beta_" <> gn <> ", " <> gn <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
+    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"

@@ -184,7 +184,7 @@ dataAndCodeBuilder totalF succF = do
   cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   vTotal <- SB.addCountData "T" "N" totalF
   vSucc <- SB.addCountData "S" "N" succF
-  alphaE <- MRP.intercept "alpha" 2
+  alphaE <- SB.intercept "alpha" 2
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
                             True
                             2 -- prior
@@ -196,12 +196,15 @@ dataAndCodeBuilder totalF succF = do
   gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
   gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
   gStateE <- MRP.addMRGroup 2 2 0.01 "State"
+  gWhiteState <- MRP.addNestedMRGroup 2 2 0.01 "White" "State"
   let dist = SB.binomialLogitDist vSucc vTotal
-      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE]
+      logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteState]
   SB.sampleDistV dist logitPE
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
   SB.generateLogLikelihood dist logitPE
+{-
   acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
+
   MRP.addPostStratification
     dist
     logitPE
@@ -211,7 +214,7 @@ dataAndCodeBuilder totalF succF = do
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
-
+-}
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)

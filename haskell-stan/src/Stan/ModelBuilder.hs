@@ -260,8 +260,11 @@ data RowTypeTag d r where
   ModeledRowTag :: (Typeable d, Typeable r) => RowTypeTag d r
   RowTypeTag :: (Typeable d, Typeable r) => Text -> RowTypeTag d r
 
+modeledDataIndexName :: Text
+modeledDataIndexName = "modeled"
+
 dsName :: RowTypeTag d r -> Text
-dsName ModeledRowTag = "modeled"
+dsName ModeledRowTag = modeledDataIndexName
 dsName (RowTypeTag n) = n
 
 dsSuffix :: RowTypeTag d r -> Text

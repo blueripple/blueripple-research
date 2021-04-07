@@ -154,6 +154,7 @@ getIndex gn = do
     Just i -> return i
 
 -- TODO: Move to ModelBuilder
+{-
 intercept :: forall r d. (Typeable d, Typeable r) => Text -> Double -> BuilderM r d SB.StanExpr
 intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
@@ -161,6 +162,7 @@ intercept iName alphaPriorSD = do
       interceptE = SB.binOp "~" alphaE $ SB.function "normal" [SB.scalar "0", SB.scalar $ show alphaPriorSD]
   SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   return alphaE
+-}
 
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: (Typeable d, Typeable r) => Double -> Double -> Double -> GroupName -> BuilderM r d SB.StanExpr
@@ -198,27 +200,43 @@ addNestedMRGroup ::  (Typeable d, Typeable r)
                  -> Double
                  -> Double
                  -> GroupName -- e.g., sex
-                 -> GroupName -- e.g., state
+                 -> GroupName -- partially pooled, e.g., state
                  -> BuilderM r d SB.StanExpr
-addNestedMRGroup  binarySD nonBinarySD sumGroupSD outerGN innerGN = do
-  let suffix = "_" <> outerGN <> "_" <> innerGN
-      suffixed x = x <> suffix
-  (SB.IntIndex innerIndexSize _) <- getIndex innerGN
-  (SB.IntIndex outerIndexSize _) <- getIndex outerGN
-  when (outerIndexSize < 2) $ SB.stanBuildError "outer index with size <2 in nestedMRGroup!"
-  let binaryNested = do
-        SB.inBlock SB.SBParameters
-          $ SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim $ "N_" <> outerGN) ""
-        SB.inBlock SB.SBModel
-          $ SB.addStanLine $ suffixed "eps" <> " ~ normal(0, " <> show binarySD <> ")"
-        return $ SB.vectorFunction "to_vector"
-          $ SB.indexed outerGN
+addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
+  let suffix = nonPooledGN <> "_" <> pooledGN
+      suffixed x = x <> "_" <> suffix
+  (SB.IntIndex pooledIndexSize _) <- getIndex pooledGN
+  (SB.IntIndex nonPooledIndexSize _) <- getIndex nonPooledGN
+  when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ")with size <2 in nestedMRGroup!"
+  when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ")with size <2 in nestedMRGroup!"
+  let nonPooledBinary = do
+        SB.inBlock SB.SBParameters $ do
+          SB.stanDeclare (suffixed "eps" <> "_raw") (SB.StanVector $ SB.NamedDim $ "N_" <> pooledGN) ""
+          SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
+        epsVar <- SB.inBlock SB.SBTransformedParameters $ do
+          SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN)) ""
+          SB.addStanLine $ suffixed "eps" <> " = " <> suffixed "sigma" <> " * " <> suffixed "eps" <> "_raw"
+          ev <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
+          SB.stanForLoop "n" Nothing "N"
+            $ const
+            $ SB.addStanLine
+            $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
+          return ev
+        SB.inBlock SB.SBModel $ do
+          SB.addStanLine $ suffixed "sigma" <> " ~ normal(0, " <> show nonBinarySD <> ")"
+          SB.addStanLine $ suffixed "eps" <> "_raw ~ normal(0, 1)"
+        SB.weightedSoftSumToZero epsVar pooledGN "N" sumGroupSD
+        return $ SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+{-
+        return SB.vectorFunction "to_vector"
+          $ SB.indexed nonPooledGN
           $ SB.bracket
-          $ SB.args [SB.indexed innerGN $ SB.name $ suffixed "eps"
-                    ,SB.indexed innerGN $ SB.name $ suffixed "-eps"
+          $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
+                    ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
                     ]
-      nonBinaryNested = undefined
-  if outerIndexSize == 2 then binaryNested else nonBinaryNested
+-}
+      nonPooledNonBinary = undefined
+  if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
 
 
 type GroupName = Text

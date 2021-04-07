@@ -128,7 +128,7 @@ lookupBinding k (VarBindingStore Nothing bm) = IndexE <$> Map.lookup k bm
 
 showKeys :: VarBindingStore -> Text
 showKeys (VarBindingStore mvk bms) =
-  maybe ("Non-vectorized") ("Vectorized over " <>) mvk
+  maybe ("Non-vectorized ") ("Vectorized over " <>) mvk
   <> "Substution keys: " <> show (Map.keys bms)
 
 vectorized :: VarBindingStore -> Bool

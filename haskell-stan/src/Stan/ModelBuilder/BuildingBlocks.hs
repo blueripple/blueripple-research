@@ -46,13 +46,20 @@ addCountData :: forall r0 d env.(Typeable d, Typeable r0)
              -> SB.StanBuilderM env d r0 SME.StanVar
 addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
 
+intercept :: forall env r d. (Typeable d, Typeable r) => Text -> Double -> SB.StanBuilderM env r d SB.StanExpr
+intercept iName alphaPriorSD = do
+  SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
+  let alphaE = SB.name iName
+      interceptE = SB.binOp "~" alphaE $ SB.function "normal" [SB.scalar "0", SB.scalar $ show alphaPriorSD]
+  SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+  return alphaE
 
 sampleDistV :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
 sampleDistV sDist args =  SB.inBlock SB.SBModel $ do
   indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
-  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed "data" $ SME.name k) indexMap
-      bindingStore = SME.vectorizingBindings "data" indexBindings
-      samplingE = SMD.familySampleF sDist "data" args
+  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap
+      bindingStore = SME.vectorizingBindings SB.modeledDataIndexName indexBindings
+      samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
   samplingCode <- SB.printExprM "mrpModelBlock" bindingStore $ return samplingE
   SB.addStanLine samplingCode
 
@@ -61,10 +68,10 @@ generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
   indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
   SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "N") ""
   SB.stanForLoop "n" Nothing "N" $ \_ -> do
-    let indexBindings  = Map.insert "data" (SME.name "n") $ Map.mapWithKey (\k _ -> SME.indexed "data" $ SME.name k) indexMap -- we need to index the groups.
+    let indexBindings  = Map.insert SB.modeledDataIndexName (SME.name "n") $ Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap -- we need to index the groups.
         bindingStore = SME.fullyIndexedBindings indexBindings
-        lhsE = SME.indexed "data" $ SME.name "log_lik"
-        rhsE = SMD.familyLDF sDist "data" args
+        lhsE = SME.indexed SB.modeledDataIndexName $ SME.name "log_lik"
+        rhsE = SMD.familyLDF sDist SB.modeledDataIndexName args
         llE = lhsE `SME.eq` rhsE
     llCode <- SB.printExprM "log likelihood (in Generated Quantitites)" bindingStore $ return llE
     SB.addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
@@ -72,9 +79,9 @@ generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
 generatePosteriorPrediction :: SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
 generatePosteriorPrediction (SME.StanVar ppName ppType) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
-  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed "data" $ SME.name k) indexMap
-      bindingStore = SME.vectorizingBindings "data" indexBindings
-      rngE = SMD.familyRNG sDist "data" args
+  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap
+      bindingStore = SME.vectorizingBindings SB.modeledDataIndexName indexBindings
+      rngE = SMD.familyRNG sDist SB.modeledDataIndexName args
   rngCode <- SB.printExprM "posterior prediction (in Generated Quantities)" bindingStore $ return rngE
   SB.stanDeclareRHS ppName ppType "" rngCode
 
