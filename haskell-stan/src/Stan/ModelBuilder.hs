@@ -400,7 +400,11 @@ addFunctionsOnce functionsName fCode = do
       fCode
       put (BuilderState vars rowBuilders newFunctionNames code ims)
 
-addIndexedDataSet :: (Typeable r, Typeable d, Typeable k) => Text -> ToFoldable d r -> (r -> k) -> StanBuilderM env d r0 ()
+addIndexedDataSet :: (Typeable r, Typeable d, Typeable k)
+                  => Text
+                  -> ToFoldable d r
+                  -> (r -> k)
+                  -> StanBuilderM env d r0 (RowTypeTag d r)
 addIndexedDataSet name toFoldable toKey = do
   let rtt = RowTypeTag name
   (BuilderState vars rowBuilders fsNames code ims) <- get
@@ -410,8 +414,12 @@ addIndexedDataSet name toFoldable toKey = do
       let rowInfo = indexedRowInfo toFoldable name toKey
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars newRowBuilders fsNames code ims)
+  return rtt
 
-addUnIndexedDataSet :: (Typeable r, Typeable d) => Text -> ToFoldable d r -> StanBuilderM env d r0 ()
+addUnIndexedDataSet :: (Typeable r, Typeable d)
+                    => Text
+                    -> ToFoldable d r
+                    -> StanBuilderM env d r0 (RowTypeTag d r)
 addUnIndexedDataSet name toFoldable = do
   let rtt = RowTypeTag name
   (BuilderState vars rowBuilders modelExprs code ims) <- get
@@ -421,6 +429,7 @@ addUnIndexedDataSet name toFoldable = do
       let rowInfo = unIndexedRowInfo toFoldable name
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars newRowBuilders modelExprs code ims)
+  return rtt
 
 addIndexIntMap :: Typeable k => Text -> (d -> Either Text (IntMap k)) -> StanBuilderM env d r0 ()
 addIndexIntMap iName imF = do
@@ -529,7 +538,7 @@ addJson rtt name st sc fld = do
   (BuilderState declared rowBuilders modelExprs code ims) <- get
 --  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
   newRowBuilders <- case addFoldToDBuilder rtt fld rowBuilders of
-    Nothing -> stanBuildError $ "Attempt to add Json to an unitialized dataset (" <> dsName rtt <> ")"
+    Nothing -> stanBuildError $ "Attempt to add Json to an uninitialized dataset (" <> dsName rtt <> ")"
     Just x -> return x
   put $ BuilderState declared newRowBuilders modelExprs code ims
   return $ SME.StanVar name st

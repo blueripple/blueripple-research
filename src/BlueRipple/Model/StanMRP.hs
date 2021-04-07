@@ -59,15 +59,6 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
 
-{-
-data MRPData f predRow modeledRow psRow =
-  MRPData
-  {
-    modeled :: f modeledRow
-  , postStratified ::Maybe (f psRow) -- if this is Nothing we don't do post-stratification
-  }
--}
-
 buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          => SB.StanGroupBuilderM modeledRow ()
                          -> env
@@ -295,10 +286,11 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
     return $ eIntF . h
   -- add the data set for the json builders
   let dsName = SB.dsName rtt
-      namedPS = "PS_" <> dsName
+      namedPS = "PS_" <> dsName <> "_" <> name
+      sizeName = "N_" <> dsName <> "_" <> name
 --  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
-  SB.addJson rtt ("N_" <> dsName) SB.StanInt "<lower=0>"
-    $ SJ.valueToPairF ("N_" <> dsName)
+  SB.addJson rtt sizeName SB.StanInt "<lower=0>"
+    $ SJ.valueToPairF sizeName
     $ fmap (A.toJSON . Set.size)
     $ FL.premapM intKeyF
     $ FL.generalize FL.set
@@ -306,12 +298,14 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
-      weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> dsName] $ SB.StanArray groupDims SB.StanReal
-  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int]) --[r -> Maybe Int]
+      weightArrayType = SB.StanArray [SB.NamedDim sizeName] $ SB.StanArray groupDims SB.StanReal
+  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int])
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
               case DHash.lookup gtt gim of
-                Nothing -> Left $ "Failed lookup of group=" <> SB.taggedGroupName gtt <> " in addPostStratification."
+                Nothing -> Left $ "Failed lookup of group="
+                           <> SB.taggedGroupName gtt
+                           <> " in addPostStratification."
                 Just (SB.IndexMap _ kToEitherInt) -> Right (kToEitherInt . rTok)
             g :: [r -> Either Text Int] -> r -> Either Text [Int]
             g fs r = traverse ($r) fs
@@ -325,7 +319,8 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
       sumInnerFold :: Ord k => FL.Fold (k, Double) [(k, Double)]
       sumInnerFold = MR.mapReduceFold MR.noUnpack (MR.Assign id) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
       assignM r = case intKeyF r of
-        Left msg -> Left $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
+        Left msg -> Left
+                    $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
         Right l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x
       reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed)
@@ -334,7 +329,7 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
              (MR.generalizeUnpack MR.noUnpack)
              (MR.AssignM assignM)
              (MR.ReduceFoldM $ const reduceF)
-  SB.addJson (SB.RowTypeTag namedPS) (namedPS <> "_wgts") weightArrayType ""
+  SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
     $ SJ.valueToPairF (namedPS <> "_wgts")
     $ fmap A.toJSON fldM
   SB.inBlock SB.SBGeneratedQuantities $ do
@@ -355,10 +350,10 @@ addPostStratification sDist args name rtt groupMaps modelGroups weightF psType m
             $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
-    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> dsName] SB.StanReal) ""
-    SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> dsName <> ")"
-    SB.stanForLoop "n" Nothing ("N_" <> dsName) $ const $ do
+    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ sizeName] SB.StanReal) ""
+    SB.addStanLine $ namedPS <> " = rep_array(0, " <> sizeName  <> ")"
+    SB.stanForLoop "n" Nothing sizeName $ const $ do
       let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ (SB.stanDeclareRHS wsn  SB.StanReal "" "0" >> return ())
+      when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" "0" >> return ())
       makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"

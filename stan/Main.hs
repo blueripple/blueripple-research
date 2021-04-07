@@ -178,15 +178,14 @@ dataAndCodeBuilder :: Typeable modelRow
                        -> (modelRow -> Int)
                        -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
 dataAndCodeBuilder totalF succF = do
-  SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+  cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
   vTotal <- SB.addCountData "T" "N" totalF
   vSucc <- SB.addCountData "S" "N" succF
   alphaE <- MRP.intercept "alpha" 2
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
                             True
-                            "data"
                             2 -- prior
-                            (SB.RowTypeTag  "CD")
+                            cdDataRT
                             (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
   gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
@@ -199,12 +198,12 @@ dataAndCodeBuilder totalF succF = do
   SB.sampleDistV dist logitPE
   SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 
-  SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
+  acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
   MRP.addPostStratification
     dist
     logitPE
     "State"
-    (SB.RowTypeTag "ACS")
+    acsDataRT
     pumsPSGroupRowMap
     (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     (realToFrac . F.rgetField @PUMS.Citizens)
@@ -225,7 +224,7 @@ extractTestResults = SC.UseSummary f where
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
     psIndexIM <- K.knitEither $ SB.getGroupIndex @Text "State" groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_State" (CS.paramStats summary)
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
     K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
@@ -272,7 +271,7 @@ testStanMRP = do
   (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
-    True
+    False
     (Just "stan/mrp/cpsV")
     "test"
     "test"
