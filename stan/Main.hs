@@ -184,8 +184,10 @@ dataAndCodeBuilder totalF succF = do
   alphaE <- MRP.intercept "alpha" 2
   (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
                             True
+                            "data"
                             2 -- prior
-                            (SB.RowTypeTag  "CD")                            (MRP.FixedEffects 2 districtPredictors)
+                            (SB.RowTypeTag  "CD")
+                            (MRP.FixedEffects 2 districtPredictors)
   gSexE <- MRP.addMRGroup 2 2 0.01 "Sex"
   gRaceE <- MRP.addMRGroup 2 2 0.01 "Race"
   gEthE <- MRP.addMRGroup 2 2 0.01 "Ethnicity"
@@ -195,13 +197,14 @@ dataAndCodeBuilder totalF succF = do
   let dist = SB.binomialLogitDist vSucc vTotal
       logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gStateE]
   SB.sampleDistV dist logitPE
---  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
+  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 
+  SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
   MRP.addPostStratification
     dist
     logitPE
     "State"
-    (SB.ToFoldable BRE.pumsRows)
+    (SB.RowTypeTag "ACS")
     pumsPSGroupRowMap
     (S.fromList ["CD", "Sex", "Race","Ethnicity","Age","Education"])
     (realToFrac . F.rgetField @PUMS.Citizens)

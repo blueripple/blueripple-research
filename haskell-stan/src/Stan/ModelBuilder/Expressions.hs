@@ -118,6 +118,9 @@ vectorizingBindings vecIndex = VarBindingStore (Just vecIndex)
 fullyIndexedBindings :: Map StanIndexKey StanExpr -> VarBindingStore
 fullyIndexedBindings = VarBindingStore Nothing
 
+noBindings :: VarBindingStore
+noBindings = fullyIndexedBindings mempty
+
 lookupBinding :: StanIndexKey -> VarBindingStore -> Maybe BindIndex
 lookupBinding k (VarBindingStore (Just vk) bm) =
   if k == vk then Just NoIndex else IndexE <$> Map.lookup k bm
@@ -132,34 +135,39 @@ vectorized :: VarBindingStore -> Bool
 vectorized (VarBindingStore mvk _) = isJust mvk
 
 -- this is wild
--- bind all indexes and do so recursively, from the top.  \
+-- bind all indexes and do so recursively, from the top.
 -- So your indexes can have indexes.
-bindIndexes :: VarBindingStore -> StanExpr -> Either Text StanExpr
-bindIndexes vbs = Rec.anaM coalg  where
-  coalg :: StanExpr -> Either Text (StanExprF StanExpr)
-  coalg (Fix.Fix (IndexedF k e)) =
-    case lookupBinding k vbs of
-      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
-      Just bi -> case bi of
-        NoIndex  -> Right $ Fix.unFix e
-        IndexE ei -> Right $ WithIndexF ei e
-  coalg x = Right $ Fix.unFix x
+-- then fold from the bottom into Stan code
+printExpr :: VarBindingStore -> StanExpr -> Either Text Text
+printExpr vbs = Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs) -- bindIndexes vbs expr >>= printIndexedExpr (vectorized vbs)
 
--- as is this
--- build up stan code recursively from the bottom
+bindIndexCoAlg ::  VarBindingStore -> StanExpr -> Either Text (StanExprF StanExpr)
+bindIndexCoAlg vbs (Fix.Fix (IndexedF k e)) =
+  case lookupBinding k vbs of
+    Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+    Just bi -> case bi of
+      NoIndex  -> Right $ Fix.unFix e
+      IndexE ei -> Right $ WithIndexF ei e
+bindIndexCoAlg _ x = Right $ Fix.unFix x
+
+csArgs :: [Text] -> Text
+csArgs = T.intercalate ", "
+
+printIndexedAlg :: Bool -> StanExprF Text -> Either Text Text
+printIndexedAlg _ (BareF t) = Right t
+printIndexedAlg _ (IndexedF _ _) = Left "Should not call printExpr' before binding indexes" --printVC vc <$> reIndex im k t
+printIndexedAlg _ (WithIndexF ie e) = Right $ e <> "[" <> ie <> "]"
+printIndexedAlg _ (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
+printIndexedAlg _ (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
+printIndexedAlg vc (VectorFunctionF f e) = Right $ if vc then f <> "(" <> e <> ")" else e
+printIndexedAlg _ (GroupF ld rd e) = Right $ ld <> e <> rd
+printIndexedAlg _ (ArgsF es) = Right $ csArgs es
+
+
+bindIndexes :: VarBindingStore -> StanExpr -> Either Text StanExpr
+bindIndexes vbs = Rec.anaM (bindIndexCoAlg vbs)
+ -- also wild
+-- build up Stan code recursively from the bottom
 -- should only be called after index binding
 printIndexedExpr :: Bool -> StanExpr -> Either Text Text
-printIndexedExpr vc = Rec.cataM alg where
-  csArgs es = T.intercalate ", " es
-  alg :: StanExprF Text -> Either Text Text
-  alg (BareF t) = Right t
-  alg (IndexedF _ _) = Left "Should not call printExpr' before binding indexes" --printVC vc <$> reIndex im k t
-  alg (WithIndexF ie e) = Right $ e <> "[" <> ie <> "]"
-  alg (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
-  alg (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
-  alg (VectorFunctionF f e) = Right $ if vc then f <> "(" <> e <> ")" else e
-  alg (GroupF ld rd e) = Right $ ld <> e <> rd
-  alg (ArgsF es) = Right $ csArgs es
-
-printExpr :: VarBindingStore -> StanExpr -> Either Text Text
-printExpr vbs expr = bindIndexes vbs expr >>= printIndexedExpr (vectorized vbs)
+printIndexedExpr vc = Rec.cataM (printIndexedAlg vc)

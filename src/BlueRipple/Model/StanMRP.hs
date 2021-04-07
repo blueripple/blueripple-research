@@ -168,7 +168,7 @@ intercept iName alphaPriorSD = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   let alphaE = SB.name iName
       interceptE = SB.binOp "~" alphaE $ SB.function "normal" [SB.scalar "0", SB.scalar $ show alphaPriorSD]
-  SB.printExprM "intercept" mempty SB.Vectorized (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+  SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
   return alphaE
 
 -- Basic group declarations, indexes and Json are produced automatically
@@ -178,7 +178,7 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
         let modelTerm = SB.vectorFunction "to_vector"
-                        $ SB.reIndexed gn
+                        $ SB.indexed gn
                         $ SB.bracket
                         $ SB.args [SB.name ("eps_" <> gn)
                                   , SB.name (" -eps_" <> gn)]
@@ -186,7 +186,7 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm
   let nonBinaryGroup = do
-        let modelTerm = SB.reIndexed gn $ SB.name $ "beta_" <> gn
+        let modelTerm = SB.indexed gn $ SB.name $ "beta_" <> gn
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare ("sigma_" <> gn) SB.StanReal "<lower=0>"
           SB.stanDeclare ("beta_raw_" <> gn) (SB.StanVector $ SB.NamedDim ("N_" <> gn)) ""
@@ -238,10 +238,10 @@ addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = if T.null suffix then SB.indexed $ SB.name "Q_ast" else SB.reIndexed suffix $ SB.name ("Q" <> uSuffix <> "_ast")
+  let eQ = if T.null suffix then SB.indexed (SB.dsName rtt) $ SB.name "Q_ast" else SB.indexed suffix $ SB.name ("Q" <> uSuffix <> "_ast")
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
-      eX = if T.null suffix then SB.indexed $ SB.name "centered_X" else SB.reIndexed suffix $ SB.name ("centered_X" <> uSuffix)
+      eX = if T.null suffix then SB.indexed (SB.dsName rtt) $ SB.name "centered_X" else SB.indexed suffix $ SB.name ("centered_X" <> uSuffix)
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
@@ -260,14 +260,14 @@ addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
                       -> args -- required args, e.g., total counts for binomial
                       -> SB.StanName -- name for vars and
-                      -> SB.ToFoldable d r -- data-set from data-set structure
+                      -> SB.RowTypeTag d r
                       -> SB.GroupRowMap r -- group mappings for PS data
                       -> Set.Set Text -- subset of groups to loop over
                       -> (r -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM r0 d ()
-addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps modelGroups weightF psType mPSGroup = do
+addPostStratification sDist args name rtt groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
@@ -282,18 +282,23 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
           <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
   checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
   checkGroupSubset "PS Spec" "All Groups" groupMaps allGroups
+  rowBuilders <- SB.rowBuilders <$> get
+  toFoldable <- case DHash.lookup rtt rowBuilders of
+    Nothing -> SB.stanBuildError $ "RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders (in addPostStratification)."
+    Just (SB.RowInfo tf _ _) -> return tf
   intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
     SB.IndexMap _ eIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-    SB.addIndexIntMap name (FL.foldM (buildIntMapBuilderF eIntF h) . rowsF)
+    SB.addIndexIntMap name (SB.applyToFoldableM (buildIntMapBuilderF eIntF h) toFoldable)
     return $ eIntF . h
   -- add the data set for the json builders
-  let namedPS = "PS_" <> name
-  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
-  SB.addJson (SB.RowTypeTag namedPS) ("N_" <> namedPS) SB.StanInt "<lower=0>"
-    $ SJ.valueToPairF ("N_" <> namedPS)
+  let dsName = SB.dsName rtt
+      namedPS = "PS_" <> dsName
+--  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
+  SB.addJson rtt ("N_" <> dsName) SB.StanInt "<lower=0>"
+    $ SJ.valueToPairF ("N_" <> dsName)
     $ fmap (A.toJSON . Set.size)
     $ FL.premapM intKeyF
     $ FL.generalize FL.set
@@ -301,7 +306,7 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
-      weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> namedPS] $ SB.StanArray groupDims SB.StanReal
+      weightArrayType = SB.StanArray [SB.NamedDim $ "N_" <> dsName] $ SB.StanArray groupDims SB.StanReal
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int]) --[r -> Maybe Int]
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
@@ -320,9 +325,7 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
       sumInnerFold :: Ord k => FL.Fold (k, Double) [(k, Double)]
       sumInnerFold = MR.mapReduceFold MR.noUnpack (MR.Assign id) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
       assignM r = case intKeyF r of
-        Left msg -> Left
-                    $ "Error during post-stratification weight fold when indexing PS rows to result groups: "
-                    <> msg
+        Left msg -> Left $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
         Right l -> Right (l, r)
       toIndexed x = SJ.prepareIndexed 0 groupBounds x
       reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed)
@@ -336,13 +339,14 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
     $ fmap A.toJSON fldM
   SB.inBlock SB.SBGeneratedQuantities $ do
     let groupCounters = fmap ("n_" <>) $ ugNames
-        indexMap' =  Map.fromList $ zip ugNames groupCounters
-        (indexMap, innerLoopNames) = case mPSGroup of
-          Nothing ->  (indexMap', Map.keys indexMap')
-          Just (SB.GroupTypeTag gn) -> (Map.insert gn "n" indexMap', Map.keys $ Map.delete gn indexMap')
+        indexBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
+        (indexBindings, innerLoopNames) = case mPSGroup of
+          Nothing ->  (indexBindings', Map.keys indexBindings')
+          Just (SB.GroupTypeTag gn) -> (Map.insert gn (SB.name "n") indexBindings', Map.keys $ Map.delete gn indexBindings')
+        bindingStore = SB.fullyIndexedBindings indexBindings
         inner = do
-          let psExpE = SB.familyExp sDist args
-          expCode <- SB.printExprM "mrpPSStanCode" indexMap SB.FullyIndexed $ return psExpE
+          let psExpE = SB.familyExp sDist dsName args
+          expCode <- SB.printExprM "mrpPSStanCode" bindingStore $ return psExpE
           SB.stanDeclareRHS "p" SB.StanReal "" expCode
           when (psType == PSShare)
             $ SB.addStanLine
@@ -351,9 +355,9 @@ addPostStratification sDist args name toFoldable@(SB.ToFoldable rowsF) groupMaps
             $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
-    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> namedPS] SB.StanReal) ""
-    SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> namedPS <> ")"
-    SB.stanForLoop "n" Nothing ("N_" <> namedPS) $ const $ do
+    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ "N_" <> dsName] SB.StanReal) ""
+    SB.addStanLine $ namedPS <> " = rep_array(0, N_" <> dsName <> ")"
+    SB.stanForLoop "n" Nothing ("N_" <> dsName) $ const $ do
       let wsn = namedPS <> "_WgtSum"
       when (psType == PSShare) $ (SB.stanDeclareRHS wsn  SB.StanReal "" "0" >> return ())
       makeLoops innerLoopNames

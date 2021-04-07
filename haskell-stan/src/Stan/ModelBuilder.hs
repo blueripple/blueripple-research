@@ -126,6 +126,12 @@ instance Monoid (JSONSeriesFold row) where
 data ToFoldable d row where
   ToFoldable :: Foldable f => (d -> f row) -> ToFoldable d row
 
+applyToFoldable :: Foldl.Fold row a -> ToFoldable d row -> d -> a
+applyToFoldable fld (ToFoldable f) = Foldl.fold fld . f
+
+applyToFoldableM :: Monad m => Foldl.FoldM m row a -> ToFoldable d row -> d -> m a
+applyToFoldableM fldM (ToFoldable f) = Foldl.foldM fldM . f
+
 data ToEFoldable d row where
   ToEFoldable :: Foldable f => (d -> Either Text (f row)) -> ToEFoldable d row
 
@@ -691,10 +697,10 @@ inBlock b m = do
   return x
 
 
-printExprM :: Text -> Map Text Text -> SME.VectorContext -> StanBuilderM env d r SME.StanExpr -> StanBuilderM env d r Text
-printExprM context im vc me = do
+printExprM :: Text -> SME.VarBindingStore -> StanBuilderM env d r SME.StanExpr -> StanBuilderM env d r Text
+printExprM context vbs me = do
   e <- me
-  case SME.printExpr im vc e of
+  case SME.printExpr vbs e of
     Right t -> return t
     Left err -> stanBuildError err
 
