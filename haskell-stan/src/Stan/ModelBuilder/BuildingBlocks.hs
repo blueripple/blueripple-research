@@ -109,3 +109,12 @@ fixedEffectsQR thinSuffix matrix rows cols = do
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
   let qMatrix = SME.StanVar q qMatrixType
   return qMatrix
+
+
+diagVectorFunction :: SB.StanBuilderM env d r Text
+diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
+--  SB.addStanLine "int vec_size = num_elements(ii)"
+  SB.addStanLine "vector[N] out_vec"
+  SB.stanForLoop "i" Nothing "N" $ const $ SB.addStanLine $ "out_vec[i] = vs[i, i]"
+  SB.addStanLine "return out_vec"
+  return "indexBoth"

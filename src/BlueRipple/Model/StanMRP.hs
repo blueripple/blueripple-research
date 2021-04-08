@@ -170,11 +170,11 @@ addMRGroup binarySD nonBinarySD sumGroupSD gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
-        let modelTerm = SB.vectorFunction "to_vector"
-                        $ SB.indexed gn
-                        $ SB.bracket
-                        $ SB.args [SB.name ("eps_" <> gn)
-                                  , SB.name (" -eps_" <> gn)]
+        let e' = SB.indexed gn
+                 $ SB.bracket
+                 $ SB.args [SB.name ("eps_" <> gn)
+                           , SB.name (" -eps_" <> gn)]
+            modelTerm = SB.vectorFunction "to_vector" e' []
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $  SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm
@@ -201,7 +201,7 @@ addNestedMRGroup ::  (Typeable d, Typeable r)
                  -> Double
                  -> GroupName -- e.g., sex
                  -> GroupName -- partially pooled, e.g., state
-                 -> BuilderM r d SB.StanExpr
+                 -> BuilderM r d (SB.StanExpr, SB.StanExpr)
 addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
   let suffix = nonPooledGN <> "_" <> pooledGN
       suffixed x = x <> "_" <> suffix
@@ -210,31 +210,30 @@ addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ")with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ")with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
+--        indexBothF <- SB.diagVectorFunction
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare (suffixed "eps" <> "_raw") (SB.StanVector $ SB.NamedDim $ "N_" <> pooledGN) ""
           SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
-        epsVar <- SB.inBlock SB.SBTransformedParameters $ do
-          SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN)) ""
+        (yVar, epsVar) <- SB.inBlock SB.SBTransformedParameters $ do
+          ev <- SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN)) ""
           SB.addStanLine $ suffixed "eps" <> " = " <> suffixed "sigma" <> " * " <> suffixed "eps" <> "_raw"
-          ev <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
+          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
           SB.stanForLoop "n" Nothing "N"
             $ const
             $ SB.addStanLine
             $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
-          return ev
+          return (yv, ev)
         SB.inBlock SB.SBModel $ do
           SB.addStanLine $ suffixed "sigma" <> " ~ normal(0, " <> show nonBinarySD <> ")"
           SB.addStanLine $ suffixed "eps" <> "_raw ~ normal(0, 1)"
         SB.weightedSoftSumToZero epsVar pooledGN "N" sumGroupSD
-        return $ SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
-{-
-        return SB.vectorFunction "to_vector"
-          $ SB.indexed nonPooledGN
-          $ SB.bracket
-          $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
-                    ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
-                    ]
--}
+        let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+            epsE =  SB.indexed nonPooledGN
+                  $ SB.bracket
+                  $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
+                            ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
+                            ]
+        return (yE, epsE)
       nonPooledNonBinary = undefined
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
 

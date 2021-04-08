@@ -51,7 +51,7 @@ data StanExprF a where
   WithIndexF :: a -> a -> StanExprF a
   BinOpF :: Text -> a -> a -> StanExprF a
   FunctionF :: Text -> [a] -> StanExprF a
-  VectorFunctionF :: Text -> a -> StanExprF a -- function to add when the context is vectorized
+  VectorFunctionF :: Text -> a -> [a] -> StanExprF a -- function to add when the context is vectorized
   GroupF :: Text -> Text -> a -> StanExprF a
   ArgsF :: [a] -> StanExprF a
   deriving (Show, Eq, Functor, Foldable, Traversable)
@@ -79,8 +79,8 @@ function fName es = Fix.Fix $ FunctionF fName es
 functionWithGivens :: Text -> [StanExpr] -> [StanExpr] -> StanExpr
 functionWithGivens fName gs as = function fName [binOp "|" (args gs) (args as)]
 
-vectorFunction :: Text -> StanExpr -> StanExpr
-vectorFunction t = Fix.Fix . VectorFunctionF t
+vectorFunction :: Text -> StanExpr -> [StanExpr] -> StanExpr
+vectorFunction t e es = Fix.Fix $ VectorFunctionF t e es
 
 group ::  Text -> Text -> StanExpr -> StanExpr
 group ld rd = Fix.Fix . GroupF ld rd
@@ -159,7 +159,7 @@ printIndexedAlg _ (IndexedF _ _) = Left "Should not call printExpr' before bindi
 printIndexedAlg _ (WithIndexF ie e) = Right $ e <> "[" <> ie <> "]"
 printIndexedAlg _ (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
 printIndexedAlg _ (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
-printIndexedAlg vc (VectorFunctionF f e) = Right $ if vc then f <> "(" <> e <> ")" else e
+printIndexedAlg vc (VectorFunctionF f e argEs) = Right $ if vc then f <> "(" <> csArgs (e:argEs) <> ")" else e
 printIndexedAlg _ (GroupF ld rd e) = Right $ ld <> e <> rd
 printIndexedAlg _ (ArgsF es) = Right $ csArgs es
 
