@@ -153,40 +153,57 @@ instance Hashable.Hashable (Some.Some GroupTypeTag) where
 
 data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Either Text Int }
 
-data MakeIndex r0 k = GivenIndex Int (k -> Either Text Int) (r0 -> k) | FoldToIndex (Foldl.Fold r0 (Int, k -> Either Text Int)) (r0 -> k)
-data IndexMap r0 k = IndexMap (IntIndex r0) (k -> Either Text Int)
+data MakeIndex r k where
+  GivenIndex :: Ord k => (Map k Int) -> (r -> k) -> MakeIndex r k
+  FoldToIndex :: Ord k =>  (Foldl.Fold r (Map k Int)) -> (r -> k) -> MakeIndex r k
 
+data IndexMap r k = IndexMap (IntIndex r) (k -> Either Text Int) (IntMap.IntMap k)
+
+mapLookupE :: Ord k => (k -> Text) -> Map k a -> k -> Either Text a
+mapLookupE errMsg m k = case Map.lookup k m of
+  Just a -> Right a
+  Nothing -> Left $ errMsg k
+
+toIntMap :: Ord k => Map k Int -> IntMap k
+toIntMap = IntMap.fromList . fmap (\(a, b) -> (b, a)) . Map.toList
+
+mapToIndexMap :: Ord k => (r -> k) -> Map k Int -> IndexMap r k
+mapToIndexMap h m = indexMap where
+  lookupK = mapLookupE (const "key not found when building given index") m
+  intIndex = IntIndex (Map.size m) (lookupK . h)
+  indexMap = IndexMap intIndex lookupK (toIntMap m)
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
-makeIndexMapF (GivenIndex n g h) = pure $ IndexMap (IntIndex n (g . h)) g
-makeIndexMapF (FoldToIndex fld h) = fmap (\(n, g) -> IndexMap (IntIndex n (g . h)) g) fld
---  let (n, g) = Foldl.fold fld rs in IndexMap (IntIndex n (g . h)) g
+makeIndexMapF (GivenIndex m h) = pure $ mapToIndexMap h m
+makeIndexMapF (FoldToIndex fld h) = fmap (mapToIndexMap h) fld
 
-makeIndexFromEnum :: forall k r.(Enum k, Bounded k) => (r -> k) -> MakeIndex r k
-makeIndexFromEnum h = GivenIndex (1 + eMax - eMin) index h where
-  index k = Right $ 1 + (fromEnum k - eMin)
-  eMin = fromEnum $ minBound @k
-  eMax = fromEnum $ maxBound @k
+makeIndexFromEnum :: forall k r.(Enum k, Bounded k, Ord k) => (r -> k) -> MakeIndex r k
+makeIndexFromEnum h = GivenIndex m h where
+  allKs = [minBound..maxBound]
+  m = Map.fromList $ zip allKs [1..]
 
 makeIndexFromFoldable :: (Foldable f, Ord k) => (k -> Text) -> (r -> k) -> f k -> MakeIndex r k
-makeIndexFromFoldable printK h allKs = GivenIndex size index h where
-  asMap = Map.fromList $ zip (ordNub $ Foldl.fold Foldl.list allKs) [1..]
+makeIndexFromFoldable _ h allKs = GivenIndex asMap h where
+  listKs = ordNub $ Foldl.fold Foldl.list allKs
+  asMap = Map.fromList $ zip listKs [1..]
+{-
   size = Map.size asMap
   index k = case Map.lookup k asMap of
     Just n -> Right n
     Nothing -> Left $ "Index lookup failed for k=" <> printK k <> " in index built from foldable collection of k."
+-}
 
 makeIndexByCounting :: Ord k => (k -> Text) -> (r -> k) -> MakeIndex r k
 makeIndexByCounting printK h = FoldToIndex (Foldl.premap h $ indexFold printK 1) h
 
-indexFold :: Ord k => (k -> Text) -> Int -> Foldl.Fold k (Int, k -> Either Text Int)
+indexFold :: Ord k => (k -> Text) -> Int -> Foldl.Fold k (Map k Int)
 indexFold printK start =  Foldl.Fold step init done where
   step s k = Set.insert k s
   init = Set.empty
-  done s = (Set.size s, toIntE) where
+  done s = mapToInt where
     keyedList = zip (Set.toList s) [start..]
     mapToInt = Map.fromList keyedList
-    toIntE k = maybe (Left $ "Lookup failed for \"" <> printK k <> "\"") Right $ Map.lookup k mapToInt
+--    toIntE k = maybe (Left $ "Lookup failed for \"" <> printK k <> "\"") Right $ Map.lookup k mapToInt
 
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
@@ -233,8 +250,14 @@ makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r
 makeMainIndexes makerMap rs = (dhm, gm) where
   dhmF = DHash.traverse makeIndexMapF makerMap -- so we only fold once to make all the indices
   dhm = Foldl.fold dhmF rs
-  namedIntIndex (GroupTypeTag n DSum.:=> IndexMap ii _) = (n, ii)
+  namedIntIndex (GroupTypeTag n DSum.:=> IndexMap ii _ _) = (n, ii)
   gm = Map.fromList $ namedIntIndex <$> DHash.toList dhm
+
+
+--modeledIndexIntMap :: GroupTypeTag k ->
+
+groupIntMap :: IndexMap r k -> IntMap.IntMap k
+groupIntMap (IndexMap _ _ im) = im
 
 data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
                               , jsonSeries :: JSONSeriesFold r
@@ -246,7 +269,7 @@ indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
   im :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
              Nothing -> Left $ "indexedRowInfo: lookup of group=" <> groupName <> " failed."
-             Just (IndexMap (IntIndex _ h) g) -> Right (g . keyF)
+             Just (IndexMap (IntIndex _ h) g _) -> Right (g . keyF)
 
 
 unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
@@ -326,7 +349,7 @@ buildJSONFromRows d rowFoldMap = do
 addGroupIndexes :: (Typeable d, Typeable r0) => StanBuilderM env d r0 ()
 addGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
-      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _)) = do
+      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _ _)) = do
         addFixedIntJson' ("N_" <> gName) (Just 2) gSize
         _ <- addColumnMJson ModeledRowTag gName "" (SME.StanArray [SME.NamedDim "N"] SME.StanInt) "<lower=1>" mIntF
         return ()

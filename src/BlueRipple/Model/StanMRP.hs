@@ -210,7 +210,7 @@ addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ")with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ")with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
---        indexBothF <- SB.diagVectorFunction
+        indexBothF <- SB.diagVectorFunction
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare (suffixed "eps" <> "_raw") (SB.StanVector $ SB.NamedDim $ "N_" <> pooledGN) ""
           SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
@@ -229,10 +229,11 @@ addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
         SB.weightedSoftSumToZero epsVar pooledGN "N" sumGroupSD
         let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
             epsE =  SB.indexed nonPooledGN
-                  $ SB.bracket
-                  $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
-                            ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
-                            ]
+                    $ SB.bracket
+                    $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
+                              ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
+                              ]
+--            epsE = SB.vectorFunction indexBothF epsE' [SB.name "N"]
         return (yE, epsE)
       nonPooledNonBinary = undefined
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary

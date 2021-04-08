@@ -196,16 +196,16 @@ dataAndCodeBuilder totalF succF = do
   gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
   gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
   gStateE <- MRP.addMRGroup 2 2 0.01 "State"
-  (gWhiteStateV, gWhiteState) <- MRP.addNestedMRGroup 2 2 0.01 "White" "State"
+  (gAgeStateV, gAgeState) <- MRP.addNestedMRGroup 2 2 0.01 "Age" "State"
   let dist = SB.binomialLogitDist vSucc vTotal
       logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteStateV]
       logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteState]
   SB.sampleDistV dist logitPE_sample
-  SB.addIndexIntMap "CPSV_State" (FL.foldM (buildIntMapBuilderF eIntF h) . BRE.cpsVRows)
+--  SB.addIndexIntMap "CPSV_State" (FL.foldM (buildIntMapBuilderF eIntF h) . BRE.cpsVRows)
 
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-  SB.generateLogLikelihood dist logitPE
-
+--  SB.generateLogLikelihood dist logitPE
+{-
   acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
   MRP.addPostStratification
     dist
@@ -216,7 +216,7 @@ dataAndCodeBuilder totalF succF = do
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
-
+-}
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -234,7 +234,7 @@ extractTestResults = SC.UseSummary f where
 --    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
     cpsVStateIndexIM <- K.knitEither $ SB.getGroupIndex @Text "CPSV_State" groupIndexes
     vEpsWS <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
-    K.knitEither $ indexStanResults cspVStateIndexIM vEpsWS
+    K.knitEither $ indexStanResults cpsVStateIndexIM vEpsWS
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
 subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist cats) = do
