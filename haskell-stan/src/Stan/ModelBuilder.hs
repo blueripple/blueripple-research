@@ -218,22 +218,27 @@ emptyGroupRowMap = DHash.empty
 addRowMap :: Typeable k => Text -> (r -> k) -> GroupRowMap r -> GroupRowMap r
 addRowMap t f grm = DHash.insert (GroupTypeTag t) (RowMap f) grm
 
-data DataToIntMap d k = DataToIntMap (d -> Either Text (IntMap k))
-type GroupIntMapBuilders d = DHash.DHashMap GroupTypeTag (DataToIntMap d)
-type GroupIntMaps = DHash.DHashMap GroupTypeTag IntMap.IntMap
+data DataToIntMap r k = DataToIntMap (r -> Either Text (IntMap k))
+type GroupIntMapBuilders r = DHash.DHashMap GroupTypeTag (DataToIntMap r)
+type DataSetGroupIntMapBuilders = DHash.HasMap RowTypeTag GroupIntMapBuilders
 
-getGroupIndex :: forall k. Typeable k => Text -> GroupIntMaps -> Either Text (IntMap k)
-getGroupIndex name groupIndexes =
-  case DHash.lookup (GroupTypeTag @k name) groupIndexes of
-    Nothing -> Left $ "\"" <> name <> "\" not found in GroupIndexes"
-    Just im -> Right im
+newtype GroupIntMap r = GroupIntMaps (DHash.DHashMap GroupTypeTag IntMap.IntMap)
+type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
 
-emptyIntMapBuilders :: GroupIntMapBuilders d
+getGroupIndex :: forall k. Typeable k => RowTypeTag d r -> GroupTypeTag k -> DataSetGroupIntMaps -> Either Text (IntMap k)
+getGroupIndex rtt gtt groupIndexes =
+  case DHash.lookup rtt groupIndexes of
+    Nothing -> Left $ "\"" <> dsName rtt <> "\" not found in data-set group int maps."
+    Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
+      Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dsName rtt <> "\""
+      Just im -> Right im
+
+emptyIntMapBuilders :: GroupIntMapBuilders r
 emptyIntMapBuilders = DHash.empty
 
-addIntMapBuilder :: forall d k. Typeable k
+addIntMapBuilder :: forall r k. Typeable k
                  => Text
-                 -> (d -> Either Text (IntMap.IntMap k))
+                 -> (r -> Either Text (IntMap.IntMap k))
                  -> GroupIntMapBuilders d
                  -> Either Text (GroupIntMapBuilders d)
 addIntMapBuilder labeledGroupName imF gm =
@@ -375,7 +380,7 @@ data BuilderState d r0 = BuilderState { declaredVars :: !(Map SME.StanName SME.S
                                       , rowBuilders :: !(RowBuilderDHM d r0)
                                       , hasFunctions :: !(Set.Set Text)
                                       , code :: !StanCode
-                                      , indexes :: !(GroupIntMapBuilders d)
+                                      , indexBuilders :: !DataSetGroupIntMapBuilders
                                       }
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
