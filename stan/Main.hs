@@ -196,7 +196,7 @@ dataAndCodeBuilder totalF succF = do
   gAgeE <- MRP.addMRGroup 2 2 0.01 "Age"
   gEduE <- MRP.addMRGroup 2 2 0.01 "Education"
   gStateE <- MRP.addMRGroup 2 2 0.01 "State"
-  (gAgeStateV, gAgeState) <- MRP.addNestedMRGroup 2 2 0.01 "Age" "State"
+  (gWhiteStateV, gWhiteState) <- MRP.addNestedMRGroup 2 2 0.01 "White" "State"
   let dist = SB.binomialLogitDist vSucc vTotal
       logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteStateV]
       logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteState]
@@ -205,7 +205,7 @@ dataAndCodeBuilder totalF succF = do
 
 --  SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 --  SB.generateLogLikelihood dist logitPE
-{-
+
   acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
   MRP.addPostStratification
     dist
@@ -216,7 +216,7 @@ dataAndCodeBuilder totalF succF = do
     (realToFrac . F.rgetField @PUMS.Citizens)
     MRP.PSShare
     (Just $ SB.GroupTypeTag @Text "State")
--}
+
 --  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: Ord k => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
@@ -224,17 +224,18 @@ indexStanResults im v = do
   when (IM.size im /= Vector.length v) $ Left "Mismatched sizes in indexStanResults"
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.GroupIntMaps () (Map Text [Double])
+extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
 extractTestResults = SC.UseSummary f where
   f summary _ aAndEb_C = do
     let eb_C = fmap snd aAndEb_C
     eb <- K.ignoreCacheTime eb_C
     groupIndexes <- K.knitEither eb
---    psIndexIM <- K.knitEither $ SB.getGroupIndex @Text "ACS_State" groupIndexes
---    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
-    cpsVStateIndexIM <- K.knitEither $ SB.getGroupIndex @Text "CPSV_State" groupIndexes
-    vEpsWS <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
-    K.knitEither $ indexStanResults cpsVStateIndexIM vEpsWS
+    psIndexIM <- K.knitEither $ SB.getGroupIndex (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS") (SB.GroupTypeTag @Text "State") groupIndexes
+    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
+--    cpsVStateIndexIM <- K.knitEither $ SB.getGroupIndex (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR)) (SB.GroupTypeTag @Text "State") groupIndexes
+--    vEpsWS <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
+--    K.knitEither $ indexStanResults cpsVStateIndexIM vEpsWS
+    K.knitEither $ indexStanResults psIndexIM vResults
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
 subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist cats) = do

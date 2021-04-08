@@ -65,16 +65,17 @@ buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
                          -> SB.StanBuilderM env d modeledRow ()
                          -> d
                          -> SB.ToFoldable d modeledRow
-                         -> Either Text (SC.DataWrangler d SB.GroupIntMaps (), SB.StanCode)
+                         -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
 buildDataWranglerAndCode groupM env builderM d (SB.ToFoldable toFoldable) =
   let builderWithWrangler = do
         SB.addGroupIndexes
         _ <- builderM
         jsonRowBuilders <- SB.buildJSONF
-        intMapBuilders <- SB.indexes <$> get
+        rowBuilders <- SB.rowBuilders <$> get
+        intMapBuilders <- SB.indexBuilders <$> get
         return
           $ SC.Wrangle SC.TransientIndex
-          $ \d -> (SB.buildIntMaps intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
+          $ \d -> (SB.buildIntMaps rowBuilders intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ c _, dw) -> (dw, c)) resE
 
@@ -243,7 +244,7 @@ type GroupName = Text
 
 data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
 
-emptyFixedEffects :: DHash.DHashMap (SB.RowTypeTag d) FixedEffects
+emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag FixedEffects
 emptyFixedEffects = DHash.empty
 
 -- returns
@@ -253,7 +254,7 @@ emptyFixedEffects = DHash.empty
 addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
                 => Bool
                 -> Double
-                -> SB.RowTypeTag d r
+                -> SB.RowTypeTag r
                 -> FixedEffects r
                 -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffects thinQR fePriorSD rtt (FixedEffects n vecF) = do
@@ -284,7 +285,7 @@ data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
                       -> args -- required args, e.g., total counts for binomial
-                      -> SB.RowTypeTag d r
+                      -> SB.RowTypeTag r
                       -> SB.GroupRowMap r -- group mappings for PS data
                       -> Set.Set Text -- subset of groups to loop over
                       -> (r -> Double) -- PS weight
@@ -319,9 +320,9 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
   intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ eIntF <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
+    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-    SB.addIndexIntMap psSuffix (SB.applyToFoldableM (buildIntMapBuilderF eIntF h) toFoldable)
+    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
     return $ eIntF . h
   -- add the data set for the json builders
 
@@ -333,7 +334,7 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
-      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _)) -> (1,n)) $ DHash.toList usedGroups
+      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _ _)) -> (1,n)) $ DHash.toList usedGroups
       groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
       weightArrayType = SB.StanArray [SB.NamedDim sizeName] $ SB.StanArray groupDims SB.StanReal
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int])
@@ -343,7 +344,7 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
                 Nothing -> Left $ "Failed lookup of group="
                            <> SB.taggedGroupName gtt
                            <> " in addPostStratification."
-                Just (SB.IndexMap _ kToEitherInt) -> Right (kToEitherInt . rTok)
+                Just (SB.IndexMap _ kToEitherInt _) -> Right (kToEitherInt . rTok)
             g :: [r -> Either Text Int] -> r -> Either Text [Int]
             g fs r = traverse ($r) fs
         in fmap g $ traverse mCompose $ DHash.toList grm
