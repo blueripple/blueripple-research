@@ -131,14 +131,14 @@ parseIndex' n t = do
 -}
 
 paramsByName :: T.Text -> M.Map String CS.StanStatistic -> [(String, CS.StanStatistic)]
-paramsByName name = M.toList . M.filterWithKey (\k _ -> T.isPrefixOf name (T.pack k))
+paramsByName name = M.toList . M.filterWithKey (\k _ -> (name == fst (T.break (== '[') (T.pack k)))) --T.isPrefixOf name (T.pack k))
 
 parseScalar :: T.Text -> M.Map String CS.StanStatistic -> Either T.Text (ParameterStatistics D0 CS.StanStatistic)
 parseScalar name = maybe
                    (Left $ "Failed to find scaler \"" <> name <> "\" in parameters")
                    (Right . (ParameterStatistics 1 () . V.singleton)) . M.lookup (toString name)
 
--- 1D: Stan is 1 indexed 
+-- 1D: Stan is 1 indexed
 parse1D :: T.Text -> M.Map String CS.StanStatistic -> Either T.Text (ParameterStatistics D1 CS.StanStatistic)
 parse1D name m = do
   let parseOneE (t, s) = do

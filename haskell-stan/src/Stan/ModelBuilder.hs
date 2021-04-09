@@ -478,8 +478,8 @@ addUnIndexedDataSet name toFoldable = do
       put (BuilderState vars newRowBuilders modelExprs code ims)
   return rtt
 
-addIndexIntMapFld :: forall r k env d r0. Typeable k
-                  => RowTypeTag r
+addIndexIntMapFld :: forall r k env d r0.
+                  RowTypeTag r
                   -> GroupTypeTag k
                   -> (Foldl.FoldM (Either Text) r (IntMap k))
                   -> StanBuilderM env d r0 ()
@@ -487,13 +487,15 @@ addIndexIntMapFld rtt gtt imFld = do
   BuilderState vars rowBuilders fsNames code ibs <- get
   let   f :: ToFoldable d r -> d -> Either Text (IntMap k)
         f tf d = applyToFoldableM imFld tf d
-  case addIntMapBuilder rtt gtt f ibs of
-    Left errMsg -> stanBuildError errMsg
-    Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
+  case gtt of
+    GroupTypeTag _ ->
+      case addIntMapBuilder rtt gtt f ibs of
+        Left errMsg -> stanBuildError errMsg
+        Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
 
 
-addIndexIntMap :: forall r k env d r0. Typeable k
-               => RowTypeTag r
+addIndexIntMap :: forall r k env d r0.
+               RowTypeTag r
                -> GroupTypeTag k
                -> IntMap k
                -> StanBuilderM env d r0 ()
@@ -501,9 +503,11 @@ addIndexIntMap rtt gtt im = do
   BuilderState vars rowBuilders fsNames code ibs <- get
   let   f :: ToFoldable d r -> d -> Either Text (IntMap k)
         f _ _ = Right im
-  case addIntMapBuilder rtt gtt f ibs of
-    Left errMsg -> stanBuildError errMsg
-    Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
+  case gtt of -- bring the Typeable constraint from the GroupTypeTag GADT into scope
+    GroupTypeTag _ ->
+      case addIntMapBuilder rtt gtt f ibs of
+        Left errMsg -> stanBuildError errMsg
+        Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
 
 
 runStanBuilder' :: forall f env d r0 a. (Typeable d, Typeable r0, Foldable f)

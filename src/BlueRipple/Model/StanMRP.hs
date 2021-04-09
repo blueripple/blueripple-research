@@ -108,7 +108,7 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
   stanConfig <-
     SC.setSigFigs 4
     . SC.noLogOfSummary
---    . SC.noDiagnose
+    . SC.noDiagnose
     <$> SM.makeDefaultModelRunnerConfig
     workDir
     (modelName <> "_model")
