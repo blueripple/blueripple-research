@@ -380,16 +380,16 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
         inner = do
           let psExpE = SB.familyExp sDist dsName args
           expCode <- SB.printExprM "mrpPSStanCode" bindingStore $ return psExpE
-          SB.stanDeclareRHS "p" SB.StanReal "" expCode
+          SB.stanDeclareRHS ("p" <> psSuffix) SB.StanReal "" expCode
           when (psType == PSShare)
             $ SB.addStanLine
             $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
           SB.addStanLine
-            $ namedPS <> "[n] += p * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
+            $ namedPS <> "[n] += p" <> psSuffix <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
-    SB.stanDeclare namedPS (SB.StanArray [SB.NamedDim $ sizeName] SB.StanReal) ""
-    SB.addStanLine $ namedPS <> " = rep_array(0, " <> sizeName  <> ")"
+    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim sizeName) "" $ "rep_vector(0, " <> sizeName  <> ")"
+--    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
     SB.stanForLoop "n" Nothing sizeName $ const $ do
       let wsn = namedPS <> "_WgtSum"
       when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" "0" >> return ())

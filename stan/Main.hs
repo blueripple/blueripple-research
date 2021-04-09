@@ -248,16 +248,31 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 --        SB.generateLogLikelihood dist logitPE
 
-        acsDataRT <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
+        acsData_W <- SB.addUnIndexedDataSet "ACS_W" (SB.ToFoldable $ F.filterFrame ra4White . BRE.pumsRows)
+        acsData_NW <- SB.addUnIndexedDataSet "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . ra4White) . BRE.pumsRows)
         MRP.addPostStratification
           dist
           logitPE
-          acsDataRT
+          acsData_W
           pumsPSGroupRowMap
           (S.fromList ["CD", "Sex", "White","Age","Education"])
           (realToFrac . F.rgetField @PUMS.Citizens)
           MRP.PSShare
           (Just $ SB.GroupTypeTag @Text "State")
+
+        MRP.addPostStratification
+          dist
+          logitPE
+          acsData_NW
+          pumsPSGroupRowMap
+          (S.fromList ["CD", "Sex", "White","Age","Education"])
+          (realToFrac . F.rgetField @PUMS.Citizens)
+          MRP.PSShare
+          (Just $ SB.GroupTypeTag @Text "State")
+
+        _ <- SB.inBlock SB.SBGeneratedQuantities
+          $ SB.stanDeclareRHS "rDiff" (SB.StanVector $ SB.NamedDim "N_ACS_W_State") "" "PS_ACS_W_State - PS_ACS_NW_State"
+        return ()
 
       extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
       extractTestResults = SC.UseSummary f where
@@ -267,18 +282,21 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
           K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
-                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS")
+                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_W")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
             vResults <- fmap (SP.getVector . fmap CS.percents)
-                        $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
+                        $ SP.parse1D "rDiff" (CS.paramStats summary)
+{-
             cpsVStateIndexIM <- SB.getGroupIndex
                                 (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
                                 (SB.GroupTypeTag @Text "State")
                                 groupIndexes
-            vEpsWS <-fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
-            indexStanResults cpsVStateIndexIM vEpsWS
---    K.knitEither $ indexStanResults psIndexIM vResults
+            vRDiff <-fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "rDiff" (CS.paramStats summary)
+-}
+            indexStanResults psIndexIM vResults
+--            indexStanResults cpsVStateIndexIM vRDiff
+--    K.knitEither $
 
   K.logLE K.Info "Building json data wrangler and model code..."
   dat <- K.ignoreCacheTime data_C
@@ -329,7 +347,7 @@ coefficientChart :: (Functor f, Foldable f)
 coefficientChart title vc rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort []]
-      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, xScale]
+      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
