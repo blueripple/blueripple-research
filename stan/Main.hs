@@ -170,18 +170,11 @@ indexStanResults im v = do
     "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " result and IntMap = " <> show im
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
-extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
-extractTestResults = SC.UseSummary f where
-  f summary _ aAndEb_C = do
-    let eb_C = fmap snd aAndEb_C
-    eb <- K.ignoreCacheTime eb_C
-    groupIndexes <- K.knitEither eb
-    psIndexIM <- K.knitEither $ SB.getGroupIndex (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS") (SB.GroupTypeTag @Text "State") groupIndexes
-    vResults <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
-    cpsVStateIndexIM <- K.knitEither $ SB.getGroupIndex (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR)) (SB.GroupTypeTag @Text "State") groupIndexes
-    vEpsWS <- K.knitEither $ fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
-    K.knitEither $ indexStanResults cpsVStateIndexIM vEpsWS
---    K.knitEither $ indexStanResults psIndexIM vResults
+expandInterval :: Text -> (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue)
+expandInterval label (t, vals)  = do
+        case vals of
+          [lo, mid, hi] -> Right $ M.fromList [(label, GV.Str t), ("lo", GV.Number $ (lo - mid)), ("mid", GV.Number $ mid), ("hi", GV.Number $ (hi - mid))]
+          _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
 subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist cats) = do
@@ -196,14 +189,16 @@ countInCategory count key as =
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- fmap (BRE.ccesAndPUMSForYear 2018) <$> BRE.prepCCESAndPums False
+  data_C <- BRE.prepCCESAndPums False
 --  dat <- K.ignoreCacheTime data_C
   K.newPandoc
     (K.PandocInfo "State/Race Interaction" $ one ("pagetitle","State/Race interaction"))
     $ cpsStateRace False $ K.liftActionWithCacheTime data_C
 
 cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsStateRace clearCaches data_C = K.wrapPrefix "cpsStateRace" $ do
+cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+  let year = 2018
+      data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
   let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
@@ -264,9 +259,32 @@ cpsStateRace clearCaches data_C = K.wrapPrefix "cpsStateRace" $ do
           MRP.PSShare
           (Just $ SB.GroupTypeTag @Text "State")
 
+      extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
+      extractTestResults = SC.UseSummary f where
+        f summary _ aAndEb_C = do
+          let eb_C = fmap snd aAndEb_C
+          eb <- K.ignoreCacheTime eb_C
+          K.knitEither $ do
+            groupIndexes <- eb
+            psIndexIM <- SB.getGroupIndex
+                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS")
+                         (SB.GroupTypeTag @Text "State")
+                         groupIndexes
+            vResults <- fmap (SP.getVector . fmap CS.percents)
+                        $ SP.parse1D "PS_ACS_State" (CS.paramStats summary)
+            cpsVStateIndexIM <- SB.getGroupIndex
+                                (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
+                                (SB.GroupTypeTag @Text "State")
+                                groupIndexes
+            vEpsWS <-fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "eps_White_State" (CS.paramStats summary)
+            indexStanResults cpsVStateIndexIM vEpsWS
+--    K.knitEither $ indexStanResults psIndexIM vResults
+
   K.logLE K.Info "Building json data wrangler and model code..."
   dat <- K.ignoreCacheTime data_C
-  let cpsVBuilder = dataAndCodeBuilder (round . F.rgetField @BRCF.WeightedCount) (round . F.rgetField @BRCF.WeightedSuccesses)
+  let cpsVBuilder = dataAndCodeBuilder
+                    (round . F.rgetField @BRCF.WeightedCount)
+                    (round . F.rgetField @BRCF.WeightedSuccesses)
       (districts, states) = FL.fold
                             ((,)
                               <$> (FL.premap districtKey FL.list)
@@ -274,13 +292,14 @@ cpsStateRace clearCaches data_C = K.wrapPrefix "cpsStateRace" $ do
                             )
                             $ BRE.districtRows dat
       cpsVGroups = cpsVGroupBuilder districts states
-  (dw, stanCode) <- K.knitEither $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
+  (dw, stanCode) <- K.knitEither
+    $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res_C <- MRP.runMRPModel
     False
     (Just "stan/mrp/cpsV")
-    "test"
-    "test"
+    ("stateXrace" <> show year)
+    ("stateXrace" <> show year)
     dw
     stanCode
     "S"
@@ -291,7 +310,39 @@ cpsStateRace clearCaches data_C = K.wrapPrefix "cpsStateRace" $ do
     Nothing
   res <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show res
+  -- sort on median coefficient
+  let sortedRes = sortOn (\(_,[_,x,_]) -> x) $ M.toList res
+  asMapRow <- K.knitEither $ traverse (expandInterval "State") sortedRes
+  let mrWithYear = fmap (M.singleton "Year" (GV.Str $ show year) <>) asMapRow
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("State x Race interaction (" <> show year <> ")")
+    (FV.ViewConfig 600 600 5)
+    mrWithYear
+  return ()
 
+coefficientChart :: (Functor f, Foldable f)
+                 => T.Text
+                 ->  FV.ViewConfig
+                 -> f (MapRow.MapRow GV.DataValue)
+                 -> GV.VegaLite
+coefficientChart title vc rows =
+  let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort []]
+      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
+      encXLo = GV.position GV.XError [GV.PName "lo"]
+      encXHi = GV.position GV.XError2 [GV.PName "hi"]
+      encL = GV.encoding . encX . encY -- . encColor
+      encB = GV.encoding . encX . encXLo . encY . encXHi -- . encColor
+      markBand = GV.mark GV.ErrorBand [GV.MTooltip GV.TTData]
+      markLine = GV.mark GV.Line []
+      markPoint = GV.mark GV.Point [GV.MTooltip GV.TTData]
+      specBand = GV.asSpec [encB [], markBand]
+      specLine = GV.asSpec [encL [], markLine]
+      specPoint = GV.asSpec [encL [], markPoint]
+      layers = GV.layer [specBand, specPoint]
+      spec = GV.asSpec [layers]
+  in FV.configuredVegaLite vc [FV.title title, layers , vlData]
 
 testHouseModel :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 testHouseModel = do
@@ -678,12 +729,13 @@ compareData clearCached ds houseData_C =  K.wrapPrefix "compareData" $ do
              "D" -> Right (name, "D Pref")
              "V" -> Right (name, "Turnout")
              _ -> Left $ "Bad last character in delta label (" <> l <> ")."
-      expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue) --T.Text (T.Text, [(T.Text, Double)])
+      expandInterval :: (T.Text, [Double]) -> Either T.Text (MapRow.MapRow GV.DataValue)
       expandInterval (l, vals) = do
         (name, t) <- nameType l
         case vals of
           [lo, mid, hi] -> Right $ M.fromList [("Name", GV.Str name), ("Type", GV.Str t), ("lo", GV.Number $ 100 * (lo - mid)), ("mid", GV.Number $ 100 * mid), ("hi", GV.Number $ 100 * (hi - mid))]
           _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
+
       expandMapRow f (y, modelResults)
         = fmap (M.insert "Year" (GV.Str $ show y)) <$> traverse expandInterval (M.toList $ f modelResults)
       modelMR mw = one ("Model", GV.Str $ BRE.modeledDataSetsLabel $ fst mw)
