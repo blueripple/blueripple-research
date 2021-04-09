@@ -197,7 +197,7 @@ cpsVAnalysis = do
 
 cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-  let year = 2018
+  let year = 2016
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
   let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
@@ -298,7 +298,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   res_C <- MRP.runMRPModel
     False
     (Just "stan/mrp/cpsV")
-    ("stateXrace" <> show year)
+    ("stateXrace")
     ("stateXrace" <> show year)
     dw
     stanCode
@@ -317,7 +317,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
     ("State x Race interaction (" <> show year <> ")")
-    (FV.ViewConfig 600 600 5)
+    (FV.ViewConfig 500 1000 5)
     mrWithYear
   return ()
 
@@ -329,18 +329,19 @@ coefficientChart :: (Functor f, Foldable f)
 coefficientChart title vc rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort []]
-      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, xScale]
+      xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
       encL = GV.encoding . encX . encY -- . encColor
       encB = GV.encoding . encX . encXLo . encY . encXHi -- . encColor
-      markBand = GV.mark GV.ErrorBand [GV.MTooltip GV.TTData]
+      markBar = GV.mark GV.ErrorBar [GV.MTooltip GV.TTData, GV.MTicks []]
       markLine = GV.mark GV.Line []
       markPoint = GV.mark GV.Point [GV.MTooltip GV.TTData]
-      specBand = GV.asSpec [encB [], markBand]
+      specBar = GV.asSpec [encB [], markBar]
       specLine = GV.asSpec [encL [], markLine]
       specPoint = GV.asSpec [encL [], markPoint]
-      layers = GV.layer [specBand, specPoint]
+      layers = GV.layer [specBar, specPoint]
       spec = GV.asSpec [layers]
   in FV.configuredVegaLite vc [FV.title title, layers , vlData]
 
