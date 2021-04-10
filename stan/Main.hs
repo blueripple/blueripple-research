@@ -197,9 +197,9 @@ cpsVAnalysis = do
 
 cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-  let year = 2016
+  let year = 2012
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
-  let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
+      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
@@ -244,37 +244,39 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         let dist = SB.binomialLogitDist vSucc vTotal
             logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteStateV]
             logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE, gWhiteState]
+            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gStateE]
         SB.sampleDistV dist logitPE_sample
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
 --        SB.generateLogLikelihood dist logitPE
 
         acsData_W <- SB.addUnIndexedDataSet "ACS_W" (SB.ToFoldable $ F.filterFrame ra4White . BRE.pumsRows)
         acsData_NW <- SB.addUnIndexedDataSet "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . ra4White) . BRE.pumsRows)
-        MRP.addPostStratification
-          dist
-          logitPE
-          acsData_W
-          pumsPSGroupRowMap
-          (S.fromList ["CD", "Sex", "White","Age","Education"])
-          (realToFrac . F.rgetField @PUMS.Citizens)
-          MRP.PSShare
-          (Just $ SB.GroupTypeTag @Text "State")
 
-        MRP.addPostStratification
-          dist
-          logitPE
-          acsData_NW
-          pumsPSGroupRowMap
-          (S.fromList ["CD", "Sex", "White","Age","Education"])
-          (realToFrac . F.rgetField @PUMS.Citizens)
-          MRP.PSShare
-          (Just $ SB.GroupTypeTag @Text "State")
+        let postStratByState nameHead modelExp dataSet =
+              MRP.addPostStratification
+                dist
+                modelExp
+                (Just nameHead)
+                dataSet
+                pumsPSGroupRowMap
+                (S.fromList ["CD", "Sex", "White","Age","Education"])
+                (realToFrac . F.rgetField @PUMS.Citizens)
+                MRP.PSShare
+                (Just $ SB.GroupTypeTag @Text "State")
 
-        _ <- SB.inBlock SB.SBGeneratedQuantities
-          $ SB.stanDeclareRHS "rDiff" (SB.StanVector $ SB.NamedDim "N_ACS_W_State") "" "PS_ACS_W_State - PS_ACS_NW_State"
+        (SB.StanVar whiteWI psType) <- postStratByState "WI" logitPE acsData_W
+        (SB.StanVar nonWhiteWI _) <- postStratByState "WI" logitPE acsData_NW
+        (SB.StanVar whiteNI _) <- postStratByState "NI" logitPE' acsData_W
+        (SB.StanVar nonWhiteNI _) <- postStratByState "NI" logitPE' acsData_NW
+
+
+        _ <- SB.inBlock SB.SBGeneratedQuantities $ do
+          SB.stanDeclareRHS "rtDiffWI" psType "" (whiteWI <> " - " <> nonWhiteWI)
+          SB.stanDeclareRHS "rtDiffNI" psType "" (whiteNI <> " - " <> nonWhiteNI)
+          SB.stanDeclareRHS "rtDiffI" psType "" "rtDiffWI - rtDiffNI"
         return ()
 
-      extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
+      extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double], Map Text [Double], Map Text [Double])
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
@@ -285,16 +287,22 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_W")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
-            vResults <- fmap (SP.getVector . fmap CS.percents)
-                        $ SP.parse1D "rDiff" (CS.paramStats summary)
-{-
-            cpsVStateIndexIM <- SB.getGroupIndex
+            vRTDiffWI <- fmap (SP.getVector . fmap CS.percents)
+                         $ SP.parse1D "rtDiffWI" (CS.paramStats summary)
+            vRTDiffNI <- fmap (SP.getVector . fmap CS.percents)
+                         $ SP.parse1D "rtDiffNI" (CS.paramStats summary)
+            vRTDiffI <- fmap (SP.getVector . fmap CS.percents)
+                        $ SP.parse1D "rtDiffI" (CS.paramStats summary)
+{-            cpsVStateIndexIM <- SB.getGroupIndex
                                 (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
                                 (SB.GroupTypeTag @Text "State")
                                 groupIndexes
             vRDiff <-fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "rDiff" (CS.paramStats summary)
 -}
-            indexStanResults psIndexIM vResults
+            rtDiffWI <- indexStanResults psIndexIM vRTDiffWI
+            rtDiffNI <- indexStanResults psIndexIM vRTDiffNI
+            rtDiffI <- indexStanResults psIndexIM vRTDiffI
+            return (rtDiffWI, rtDiffNI, rtDiffI)
 --            indexStanResults cpsVStateIndexIM vRDiff
 --    K.knitEither $
 
@@ -326,27 +334,43 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (Just 1000)
     (Just 0.95)
     Nothing
-  res <- K.ignoreCacheTime res_C
-  K.logLE K.Info $ "results: " <> show res
+  (rtDiffWI, rtDiffNI, rtDiffI) <- K.ignoreCacheTime res_C
+  K.logLE K.Info $ "results: " <> show rtDiffI
   -- sort on median coefficient
-  let sortedRes = sortOn (\(_,[_,x,_]) -> x) $ M.toList res
-  asMapRow <- K.knitEither $ traverse (expandInterval "State") sortedRes
-  let mrWithYear = fmap (M.singleton "Year" (GV.Str $ show year) <>) asMapRow
+  let sortedStates = fst <$> (sortOn (\(_,[_,x,_]) -> x) $ M.toList rtDiffI)
+      addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str $ show y)] <> m
+  rtDiffWIMR <- K.knitEither $ fmap (addCols "With Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffWI)
+  rtDiffNIMR <- K.knitEither $ fmap (addCols "Without Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffNI)
+  rtDiffIMR <- K.knitEither $ fmap (addCols "Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffI)
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State x Race interaction (" <> show year <> ")")
+    ("No interaction (" <> show year <> ")")
+    sortedStates
     (FV.ViewConfig 500 1000 5)
-    mrWithYear
+    rtDiffNIMR
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("With interaction (" <> show year <> ")")
+    sortedStates
+    (FV.ViewConfig 500 1000 5)
+    rtDiffWIMR
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("WI - NI (" <> show year <> ")")
+    sortedStates
+    (FV.ViewConfig 500 1000 5)
+    rtDiffIMR
   return ()
 
 coefficientChart :: (Functor f, Foldable f)
-                 => T.Text
+                 => Text
+                 -> [Text]
                  ->  FV.ViewConfig
                  -> f (MapRow.MapRow GV.DataValue)
                  -> GV.VegaLite
-coefficientChart title vc rows =
+coefficientChart title sortedStates vc rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
-      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort []]
+      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]

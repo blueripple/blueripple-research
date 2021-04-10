@@ -242,18 +242,21 @@ getGroupIndex rtt gtt groupIndexes =
 emptyIntMapBuilders :: DataSetGroupIntMapBuilders d
 emptyIntMapBuilders = DHash.empty
 
+-- if it already exists, we ignore.  Which might lead to an error but we sometimes
+-- want to post-stratify (or whatever) using the same data-set
 addIntMapBuilder :: forall d r k. (Typeable k)
                  => RowTypeTag r
                  -> GroupTypeTag k
                  -> (ToFoldable d r -> d -> Either Text (IntMap.IntMap k))
                  -> DataSetGroupIntMapBuilders d
-                 -> Either Text (DataSetGroupIntMapBuilders d)
+                 -> DataSetGroupIntMapBuilders d
 addIntMapBuilder rtt gtt imF dsgimb =
   case DHash.lookup rtt dsgimb of
-    Nothing -> Right $ DHash.insert rtt (GroupIntMapBuilders $ DHash.singleton gtt (DataToIntMap imF)) dsgimb
+    Nothing -> DHash.insert rtt (GroupIntMapBuilders $ DHash.singleton gtt (DataToIntMap imF)) dsgimb
     Just (GroupIntMapBuilders gimb) -> case DHash.lookup gtt gimb of
-      Nothing -> Right $ DHash.insert rtt (GroupIntMapBuilders $ DHash.insert gtt (DataToIntMap imF) gimb) dsgimb
-      Just _ -> Left $ taggedGroupName gtt <> " already has an index for data-set \"" <> dsName rtt <> "\""
+      Nothing -> DHash.insert rtt (GroupIntMapBuilders $ DHash.insert gtt (DataToIntMap imF) gimb) dsgimb
+      Just _ -> dsgimb
+--        Left $ taggedGroupName gtt <> " already has an index for data-set \"" <> dsName rtt <> "\""
 
 
 buildIntMaps :: forall d r0. RowBuilderDHM d r0 -> DataSetGroupIntMapBuilders d -> d -> Either Text DataSetGroupIntMaps
@@ -387,6 +390,18 @@ buildJSONF = do
           Left _ -> return $ JSONRowFold (ToFoldable toData) jsonF
   DHash.traverse buildRowJSONFolds rbs
 
+newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
+newtype ScopedDeclarations = ScopedDeclarations [DeclarationMap]
+
+alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
+alreadyDeclared (ScopedDeclarations dms) (SME.StanVar sn st) = go dms where
+  go [] = return ()
+  go ((DeclarationMap x) : xs) = case Map.lookup sn x of
+    Nothing -> go xs
+    Just st' -> if st == st'
+               then Left $ sn <> " already declared (with same type)!"
+               else Left $ sn <> " already declared (with different type)!"
+
 data BuilderState d r0 = BuilderState { declaredVars :: !(Map SME.StanName SME.StanType)
                                       , rowBuilders :: !(RowBuilderDHM d r0)
                                       , hasFunctions :: !(Set.Set Text)
@@ -488,10 +503,9 @@ addIndexIntMapFld rtt gtt imFld = do
   let   f :: ToFoldable d r -> d -> Either Text (IntMap k)
         f tf d = applyToFoldableM imFld tf d
   case gtt of
-    GroupTypeTag _ ->
-      case addIntMapBuilder rtt gtt f ibs of
-        Left errMsg -> stanBuildError errMsg
-        Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
+    GroupTypeTag _ -> do
+      let ibs' = addIntMapBuilder rtt gtt f ibs
+      put $  BuilderState vars rowBuilders fsNames code ibs'
 
 
 addIndexIntMap :: forall r k env d r0.
@@ -504,11 +518,9 @@ addIndexIntMap rtt gtt im = do
   let   f :: ToFoldable d r -> d -> Either Text (IntMap k)
         f _ _ = Right im
   case gtt of -- bring the Typeable constraint from the GroupTypeTag GADT into scope
-    GroupTypeTag _ ->
-      case addIntMapBuilder rtt gtt f ibs of
-        Left errMsg -> stanBuildError errMsg
-        Right ibs' -> put $  BuilderState vars rowBuilders fsNames code ibs'
-
+    GroupTypeTag _ -> do
+      let ibs' = addIntMapBuilder rtt gtt f ibs
+      put $  BuilderState vars rowBuilders fsNames code ibs'
 
 runStanBuilder' :: forall f env d r0 a. (Typeable d, Typeable r0, Foldable f)
                => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
@@ -539,18 +551,21 @@ stanBuildMaybe msg = maybe (stanBuildError msg) return
 stanBuildEither :: Either Text a -> StanBuilderM ev d r0 a
 stanBuildEither = either stanBuildError return
 
-declare :: SME.StanName -> SME.StanType -> StanBuilderM env d r0 ()
+-- return True if variable is new, False if already declared
+declare :: SME.StanName -> SME.StanType -> StanBuilderM env d r0 Bool
 declare sn st = do
   (BuilderState vars rowBuilders modelExprs code ims) <- get
   case Map.lookup sn vars of
-    Nothing -> put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code ims
+    Nothing -> do
+      put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code ims
+      return True
     Just dt -> if dt == st
-               then stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
+               then return False --stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
                else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
 
 stanDeclare' :: SME.StanName -> SME.StanType -> Text -> Maybe Text -> StanBuilderM env d r SME.StanVar
 stanDeclare' sn st sc mRHS = do
-  declare sn st
+  isNew <- declare sn st
   let dimsToText x = "[" <> T.intercalate ", " (SME.dimToText <$> x) <> "]"
   let typeToCode :: SME.StanName -> SME.StanType -> Text -> Text
       typeToCode sn st sc = case st of
@@ -570,9 +585,13 @@ stanDeclare' sn st sc mRHS = do
         SME.NamedDim t -> checkName t
         SME.GivenDim _ -> return ()
   traverse_ checkDim $ dimsToCheck st
-  case mRHS of
-    Nothing -> addStanLine $ typeToCode sn st sc
-    Just rhs -> addStanLine $ typeToCode sn st sc <> " = " <> rhs
+  _ <- if isNew
+    then case mRHS of
+           Nothing -> addStanLine $ typeToCode sn st sc
+           Just rhs -> addStanLine $ typeToCode sn st sc <> " = " <> rhs
+    else case mRHS of
+           Nothing -> return ()
+           Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
   return $ SME.StanVar sn st
 
 stanDeclare :: SME.StanName -> SME.StanType -> Text -> StanBuilderM env d r0 SME.StanVar

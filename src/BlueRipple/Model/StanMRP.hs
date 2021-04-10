@@ -211,7 +211,7 @@ addNestedMRGroup  binarySD nonBinarySD sumGroupSD nonPooledGN pooledGN = do
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ")with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ")with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
-        indexBothF <- SB.diagVectorFunction
+--        indexBothF <- SB.diagVectorFunction
         SB.inBlock SB.SBParameters $ do
           SB.stanDeclare (suffixed "eps" <> "_raw") (SB.StanVector $ SB.NamedDim $ "N_" <> pooledGN) ""
           SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
@@ -285,22 +285,23 @@ data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
                       => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
                       -> args -- required args, e.g., total counts for binomial
+                      -> Maybe Text
                       -> SB.RowTypeTag r
                       -> SB.GroupRowMap r -- group mappings for PS data
                       -> Set.Set Text -- subset of groups to loop over
                       -> (r -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
-                      -> BuilderM r0 d ()
-addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGroup = do
+                      -> BuilderM r0 d SB.StanVar
+addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
       dsName = SB.dsName rtt
       psGroupName = maybe "" SB.taggedGroupName mPSGroup
       uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
       psSuffix = dsName <> uPSGroupName
-      namedPS = "PS_" <> psSuffix
-      sizeName = "N_" <> psSuffix
+      namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
+      sizeName = "N_" <> namedPS
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
   let checkGroupSubset n1 n2 gs1 gs2 = do
@@ -380,12 +381,12 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
         inner = do
           let psExpE = SB.familyExp sDist dsName args
           expCode <- SB.printExprM "mrpPSStanCode" bindingStore $ return psExpE
-          SB.stanDeclareRHS ("p" <> psSuffix) SB.StanReal "" expCode
+          SB.stanDeclareRHS ("p" <> namedPS) SB.StanReal "" expCode
           when (psType == PSShare)
             $ SB.addStanLine
             $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
           SB.addStanLine
-            $ namedPS <> "[n] += p" <> psSuffix <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
+            $ namedPS <> "[n] += p" <> namedPS <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
     SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim sizeName) "" $ "rep_vector(0, " <> sizeName  <> ")"
@@ -395,3 +396,4 @@ addPostStratification sDist args rtt groupMaps modelGroups weightF psType mPSGro
       when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" "0" >> return ())
       makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
+    return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim sizeName)
