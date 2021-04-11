@@ -46,12 +46,12 @@ addCountData :: forall r0 d env.(Typeable d, Typeable r0)
              -> SB.StanBuilderM env d r0 SME.StanVar
 addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
 
-intercept :: forall env r d. (Typeable d, Typeable r) => Text -> Double -> SB.StanBuilderM env r d SB.StanExpr
-intercept iName alphaPriorSD = do
+intercept :: forall env r d. (Typeable d, Typeable r) => Text -> SME.StanExpr -> SB.StanBuilderM env r d SB.StanExpr
+intercept iName alphaPriorE = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   let alphaE = SB.name iName
-      interceptE = SB.binOp "~" alphaE $ SB.function "normal" [SB.scalar "0", SB.scalar $ show alphaPriorSD]
-  SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine -- $ iName <> " ~ normal(0, " <> show alphaPriorSD <> ")"
+      interceptE = alphaE `SME.vectorSample` alphaPriorE
+  SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return interceptE) >>= SB.inBlock SB.SBModel . SB.addStanLine
   return alphaE
 
 sampleDistV :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()

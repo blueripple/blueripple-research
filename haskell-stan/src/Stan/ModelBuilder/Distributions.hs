@@ -40,10 +40,34 @@ familyRNG (StanDist _ _ rng _) = rng
 familyExp :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
 familyExp (StanDist _ _ _ e) = e
 
+vec :: SME.StanIndexKey -> SME.StanVar -> SME.StanExpr
+vec k (SME.StanVar name _) = SME.indexed k $ SME.name name
+
 binomialLogitDist :: SME.StanVar -> SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist sV tV = StanDist sample lpdf rng expectation where
-  vec k (SME.StanVar name _) = SME.indexed k $ SME.name name
   sample k lpE = vec k sV `SME.vectorSample` SME.function "binomial_logit" [vec k tV, lpE]
   lpdf k lpE = SME.functionWithGivens "binomial_logit_lpmf" [vec k sV] [vec k tV, lpE]
   rng k lpE = SME.function "binomial_rng" [vec k tV, SME.function "inv_logit" [lpE]]
   expectation k lpE = SME.function "inv_logit" [lpE]
+
+-- for priors
+normal :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr
+normal mMean sigma = SME.function "normal" [mean, sigma] where
+  mean = fromMaybe (SME.scalar "0") mMean
+
+stdNormal :: SME.StanExpr
+stdNormal = normal Nothing (SME.scalar "1")
+
+normalDist :: SME.StanVar -> StanDist (SME.StanExpr, SME.StanExpr)
+normalDist yV = StanDist sample lpdf rng expectation where
+  sample k (mean, sigma) = vec k yV `SME.vectorSample` normal (Just mean) sigma
+  lpdf k (mean, sigma) = SME.functionWithGivens "normal_lpdf" [vec k yV] [mean, sigma]
+  rng _ (mean, sigma) = SME.function "normal_rng" [mean, sigma]
+  expectation _ (mean, _) = mean
+
+cauchy :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr
+cauchy mMean sigma = SME.function "cauchy" [mean, sigma] where
+  mean = fromMaybe (SME.scalar "0") mMean
+
+gamma :: SME.StanExpr -> SME.StanExpr -> SME.StanExpr
+gamma alpha beta = SME.function "gamma" [alpha, beta]

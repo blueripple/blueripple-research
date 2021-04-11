@@ -139,7 +139,7 @@ vectorized (VarBindingStore mvk _) = isJust mvk
 -- So your indexes can have indexes.
 -- then fold from the bottom into Stan code
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
-printExpr vbs = Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs) -- bindIndexes vbs expr >>= printIndexedExpr (vectorized vbs)
+printExpr vbs = Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs)
 
 bindIndexCoAlg ::  VarBindingStore -> StanExpr -> Either Text (StanExprF StanExpr)
 bindIndexCoAlg vbs (Fix.Fix (IndexedF k e)) =
