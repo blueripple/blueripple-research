@@ -156,8 +156,8 @@ getIndex gn = do
     Just i -> return i
 
 -- Basic group declarations, indexes and Json are produced automatically
-addMRGroup :: (Typeable d, Typeable r) => SB.StanExpr -> SB.StanExpr -> Maybe SB.StanExpr -> GroupName -> BuilderM r d SB.StanExpr
-addMRGroup binaryPrior nonBinaryPrior mSumGroupPrior gn = do
+addMRGroup :: (Typeable d, Typeable r) => SB.StanExpr -> SB.StanExpr -> SB.SumToZero -> GroupName -> BuilderM r d SB.StanExpr
+addMRGroup binaryPrior sigmaPrior stz gn = do
   (SB.IntIndex indexSize _) <- getIndex gn
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
@@ -170,40 +170,27 @@ addMRGroup binaryPrior nonBinaryPrior mSumGroupPrior gn = do
         SB.inBlock SB.SBModel $ do
           let priorE = SB.name en `SB.vectorSample` binaryPrior
           SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return priorE) >>= SB.addStanLine
---          SB.addStanLine $ "eps_" <> gn <> " ~ normal(0, " <> show binarySD <> ")"
         return modelTerm
   let nonBinaryGroup = do
         let gs t = t <> "_" <> gn
             modelTerm = SB.indexed gn $ SB.name $ gs "beta"
-        SB.inBlock SB.SBParameters $ do
-          SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
-          SB.stanDeclare (gs "beta_raw") (SB.StanVector $ SB.NamedDim $ gs "N") ""
-        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
-          bv <- SB.stanDeclare (gs "beta") (SB.StanVector $ SB.NamedDim (gs "N")) ""
-          SB.addStanLine $ gs "beta" <> " = " <> gs "sigma" <> " * " <> gs "beta_raw"
-          return bv
+        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
         SB.inBlock SB.SBModel $ do
-          let sigmaPrior = SB.name (gs "sigma") `SB.vectorSample` nonBinaryPrior
-              betaRawPrior = SB.name (gs "beta_raw") `SB.vectorSample` SB.stdNormal
-          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPrior) >>= SB.addStanLine
-          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return betaRawPrior) >>= SB.addStanLine
---          SB.addStanLine $ "sigma_" <> gn <> " ~ normal(0, " <> show nonBinarySD <> ")"
---          SB.addStanLine $ "beta_raw_" <> gn <> " ~ normal(0, 1) "
-        case mSumGroupPrior of
-          Just prior -> SB.weightedSoftSumToZero betaVar gn "N" prior
-          Nothing -> return ()
+          let sigmaPriorLine = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
+          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
+        let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim $ gs "N")
+        SB.rescaledSumToZero stz betaVar sigmaVar
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
 
 addNestedMRGroup ::  (Typeable d, Typeable r)
                  => SB.StanExpr
-                 -> SB.StanExpr
-                 -> Maybe SB.StanExpr
+                 -> SB.SumToZero
                  -> GroupName -- e.g., sex
                  -> GroupName -- partially pooled, e.g., state
                  -> BuilderM r d (SB.StanExpr, SB.StanExpr)
-addNestedMRGroup  sigmaPrior _ mSumGroupPrior nonPooledGN pooledGN = do
+addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
   let suffix = nonPooledGN <> "_" <> pooledGN
       suffixed x = x <> "_" <> suffix
   (SB.IntIndex pooledIndexSize _) <- getIndex pooledGN
@@ -211,37 +198,49 @@ addNestedMRGroup  sigmaPrior _ mSumGroupPrior nonPooledGN pooledGN = do
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ") with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
-        SB.inBlock SB.SBParameters $ do
-          SB.stanDeclare (suffixed "eps" <> "_raw") (SB.StanVector $ SB.NamedDim $ "N_" <> pooledGN) ""
-          SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
-        (yVar, epsVar) <- SB.inBlock SB.SBTransformedParameters $ do
-          ev <- SB.stanDeclare (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN)) ""
-          SB.addStanLine $ suffixed "eps" <> " = " <> suffixed "sigma" <> " * " <> suffixed "eps_raw"
+        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
+        let epsVar = SB.StanVar (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN))
+        SB.inBlock SB.SBModel $ do
+          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
+          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
+        SB.rescaledSumToZero stz epsVar sigmaVar
+        yVar <- SB.inBlock SB.SBTransformedParameters $ do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
           SB.stanForLoop "n" Nothing "N"
             $ const
             $ SB.addStanLine
             $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
-          return (yv, ev)
-        SB.inBlock SB.SBModel $ do
-          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
-              e2 = SB.name (suffixed "eps_raw") `SB.vectorSample` SB.stdNormal
-          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
-          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e2) >>= SB.addStanLine
---          SB.addStanLine $ suffixed "sigma" <> " ~ normal(0, " <> show nonBinarySD <> ")"
---          SB.addStanLine $ suffixed "eps_raw" <> " ~ normal(0, 1)"
-        case mSumGroupPrior of
-          Just prior -> SB.weightedSoftSumToZero epsVar pooledGN "N" prior
-          Nothing -> return ()
+          return yv
         let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
             epsE =  SB.indexed nonPooledGN
                     $ SB.bracket
                     $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
                               ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
                               ]
---            epsE = SB.vectorFunction indexBothF epsE' [SB.name "N"]
         return (yE, epsE)
-      nonPooledNonBinary = undefined
+      nonPooledNonBinary = do
+        let npGS = "N_" <> nonPooledGN
+            pGS = "N_" <> pooledGN
+        (sigmaV, lcorrV) <- SB.inBlock SB.SBParameters $ do
+          sv <- SB.stanDeclare (suffixed "sigma") (SB.StanVector (SB.NamedDim npGS)) "<lower=0>"
+          lv <- SB.stanDeclare (suffixed "lCorr") (SB.StanCholeskyFactorCorr (SB.NamedDim npGS)) ""
+          return (sv, lv)
+
+        let betaVar = SB.StanVar (suffixed "beta")  (SB.StanMatrix (SB.NamedDim npGS, SB.NamedDim pGS))
+        SB.inBlock SB.SBModel $ do
+          let e1 = SB.name (suffixed "sigma")  `SB.vectorSample` sigmaPrior -- NB this should prolly be some LKJ thing
+          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
+        SB.rescaledSumToZero SB.STZNone betaVar sigmaVar  -- FIX, we can't sum to zero along cols or rows.
+        yVar <- SB.inBlock SB.SBTransformedParameters $ do
+          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
+          SB.stanForLoop "n" Nothing "N"
+            $ const
+            $ SB.addStanLine
+            $ suffixed "y" <> "[n] = " <> suffixed "beta" <> "[" <> nonPooledGN <> "[n], " <> pooledGN <> "[n]]"
+          return yv
+        let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+            betaE =  SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
+        return (yE, betaE)
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
 
 

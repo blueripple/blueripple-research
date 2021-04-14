@@ -36,6 +36,7 @@ import qualified Data.Dependent.Sum as DSum
 import qualified Data.GADT.Compare as GADT
 import qualified Data.IntMap.Strict as IntMap
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import qualified Data.Proxy as Proxy
 import qualified Data.Sequence as Seq
@@ -391,23 +392,79 @@ buildJSONF = do
   DHash.traverse buildRowJSONFolds rbs
 
 newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
-newtype ScopedDeclarations = ScopedDeclarations [DeclarationMap]
+newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap)
 
-alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
-alreadyDeclared (ScopedDeclarations dms) (SME.StanVar sn st) = go dms where
-  go [] = return ()
+varLookup :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
+varLookup (ScopedDeclarations dms) sn = go $ toList dms where
+  go [] = Left $ "\"" <> sn <> "\" not declared/in scope."
   go ((DeclarationMap x) : xs) = case Map.lookup sn x of
     Nothing -> go xs
-    Just st' -> if st == st'
-               then Left $ sn <> " already declared (with same type)!"
-               else Left $ sn <> " already declared (with different type)!"
+    Just st -> return $ StanVar sn st
 
-data BuilderState d r0 = BuilderState { declaredVars :: !(Map SME.StanName SME.StanType)
+alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
+alreadyDeclared sd@(ScopedDeclarations dms) (SME.StanVar sn st) =
+  case varLookup sd sn of
+    Right (StanVar _ st') ->  if st == st'
+                              then Left $ sn <> " already declared (with same type)!"
+                              else Left $ sn <> " already declared (with different type)!"
+    Left _ -> return ()
+
+addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d r0 SME.StanVar
+addVarInScope sn st = do
+  let sv = SME.StanVar sn st
+      newDVs dvs = do
+        _ <- alreadyDeclared dvs sv
+        let ScopedDeclarations dmNE = dvs
+            DeclarationMap dm = head dmNE
+            dmWithNew = DeclarationMap $ Map.insert sn st dm
+        return  $ ScopedDeclarations $ dmWithNew :| tail dmNE
+  bs <- get
+  case modifyDeclaredVarsA newDVs bs of
+    Left errMsg -> stanBuildError errMsg
+    Right newBS -> put newBS >> return sv
+
+
+getVar :: StanName -> StanBuilderM env d r0 StanVar
+getVar sn = do
+  sd <- declaredVars <$> get
+  case varLookup sd sn of
+    Right sv -> return sv
+    Left errMsg -> stanBuildError errMsg
+
+
+addScope :: StanBuilderM env d r0 ()
+addScope = modify (modifyDeclaredVars f) where
+  f (ScopedDeclarations dmNE) = ScopedDeclarations $ (DeclarationMap Map.empty) :| toList dmNE
+
+dropScope :: StanBuilderM env d r0 ()
+dropScope = do
+  ScopedDeclarations dmNE <- declaredVars <$> get
+  let (_, mx) = NE.uncons dmNE
+  case mx of
+    Nothing -> stanBuildError $ "Attempt to drop outermost scope!"
+    Just dmNE' -> modify (modifyDeclaredVars $ const $ ScopedDeclarations dmNE)
+
+
+scoped :: StanBuilderM env d r0 a -> StanBuilderM env d r0 a
+scoped x = do
+  addScope
+  a <- x
+  dropScope
+  return a
+
+data BuilderState d r0 = BuilderState { declaredVars :: !ScopedDeclarations
                                       , rowBuilders :: !(RowBuilderDHM d r0)
                                       , hasFunctions :: !(Set.Set Text)
                                       , code :: !StanCode
                                       , indexBuilders :: !(DataSetGroupIntMapBuilders d)
                                       }
+
+modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d r -> BuilderState d r
+modifyDeclaredVars f (BuilderState dv rb hf c ib) = BuilderState (f dv) rb hf c ib
+
+modifyDeclaredVarsA :: Applicative t => (ScopedDeclarations -> t ScopedDeclarations) -> BuilderState d r -> t (BuilderState d r)
+modifyDeclaredVarsA f (BuilderState dv rb hf c ib) = (\x -> BuilderState x rb hf c ib) <$> f dv
+
 modifyRowBuildersA :: Applicative t => (RowBuilderDHM d r -> t (RowBuilderDHM d r)) -> BuilderState d r -> t (BuilderState d r)
 modifyRowBuildersA f (BuilderState dv rb hf c ib) = (\x -> BuilderState dv x hf c ib) <$> f rb
 
@@ -415,7 +472,13 @@ modifyIndexBuildersA :: Applicative t => (DataSetGroupIntMapBuilders d -> t (Dat
 modifyIndexBuildersA f (BuilderState dv rb hf c ib) = (\x -> BuilderState dv rb hf  c x) <$> f ib
 
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled = BuilderState Map.empty (initialRowBuilders toModeled) Set.empty emptyStanCode emptyIntMapBuilders
+initialBuilderState toModeled =
+  BuilderState
+  (ScopedDeclarations $ (DeclarationMap Map.empty) :| [])
+  (initialRowBuilders toModeled)
+  Set.empty
+  emptyStanCode
+  emptyIntMapBuilders
 
 newtype StanGroupBuilderM r0 a
   = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
@@ -551,17 +614,23 @@ stanBuildMaybe msg = maybe (stanBuildError msg) return
 stanBuildEither :: Either Text a -> StanBuilderM ev d r0 a
 stanBuildEither = either stanBuildError return
 
+isDeclared :: SME.StanName -> StanBuilderM env d r0 Bool
+isDeclared sn  = do
+  sd <- declaredVars <$> get
+  case varLookup sd sn of
+    Left _ -> return False
+    Right _ -> return True
+
 -- return True if variable is new, False if already declared
 declare :: SME.StanName -> SME.StanType -> StanBuilderM env d r0 Bool
 declare sn st = do
-  (BuilderState vars rowBuilders modelExprs code ims) <- get
-  case Map.lookup sn vars of
-    Nothing -> do
-      put $ BuilderState (Map.insert sn st vars) rowBuilders modelExprs code ims
-      return True
-    Just dt -> if dt == st
-               then return False --stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with same type."
-               else stanBuildError $ "Attempt to re-declare " <> show sn <> " (" <> show dt <> ") with new type (" <> show st <> ")!"
+  let sv = SME.StanVar sn st
+  sd <- declaredVars <$> get
+  case varLookup sd sn of
+    Left _ -> addVarInScope sn st >> return True
+    Right (SME.StanVar _ st') -> if st' == st
+                                 then return False
+                                 else stanBuildError $ "Attempt to re-declare \"" <> sn <> "\" with different type. Previous=" <> show st' <> "; new=" <> show st
 
 stanDeclare' :: SME.StanName -> SME.StanType -> Text -> Maybe Text -> StanBuilderM env d r SME.StanVar
 stanDeclare' sn st sc mRHS = do
@@ -576,9 +645,15 @@ stanDeclare' sn st sc mRHS = do
           _ -> typeToCode sn st' sc <> dimsToText dims
         SME.StanVector dim -> "vector" <> sc <> "[" <> SME.dimToText dim <> "] " <> sn
         SME.StanMatrix (dimR, dimC) -> "matrix" <> sc <> "[" <> SME.dimToText dimR <> "," <> SME.dimToText dimC <> "] " <> sn
+        SME.StanCorrMatrix dim -> "corr_matrix[" <> SME.dimToText dim <> "]" <> sn
+        SME.StanCholeskyFactorCorr dim -> "cholesky_factor_corr[" <> SME.dimToText dim <> "]" <> sn
+        SME.StanCovMatrix dim -> "cov_matrix[" <> SME.dimToText dim <> "]" <> sn
   let dimsToCheck st = case st of
         SME.StanVector d -> [d]
         SME.StanMatrix (d1, d2) -> [d1, d2]
+        SME.StanCorrMatrix d -> [d]
+        SME.StanCholeskyFactorCorr d -> [d]
+        SME.StanCovMatrix d -> [d]
         SME.StanArray dims st' -> dimsToCheck st' ++ dims
         _ -> []
   let checkDim d = case d of
@@ -600,28 +675,21 @@ stanDeclare sn st sc = stanDeclare' sn st sc Nothing
 stanDeclareRHS :: SME.StanName -> SME.StanType -> Text -> Text -> StanBuilderM env d r0 SME.StanVar
 stanDeclareRHS sn st sc rhs = stanDeclare' sn st sc (Just rhs)
 
-
 checkName :: SME.StanName -> StanBuilderM env d r0 ()
 checkName sn = do
-  declared <- declaredVars <$> get
+  dvs <- declaredVars <$> get
+  _ <- stanBuildEither $ varLookup dvs sn
+  return ()
+{-
   case Map.lookup sn declared of
     Nothing -> stanBuildError $ "name check failed for " <> show sn <> ". Missing declaration?"
     _ -> return ()
+-}
 
 typeForName :: SME.StanName -> StanBuilderM env d r0 SME.StanType
 typeForName sn = do
-  declared <- declaredVars <$> get
-  case Map.lookup sn declared of
-    Nothing -> stanBuildError $ "type for name failed for " <> show sn <> ". Missing declaration?"
-    Just x -> return x
-
-
-isDeclared :: SME.StanName -> StanBuilderM env d r0 Bool
-isDeclared sn  = do
-  declared <- declaredVars <$> get
-  case Map.lookup sn declared of
-    Nothing -> return False
-    Just _  -> return True
+  dvs <- declaredVars <$> get
+  stanBuildEither $ (\(SME.StanVar _ st) -> st) <$> varLookup dvs sn
 
 addJson :: (Typeable d)
         => RowTypeTag r
@@ -735,6 +803,13 @@ getBlock = do
   (BuilderState _ _ _ (StanCode b _) _) <- get
   return b
 
+addInLine' :: Text -> StanCode -> StanCode
+addInLine' t (StanCode b blocks) =
+  let (WithIndent curCode curIndent) = blocks Array.! b
+      newCode = curCode <> t
+  in StanCode b (blocks Array.// [(b, WithIndent newCode curIndent)])
+
+
 addLine' :: Text -> StanCode -> StanCode
 addLine' t (StanCode b blocks) =
   let (WithIndent curCode curIndent) = blocks Array.! b
@@ -743,6 +818,9 @@ addLine' t (StanCode b blocks) =
 
 addLine :: Text -> StanBuilderM env d r ()
 addLine = modifyCode . addLine'
+
+addInLine :: Text -> StanBuilderM env d r ()
+addInLine = modifyCode . addInLine'
 
 addStanLine :: Text -> StanBuilderM env d r ()
 addStanLine t = addLine $ t <> ";\n"
@@ -767,8 +845,8 @@ indented n m = do
 
 bracketed :: Int -> StanBuilderM env d r a -> StanBuilderM env d r a
 bracketed n m = do
-  addLine " {\n"
-  x <- indented n m
+  addInLine " {\n"
+  x <- scoped $ indented n m
   addLine "}\n"
   return x
 
@@ -802,13 +880,17 @@ inBlock b m = do
   setBlock oldBlock
   return x
 
-
 printExprM :: Text -> SME.VarBindingStore -> StanBuilderM env d r SME.StanExpr -> StanBuilderM env d r Text
 printExprM context vbs me = do
   e <- me
   case SME.printExpr vbs e of
     Right t -> return t
     Left err -> stanBuildError err
+
+printUnindexedExprM :: Text -> SME.StanExpr -> StanBuilderM env d r Text
+printUnindexedExprM ctxt = printExprM ctxt SME.noBindings . return
+
+
 
 {-
 data StanPrior = NormalPrior Double Double | CauchyPrior Double Double | NoPrior

@@ -73,6 +73,7 @@ import Optics.Operators
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Stan.ModelBuilder.SumToZero as SB
 --import qualified Stan
 import qualified Stan.Parameters as SP
 import qualified CmdStan as CS
@@ -132,10 +133,16 @@ districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField 
 districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
+densityPredictor r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)]
+
 --acsWhite :: F.Record BRE.PUMSByCDR -> Bool
 ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
 
+wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+
 ra4WhiteNonGrad r = ra4White r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+
+
 
 ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
 ccesGroupBuilder = do
@@ -210,12 +217,19 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
         SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
+        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+--        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
+--        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
-        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
+--        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
         $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
+--        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
         $ SB.emptyGroupRowMap
 
       dataAndCodeBuilder :: Typeable modelRow
@@ -227,20 +241,30 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         vTotal <- SB.addCountData "T" "N" totalF
         vSucc <- SB.addCountData "S" "N" succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
-            binaryPrior = normal 2
-            nonBinaryPrior = normal 2
-            fePrior = normal 2
+            binaryPrior = normal 1
+            sigmaPrior = normal 1
+            fePrior = normal 1
+            stzPrior = normal 0.01
         alphaE <- SB.intercept "alpha" (normal 2)
+
         (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
                                   True
                                   fePrior
                                   cdDataRT
-                                  (MRP.FixedEffects 2 districtPredictors)
-        gRaceE <- MRP.addMRGroup binaryPrior nonBinaryPrior Nothing "Race"
+                                  (MRP.FixedEffects 1 densityPredictor)
+
+        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
+        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
+        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
+--        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
+        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
+--        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
+--        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
+        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
+        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gRaceE]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gAgeE, gEduE, gRaceE, gStateE, gRaceStateEV]
         SB.sampleDistV dist logitPE
---        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE
         return ()
 
@@ -263,18 +287,18 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   (dw, stanCode) <- K.knitEither
     $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
   res_C <- MRP.runMRPModel
-    False
+    True
     (Just "stan/mrp/cpsV")
-    ("stateXrace")
-    ("stateXrace" <> show year)
+    ("test")
+    ("test" <> show year)
     dw
     stanCode
     "S"
     extractTestResults
     data_C
     (Just 1000)
-    (Just 0.95)
-    Nothing
+    (Just 0.99)
+    (Just 15)
   return ()
 
 cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
@@ -314,7 +338,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         vSucc <- SB.addCountData "S" "N" succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
-            nonBinaryPrior = normal 2
+            sigmaPrior = normal 2
             fePrior = normal 2
             sumToZeroPrior = normal 0.01
         alphaE <- SB.intercept "alpha" (normal 2)
@@ -323,14 +347,14 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 2 districtPredictors)
-        gSexE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "Sex"
-        gWhiteE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "White"
---        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "Ethnicity"
-        gAgeE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "Age"
-        gEduE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "Education"
-        gWNG <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "WhiteNonGrad"
-        gStateE <- MRP.addMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "State"
-        (gWhiteStateV, gWhiteState) <- MRP.addNestedMRGroup binaryPrior nonBinaryPrior (Just sumToZeroPrior) "White" "State"
+        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Sex" sumToZeroPrior) "Sex"
+        gWhiteE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "White" sumToZeroPrior) "White"
+--        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior (Just sumToZeroPrior) "Ethnicity"
+        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Age" sumToZeroPrior) "Age"
+        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Education" sumToZeroPrior) "Education"
+        gWNG <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "WhiteNonGrad" sumToZeroPrior) "WhiteNonGrad"
+        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "State" sumToZeroPrior) "State"
+        (gWhiteStateV, gWhiteState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "White" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
             logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gWNG, gStateE, gWhiteStateV]
             logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gWNG, gStateE, gWhiteState]
