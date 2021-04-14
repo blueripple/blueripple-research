@@ -84,15 +84,15 @@ indexesToExpr t dims = withIndexes (go id dims) where
 --indexOne t (GivenDim d) = withIndexes (name t) [name d]
 
 declarationToExpr :: VarBindingStore -> StanVar -> Text -> Either Text (StanExprF StanExpr)
-declarationToExpr vbs (StanVar sn st) = case st of
-  StanInt -> Right $ SpacedF (name "int") (name sn)
-  StanReal -> Right $ SpacedF (name "real") (name sn)
-  StanVector dim -> Right $ SpacedF (indexesToExpr "vector" [dim]) (name sn)
+declarationToExpr vbs (StanVar sn st) c = case st of
+  StanInt -> Right $ SpacedF (name "int" <> c) (name sn)
+  StanReal -> Right $ SpacedF (name "real" <> c) (name sn)
+  StanVector dim -> Right $ SpacedF (indexesToExpr ("vector" <> c) [dim]) (name sn)
   StanCorrMatrix dim -> Right $ SpacedF (indexesToExpr "corr_matrix" [dim]) (name sn)
   StanCholeskyFactorCorr dim -> Right $ SpacedF (indexesToExpr "cholesky_factor_corr" [dim]) (name sn)
   StanCovMatrix dim -> Right $ SpacedF (indexesToExpr "cov_matrix" [dim]) (name sn)
-  StanMatrix (d1, d2) -> Right $ SpacedF (indexesToExpr "matrix" [d1, d2]) (name sn)
-  StanArray dims st -> ??
+  StanMatrix (d1, d2) -> Right $ SpacedF (indexesToExpr ("matrix" <> c) [d1, d2]) (name sn)
+  StanArray dims st -> ?? -- Array dims go after until not array and then name + plus array dims are like name ??
 
 
 data StanExprF a where
