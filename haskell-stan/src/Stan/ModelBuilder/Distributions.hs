@@ -41,7 +41,7 @@ familyExp :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
 familyExp (StanDist _ _ _ e) = e
 
 vec :: SME.StanIndexKey -> SME.StanVar -> SME.StanExpr
-vec k (SME.StanVar name _) = SME.indexed k $ SME.name name
+vec k (SME.StanVar name _) = SME.uIndexed k $ SME.name name
 
 binomialLogitDist :: SME.StanVar -> SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist sV tV = StanDist sample lpdf rng expectation where

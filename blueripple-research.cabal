@@ -100,6 +100,7 @@ library  haskell-stan
                , streamly >= 0.7.2 && < 0.8
                , text
                , time
+               , transformers-compat >= 0.6 && < 0.7
                , vector
                , vector-builder >= 0.3.7 && < 0.4
                , vinyl >= 0.13 && < 0.14

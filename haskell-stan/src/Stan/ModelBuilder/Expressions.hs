@@ -1,7 +1,10 @@
 {-# LANGUAGE DataKinds #-}
+--{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -18,9 +21,10 @@
 
 module Stan.ModelBuilder.Expressions where
 
-
 import Prelude hiding (All, group)
 import qualified Control.Foldl as Fold
+import qualified Data.Functor.Classes as FC
+import qualified Data.Functor.Classes.Generic as FC
 import qualified Data.Functor.Foldable as Rec
 import qualified Data.Functor.Foldable.Monadic as Rec
 import qualified Data.Functor.Foldable.TH as Rec
@@ -29,13 +33,19 @@ import qualified Data.Fix as Fix
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 
+import GHC.Generics (Generic1)
+
 type StanName = Text
 type StanIndexKey = Text
-data StanDim = NamedDim StanIndexKey | GivenDim Int deriving (Show, Eq, Ord)
+data StanDim = NamedDim StanIndexKey
+             | GivenDim Int
+             | ExprDim StanExpr
+             deriving (Show, Eq, Ord, Generic)
 
 dimToText :: StanDim -> Text
 dimToText (NamedDim t) = t
 dimToText (GivenDim n) = show n
+dimToText (ExprDim _) = error "Can't call dimToText on ExprDim"
 
 data StanType = StanInt
               | StanReal
@@ -45,9 +55,9 @@ data StanType = StanInt
               | StanCorrMatrix StanDim
               | StanCholeskyFactorCorr StanDim
               | StanCovMatrix StanDim
-              deriving (Show, Eq, Ord)
+              deriving (Show, Eq, Ord, Generic)
 
-data StanVar = StanVar StanName StanType deriving (Show, Eq)
+data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord, Generic)
 
 getDims :: StanType -> [StanDim]
 getDims StanInt = []
@@ -59,55 +69,69 @@ getDims (StanCorrMatrix d) = [d]
 getDims (StanCholeskyFactorCorr d) = [d]
 getDims (StanCovMatrix d) = [d]
 
-{-
-dimsAsIndexes :: [StanDim]
-
-varToExpr :: StanVar -> StanExpr
-varToExpr (StanVar sn t) = case t of
-  StanInt -> name sn
-  StanReal -> name sn
-  StanArray dims
--}
-
---printDeclaration :: VarBindingStore -> StanVar -> Either Text Text
---printDeclaration (VarBindingStore _ _ dms) (StanVar sn st) = do
-
-indexesToExpr :: Text -> [StanDim] -> StanExpr
-indexesToExpr t dims = withIndexes (go id dims) where
+indexesToDExpr :: Text -> [StanDim] -> StanExpr
+indexesToDExpr t dims = go id dims where
   go ef [] = ef (name t)
   go ef (x : xs) = case x of
     NamedDim k -> go (ef . dIndexed k) xs
-    GivenDim d -> go (ef . withIndexes [d])
+    GivenDim d -> go (ef . flip withIndexes [name $ show d]) xs
+    ExprDim e -> go (ef . flip withIndexes [e]) xs
+
+indexesToUExpr :: Text -> [StanDim] -> StanExpr
+indexesToUExpr t dims = go id dims where
+  go ef [] = ef (name t)
+  go ef (x : xs) = case x of
+    NamedDim k -> go (ef . uIndexed k) xs
+    GivenDim d -> go (ef . flip withIndexes [name $ show d]) xs
+    ExprDim e -> go (ef . flip withIndexes [e]) xs
+
 
 --indexOne :: Text -> StanDim -> StanExpr
 --indexOne t (NamedDim k) = dIndexed k (name t)
 --indexOne t (GivenDim d) = withIndexes (name t) [name d]
 
-declarationToExpr :: VarBindingStore -> StanVar -> Text -> Either Text (StanExprF StanExpr)
-declarationToExpr vbs (StanVar sn st) c = case st of
-  StanInt -> Right $ SpacedF (name "int" <> c) (name sn)
-  StanReal -> Right $ SpacedF (name "real" <> c) (name sn)
-  StanVector dim -> Right $ SpacedF (indexesToExpr ("vector" <> c) [dim]) (name sn)
-  StanCorrMatrix dim -> Right $ SpacedF (indexesToExpr "corr_matrix" [dim]) (name sn)
-  StanCholeskyFactorCorr dim -> Right $ SpacedF (indexesToExpr "cholesky_factor_corr" [dim]) (name sn)
-  StanCovMatrix dim -> Right $ SpacedF (indexesToExpr "cov_matrix" [dim]) (name sn)
-  StanMatrix (d1, d2) -> Right $ SpacedF (indexesToExpr ("matrix" <> c) [d1, d2]) (name sn)
-  StanArray dims st -> ?? -- Array dims go after until not array and then name + plus array dims are like name ??
+collapseArray :: StanType -> StanType
+collapseArray (StanArray dims st) = case st of
+  StanArray dims' st -> collapseArray $ StanArray (dims ++ dims') st
+  x -> StanArray dims st
+collapseArray st = st
 
+declarationPart :: StanType -> Text -> StanExpr
+declarationPart  st c = case st of
+  StanInt -> name $ "int" <> c
+  StanReal -> name $ "real" <> c
+  StanVector dim -> indexesToDExpr ("vector" <> c) [dim]
+  StanCorrMatrix dim -> indexesToDExpr "corr_matrix" [dim]
+  StanCholeskyFactorCorr dim -> indexesToDExpr "cholesky_factor_corr" [dim]
+  StanCovMatrix dim -> indexesToDExpr "cov_matrix" [dim]
+  StanMatrix (d1, d2) -> indexesToDExpr ("matrix" <> c) [d1, d2]
+  StanArray dims st -> declarationPart st c
+
+declarationExpr :: StanVar -> Text -> StanExpr
+declarationExpr (StanVar sn st) c = case st of
+  sa@(StanArray _ _) -> let (StanArray dims st) = collapseArray sa
+                        in spaced (declarationPart st c) (indexesToDExpr sn dims)
+  _ -> spaced (declarationPart st c) (name sn)
+
+useVarExpr :: StanVar -> StanExpr
+useVarExpr (StanVar sn st) = indexesToUExpr sn dims where
+  dims = getDims st
 
 data StanExprF a where
   BareF :: Text -> StanExprF a
   SpacedF :: a -> a -> StanExprF a
   DeclareF :: StanVar -> Text -> StanExprF a
-  DIndexedF :: StanIndexKey -> StanExprF
-  IndexedF :: StanIndexKey -> a -> StanExprF a
+  UseVarF :: StanVar -> StanExprF a
+  DIndexedF :: StanIndexKey -> a -> StanExprF a
+  UIndexedF :: StanIndexKey -> a -> StanExprF a
   WithIndexesF :: a -> [a] -> StanExprF a
   BinOpF :: Text -> a -> a -> StanExprF a
   FunctionF :: Text -> [a] -> StanExprF a
   VectorFunctionF :: Text -> a -> [a] -> StanExprF a -- function to add when the context is vectorized
   GroupF :: Text -> Text -> a -> StanExprF a
   ArgsF :: [a] -> StanExprF a
-  deriving (Show, Eq, Functor, Foldable, Traversable)
+  deriving  stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
+  deriving   (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault StanExprF
 
 type StanExpr = Fix.Fix StanExprF
 
@@ -117,12 +141,20 @@ scalar = Fix.Fix . BareF
 name :: Text -> StanExpr
 name = Fix.Fix . BareF
 
+spaced :: StanExpr -> StanExpr -> StanExpr
+spaced le re = Fix.Fix $ SpacedF le re
+
+declareVar :: StanVar -> Text -> StanExpr
+declareVar sv c = Fix.Fix $ DeclareF sv c
+
+useVar :: StanVar -> StanExpr
+useVar = Fix.Fix . UseVarF
+
 dIndexed :: StanIndexKey -> StanExpr -> StanExpr
 dIndexed k e = Fix.Fix $ DIndexedF k e
 
-
-indexed :: StanIndexKey -> StanExpr -> StanExpr
-indexed k e = Fix.Fix $ IndexedF k e
+uIndexed :: StanIndexKey -> StanExpr -> StanExpr
+uIndexed k e = Fix.Fix $ UIndexedF k e
 
 withIndexes :: StanExpr -> [StanExpr] -> StanExpr
 withIndexes e eis = Fix.Fix $ WithIndexesF e eis
@@ -209,7 +241,7 @@ printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs = Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs)
 
 bindIndexCoAlg ::  VarBindingStore -> StanExpr -> Either Text (StanExprF StanExpr)
-bindIndexCoAlg vbs (Fix.Fix (IndexedF k e)) =
+bindIndexCoAlg vbs (Fix.Fix (UIndexedF k e)) =
   case lookupUseBinding k vbs of
     Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
     Just bi -> case bi of
@@ -221,22 +253,24 @@ bindIndexCoAlg vbs (Fix.Fix (DIndexedF k e)) =
     Just bi -> case bi of
       NoIndex  -> Right $ Fix.unFix e
       IndexE ei -> Right $ WithIndexesF e [ei]
-bindIndexCoAlg vbs (Fix.Fix (DeclareF sv c)) = declarationToExpr vbs sv c
+bindIndexCoAlg vbs (Fix.Fix (DeclareF sv c)) = Right $ Fix.unFix $ declarationExpr sv c
+bindIndexCoAlg vbs (Fix.Fix (UseVarF sv)) = Right $ Fix.unFix $ useVarExpr sv
 bindIndexCoAlg _ x = Right $ Fix.unFix x
 
 csArgs :: [Text] -> Text
 csArgs = T.intercalate ", "
 
-printIndexedAlg :: VarBindingStore -> StanExprF Text -> Either Text Text
+printIndexedAlg :: Bool -> StanExprF Text -> Either Text Text
 printIndexedAlg _ (BareF t) = Right t
 printIndexedAlg _ (SpacedF l r) = Right $ l <> " " <> r
-printIndexedAlg vbs (DeclareF sv) = Left "Should not call printExpr before expanding declarations" --printVC vc <$> reIndex im k t
-printIndexedAlg _ (DIndexedF _ _) = Left "Should not call printExpr before binding declation indexes" --printVC vc <$> reIndex im k t
-printIndexedAlg _ (IndexedF _ _) = Left "Should not call printExpr before binding indexes" --printVC vc <$> reIndex im k t
+printIndexedAlg _ (DeclareF _ _) = Left "Should not call printExpr before expanding declarations"
+printIndexedAlg _ (UseVarF _) = Left "Should not call printExpr before expanding var uses"
+printIndexedAlg _ (DIndexedF _ _) = Left "Should not call printExpr before binding declaration indexes"
+printIndexedAlg _ (UIndexedF _ _) = Left "Should not call printExpr before binding use indexes"
 printIndexedAlg _ (WithIndexesF e ies) = Right $ e <> "[" <> csArgs ies <> "]"
 printIndexedAlg _ (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
 printIndexedAlg _ (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
-printIndexedAlg vbs (VectorFunctionF f e argEs) = Right $ if vectorized vbs then f <> "(" <> csArgs (e:argEs) <> ")" else e
+printIndexedAlg vc (VectorFunctionF f e argEs) = Right $ if vc then f <> "(" <> csArgs (e:argEs) <> ")" else e
 printIndexedAlg _ (GroupF ld rd e) = Right $ ld <> e <> rd
 printIndexedAlg _ (ArgsF es) = Right $ csArgs es
 
