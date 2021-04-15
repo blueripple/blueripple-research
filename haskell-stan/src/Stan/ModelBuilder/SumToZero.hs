@@ -17,6 +17,7 @@
 module Stan.ModelBuilder.SumToZero where
 
 import Prelude hiding (All)
+import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 
 sumToZeroFunctions :: SB.StanBuilderM env d r0 ()
@@ -50,15 +51,19 @@ sumToZeroQR :: SB.StanVar -> SB.StanBuilderM env d r0 ()
 sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
   sumToZeroFunctions
   let vDim = SB.dimToText sd
-  SB.inBlock SB.SBTransformedData
-    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
-  SB.inBlock SB.SBParameters
-    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
+  SB.inBlock SB.SBTransformedData $ do
+    let dim = SB.scalar "2" `SB.times` SB.name vDim
+    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" [SB.name vDim]
+--    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
+  SB.inBlock SB.SBParameters $ do
+    let dim = SB.name vDim `SB.minus` SB.scalar "1"
+    SB.stanDeclare (varName <> "_stz") (SB.StanVector $ SB.ExprDim dim) ""
+--    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
   SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS varName st "" $ "sum_to_zero_QR(" <> varName <> "_stz, Q_r_" <> varName <> ")"
+    $ SB.stanDeclareRHS varName st "" $ SB.function "sum_to_zero_QR" [SB.name (varName <> "_stz"), SB.name ("Q_r_" <> varName)]
   SB.inBlock SB.SBModel
-    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
-
+    $ SB.addExprLines "sumToZeroQR" $ [SB.name varName `SB.vectorSample` SD.stdNormal]
+--    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
 sumToZeroQR (SB.StanVar varName _) = SB.stanBuildError $ "Non vector type given to sumToZeroQR (varName=" <> varName <> ")"
 
 softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
@@ -66,7 +71,7 @@ softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBModel $ do
     let expr = SB.function "sum" [SB.name varName] `SB.vectorSample` sumToZeroPrior
-    SB.printExprM "softSumToZero" (SB.fullyIndexedBindings mempty) (return expr) >>= SB.addStanLine
+    SB.addExprLines "softSumToZero" [expr]
 softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
 
 weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
@@ -74,12 +79,13 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector sd)) gn sumToZeroPri
   let dSize = SB.dimToText sd
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBTransformedData $ do
-    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>" ("rep_vector(0," <> dSize <> ")")
+    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>"
+      $ SB.function "rep_vector" [SB.scalar "0", SB.name dSize]
     SB.stanForLoop "n" Nothing dSize $ const $ SB.addStanLine $ varName <> "_weights[" <> gn <> "[n]] += 1"
     SB.addStanLine $ varName <> "_weights /= N"
   SB.inBlock SB.SBModel $ do
     let expr = SB.function "dot_product" [SB.name varName, SB.name $ varName <> "_weights"] `SB.vectorSample` sumToZeroPrior
-    SB.printUnindexedExprM "softSumToZero" expr >>= SB.addStanLine
+    SB.addExprLines "softSumToZero" [expr]
 --    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
 
@@ -88,26 +94,26 @@ data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.
 rescaledSumToZero :: SumToZero -> SB.StanVar ->  SB.StanVar -> SB.StanBuilderM env d r0 ()
 rescaledSumToZero STZNone beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn st) = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (sn <> " * " <> rawName bn)
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.printUnindexedExprM "rescaledSumToZero (No sum)" betaRawPrior >>= SB.addStanLine
+     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
 rescaledSumToZero (STZSoft prior) beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
   softSumToZero (SB.StanVar (rawName bn) bt)  prior
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (sn <> " * " <> rawName bn)
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.printUnindexedExprM "rescaledSumToZero (No sum)" betaRawPrior >>= SB.addStanLine
+     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
 rescaledSumToZero (STZSoftWeighted gV prior) beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
   weightedSoftSumToZero (SB.StanVar (rawName bn) bt)  gV prior
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (sn <> " * " <> rawName bn)
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.printUnindexedExprM "rescaledSumToZero (No sum)" betaRawPrior >>= SB.addStanLine
+     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
 rescaledSumToZero STZQR beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
   sumToZeroQR (SB.StanVar (rawName bn) bt)
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (sn <> " * " <> rawName bn)
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   return ()

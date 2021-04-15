@@ -31,6 +31,7 @@ import qualified Data.Functor.Foldable.TH as Rec
 
 import qualified Data.Fix as Fix
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Data.Text as T
 
 import GHC.Generics (Generic1)
@@ -57,7 +58,22 @@ data StanType = StanInt
               | StanCovMatrix StanDim
               deriving (Show, Eq, Ord, Generic)
 
+data TExpr = TExpr StanExpr StanType deriving (Show, Eq, Ord, Generic)
+
 data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord, Generic)
+
+tExprFromStanVar :: StanVar -> TExpr
+tExprFromStanVar (StanVar sn st) = TExpr (name sn) st
+
+indexTExpr :: TExpr -> StanExpr -> Either Text TExpr
+indexTExpr (TExpr e (StanArray (x : xs) st)) ie =
+  let st' = case xs of
+        [] -> st
+        ds -> StanArray ds st
+  in Right $ TExpr (withIndexes e [ie]) st'
+indexTExpr (TExpr e (StanVector d)) ie = Right $ TExpr (withIndexes e [ie]) StanReal
+indexTExpr (TExpr e (StanMatrix (dr, dc))) ie = Right $ TExpr (withIndexes e [ie]) (StanVector dc)
+indexTExpr te _ = Left $ "Attempt to index non-indexable TExpr: " <> show te
 
 getDims :: StanType -> [StanDim]
 getDims StanInt = []
@@ -69,26 +85,26 @@ getDims (StanCorrMatrix d) = [d]
 getDims (StanCholeskyFactorCorr d) = [d]
 getDims (StanCovMatrix d) = [d]
 
+indexKeys :: StanType -> [StanIndexKey]
+indexKeys = catMaybes . fmap dimToIndexKey . getDims where
+  dimToIndexKey (NamedDim k) = Just k
+  dimToindexKey _ = Nothing
+
 indexesToDExpr :: Text -> [StanDim] -> StanExpr
-indexesToDExpr t dims = go id dims where
+indexesToDExpr t = go id where
   go ef [] = ef (name t)
   go ef (x : xs) = case x of
     NamedDim k -> go (ef . dIndexed k) xs
     GivenDim d -> go (ef . flip withIndexes [name $ show d]) xs
     ExprDim e -> go (ef . flip withIndexes [e]) xs
 
-indexesToUExpr :: Text -> [StanDim] -> StanExpr
-indexesToUExpr t dims = go id dims where
-  go ef [] = ef (name t)
+indexesToUExpr :: StanExpr -> [StanDim] -> StanExpr
+indexesToUExpr ne  = go id where
+  go ef [] = ef ne
   go ef (x : xs) = case x of
     NamedDim k -> go (ef . uIndexed k) xs
     GivenDim d -> go (ef . flip withIndexes [name $ show d]) xs
     ExprDim e -> go (ef . flip withIndexes [e]) xs
-
-
---indexOne :: Text -> StanDim -> StanExpr
---indexOne t (NamedDim k) = dIndexed k (name t)
---indexOne t (GivenDim d) = withIndexes (name t) [name d]
 
 collapseArray :: StanType -> StanType
 collapseArray (StanArray dims st) = case st of
@@ -113,15 +129,15 @@ declarationExpr (StanVar sn st) c = case st of
                         in spaced (declarationPart st c) (indexesToDExpr sn dims)
   _ -> spaced (declarationPart st c) (name sn)
 
-useVarExpr :: StanVar -> StanExpr
-useVarExpr (StanVar sn st) = indexesToUExpr sn dims where
+tExprToExpr :: TExpr -> StanExpr
+tExprToExpr (TExpr ne st) = indexesToUExpr ne dims where
   dims = getDims st
 
 data StanExprF a where
   BareF :: Text -> StanExprF a
   SpacedF :: a -> a -> StanExprF a
   DeclareF :: StanVar -> Text -> StanExprF a
-  UseVarF :: StanVar -> StanExprF a
+  UseTExprF :: TExpr -> StanExprF a
   DIndexedF :: StanIndexKey -> a -> StanExprF a
   UIndexedF :: StanIndexKey -> a -> StanExprF a
   WithIndexesF :: a -> [a] -> StanExprF a
@@ -148,7 +164,10 @@ declareVar :: StanVar -> Text -> StanExpr
 declareVar sv c = Fix.Fix $ DeclareF sv c
 
 useVar :: StanVar -> StanExpr
-useVar = Fix.Fix . UseVarF
+useVar = useTExpr . tExprFromStanVar
+
+useTExpr :: TExpr -> StanExpr
+useTExpr = Fix.Fix . UseTExprF
 
 dIndexed :: StanIndexKey -> StanExpr -> StanExpr
 dIndexed k e = Fix.Fix $ DIndexedF k e
@@ -192,6 +211,9 @@ vectorSample = binOp "~"
 plus ::  StanExpr -> StanExpr -> StanExpr
 plus = binOp "+"
 
+minus ::  StanExpr -> StanExpr -> StanExpr
+minus = binOp "-"
+
 times :: StanExpr -> StanExpr -> StanExpr
 times = binOp "*"
 
@@ -199,38 +221,36 @@ multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
 
 data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
-data VarBindingStore = VarBindingStore { vectorizedIndex :: !(Maybe StanIndexKey)
+data VarBindingStore = VarBindingStore { vectorizedIndexes :: !(Set StanIndexKey)
                                        , useBindings :: Map StanIndexKey StanExpr
                                        , declarationBindings :: Map StanIndexKey StanExpr
                                        }
 
 vectorizingBindings :: StanIndexKey -> Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
-vectorizingBindings vecIndex = VarBindingStore (Just vecIndex)
+vectorizingBindings vecIndex = VarBindingStore (one vecIndex)
 
 fullyIndexedBindings :: Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
-fullyIndexedBindings = VarBindingStore Nothing
+fullyIndexedBindings = VarBindingStore mempty
 
 noBindings :: VarBindingStore
 noBindings = fullyIndexedBindings mempty mempty
 
 lookupUseBinding :: StanIndexKey -> VarBindingStore -> Maybe BindIndex
-lookupUseBinding k (VarBindingStore (Just vk) bm _) =
-  if k == vk then Just NoIndex else IndexE <$> Map.lookup k bm
-lookupUseBinding k (VarBindingStore Nothing bm _) = IndexE <$> Map.lookup k bm
+lookupUseBinding k (VarBindingStore vb bm _) =
+  if Set.member k vb then Just NoIndex else IndexE <$> Map.lookup k bm
 
 lookupDeclarationBinding :: StanIndexKey -> VarBindingStore -> Maybe BindIndex
-lookupDeclarationBinding k (VarBindingStore (Just vk) _ dms) =
-  if k == vk then Just NoIndex else IndexE <$> Map.lookup k dms
-lookupDeclarationBinding k (VarBindingStore _ _ dm) = IndexE <$> Map.lookup k dm
+lookupDeclarationBinding k (VarBindingStore vb _ dms) =
+  if Set.member k vb then Just NoIndex else IndexE <$> Map.lookup k dms
 
 showKeys :: VarBindingStore -> Text
-showKeys (VarBindingStore mvk bms dms) =
-  maybe ("Non-vectorized ") ("Vectorized over " <>) mvk
+showKeys (VarBindingStore vb bms dms) =
+  (if Set.null vb then "Non-vectorized " else  "Vectorized over " <> show vb)
   <> "Substitution keys: " <> show (Map.keys bms)
   <> "Declaration keys: " <> show (Map.keys dms)
 
 vectorized :: VarBindingStore -> Bool
-vectorized (VarBindingStore mvk _ _) = isJust mvk
+vectorized (VarBindingStore vb _ _) = not $ Set.null vb
 
 
 -- this is wild
@@ -254,7 +274,7 @@ bindIndexCoAlg vbs (Fix.Fix (DIndexedF k e)) =
       NoIndex  -> Right $ Fix.unFix e
       IndexE ei -> Right $ WithIndexesF e [ei]
 bindIndexCoAlg vbs (Fix.Fix (DeclareF sv c)) = Right $ Fix.unFix $ declarationExpr sv c
-bindIndexCoAlg vbs (Fix.Fix (UseVarF sv)) = Right $ Fix.unFix $ useVarExpr sv
+bindIndexCoAlg vbs (Fix.Fix (UseTExprF te)) = Right $ Fix.unFix $ tExprToExpr te
 bindIndexCoAlg _ x = Right $ Fix.unFix x
 
 csArgs :: [Text] -> Text
@@ -264,7 +284,7 @@ printIndexedAlg :: Bool -> StanExprF Text -> Either Text Text
 printIndexedAlg _ (BareF t) = Right t
 printIndexedAlg _ (SpacedF l r) = Right $ l <> " " <> r
 printIndexedAlg _ (DeclareF _ _) = Left "Should not call printExpr before expanding declarations"
-printIndexedAlg _ (UseVarF _) = Left "Should not call printExpr before expanding var uses"
+printIndexedAlg _ (UseTExprF _) = Left "Should not call printExpr before expanding var uses"
 printIndexedAlg _ (DIndexedF _ _) = Left "Should not call printExpr before binding declaration indexes"
 printIndexedAlg _ (UIndexedF _ _) = Left "Should not call printExpr before binding use indexes"
 printIndexedAlg _ (WithIndexesF e ies) = Right $ e <> "[" <> csArgs ies <> "]"

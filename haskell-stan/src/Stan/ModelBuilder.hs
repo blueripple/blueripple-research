@@ -365,7 +365,9 @@ addGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
       buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _ _)) = do
         addFixedIntJson' ("N_" <> gName) (Just 2) gSize
-        _ <- addColumnMJson ModeledRowTag gName "" (SME.StanArray [SME.NamedDim "N"] SME.StanInt) "<lower=1>" mIntF
+        _ <- addColumnMJson ModeledRowTag gName "" (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
+        addDeclBinding gName $ SME.name $ "N_" <> gName
+        addUseBinding gName $ SME.uIndexed modeledDataIndexName $ SME.name gName
         return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
@@ -600,6 +602,7 @@ runStanBuilder' userEnv ge toModeled sb = res where
     let f :: (DHash.DSum GroupTypeTag (IndexMap r0)) -> StanBuilderM env d r0 ()
         f (gtt DSum.:=> IndexMap _ _ im) =  addIndexIntMap (ModeledRowTag @r0) gtt im
     traverse_ f $ DHash.toList $ groupIndexByType ge
+    addDeclBinding modeledDataIndexName (name $ "N")
     sb
 
 runStanBuilder :: (Foldable f, Typeable d, Typeable r0)
@@ -628,11 +631,15 @@ getDeclBinding k = do
 
 addDeclBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d r ()
 addDeclBinding k e = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore mvk ubm dbm) = SME.VarBindingStore mvk ubm (Map.insert k e dbm)
+  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore vb ubm (Map.insert k e dbm)
 
 addUseBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d r ()
 addUseBinding k e = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore mvk ubm dbm) = SME.VarBindingStore mvk (Map.insert k e ubm) dbm
+  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore vb (Map.insert k e ubm) dbm
+
+vectorizeIndex :: StanIndexKey -> StanBuilderM env d r ()
+vectorizeIndex k = modify $ modifyIndexBindings f where
+  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore (Set.insert k vb) ubm dbm
 
 indexBindingScope :: StanBuilderM env d r a -> StanBuilderM env d r a
 indexBindingScope x = do
@@ -659,9 +666,21 @@ declare sn st = do
                                  then return False
                                  else stanBuildError $ "Attempt to re-declare \"" <> sn <> "\" with different type. Previous=" <> show st' <> "; new=" <> show st
 
-stanDeclare' :: SME.StanName -> SME.StanType -> Text -> Maybe Text -> StanBuilderM env d r SME.StanVar
+stanDeclare' :: SME.StanName -> SME.StanType -> Text -> Maybe StanExpr -> StanBuilderM env d r SME.StanVar
 stanDeclare' sn st sc mRHS = do
   isNew <- declare sn st
+  let sv = SME.StanVar sn st
+      lhs = declareVar sv sc
+  _ <- if isNew
+    then case mRHS of
+           Nothing -> addExprLines "stanDeclare'" [lhs]
+           Just rhs -> addExprLines "stanDeclare'" $ [lhs `SME.eq` rhs]
+    else case mRHS of
+           Nothing -> return ()
+           Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
+  return sv
+
+{-
   let dimsToText x = "[" <> T.intercalate ", " (SME.dimToText <$> x) <> "]"
   let typeToCode :: SME.StanName -> SME.StanType -> Text -> Text
       typeToCode sn st sc = case st of
@@ -683,10 +702,13 @@ stanDeclare' sn st sc mRHS = do
         SME.StanCovMatrix d -> [d]
         SME.StanArray dims st' -> dimsToCheck st' ++ dims
         _ -> []
+
+
   let checkDim d = case d of
         SME.NamedDim t -> checkName t
         SME.GivenDim _ -> return ()
   traverse_ checkDim $ dimsToCheck st
+
   _ <- if isNew
     then case mRHS of
            Nothing -> addStanLine $ typeToCode sn st sc
@@ -694,12 +716,12 @@ stanDeclare' sn st sc mRHS = do
     else case mRHS of
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
-  return $ SME.StanVar sn st
+-}
 
 stanDeclare :: SME.StanName -> SME.StanType -> Text -> StanBuilderM env d r0 SME.StanVar
 stanDeclare sn st sc = stanDeclare' sn st sc Nothing
 
-stanDeclareRHS :: SME.StanName -> SME.StanType -> Text -> Text -> StanBuilderM env d r0 SME.StanVar
+stanDeclareRHS :: SME.StanName -> SME.StanType -> Text -> SME.StanExpr -> StanBuilderM env d r0 SME.StanVar
 stanDeclareRHS sn st sc rhs = stanDeclare' sn st sc (Just rhs)
 
 checkName :: SME.StanName -> StanBuilderM env d r0 ()
@@ -751,17 +773,22 @@ addJsonUnchecked rtt name st sc fld = do
     else return $ SME.StanVar name st
 
 addFixedIntJson :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 SME.StanVar
-addFixedIntJson name mLower n = addJson (ModeledRowTag @r0) name SME.StanInt sc (Stan.constDataF name n) where
-  sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
+addFixedIntJson name mLower n = do
+  let sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
+  addJson (ModeledRowTag @r0) name SME.StanInt sc (Stan.constDataF name n) where
 
 addFixedIntJson' :: forall r0 d env. (Typeable r0, Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d r0 SME.StanVar
-addFixedIntJson' name mLower n = addJsonUnchecked (ModeledRowTag @r0) name SME.StanInt sc (Stan.constDataF name n) where
-  sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
+addFixedIntJson' name mLower n = do
+  let sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
+  addJsonUnchecked (ModeledRowTag @r0) name SME.StanInt sc (Stan.constDataF name n) where
+
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> StanBuilderM env d r0 SME.StanVar
-addLengthJson rtt name = addJsonUnchecked rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
+addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> SME.StanIndexKey -> StanBuilderM env d r0 SME.StanVar
+addLengthJson rtt name iKey = do
+  addDeclBinding iKey (SME.name name)
+  addJsonUnchecked rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: SME.StanName -> Text -> Text
 nameSuffixMsg n s = "name=\"" <> show n <> "\" suffix=\"" <> s <> "\""
@@ -778,7 +805,7 @@ addColumnJson rtt name suffix st sc toX = do
     SME.StanInt -> stanBuildError $ "SME.StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
     SME.StanReal -> stanBuildError $ "SME.StanReal (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
     _ -> return ()
-  addLengthJson rtt ("N" <> underscoredIf suffix)
+  addLengthJson rtt ("N" <> underscoredIf suffix) suffix -- ??
   let fullName = name <> underscoredIf suffix
   addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
 
@@ -795,10 +822,9 @@ addColumnMJson rtt name suffix st sc toMX = do
     SME.StanInt -> stanBuildError $ "SME.StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
     SME.StanReal -> stanBuildError $ "SME.StanReal (scalar) given as type in addColumnJson. " <> nameSuffixMsg name suffix
     _ -> return ()
-  addLengthJson rtt ("N" <> underscoredIf suffix)
+  addLengthJson rtt ("N" <> underscoredIf suffix) suffix -- ??
   let fullName = name <> underscoredIf suffix
   addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayEF toMX)
-
 
 add2dMatrixJson :: (Typeable d, Typeable r0)
                 => RowTypeTag r
@@ -811,6 +837,7 @@ add2dMatrixJson :: (Typeable d, Typeable r0)
 add2dMatrixJson rtt name suffix sc rowDim cols vecF = do
   let colName = "K" <> underscoredIf suffix
   addFixedIntJson colName Nothing cols
+  addDeclBinding (name <> underscoredIf suffix <> "_Cols") (SME.name colName)
   addColumnJson rtt name suffix (SME.StanMatrix (rowDim, SME.NamedDim colName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d r -> BuilderState d r
@@ -934,7 +961,10 @@ printExprM context e = do
   vbs <- indexBindings <$> get
   case SME.printExpr vbs e of
     Right t -> return t
-    Left err -> stanBuildError err
+    Left err -> stanBuildError $ context <> ": " <> err
+
+addExprLines :: Traversable t => Text -> t SME.StanExpr -> StanBuilderM env d r ()
+addExprLines context = traverse_ (printExprM context >=> addLine)
 
 --printUnindexedExprM :: Text -> SME.StanExpr -> StanBuilderM env d r Text
 --printUnindexedExprM ctxt = printExprM ctxt SME.noBindings . return
