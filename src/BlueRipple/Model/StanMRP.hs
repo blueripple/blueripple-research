@@ -78,7 +78,7 @@ buildDataWranglerAndCode groupM env builderM d (SB.ToFoldable toFoldable) =
           $ SC.Wrangle SC.TransientIndex
           $ \d -> (SB.buildIntMaps rowBuilders intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable env groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ _ c _, dw) -> (dw, c)) resE
+  in fmap (\(SB.BuilderState _ _ _ _ c _, dw) -> (dw, c)) resE
 
 
 runMRPModel :: (K.KnitEffects r
@@ -162,23 +162,25 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = "eps_" <> gn
-        let e' = SB.indexed gn
+        let e' = SB.uIndexed gn
                  $ SB.bracket
                  $ SB.args [SB.name en, SB.name $ "-" <> en]
             modelTerm = SB.vectorFunction "to_vector" e' []
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $ do
           let priorE = SB.name en `SB.vectorSample` binaryPrior
-          SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return priorE) >>= SB.addStanLine
+          SB.addExprLine "intercept" priorE
+--          SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return priorE) >>= SB.addStanLine
         return modelTerm
   let nonBinaryGroup = do
         let gs t = t <> "_" <> gn
-            modelTerm = SB.indexed gn $ SB.name $ gs "beta"
+            modelTerm = SB.uIndexed gn $ SB.name $ gs "beta"
         sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
         SB.inBlock SB.SBModel $ do
-          let sigmaPriorLine = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
-          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
-        let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim $ gs "N")
+          let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
+          SB.addExprLine "addMRGroup" sigmaPriorE
+--          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
+        let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim gn)
         SB.rescaledSumToZero stz betaVar sigmaVar
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
@@ -199,26 +201,30 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
         sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
-        let epsVar = SB.StanVar (suffixed "eps") (SB.StanVector $ SB.NamedDim ("N_" <> pooledGN))
+        let epsVar = SB.StanVar (suffixed "eps") (SB.StanVector $ SB.NamedDim pooledGN)
         SB.inBlock SB.SBModel $ do
           let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
-          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
+          SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
+--          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
         SB.rescaledSumToZero stz epsVar sigmaVar
-        yVar <- SB.inBlock SB.SBTransformedParameters $ do
-          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
-          SB.stanForLoop "n" Nothing "N"
-            $ const
-            $ SB.addStanLine
-            $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
-          return yv
-        let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
-            epsE =  SB.indexed nonPooledGN
-                    $ SB.bracket
-                    $ SB.args [SB.indexed pooledGN $ SB.name $ suffixed "eps"
-                              ,SB.indexed pooledGN $ SB.name $ suffixed "-eps"
-                              ]
+        (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
+          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
+          let yE = SB.useVar yv --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+              epsE =  SB.uIndexed nonPooledGN
+                      $ SB.bracket
+                      $ SB.args [SB.uIndexed pooledGN $ SB.name $ suffixed "eps"
+                                ,SB.uIndexed pooledGN $ SB.name $ suffixed "-eps"
+                                ]
+          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
+--            $ const
+--            $ SB.addStanLine
+--            $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
+          return (yE, epsE)
+
         return (yE, epsE)
-      nonPooledNonBinary = do
+      nonPooledNonBinary = undefined
+{-
+        do
         let npGS = "N_" <> nonPooledGN
             pGS = "N_" <> pooledGN
         (sigmaV, lcorrV) <- SB.inBlock SB.SBParameters $ do
@@ -241,6 +247,7 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
         let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
             betaE =  SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
         return (yE, betaE)
+-}
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
 
 
@@ -264,17 +271,17 @@ addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
 addFixedEffects thinQR fePrior rtt (FixedEffects n vecF) = do
   let suffix = SB.dsSuffix rtt
       uSuffix = SB.underscoredIf suffix
-  SB.add2dMatrixJson rtt "X" suffix "" (SB.NamedDim $ "N" <> uSuffix) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) ("N" <> uSuffix) ("K" <> uSuffix) -- code for parameters and transformed parameters
+  SB.add2dMatrixJson rtt "X" (Just suffix) "" (SB.NamedDim $ SB.dsName rtt) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) (SB.dsName rtt) ("X_" <> SB.dsName rtt <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
-    SB.printExprM "addFixedEffects" (SB.fullyIndexedBindings mempty) (return e) >>= SB.addStanLine
+    SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = if T.null suffix then SB.indexed (SB.dsName rtt) $ SB.name "Q_ast" else SB.indexed suffix $ SB.name ("Q" <> uSuffix <> "_ast")
+  let eQ = if T.null suffix then SB.uIndexed (SB.dsName rtt) $ SB.name "Q_ast" else SB.uIndexed (SB.dsName rtt) $ SB.name ("Q" <> uSuffix <> "_ast")
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
-      eX = if T.null suffix then SB.indexed (SB.dsName rtt) $ SB.name "centered_X" else SB.indexed suffix $ SB.name ("centered_X" <> uSuffix)
+      eX = if T.null suffix then SB.uIndexed (SB.dsName rtt) $ SB.name "centered_X" else SB.uIndexed (SB.dsName rtt) $ SB.name ("centered_X" <> uSuffix)
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
@@ -343,8 +350,8 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _ _)) -> (1,n)) $ DHash.toList usedGroups
-      groupDims = fmap (\gn -> SB.NamedDim $ "N_" <> gn) ugNames
-      weightArrayType = SB.StanArray [SB.NamedDim sizeName] $ SB.StanArray groupDims SB.StanReal
+      groupDims = fmap SB.NamedDim ugNames
+      weightArrayType = SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int])
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
@@ -380,27 +387,27 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
     $ fmap A.toJSON fldM
   SB.inBlock SB.SBGeneratedQuantities $ do
     let groupCounters = fmap ("n_" <>) $ ugNames
-        indexBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
-        (indexBindings, innerLoopNames) = case mPSGroup of
-          Nothing ->  (indexBindings', Map.keys indexBindings')
-          Just (SB.GroupTypeTag gn) -> (Map.insert gn (SB.name "n") indexBindings', Map.keys $ Map.delete gn indexBindings')
-        bindingStore = SB.fullyIndexedBindings indexBindings
+--        indexBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
+        innerLoopNames = case mPSGroup of
+          Nothing -> ugNames -- (indexBindings', Map.keys indexBindings')
+          Just (SB.GroupTypeTag gn) -> List.filter (/= gn) ugNames --(Map.insert gn (SB.name "n") indexBindings', Map.keys $ Map.delete gn indexBindings')
+--        bindingStore = SB.fullyIndexedBindings indexBindings
         inner = do
           let psExpE = SB.familyExp sDist dsName args
-          expCode <- SB.printExprM "mrpPSStanCode" bindingStore $ return psExpE
-          SB.stanDeclareRHS ("p" <> namedPS) SB.StanReal "" expCode
+--          expCode <- SB.printExprM "mrpPSStanCode" psExpE
+          SB.stanDeclareRHS ("p" {-<> namedPS-}) SB.StanReal "" psExpE --expCode
           when (psType == PSShare)
             $ SB.addStanLine
             $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
           SB.addStanLine
             $ namedPS <> "[n] += p" <> namedPS <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
-        makeLoops (x : xs) = SB.stanForLoop ("n_" <> x) Nothing ("N_" <> x) $ const $ makeLoops xs
-    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim sizeName) "" $ "rep_vector(0, " <> sizeName  <> ")"
+        makeLoops (x : xs) = SB.stanForLoopB ("n_" <> x) Nothing x $ makeLoops xs
+    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim sizeName) "" $ SB.function "rep_vector" [SB.scalar "0", SB.name sizeName]
 --    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
-    SB.stanForLoop "n" Nothing sizeName $ const $ do
+    SB.stanForLoopB "n" Nothing sizeName $ do
       let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" "0" >> return ())
+      when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" (SB.scalar "0") >> return ())
       makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
     return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim sizeName)

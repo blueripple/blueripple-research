@@ -25,26 +25,24 @@ import qualified Data.Map as Map
 
 addIntData :: (Typeable d, Typeable r0)
            => SME.StanName
-           -> SME.StanName
            -> Maybe Int
            -> Maybe Int
            -> (r0 -> Int)
            -> SB.StanBuilderM env d r0 SME.StanVar
-addIntData varName dimName mLower mUpper f = do
-  let stanType =  SB.StanArray [SB.NamedDim dimName] SME.StanInt
+addIntData varName mLower mUpper f = do
+  let stanType =  SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SME.StanInt
       bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
                  (Just l, Nothing) -> "<lower=" <> show l <> ">"
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.addColumnJson SB.ModeledRowTag varName "" stanType bounds f
+  SB.addColumnJson SB.ModeledRowTag varName Nothing stanType bounds f
 
 addCountData :: forall r0 d env.(Typeable d, Typeable r0)
              => SME.StanName
-             -> SME.StanName
              -> (r0 -> Int)
              -> SB.StanBuilderM env d r0 SME.StanVar
-addCountData varName dimName f = addIntData varName dimName (Just 0) Nothing f
+addCountData varName f = addIntData varName (Just 0) Nothing f
 
 intercept :: forall env r d. (Typeable d, Typeable r) => Text -> SME.StanExpr -> SB.StanBuilderM env r d SB.StanExpr
 intercept iName alphaPriorE = do
@@ -91,27 +89,27 @@ generatePosteriorPrediction (SME.StanVar ppName ppType) sDist args = SB.inBlock 
 --  rngCode <- SB.printExprM "posterior prediction (in Generated Quantities)" rngE
   SB.stanDeclareRHS ppName ppType "" rngE
 
-fixedEffectsQR :: Text -> Text -> Text -> Text -> SB.StanBuilderM env d r SME.StanVar
-fixedEffectsQR thinSuffix matrix rows cols = do
+fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanVar
+fixedEffectsQR thinSuffix matrix rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
       r = "R" <> thinSuffix <> "_ast"
-      qMatrixType = SME.StanMatrix (SME.NamedDim rows, SME.NamedDim cols)
-  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim cols) "" --addStanLine $ "vector[" <> cols <> "] theta" <> matrix
+      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
+  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
   SB.inBlock SB.SBTransformedData $ do
-    SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim cols)) ""
-    SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rows, SME.NamedDim cols)) ""
-    SB.stanForLoopB "k" Nothing cols $ do
+    SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
+    SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
+    SB.stanForLoopB "k" Nothing colKey $ do
       SB.addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
       SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
     SB.stanDeclare q qMatrixType ""
-    SB.stanDeclare r (SME.StanMatrix (SME.NamedDim cols, SME.NamedDim cols)) ""
-    SB.stanDeclare ri (SME.StanMatrix (SME.NamedDim cols, SME.NamedDim cols)) ""
-    SB.addStanLine $ q <> " = qr_thin_Q(centered_" <> matrix <> ") * sqrt(" <> rows <> " - 1)"
-    SB.addStanLine $ r <> " = qr_thin_R(centered_" <> matrix <> ") / sqrt(" <> rows <> " - 1)"
+    SB.stanDeclare r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) ""
+    SB.stanDeclare ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) ""
+    SB.addStanLine $ q <> " = qr_thin_Q(centered_" <> matrix <> ") * sqrt(size(" <> matrix <> ") - 1)"
+    SB.addStanLine $ r <> " = qr_thin_R(centered_" <> matrix <> ") / sqrt(size(" <> matrix <> ") - 1)"
     SB.addStanLine $ ri <> " = inverse(" <> r <> ")"
   SB.inBlock SB.SBTransformedParameters $ do
-    SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim cols) ""
+    SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
   let qMatrix = SME.StanVar q qMatrixType
   return qMatrix

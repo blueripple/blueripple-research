@@ -238,8 +238,8 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                          -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF = do
         cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-        vTotal <- SB.addCountData "T" "N" totalF
-        vSucc <- SB.addCountData "S" "N" succF
+        vTotal <- SB.addCountData "T" totalF
+        vSucc <- SB.addCountData "S"  succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 1
             sigmaPrior = normal 1
@@ -334,8 +334,8 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                          -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF = do
         cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-        vTotal <- SB.addCountData "T" "N" totalF
-        vSucc <- SB.addCountData "S" "N" succF
+        vTotal <- SB.addCountData "T" totalF
+        vSucc <- SB.addCountData "S" succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
             sigmaPrior = normal 2
@@ -385,9 +385,9 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
 
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
-          SB.stanDeclareRHS "rtDiffWI" psType "" (whiteWI <> " - " <> nonWhiteWI)
-          SB.stanDeclareRHS "rtDiffNI" psType "" (whiteNI <> " - " <> nonWhiteNI)
-          SB.stanDeclareRHS "rtDiffI" psType "" "rtDiffWI - rtDiffNI"
+          SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
+          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
+          SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
 
         return ()
 
