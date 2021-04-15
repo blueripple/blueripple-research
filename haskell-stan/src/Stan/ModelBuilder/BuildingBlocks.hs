@@ -49,7 +49,7 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   let alphaE = SB.name iName
       interceptE = alphaE `SME.vectorSample` alphaPriorE
-  SB.inBlock SB.SBModel $ SB.addExprLines "intercept" [interceptE]
+  SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return alphaE
 
 sampleDistV :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
@@ -58,9 +58,7 @@ sampleDistV sDist args =  SB.inBlock SB.SBModel $ do
 --  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap
 --      bindingStore = SME.vectorizingBindings SB.modeledDataIndexName indexBindings
   let samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
-  SB.indexBindingScope $ do
-    SB.vectorizeIndex SB.modeledDataIndexName
-    SB.addExprLines "sampleDistV" [samplingE]
+  SB.indexBindingScope $ SB.addExprLine "sampleDistV" $ SME.vectorizedOne SB.modeledDataIndexName  samplingE
 {-
   samplingCode <- SB.printExprM "mrpModelBlock" bindingStore $ return samplingE
   SB.addStanLine samplingCode
@@ -69,14 +67,15 @@ sampleDistV sDist args =  SB.inBlock SB.SBModel $ do
 generateLogLikelihood :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
 generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
 --  indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
-  SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim SB.modeledDataIndexName) ""
+  let dim = SME.NamedDim SB.modeledDataIndexName
+  SB.stanDeclare "log_lik" (SME.StanVector dim) ""
   SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ do
 --    let indexBindings  = Map.insert SB.modeledDataIndexName (SME.name "n") $ Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap -- we need to index the groups.
 --        bindingStore = SME.fullyIndexedBindings indexBindings
-    let lhsE = SME.uIndexed SB.modeledDataIndexName $ SME.name "log_lik"
+    let lhsE = SME.withIndexes (SME.name "log_lik") $ SME.indexesToUExprs [dim]
         rhsE = SMD.familyLDF sDist SB.modeledDataIndexName args
         llE = lhsE `SME.eq` rhsE
-    SB.addExprLines "log likelihood (in Generated Quantitites)" [llE]
+    SB.addExprLine "log likelihood (in Generated Quantitites)" llE
 --    llCode <- SB.printExprM "log likelihood (in Generated Quantitites)" bindingStore $ return llE
 --    SB.addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 

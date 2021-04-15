@@ -367,7 +367,7 @@ addGroupIndexes = do
         addFixedIntJson' ("J_" <> gName) (Just 2) gSize
         _ <- addColumnMJson ModeledRowTag gName Nothing (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.name $ "J_" <> gName
-        addUseBinding gName $ SME.uIndexed modeledDataIndexName $ SME.name gName
+        addUseBinding gName $ SME.name gName
         return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
@@ -624,22 +624,18 @@ stanBuildEither = either stanBuildError return
 
 getDeclBinding :: StanIndexKey -> StanBuilderM env d r SME.StanExpr
 getDeclBinding k = do
-  SME.VarBindingStore _ _ dbm <- indexBindings <$> get
+  SME.VarBindingStore _ dbm <- indexBindings <$> get
   case Map.lookup k dbm of
     Nothing -> stanBuildError $ "declaration key (\"" <> k <> "\") not in binding store."
     Just e -> return e
 
 addDeclBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d r ()
 addDeclBinding k e = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore vb ubm (Map.insert k e dbm)
+  f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore ubm (Map.insert k e dbm)
 
 addUseBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d r ()
 addUseBinding k e = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore vb (Map.insert k e ubm) dbm
-
-vectorizeIndex :: StanIndexKey -> StanBuilderM env d r ()
-vectorizeIndex k = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore vb ubm dbm) = SME.VarBindingStore (Set.insert k vb) ubm dbm
+  f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore (Map.insert k e ubm) dbm
 
 indexBindingScope :: StanBuilderM env d r a -> StanBuilderM env d r a
 indexBindingScope x = do
@@ -673,8 +669,8 @@ stanDeclare' sn st sc mRHS = do
       lhs = declareVar sv sc
   _ <- if isNew
     then case mRHS of
-           Nothing -> addExprLines "stanDeclare'" [lhs]
-           Just rhs -> addExprLines "stanDeclare'" $ [lhs `SME.eq` rhs]
+           Nothing -> addExprLine "stanDeclare'" lhs
+           Just rhs -> addExprLine "stanDeclare'" $ lhs `SME.eq` rhs
     else case mRHS of
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
@@ -969,7 +965,7 @@ printExprM context e = do
     Left err -> stanBuildError $ context <> ": " <> err
 
 addExprLine :: Text -> SME.StanExpr -> StanBuilderM env d r ()
-addExprLine context = printExprM context >=> addLine
+addExprLine context = printExprM context >=> addStanLine
 
 addExprLines :: Traversable t => Text -> t SME.StanExpr -> StanBuilderM env d r ()
 addExprLines context = traverse_ (addExprLine context)

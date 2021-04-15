@@ -53,14 +53,14 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
   let vDim = SB.dimToText sd
   SB.inBlock SB.SBTransformedData $ do
     let dim = SB.scalar "2" `SB.times` SB.name vDim
-    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" [SB.name vDim]
+    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" (one $ SB.name vDim)
 --    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
   SB.inBlock SB.SBParameters $ do
     let dim = SB.name vDim `SB.minus` SB.scalar "1"
     SB.stanDeclare (varName <> "_stz") (SB.StanVector $ SB.ExprDim dim) ""
 --    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
   SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS varName st "" $ SB.function "sum_to_zero_QR" [SB.name (varName <> "_stz"), SB.name ("Q_r_" <> varName)]
+    $ SB.stanDeclareRHS varName st "" $ SB.function "sum_to_zero_QR" (SB.name (varName <> "_stz") :| [SB.name ("Q_r_" <> varName)])
   SB.inBlock SB.SBModel
     $ SB.addExprLines "sumToZeroQR" $ [SB.name varName `SB.vectorSample` SD.stdNormal]
 --    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
@@ -70,7 +70,7 @@ softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
 softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBModel $ do
-    let expr = SB.function "sum" [SB.name varName] `SB.vectorSample` sumToZeroPrior
+    let expr = SB.function "sum" (one $ SB.name varName) `SB.vectorSample` sumToZeroPrior
     SB.addExprLines "softSumToZero" [expr]
 softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
 
@@ -80,11 +80,11 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector sd)) gn sumToZeroPri
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBTransformedData $ do
     SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>"
-      $ SB.function "rep_vector" [SB.scalar "0", SB.name dSize]
+      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name dSize])
     SB.stanForLoop "n" Nothing dSize $ const $ SB.addStanLine $ varName <> "_weights[" <> gn <> "[n]] += 1"
     SB.addStanLine $ varName <> "_weights /= N"
   SB.inBlock SB.SBModel $ do
-    let expr = SB.function "dot_product" [SB.name varName, SB.name $ varName <> "_weights"] `SB.vectorSample` sumToZeroPrior
+    let expr = SB.function "dot_product" (SB.name varName :| [SB.name $ varName <> "_weights"]) `SB.vectorSample` sumToZeroPrior
     SB.addExprLines "softSumToZero" [expr]
 --    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"

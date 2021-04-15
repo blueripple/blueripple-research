@@ -162,9 +162,9 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = "eps_" <> gn
-        let e' = SB.uIndexed gn
-                 $ SB.bracket
-                 $ SB.args [SB.name en, SB.name $ "-" <> en]
+            be = SB.bracket
+                 $ SB.csExprs (SB.name en :| [SB.name $ "-" <> en])
+        let e' = SB.uIndexBy be $ SB.indexesToUExprs [SB.NamedDim gn]
             modelTerm = SB.vectorFunction "to_vector" e' []
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $ do
@@ -174,7 +174,7 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
         return modelTerm
   let nonBinaryGroup = do
         let gs t = t <> "_" <> gn
-            modelTerm = SB.uIndexed gn $ SB.name $ gs "beta"
+            modelTerm = SB.withIndexes (SB.name $ gs "beta") $ SB.indexesToUExprs [SB.NamedDim gn] --SB.uIndexed gn $
         sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
         SB.inBlock SB.SBModel $ do
           let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
@@ -210,11 +210,11 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
         (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
           let yE = SB.useVar yv --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
-              epsE =  SB.uIndexed nonPooledGN
-                      $ SB.bracket
-                      $ SB.args [SB.uIndexed pooledGN $ SB.name $ suffixed "eps"
-                                ,SB.uIndexed pooledGN $ SB.name $ suffixed "-eps"
-                                ]
+              be = SB.bracket
+                   $ SB.csExprs (SB.uIndexed pooledGN $ SB.name $ suffixed "eps" :|
+                                  [SB.uIndexed pooledGN $ SB.name $ suffixed "-eps"]
+                                )
+              epsE =  SB.withIndexes be $ SB.indexesToUExprs [SB.NamedDim nonPooledGN]
           SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
 --            $ const
 --            $ SB.addStanLine

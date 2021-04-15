@@ -261,9 +261,9 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 --        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
 --        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
-        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
+--        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gAgeE, gEduE, gRaceE, gStateE, gRaceStateEV]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gAgeE, gEduE, gRaceE, gStateE] --, gRaceStateEV]
         SB.sampleDistV dist logitPE
         SB.generateLogLikelihood dist logitPE
         return ()
