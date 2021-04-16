@@ -254,11 +254,11 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
 --              eBeta = SB.vectorizedOne nonPooledGN
 --                      $ SB.useVar betaV `SB.vectorSample` eMNC
           SB.addExprLines "addNestedMRGroup (NB.Model)" [eSigma]
-{-          SB.stanForLoopB ("j" <> nonPooledGN) Nothing nonPooledGN
+          SB.stanForLoopB ("j" <> nonPooledGN) Nothing nonPooledGN
             $ SB.addExprLine "nestedMRGroup (NB.BetaLoop)"
             $ SB.vectorizedOne pooledGN
-            $ SB.useVar betaV `SB.vectorSample` eMNC
--}
+            $ SB.useVar betaRawV `SB.vectorSample` SB.stdNormal
+
 --        SB.rescaledSumToZero SB.STZNone betaVar sigmaV  -- FIX, we can't sum to zero along cols or rows.
         let yE = SB.useVar yV --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
             betaE =  SB.useVar betaV --SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
