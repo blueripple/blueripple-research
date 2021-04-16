@@ -367,7 +367,7 @@ addGroupIndexes = do
         addFixedIntJson' ("J_" <> gName) (Just 2) gSize
         _ <- addColumnMJson ModeledRowTag gName Nothing (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.name $ "J_" <> gName
-        addUseBinding gName $ SME.name gName
+        addUseBinding gName $ SME.indexBy (SME.name gName) modeledDataIndexName
         return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
@@ -670,7 +670,7 @@ stanDeclare' sn st sc mRHS = do
   _ <- if isNew
     then case mRHS of
            Nothing -> addExprLine "stanDeclare'" lhs
-           Just rhs -> addExprLine "stanDeclare'" $ lhs `SME.eq` rhs
+           Just rhs -> addExprLine "stanDeclare'" (SME.declaration $ lhs `SME.eq` rhs)
     else case mRHS of
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
@@ -928,7 +928,7 @@ stanForLoopB counter mStartE k x = do
              $ SME.spaced
              (SME.spaced (SME.name counter) (SME.name "in"))
              (SME.binOp ":" start endE)
-  printExprM "forLoopB" forE
+  printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
     addUseBinding k (SME.name counter)
     bracketed 2 x

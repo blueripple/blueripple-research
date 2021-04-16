@@ -52,11 +52,11 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
   sumToZeroFunctions
   let vDim = SB.dimToText sd
   SB.inBlock SB.SBTransformedData $ do
-    let dim = SB.scalar "2" `SB.times` SB.name vDim
-    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" (one $ SB.name vDim)
+    let dim = SB.scalar "2" `SB.times` SB.stanDimToExpr sd
+    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" (one $ SB.stanDimToExpr sd)
 --    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
   SB.inBlock SB.SBParameters $ do
-    let dim = SB.name vDim `SB.minus` SB.scalar "1"
+    let dim = SB.stanDimToExpr sd `SB.minus` SB.scalar "1"
     SB.stanDeclare (varName <> "_stz") (SB.StanVector $ SB.ExprDim dim) ""
 --    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
   SB.inBlock SB.SBTransformedParameters
@@ -80,7 +80,7 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector sd)) gn sumToZeroPri
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBTransformedData $ do
     SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>"
-      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name dSize])
+      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr sd])
     SB.stanForLoop "n" Nothing dSize $ const $ SB.addStanLine $ varName <> "_weights[" <> gn <> "[n]] += 1"
     SB.addStanLine $ varName <> "_weights /= N"
   SB.inBlock SB.SBModel $ do

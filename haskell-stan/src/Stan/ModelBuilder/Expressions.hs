@@ -92,18 +92,21 @@ indexKeys = catMaybes . fmap dimToIndexKey . getDims where
   dimToIndexKey (NamedDim k) = Just k
   dimToindexKey _ = Nothing
 
-indexesToDExprs :: [StanDim] -> [(Maybe StanIndexKey, StanExpr)]
-indexesToDExprs = fmap go  where
-  go (NamedDim k) = (Just k, dIndex k)
-  go (GivenDim n) = (Nothing, name $ show n)
-  go (ExprDim e) = (Nothing, e)
+stanDimToExpr :: StanDim -> StanExpr
+stanDimToExpr (NamedDim k) = index k
+stanDimToExpr (GivenDim n) = name $ show n
+stanDimToExpr (ExprDim e) = e
 
+indexesToExprs :: [StanDim] -> [StanExpr]
+indexesToExprs = fmap stanDimToExpr
+
+{-
 indexesToUExprs :: [StanDim] -> [(Maybe StanIndexKey, StanExpr)]
 indexesToUExprs = fmap go  where
   go (NamedDim k) = (Just k, uIndex k)
   go (GivenDim n) = (Nothing, name $ show n)
   go (ExprDim e) = (Nothing, e)
-
+-}
 
 collapseArray :: StanType -> StanType
 collapseArray (StanArray dims st) = case st of
@@ -115,21 +118,21 @@ declarationPart :: StanType -> Text -> StanExpr
 declarationPart  st c = case st of
   StanInt -> name $ "int" <> c
   StanReal -> name $ "real" <> c
-  StanVector dim -> withIndexes (name $ "vector" <> c) $ indexesToDExprs [dim]
-  StanCorrMatrix dim -> withIndexes (name "corr_matrix") $ indexesToDExprs [dim]
-  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") $ indexesToDExprs [dim]
-  StanCovMatrix dim -> withIndexes (name "cov_matrix") $ indexesToDExprs  [dim]
-  StanMatrix (d1, d2) -> withIndexes (name $ "matrix" <> c) $ indexesToDExprs [d1, d2]
+  StanVector dim -> withIndexes (name $ "vector" <> c) [dim]
+  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
+  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
+  StanCovMatrix dim -> withIndexes (name "cov_matrix") [dim]
+  StanMatrix (d1, d2) -> withIndexes (name $ "matrix" <> c) [d1, d2]
   StanArray dims st -> declarationPart st c
 
 declarationExpr :: StanVar -> Text -> StanExpr
 declarationExpr (StanVar sn st) c = case st of
   sa@(StanArray _ _) -> let (StanArray dims st) = collapseArray sa
-                        in spaced (declarationPart st c) (withIndexes (name sn) $ indexesToDExprs dims)
+                        in spaced (declarationPart st c) (withIndexes (name sn) dims)
   _ -> spaced (declarationPart st c) (name sn)
 
 tExprToExpr :: TExpr -> StanExpr
-tExprToExpr (TExpr ne st) = withIndexes ne $ indexesToUExprs dims where
+tExprToExpr (TExpr ne st) = withIndexes ne dims where
   dims = getDims st
 
 --data IndexedExpr = Keyed StanIndex
@@ -138,13 +141,14 @@ data StanExprF a where
   NullF :: StanExprF a
   BareF :: Text -> StanExprF a
   NextToF :: a -> a -> StanExprF a
-  DeclareF :: StanVar -> Text -> StanExprF a
+--  DeclareF :: StanVar -> Text -> StanExprF a
+  DeclCtxtF :: a -> StanExprF a
   UseTExprF :: TExpr -> StanExprF a
-  DIndexF :: StanIndexKey -> StanExprF a -- pre-lookup
-  UIndexF :: StanIndexKey -> StanExprF a -- pre-lookup
+  IndexF :: StanIndexKey -> StanExprF a -- pre-lookup
+--  UIndexF :: StanIndexKey -> StanExprF a -- pre-lookup
 --  IndexedF :: StanIndexKey -> a -> StanExprF a -- post-lookup
   VectorizedF :: Set StanIndexKey -> a -> StanExprF a
-  IndexesF :: [(Maybe StanIndexKey, a)] -> StanExprF a
+  IndexesF :: [StanDim] -> StanExprF a
 --  NextToF :: Text -> a -> a -> StanExprF a
 --  FunctionF :: Text -> [a] -> StanExprF a
   VectorFunctionF :: Text -> a -> [a] -> StanExprF a -- function to add when the context is vectorized
@@ -173,8 +177,11 @@ nextTo le re = Fix.Fix $ NextToF le re
 spaced :: StanExpr -> StanExpr -> StanExpr
 spaced le re = le `nextTo` bare " " `nextTo` re
 
+declaration :: StanExpr -> StanExpr
+declaration = Fix.Fix . DeclCtxtF
+
 declareVar :: StanVar -> Text -> StanExpr
-declareVar sv c = Fix.Fix $ DeclareF sv c
+declareVar sv c = Fix.Fix $ DeclCtxtF $ declarationExpr sv c
 
 useVar :: StanVar -> StanExpr
 useVar = useTExpr . tExprFromStanVar
@@ -182,11 +189,8 @@ useVar = useTExpr . tExprFromStanVar
 useTExpr :: TExpr -> StanExpr
 useTExpr = Fix.Fix . UseTExprF
 
-dIndex :: StanIndexKey -> StanExpr
-dIndex k = Fix.Fix $ DIndexF k
-
-uIndex :: StanIndexKey -> StanExpr
-uIndex k = Fix.Fix $ UIndexF k
+index :: StanIndexKey -> StanExpr
+index k = Fix.Fix $ IndexF k
 
 vectorized :: Set StanIndexKey -> StanExpr -> StanExpr
 vectorized ks = Fix.Fix . VectorizedF ks
@@ -194,13 +198,13 @@ vectorized ks = Fix.Fix . VectorizedF ks
 vectorizedOne :: StanIndexKey -> StanExpr -> StanExpr
 vectorizedOne k = vectorized (one k)
 
-uIndexBy :: StanExpr -> StanIndexKey -> StanExpr
-uIndexBy e k = withIndexes e [(Just k, uIndex k)]
+indexBy :: StanExpr -> StanIndexKey -> StanExpr
+indexBy e k = withIndexes e [NamedDim k]
 
-withIndexes :: StanExpr -> [(Maybe StanIndexKey, StanExpr)] -> StanExpr
+withIndexes :: StanExpr -> [StanDim] -> StanExpr
 withIndexes e eis = e `nextTo` indexes eis --``Fix.Fix $ WithIndexesF e eis
 
-indexes :: [(Maybe StanIndexKey, StanExpr)] -> StanExpr
+indexes :: [StanDim] -> StanExpr
 indexes = Fix.Fix . IndexesF --group "[" "]" . args
 
 binOp :: Text -> StanExpr -> StanExpr -> StanExpr
@@ -282,44 +286,57 @@ showKeys (VarBindingStore bms dms) =
 -- then fold from the bottom into Stan code
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
-  unfolded <- usingCoalgM Set.empty $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e
+  unfolded <- usingCoalgM $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e
   Rec.cataM printIndexedAlg unfolded
 
 --  Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs)
 
-keepIndex :: Set StanIndexKey -> Maybe StanIndexKey -> Bool
-keepIndex _ Nothing = True
-keepIndex vks (Just k) = not $ Set.member k vks
+keepIndex :: Set StanIndexKey -> StanExpr -> Bool
+keepIndex vks (Fix.Fix (IndexF k)) = not $ Set.member k vks
+keepIndex _ _ = True
 
-newtype CoalgM a = CoalgM { unCoalgM :: StateT (Set StanIndexKey) (Either Text) a}
-  deriving (Functor, Applicative, Monad, MonadState (Set StanIndexKey))
+data LookupContext = Use | Declare
 
-usingCoalgM :: Set StanIndexKey -> CoalgM a -> Either Text a
-usingCoalgM vks x = evalStateT (unCoalgM x) vks
+data AnaS = AnaS { lContext :: LookupContext, vectorizedIndexes :: Set StanIndexKey}
+
+setLookupContext :: LookupContext -> AnaS -> AnaS
+setLookupContext lc (AnaS _ x) = AnaS lc x
+
+addVectorizedIndexes :: Set StanIndexKey -> AnaS -> AnaS
+addVectorizedIndexes vks (AnaS lc vks') = AnaS lc (Set.union vks vks')
+
+newtype CoalgM a = CoalgM { unCoalgM :: StateT AnaS (Either Text) a}
+  deriving (Functor, Applicative, Monad, MonadState AnaS)
+
+usingCoalgM :: CoalgM a -> Either Text a
+usingCoalgM x = evalStateT (unCoalgM x) (AnaS Use Set.empty)
 
 coalgLeft :: Text -> CoalgM a
 coalgLeft = CoalgM . lift . Left
 
 bindIndexCoAlg ::  VarBindingStore -> StanExpr -> CoalgM (StanExprF StanExpr)
-bindIndexCoAlg vbs (Fix.Fix (UIndexF k)) =
-  case lookupUseBinding k vbs of
-    Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
-    Just ie -> return $ Fix.unFix ie
-bindIndexCoAlg vbs (Fix.Fix (DIndexF k)) =
-  case lookupDeclarationBinding k vbs of
-    Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
-    Just ie -> return $ Fix.unFix ie
-bindIndexCoAlg _ (Fix.Fix (DeclareF sv c)) = return $ Fix.unFix $ declarationExpr sv c
+bindIndexCoAlg vbs (Fix.Fix (IndexF k)) = do
+  lc <- lContext <$> get
+  case lc of
+    Use -> case lookupUseBinding k vbs of
+      Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+      Just ie -> return $ Fix.unFix ie
+    Declare ->   case lookupDeclarationBinding k vbs of
+      Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
+      Just ie -> return $ Fix.unFix ie
+bindIndexCoAlg _ (Fix.Fix (DeclCtxtF e)) = do
+  modify $ setLookupContext Declare
+  return $ Fix.unFix $ e --declarationExpr sv c
 bindIndexCoAlg _ (Fix.Fix (UseTExprF te)) = return $ Fix.unFix $ tExprToExpr te
 bindIndexCoAlg _ (Fix.Fix (VectorizedF vks e)) = do
-  modify $ (<> vks)
+  modify $ addVectorizedIndexes vks
   return $ Fix.unFix e
 bindIndexCoAlg _ (Fix.Fix (VectorFunctionF f e es)) = do
-  vks <- get
+  vks <- vectorizedIndexes <$> get
   return $ Fix.unFix $ if Set.null vks then e else function f (e :| es)
 bindIndexCoAlg _ (Fix.Fix (IndexesF xs)) = do
-  vks <- get
-  let ies = snd <$> filter (keepIndex vks . fst) xs
+  vks <- vectorizedIndexes <$> get
+  let ies = filter (keepIndex vks) $ indexesToExprs xs
   case nonEmpty ies of
     Nothing -> return NullF
     Just x -> return $ Fix.unFix $ group "[" "]" $ csExprs x
@@ -333,10 +350,10 @@ printIndexedAlg :: StanExprF Text -> Either Text Text
 printIndexedAlg NullF = Right ""
 printIndexedAlg (BareF t) = Right t
 printIndexedAlg (NextToF l r) = Right $ l <> r
-printIndexedAlg (DeclareF _ _) = Left "Should not call printExpr before expanding declarations"
+printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
 printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding var uses"
-printIndexedAlg (DIndexF _) = Left "Should not call printExpr before binding declaration indexes"
-printIndexedAlg (UIndexF _) = Left "Should not call printExpr before binding use indexes"
+printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes"
+--printIndexedAlg (UIndexF _) = Left "Should not call printExpr before binding use indexes"
 printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use"
 printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use"
 --printIndexedAlg _ (WithIndexesF e ies) = Right $ e <> "[" <> csArgs ies <> "]"

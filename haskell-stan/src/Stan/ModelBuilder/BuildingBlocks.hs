@@ -72,7 +72,7 @@ generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
   SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ do
 --    let indexBindings  = Map.insert SB.modeledDataIndexName (SME.name "n") $ Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap -- we need to index the groups.
 --        bindingStore = SME.fullyIndexedBindings indexBindings
-    let lhsE = SME.withIndexes (SME.name "log_lik") $ SME.indexesToUExprs [dim]
+    let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
         rhsE = SMD.familyLDF sDist SB.modeledDataIndexName args
         llE = lhsE `SME.eq` rhsE
     SB.addExprLine "log likelihood (in Generated Quantitites)" llE

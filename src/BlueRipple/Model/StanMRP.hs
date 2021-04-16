@@ -164,7 +164,7 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
         let en = "eps_" <> gn
             be = SB.bracket
                  $ SB.csExprs (SB.name en :| [SB.name $ "-" <> en])
-        let e' = SB.uIndexBy be gn
+        let e' = SB.indexBy be gn
             modelTerm = SB.vectorFunction "to_vector" e' []
         SB.inBlock SB.SBParameters $ SB.stanDeclare ("eps_" <> gn) SB.StanReal ""
         SB.inBlock SB.SBModel $ do
@@ -174,7 +174,7 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
         return modelTerm
   let nonBinaryGroup = do
         let gs t = t <> "_" <> gn
-            modelTerm = SB.uIndexBy (SB.name $ gs "beta") gn --SB.uIndexed gn $
+            modelTerm = SB.indexBy (SB.name $ gs "beta") gn
         sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
         SB.inBlock SB.SBModel $ do
           let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
@@ -211,10 +211,10 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
           let yE = SB.useVar yv --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
               be = SB.bracket
-                   $ SB.csExprs (SB.uIndexBy (SB.name $ suffixed "eps") pooledGN :|
-                                  [SB.uIndexBy (SB.name $ suffixed "-eps") pooledGN]
+                   $ SB.csExprs (SB.indexBy (SB.name $ suffixed "eps") pooledGN :|
+                                  [SB.indexBy (SB.name $ suffixed "-eps") pooledGN]
                                 )
-              epsE =  SB.uIndexBy be nonPooledGN
+              epsE =  SB.indexBy be nonPooledGN
           SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
 --            $ const
 --            $ SB.addStanLine
@@ -279,13 +279,13 @@ addFixedEffects thinQR fePrior rtt (FixedEffects n vecF) = do
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = if T.null suffix
-           then SB.uIndexBy (SB.name "Q_ast") (SB.dsName rtt)
-           else SB.uIndexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") (SB.dsName rtt)
+           then SB.indexBy (SB.name "Q_ast") (SB.dsName rtt)
+           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") (SB.dsName rtt)
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
       eX = if T.null suffix
-           then SB.uIndexBy (SB.name "centered_X") (SB.dsName rtt)
-           else SB.uIndexBy (SB.name ("centered_X" <> uSuffix)) (SB.dsName rtt)
+           then SB.indexBy (SB.name "centered_X") (SB.dsName rtt)
+           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) (SB.dsName rtt)
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta

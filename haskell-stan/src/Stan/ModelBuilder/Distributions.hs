@@ -41,7 +41,7 @@ familyExp :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
 familyExp (StanDist _ _ _ e) = e
 
 vec :: SME.StanIndexKey -> SME.StanVar -> SME.StanExpr
-vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) $ [(Just k, SME.uIndex k)]
+vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
 
 binomialLogitDist :: SME.StanVar -> SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist sV tV = StanDist sample lpdf rng expectation where
