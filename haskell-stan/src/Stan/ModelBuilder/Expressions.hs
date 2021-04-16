@@ -252,6 +252,9 @@ minus = binOp "-"
 times :: StanExpr -> StanExpr -> StanExpr
 times = binOp "*"
 
+divide :: StanExpr -> StanExpr -> StanExpr
+divide = binOp "/"
+
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
 

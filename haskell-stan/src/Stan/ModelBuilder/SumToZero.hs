@@ -75,13 +75,15 @@ softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
 softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
 
 weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
-weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector sd)) gn sumToZeroPrior = do
-  let dSize = SB.dimToText sd
+weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn sumToZeroPrior = do
+--  let dSize = SB.dimToText sd
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBTransformedData $ do
-    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector sd) "<lower=0>"
-      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr sd])
-    SB.stanForLoop "n" Nothing dSize $ const $ SB.addStanLine $ varName <> "_weights[" <> gn <> "[n]] += 1"
+    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector (SB.NamedDim k)) "<lower=0>"
+      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr $ SB.NamedDim k])
+    SB.stanForLoopB "n" Nothing k
+      $ SB.addExprLine "weightedSoftSumToZero"
+      $ SB.binOp "+=" (SB.indexBy (SB.name $ varName <> "_weights") gn) (SB.scalar "1") --[" <> gn <> "[n]] += 1"
     SB.addStanLine $ varName <> "_weights /= N"
   SB.inBlock SB.SBModel $ do
     let expr = SB.function "dot_product" (SB.name varName :| [SB.name $ varName <> "_weights"]) `SB.vectorSample` sumToZeroPrior

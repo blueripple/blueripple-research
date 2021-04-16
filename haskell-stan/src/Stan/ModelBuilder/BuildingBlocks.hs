@@ -54,39 +54,29 @@ intercept iName alphaPriorE = do
 
 sampleDistV :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
 sampleDistV sDist args =  SB.inBlock SB.SBModel $ do
---  indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
---  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap
---      bindingStore = SME.vectorizingBindings SB.modeledDataIndexName indexBindings
   let samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
-  SB.indexBindingScope $ SB.addExprLine "sampleDistV" $ SME.vectorizedOne SB.modeledDataIndexName  samplingE
-{-
-  samplingCode <- SB.printExprM "mrpModelBlock" bindingStore $ return samplingE
-  SB.addStanLine samplingCode
--}
+  SB.addExprLine "sampleDistV" $ SME.vectorizedOne SB.modeledDataIndexName  samplingE
 
 generateLogLikelihood :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
 generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
---  indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
   let dim = SME.NamedDim SB.modeledDataIndexName
   SB.stanDeclare "log_lik" (SME.StanVector dim) ""
   SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ do
---    let indexBindings  = Map.insert SB.modeledDataIndexName (SME.name "n") $ Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap -- we need to index the groups.
---        bindingStore = SME.fullyIndexedBindings indexBindings
     let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
         rhsE = SMD.familyLDF sDist SB.modeledDataIndexName args
         llE = lhsE `SME.eq` rhsE
     SB.addExprLine "log likelihood (in Generated Quantitites)" llE
---    llCode <- SB.printExprM "log likelihood (in Generated Quantitites)" bindingStore $ return llE
---    SB.addStanLine llCode --"log_lik[n] = binomial_logit_lpmf(S[n] | T[n], " <> modelTerms <> ")"
 
 generatePosteriorPrediction :: SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
-generatePosteriorPrediction (SME.StanVar ppName ppType) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
---  indexMap <- SB.groupIndexByName <$> SB.askGroupEnv
---  let indexBindings = Map.mapWithKey (\k _ -> SME.indexed SB.modeledDataIndexName $ SME.name k) indexMap
---      bindingStore = SME.vectorizingBindings SB.modeledDataIndexName indexBindings
-  let  rngE = SMD.familyRNG sDist SB.modeledDataIndexName args
---  rngCode <- SB.printExprM "posterior prediction (in Generated Quantities)" rngE
-  SB.stanDeclareRHS ppName ppType "" rngE
+generatePosteriorPrediction sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
+  let rngE = SMD.familyRNG sDist k args
+      ppE = SME.indexBy (SME.name ppName) k `SME.eq` rngE
+  SB.stanDeclare ppName t ""
+  SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "generatePosteriorPrediction" ppE
+  return sv
+generatePosteriorPrediction _ _ _ = SB.stanBuildError $ "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
+
+--
 
 fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanVar
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
@@ -101,12 +91,13 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
     SB.stanForLoopB "k" Nothing colKey $ do
       SB.addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
       SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
-    SB.stanDeclare q qMatrixType ""
-    SB.stanDeclare r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) ""
-    SB.stanDeclare ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) ""
-    SB.addStanLine $ q <> " = qr_thin_Q(centered_" <> matrix <> ") * sqrt(size(" <> matrix <> ") - 1)"
-    SB.addStanLine $ r <> " = qr_thin_R(centered_" <> matrix <> ") / sqrt(size(" <> matrix <> ") - 1)"
-    SB.addStanLine $ ri <> " = inverse(" <> r <> ")"
+    let srE =  SB.function "sqrt" (one $ SB.index rowKey `SB.minus` SB.scalar "1")
+        qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
+        rRHS = SB.function "qr_thin_R" (one $ SB.name $ "centered_" <> matrix) `SB.divide` srE
+        riRHS = SB.function "inverse" (one $ SB.name r)
+    SB.stanDeclareRHS q qMatrixType "" qRHS
+    SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
+    SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
   SB.inBlock SB.SBTransformedParameters $ do
     SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix

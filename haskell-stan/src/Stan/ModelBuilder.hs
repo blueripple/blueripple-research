@@ -927,7 +927,7 @@ stanForLoopB counter mStartE k x = do
              $ SME.paren
              $ SME.spaced
              (SME.spaced (SME.name counter) (SME.name "in"))
-             (SME.binOp ":" start endE)
+             (start `SME.nextTo` (SME.bare ":") `SME.nextTo` endE)
   printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
     addUseBinding k (SME.name counter)

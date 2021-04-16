@@ -320,6 +320,7 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
       psSuffix = dsName <> uPSGroupName
       namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
       sizeName = "N_" <> namedPS
+  SB.addDeclBinding namedPS (SB.name sizeName)
   allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
   let checkGroupSubset n1 n2 gs1 gs2 = do
@@ -399,7 +400,7 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
         inner = do
           let psExpE = SB.familyExp sDist dsName args
 --          expCode <- SB.printExprM "mrpPSStanCode" psExpE
-          SB.stanDeclareRHS ("p" {-<> namedPS-}) SB.StanReal "" psExpE --expCode
+          SB.stanDeclareRHS ("p" <> namedPS) SB.StanReal "" psExpE --expCode
           when (psType == PSShare)
             $ SB.addStanLine
             $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
@@ -407,12 +408,12 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
             $ namedPS <> "[n] += p" <> namedPS <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoopB ("n_" <> x) Nothing x $ makeLoops xs
-    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim sizeName) ""
+    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) ""
       $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name sizeName])
 --    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
-    SB.stanForLoopB "n" Nothing sizeName $ do
+    SB.stanForLoopB "n" Nothing namedPS $ do
       let wsn = namedPS <> "_WgtSum"
       when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" (SB.scalar "0") >> return ())
       makeLoops innerLoopNames
       when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
-    return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim sizeName)
+    return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim namedPS)
