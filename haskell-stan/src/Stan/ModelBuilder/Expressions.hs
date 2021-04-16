@@ -135,25 +135,16 @@ tExprToExpr :: TExpr -> StanExpr
 tExprToExpr (TExpr ne st) = withIndexes ne dims where
   dims = getDims st
 
---data IndexedExpr = Keyed StanIndex
-
 data StanExprF a where
   NullF :: StanExprF a
   BareF :: Text -> StanExprF a
   NextToF :: a -> a -> StanExprF a
---  DeclareF :: StanVar -> Text -> StanExprF a
   DeclCtxtF :: a -> StanExprF a
   UseTExprF :: TExpr -> StanExprF a
   IndexF :: StanIndexKey -> StanExprF a -- pre-lookup
---  UIndexF :: StanIndexKey -> StanExprF a -- pre-lookup
---  IndexedF :: StanIndexKey -> a -> StanExprF a -- post-lookup
   VectorizedF :: Set StanIndexKey -> a -> StanExprF a
   IndexesF :: [StanDim] -> StanExprF a
---  NextToF :: Text -> a -> a -> StanExprF a
---  FunctionF :: Text -> [a] -> StanExprF a
   VectorFunctionF :: Text -> a -> [a] -> StanExprF a -- function to add when the context is vectorized
---  GroupF :: Text -> Text -> a -> StanExprF a
---  ArgsF :: [a] -> StanExprF a
   deriving  stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
   deriving   (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault StanExprF
 
@@ -228,9 +219,6 @@ vectorFunction t e es = Fix.Fix $ VectorFunctionF t e es
 group ::  Text -> Text -> StanExpr -> StanExpr
 group ld rd e = bare ld `nextTo` e `nextTo` bare rd --Fix.Fix . GroupF ld rd
 
---args :: [StanExpr] -> StanExpr
---args = Fix.Fix . ArgsF
-
 paren :: StanExpr -> StanExpr
 paren = group "(" ")"
 
@@ -262,9 +250,6 @@ multiOp o es = foldl' (binOp o) (head es) (tail es)
 data VarBindingStore = VarBindingStore { useBindings :: Map StanIndexKey StanExpr
                                        , declarationBindings :: Map StanIndexKey StanExpr
                                        }
-
---vectorizingBindings :: StanIndexKey -> Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
---vectorizingBindings vecIndex = VarBindingStore (one vecIndex)
 
 bindings :: Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
 bindings = VarBindingStore
@@ -356,38 +341,6 @@ printIndexedAlg (NextToF l r) = Right $ l <> r
 printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
 printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding var uses"
 printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes"
---printIndexedAlg (UIndexF _) = Left "Should not call printExpr before binding use indexes"
 printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use"
 printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use"
---printIndexedAlg _ (WithIndexesF e ies) = Right $ e <> "[" <> csArgs ies <> "]"
---printIndexedAlg _ (BinOpF op e1 e2) = Right $ e1 <> " " <> op <> " " <> e2
---printIndexedAlg _ (FunctionF f es) = Right $ f <> "(" <> csArgs es <> ")"
 printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorizatio nuse"
---printIndexedAlg _ (GroupF ld rd e) = Right $ ld <> e <> rd
---printIndexedAlg _ (ArgsF es) = Right $ csArgs es
-
-{-
-bindIndexes :: VarBindingStore -> StanExpr -> Either Text StanExpr
-bindIndexes vbs = Rec.anaM (bindIndexCoAlg vbs)
- -- also wild
--- build up Stan code recursively from the bottom
--- should only be called after index binding
-printIndexedExpr :: Bool -> StanExpr -> Either Text Text
-printIndexedExpr vc = Rec.cataM (printIndexedAlg vc)
--}
-
-
-{-
-bindIndexCoAlg' ::  VarBindingStore -> StanExpr -> Either Text (StanExprF StanExpr)
-bindIndexCoAlg' vbs (Fix.Fix (UIndexF k)) =
-  case lookupUseBinding k vbs of
-    Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
-    Just ie -> Right $ IndexedF k ie
-bindIndexCoAlg' vbs (Fix.Fix (DIndexF k)) =
-  case lookupDeclarationBinding k vbs of
-    Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
-    Just ie -> Right $ IndexedF k ie
-bindIndexCoAlg' vbs (Fix.Fix (DeclareF sv c)) = Right $ Fix.unFix $ declarationExpr sv c
-bindIndexCoAlg' vbs (Fix.Fix (UseTExprF te)) = Right $ Fix.unFix $ tExprToExpr te
-bindIndexCoAlg' _ x = Right $ Fix.unFix x
--}
