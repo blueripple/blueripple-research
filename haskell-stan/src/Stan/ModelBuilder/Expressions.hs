@@ -274,8 +274,9 @@ showKeys (VarBindingStore bms dms) =
 -- then fold from the bottom into Stan code
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
-  unfolded <- usingCoalgM $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e
-  Rec.cataM printIndexedAlg unfolded
+  case usingCoalgM $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e of
+    Left err -> Left $ err <> "\nTree:\n" <> show e
+    Right ue -> Rec.cataM printIndexedAlg ue
 
 --  Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs)
 
@@ -329,7 +330,6 @@ bindIndexCoAlg _ (Fix.Fix (IndexesF xs)) = do
     Nothing -> return NullF
     Just x -> return $ Fix.unFix $ group "[" "]" $ csExprs x
 bindIndexCoAlg _ x = return $ Fix.unFix x
-
 
 csArgs :: [Text] -> Text
 csArgs = T.intercalate ", "

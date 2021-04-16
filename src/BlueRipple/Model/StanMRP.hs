@@ -185,7 +185,7 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-
+--- return expression for sampling and one for everything else
 addNestedMRGroup ::  (Typeable d, Typeable r)
                  => SB.StanExpr
                  -> SB.SumToZero
@@ -205,49 +205,65 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
         SB.inBlock SB.SBModel $ do
           let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
           SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
---          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
         SB.rescaledSumToZero stz epsVar sigmaVar
         (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
-          let yE = SB.useVar yv --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+          let yE = SB.useVar yv
               be = SB.bracket
                    $ SB.csExprs (SB.indexBy (SB.name $ suffixed "eps") pooledGN :|
                                   [SB.indexBy (SB.name $ suffixed "-eps") pooledGN]
                                 )
               epsE =  SB.indexBy be nonPooledGN
-          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
---            $ const
---            $ SB.addStanLine
---            $ suffixed "y" <> "[n] = {" <> suffixed "eps" <> "[" <> pooledGN <> "[n]], -" <> suffixed "eps" <> "[" <> pooledGN <> "[n]]}[" <> nonPooledGN <> "[n]]"
+          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName
+            $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
+
           return (yE, epsE)
-
         return (yE, epsE)
-      nonPooledNonBinary = undefined
-{-
-        do
-        let npGS = "N_" <> nonPooledGN
-            pGS = "N_" <> pooledGN
-        (sigmaV, lcorrV) <- SB.inBlock SB.SBParameters $ do
-          sv <- SB.stanDeclare (suffixed "sigma") (SB.StanVector (SB.NamedDim npGS)) "<lower=0>"
-          lv <- SB.stanDeclare (suffixed "lCorr") (SB.StanCholeskyFactorCorr (SB.NamedDim npGS)) ""
-          return (sv, lv)
-
-        let betaVar = SB.StanVar (suffixed "beta")  (SB.StanMatrix (SB.NamedDim npGS, SB.NamedDim pGS))
-        SB.inBlock SB.SBModel $ do
-          let e1 = SB.name (suffixed "sigma")  `SB.vectorSample` sigmaPrior -- NB this should prolly be some LKJ thing
-          SB.printExprM "addNestedMRGroup" (SB.fullyIndexedBindings mempty) (return e1) >>= SB.addStanLine
-        SB.rescaledSumToZero SB.STZNone betaVar sigmaVar  -- FIX, we can't sum to zero along cols or rows.
-        yVar <- SB.inBlock SB.SBTransformedParameters $ do
-          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim "N") ""
-          SB.stanForLoop "n" Nothing "N"
-            $ const
-            $ SB.addStanLine
-            $ suffixed "y" <> "[n] = " <> suffixed "beta" <> "[" <> nonPooledGN <> "[n], " <> pooledGN <> "[n]]"
-          return yv
-        let yE = SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
-            betaE =  SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
-        return (yE, betaE)
+      nonPooledNonBinary = do
+        let betaType = SB.StanMatrix (SB.NamedDim nonPooledGN, SB.NamedDim pooledGN)
+{-        zeroV <- SB.inBlock SB.SBTransformedData
+          $ SB.stanDeclareRHS
+          ("zero_" <> nonPooledGN)
+          (SB.StanVector (SB.NamedDim nonPooledGN)) ""
+          $  SB.function "rep_vector" (SB.scalar "0" :| [SB.index nonPooledGN])
 -}
+        (sigmaV, betaRawV) <- SB.inBlock SB.SBParameters $ do
+          sv <- SB.stanDeclare (suffixed "sigma") (SB.StanVector (SB.NamedDim nonPooledGN)) "<lower=0>"
+--          lv <- SB.stanDeclare (suffixed "lCorr") (SB.StanCholeskyFactorCorr (SB.NamedDim nonPooledGN)) ""
+          brv <- SB.stanDeclare (suffixed "beta" <> "_raw") betaType ""
+          return (sv, brv)
+        (yV, betaV) <- SB.inBlock SB.SBTransformedParameters $ do
+          let eDPM = SB.vectorized (Set.fromList [nonPooledGN, pooledGN])
+                     $ SB.function "diag_pre_multiply" (SB.useVar sigmaV :| [SB.useVar betaRawV])
+          b <- SB.stanDeclareRHS (suffixed "beta") betaType ""
+               $ eDPM
+          y <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
+          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName
+            $ SB.addExprLine "nestedMRGroup (NB.TransformedParameters)"
+            $ SB.useVar y `SB.eq` SB.useVar b
+          return (y, b)
+        SB.inBlock SB.SBModel $ do
+          let eSigma = SB.vectorizedOne nonPooledGN
+                       $ SB.useVar sigmaV `SB.vectorSample` sigmaPrior
+--              eLKJ = SB.function "lkj_corr_cholesky" (one $ SB.scalar "1")
+--              eLCorr = SB.vectorizedOne nonPooledGN
+--                       $ SB.useVar lcorrV `SB.vectorSample` eLKJ
+--              eDPM = SB.function "diag_pre_multiply" (SB.useVar sigmaV :| [SB.useVar lcorrV])
+--              eMNC = SB.vectorizedOne nonPooledGN
+--                     $ SB.function "multi_normal_cholesky" (SB.useVar zeroV :| [eDPM])
+--              eBeta = SB.vectorizedOne nonPooledGN
+--                      $ SB.useVar betaV `SB.vectorSample` eMNC
+          SB.addExprLines "addNestedMRGroup (NB.Model)" [eSigma]
+{-          SB.stanForLoopB ("j" <> nonPooledGN) Nothing nonPooledGN
+            $ SB.addExprLine "nestedMRGroup (NB.BetaLoop)"
+            $ SB.vectorizedOne pooledGN
+            $ SB.useVar betaV `SB.vectorSample` eMNC
+-}
+--        SB.rescaledSumToZero SB.STZNone betaVar sigmaV  -- FIX, we can't sum to zero along cols or rows.
+        let yE = SB.useVar yV --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
+            betaE =  SB.useVar betaV --SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
+        return (yE, betaE)
+
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
 
 
