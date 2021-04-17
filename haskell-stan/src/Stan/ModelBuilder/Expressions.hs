@@ -34,6 +34,8 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
+import qualified Text.PrettyPrint as Pretty
+
 import GHC.Generics (Generic1)
 
 type StanName = Text
@@ -58,12 +60,17 @@ data StanType = StanInt
               | StanCovMatrix StanDim
               deriving (Show, Eq, Ord, Generic)
 
-data TExpr = TExpr StanExpr StanType deriving (Show, Eq, Ord, Generic)
+data TExpr a = TExpr a StanType
+  deriving  stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
+  deriving   (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault TExpr
 
 data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord, Generic)
 
-tExprFromStanVar :: StanVar -> TExpr
+tExprFromStanVar :: StanVar -> TExpr StanExpr
 tExprFromStanVar (StanVar sn st) = TExpr (name sn) st
+
+--exprFromStanVar :: StanVar -> ()
+--exprFromStanVar (StanVar sn st) = TExpr (name sn) st
 
 {-
 indexTExpr :: TExpr -> StanExpr -> Either Text TExpr
@@ -131,16 +138,17 @@ declarationExpr (StanVar sn st) c = case st of
                         in spaced (declarationPart st c) (withIndexes (name sn) dims)
   _ -> spaced (declarationPart st c) (name sn)
 
-tExprToExpr :: TExpr -> StanExpr
+tExprToExpr :: TExpr StanExpr -> StanExpr
 tExprToExpr (TExpr ne st) = withIndexes ne dims where
   dims = getDims st
+
 
 data StanExprF a where
   NullF :: StanExprF a
   BareF :: Text -> StanExprF a
   NextToF :: a -> a -> StanExprF a
   DeclCtxtF :: a -> StanExprF a
-  UseTExprF :: TExpr -> StanExprF a
+  UseTExprF :: TExpr a -> StanExprF a
   IndexF :: StanIndexKey -> StanExprF a -- pre-lookup
   VectorizedF :: Set StanIndexKey -> a -> StanExprF a
   IndexesF :: [StanDim] -> StanExprF a
@@ -172,16 +180,19 @@ declaration :: StanExpr -> StanExpr
 declaration = Fix.Fix . DeclCtxtF
 
 declareVar :: StanVar -> Text -> StanExpr
-declareVar sv c = Fix.Fix $ DeclCtxtF $ declarationExpr sv c
+declareVar sv c = declaration $ declarationExpr sv c
+
+useTExpr :: TExpr StanExpr -> StanExpr
+useTExpr = Fix.Fix . UseTExprF
 
 useVar :: StanVar -> StanExpr
 useVar = useTExpr . tExprFromStanVar
 
-useTExpr :: TExpr -> StanExpr
-useTExpr = Fix.Fix . UseTExprF
-
 index :: StanIndexKey -> StanExpr
 index k = Fix.Fix $ IndexF k
+
+indexSize :: StanIndexKey -> StanExpr
+indexSize = declaration . index
 
 vectorized :: Set StanIndexKey -> StanExpr -> StanExpr
 vectorized ks = Fix.Fix . VectorizedF ks
@@ -268,17 +279,23 @@ showKeys (VarBindingStore bms dms) =
   "Use keys: " <> show (Map.keys bms)
   <> "; Declaration keys: " <> show (Map.keys dms)
 
+prettyPrintTree :: StanExpr -> Text
+prettyPrintTree = toText  . Pretty.render . Rec.cata prettyPrintExpr
+
 -- this is wild
 -- bind all indexes and do so recursively, from the top.
 -- So your indexes can have indexes.
 -- then fold from the bottom into Stan code
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
-  case usingCoalgM $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e of
-    Left err -> Left $ err <> "\nTree:\n" <> show e
-    Right ue -> Rec.cataM printIndexedAlg ue
+  case usingRecM $ Rec.anaM @_ @StanExpr (bindIndexCoAlg vbs) e of
+    Left err -> Left $ err <> "\nTree:\n" <> prettyPrintTree e
+    Right ue -> case Rec.cataM printIndexedAlg ue of
+      Left err -> Left $ err <> "\nOrig Tree:\n" <> prettyPrintTree e <> "after binding:" <> prettyPrintTree ue
+      Right x -> Right x
 
---  Rec.hyloM (printIndexedAlg $ vectorized vbs) (bindIndexCoAlg vbs)
+printExpr' :: VarBindingStore -> StanExpr -> Either Text Text
+printExpr' vbs e = usingRecM $ Rec.hyloM (RecM . lift . printIndexedAlg) (bindIndexCoAlg vbs) e
 
 keepIndex :: Set StanIndexKey -> StanExpr -> Bool
 keepIndex vks (Fix.Fix (IndexF k)) = not $ Set.member k vks
@@ -294,28 +311,28 @@ setLookupContext lc (AnaS _ x) = AnaS lc x
 addVectorizedIndexes :: Set StanIndexKey -> AnaS -> AnaS
 addVectorizedIndexes vks (AnaS lc vks') = AnaS lc (Set.union vks vks')
 
-newtype CoalgM a = CoalgM { unCoalgM :: StateT AnaS (Either Text) a}
+newtype RecM a = RecM { unRecM :: StateT AnaS (Either Text) a}
   deriving (Functor, Applicative, Monad, MonadState AnaS)
 
-usingCoalgM :: CoalgM a -> Either Text a
-usingCoalgM x = evalStateT (unCoalgM x) (AnaS Use Set.empty)
+usingRecM :: RecM a -> Either Text a
+usingRecM x = evalStateT (unRecM x) (AnaS Use Set.empty)
 
-coalgLeft :: Text -> CoalgM a
-coalgLeft = CoalgM . lift . Left
+recLeft :: Text -> RecM a
+recLeft = RecM . lift . Left
 
-bindIndexCoAlg ::  VarBindingStore -> StanExpr -> CoalgM (StanExprF StanExpr)
+bindIndexCoAlg ::  VarBindingStore -> StanExpr -> RecM (StanExprF StanExpr)
 bindIndexCoAlg vbs (Fix.Fix (IndexF k)) = do
   lc <- lContext <$> get
   case lc of
     Use -> case lookupUseBinding k vbs of
-      Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+      Nothing -> recLeft $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
       Just ie -> return $ Fix.unFix ie
     Declare ->   case lookupDeclarationBinding k vbs of
-      Nothing -> coalgLeft $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
+      Nothing -> recLeft $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
       Just ie -> return $ Fix.unFix ie
 bindIndexCoAlg _ (Fix.Fix (DeclCtxtF e)) = do
   modify $ setLookupContext Declare
-  return $ Fix.unFix $ e --declarationExpr sv c
+  return $ Fix.unFix e --declarationExpr sv c
 bindIndexCoAlg _ (Fix.Fix (UseTExprF te)) = return $ Fix.unFix $ tExprToExpr te
 bindIndexCoAlg _ (Fix.Fix (VectorizedF vks e)) = do
   modify $ addVectorizedIndexes vks
@@ -339,8 +356,19 @@ printIndexedAlg NullF = Right ""
 printIndexedAlg (BareF t) = Right t
 printIndexedAlg (NextToF l r) = Right $ l <> r
 printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
-printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding var uses"
+printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding texpr/var uses"
 printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes"
 printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use"
 printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use"
-printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorizatio nuse"
+printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorization use"
+
+prettyPrintExpr :: StanExprF (Pretty.Doc) -> Pretty.Doc
+prettyPrintExpr NullF = mempty
+prettyPrintExpr (BareF t) = Pretty.text (toString t)
+prettyPrintExpr (NextToF l r) = l <> r
+prettyPrintExpr (DeclCtxtF e) = Pretty.text "dCtxt" <> Pretty.parens e
+prettyPrintExpr (UseTExprF (TExpr e st)) = Pretty.text ("use [of " <> show st <> "]")  <> Pretty.parens e
+prettyPrintExpr (IndexF k) = Pretty.braces (Pretty.text $ toString k)
+prettyPrintExpr (VectorizedF ks e) = Pretty.text "vec" <> Pretty.brackets (Pretty.text $ show  $ Set.toList ks) <> Pretty.parens e
+prettyPrintExpr (IndexesF ds) = Pretty.braces (show ds)
+prettyPrintExpr (VectorFunctionF f e es) = e <> Pretty.text "?" <> Pretty.text (toString f) <> Pretty.parens (mconcat (Pretty.punctuate "," es))

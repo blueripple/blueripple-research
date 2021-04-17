@@ -141,8 +141,7 @@ ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 
 ra4WhiteNonGrad r = ra4White r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-
-
+wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
 ccesGroupBuilder = do
@@ -153,24 +152,16 @@ ccesGroupBuilder = do
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
-
-
 race5FromPUMS :: F.Record BRE.PUMSByCDR -> DT.Race5
 race5FromPUMS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
-
-
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
-
-
-
---  MRP.addPostStratification dist logitPE "Sex" (SB.ToFoldable BRE.allCategoriesRows) (Set.fromList ["Sex","CD"]) catsPSGroupRowMap (const 1) MRP.PSShare (Just $ SB.GroupTypeTag @DT.Sex "Sex")
 
 indexStanResults :: (Show k, Ord k) => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
 indexStanResults im v = do
@@ -200,15 +191,15 @@ cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
 --  dat <- K.ignoreCacheTime data_C
-{-
+
   K.newPandoc
     (K.PandocInfo "State_Race Interaction" $ one ("pagetitle","State_Race interaction"))
     $ cpsStateRace False $ K.liftActionWithCacheTime data_C
--}
+{-
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
-
+-}
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -265,8 +256,8 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         let dist = SB.binomialLogitDist vSucc vTotal
             logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gAgeE, gEduE, gRaceE, gStateE, gRaceStateEV]
         SB.sampleDistV dist logitPE
---        SB.generateLogLikelihood dist logitPE
-        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SB.StanInt) dist logitPE
+        SB.generateLogLikelihood dist logitPE
+--        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SB.StanInt) dist logitPE
         return ()
 
       extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () ()
@@ -312,21 +303,23 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
 --        SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
         SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
+        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
         SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum ra4WhiteNonGrad
+        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
         SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
         $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-        $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
+        $ SB.addRowMap "WNH"  wnh
+--        $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
 --        $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
         $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
-        $ SB.addRowMap "WhiteNonGrad" ra4WhiteNonGrad
+        $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
         $ SB.emptyGroupRowMap
 
       dataAndCodeBuilder :: Typeable modelRow
@@ -348,24 +341,24 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 2 districtPredictors)
-        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Sex" sumToZeroPrior) "Sex"
-        gWhiteE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "White" sumToZeroPrior) "White"
+        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
+        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
 --        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior (Just sumToZeroPrior) "Ethnicity"
-        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Age" sumToZeroPrior) "Age"
-        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "Education" sumToZeroPrior) "Education"
-        gWNG <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "WhiteNonGrad" sumToZeroPrior) "WhiteNonGrad"
-        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior (SB.STZSoftWeighted "State" sumToZeroPrior) "State"
-        (gWhiteStateV, gWhiteState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "White" "State"
+        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
+        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
+        gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
+        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
+        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gWNG, gStateE, gWhiteStateV]
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gWNG, gStateE, gWhiteState]
-            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWhiteE, gAgeE, gEduE, gWNG, gStateE]
+            logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
+            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
         SB.sampleDistV dist logitPE_sample
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE
 
-        acsData_W <- SB.addUnIndexedDataSet "ACS_W" (SB.ToFoldable $ F.filterFrame ra4White . BRE.pumsRows)
-        acsData_NW <- SB.addUnIndexedDataSet "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . ra4White) . BRE.pumsRows)
+        acsData_W <- SB.addUnIndexedDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+        acsData_NW <- SB.addUnIndexedDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
 
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification
@@ -374,7 +367,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                 (Just nameHead)
                 dataSet
                 pumsPSGroupRowMap
-                (S.fromList ["CD", "Sex", "White", "Age", "Education", "WhiteNonGrad"])
+                (S.fromList ["CD", "Sex", "WNH", "Age", "Education", "WhiteNonGrad"])
                 (realToFrac . F.rgetField @PUMS.Citizens)
                 MRP.PSShare
                 (Just $ SB.GroupTypeTag @Text "State")
@@ -387,7 +380,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
           SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
-          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
+          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name whiteNI `SB.minus` SB.name nonWhiteNI
           SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
 
         return ()
@@ -400,7 +393,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
           K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
-                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_W")
+                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
             vRTDiffWI <- fmap (SP.getVector . fmap CS.percents)

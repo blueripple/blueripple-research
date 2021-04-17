@@ -670,7 +670,7 @@ stanDeclare' sn st sc mRHS = do
   _ <- if isNew
     then case mRHS of
            Nothing -> addExprLine "stanDeclare'" lhs
-           Just rhs -> addExprLine "stanDeclare'" (SME.declaration $ lhs `SME.eq` rhs)
+           Just rhs -> addExprLine "stanDeclare'" (SME.declaration lhs `SME.eq` rhs)
     else case mRHS of
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"

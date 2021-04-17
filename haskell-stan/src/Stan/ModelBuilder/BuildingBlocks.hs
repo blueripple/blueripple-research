@@ -91,7 +91,7 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
     SB.stanForLoopB "k" Nothing colKey $ do
       SB.addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
       SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
-    let srE =  SB.function "sqrt" (one $ SB.index rowKey `SB.minus` SB.scalar "1")
+    let srE =  SB.function "sqrt" (one $ SB.indexSize rowKey `SB.minus` SB.scalar "1")
         qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
         rRHS = SB.function "qr_thin_R" (one $ SB.name $ "centered_" <> matrix) `SB.divide` srE
         riRHS = SB.function "inverse" (one $ SB.name r)
