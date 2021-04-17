@@ -146,6 +146,7 @@ tExprToExpr (TExpr ne st) = withIndexes ne dims where
 data StanExprF a where
   NullF :: StanExprF a
   BareF :: Text -> StanExprF a
+  AsIsF :: a -> StanExprF a -- required to rewrap Declarations
   NextToF :: a -> a -> StanExprF a
   DeclCtxtF :: a -> StanExprF a
   UseTExprF :: TExpr a -> StanExprF a
@@ -332,14 +333,14 @@ bindIndexCoAlg vbs (Fix.Fix (IndexF k)) = do
       Just ie -> return $ Fix.unFix ie
 bindIndexCoAlg _ (Fix.Fix (DeclCtxtF e)) = do
   modify $ setLookupContext Declare
-  return $ Fix.unFix e --declarationExpr sv c
+  return $ AsIsF e --declarationExpr sv c
 bindIndexCoAlg _ (Fix.Fix (UseTExprF te)) = return $ Fix.unFix $ tExprToExpr te
 bindIndexCoAlg _ (Fix.Fix (VectorizedF vks e)) = do
   modify $ addVectorizedIndexes vks
-  return $ Fix.unFix e
+  return $ AsIsF e
 bindIndexCoAlg _ (Fix.Fix (VectorFunctionF f e es)) = do
   vks <- vectorizedIndexes <$> get
-  return $ Fix.unFix $ if Set.null vks then e else function f (e :| es)
+  return $ AsIsF $ if Set.null vks then e else function f (e :| es)
 bindIndexCoAlg _ (Fix.Fix (IndexesF xs)) = do
   vks <- vectorizedIndexes <$> get
   let ies = filter (keepIndex vks) $ indexesToExprs xs
@@ -354,6 +355,7 @@ csArgs = T.intercalate ", "
 printIndexedAlg :: StanExprF Text -> Either Text Text
 printIndexedAlg NullF = Right ""
 printIndexedAlg (BareF t) = Right t
+printIndexedAlg (AsIsF t) = Right t
 printIndexedAlg (NextToF l r) = Right $ l <> r
 printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
 printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding texpr/var uses"
@@ -365,6 +367,7 @@ printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr be
 prettyPrintExpr :: StanExprF (Pretty.Doc) -> Pretty.Doc
 prettyPrintExpr NullF = mempty
 prettyPrintExpr (BareF t) = Pretty.text (toString t)
+prettyPrintExpr (AsIsF t) = t
 prettyPrintExpr (NextToF l r) = l <> r
 prettyPrintExpr (DeclCtxtF e) = Pretty.text "dCtxt" <> Pretty.parens e
 prettyPrintExpr (UseTExprF (TExpr e st)) = Pretty.text ("use [of " <> show st <> "]")  <> Pretty.parens e
