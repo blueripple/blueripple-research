@@ -292,12 +292,12 @@ prettyPrintCTree = toText  . Pretty.render . Rec.cata prettyPrintCExpr
 -- then fold from the bottom into Stan code
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
-  case usingRecM $ Rec.anaM @_ @CodeExpr (toCodeCoAlg vbs) e of
+  case Rec.anaM @_ @CodeExpr (toCodeCoAlg vbs) (AnaS Use mempty, e) of
     Left err -> Left $ err <> "\nTree:\n" <> prettyPrintSTree e
     Right ue -> Right $ Rec.cata writeCodeAlg ue
 
 printExpr' :: VarBindingStore -> StanExpr -> Either Text Text
-printExpr' vbs e = usingRecM $ Rec.hyloM (return . writeCodeAlg) (toCodeCoAlg vbs) e
+printExpr' vbs e = Rec.hyloM (return . writeCodeAlg) (toCodeCoAlg vbs) (AnaS Use mempty, e)
 {-
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
@@ -325,15 +325,6 @@ setLookupContext lc (AnaS _ x) = AnaS lc x
 addVectorizedIndexes :: Set StanIndexKey -> AnaS -> AnaS
 addVectorizedIndexes vks (AnaS lc vks') = AnaS lc (Set.union vks vks')
 
-newtype RecM a = RecM { unRecM :: StateT AnaS (Either Text) a}
-  deriving (Functor, Applicative, Monad, MonadState AnaS)
-
-usingRecM :: RecM a -> Either Text a
-usingRecM x = evalStateT (unRecM x) (AnaS Use Set.empty)
-
-recLeft :: Text -> RecM a
-recLeft = RecM . lift . Left
-
 data CodeExprF a where
   NullCF :: CodeExprF a
   BareCF :: Text -> CodeExprF a
@@ -344,37 +335,73 @@ data CodeExprF a where
 
 type CodeExpr = Fix.Fix CodeExprF
 
-toCodeCoAlg ::  VarBindingStore -> StanExpr -> RecM (CodeExprF StanExpr)
-toCodeCoAlg vbs (Fix.Fix (IndexF k)) = do
-  lc <- lContext <$> get
-  case lc of
+toCodeCoAlg ::  VarBindingStore -> (AnaS, StanExpr) -> Either Text (CodeExprF (AnaS, StanExpr))
+toCodeCoAlg vbs (as, Fix.Fix (IndexF k)) = do
+  case lContext as of
     Use -> case lookupUseBinding k vbs of
-      Nothing -> recLeft $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
-      Just ie -> return $ AsIsCF ie
+      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+      Just ie -> return $ AsIsCF (as, ie)
     Declare ->   case lookupDeclarationBinding k vbs of
-      Nothing -> recLeft $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
-      Just ie -> return $ AsIsCF ie
-toCodeCoAlg _ (Fix.Fix (DeclCtxtF e)) = do
-  modify $ setLookupContext Declare
-  return $ AsIsCF e
-toCodeCoAlg _ (Fix.Fix (UseTExprF te)) = return $ AsIsCF $ tExprToExpr te
-toCodeCoAlg _ (Fix.Fix (VectorizedF vks e)) = do
-  modify $ addVectorizedIndexes vks
-  return $ AsIsCF e
-toCodeCoAlg _ (Fix.Fix (VectorFunctionF f e es)) = do
-  vks <- vectorizedIndexes <$> get
-  return $ AsIsCF $ if Set.null vks then e else function f (e :| es)
-toCodeCoAlg _ (Fix.Fix (IndexesF xs)) = do
-  vks <- vectorizedIndexes <$> get
+      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
+      Just ie -> return $ AsIsCF (as, ie)
+toCodeCoAlg _ (AnaS _ vks, Fix.Fix (DeclCtxtF e)) = do
+  return $ AsIsCF (AnaS Declare vks, e)
+toCodeCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ AsIsCF $ (as, tExprToExpr te)
+toCodeCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = do
+  return $ AsIsCF (AnaS lc (vks <> vks'), e)
+toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = do
+  return $ AsIsCF $ (as, if Set.null vks then e else function f (e :| es))
+toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
   let ies = filter (keepIndex vks) $ indexesToExprs xs
   case nonEmpty ies of
     Nothing -> return NullCF
-    Just x -> return $ AsIsCF $ group "[" "]" $ csExprs x
-toCodeCoAlg _ (Fix.Fix NullF) = return $ NullCF
-toCodeCoAlg _ (Fix.Fix (BareF t)) = return $ BareCF t
-toCodeCoAlg _ (Fix.Fix (AsIsF x)) = return $ AsIsCF x
-toCodeCoAlg _ (Fix.Fix (NextToF l r)) = return $ NextToCF l r
+    Just x -> return $ AsIsCF (as, group "[" "]" $ csExprs x)
+toCodeCoAlg _ (_, Fix.Fix NullF) = return $ NullCF
+toCodeCoAlg _ (_, Fix.Fix (BareF t)) = return $ BareCF t
+toCodeCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ AsIsCF (as, x)
+toCodeCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ NextToCF (as, l) (as, r)
 
+csArgs :: [Text] -> Text
+csArgs = T.intercalate ", "
+
+writeCodeAlg :: CodeExprF Text -> Text
+writeCodeAlg NullCF = ""
+writeCodeAlg (BareCF t) = t
+writeCodeAlg (AsIsCF e) = e
+writeCodeAlg (NextToCF l r) = l <> r
+
+prettyPrintSExpr :: StanExprF Pretty.Doc -> Pretty.Doc
+prettyPrintSExpr NullF = mempty
+prettyPrintSExpr (BareF t) = Pretty.text (toString t)
+prettyPrintSExpr (AsIsF t) = t
+prettyPrintSExpr (NextToF l r) = l <> r
+prettyPrintSExpr (DeclCtxtF e) = Pretty.text "dCtxt" <> Pretty.parens e
+prettyPrintSExpr (UseTExprF (TExpr e st)) = Pretty.text ("use [of " <> show st <> "]")  <> Pretty.parens e
+prettyPrintSExpr (IndexF k) = Pretty.braces (Pretty.text $ toString k)
+prettyPrintSExpr (VectorizedF ks e) = Pretty.text "vec" <> Pretty.brackets (Pretty.text $ show  $ Set.toList ks) <> Pretty.parens e
+prettyPrintSExpr (IndexesF ds) = Pretty.braces (show ds)
+prettyPrintSExpr (VectorFunctionF f e es) = e <> Pretty.text "?" <> Pretty.text (toString f) <> Pretty.parens (mconcat (Pretty.punctuate "," es))
+
+prettyPrintCExpr :: CodeExprF Pretty.Doc -> Pretty.Doc
+prettyPrintCExpr NullCF = mempty
+prettyPrintCExpr (BareCF t) = Pretty.text (toString t)
+prettyPrintCExpr (AsIsCF t) = t
+prettyPrintCExpr (NextToCF l r) = l <> r
+---
+
+printIndexedAlg :: StanExprF Text -> Either Text Text
+printIndexedAlg NullF = Right ""
+printIndexedAlg (BareF t) = Right t
+printIndexedAlg (AsIsF t) = Right t
+printIndexedAlg (NextToF l r) = Right $ l <> r
+printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
+printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding texpr/var uses"
+printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes"
+printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use"
+printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use"
+printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorization use"
+
+{-
 bindIndexCoAlg ::  VarBindingStore -> StanExpr -> RecM (StanExprF StanExpr)
 bindIndexCoAlg vbs (Fix.Fix (IndexF k)) = do
   lc <- lContext <$> get
@@ -402,43 +429,4 @@ bindIndexCoAlg _ (Fix.Fix (IndexesF xs)) = do
     Nothing -> return NullF
     Just x -> return $ AsIsF $ group "[" "]" $ csExprs x
 bindIndexCoAlg _ x = return $ AsIsF x
-
-csArgs :: [Text] -> Text
-csArgs = T.intercalate ", "
-
-printIndexedAlg :: StanExprF Text -> Either Text Text
-printIndexedAlg NullF = Right ""
-printIndexedAlg (BareF t) = Right t
-printIndexedAlg (AsIsF t) = Right t
-printIndexedAlg (NextToF l r) = Right $ l <> r
-printIndexedAlg (DeclCtxtF _) = Left "Should not call printExpr before expanding declarations"
-printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding texpr/var uses"
-printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes"
-printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use"
-printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use"
-printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorization use"
-
-writeCodeAlg :: CodeExprF Text -> Text
-writeCodeAlg NullCF = ""
-writeCodeAlg (BareCF t) = t
-writeCodeAlg (AsIsCF t) = t
-writeCodeAlg (NextToCF l r) = l <> r
-
-prettyPrintSExpr :: StanExprF (Pretty.Doc) -> Pretty.Doc
-prettyPrintSExpr NullF = mempty
-prettyPrintSExpr (BareF t) = Pretty.text (toString t)
-prettyPrintSExpr (AsIsF t) = t
-prettyPrintSExpr (NextToF l r) = l <> r
-prettyPrintSExpr (DeclCtxtF e) = Pretty.text "dCtxt" <> Pretty.parens e
-prettyPrintSExpr (UseTExprF (TExpr e st)) = Pretty.text ("use [of " <> show st <> "]")  <> Pretty.parens e
-prettyPrintSExpr (IndexF k) = Pretty.braces (Pretty.text $ toString k)
-prettyPrintSExpr (VectorizedF ks e) = Pretty.text "vec" <> Pretty.brackets (Pretty.text $ show  $ Set.toList ks) <> Pretty.parens e
-prettyPrintSExpr (IndexesF ds) = Pretty.braces (show ds)
-prettyPrintSExpr (VectorFunctionF f e es) = e <> Pretty.text "?" <> Pretty.text (toString f) <> Pretty.parens (mconcat (Pretty.punctuate "," es))
-
-
-prettyPrintCExpr :: CodeExprF (Pretty.Doc) -> Pretty.Doc
-prettyPrintCExpr NullCF = mempty
-prettyPrintCExpr (BareCF t) = Pretty.text (toString t)
-prettyPrintCExpr (AsIsCF t) = t
-prettyPrintCExpr (NextToCF l r) = l <> r
+-}

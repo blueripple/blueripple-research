@@ -392,12 +392,11 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
     $ fmap A.toJSON fldM
   SB.inBlock SB.SBGeneratedQuantities $ do
     let groupCounters = fmap ("n_" <>) $ ugNames
---        indexBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
-        innerLoopNames = case mPSGroup of
-          Nothing -> ugNames -- (indexBindings', Map.keys indexBindings')
-          Just (SB.GroupTypeTag gn) -> List.filter (/= gn) ugNames --(Map.insert gn (SB.name "n") indexBindings', Map.keys $ Map.delete gn indexBindings')
---        bindingStore = SB.fullyIndexedBindings indexBindings
-        inner = do
+        useBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
+        (useBindings, innerLoopNames) = case mPSGroup of
+          Nothing -> (useBindings', ugNames) -- (indexBindings', Map.keys indexBindings')
+          Just (SB.GroupTypeTag gn) -> (Map.insert gn (SB.name "n") useBindings', List.filter (/= gn) ugNames)
+    let inner = do
           let psExpE = SB.familyExp sDist dsName args
 --          expCode <- SB.printExprM "mrpPSStanCode" psExpE
           SB.stanDeclareRHS ("p" <> namedPS) SB.StanReal "" psExpE --expCode
@@ -408,12 +407,13 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
             $ namedPS <> "[n] += p" <> namedPS <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
         makeLoops [] = inner
         makeLoops (x : xs) = SB.stanForLoopB ("n_" <> x) Nothing x $ makeLoops xs
-    SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) ""
-      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name sizeName])
---    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
-    SB.stanForLoopB "n" Nothing namedPS $ do
-      let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" (SB.scalar "0") >> return ())
-      makeLoops innerLoopNames
-      when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
-    return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim namedPS)
+    SB.withUseBindings useBindings $ do
+      SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) ""
+        $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name sizeName])
+  --    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
+      SB.stanForLoopB "n" Nothing namedPS $ do
+        let wsn = namedPS <> "_WgtSum"
+        when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" (SB.scalar "0") >> return ())
+        makeLoops innerLoopNames
+        when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
+      return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim namedPS)

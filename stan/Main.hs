@@ -352,7 +352,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         let dist = SB.binomialLogitDist vSucc vTotal
             logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
             logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
-            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
+            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gWNHE, gAgeE, gEduE, gWNGE, gStateE]
         SB.sampleDistV dist logitPE_sample
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE

@@ -465,6 +465,15 @@ modifyIndexBindings :: (VarBindingStore -> VarBindingStore)
                     -> BuilderState d r
                     -> BuilderState d r
 modifyIndexBindings f (BuilderState dv vbs rb hf c ib) = BuilderState dv (f vbs) rb hf c ib
+
+withUseBindings :: Map SME.StanIndexKey SME.StanExpr -> StanBuilderM env d r0 a -> StanBuilderM env d r0 a
+withUseBindings ubs m = do
+  oldBindings <- indexBindings <$> get
+  modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbs) -> SME.VarBindingStore ubs dbs)
+  a <- m
+  modify $ modifyIndexBindings $ const oldBindings
+  return a
+
 modifyRowBuildersA :: Applicative t
                    => (RowBuilderDHM d r -> t (RowBuilderDHM d r))
                    -> BuilderState d r
