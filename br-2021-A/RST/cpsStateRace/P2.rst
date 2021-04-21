@@ -1,0 +1,4 @@
+Now we add the state-race interaction term, allowing the model to
+adjust for state-specific effects on the turnout gap.  We chart the
+modeled gaps again, for now leaving the states sorted in the same
+order as the first chart.

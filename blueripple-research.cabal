@@ -372,6 +372,21 @@ executable stan-models
          , relude (Relude as Prelude
          , Relude.Extra)
 
+executable br-2021-A
+  import: deps
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: br-2021-A
+  main-is: Main.hs
+  build-depends: base
+               , blueripple-research
+               , blueripple-data-sets
+               , haskell-stan
+               , hs-cmdstan
+               , pandoc
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+
 executable ga-work
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16

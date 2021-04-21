@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/knit-haskell ~/DataScience/Frames-hvega ../data-sets ~/DataScience/hs-cmdstan
+packages: ./
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -20,15 +20,15 @@ source-repository-package
   subdir: generic-optics
 
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/hs-cmdstan
---  tag: fe4a0cd8ab7548b64eaf5000c0f28b151b75522e
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/hs-cmdstan
+  tag: cc2fb6704d196f8e467fc02a74f0117bfd043f42
 
---source-repository-package
---  type: git
---  location: https://github.com/blueripple/data-sets
---  tag: c415520c2c1ee806df2254a4cbc2c61dcb72975a
+source-repository-package
+  type: git
+  location: https://github.com/blueripple/data-sets
+  tag: 415adbfbcea4f43eb182a29d3674639f2ed178ff
 
 source-repository-package
   type: git
@@ -47,10 +47,10 @@ source-repository-package
 --  location: https://github.com/polysemy-research/polysemy-zoo
 --  tag: fd7eb2b9934d15d233fb4e75acb7fbff80d149bf
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/knit-haskell
---  tag: ae9b22c9e0184c4965289dd9ff8d148e172d9872
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 59bdb7a4c16d246f2410a204666e793273d845d0
 
 source-repository-package
   type: git
@@ -77,10 +77,10 @@ source-repository-package
   location: https://gitlab.com/adamCS/Frames-serialize
   tag: bfd0273dd3f5e66ac1f8c31a7f0c293dd9d819c5
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-hvega
---  tag: 79d68f20d38a8167ec4ef7ca9c61f729ad5e7a52
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: f816f822ff5a004c2485e97b5e44f511589e44a5
 
 source-repository-package
   type: git
