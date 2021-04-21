@@ -53,7 +53,8 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
   let vDim = SB.dimToText sd
   SB.inBlock SB.SBTransformedData $ do
     let dim = SB.scalar "2" `SB.times` SB.stanDimToExpr sd
-    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) "" $ SB.function "Q_sum_to_zero_QR" (one $ SB.stanDimToExpr sd)
+    SB.stanDeclareRHS ("Q_r_" <> varName) (SB.StanVector $ SB.ExprDim dim) ""
+      $ SB.function "Q_sum_to_zero_QR" (one $ SB.declaration $ SB.stanDimToExpr sd)
 --    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
   SB.inBlock SB.SBParameters $ do
     let dim = SB.stanDimToExpr sd `SB.minus` SB.scalar "1"

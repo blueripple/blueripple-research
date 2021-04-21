@@ -1,4 +1,5 @@
 Now we add the state-race interaction term, allowing the model to
-adjust for state-specific effects on the turnout gap.  We chart the
-modeled gaps again, for now leaving the states sorted in the same
-order as the first chart.
+incorporate state-specific effects on the turnout gap, and chart the
+result below. The range of gaps is now much larger, from
+slightly negative in SC (NWNH voters vote at higher rates than WNH voters)
+to more than 20 points in AZ.

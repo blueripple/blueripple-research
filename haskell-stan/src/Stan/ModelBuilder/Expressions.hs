@@ -107,14 +107,6 @@ stanDimToExpr (ExprDim e) = e
 indexesToExprs :: [StanDim] -> [StanExpr]
 indexesToExprs = fmap stanDimToExpr
 
-{-
-indexesToUExprs :: [StanDim] -> [(Maybe StanIndexKey, StanExpr)]
-indexesToUExprs = fmap go  where
-  go (NamedDim k) = (Just k, uIndex k)
-  go (GivenDim n) = (Nothing, name $ show n)
-  go (ExprDim e) = (Nothing, e)
--}
-
 collapseArray :: StanType -> StanType
 collapseArray (StanArray dims st) = case st of
   StanArray dims' st -> collapseArray $ StanArray (dims ++ dims') st

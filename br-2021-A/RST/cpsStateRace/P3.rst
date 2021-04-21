@@ -1,0 +1,2 @@
+Finally, we look *only* at the state-race interaction term, isolating
+the portion of the turnout gap attributable to the state.
