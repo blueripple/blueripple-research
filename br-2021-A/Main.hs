@@ -164,6 +164,13 @@ race5FromPUMS r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
+race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
+race5FromCPS r =
+  let race4A = F.rgetField @DT.RaceAlone4C r
+      hisp = F.rgetField @DT.HispC r
+  in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
@@ -316,10 +323,10 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
+        SB.addGroup "Race" $ SB.makeIndexFromEnum race5FromCPS
 --        SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
         SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
-        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
+--        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
         SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
         SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
@@ -331,8 +338,8 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
         $ SB.addRowMap "WNH"  wnh
 --      $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
-        $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
-        $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
+        $ SB.addRowMap "Race" race5FromPUMS --(F.rgetField @DT.RaceAlone4C)
+--        $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
         $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
         $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
@@ -360,16 +367,16 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
         gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
-        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Ethnicity"
+--        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Ethnicity"
         gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
         gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
         gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
         gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
         (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
-            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gEthE, gAgeE, gEduE, gWNGE, gStateE]
+            logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
+            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
         SB.sampleDistV dist logitPE_sample
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE
@@ -384,7 +391,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                 (Just nameHead)
                 dataSet
                 pumsPSGroupRowMap
-                (S.fromList ["CD", "Sex", "Race", "Ethnicity", "WNH", "Age", "Education", "WhiteNonGrad"])
+                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad"])
                 (realToFrac . F.rgetField @PUMS.Citizens)
                 MRP.PSShare
                 (Just $ SB.GroupTypeTag @Text "State")
@@ -458,8 +465,8 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     extractTestResults
     data_C
     (Just 1000)
-    (Just 0.95)
-    Nothing
+    (Just 0.99)
+    (Just 15)
   (rtDiffWI, rtDiffNI, rtDiffI) <- K.ignoreCacheTime res_C
   K.logLE K.Info $ "results: " <> show rtDiffI
   -- sort on median coefficient
