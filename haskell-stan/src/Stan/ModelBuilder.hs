@@ -601,6 +601,28 @@ addIndexIntMap rtt gtt im = do
       let ibs' = addIntMapBuilder rtt gtt f ibs
       put $  BuilderState vars ib rowBuilders fsNames code ibs'
 
+
+addDataSetIndexes ::  forall r k env d r0. (Typeable d)
+                    => RowTypeTag r
+                    -> GroupRowMap r
+                    -> StanBuilderM env d r0 ()
+addDataSetIndexes rtt grm = do
+  git <- groupIndexByType <$> askGroupEnv
+  let lengthName = "N_" <> dsName rtt
+  addLengthJson rtt lengthName (dsName rtt)
+  let f (gtt DSum.:=> (RowMap h)) = case DHash.lookup gtt git of
+        Nothing -> stanBuildError $ "addDataSetIndexes (data set=" <> dsName rtt <> ") group=" <> taggedGroupName gtt <> " not found in group environment."
+        Just (IndexMap _ gE _) -> do
+          let name = taggedGroupName gtt <> "_" <> dsSuffix rtt
+          addJson
+            rtt
+            name
+            (SME.StanArray [SME.NamedDim $ dsName rtt] SME.StanInt)
+            "<lower=1>"
+            (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
+  traverse_ f $ DHash.toList grm
+
+
 runStanBuilder' :: forall f env d r0 a. (Typeable d, Typeable r0, Foldable f)
                => env -> GroupEnv r0 -> (d -> f r0) -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
 runStanBuilder' userEnv ge toModeled sb = res where
@@ -804,7 +826,8 @@ addColumnJson :: (Typeable d, Aeson.ToJSON x)
               -> Maybe SME.StanIndexKey
               -> SME.StanType
               -> Text
-              -> (r -> x) -> StanBuilderM env d r0 SME.StanVar
+              -> (r -> x)
+              -> StanBuilderM env d r0 SME.StanVar
 addColumnJson rtt name mk st sc toX = do
   case st of
     SME.StanInt -> stanBuildError $ "SME.StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name mk

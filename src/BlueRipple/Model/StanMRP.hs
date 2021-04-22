@@ -335,8 +335,21 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   checkGroupSubset "PS Spec" "All Groups" groupMaps allGroups
   rowBuilders <- SB.rowBuilders <$> get
   toFoldable <- case DHash.lookup rtt rowBuilders of
-    Nothing -> SB.stanBuildError $ "RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders (in addPostStratification)."
+    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _) -> return tf
+
+
+  case mPSGroup of
+    Nothing -> return ()
+    Just gtt@(SB.GroupTypeTag gn) ->
+      case DHash.lookup gtt allGroups of
+        Nothing -> do
+          let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                             <> ") is not present in Builder groups: " <> tGrps
+          SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
+          let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
+          SB.addIndexIntMapFld rtt gtt fld
+
   intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
@@ -347,6 +360,8 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   -- add the data set for the json builders
 
 --  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
+  -- size of post-stratification result
+  -- e.g., N_PS_ACS_State
   SB.addJson rtt sizeName SB.StanInt "<lower=0>"
     $ SJ.valueToPairF sizeName
     $ fmap (A.toJSON . Set.size)
@@ -354,9 +369,13 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
-      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _ _)) -> (1,n)) $ DHash.toList usedGroups
-      groupDims = fmap SB.NamedDim ugNames
-      weightArrayType = SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+--      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _ _)) -> (1,n)) $ DHash.toList usedGroups
+--      groupDims = fmap SB.NamedDim ugNames
+      weightArrayType = SB.StanVector $ SB.NamedDim dsName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+  wgtsV <-  SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
+            $ SJ.valueToPairF (namedPS <> "_wgts")
+            $ SJ.jsonArrayF weightF
+{-
   let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int])
       indexList grm gim =
         let mCompose (gtt DSum.:=> SB.RowMap rTok) =
@@ -390,12 +409,53 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
     $ SJ.valueToPairF (namedPS <> "_wgts")
     $ fmap A.toJSON fldM
+-}
   SB.inBlock SB.SBGeneratedQuantities $ do
-    let groupCounters = fmap ("n_" <>) $ ugNames
-        useBindings' =  Map.fromList $ zip ugNames $ fmap SB.name $ groupCounters
-        (useBindings, innerLoopNames) = case mPSGroup of
-          Nothing -> (useBindings', ugNames) -- (indexBindings', Map.keys indexBindings')
-          Just (SB.GroupTypeTag gn) -> (Map.insert gn (SB.name "n") useBindings', List.filter (/= gn) ugNames)
+    let --groupCounters = fmap ("n_" <>) $ ugNames
+        errCtxt = "addPostStratification"
+        indexToPS x = SB.indexBy (SB.name x) dsName
+        useBindings' =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
+        divEq = SB.binOp "/="
+    case mPSGroup of
+      Nothing -> do
+        psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
+        SB.bracketed 2 $ do
+          wgtSumE <- if psType == PSShare
+                    then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
+                    else return SB.nullE
+          SB.stanForLoopB "n" Nothing dsName $ do
+            e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args --expCode
+            SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+            when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+          when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+        return psV
+      Just (SB.GroupTypeTag gn) -> do
+        let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize dsName])
+        psV <- SB.stanDeclareRHS namedPS (SB.StanVector (SB.NamedDim dsName)) "" zeroVec
+        SB.bracketed 2 $ do
+          wgtSumE <- if psType == PSShare
+                     then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim dsName)) "" zeroVec
+                     else return SB.nullE
+          SB.stanForLoopB "n" Nothing dsName $ do
+            e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args
+            SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+            when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+          when (psType == PSShare) $ SB.stanForLoopB "n" Nothing gn $ do
+            SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+        return psV
+{-
+
+        (useBindings, psGrpDim) = case mPSGroup of
+          Nothing -> (useBindings', SB.GivenDim 1) -- (indexBindings', Map.keys indexBindings')
+          Just (SB.GroupTypeTag gn) -> (Map.insert gn (indexToPS gn) useBindings', SB.NamedDim gn)
+    SB.withUseBindings useBindings $ do
+      let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr psGrpDim])
+      SB.stanDeclareRHS namedPS (SB.StanVector psGrpDim) "" zeroVec
+      let wsn = namedPS <> "_WgtSum"
+      when (psType == PSShare) $ (SB.stanDeclareRHS wsn (SB.StanVector psGrpDim) "" zeroVec >> return ())
+      stanForLoopB "n" Nothing (dsName rtt) $ do
+        e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpE --expCode
+
     let inner = do
           let psExpE = SB.familyExp sDist dsName args
 --          expCode <- SB.printExprM "mrpPSStanCode" psExpE
@@ -417,3 +477,4 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
         makeLoops innerLoopNames
         when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
       return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim namedPS)
+-}

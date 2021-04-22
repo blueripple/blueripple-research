@@ -212,15 +212,16 @@ cpsVAnalysis = do
   BR.logFrame $ FL.fold cpsCountsByYear cpsV
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
-
+{-
   K.newPandoc
     (K.PandocInfo "State_Race Interaction" $ one ("pagetitle","State_Race interaction"))
     $ cpsStateRace False $ K.liftActionWithCacheTime data_C
-{-
+-}
+
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
--}
+
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -229,11 +230,11 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+--        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
         SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+--        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+--        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
 --        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 
@@ -241,7 +242,9 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
 --        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
         $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
---        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+--        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
+--        $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.emptyGroupRowMap
 
       dataAndCodeBuilder :: Typeable modelRow
@@ -266,18 +269,33 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                                   (MRP.FixedEffects 1 densityPredictor)
 
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
-        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
-        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
+--        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
+--        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
 --        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
-        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
+--        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
 --        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
 --        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
-        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
+--        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gAgeE, gEduE, gRaceE, gStateE, gRaceStateEV]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE]
         SB.sampleDistV dist logitPE
-        SB.generateLogLikelihood dist logitPE
+
+        acsData <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
+        SB.addDataSetIndexes acsData pumsPSGroupRowMap
+
+        MRP.addPostStratification
+          dist
+          logitPE
+          Nothing
+          acsData
+          (SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation) $ pumsPSGroupRowMap)
+          (S.fromList ["CD", "Sex", "Race"])
+          (realToFrac . F.rgetField @PUMS.Citizens)
+          MRP.PSShare
+          (Just $ SB.GroupTypeTag @Text "State")
+
+--        SB.generateLogLikelihood dist logitPE
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SB.StanInt) dist logitPE
         return ()
 

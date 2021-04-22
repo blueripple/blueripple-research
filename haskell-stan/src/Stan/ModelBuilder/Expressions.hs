@@ -238,6 +238,10 @@ vectorSample = binOp "~"
 plus ::  StanExpr -> StanExpr -> StanExpr
 plus = binOp "+"
 
+plusEq ::  StanExpr -> StanExpr -> StanExpr
+plusEq = binOp "+="
+
+
 minus ::  StanExpr -> StanExpr -> StanExpr
 minus = binOp "-"
 
