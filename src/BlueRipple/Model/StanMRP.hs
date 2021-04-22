@@ -332,13 +332,13 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
           <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
           <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
   checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
-  checkGroupSubset "PS Spec" "All Groups" groupMaps allGroups
+  -- we don't need the PS group to be present on the RHS, but it could be
+  let groupMapsToCheck = maybe groupMaps (\x -> DHash.delete x groupMaps) mPSGroup
+  checkGroupSubset "PS Spec" "All Groups" groupMapsToCheck allGroups
   rowBuilders <- SB.rowBuilders <$> get
   toFoldable <- case DHash.lookup rtt rowBuilders of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _) -> return tf
-
-
   case mPSGroup of
     Nothing -> return ()
     Just gtt@(SB.GroupTypeTag gn) ->

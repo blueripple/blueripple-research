@@ -602,7 +602,7 @@ addIndexIntMap rtt gtt im = do
       put $  BuilderState vars ib rowBuilders fsNames code ibs'
 
 
-addDataSetIndexes ::  forall r k env d r0. (Typeable d)
+addDataSetIndexes ::  forall r k env d r0. (Ord k, Typeable d)
                     => RowTypeTag r
                     -> GroupRowMap r
                     -> StanBuilderM env d r0 ()
@@ -610,16 +610,20 @@ addDataSetIndexes rtt grm = do
   git <- groupIndexByType <$> askGroupEnv
   let lengthName = "N_" <> dsName rtt
   addLengthJson rtt lengthName (dsName rtt)
-  let f (gtt DSum.:=> (RowMap h)) = case DHash.lookup gtt git of
-        Nothing -> stanBuildError $ "addDataSetIndexes (data set=" <> dsName rtt <> ") group=" <> taggedGroupName gtt <> " not found in group environment."
-        Just (IndexMap _ gE _) -> do
-          let name = taggedGroupName gtt <> "_" <> dsSuffix rtt
-          addJson
-            rtt
-            name
-            (SME.StanArray [SME.NamedDim $ dsName rtt] SME.StanInt)
-            "<lower=1>"
-            (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
+  let f (gtt DSum.:=> (RowMap h)) =
+        let name = taggedGroupName gtt <> "_" <> dsSuffix rtt
+        in case DHash.lookup gtt git of
+          Nothing -> do
+            let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
+            addIndexIntMapFld rtt gtt fld
+
+          Just (IndexMap _ gE _) -> do
+            addJson
+              rtt
+              name
+              (SME.StanArray [SME.NamedDim $ dsName rtt] SME.StanInt)
+              "<lower=1>"
+              (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
   traverse_ f $ DHash.toList grm
 
 
@@ -706,44 +710,6 @@ stanDeclare' sn st sc mRHS = do
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
   return sv
-
-{-
-  let dimsToText x = "[" <> T.intercalate ", " (SME.dimToText <$> x) <> "]"
-  let typeToCode :: SME.StanName -> SME.StanType -> Text -> Text
-      typeToCode sn st sc = case st of
-        SME.StanInt -> "int" <> sc <> " " <> sn
-        SME.StanReal -> "real" <> sc <> " " <> sn
-        SME.StanArray dims st' -> case st' of
-          SME.StanArray iDims st'' -> typeToCode sn (SME.StanArray (dims ++ iDims) st'') sc
-          _ -> typeToCode sn st' sc <> dimsToText dims
-        SME.StanVector dim -> "vector" <> sc <> "[" <> SME.dimToText dim <> "] " <> sn
-        SME.StanMatrix (dimR, dimC) -> "matrix" <> sc <> "[" <> SME.dimToText dimR <> "," <> SME.dimToText dimC <> "] " <> sn
-        SME.StanCorrMatrix dim -> "corr_matrix[" <> SME.dimToText dim <> "]" <> sn
-        SME.StanCholeskyFactorCorr dim -> "cholesky_factor_corr[" <> SME.dimToText dim <> "]" <> sn
-        SME.StanCovMatrix dim -> "cov_matrix[" <> SME.dimToText dim <> "]" <> sn
-  let dimsToCheck st = case st of
-        SME.StanVector d -> [d]
-        SME.StanMatrix (d1, d2) -> [d1, d2]
-        SME.StanCorrMatrix d -> [d]
-        SME.StanCholeskyFactorCorr d -> [d]
-        SME.StanCovMatrix d -> [d]
-        SME.StanArray dims st' -> dimsToCheck st' ++ dims
-        _ -> []
-
-
-  let checkDim d = case d of
-        SME.NamedDim t -> checkName t
-        SME.GivenDim _ -> return ()
-  traverse_ checkDim $ dimsToCheck st
-
-  _ <- if isNew
-    then case mRHS of
-           Nothing -> addStanLine $ typeToCode sn st sc
-           Just rhs -> addStanLine $ typeToCode sn st sc <> " = " <> rhs
-    else case mRHS of
-           Nothing -> return ()
-           Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
--}
 
 stanDeclare :: SME.StanName -> SME.StanType -> Text -> StanBuilderM env d r0 SME.StanVar
 stanDeclare sn st sc = stanDeclare' sn st sc Nothing
