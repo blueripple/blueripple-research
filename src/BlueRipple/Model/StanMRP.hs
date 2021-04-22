@@ -339,17 +339,19 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   toFoldable <- case DHash.lookup rtt rowBuilders of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _) -> return tf
+{-
   case mPSGroup of
     Nothing -> return ()
     Just gtt@(SB.GroupTypeTag gn) ->
       case DHash.lookup gtt allGroups of
-        Nothing -> do
+        Nothing -> stanBuildError $ "addPostStratification: given group not in group environment.  Perhaps add as a supplemental index?"
+        Just (IndexMap _ h im) -> do
           let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                             <> ") is not present in Builder groups: " <> tGrps
+                             <> ") is not present in given RowMaps: " <> tGrps
           SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-          let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
-          SB.addIndexIntMapFld rtt gtt fld
-
+--          let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
+--          SB.addIndexIntMapFld rtt gtt fld
+-}
   intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
@@ -413,36 +415,39 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   SB.inBlock SB.SBGeneratedQuantities $ do
     let --groupCounters = fmap ("n_" <>) $ ugNames
         errCtxt = "addPostStratification"
-        indexToPS x = SB.indexBy (SB.name x) dsName
-        useBindings' =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
+        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> dsName) dsName
+        useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
     case mPSGroup of
       Nothing -> do
-        psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
-        SB.bracketed 2 $ do
-          wgtSumE <- if psType == PSShare
-                    then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
-                    else return SB.nullE
-          SB.stanForLoopB "n" Nothing dsName $ do
-            e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args --expCode
-            SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
-            when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-          when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
-        return psV
+        SB.withUseBindings useBindings $ do
+          psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
+          SB.bracketed 2 $ do
+            wgtSumE <- if psType == PSShare
+                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
+                       else return SB.nullE
+            SB.stanForLoopB "n" Nothing dsName $ do
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args --expCode
+              SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+              when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+            when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+          return psV
       Just (SB.GroupTypeTag gn) -> do
-        let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize dsName])
-        psV <- SB.stanDeclareRHS namedPS (SB.StanVector (SB.NamedDim dsName)) "" zeroVec
-        SB.bracketed 2 $ do
-          wgtSumE <- if psType == PSShare
-                     then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim dsName)) "" zeroVec
-                     else return SB.nullE
-          SB.stanForLoopB "n" Nothing dsName $ do
-            e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args
-            SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
-            when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-          when (psType == PSShare) $ SB.stanForLoopB "n" Nothing gn $ do
-            SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
-        return psV
+        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> dsName) dsName) useBindings
+        SB.withUseBindings useBindings' $ do
+          let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
+          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
+          SB.bracketed 2 $ do
+            wgtSumE <- if psType == PSShare
+                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim namedPS)) "" zeroVec
+                       else return SB.nullE
+            SB.stanForLoopB "n" Nothing dsName $ do
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args
+              SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+              when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do
+              SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+          return psV
 {-
 
         (useBindings, psGrpDim) = case mPSGroup of

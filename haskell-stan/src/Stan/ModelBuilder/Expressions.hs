@@ -257,7 +257,7 @@ multiOp o es = foldl' (binOp o) (head es) (tail es)
 --data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
 data VarBindingStore = VarBindingStore { useBindings :: Map StanIndexKey StanExpr
                                        , declarationBindings :: Map StanIndexKey StanExpr
-                                       }
+                                       } deriving (Show)
 
 bindings :: Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
 bindings = VarBindingStore
@@ -335,10 +335,10 @@ toCodeCoAlg ::  VarBindingStore -> (AnaS, StanExpr) -> Either Text (CodeExprF (A
 toCodeCoAlg vbs (as, Fix.Fix (IndexF k)) = do
   case lContext as of
     Use -> case lookupUseBinding k vbs of
-      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> showKeys vbs
+      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> show vbs
       Just ie -> return $ AsIsCF (as, ie)
     Declare ->   case lookupDeclarationBinding k vbs of
-      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> showKeys vbs
+      Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> show vbs
       Just ie -> return $ AsIsCF (as, ie)
 toCodeCoAlg _ (AnaS _ vks, Fix.Fix (DeclCtxtF e)) = do
   return $ AsIsCF (AnaS Declare vks, e)

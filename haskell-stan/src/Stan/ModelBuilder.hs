@@ -159,8 +159,21 @@ data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Either Text Int 
 data MakeIndex r k where
   GivenIndex :: Ord k => (Map k Int) -> (r -> k) -> MakeIndex r k
   FoldToIndex :: Ord k =>  (Foldl.Fold r (Map k Int)) -> (r -> k) -> MakeIndex r k
+  SupplementalIndex :: (Ord k, Foldable f) => f k -> MakeIndex r k
 
-data IndexMap r k = IndexMap (IntIndex r) (k -> Either Text Int) (IntMap.IntMap k)
+data IndexMap r k = IndexMap (Maybe (IntIndex r)) (k -> Either Text Int) (IntMap.IntMap k)
+
+unusedIntIndex :: IntIndex r
+unusedIntIndex = IntIndex 0 (const $ Left $ "Attempt to use an unused Int Index.")
+
+supplementalIM :: (Foldable f, Ord k) => f k -> IndexMap r k
+supplementalIM ks = IndexMap Nothing g im where
+  fldToIM = fmap (IntMap.fromAscList . zip [1..] . Set.toList) Foldl.set
+  im = Foldl.fold fldToIM ks
+  m = Map.fromList $ fmap (\(a, b)->(b, a)) $ IntMap.toList im
+  g k = case Map.lookup k m of
+    Nothing -> Left "Index lookup error in function produced by supplementalIM"
+    Just x -> Right x
 
 mapLookupE :: Ord k => (k -> Text) -> Map k a -> k -> Either Text a
 mapLookupE errMsg m k = case Map.lookup k m of
@@ -174,11 +187,12 @@ mapToIndexMap :: Ord k => (r -> k) -> Map k Int -> IndexMap r k
 mapToIndexMap h m = indexMap where
   lookupK = mapLookupE (const "key not found when building given index") m
   intIndex = IntIndex (Map.size m) (lookupK . h)
-  indexMap = IndexMap intIndex lookupK (toIntMap m)
+  indexMap = IndexMap (Just intIndex) lookupK (toIntMap m)
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
 makeIndexMapF (GivenIndex m h) = pure $ mapToIndexMap h m
 makeIndexMapF (FoldToIndex fld h) = fmap (mapToIndexMap h) fld
+makeIndexMapF (SupplementalIndex ks) = pure $ supplementalIM ks
 
 makeIndexFromEnum :: forall k r.(Enum k, Bounded k, Ord k) => (r -> k) -> MakeIndex r k
 makeIndexFromEnum h = GivenIndex m h where
@@ -189,6 +203,9 @@ makeIndexFromFoldable :: (Foldable f, Ord k) => (k -> Text) -> (r -> k) -> f k -
 makeIndexFromFoldable _ h allKs = GivenIndex asMap h where
   listKs = ordNub $ Foldl.fold Foldl.list allKs
   asMap = Map.fromList $ zip listKs [1..]
+
+--makeSupplementalIndex :: (Foldable f, Ord k) => Text -> f k -> MakeIndex r k
+--makeSupplementalIndex gn ks = SupplementalIndex
 {-
   size = Map.size asMap
   index k = case Map.lookup k asMap of
@@ -273,8 +290,8 @@ makeMainIndexes :: Foldable f => GroupIndexMakerDHM r -> f r -> (GroupIndexDHM r
 makeMainIndexes makerMap rs = (dhm, gm) where
   dhmF = DHash.traverse makeIndexMapF makerMap -- so we only fold once to make all the indices
   dhm = Foldl.fold dhmF rs
-  namedIntIndex (GroupTypeTag n DSum.:=> IndexMap ii _ _) = (n, ii)
-  gm = Map.fromList $ namedIntIndex <$> DHash.toList dhm
+  namedIntIndex (GroupTypeTag n DSum.:=> IndexMap mII _ _) = fmap (n,) mII
+  gm = Map.fromList $ catMaybes $ namedIntIndex <$> DHash.toList dhm
 
 groupIntMap :: IndexMap r k -> IntMap.IntMap k
 groupIntMap (IndexMap _ _ im) = im
@@ -288,7 +305,7 @@ indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
   im :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int)
   im gim = case DHash.lookup (GroupTypeTag @k groupName) gim of
              Nothing -> Left $ "indexedRowInfo: lookup of group=" <> groupName <> " failed."
-             Just (IndexMap (IntIndex _ h) g _) -> Right (g . keyF)
+             Just (IndexMap _ g _) -> Right (g . keyF)
 
 
 unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
@@ -363,12 +380,14 @@ buildJSONFromRows d rowFoldMap = do
 addGroupIndexes :: (Typeable d, Typeable r0) => StanBuilderM env d r0 ()
 addGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
-      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _ _)) = do
-        addFixedIntJson' ("J_" <> gName) (Just 2) gSize
-        _ <- addColumnMJson ModeledRowTag gName Nothing (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
-        addDeclBinding gName $ SME.name $ "J_" <> gName
-        addUseBinding gName $ SME.indexBy (SME.name gName) modeledDataIndexName
-        return ()
+      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap mII {-(IntIndex gSize mIntF)-} _ _)) =
+        case mII of
+          Just (IntIndex gSize mIntF) -> do
+            addFixedIntJson' ("J_" <> gName) (Just 2) gSize
+            _ <- addColumnMJson ModeledRowTag gName Nothing (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
+            addDeclBinding gName $ SME.name $ "J_" <> gName
+            addUseBinding gName $ SME.indexBy (SME.name gName) modeledDataIndexName
+          Nothing -> return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
 
@@ -602,7 +621,7 @@ addIndexIntMap rtt gtt im = do
       put $  BuilderState vars ib rowBuilders fsNames code ibs'
 
 
-addDataSetIndexes ::  forall r k env d r0. (Ord k, Typeable d)
+addDataSetIndexes ::  forall r k env d r0. (Typeable d)
                     => RowTypeTag r
                     -> GroupRowMap r
                     -> StanBuilderM env d r0 ()
@@ -613,10 +632,9 @@ addDataSetIndexes rtt grm = do
   let f (gtt DSum.:=> (RowMap h)) =
         let name = taggedGroupName gtt <> "_" <> dsSuffix rtt
         in case DHash.lookup gtt git of
-          Nothing -> do
-            let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
-            addIndexIntMapFld rtt gtt fld
-
+          Nothing -> stanBuildError $ "addDataSetIndexes: Group=" <> taggedGroupName gtt
+                     <> " missing from GroupEnv. Perhaps a group index needs to be added, "
+                     <> "either to modeled data or manually in the code-builder?"
           Just (IndexMap _ gE _) -> do
             addJson
               rtt
@@ -641,7 +659,12 @@ runStanBuilder' userEnv ge toModeled sb = res where
     sb
 
 runStanBuilder :: (Foldable f, Typeable d, Typeable r0)
-               => d -> (d -> f r0) -> env -> StanGroupBuilderM r0 () -> StanBuilderM env d r0 a -> Either Text (BuilderState d r0, a)
+               => d
+               -> (d -> f r0)
+               -> env
+               -> StanGroupBuilderM r0 ()
+               -> StanBuilderM env d r0 a
+               -> Either Text (BuilderState d r0, a)
 runStanBuilder d toModeled userEnv sgb sb =
   let eGE = runStanGroupBuilder sgb (toModeled d)
   in case eGE of

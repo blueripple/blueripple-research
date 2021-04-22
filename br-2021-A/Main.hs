@@ -230,7 +230,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
---        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
         SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
 --        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
@@ -240,7 +240,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
---        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
+        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
         $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
 --        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
@@ -289,7 +289,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
           logitPE
           Nothing
           acsData
-          (SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation) $ pumsPSGroupRowMap)
+          pumsPSGroupRowMap
           (S.fromList ["CD", "Sex", "Race"])
           (realToFrac . F.rgetField @PUMS.Citizens)
           MRP.PSShare
