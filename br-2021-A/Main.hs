@@ -212,15 +212,15 @@ cpsVAnalysis = do
   BR.logFrame $ FL.fold cpsCountsByYear cpsV
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
-{-
+
   K.newPandoc
     (K.PandocInfo "State_Race Interaction" $ one ("pagetitle","State_Race interaction"))
     $ cpsStateRace False $ K.liftActionWithCacheTime data_C
--}
-
+{-
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
+-}
 
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
@@ -400,7 +400,10 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         SB.generateLogLikelihood dist logitPE
 
         acsData_W <- SB.addUnIndexedDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_W pumsPSGroupRowMap
+
         acsData_NW <- SB.addUnIndexedDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_NW pumsPSGroupRowMap
 
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification
@@ -409,7 +412,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                 (Just nameHead)
                 dataSet
                 pumsPSGroupRowMap
-                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad"])
+                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad", "State"])
                 (realToFrac . F.rgetField @PUMS.Citizens)
                 MRP.PSShare
                 (Just $ SB.GroupTypeTag @Text "State")
