@@ -383,7 +383,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                                   cdDataRT
                                   (MRP.FixedEffects 2 districtPredictors)
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
-        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
+--        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
 --        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Ethnicity"
         gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
@@ -540,6 +540,10 @@ coefficientChart title sortedStates vc rows =
       specBar = GV.asSpec [encB [], markBar]
       specLine = GV.asSpec [encL [], markLine]
       specPoint = GV.asSpec [encL [], markPoint]
-      layers = GV.layer [specBar, specPoint]
+      encXZero = GV.position GV.X [GV.PDatum (GV.Number 0), GV.PAxis [GV.AxNoTitle]]
+      encXMean = GV.position GV.X [GV.PName "mid", GV.PAggregate GV.Mean, GV.PAxis [GV.AxNoTitle]]
+      specZero = GV.asSpec [(GV.encoding . encXZero) [], GV.mark GV.Rule [GV.MColor "blue"]]
+      specMean = GV.asSpec [(GV.encoding . encXMean) [], GV.mark GV.Rule [GV.MColor "red"]]
+      layers = GV.layer [specBar, specPoint, specZero, specMean]
       spec = GV.asSpec [layers]
   in FV.configuredVegaLite vc [FV.title title, layers , vlData]

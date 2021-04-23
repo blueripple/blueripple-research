@@ -80,14 +80,14 @@ via `Stan <https://mc-stan.org/about/>`_)
 allow the data itself determine how much partial-pooling leads
 to the best estimation.
 
-Once we have these estimations for every group in every state, we turn them into
-meaningful turnout numbers via Post-stratification: multiplying
-the estimated probabilities by the actual number of people in each group
-to figure out how many people are likely to vote.
+Once we have estimations for every group in every state, we turn them into
+meaningful turnout numbers via post-stratification: multiplying
+the estimated probabilities by the actual number of people in each group,
+and adding these up to figure out how many people are likely to vote.
 
-Monte-Carlo techniques are too big a topic to get into here.  However one notable
-property of Monte Carlo techniques, is that confidence intervals of
-parameters *and* post-stratifications wihch use them are produced naturally by the modeling.
+Confidence intervals of the parameters,
+*and* post-stratifications which use them,
+are produced naturally by the Monte-Carlo modeling.
 The fact that some groups are very small, and thus hard to estimate,
 will show up in our results as large error bars.  Partial-pooling helps,
 but only so much.
@@ -97,36 +97,36 @@ _________________
 
 Our basic model includes age (under 45 or 45-and-over),
 sex (female or male), education (non-college-graduate or college-graduate),
-race/ethnicity (non-White/Hispanic or White-non-Hispanic) and state.  We recognize that all
-these categories are reductive.  In the case of sex,
-we are limited to categories provided by the CPS data. For age, education, and race/ethnicity
+race/ethnicity (Black, Hispanic, Asian, White-non-Hispanic and other) and state.
+We recognize that all these categories are reductive.  In the case of sex
+we are limited to categories provided by the CPS data. For age and education
 we've chosen to simplify the categories to keep the modeling simple.
-In a subsequent post we plan to expand the race/ethnicity category, since turnout gaps vary widely
-within that category.
+For race/ethnicity, we‘re using a slightly richer set of categories,
+since turnout varies widely among these groups.
 
 We add a congressional-district-level population-density
-factor and interactions between education and race—a term in the model
-that estimates the effect of being, e.g., White-non-Hispanic (WNH) *and* college-educated over and above the
-effects of being in either category separately. Finally, we include an interaction between state and race,
+factor and interactions between education and a binary race term—a simplification
+of the race categories to White-non-Hispanic (WNH) and non-White-non-Hispanic (NWNH):
+a term in the model that estimates the effect of being, e.g.,
+White-non-Hispanic (WNH) *and* college-educated over and above the
+effects of being in either category separately. Finally,
+we include an interaction between state and WNH/NWNH,
 a term which estimates the *state-dependent* portion of the turnout gap.
 
-Given those categories, we fit a multi-level model, allowing partial-pooling in the estimate of
-the overall turnout probability in each state and for the interaction between state
-and race.
-We also add an interaction term for education
-and race/ethnicity.  A more complex model might expand the categories,
+We fit a multi-level model, allowing partial-pooling in the estimate of
+the overall turnout probability in each state and for the interaction between state and race.
+A more complex model might expand the categories,
 allow partial pooling for more of the categories, and add more interaction between categories.
 
 For the purposes of this post, we are interested specifically in the turnout difference
 between White-Non-Hispanic voters, who lean R, and everyone else, who lean D.  Separately
 Post-stratifying across the WNH and the NWNH populations
-produces modeled turnout rates for each, taking the difference produces the turnout gap.
+produces modeled turnout rates for each and taking the difference produces the turnout gap.
 
-The state-dependent portion of the turnout gap is not the same as the turnout gap in each state,
-or even the difference between the states turnout gap and the average turnout gap.
-Each state has a different mix of people: the age, gender and education distributions
-are different in each state and that by itself leads to differences in the turnout gap among
-states.  As an example, in the chart below, we look at the 2016 state turnout gaps
+The turnout gap in each state is partly due to the specific mix of people in that state,
+their mix of ages, sexes, etc. and partly due to things specific to the state itself, such
+as history, organizing and voter suppression.
+As an example, in the chart below, we look at the 2016 state turnout gaps
 (along with 90% percent confidence intervals) predicted
 by our model, first without the state-race interaction.
 These gaps come from the *national* turnout gap between WNH and NWNH voters and the
@@ -134,3 +134,5 @@ differences among states come entirely from different distributions of ages,
 gender and education among the WNH and NWNH populations in that state.  These gaps
 average about 9 pts, ranging from a bit more than 7 points in WV to 12 points in SD.
 The average gap can be quite different year-to-year and it was, for example, close to 0 in 2012.
+In each of the following charts, the zero-line is marked in black and the mean of the
+turnout gaps in red.

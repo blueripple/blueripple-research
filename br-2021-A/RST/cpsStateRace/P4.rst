@@ -1,7 +1,4 @@
-At the top, in SC, there was an 11 pt state-specific boost in NWNH voting rates.
-By contrast, WA is at the bottom, with a 10 point state-specific deficit in NWNH
-voting rates.  Part of this difference is explained by the different composition
-of the NWNH population of the various states.  Black people make up most of the
-NWNH population of SC, whereas Hispanic people make up most of the NWNH people in
-WA (and AZ).  Historically, eligible Black voters vote at much higher rates than
-eligible Hispanic voters.
+At the top, in PA and SC, there was an 8 pt state-specific boost in NWNH voting rates.
+By contrast, AZ is at the bottom, with a 9 point state-specific deficit in NWNH
+voting rates. The 90% confidence intervals are large—very few state-specific turnout gaps
+are clearly non-zero.

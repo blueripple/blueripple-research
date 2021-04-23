@@ -339,19 +339,6 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   toFoldable <- case DHash.lookup rtt rowBuilders of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _) -> return tf
-{-
-  case mPSGroup of
-    Nothing -> return ()
-    Just gtt@(SB.GroupTypeTag gn) ->
-      case DHash.lookup gtt allGroups of
-        Nothing -> stanBuildError $ "addPostStratification: given group not in group environment.  Perhaps add as a supplemental index?"
-        Just (IndexMap _ h im) -> do
-          let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                             <> ") is not present in given RowMaps: " <> tGrps
-          SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
---          let fld = FL.generalize $ fmap (\s -> IntMap.fromList $ zip [1..] $ Set.toList x) $ FL.premap h FL.set
---          SB.addIndexIntMapFld rtt gtt fld
--}
   intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
@@ -361,7 +348,6 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
     return $ eIntF . h
   -- add the data set for the json builders
 
---  SB.addUnIndexedDataSet namedPS toFoldable -- add this data set for JSON building
   -- size of post-stratification result
   -- e.g., N_PS_ACS_State
   SB.addJson rtt sizeName SB.StanInt "<lower=0>"
@@ -371,50 +357,12 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
---      groupBounds = fmap (\(_ DSum.:=> (SB.IndexMap (SB.IntIndex n _) _ _)) -> (1,n)) $ DHash.toList usedGroups
---      groupDims = fmap SB.NamedDim ugNames
       weightArrayType = SB.StanVector $ SB.NamedDim dsName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
   wgtsV <-  SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
             $ SJ.valueToPairF (namedPS <> "_wgts")
             $ SJ.jsonArrayF weightF
-{-
-  let indexList :: SB.GroupRowMap r -> SB.GroupIndexDHM r0 -> Either Text (r -> Either Text [Int])
-      indexList grm gim =
-        let mCompose (gtt DSum.:=> SB.RowMap rTok) =
-              case DHash.lookup gtt gim of
-                Nothing -> Left $ "Failed lookup of group="
-                           <> SB.taggedGroupName gtt
-                           <> " in addPostStratification."
-                Just (SB.IndexMap _ kToEitherInt _) -> Right (kToEitherInt . rTok)
-            g :: [r -> Either Text Int] -> r -> Either Text [Int]
-            g fs r = traverse ($r) fs
-        in fmap g $ traverse mCompose $ DHash.toList grm
-  indexF <- case indexList usedGroupMaps allGroups of
-    Left msg -> SB.stanBuildError $ "Error producing PostStratification weight indexing function: " <> msg
-    Right x -> return x
-  let innerF r = case indexF r of
-        Left msg -> Left $ "Error during post-stratification weight fold when applying group index function (index out of range?): " <> msg
-        Right ls -> Right (ls, weightF r)
-      sumInnerFold :: Ord k => FL.Fold (k, Double) [(k, Double)]
-      sumInnerFold = MR.mapReduceFold MR.noUnpack (MR.Assign id) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
-      assignM r = case intKeyF r of
-        Left msg -> Left
-                    $ "Error during post-stratification weight fold when indexing PS rows to result groups: " <> msg
-        Right l -> Right (l, r)
-      toIndexed x = SJ.prepareIndexed 0 groupBounds x
-      reduceF = postMapM (\x -> (fmap (FL.fold sumInnerFold) $ traverse innerF x) >>= toIndexed)
-                $ FL.generalize FL.list
-      fldM = MR.mapReduceFoldM
-             (MR.generalizeUnpack MR.noUnpack)
-             (MR.AssignM assignM)
-             (MR.ReduceFoldM $ const reduceF)
-  SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
-    $ SJ.valueToPairF (namedPS <> "_wgts")
-    $ fmap A.toJSON fldM
--}
   SB.inBlock SB.SBGeneratedQuantities $ do
-    let --groupCounters = fmap ("n_" <>) $ ugNames
-        errCtxt = "addPostStratification"
+    let errCtxt = "addPostStratification"
         indexToPS x = SB.indexBy (SB.name $ x <> "_" <> dsName) dsName
         useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
@@ -448,38 +396,3 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
             when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do
               SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
-{-
-
-        (useBindings, psGrpDim) = case mPSGroup of
-          Nothing -> (useBindings', SB.GivenDim 1) -- (indexBindings', Map.keys indexBindings')
-          Just (SB.GroupTypeTag gn) -> (Map.insert gn (indexToPS gn) useBindings', SB.NamedDim gn)
-    SB.withUseBindings useBindings $ do
-      let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr psGrpDim])
-      SB.stanDeclareRHS namedPS (SB.StanVector psGrpDim) "" zeroVec
-      let wsn = namedPS <> "_WgtSum"
-      when (psType == PSShare) $ (SB.stanDeclareRHS wsn (SB.StanVector psGrpDim) "" zeroVec >> return ())
-      stanForLoopB "n" Nothing (dsName rtt) $ do
-        e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpE --expCode
-
-    let inner = do
-          let psExpE = SB.familyExp sDist dsName args
---          expCode <- SB.printExprM "mrpPSStanCode" psExpE
-          SB.stanDeclareRHS ("p" <> namedPS) SB.StanReal "" psExpE --expCode
-          when (psType == PSShare)
-            $ SB.addStanLine
-            $ namedPS <> "_WgtSum += " <>  (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
-          SB.addStanLine
-            $ namedPS <> "[n] += p" <> namedPS <> " * " <> (namedPS <> "_wgts") <> "[n][" <> T.intercalate ", " groupCounters <> "]"
-        makeLoops [] = inner
-        makeLoops (x : xs) = SB.stanForLoopB ("n_" <> x) Nothing x $ makeLoops xs
-    SB.withUseBindings useBindings $ do
-      SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) ""
-        $ SB.function "rep_vector" (SB.scalar "0" :| [SB.name sizeName])
-  --    SB.addStanLine $ namedPS <> " = rep_vector(0, " <> sizeName  <> ")"
-      SB.stanForLoopB "n" Nothing namedPS $ do
-        let wsn = namedPS <> "_WgtSum"
-        when (psType == PSShare) $ (SB.stanDeclareRHS wsn SB.StanReal "" (SB.scalar "0") >> return ())
-        makeLoops innerLoopNames
-        when (psType == PSShare) $ SB.addStanLine $ namedPS <> "[n] /= " <> namedPS <> "_WgtSum"
-      return $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim namedPS)
--}
