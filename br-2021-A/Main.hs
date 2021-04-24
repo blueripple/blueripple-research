@@ -517,6 +517,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (sortedStates rtDiffI)
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR
+  K.addRSTFromFile $ rstDir ++ "P4.rst"
   return ()
 
 coefficientChart :: (Functor f, Foldable f)

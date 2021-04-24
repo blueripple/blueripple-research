@@ -1,4 +1,16 @@
-At the top, in PA and SC, there was an 8 pt state-specific boost in NWNH voting rates.
-By contrast, AZ is at the bottom, with a 9 point state-specific deficit in NWNH
-voting rates. The 90% confidence intervals are large—very few state-specific turnout gaps
+At the top, in PA and SC, there was an 8 pt state-specific boost in relative
+NWNH voting rates.
+By contrast, AZ is at the bottom, with a 9 point state-specific deficit in relative
+NWNH voting rates.
+The 90% confidence intervals are large—very few state-specific turnout gaps
 are clearly non-zero.
+
+We should emphasize
+that the split between what we attribute to demographics of the state vs. the
+state itself is strongly influenced by what we include in the model
+and how we include it.
+Perhaps if we added other factors, e.g., religion or median-income, gaps that
+appear to be state-specific would instead be explained by these other factors.
+We’ve included the biggest factors that tend to correlate with voter turnout
+and we believe that the gaps we see are too large to be explained by other factors.
+But it’s important to be mindful of the limits of this sort of analysis.
