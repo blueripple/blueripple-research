@@ -427,6 +427,7 @@ prepCCESAndPums clearCache = do
   let achenHurDeps = (,,) <$> cpsVByCD_C <*> pumsByCD_C <*> stateTurnout_C
       achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
   cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
+    K.logLE K.Info "Doing Ghitza/Gelman logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
         cpsWithProb = fmap (FT.mutate ew) cpsV
         (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CPSPredictorR) cpsWithProb $ acs
