@@ -64,7 +64,16 @@ The CPS responses are “self-reported”: the survey does not validate the regi
 or turnout of the people
 surveyed, and thus there are
 `reporting errors <http://www.electproject.org/home/voter-turnout/cps-methodology>`_,
-ones which tend to overestimate turnout. Also, CPS data
+ones which tend to overestimate turnout and do so in a way which differs systematically
+among states.  To account for this, we adjust the turnout probabilities from the CPS
+so that when they are post-stratified across the citizen population of each state, we get
+the correct total turnout.  This was first suggested by
+`Achen and Hur <https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf>`_
+and we follow the procedure outlined by
+`Ghitza and Gelman <http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf>`_
+(p. 769), to compute the adjustment for each state/year.
+
+Also, CPS data
 `seems to under-report
 <https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf>`_
 the gaps between White and non-White voters.  So all of our results looking at turnout gaps
@@ -162,4 +171,4 @@ gender and education among the WNH and NWNH populations in that state.  These ga
 average about 9 pts, ranging from a bit more than 4 points in TN to 15 points in HI.
 The average gap can be quite different year-to-year and it was, for example, close to 0 in 2012.
 In each of the following charts, the zero-line is marked in blue and the mean of the
-turnout gaps in red.
+turnout gaps in orange.

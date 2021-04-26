@@ -30,6 +30,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Model.TurnoutAdjustment as BRTA
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified CmdStan as CS
@@ -420,9 +421,21 @@ prepCCESAndPums clearCache = do
       pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest 2012) (pumsReKey . F.rcast) cdFromPUMA pums
   pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
-  houseElections_C <- BR.houseElectionsWithIncumbency
   cpsVByCD_C <- cpsCountedTurnoutByCD
-  let deps = (,,,) <$> countedCCES_C <*> cpsVByCD_C <*> pumsByCD_C <*> houseElections_C
+  -- first, do the turnout corrections
+  stateTurnout_C <- BR.stateTurnoutLoader
+  let achenHurDeps = (,,) <$> cpsVByCD_C <*> pumsByCD_C <*> stateTurnout_C
+      achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
+  cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
+    let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
+        cpsWithProb = fmap (FT.mutate ew) cpsV
+        (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CPSPredictorR) cpsWithProb $ acs
+    when (not $ null missing) $ K.knitError $ "Missing keys in cpsV/acs join: " <> show missing
+    adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
+    let adjVoters r = F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
+    return $ fmap (F.rcast @CPSVByCDR . adjVoters) adjCPSProb
+  houseElections_C <- BR.houseElectionsWithIncumbency
+  let deps = (,,,) <$> countedCCES_C <*> cpsV_AchenHur_C <*> pumsByCD_C <*> houseElections_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeD cacheKey deps $ \(cces, cpsVByCD, pums, houseElections) -> do

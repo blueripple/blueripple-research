@@ -591,7 +591,7 @@ intToVotedYN n
 cpsPossibleVoter :: BR.VotedYN -> Bool
 cpsPossibleVoter BR.VYN_DidNotVote = True
 cpsPossibleVoter BR.VYN_Voted = True
-cpsPossibleVoter BR.VYN_Refused = True
+cpsPossibleVoter BR.VYN_Refused = False
 cpsPossibleVoter BR.VYN_DontKnow = False
 cpsPossibleVoter BR.VYN_NoResponse = False
 cpsPossibleVoter BR.VYN_NotInUniverse = False
