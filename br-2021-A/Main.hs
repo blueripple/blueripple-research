@@ -335,8 +335,6 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let rstDir = "br-2021-A/RST/cpsStateRace/"
-      year = 2016
-      data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
@@ -447,12 +445,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                          $ SP.parse1D "rtDiffNI" (CS.paramStats summary)
             vRTDiffI <- fmap (SP.getVector . fmap CS.percents)
                         $ SP.parse1D "rtDiffI" (CS.paramStats summary)
-{-            cpsVStateIndexIM <- SB.getGroupIndex
-                                (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
-                                (SB.GroupTypeTag @Text "State")
-                                groupIndexes
-            vRDiff <-fmap (SP.getVector . fmap CS.percents) $ SP.parse1D "rDiff" (CS.paramStats summary)
--}
+
             rtDiffWI <- indexStanResults psIndexIM vRTDiffWI
             rtDiffNI <- indexStanResults psIndexIM vRTDiffNI
             rtDiffI <- indexStanResults psIndexIM vRTDiffI
@@ -460,64 +453,80 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 --            indexStanResults cpsVStateIndexIM vRDiff
 --    K.knitEither $
 
+
   K.logLE K.Info "Building json data wrangler and model code..."
-  dat <- K.ignoreCacheTime data_C
-  let cpsVBuilder = dataAndCodeBuilder
-                    (round . F.rgetField @BRCF.WeightedCount)
-                    (round . F.rgetField @BRCF.WeightedSuccesses)
-      (districts, states) = FL.fold
-                            ((,)
-                              <$> (FL.premap districtKey FL.list)
-                              <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
-                            )
-                            $ BRE.districtRows dat
-      cpsVGroups = cpsVGroupBuilder districts states
-  (dw, stanCode) <- K.knitEither
-    $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
+--  let year = 2016
+--      data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
+--  dataAllYears <- K.ignoreCacheTime dataAllYears_C
+
+  let cpsVCodeBuilder = dataAndCodeBuilder
+                        (round . F.rgetField @BRCF.WeightedCount)
+                        (round . F.rgetField @BRCF.WeightedSuccesses)
+
+      dataWranglerAndCode data_C years = do
+        dat <- K.ignoreCacheTime data_C
+        let (districts, states) = FL.fold
+                                  ((,)
+                                   <$> (FL.premap districtKey FL.list)
+                                   <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
+                                  )
+                                  $ BRE.districtRows dat
+            cpsVGroups = cpsVGroupBuilder districts states
+
+        K.knitEither
+          $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVCodeBuilder dat (SB.ToFoldable BRE.cpsVRows)
+
+      runModel years = do
+        let data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
+        (dw, stanCode) <- dataWranglerAndCode data_C years
+        MRP.runMRPModel
+          False
+          (Just "br-2021-A/stan/cpsV")
+          ("stateXrace")
+          ("stateXrace" <> (T.intercalate "_" $ fmap show years))
+          dw
+          stanCode
+          "S"
+          extractTestResults
+          data_C
+          (Just 1000)
+          (Just 0.99)
+          (Just 15)
+
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
-  res_C <- MRP.runMRPModel
-    False
-    (Just "br-2021-A/stan/cpsV")
-    ("stateXrace")
-    ("stateXrace" <> show year)
-    dw
-    stanCode
-    "S"
-    extractTestResults
-    data_C
-    (Just 1000)
-    (Just 0.99)
-    (Just 15)
-  (rtDiffWI, rtDiffNI, rtDiffI) <- K.ignoreCacheTime res_C
-  K.logLE K.Info $ "results: " <> show rtDiffI
+  res2016_C <- runModel [2016]
+  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016) <- K.ignoreCacheTime res2016_C
+  K.logLE K.Info $ "results: " <> show rtDiffI_2016
   -- sort on median coefficient
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str $ show y)] <> m
-  rtDiffWIMR <- K.knitEither $ fmap (addCols "With Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffWI)
-  rtDiffNIMR <- K.knitEither $ fmap (addCols "Without Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffNI)
-  rtDiffIMR <- K.knitEither $ fmap (addCols "Interaction" year) <$> traverse (expandInterval "State") (M.toList rtDiffI)
+  rtDiffWIMR_2016 <- K.knitEither $ fmap (addCols "With Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
+  rtDiffNIMR_2016 <- K.knitEither $ fmap (addCols "Without Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffNI_2016)
+  rtDiffIMR_2016 <- K.knitEither $ fmap (addCols "Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffI_2016)
   K.addRSTFromFile $ rstDir ++ "Intro.rst" -- cpsStateRaceIntroRST
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps without State x Race term (" <> show year <> ")")
-    (sortedStates rtDiffNI)
+    ("Turnout Gaps without State x Race term (2016)")
+    (sortedStates rtDiffNI_2016)
     (FV.ViewConfig 500 1000 5)
-    rtDiffNIMR
+    rtDiffNIMR_2016
   K.addRSTFromFile $ rstDir ++ "P2.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps with State x Race term (" <> show year <> ")")
-    (sortedStates rtDiffWI)
+    ("Turnout Gaps with State x Race term (2016)")
+    (sortedStates rtDiffWI_2016)
     (FV.ViewConfig 500 1000 5)
-    rtDiffWIMR
+    rtDiffWIMR_2016
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State x Race contribution to Turnout Gap (" <> show year <> ")")
-    (sortedStates rtDiffI)
+    ("State x Race contribution to Turnout Gap (2016)")
+    (sortedStates rtDiffI_2016)
     (FV.ViewConfig 500 1000 5)
-    rtDiffIMR
+    rtDiffIMR_2016
   K.addRSTFromFile $ rstDir ++ "P4.rst"
+  res2012_C <- runModel [2012]
+
   return ()
 
 coefficientChart :: (Functor f, Foldable f)

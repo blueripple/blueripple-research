@@ -193,10 +193,14 @@ data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCDR
                                } deriving (Generic)
 
 ccesAndPUMSForYear :: Int -> CCESAndPUMS -> CCESAndPUMS
-ccesAndPUMSForYear y (CCESAndPUMS cces cpsV pums dist cats) =
+ccesAndPUMSForYear y = ccesAndPUMSForYears [y]
+
+ccesAndPUMSForYears :: [Int] -> CCESAndPUMS -> CCESAndPUMS
+ccesAndPUMSForYears ys (CCESAndPUMS cces cpsV pums dist cats) =
   let f :: (FI.RecVec rs, F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
-      f = F.filterFrame ((== y) . F.rgetField @BR.Year)
+      f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
   in CCESAndPUMS (f cces) (f cpsV) (f pums) (f dist) (f cats)
+
 
 instance S.Serialize CCESAndPUMS where
   put (CCESAndPUMS cces cpsV pums dist cats) = S.put (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats)
