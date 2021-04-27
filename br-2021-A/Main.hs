@@ -534,6 +534,14 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (sortedStates rtDiffI_2012)
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2012
+--  rtDiffIMR_2012_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2012" rtDiffIMR_2012
+--  rtDiffIMR_2016_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2016" rtDiffIMR_2016
+  let rtDiffIMR_Combined = rtDiffIMR_2012 <> rtDiffIMR_2016
+  _ <- K.addHvega Nothing Nothing
+    $ turnoutGapScatter
+    ("State-Specific Turnout Gaps: 2012 vs. 2016")
+    (FV.ViewConfig 500 500 5)
+    rtDiffIMR_Combined
   return ()
 
 coefficientChart :: (Functor f, Foldable f)
@@ -546,6 +554,7 @@ coefficientChart title sortedStates vc rows =
   let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
+--      encColor = GV.color [GV.MName "Year", GV.MmType GV.Nominal]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
@@ -564,3 +573,21 @@ coefficientChart title sortedStates vc rows =
       layers = GV.layer [specBar, specPoint, specZero, specMean]
       spec = GV.asSpec [layers]
   in FV.configuredVegaLite vc [FV.title title, layers , vlData]
+
+
+-- 2 x 2
+turnoutGapScatter ::  (Functor f, Foldable f)
+                  => Text
+                  -> FV.ViewConfig
+                  -> f (MapRow.MapRow GV.DataValue)
+                  -> GV.VegaLite
+turnoutGapScatter title vc rows =
+  let vlData = MapRow.toVLData M.toList [] rows -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+      foldMids = GV.pivot "Year" "mid" [GV.PiGroupBy ["State"]]
+      encY = GV.position GV.Y [GV.PName "2016", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "2012", GV.PmType GV.Quantitative]
+      enc = GV.encoding . encX . encY
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+      transform = GV.transform . foldMids
+--      spec = GV.asSpec [enc [], mark]
+  in FV.configuredVegaLite vc [FV.title title, enc [], mark, transform [], vlData]
