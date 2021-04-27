@@ -64,8 +64,8 @@ The CPS responses are “self-reported”: the survey does not validate the regi
 or turnout of the people
 surveyed, and thus there are
 `reporting errors <http://www.electproject.org/home/voter-turnout/cps-methodology>`_,
-ones which tend to overestimate turnout and do so in a way which differs systematically
-among states.  To account for this, we adjust the turnout probabilities from the CPS
+ones which tend to overestimate turnout in a way which differs systematically
+among states. To account for this, we adjust the turnout probabilities from the CPS
 so that when they are post-stratified across the citizen population of each state, we get
 the correct total turnout.  This was first suggested by
 `Achen and Hur <https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf>`_

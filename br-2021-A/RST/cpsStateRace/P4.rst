@@ -15,4 +15,5 @@ We’ve included the biggest factors that tend to correlate with voter turnout
 and we believe that the gaps we see are too large to be explained by other factors.
 But it’s important to be mindful of the limits of this sort of analysis.
 
-We’ve done the same analysis for 2012, and we chart
+We’ve done the same analysis for 2012, and below we chart just the state dependent
+part of the turnout gap.

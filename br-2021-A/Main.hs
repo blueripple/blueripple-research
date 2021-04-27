@@ -526,7 +526,14 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     rtDiffIMR_2016
   K.addRSTFromFile $ rstDir ++ "P4.rst"
   res2012_C <- runModel [2012]
-
+  (rtDiffWI_2012, rtDiffNI_2012, rtDiffI_2012) <- K.ignoreCacheTime res2012_C
+  rtDiffIMR_2012 <- K.knitEither $ fmap (addCols "Interaction" 2012) <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("State x Race contribution to Turnout Gap (2012)")
+    (sortedStates rtDiffI_2012)
+    (FV.ViewConfig 500 1000 5)
+    rtDiffIMR_2012
   return ()
 
 coefficientChart :: (Functor f, Foldable f)
