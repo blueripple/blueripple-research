@@ -537,7 +537,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 --  rtDiffIMR_2012_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2012" rtDiffIMR_2012
 --  rtDiffIMR_2016_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2016" rtDiffIMR_2016
   let rtDiffIMR_Combined = rtDiffIMR_2012 <> rtDiffIMR_2016
-  _ <- K.addHvega Nothing Nothing
+  _ <- K.addHvega' Nothing Nothing True
     $ turnoutGapScatter
     ("State-Specific Turnout Gaps: 2012 vs. 2016")
     (FV.ViewConfig 500 500 5)
@@ -581,13 +581,32 @@ turnoutGapScatter ::  (Functor f, Foldable f)
                   -> FV.ViewConfig
                   -> f (MapRow.MapRow GV.DataValue)
                   -> GV.VegaLite
-turnoutGapScatter title vc rows =
+turnoutGapScatter title vc@(FV.ViewConfig w h _) rows =
   let vlData = MapRow.toVLData M.toList [] rows -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
       foldMids = GV.pivot "Year" "mid" [GV.PiGroupBy ["State"]]
+      gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
       encY = GV.position GV.Y [GV.PName "2016", GV.PmType GV.Quantitative]
       encX = GV.position GV.X [GV.PName "2012", GV.PmType GV.Quantitative]
       enc = GV.encoding . encX . encY
+--      enc45_X = GV.position GV.X [GV.PName "2016", GV.PmType GV.Quantitative, gapScale, GV.PAxis [GV.AxNoTitle]]
+--      mark45 = GV.mark GV.Line
+--      spec45 = GV.asSpec [(GV.encoding . enc45_X . encY) [], mark45 []]
+      specXaxis = GV.asSpec [GV.encoding . (GV.position GV.Y [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      specYaxis = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
+                              ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
+                              ]
+      labelSpecs = [labelSpec 0.1 0.1 "Good -> Bad"
+                   , labelSpec 0.1 0.9 "Both Good"
+                   , labelSpec 0.9 0.9 "Bad -> Good"
+                   , labelSpec 0.9 0.1 "Both Bad"
+                   ]
+
+
       mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
       transform = GV.transform . foldMids
---      spec = GV.asSpec [enc [], mark]
-  in FV.configuredVegaLite vc [FV.title title, enc [], mark, transform [], vlData]
+      specPts = GV.asSpec [enc [], mark]
+  in FV.configuredVegaLiteSchema
+     (GV.vlSchema 5 (Just 1) Nothing Nothing)
+     vc
+     [FV.title title, GV.layer ([specPts, specXaxis, specYaxis] ++ labelSpecs), transform [], vlData]
