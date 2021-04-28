@@ -100,12 +100,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
-  tag: ad930a2188d06247aed1cbead07cff178737ce4a
+  tag: a472b31ae9cfa42cdf4b67b50557477461062beb
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/data-science-utils
-  tag: 6e04666c4e01e1d77e38c49edc28e2dd852bdac4
+  tag: fd06d608193d41be50508386396a93ba62397e75
 
 source-repository-package
   type: git
@@ -115,18 +115,18 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/glm-haskell
-  tag: bda73ddec82c8738ae4f9a4c1ea541ee5738c94b
+  tag: 5b99cc78babc62f4581ef015e621e0ae1dc4eaa8
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/tsne
-  tag: 3d900ed7612e223121144b2ebe79acfe5e94f3d3
+  tag: 0ecec75d904482e0171a618a72d6bd3a3a94440a
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/polysemy-Extra
-  subdir: polysemy-RandomFu
-  tag: 1d40f687152e0c06c99efd6fe2c42e27aea6b76d
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/polysemy-Extra
+--  subdir: polysemy-RandomFu
+--  tag: 1d40f687152e0c06c99efd6fe2c42e27aea6b76d
 
 -- Heidi
 --source-repository-package
