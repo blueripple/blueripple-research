@@ -32,19 +32,19 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-has
 --
 
 
--- don't need these anymore??
 --source-repository-package
 --  type: git
 --  location: https://github.com/kcsongor/generic-lens
 --  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
 --  subdir: generic-lens-core
 
---source-repository-package
---  type: git
---  location: https://github.com/kcsongor/generic-lens
---  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
---  subdir: generic-optics
---
+-- need this for labels to work
+source-repository-package
+  type: git
+  location: https://github.com/kcsongor/generic-lens
+  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
+  subdir: generic-optics
+
 
 source-repository-package
   type: git
@@ -54,7 +54,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 415adbfbcea4f43eb182a29d3674639f2ed178ff
+  tag: 573595af046badf555ac8f47f8a19b2bc6f26d55
 
 source-repository-package
   type: git

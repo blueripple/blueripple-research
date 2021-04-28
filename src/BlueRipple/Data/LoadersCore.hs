@@ -72,6 +72,7 @@ import qualified Frames.Transform              as FT
 import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
+import qualified Frames.Streamly.CSV        as FStreamly
 
 import qualified System.Directory as System
 import qualified System.Clock
@@ -98,10 +99,10 @@ recStreamLoader
   :: forall qs rs t m
    . ( V.RMap rs
      , V.RMap qs
-     , F.ReadRec qs
-     , Monad m
+     , FStreamly.StrictReadRec qs
+     , Streamly.MonadAsync m
      , Monad (t m)
-     , MonadIO m
+--     , MonadIO m
      , Exceptions.MonadCatch m
      , Streamly.IsStream t
      )
@@ -140,7 +141,7 @@ cachedFrameLoader
   :: forall qs rs r
    . ( V.RMap rs
      , V.RMap qs
-     , F.ReadRec qs
+     , FStreamly.StrictReadRec qs
      , FI.RecVec qs
      , FI.RecVec rs
      , BR.RecSerializerC rs
@@ -171,7 +172,7 @@ frameLoader
   :: forall qs rs r
   . (K.KnitEffects r
     , BR.CacheEffects r
-    , F.ReadRec qs
+    , FStreamly.StrictReadRec qs
     , FI.RecVec qs
     , V.RMap qs
     )
