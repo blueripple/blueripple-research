@@ -49,18 +49,19 @@ ____________
 - State-Level effects
 - Conclusions
 
-*Turnout Data: The CPS Voter Supplement*
-________________________________________
+*Turnout Data: The CPS Voting and Registration Supplement*
+__________________________________________________________
 
 Each election year, the census bureau, via the Current Population Survey,
-conducts the `Voter Survey <https://www.census.gov/topics/public-sector/voting.html>`_,
+conducts the
+`Voting and Registration Survey <https://www.census.gov/topics/public-sector/voting.html>`_,
 asking approximately 100,000 people nationwide
 about their registration status and if they voted in the general election.
 In addition to county of residence, demographic information
 (age, sex, race, ethnicity, education, etc.) is paired with the responses,
 allowing estimation of voter turnout among various groups and in various places.
 
-The CPS responses are “self-reported”: the survey does not validate the registration
+The CPS-VRS responses are “self-reported”: the survey does not validate the registration
 or turnout of the people
 surveyed, and thus there are
 `reporting errors <http://www.electproject.org/home/voter-turnout/cps-methodology>`_,
@@ -73,18 +74,19 @@ and we follow the procedure outlined by
 `Ghitza and Gelman <http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf>`_
 (p. 769), to compute the adjustment for each state/year.
 
-Also, CPS data
+Also, CPS-VRS data
 `seems to under-report
 <https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf>`_
 the gaps between White and non-White voters.  So all of our results looking at turnout gaps
 should be viewed skeptically: the gaps are likely larger than we see in the data.
 There are other publically available
-surveys which do validate these reponses, primarily the
+surveys which validate survey reponses, when possible, via state voter files,
+primarily the
 `CCES <https://cces.gov.harvard.edu>`_.  That survey is smaller: approximately
 50,000 people surveyed each year, with about 40,000 validated voters. For the sake of a
 first analysis, we will start with the CPS data.
 
-The 100,000 people surveyed by the CPS are distributed throughout the country, so there
+The 100,000 people surveyed by the CPS-VRS are distributed throughout the country, so there
 will only be a limited number of people in each state, particularly less populous ones.
 Once you start breaking those people down by demographic groups, the number of people
 per group gets quite small.  For example, our model has binary groupings for age, sex and
@@ -165,10 +167,11 @@ as history, organizing and voter suppression.
 As an example, in the chart below, we look at the 2016 state turnout gaps
 (along with 90% percent confidence intervals) predicted
 by our model, first without the state-race interaction.
-These gaps come from the *national* turnout gap between WNH and NWNH voters and the
+These gaps come from the *national* turnout gap between NWNH and WNH voters and the
 differences among states come entirely from different distributions of ages,
-gender and education among the WNH and NWNH populations in that state.  These gaps
-average about 9 pts, ranging from a bit more than 4 points in TN to 15 points in HI.
+gender and education among the NWNH and WNH populations in that state.  These gaps
+average about -9 pts—indicating 9% more WNH voters turned out than NWNH nationally—
+ranging from -3 points in TN to -16 points in HI.
 The average gap can be quite different year-to-year and it was, for example, close to 0 in 2012.
 In each of the following charts, the zero-line is marked in blue and the mean of the
 turnout gaps in orange.

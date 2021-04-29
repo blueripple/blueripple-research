@@ -31,7 +31,9 @@ import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.List as List
 import qualified Data.IntMap as IM
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as M
+
 --import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
@@ -446,9 +448,9 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
             vRTDiffI <- fmap (SP.getVector . fmap CS.percents)
                         $ SP.parse1D "rtDiffI" (CS.paramStats summary)
 
-            rtDiffWI <- indexStanResults psIndexIM vRTDiffWI
-            rtDiffNI <- indexStanResults psIndexIM vRTDiffNI
-            rtDiffI <- indexStanResults psIndexIM vRTDiffI
+            rtDiffWI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffWI)
+            rtDiffNI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffNI)
+            rtDiffI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffI)
             return (rtDiffWI, rtDiffNI, rtDiffI)
 --            indexStanResults cpsVStateIndexIM vRDiff
 --    K.knitEither $
@@ -498,7 +500,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016) <- K.ignoreCacheTime res2016_C
   K.logLE K.Info $ "results: " <> show rtDiffI_2016
   -- sort on median coefficient
-  let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> x) $ M.toList x)
+  let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str $ show y)] <> m
   rtDiffWIMR_2016 <- K.knitEither $ fmap (addCols "With Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
   rtDiffNIMR_2016 <- K.knitEither $ fmap (addCols "Without Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffNI_2016)
@@ -506,22 +508,25 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.addRSTFromFile $ rstDir ++ "Intro.rst" -- cpsStateRaceIntroRST
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps without State x Race term (2016)")
+    ("Turnout Gaps without State-specific effects (2016)")
     (sortedStates rtDiffNI_2016)
+    True
     (FV.ViewConfig 500 1000 5)
     rtDiffNIMR_2016
   K.addRSTFromFile $ rstDir ++ "P2.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps with State x Race term (2016)")
+    ("Turnout Gaps with State-specific effects (2016)")
     (sortedStates rtDiffWI_2016)
+    True
     (FV.ViewConfig 500 1000 5)
     rtDiffWIMR_2016
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State x Race contribution to Turnout Gap (2016)")
+    ("State-specific contribution to turnout gap (2016)")
     (sortedStates rtDiffI_2016)
+    True
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2016
   K.addRSTFromFile $ rstDir ++ "P4.rst"
@@ -530,8 +535,9 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   rtDiffIMR_2012 <- K.knitEither $ fmap (addCols "Interaction" 2012) <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State x Race contribution to Turnout Gap (2012)")
+    ("State-specific contribution to Turnout Gap (2012)")
     (sortedStates rtDiffI_2012)
+    True
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2012
   let rtDiffIMR_Combined = rtDiffIMR_2012 <> rtDiffIMR_2016
@@ -541,41 +547,52 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (FV.ViewConfig 500 500 5)
     rtDiffIMR_Combined
   K.addRSTFromFile $ rstDir ++ "P5.rst"
-  let diffFromZero :: MapRow.MapRow GV.DataValue -> Either Text Bool
-      diffFromZero mr = do
-        (GV.Number mid) <- maybe (Left "mid missing in MapRow") Right $ M.lookup "mid" mr
-        (GV.Number lo) <- maybe (Left "lo missing in MapRow") Right $ M.lookup "lo" mr
-        (GV.Number hi) <- maybe (Left "hi missing in MapRow") Right $ M.lookup "hi" mr
-        return $ (lo + mid) * (hi + mid) > 0
-
-
-  significantGaps2016MR <- K.knitEither
-                           $ fmap (fmap fst . List.filter snd . zip rtDiffIMR_2016)
-                           $ traverse diffFromZero rtDiffIMR_2016
+  let sig lo hi = lo * hi > 0
+      sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
+      sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
+      significantPersistent = M.keys
+                              $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigBoth)) rtDiffI_2012 rtDiffI_2016
+      significantMove = M.keys
+                        $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigMove)) rtDiffI_2012 rtDiffI_2016
+  let filterState states x = K.knitMaybe "Missing State in MapRow"
+                             $ fmap (fmap fst . List.filter ((`elem` states) . snd) . zip x)
+                             $ traverse (fmap (\(GV.Str x) -> x) . M.lookup "State") x
+  significantGapsBothMR <- (<>) <$> filterState significantPersistent rtDiffIMR_2016 <*> filterState significantPersistent rtDiffIMR_2012
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State x Race contribution to Turnout Gap (significant, 2016)")
-    (sortedStates rtDiffI_2016)
-    (FV.ViewConfig 500 1000 5)
-    significantGaps2016MR
+    ("State-specific contribution to Turnout Gap: significant *and* persistent gaps in 2012 and 2016")
+    (sortedStates rtDiffI_2012)
+    False
+    (FV.ViewConfig 400 400 5)
+    significantGapsBothMR
+  significantMoveMR <- (<>) <$> filterState significantMove rtDiffIMR_2016 <*> filterState significantMove rtDiffIMR_2012
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("State-specific contribution to Turnout Gap: significant changes 2012 to 2016")
+    (sortedStates rtDiffI_2012)
+    False
+    (FV.ViewConfig 400 400 5)
+    significantMoveMR
   return ()
+
 
 coefficientChart :: (Functor f, Foldable f)
                  => Text
                  -> [Text]
+                 -> Bool
                  ->  FV.ViewConfig
                  -> f (MapRow.MapRow GV.DataValue)
                  -> GV.VegaLite
-coefficientChart title sortedStates vc rows =
-  let vlData = MapRow.toVLData M.toList [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+coefficientChart title sortedStates showAvg vc rows =
+  let vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
---      encColor = GV.color [GV.MName "Year", GV.MmType GV.Nominal]
+      encColor = GV.color [GV.MName "Year", GV.MmType GV.Nominal]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
-      encL = GV.encoding . encX . encY -- . encColor
-      encB = GV.encoding . encX . encXLo . encY . encXHi -- . encColor
+      encL = GV.encoding . encX . encY  . encColor
+      encB = GV.encoding . encX . encXLo . encY . encXHi . encColor
       markBar = GV.mark GV.ErrorBar [GV.MTooltip GV.TTData, GV.MTicks []]
       markLine = GV.mark GV.Line []
       markPoint = GV.mark GV.Point [GV.MTooltip GV.TTData]
@@ -586,7 +603,7 @@ coefficientChart title sortedStates vc rows =
       encXMean = GV.position GV.X [GV.PName "mid", GV.PAggregate GV.Mean, GV.PAxis [GV.AxNoTitle]]
       specZero = GV.asSpec [(GV.encoding . encXZero) [], GV.mark GV.Rule [GV.MColor "skyblue"]]
       specMean = GV.asSpec [(GV.encoding . encXMean) [], GV.mark GV.Rule [GV.MColor "orange"]]
-      layers = GV.layer [specBar, specPoint, specZero, specMean]
+      layers = GV.layer $ [specBar, specPoint, specZero] ++ if showAvg then [specMean] else []
       spec = GV.asSpec [layers]
   in FV.configuredVegaLite vc [FV.title title, layers , vlData]
 

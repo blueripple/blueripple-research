@@ -1,7 +1,3 @@
-At the top, in PA and SC, there was an 8 pt state-specific boost in relative
-NWNH voting rates.
-By contrast, AZ is at the bottom, with a 9 point state-specific deficit in relative
-NWNH voting rates.
 The 90% confidence intervals are large—very few state-specific turnout gaps
 are clearly non-zero.
 
