@@ -534,14 +534,30 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (sortedStates rtDiffI_2012)
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2012
---  rtDiffIMR_2012_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2012" rtDiffIMR_2012
---  rtDiffIMR_2016_renamed <- K.knitEither $ MapRow.changeColName "mid" "mid2016" rtDiffIMR_2016
   let rtDiffIMR_Combined = rtDiffIMR_2012 <> rtDiffIMR_2016
   _ <- K.addHvega' Nothing Nothing True
     $ turnoutGapScatter
     ("State-Specific Turnout Gaps: 2012 vs. 2016")
     (FV.ViewConfig 500 500 5)
     rtDiffIMR_Combined
+  K.addRSTFromFile $ rstDir ++ "P5.rst"
+  let diffFromZero :: MapRow.MapRow GV.DataValue -> Either Text Bool
+      diffFromZero mr = do
+        (GV.Number mid) <- maybe (Left "mid missing in MapRow") Right $ M.lookup "mid" mr
+        (GV.Number lo) <- maybe (Left "lo missing in MapRow") Right $ M.lookup "lo" mr
+        (GV.Number hi) <- maybe (Left "hi missing in MapRow") Right $ M.lookup "hi" mr
+        return $ (lo + mid) * (hi + mid) > 0
+
+
+  significantGaps2016MR <- K.knitEither
+                           $ fmap (fmap fst . List.filter snd . zip rtDiffIMR_2016)
+                           $ traverse diffFromZero rtDiffIMR_2016
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("State x Race contribution to Turnout Gap (significant, 2016)")
+    (sortedStates rtDiffI_2016)
+    (FV.ViewConfig 500 1000 5)
+    significantGaps2016MR
   return ()
 
 coefficientChart :: (Functor f, Foldable f)
@@ -596,10 +612,10 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) rows =
       labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
                               ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
                               ]
-      labelSpecs = [labelSpec 0.1 0.1 "Good -> Bad"
-                   , labelSpec 0.1 0.9 "Both Good"
-                   , labelSpec 0.9 0.9 "Bad -> Good"
-                   , labelSpec 0.9 0.1 "Both Bad"
+      labelSpecs = [labelSpec 0.1 0.05 "Good -> Bad"
+                   , labelSpec 0.1 0.95 "Both Good"
+                   , labelSpec 0.9 0.95 "Bad -> Good"
+                   , labelSpec 0.9 0.05 "Both Bad"
                    ]
 
 

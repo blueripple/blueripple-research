@@ -1,0 +1,4 @@
+Though we can see some things clearly in these charts, there are large confidence intervals and a lot of states!
+So we zoom in two different ways.  First we’ll look at all the gaps which are significant (we are 90% confident that
+the gap is not 0) in *both* 2012 and 2016 and then we’ll look at gaps which have changed significantly between 2012
+and 2016, that is those for which the  2016 confidence interval is outside the 2012 confidence interval.
