@@ -584,7 +584,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     ("State-specific contribution to Turnout Gap: 2012 & 2016")
     (sortedStates rtDiffI_2012_2016)
     True
-    (FV.ViewConfig 400 400 5)
+    (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2012_2016
   return ()
 
