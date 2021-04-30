@@ -501,10 +501,10 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.logLE K.Info $ "results: " <> show rtDiffI_2016
   -- sort on median coefficient
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
-      addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str $ show y)] <> m
-  rtDiffWIMR_2016 <- K.knitEither $ fmap (addCols "With Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
-  rtDiffNIMR_2016 <- K.knitEither $ fmap (addCols "Without Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffNI_2016)
-  rtDiffIMR_2016 <- K.knitEither $ fmap (addCols "Interaction" 2016) <$> traverse (expandInterval "State") (M.toList rtDiffI_2016)
+      addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
+  rtDiffWIMR_2016 <- K.knitEither $ fmap (addCols "With Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
+  rtDiffNIMR_2016 <- K.knitEither $ fmap (addCols "Without Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffNI_2016)
+  rtDiffIMR_2016 <- K.knitEither $ fmap (addCols "Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffI_2016)
   K.addRSTFromFile $ rstDir ++ "Intro.rst" -- cpsStateRaceIntroRST
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
@@ -532,7 +532,8 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.addRSTFromFile $ rstDir ++ "P4.rst"
   res2012_C <- runModel [2012]
   (rtDiffWI_2012, rtDiffNI_2012, rtDiffI_2012) <- K.ignoreCacheTime res2012_C
-  rtDiffIMR_2012 <- K.knitEither $ fmap (addCols "Interaction" 2012) <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
+  rtDiffIMR_2012 <- K.knitEither
+                    $ fmap (addCols "Interaction" "2012") <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
     ("State-specific contribution to Turnout Gap (2012)")
@@ -573,6 +574,18 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     False
     (FV.ViewConfig 400 400 5)
     significantMoveMR
+  res2012_2016_C <- runModel [2012, 2016]
+  (_, _, rtDiffI_2012_2016) <- K.ignoreCacheTime res2012_2016_C
+  rtDiffIMR_2012_2016 <- K.knitEither
+                         $ fmap (addCols "Interaction" "2012 & 2016")
+                         <$> traverse (expandInterval "State") (M.toList rtDiffI_2012_2016)
+  _ <- K.addHvega Nothing Nothing
+    $ coefficientChart
+    ("State-specific contribution to Turnout Gap: 2012 & 2016")
+    (sortedStates rtDiffI_2012_2016)
+    True
+    (FV.ViewConfig 400 400 5)
+    rtDiffIMR_2012_2016
   return ()
 
 
@@ -629,13 +642,11 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) rows =
       labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
                               ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
                               ]
-      labelSpecs = [labelSpec 0.1 0.05 "Good -> Bad"
-                   , labelSpec 0.1 0.95 "Both Good"
-                   , labelSpec 0.9 0.95 "Bad -> Good"
-                   , labelSpec 0.9 0.05 "Both Bad"
+      labelSpecs = [labelSpec 0.1 0.05 "Bad -> Good"
+                   , labelSpec 0.1 0.95 "Both Bad"
+                   , labelSpec 0.9 0.95 "Good -> Bad"
+                   , labelSpec 0.9 0.05 "Both Good"
                    ]
-
-
       mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
       transform = GV.transform . foldMids
       specPts = GV.asSpec [enc [], mark]
