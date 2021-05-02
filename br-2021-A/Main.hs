@@ -218,12 +218,12 @@ cpsVAnalysis = do
   K.newPandoc
     (K.PandocInfo "State_Race Interaction" $ one ("pagetitle","State_Race interaction"))
     $ cpsStateRace False $ K.liftActionWithCacheTime data_C
+
 {-
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
 -}
-
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -233,7 +233,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (F.rgetField @DT.RaceAlone4C)
+        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
 --        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
 --        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
@@ -243,7 +243,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
         $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-        $ SB.addRowMap "Race" (F.rgetField @DT.RaceAlone4C)
+        $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS)
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
 --        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
 --        $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
@@ -341,7 +341,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum race5FromCPS
+        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
 --        SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
         SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
@@ -356,7 +356,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
         $ SB.addRowMap "WNH"  wnh
 --      $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
-        $ SB.addRowMap "Race" race5FromPUMS --(F.rgetField @DT.RaceAlone4C)
+        $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
 --        $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
         $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
@@ -508,7 +508,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.addRSTFromFile $ rstDir ++ "Intro.rst" -- cpsStateRaceIntroRST
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps without State-specific effects (2016)")
+    ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
     (sortedStates rtDiffNI_2016)
     True
     (FV.ViewConfig 500 1000 5)
@@ -516,7 +516,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.addRSTFromFile $ rstDir ++ "P2.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("Turnout Gaps with State-specific effects (2016)")
+    ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
     (sortedStates rtDiffWI_2016)
     True
     (FV.ViewConfig 500 1000 5)
@@ -524,7 +524,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State-specific contribution to turnout gap (2016)")
+    ("NWNH/WNH State-specific contribution to turnout gap (2016)")
     (sortedStates rtDiffI_2016)
     True
     (FV.ViewConfig 500 1000 5)
@@ -536,32 +536,35 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                     $ fmap (addCols "Interaction" "2012") <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State-specific contribution to Turnout Gap (2012)")
+    ("NWNH/WNH State-specific contribution to Turnout Gap (2012)")
     (sortedStates rtDiffI_2012)
     True
     (FV.ViewConfig 500 1000 5)
     rtDiffIMR_2012
-  let rtDiffIMR_Combined = rtDiffIMR_2012 <> rtDiffIMR_2016
+  let filterState states x = K.knitMaybe "Missing State in MapRow"
+                             $ fmap (fmap fst . List.filter ((`elem` states) . snd) . zip x)
+                             $ traverse (fmap (\(GV.Str x) -> x) . M.lookup "State") x
+      sig lo hi = lo * hi > 0
+      oneSig [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA || sig loB hiB then Just () else Nothing
+      oneSigStates =  M.keys
+                      $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) rtDiffI_2012 rtDiffI_2016
+  combinedOneSig <- (<>) <$> filterState oneSigStates rtDiffIMR_2016 <*> filterState oneSigStates rtDiffIMR_2012
   _ <- K.addHvega' Nothing Nothing True
     $ turnoutGapScatter
-    ("State-Specific Turnout Gaps: 2012 vs. 2016")
+    ("State-Specific NWNH/WNH Turnout Gaps: 2012 vs. 2016")
     (FV.ViewConfig 500 500 5)
-    rtDiffIMR_Combined
+    combinedOneSig
   K.addRSTFromFile $ rstDir ++ "P5.rst"
-  let sig lo hi = lo * hi > 0
-      sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
+  let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
       sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
       significantPersistent = M.keys
                               $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigBoth)) rtDiffI_2012 rtDiffI_2016
       significantMove = M.keys
                         $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigMove)) rtDiffI_2012 rtDiffI_2016
-  let filterState states x = K.knitMaybe "Missing State in MapRow"
-                             $ fmap (fmap fst . List.filter ((`elem` states) . snd) . zip x)
-                             $ traverse (fmap (\(GV.Str x) -> x) . M.lookup "State") x
   significantGapsBothMR <- (<>) <$> filterState significantPersistent rtDiffIMR_2016 <*> filterState significantPersistent rtDiffIMR_2012
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
-    ("State-specific contribution to Turnout Gap: significant *and* persistent gaps in 2012 and 2016")
+    ("NWNH/WNH State-specific contribution to Turnout Gap: significant *and* persistent gaps in 2012 and 2016")
     (sortedStates rtDiffI_2012)
     False
     (FV.ViewConfig 400 400 5)
@@ -633,12 +636,15 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) rows =
       gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
       encY = GV.position GV.Y [GV.PName "2016", GV.PmType GV.Quantitative]
       encX = GV.position GV.X [GV.PName "2012", GV.PmType GV.Quantitative]
+      label = GV.text [GV.TName "State", GV.TmType GV.Nominal]
       enc = GV.encoding . encX . encY
+
 --      enc45_X = GV.position GV.X [GV.PName "2016", GV.PmType GV.Quantitative, gapScale, GV.PAxis [GV.AxNoTitle]]
 --      mark45 = GV.mark GV.Line
 --      spec45 = GV.asSpec [(GV.encoding . enc45_X . encY) [], mark45 []]
       specXaxis = GV.asSpec [GV.encoding . (GV.position GV.Y [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
       specYaxis = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      stateLabelSpec = GV.asSpec [(enc . label) [], GV.mark GV.Text [GV.MTooltip GV.TTData]]
       labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
                               ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
                               ]
@@ -653,4 +659,4 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) rows =
   in FV.configuredVegaLiteSchema
      (GV.vlSchema 5 (Just 1) Nothing Nothing)
      vc
-     [FV.title title, GV.layer ([specPts, specXaxis, specYaxis] ++ labelSpecs), transform [], vlData]
+     [FV.title title, GV.layer ([{-specPts ,-} stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]

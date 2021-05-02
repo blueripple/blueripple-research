@@ -1,60 +1,98 @@
 Voter Turnout And Race
 ++++++++++++++++++++++
 
-
 As we've written about `before <https://blueripple.github.io/research/mrp-model/p3/main.html>`_,
 younger voters and voters of color
 tend to vote for Democrats, but smaller fractions of those voters cast a vote in most elections.
 White voters without a college degree
 are more likely to vote for Republicans, and are similarly less likely to vote than White voters
 with a college degree. These turnout differences
-vary by state, though it’s not clear why.  Some possibilities:
+vary by state.  In a sense, that’s no surprise: each state has a different mix of voters, with different
+distributions of age and education, etc.  But turnout gaps vary widely by state
+*even once we account for the demographic differences among them*, something we explore in detail below.
+Some possible reasons incude:
 
-- Each state has different policies which encourage or discourage voting: more days of early
+- Different policies which encourage or discourage voting: more days of early
   voting, having more polling places, or keeping polls open for more hours makes voting easier and may shrink
-  the turnout gap.
+  the turnout gap.  ID requirements, voter purges and unduly strict requirements around provisional ballots can
+  widen these gaps.
 - Grassroots organizing and campaigning, both largely local,
   may also drive turnout and shrink turnout gaps.
 - Specific national and local elections have their own dynamics, energizing certain groups of voters.
 
-The Democratic successes in AL in 2016 (the election of Doug Jones),
+Democratic successes in AL in 2016 (the election of Doug Jones to the Senate),
 and GA in 2020, as well as 2020 Dem struggles in FL and TX,
 echo important themes about the role of organizing and voter
 suppression in the turnout of Democratic voters.  Before we dig into that story—something we plan to do
-later this year—we set the stage, exploring the variations in state-level turnout gaps, using data
-from the Current Population Survey (CPS) Voter Supplement and the
-American Community Survey (ACS), both produced by the US Census bureau. We're also going to
+later this year—we set the stage, exploring the variations in state-level turnout gaps
+between White-non-Hispanic (WNH) voters and everyone else (Non-White-Non-Hispanic voters, NWNH),
+using data from the Current Population Survey (CPS) Voter and Registration Supplement (CPS-VRS)
+and the American Community Survey (ACS), both produced by the US Census bureau. We're also going to
 explain a bit about `MRP modeling <https://www.youtube.com/watch?v=bq9c1zsR9NM>`_,
 anchoring this and further analyses based on similar models.
 
-Before we dive in, we should note that trying to measure the effect of suppressive
-voting policy (requiring voter ID, shrinking the available polling places/hours, etc.) using
-`data-science <https://scholar.princeton.edu/sites/default/files/jmummolo/files/jop_voterid_print.pdf>`_
-is difficult.  It requires measuring within-state differences over-time among subsets of voters.  The
+Considering only the WNH/NWNH gap is simplistic and reductive.  There are turnout gaps
+by level of education and age, by population density and income, by religion, family
+structure and occupation.  But we are particularly interested in the interplay of
+voter suppression and organizing, and a lot of this plays out on the field
+of race. In order to look state by state, which complicates the modeling,
+we must simplify as much else as we can.
+
+Any attempt to analyze voter turnout and connect it to government policy or
+grasroots organizing is fraught,
+running the risk of minimizing the harms done by suppressive policies or
+asserting that organizing is a solution to voter suppression.  So it’s important
+that we begin by saying that we at Blue Ripple Politics are unequivocally
+in support of nearly all measures to make voting easier:
+no-excuse voting by mail,
+same day registration,
+more polling places,
+more days of early voting,
+longer hours at polling places,
+the elimination of voter ID requirements,
+an end to the aggressive purging of voter lists,
+support and allowance of provisional ballots,
+re-enfranchisement of people in
+prison and the formerly incarcerated, etc.
+And regardless of whether suppression is succesful, it is wrong.  It is morally repugnant and
+it requires energy and resources to combat.  Forcing people to spend those energies and resources
+is itself an outrage. Voting should be easy for everyone and we want everyone to vote!
+
+Trying to measure the effect of suppressive
+voting policy (requiring voter ID, shrinking the available polling places/hours, etc.)
+`is difficult. <https://scholar.princeton.edu/sites/default/files/jmummolo/files/jop_voterid_print.pdf>`_
+It requires measuring within-state differences over-time among subsets of voters.  The
 standard surveys used to look at these effects do not have sufficient data within groups or enough
 consistency over time for these analyses. The inspiring and remarkable successes of
-organizing in the face of these restrictions further complicates measuring effects.  We want to be clear
-that whatever the consequence of these laws and policies on turnout, we at Blue Ripple Politics are against them.
-Every state should make it *easier* to vote, particularly via early voting, same-day registration and the
-(re-)enfranchisement of the formerly incarcerated and people im jail and prison. We also believe that
-even succesfully overcome voter suppression represents wasted time and energy on behalf of the organizers and
-voters which should not be minimized just because the electoral outcome is one we favor.
+organizing in the face of these restrictions further complicates any simple measuring of their effects.
 
 In This Post
 ____________
 
-- The CPS Voter Supplement
+- The CPS-VRS and ACS Surveys
 - MRP: A Quick Primer
 - The Basic Model
 - State-Level effects
 - Conclusions
 
-*Turnout Data: The CPS Voting and Registration Supplement*
-__________________________________________________________
+*Data: The American Community Survey and the CPS Voting and Registration Supplement*
+____________________________________________________________________________________
+
+Each year, the census conducts the “American Community Survey” which, for our purposes,
+you can think of as an update to the decennial census.  Surveys are sent to ~3.5 million
+households, so it’s not as complete a count.  There is also less geographic specificity
+to the reported results.  The census reports results down to the “block” level, whereas
+much of the ACS data is available only at the PUMA (Public Use Microdata Area) level,
+where each PUMA has about 100,000 people.  Still, this is enough granularity for work
+at the state or congressional-district level.  For precise demographics at the state
+or voting precint level, we need to use either decennial census results or a subset of
+the ACS data. We use this data when we can because it provides a more up-to-date
+picture of the demographics than the 2010 census.  Of course when the 2020 census
+results are available we will have an extremely precise set of current demographic data.
 
 Each election year, the census bureau, via the Current Population Survey,
 conducts the
-`Voting and Registration Survey <https://www.census.gov/topics/public-sector/voting.html>`_,
+`Voting and Registration Supplement <https://www.census.gov/topics/public-sector/voting.html>`_,
 asking approximately 100,000 people nationwide
 about their registration status and if they voted in the general election.
 In addition to county of residence, demographic information
@@ -90,9 +128,9 @@ The 100,000 people surveyed by the CPS-VRS are distributed throughout the countr
 will only be a limited number of people in each state, particularly less populous ones.
 Once you start breaking those people down by demographic groups, the number of people
 per group gets quite small.  For example, our model has binary groupings for age, sex and
-education and a 5-category grouping for race. Considering
-each of the 50 states plus DC, we have :math:`40 \times 51 = 2040` groups.  If people were
-distributed evenly among those groups, we might have 50 people or so in each. But people
+education and a 4-category grouping for race. Considering
+each of the 50 states plus DC, we have :math:`32 \times 51 = 1632` groups.  If people were
+distributed evenly among those groups, we might have 60 or so people in each. But people
 are not distributed equally among those groups! Some states are smaller and some may not have
 very many people in some of those categories.  So how can we hope to understand any state-level
 subtleties in turnout?
@@ -110,8 +148,8 @@ of the turnout probability in each group is built partially from the data in tha
 from the data in the shared categories.  For example, the turnout probability for
 young, female, college-educated, Black voters in MI is fit partially from just those voters,
 partially from all young, female, college-educated, Black voters in the
-entire country, and partially from all voters in MI.  Models can be constructed various ways to allow
-different sorts of partial-pooling.  The **MR** technique and tools we use
+entire country, and partially from all voters in MI.  Models can be constructed to allow
+partial-pooling along different groupings.  The **MR** technique and tools we use
 (namely, `Hamiltonian Monte Carlo <https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo>`_
 via `Stan <https://mc-stan.org/about/>`_)
 allow the data itself to determine how much partial-pooling leads
@@ -122,20 +160,19 @@ turnout numbers via post-stratification: multiplying
 the estimated probabilities by the actual number of people in each group,
 and adding these up to figure out how many people are likely to vote.
 
-Confidence intervals of the parameters,
-*and* post-stratifications which use them,
-are produced naturally by the Monte-Carlo modeling.
+The Monte-Carlo modeling produces confidence intervals of the parameters,
+*and* the post-stratifications which use them.
 The fact that some groups are very small, and thus hard to estimate,
-will show up in our results as large error bars.  Partial-pooling helps,
-but only so much.
+will show up in our results as large confidence intervals.
+Partial-pooling helps, but only so much.
 
 *The Basic Model*
 _________________
 
 Our basic model includes age (under 45 or 45-and-over),
 sex (female or male), education (non-college-graduate or college-graduate),
-race/ethnicity (Black, Hispanic, Asian, White-non-Hispanic and other) and state.
-We recognize that all these categories are reductive.  In the case of sex
+race/ethnicity (Black-Non-Hispanic, Hispanic, Asian/Other, and White-Non-Hispanic) and state.
+We recognize that these categories are reductive.  In the case of sex
 we are limited to categories provided by the CPS data. For age and education
 we've chosen to simplify the categories to keep the modeling simple.
 For race/ethnicity, we‘re using a slightly richer set of categories,
@@ -170,8 +207,8 @@ by our model, first without the state-race interaction.
 These gaps come from the *national* turnout gap between NWNH and WNH voters and the
 differences among states come entirely from different distributions of ages,
 gender and education among the NWNH and WNH populations in that state.  These gaps
-average about -9 pts—indicating 9% more WNH voters turned out than NWNH nationally—
-ranging from -3 points in TN to -16 points in HI.
+average about -10 pts—indicating 9% more WNH voters turned out than NWNH nationally—
+ranging from -4 points in MI to -25 points in SD.
 The average gap can be quite different year-to-year and it was, for example, close to 0 in 2012.
 In each of the following charts, the zero-line is marked in blue and the mean of the
 turnout gaps in orange.
