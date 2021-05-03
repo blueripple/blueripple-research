@@ -207,17 +207,4 @@ their mix of ages, sexes, etc. and partly due to things specific to the state it
 as history, organizing and voter suppression.  And it’s important to keep in mind that a turnout
 gap can come from higher than expected turnout in one group or lower than expected in the other
 or some combination of the two.  We’re going to focus in on the state-specific portion of the gap but
-you can look at this note_ if you are interested in the piece coming from the demographics alone, and
-here if you are interested in the total gap for each state in 2016.
-
-As an example, in the chart below, we look at the 2016 state turnout gaps
-(along with 90% percent confidence intervals) predicted
-by our model, first without the state-race interaction.
-These gaps come from the *national* turnout gap between NWNH and WNH voters and the
-differences among states come entirely from different distributions of ages,
-gender and education among the NWNH and WNH populations in that state.  These gaps
-average about -10 pts—indicating 9% more WNH voters turned out than NWNH nationally—
-ranging from -4 points in MI to -25 points in SD.
-The average gap can be quite different year-to-year and it was, for example, close to 0 in 2012.
-In each of the following charts, the zero-line is marked in blue and the mean of the
-turnout gaps in orange.
+click the link below for more detail about the demographics-only gap and the total gap.

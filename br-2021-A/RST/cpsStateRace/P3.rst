@@ -1,6 +1,7 @@
-Finally, we look *only* at the state-race interaction term, isolating
+So below we look *only* at the state-race interaction term, isolating
 the portion of the turnout gap attributable to the state. These average
 to 0–as they should since they reflect the state-specific difference from
 the average gap. In this case PA is at the top with 8 point better-than-average
 relative turnout of NWNH voters and AZ is at the bottom, with 9 point
-worse-than-average relative turnout of NWNH voters.
+worse-than-average relative turnout of NWNH voters.  We add color to give
+some indication of the source of the gap.

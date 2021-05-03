@@ -21,6 +21,7 @@ import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Model.StanCCES as BRS
@@ -34,7 +35,6 @@ import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 
---import qualified Data.Random.Source.PureMT as PureMT
 import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here, i)
@@ -48,12 +48,10 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
---import qualified Frames.Table as FTable
 import qualified Frames.Visualization.VegaLite.Correlation as FV
 import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
---import qualified Frames.Visualization.VegaLite.Data as FV
 
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
@@ -214,10 +212,13 @@ cpsVAnalysis = do
   BR.logFrame $ FL.fold cpsCountsByYear cpsV
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
-
+  let htmlDir = "turnoutModel/stateSpecificGaps/"
+      notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
+      notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
+      postPath = htmlDir <> "/post"
   K.newPandoc
-    (K.PandocInfo "State_Race Interaction" $ one ("pagetitle","State_Race interaction"))
-    $ cpsStateRace False $ K.liftActionWithCacheTime data_C
+    (K.PandocInfo postPath $ one ("pagetitle","State-Specific Gaps"))
+    $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
 
 {-
   K.newPandoc
@@ -334,9 +335,14 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (Just 15)
   return ()
 
-cpsStateRace :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+             => Bool
+             -> (Text -> Text)
+             -> (Text -> Text)
+             -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
+cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let rstDir = "br-2021-A/RST/cpsStateRace/"
+
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
@@ -430,7 +436,8 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
         return ()
 
-      extractTestResults :: K.KnitEffects r => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double], Map Text [Double], Map Text [Double])
+      extractTestResults :: K.KnitEffects r
+                         => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double], Map Text [Double], Map Text [Double], Map Text [Double])
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
@@ -447,11 +454,14 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                          $ SP.parse1D "rtDiffNI" (CS.paramStats summary)
             vRTDiffI <- fmap (SP.getVector . fmap CS.percents)
                         $ SP.parse1D "rtDiffI" (CS.paramStats summary)
+            vRT_NWNH_WI <- fmap (SP.getVector . fmap CS.percents)
+                        $ SP.parse1D "WI_ACS_NWNH_State" (CS.paramStats summary)
 
             rtDiffWI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffWI)
             rtDiffNI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffNI)
             rtDiffI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffI)
-            return (rtDiffWI, rtDiffNI, rtDiffI)
+            rtNWNH_WI <- indexStanResults psIndexIM vRT_NWNH_WI
+            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI)
 --            indexStanResults cpsVStateIndexIM vRDiff
 --    K.knitEither $
 
@@ -497,30 +507,41 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
-  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016) <- K.ignoreCacheTime res2016_C
-  K.logLE K.Info $ "results: " <> show rtDiffI_2016
+  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH) <- K.ignoreCacheTime res2016_C
   -- sort on median coefficient
+  let rtNWNH_mids = fmap (\[_, x,_] -> x) rtNWNH
+  stateTurnout <- K.ignoreCacheTimeM $ BR.stateTurnoutLoader
+  let stateVEP = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.VEP r)) FL.map) stateTurnout
+      stateNWNH = M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (\_ nwnh vep -> Just $ (nwnh, realToFrac vep))) rtNWNH_mids stateVEP
+      avgNWNH = FL.fold ((/) <$> (FL.premap (\(a, b) -> a * b) FL.sum) <*> (FL.premap snd FL.sum)) stateNWNH
+      stateDiffFromAvg = fmap (\(nwnh, _) -> nwnh - avgNWNH) stateNWNH
+  K.logLE K.Info $ "State NWNH: " <> show stateDiffFromAvg
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
   rtDiffWIMR_2016 <- K.knitEither $ fmap (addCols "With Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
   rtDiffNIMR_2016 <- K.knitEither $ fmap (addCols "Without Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffNI_2016)
   rtDiffIMR_2016 <- K.knitEither $ fmap (addCols "Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffI_2016)
-  K.addRSTFromFile $ rstDir ++ "Intro.rst" -- cpsStateRaceIntroRST
-  _ <- K.addHvega Nothing Nothing
-    $ coefficientChart
-    ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
-    (sortedStates rtDiffNI_2016)
-    True
-    (FV.ViewConfig 500 1000 5)
-    rtDiffNIMR_2016
-  K.addRSTFromFile $ rstDir ++ "P2.rst"
-  _ <- K.addHvega Nothing Nothing
-    $ coefficientChart
-    ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
-    (sortedStates rtDiffWI_2016)
-    True
-    (FV.ViewConfig 500 1000 5)
-    rtDiffWIMR_2016
+  K.addRSTFromFile $ rstDir ++ "P1a.rst"
+  K.addRST $ "`Demographic-only gaps and total gaps <" <> notesURL "1" <> ">`_"
+  K.newPandoc
+    (K.PandocInfo (notesPath "1") $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
+    K.addRSTFromFile $ rstDir ++ "N1.rst"
+    _ <- K.addHvega Nothing Nothing
+      $ coefficientChart
+      ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
+      (sortedStates rtDiffNI_2016)
+      True
+      (FV.ViewConfig 500 1000 5)
+      rtDiffNIMR_2016
+    K.addRSTFromFile $ rstDir ++ "N2.rst"
+    _ <- K.addHvega Nothing Nothing
+      $ coefficientChart
+      ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
+      (sortedStates rtDiffWI_2016)
+      True
+      (FV.ViewConfig 500 1000 5)
+      rtDiffWIMR_2016
+    return ()
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
@@ -531,7 +552,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     rtDiffIMR_2016
   K.addRSTFromFile $ rstDir ++ "P4.rst"
   res2012_C <- runModel [2012]
-  (rtDiffWI_2012, rtDiffNI_2012, rtDiffI_2012) <- K.ignoreCacheTime res2012_C
+  (rtDiffWI_2012, rtDiffNI_2012, rtDiffI_2012, _) <- K.ignoreCacheTime res2012_C
   rtDiffIMR_2012 <- K.knitEither
                     $ fmap (addCols "Interaction" "2012") <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
   _ <- K.addHvega Nothing Nothing
@@ -578,7 +599,7 @@ cpsStateRace clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (FV.ViewConfig 400 400 5)
     significantMoveMR
   res2012_2016_C <- runModel [2012, 2016]
-  (_, _, rtDiffI_2012_2016) <- K.ignoreCacheTime res2012_2016_C
+  (_, _, rtDiffI_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   rtDiffIMR_2012_2016 <- K.knitEither
                          $ fmap (addCols "Interaction" "2012 & 2016")
                          <$> traverse (expandInterval "State") (M.toList rtDiffI_2012_2016)
