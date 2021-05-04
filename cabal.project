@@ -1,4 +1,4 @@
-packages: ./
+packages: ./ ~/DataScience/data-science-utils
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -102,10 +102,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hvega-utils
   tag: a472b31ae9cfa42cdf4b67b50557477461062beb
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/data-science-utils
-  tag: fd06d608193d41be50508386396a93ba62397e75
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/data-science-utils
+--  tag: fd06d608193d41be50508386396a93ba62397e75
 
 source-repository-package
   type: git
