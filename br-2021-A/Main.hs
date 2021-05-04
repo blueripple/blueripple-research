@@ -21,6 +21,7 @@ import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanMRP as MRP
@@ -216,15 +217,16 @@ cpsVAnalysis = do
       notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
       notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
       postPath = htmlDir <> "/post"
+{-
   K.newPandoc
     (K.PandocInfo postPath $ one ("pagetitle","State-Specific Gaps"))
     $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
+-}
 
-{-
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
--}
+
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -232,12 +234,15 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
+        let ageSex r = (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r)
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
+        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
---        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
---        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
+        SB.addGroup "AgeSex" $ SB.makeIndexFromFoldable show ageSex BRK.elements
+
+--        SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
 --        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 
@@ -271,19 +276,20 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
 
+        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
---        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
---        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
+        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
+        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
+        gAgeSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeSex"
 --        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
 --        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
 --        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
 --        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
-        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
 --        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gAgeE, gSexE, gEduE, gRaceE, gAgeSexE]
         SB.sampleDistV dist logitPE
-
+{-
         acsData <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
         SB.addDataSetIndexes acsData pumsPSGroupRowMap
 
@@ -297,7 +303,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
           (realToFrac . F.rgetField @PUMS.Citizens)
           MRP.PSShare
           (Just $ SB.GroupTypeTag @Text "State")
-
+-}
 --        SB.generateLogLikelihood dist logitPE
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SB.StanInt) dist logitPE
         return ()

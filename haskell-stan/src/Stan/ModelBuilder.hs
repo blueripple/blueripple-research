@@ -505,6 +505,10 @@ modifyIndexBuildersA :: Applicative t
                      -> t (BuilderState d r)
 modifyIndexBuildersA f (BuilderState dv vbs rb hf c ib) = (\x -> BuilderState dv vbs rb hf  c x) <$> f ib
 
+
+modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState d r -> BuilderState d r
+modifyFunctionNames f (BuilderState dv vbs rb hf c ib) = BuilderState dv vbs rb (f hf) c ib
+
 initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
 initialBuilderState toModeled =
   BuilderState
@@ -553,12 +557,12 @@ askGroupEnv = asks groupEnv
 addFunctionsOnce :: Text -> StanBuilderM env d r0 () -> StanBuilderM env d r0 ()
 addFunctionsOnce functionsName fCode = do
   (BuilderState vars ibs rowBuilders fsNames code ims) <- get
-  case Set.member functionsName fsNames of
-    True -> return ()
-    False -> do
-      let newFunctionNames = Set.insert functionsName fsNames
-      fCode
-      put (BuilderState vars ibs rowBuilders newFunctionNames code ims)
+  if functionsName `Set.member` fsNames
+    then return ()
+    else (do
+             fCode
+             modify $ modifyFunctionNames $ Set.insert functionsName
+         )
 
 addIndexedDataSet :: (Typeable r, Typeable d, Typeable k)
                   => Text

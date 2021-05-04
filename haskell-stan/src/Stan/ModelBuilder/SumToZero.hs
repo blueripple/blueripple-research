@@ -21,7 +21,7 @@ import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 
 sumToZeroFunctions :: SB.StanBuilderM env d r0 ()
-sumToZeroFunctions = do
+sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
   SB.declareStanFunction "vector Q_sum_to_zero_QR(int N)" $ do
     SB.addStanLine "vector [2*N] Q_r"
     SB.stanForLoop "i" Nothing "N" $ const $ do
@@ -39,9 +39,6 @@ sumToZeroFunctions = do
       SB.addStanLine "x_aux = x_aux + x_raw[i] * Q_r[i+N]"
     SB.addStanLine "x[N] = x_aux"
     SB.addStanLine "return (x_sigma * x)"
-
-addSumToZeroFunctions ::SB.StanBuilderM env d r0 ()
-addSumToZeroFunctions = SB.addFunctionsOnce "SumToZero" sumToZeroFunctions
 
 rawName :: Text -> Text
 rawName t = t <> "_raw"
