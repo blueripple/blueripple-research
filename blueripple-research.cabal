@@ -39,6 +39,7 @@ common deps
                , foldl-statistics >= 0.1.5 && < 0.2
                , generic-optics >= 2.0
                , groups
+               , heidi >= 0.1.0 && < 0.2
                , here
                , hvega >= 0.7.0 && < 0.12
                , hvega-utils >= 0.3.0 && < 0.4
@@ -47,10 +48,11 @@ common deps
                , lens
                , lucid
                , massiv >= 0.5.4 && < 0.7
+               , microlens-platform >= 0.4.0 && < 0.5
                , map-reduce-folds >= 0.1.0.1
                , optics >= 0.3 && < 0.4
                , pipes
-               , polysemy >= 0.2.1.0 && < 1.4
+               , polysemy >= 0.2.1.0 && < 1.6
                , polysemy-plugin
                , primitive >= 0.7.0.0
                , profunctors

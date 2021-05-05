@@ -55,6 +55,8 @@ import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
+import qualified Heidi
+
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
     ViewConfig (ViewConfig),
@@ -217,16 +219,15 @@ cpsVAnalysis = do
       notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
       notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
       postPath = htmlDir <> "/post"
-{-
+
   K.newPandoc
     (K.PandocInfo postPath $ one ("pagetitle","State-Specific Gaps"))
     $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
--}
-
+{-
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
-
+-}
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -234,13 +235,28 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
-        let ageSex r = (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r)
+        let age = F.rgetField @DT.SimpleAgeC
+            sex = F.rgetField @DT.SexC
+            edu = F.rgetField @DT.CollegeGradC
+            race = DT.race4FromRace5 . race5FromCPS
+            ageSex r = (age r, sex r)
+            ageEdu r = (age r, edu r)
+            ageRace r = (age r, race r)
+            sexEdu r = (sex r, edu r)
+            sexRace r = (sex r, race r)
+            eduRace r = (edu r, race r)
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "Age" $ SB.makeIndexFromEnum age
+        SB.addGroup "Sex" $ SB.makeIndexFromEnum sex
+        SB.addGroup "Education" $ SB.makeIndexFromEnum edu
         SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
         SB.addGroup "AgeSex" $ SB.makeIndexFromFoldable show ageSex BRK.elements
+        SB.addGroup "AgeEdu" $ SB.makeIndexFromFoldable show ageEdu BRK.elements
+        SB.addGroup "AgeRace" $ SB.makeIndexFromFoldable show ageRace BRK.elements
+        SB.addGroup "SexEdu" $ SB.makeIndexFromFoldable show sexEdu BRK.elements
+        SB.addGroup "SexRace" $ SB.makeIndexFromFoldable show sexRace BRK.elements
+        SB.addGroup "EduRace" $ SB.makeIndexFromFoldable show eduRace BRK.elements
+
 
 --        SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
@@ -281,13 +297,19 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
         gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
         gAgeSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeSex"
+        gAgeEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeEdu"
+        gAgeRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeRace"
+        gSexEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "SexEdu"
+        gSexRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "SexRace"
+        gEduRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "EduRace"
+
 --        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
 --        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
 --        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
 --        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
 --        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gAgeE, gSexE, gEduE, gRaceE, gAgeSexE]
+            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gAgeE, gSexE, gEduE, gRaceE, gAgeSexE, gAgeEduE, gAgeRaceE, gSexEduE, gSexRaceE, gEduRaceE]
         SB.sampleDistV dist logitPE
 {-
         acsData <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
@@ -327,7 +349,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   (dw, stanCode) <- K.knitEither
     $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
   res_C <- MRP.runMRPModel
-    True
+    False
     (Just "br-2021-A/stan/cpsV")
     ("test")
     ("test" <> show year)
@@ -439,11 +461,19 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
           SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
           SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name whiteNI `SB.minus` SB.name nonWhiteNI
           SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
+          SB.stanDeclareRHS "dNWNH" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name nonWhiteNI
+          SB.stanDeclareRHS "dWNH" psType "" $ SB.name whiteWI `SB.minus` SB.name whiteNI
 
         return ()
 
       extractTestResults :: K.KnitEffects r
-                         => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double], Map Text [Double], Map Text [Double], Map Text [Double])
+                         => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double]
+                                                                          , Map Text [Double]
+                                                                          , Map Text [Double]
+                                                                          , Map Text [Double]
+                                                                          , Map Text [Double]
+                                                                          , Map Text [Double]
+                                                                          )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
@@ -454,23 +484,17 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
-            vRTDiffWI <- fmap (SP.getVector . fmap CS.percents)
-                         $ SP.parse1D "rtDiffWI" (CS.paramStats summary)
-            vRTDiffNI <- fmap (SP.getVector . fmap CS.percents)
-                         $ SP.parse1D "rtDiffNI" (CS.paramStats summary)
-            vRTDiffI <- fmap (SP.getVector . fmap CS.percents)
-                        $ SP.parse1D "rtDiffI" (CS.paramStats summary)
-            vRT_NWNH_WI <- fmap (SP.getVector . fmap CS.percents)
-                        $ SP.parse1D "WI_ACS_NWNH_State" (CS.paramStats summary)
+            let parseAndIndexPctsWith f vn = do
+                  v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
+                  indexStanResults psIndexIM $ Vector.map f v
 
-            rtDiffWI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffWI)
-            rtDiffNI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffNI)
-            rtDiffI <- indexStanResults psIndexIM (Vector.map (reverse . fmap negate) vRTDiffI)
-            rtNWNH_WI <- indexStanResults psIndexIM vRT_NWNH_WI
-            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI)
---            indexStanResults cpsVStateIndexIM vRDiff
---    K.knitEither $
-
+            rtDiffWI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffWI"
+            rtDiffNI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffNI"
+            rtDiffI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffI"
+            rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NWNH_State"
+            dNWNH <- parseAndIndexPctsWith id "dNWNH"
+            dWNH <- parseAndIndexPctsWith id "dWNH"
+            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, dNWNH, dWNH)
 
   K.logLE K.Info "Building json data wrangler and model code..."
 --  let year = 2016
@@ -513,7 +537,16 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
-  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH) <- K.ignoreCacheTime res2016_C
+  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH, _, _) <- K.ignoreCacheTime res2016_C
+{-
+  let toHeidiRows :: Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+      toHeidiRows m = Heidi.rowFromList $ fmap f $ M.toList m where
+        f (s, [lo, mid, hi]) = [(Heidi.mkTyN "State", Heidi.toVal s)
+                           , (Heidi.mkTyN "lo", Heidi.toVal lo)
+                           , (Heidi.mkTyN "mid", Heidi.toVal mid)
+                           , (Heidi.mkTyN "hi", Heidi.toVal hi)
+                           ]
+-}
   -- sort on median coefficient
   let rtNWNH_mids = fmap (\[_, x,_] -> x) rtNWNH
   stateTurnout <- K.ignoreCacheTimeM $ BR.stateTurnoutLoader
@@ -570,7 +603,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     diffIMR_2016
   K.addRSTFromFile $ rstDir ++ "P4.rst"
   res2012_C <- runModel [2012]
-  (_, _, rtDiffI_2012, _) <- K.ignoreCacheTime res2012_C
+  (_, _, rtDiffI_2012, _, _, _) <- K.ignoreCacheTime res2012_C
   rtDiffIMR_2012 <- K.knitEither
                     $ fmap (addCols "Interaction" "2012") <$> traverse (expandInterval "State") (M.toList rtDiffI_2012)
                     >>= MapRow.keyedMapRows (\(GV.Str x) -> x) "State"
@@ -625,7 +658,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     (FV.ViewConfig 400 400 5)
     significantMoveMR
   res2012_2016_C <- runModel [2012, 2016]
-  (_, _, rtDiffI_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
+  (_, _, rtDiffI_2012_2016, _, _, _) <- K.ignoreCacheTime res2012_2016_C
   rtDiffIMR_2012_2016 <- K.knitEither
                          $ fmap (addCols "Interaction" "2012 & 2016") <$> traverse (expandInterval "State") (M.toList rtDiffI_2012_2016)
                          >>= MapRow.keyedMapRows (\(GV.Str x) -> x) "State"
