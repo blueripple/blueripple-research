@@ -1,15 +1,4 @@
-The 90% confidence intervals are large—very few state-specific turnout gaps
-are clearly non-zero.
-
-We should emphasize
-that the split between what we attribute to demographics of the state vs. the
-state itself is strongly influenced by what we include in the model
-and how we include it.
-Perhaps if we added other factors, e.g., religion or median-income, gaps that
-appear to be state-specific would instead be explained by these other factors.
-We’ve included the biggest factors that tend to correlate with voter turnout
-and we believe that the gaps we see are too large to be explained by other factors.
-But it’s important to be mindful of the limits of this sort of analysis.
-
-We’ve done the same analysis for 2012, and below we chart just the state dependent
-part of the turnout gap.
+We can compare 2012 to 2016 a few ways.  We start by plotting the estimated effect for 2016 vs 2012,
+excluding any state for which the 2012 and 2016 confidence intervals both include 0. States in the
+upper right all had NWNH turnout exceeding expectations in both years and the lower left is populated
+by states with NWNH turnout below expectations in both years.

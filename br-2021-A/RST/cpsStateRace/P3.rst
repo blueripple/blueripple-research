@@ -1,7 +1,15 @@
-So below we look *only* at the state-race interaction term, isolating
-the portion of the turnout gap attributable to the state. These average
-to 0–as they should since they reflect the state-specific difference from
-the average gap. In this case PA is at the top with 8 point better-than-average
-relative turnout of NWNH voters and AZ is at the bottom, with 9 point
-worse-than-average relative turnout of NWNH voters.  We add color to give
-some indication of the source of the gap.
+The 90% confidence intervals are large—in very few states is the state-specific
+effect on NWNH voters clearly non-zero.
+
+We should emphasize
+that the split between what we attribute to demographics of the state vs. the
+state itself is strongly influenced by what we include in the model
+and how we include it.
+Perhaps if we added other factors, e.g., religion or median-income, gaps that
+appear to be state-specific would instead be explained by these other factors.
+We’ve included the biggest factors that tend to correlate with voter turnout
+and we believe that some of the shifts we see are too large to be explained by other factors.
+But it’s important to be mindful of the limits of this sort of analysis.
+
+We’ve done the same analysis for 2012, and below we chart state dependent
+NWNH turnout effect.

@@ -196,15 +196,12 @@ A more complex model might expand the categories,
 allow partial pooling for more of the categories,
 or add more interactions between categories.
 
-For the purposes of this post, we are interested specifically in the turnout difference
-between White-Non-Hispanic voters (who are more likely to vote for Republicans)
-and everyone else (who are more likely to vote for Democrats).  Separately
-Post-stratifying across the WNH and the NWNH populations
-produces modeled turnout rates for each and taking the difference produces the turnout gap.
+Because we are interested in local organizing and state-level voter suppression,
+we focus on the state-specific portion of NWNH turnout, in particular how much NWNH turnout
+in each state differs from what we would expect based on the demographics
+(age, sex, education, local population density) of those voters. So we post stratify on NWNH
+voters in each state, with and without state/race interactions.
 
-The turnout gap in each state is partly due to the specific mix of people in that state,
-their mix of ages, sexes, etc. and partly due to things specific to the state itself, such
-as history, organizing and voter suppression.  And it’s important to keep in mind that a turnout
-gap can come from higher than expected turnout in one group or lower than expected in the other
-or some combination of the two.  We’re going to focus in on the state-specific portion of the gap but
+It’s also interesting to look at turnout gaps between NWNH voters and WNH voters.
+Clicking the link below will bring you some more information about those.
 click the link below for more detail about the demographics-only gap and the total gap.

@@ -1,0 +1,2 @@
+We can also model 2012 and 2016 at the same time.  We lose the ability to see any changes but some confidence
+intervals shrink because there is more information to use in the fit.

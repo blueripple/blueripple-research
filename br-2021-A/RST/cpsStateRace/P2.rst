@@ -1,5 +1,6 @@
-Now we add the state-race interaction term, allowing the model to
-incorporate state-specific effects on the turnout gap, and chart the
-result below. The range of gaps is now much larger, from
-slightly positive (NWNH voters voted at *higher* rates than WNH voters) in SC
-to -20 points in AZ.
+So below we look *only* at the “State NWNH Turnout Effect”, taking
+the difference of the estimated NWNH turnout in a state and subtracting
+the estimated NWNH turnout *based on the demographics alone*.
+PA is at the top with 4 point better-than-expected
+turnout of NWNH voters and AZ is at the bottom, with 5 point
+worse-than-exoected turnout of NWNH voters.
