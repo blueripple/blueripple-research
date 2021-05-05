@@ -31,6 +31,7 @@ import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.TableUtils as BR
 
 import qualified Control.Foldl as FL
+import qualified Data.GenericTrie as GT
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
@@ -538,15 +539,17 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
   (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH, _, _) <- K.ignoreCacheTime res2016_C
-{-
+  let valToLabeledKV l = GT.toList . Heidi.flatten GT.empty (\tcs -> GT.insert (Heidi.mkTyN l : tcs)) . Heidi.toVal
   let toHeidiRows :: Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-      toHeidiRows m = Heidi.rowFromList $ fmap f $ M.toList m where
-        f (s, [lo, mid, hi]) = [(Heidi.mkTyN "State", Heidi.toVal s)
-                           , (Heidi.mkTyN "lo", Heidi.toVal lo)
-                           , (Heidi.mkTyN "mid", Heidi.toVal mid)
-                           , (Heidi.mkTyN "hi", Heidi.toVal hi)
-                           ]
--}
+      toHeidiRows m = Heidi.frameFromList $ fmap f $ M.toList m where
+        f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
+        f (s, [lo, mid, hi]) = Heidi.rowFromList
+                               $ concat [(valToLabeledKV "State" s)
+                                        , (valToLabeledKV "lo" lo)
+                                        , (valToLabeledKV "mid" mid)
+                                        , (valToLabeledKV "hi" hi)
+                                        ]
+
   -- sort on median coefficient
   let rtNWNH_mids = fmap (\[_, x,_] -> x) rtNWNH
   stateTurnout <- K.ignoreCacheTimeM $ BR.stateTurnoutLoader

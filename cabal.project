@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/data-science-utils
+packages: ./ ~/DataScience/data-science-utils ~/DataScience/heidi ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -72,10 +72,10 @@ source-repository-package
 --  location: https://github.com/adamConnerSax/Frames-map-reduce
 --  tag: 1fbb72b90364449b24dfde70b9fce2576da27191
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 83f3ab886eacb1fb0d874702cab6ea3ab1965136
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 83f3ab886eacb1fb0d874702cab6ea3ab1965136
 
 --source-repository-package
 --  type: git
