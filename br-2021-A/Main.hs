@@ -49,6 +49,7 @@ import qualified Frames as F
 import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
+import qualified Frames.Heidi as FH
 import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
 import qualified Frames.Visualization.VegaLite.Correlation as FV
@@ -219,6 +220,7 @@ cpsVAnalysis = do
   let htmlDir = "turnoutModel/stateSpecificGaps/"
       notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
       notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
+--      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
       postPath = htmlDir <> "/post"
 
   K.newPandoc
@@ -539,18 +541,21 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
   (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
-{-
-  let valToLabeledKV l = GT.toList . Heidi.flatten GT.empty (\tcs -> GT.insert (Heidi.mkTyN l : tcs)) . Heidi.toVal
-  let toHeidiRows :: Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-      toHeidiRows m = Heidi.frameFromList $ fmap f $ M.toList m where
+
+  let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
+  let toHeidiFrame :: Int -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+      toHeidiFrame y m = Heidi.frameFromList $ fmap f $ M.toList m where
         f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
         f (s, [lo, mid, hi]) = Heidi.rowFromList
-                               $ concat [(valToLabeledKV "State" s)
-                                        , (valToLabeledKV "lo" lo)
-                                        , (valToLabeledKV "mid" mid)
-                                        , (valToLabeledKV "hi" hi)
+                                 $ concat [(valToLabeledKV "State" s)
+                                          , (valToLabeledKV "Year" y)
+                                          , (valToLabeledKV "lo" $ lo - mid)
+                                          , (valToLabeledKV "mid" mid)
+                                          , (valToLabeledKV "hi" $ hi - mid)
                                         ]
--}
+      dNWNH_h_2016 = toHeidiFrame 2016 dNWNH_2016
+--  K.logLE K.Info $ show dNWNH_h_2016
+
   -- sort on median coefficient
 {-
   let mids = fmap (\[_, x,_] -> x)

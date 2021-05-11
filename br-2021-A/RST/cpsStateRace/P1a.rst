@@ -181,7 +181,7 @@ a term in the model that estimates the effect of being, e.g.,
 White-non-Hispanic (WNH) *and* college-educated over and above the
 effects of being in either category separately. Crucially,
 we also include an interaction between state and WNH/NWNH,
-a term which estimates the *state-dependent* portion of the turnout gap.
+a term which estimates the *state-dependent* portion of the NWNH turnout.
 
 We fit a multi-level model, allowing partial-pooling in the estimate of
 the overall turnout probability in each state and for the interaction between state and race.

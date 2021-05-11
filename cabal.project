@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/data-science-utils ~/DataScience/heidi
+packages: ./
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -74,8 +74,14 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/adamConnerSax/heidi
+  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
+
+
+source-repository-package
+  type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 24a6d4f7a327a7d608bce03d2d337740eb615b4f
+  tag: c81a8a683229181f66222fe9e50d567f6be27153
 
 --source-repository-package
 --  type: git
@@ -100,12 +106,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
-  tag: a472b31ae9cfa42cdf4b67b50557477461062beb
+  tag: 10c1d13a0edfad2ffe24731beaffaf2862e63944
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/data-science-utils
---  tag: fd06d608193d41be50508386396a93ba62397e75
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/data-science-utils
+  tag: cedfd4041c26a85fb94199c634da4a1f179c2905
 
 source-repository-package
   type: git
