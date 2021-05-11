@@ -211,6 +211,7 @@ library
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.TSNE
                  , BlueRipple.Model.House.ElectionResult
+                 , BlueRipple.Utilities.Heidi
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
                  , BlueRipple.Utilities.FramesUtils

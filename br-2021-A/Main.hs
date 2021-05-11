@@ -555,8 +555,17 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                           , (valToLabeledKV "mid" mid)
                                           , (valToLabeledKV "hi" $ hi - mid)
                                         ]
---      hfToVLData = HV.rowsToVLData [] []
+      hfToVLData = HV.rowsToVLData [] [HV.asStr "State"
+                                      ,HV.asNumber "Year"
+                                      ,HV.asNumber "lo"
+                                      ,HV.asNumber "mid"
+                                      ,HV.asNumber "hi"
+                                      ]
       dNWNH_h_2016 = toHeidiFrame 2016 dNWNH_2016
+      rtDiffNIh_2016 = toHeidiFrame 2016 rtDiffNI_2016
+      rtDiffWIh_2016 = toHeidiFrame 2016 rtDiffWI_2016
+      rtDiffIh_2016 = toHeidiFrame 2016 rtDiffI_2016
+
 --  K.logLE K.Info $ show dNWNH_h_2016
 
   -- sort on median coefficient
@@ -597,57 +606,67 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   K.newPandoc
     (K.PandocInfo (notesPath "1") $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
     K.addRSTFromFile $ rstDir ++ "N1a.rst"
-    _ <- K.addHvega Nothing Nothing
-      $ coefficientChart
-      ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
-      (sortedStates rtDiffNI_2016)
-      True
-      False
-      (FV.ViewConfig 500 1000 5)
-      (mapRowToVLData rtDiffNIMR_2016)
+    _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
+         K.addHvega Nothing Nothing
+         . coefficientChart
+         ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
+         (sortedStates rtDiffNI_2016)
+         True
+         False
+         (FV.ViewConfig 500 1000 5)
+--         (mapRowToVLData rtDiffNIMR_2016)
     K.addRSTFromFile $ rstDir ++ "N1b.rst"
-    _ <- K.addHvega Nothing Nothing
-      $ coefficientChart
-      ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
-      (sortedStates rtDiffWI_2016)
-      True
-      False
-      (FV.ViewConfig 500 1000 5)
-      (mapRowToVLData rtDiffWIMR_2016)
+    _ <- K.knitEither (hfToVLData rtDiffWIh_2016) >>=
+         K.addHvega Nothing Nothing
+         . coefficientChart
+         ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
+         (sortedStates rtDiffWI_2016)
+         True
+         False
+         (FV.ViewConfig 500 1000 5)
+--         (mapRowToVLData rtDiffWIMR_2016)
     K.addRSTFromFile $ rstDir ++ "N1c.rst"
-    _ <- K.addHvega Nothing Nothing
-      $ coefficientChart
-      ("NWNH/WNH State-specific contribution to turnout gap (2016)")
-      (sortedStates rtDiffI_2016)
-      True
-      False
-      (FV.ViewConfig 500 1000 5)
-      (mapRowToVLData rtDiffIMR_2016)
+    _ <- K.knitEither (hfToVLData rtDiffIh_2016) >>=
+         K.addHvega Nothing Nothing
+         . coefficientChart
+         ("NWNH/WNH State-specific contribution to turnout gap (2016)")
+         (sortedStates rtDiffI_2016)
+         True
+         False
+         (FV.ViewConfig 500 1000 5)
+--         (mapRowToVLData rtDiffIMR_2016)
     return ()
   K.addRSTFromFile $ rstDir ++ "P2.rst"
-  _ <- K.addHvega Nothing Nothing
-    $ coefficientChart
-    ("State NWNH Turnout Effect (2016)")
-    (sortedStates dNWNH_2016)
-    True
-    False
-    (FV.ViewConfig 500 1000 5)
-    (mapRowToVLData dNWNH_MR_2016)
+  _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
+       K.addHvega Nothing Nothing
+       . coefficientChart
+       ("State NWNH Turnout Effect (2016)")
+       (sortedStates dNWNH_2016)
+       True
+       False
+       (FV.ViewConfig 500 1000 5)
+--       (hfToVLData dNWNH_h_2016)
+--    (mapRowToVLData dNWNH_MR_2016)
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   res2012_C <- runModel [2012]
   (_, _, _, _, dNWNH_2012, _) <- K.ignoreCacheTime res2012_C
+  let dNWNH_h_2012 = toHeidiFrame 2012 dNWNH_2012
+      dNWNH_h_2012_2016 = dNWNH_h_2012 <> dNWNH_h_2016
+  K.logLE K.Info $ show dNWNH_h_2012_2016
+--  let test = Heidi.gatherWith toText (Set.fromList ["lo","mid","hi"]) "Year"
   dNWNH_MR_2012 <- K.knitEither
                     $ fmap (addCols "Interaction" "2012") <$> traverse (expandInterval "State") (M.toList dNWNH_2012)
                     >>= MapRow.keyedMapRows (\(GV.Str x) -> x) "State"
 --  let diffIMR_2012 = MapRow.joinKeyedMapRows rtDiffIMR_2012 $ stateDiffFromAvgMRs 2012
-  _ <- K.addHvega Nothing Nothing
-    $ coefficientChart
-    ("State NWNH Turnout Effect (2012)")
-    (sortedStates dNWNH_2012)
-    True
-    False
-    (FV.ViewConfig 500 1000 5)
-    (mapRowToVLData dNWNH_MR_2012)
+  _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
+       K.addHvega Nothing Nothing
+       . coefficientChart
+       ("State NWNH Turnout Effect (2012)")
+       (sortedStates dNWNH_2012)
+       True
+       False
+       (FV.ViewConfig 500 1000 5)
+--       (mapRowToVLData dNWNH_MR_2012)
   let filterState states x = M.filterWithKey (\k _ -> k `elem` states) x
 {-
         K.knitMaybe "Missing State in MapRow"
