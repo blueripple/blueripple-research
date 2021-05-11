@@ -1,6 +1,17 @@
-So below we look *only* at the “State NWNH Turnout Effect”, taking
+Three initial questions (and answers) about voter turnout and race
+__________________________________________________________________
+
+Now we’re positioned to be able to post three questions about each state’s NWNH turnout:
+
+1. How much worse (or better) was each state’s NWNH turnout in 2016 compared with what one would have expected?
+2. How did each state’s NWNH turnout change from 2012 to 2016?
+3. xxxxxxxx
+
+
+(1) Observed vs. expected NWNH turnout in 2016 by state:
+Below we look *only* at the “State NWNH Turnout Effect”, taking
 the difference of the estimated NWNH turnout in a state and subtracting
 the estimated NWNH turnout *based on the demographics alone*.
 PA is at the top with 4 point better-than-expected
 turnout of NWNH voters and AZ is at the bottom, with 5 point
-worse-than-exoected turnout of NWNH voters.
+worse-than-expected turnout of NWNH voters.

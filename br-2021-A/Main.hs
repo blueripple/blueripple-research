@@ -64,8 +64,10 @@ import Graphics.Vega.VegaLite.Configuration as FV
     ViewConfig (ViewConfig),
   )
 import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.Heidi as HV
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
+
 import qualified Visualization.VegaLite.Histogram as VL
 
 import qualified Knit.Report as K
@@ -553,6 +555,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                           , (valToLabeledKV "mid" mid)
                                           , (valToLabeledKV "hi" $ hi - mid)
                                         ]
+--      hfToVLData = HV.rowsToVLData [] []
       dNWNH_h_2016 = toHeidiFrame 2016 dNWNH_2016
 --  K.logLE K.Info $ show dNWNH_h_2016
 
@@ -568,6 +571,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 -}
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
+      mapRowToVLData = MapRow.toVLData M.toList []
   rtDiffWIMR_2016 <- K.knitEither
                      $ fmap (addCols "With Interaction" "2016") <$> traverse (expandInterval "State") (M.toList rtDiffWI_2016)
                      >>= MapRow.keyedMapRows (\(GV.Str x) -> x) "State"
@@ -600,7 +604,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
       True
       False
       (FV.ViewConfig 500 1000 5)
-      rtDiffNIMR_2016
+      (mapRowToVLData rtDiffNIMR_2016)
     K.addRSTFromFile $ rstDir ++ "N1b.rst"
     _ <- K.addHvega Nothing Nothing
       $ coefficientChart
@@ -609,7 +613,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
       True
       False
       (FV.ViewConfig 500 1000 5)
-      rtDiffWIMR_2016
+      (mapRowToVLData rtDiffWIMR_2016)
     K.addRSTFromFile $ rstDir ++ "N1c.rst"
     _ <- K.addHvega Nothing Nothing
       $ coefficientChart
@@ -618,7 +622,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
       True
       False
       (FV.ViewConfig 500 1000 5)
-      rtDiffIMR_2016
+      (mapRowToVLData rtDiffIMR_2016)
     return ()
   K.addRSTFromFile $ rstDir ++ "P2.rst"
   _ <- K.addHvega Nothing Nothing
@@ -628,7 +632,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     True
     False
     (FV.ViewConfig 500 1000 5)
-    dNWNH_MR_2016
+    (mapRowToVLData dNWNH_MR_2016)
   K.addRSTFromFile $ rstDir ++ "P3.rst"
   res2012_C <- runModel [2012]
   (_, _, _, _, dNWNH_2012, _) <- K.ignoreCacheTime res2012_C
@@ -643,7 +647,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     True
     False
     (FV.ViewConfig 500 1000 5)
-    dNWNH_MR_2012
+    (mapRowToVLData dNWNH_MR_2012)
   let filterState states x = M.filterWithKey (\k _ -> k `elem` states) x
 {-
         K.knitMaybe "Missing State in MapRow"
@@ -676,7 +680,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     False
     False
     (FV.ViewConfig 400 400 5)
-    significantGapsBothMR
+    (mapRowToVLData significantGapsBothMR)
   let significantMoveMR = M.elems (filterState significantMove dNWNH_MR_2016) <> M.elems (filterState significantMove dNWNH_MR_2012)
   _ <- K.addHvega Nothing Nothing
     $ coefficientChart
@@ -685,7 +689,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     False
     False
     (FV.ViewConfig 400 400 5)
-    significantMoveMR
+    (mapRowToVLData significantMoveMR)
   res2012_2016_C <- runModel [2012, 2016]
   (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   dNWNH_MR_2012_2016 <- K.knitEither
@@ -700,20 +704,22 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     True
     False
     (FV.ViewConfig 500 1000 5)
-    dNWNH_MR_2012_2016
+    (mapRowToVLData dNWNH_MR_2012_2016)
   return ()
 
 
-coefficientChart :: (Functor f, Foldable f)
-                 => Text
+coefficientChart :: --(Functor f, Foldable f)
+                 Text
                  -> [Text]
                  -> Bool
                  -> Bool
-                 ->  FV.ViewConfig
-                 -> f (MapRow.MapRow GV.DataValue)
+                 -> FV.ViewConfig
+                 -> GV.Data
+--                 -> (f a -> Either Text GV.Data)
+--                 -> f a --(MapRow.MapRow GV.DataValue)
                  -> GV.VegaLite
-coefficientChart title sortedStates showAvg colorIsDelta vc rows =
-  let vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
+coefficientChart title sortedStates showAvg colorIsDelta vc vlData =
+  let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
       encColor = if colorIsDelta
