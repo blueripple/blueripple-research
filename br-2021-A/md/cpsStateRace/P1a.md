@@ -1,11 +1,6 @@
-Voter Turnout And Race
-************************
+# Voter Turnout And Race
 
-============
-Introduction
-============
-
-As we've written about `before <https://blueripple.github.io/research/mrp-model/p3/main.html>`_,
+As we've written about [before](https://blueripple.github.io/research/mrp-model/p3/main.html)
 voter turnout varies widely among demographic groups.
 Younger voters and voters of color
 tend to vote for Democrats, but smaller fractions of those voters cast a vote in most elections.
@@ -18,7 +13,8 @@ also vary by state, because each state has a different mix of voters, with diffe
 distributions of age and education, etc.
 
 But turnout gaps vary widely by state
-*even once we account for the demographic differences among them*, something we explore in detail below.
+*even once we account for the demographic differences among them*,
+something we explore in detail below.
 Some possible reasons include:
 
 - Specific state policies which encourage or discourage voting by regulating early
@@ -38,7 +34,7 @@ between White-non-Hispanic (WNH) voters and everyone else
 (Non-White-Non-Hispanic voters, NWNH),
 using data from the Current Population Survey Voter and Registration Supplement (CPS-VRS)
 and the American Community Survey (ACS), both produced by the US Census bureau. We're also going to
-explain a bit about `MRP modeling <https://www.youtube.com/watch?v=bq9c1zsR9NM>`_,
+explain a bit about [MRP modeling](https://www.youtube.com/watch?v=bq9c1zsR9NM>),
 anchoring this and further analyses based on similar models.
 
 Three quick caveats before we dig in.
@@ -52,7 +48,7 @@ regardless of demographics or partisan identity,
 and all measures to suppress voting are wrong.
 And third, any conclusions we can make linking turnout to state voting policies
 will be suggestive at best, because these analyses are
-`notoriously difficult <https://scholar.princeton.edu/sites/default/files/jmummolo/files/jop_voterid_print.pdf>`_.
+[notoriously difficult](<https://scholar.princeton.edu/sites/default/files/jmummolo/files/jop_voterid_print.pdf>).
 Standard surveys don’t collect the right type or amount of data to track within-state
 differences over time among subsets of voters with enough consistency
 to do anything more than generate interesting hypotheses.
@@ -62,9 +58,7 @@ let’s dive into the analysis.
 We’re going to start with two detailed sections about the underlying data and approach,
 describe our model, and then pose and answer three initial questions about voter turnout and race
 
-============
-In This Post
-============
+### In This Post
 
 - Intro (1): Our Data—The CPS-VRS and ACS
 - Intro (2): MRP—A Quick Primer
@@ -72,9 +66,7 @@ In This Post
 - Three initial questions (and answers) about voter turnout and race.
 - Conclusions
 
-================================================================================================
-Intro (1): Our Data–The American Community Survey and the CPS Voting and Registration Supplement
-================================================================================================
+## Intro (1): Our Data–The American Community Survey and the CPS Voting and Registration Supplement
 
 Each year, the U.S. Census Bureau (USCB) conducts the “American Community Survey” which, for our purposes,
 is an update to the decennial census.  Surveys are sent to ~3.5 million
@@ -91,7 +83,7 @@ picture of the demographics. (We’ll re-run this analysis once we have full 202
 
 In addition, each election year,
 the USCB publishes the
-`Voting and Registration Supplement <https://www.census.gov/topics/public-sector/voting.html>`_
+[Voting and Registration Supplement](https://www.census.gov/topics/public-sector/voting.html)
 to the Current Population Survey (CPS-VRS),
 which asks approximately 100,000 people nationwide
 about their registration status and if they voted in the general election.
@@ -102,27 +94,26 @@ allowing estimation of voter turnout among various groups and in various places.
 We make two important tweaks to the COS-VRS data.
 First, the survey responses are “self-reported” and not independently validated,
 so there are
-`reporting errors <http://www.electproject.org/home/voter-turnout/cps-methodology>`_
+[reporting errors](http://www.electproject.org/home/voter-turnout/cps-methodology)
 that tend to overestimate turnout in a way which differs systematically
 among states. To account for this, we adjust the turnout probabilities from the CPS
 so that when they are post-stratified across the citizen population of each state, we get
 the correct total turnout.  This was first suggested by
-`Achen and Hur <https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf>`_
+[Achen and Hur](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf)
 and we follow the procedure outlined by
-`Ghitza and Gelman <http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf>`_
+[Ghitza and Gelman](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf)
 (p. 769), to compute the adjustment for each state/year, using the vote totals from
-`United States Election Project <http://www.electproject.org/home/voter-turnout/voter-turnout-data>`_.
+[United States Election Project](http://www.electproject.org/home/voter-turnout/voter-turnout-data)
 
 
 Second, CPS-VRS data
-`seems to under-report
-<https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf>`_
+[seems to under-report](https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf)
 the gaps between White and non-White voters.  So all of our results looking at turnout gaps
 should be viewed skeptically: the gaps are likely larger than we see in the data.
 There are other publically available
 surveys which, when possible, validate survey reponses via state voter files,
 primarily the
-`CCES <https://cces.gov.harvard.edu>`_.  That survey is smaller: approximately
+[CCES](https://cces.gov.harvard.edu).  That survey is smaller: approximately
 50,000 people surveyed each year, with about 40,000 validated voters. For the sake of a
 first analysis, we will start with the CPS data.
 
@@ -131,7 +122,7 @@ will only be a limited number of people in each state, particularly less populou
 Once you start breaking those people down by demographic groups, the number of people
 per group gets quite small.  For example, our model has binary groupings for age, sex and
 education and a 4-category grouping for race. Considering
-each of the 50 states plus DC, we have :math:`32 \times 51 = 1632` groups.  If people were
+each of the 50 states plus DC, we have $32 \times 51 = 1632$ groups.  If people were
 distributed evenly among those groups, we might have 60 or so people in each. But people
 are not distributed equally among those groups! Some states are smaller and some may not have
 very many people in some of those categories.  So how can we hope to understand any state-level
@@ -139,9 +130,7 @@ subtleties in turnout?
 
 That's where MRP comes in.
 
-============================
-Intro(2): MRP—A Quick Primer
-============================
+## Intro(2): MRP—A Quick Primer
 
 Though there might not be many people in any one Age/Sex/Education/Race/State group, each person
 surveyed has many things in common with many people in other groups.  The **MR** part of **MRP** stands
@@ -153,8 +142,8 @@ young, female, college-educated, Black voters in MI is fit partially from just t
 partially from all young, female, college-educated, Black voters in the
 entire country, and partially from all voters in MI.  Models can be constructed to allow
 partial-pooling along different groupings.  The **MR** technique and tools we use
-(namely, `Hamiltonian Monte Carlo <https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo>`_
-via `Stan <https://mc-stan.org/about/>`_)
+(namely, [Hamiltonian Monte Carlo](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
+via [Stan](https://mc-stan.org/about/))
 allow the data itself to determine how much partial-pooling leads
 to the best estimation.
 
@@ -169,9 +158,7 @@ The fact that some groups are very small, making probabilistic inference difficu
 will show up in our results as large confidence intervals.
 Partial-pooling helps, but only so much.
 
-===============
-Our Basic Model
-===============
+## Our Basic Model
 
 Our basic model includes age (under 45 or 45-and-over),
 sex (female or male), education (non-college-graduate or college-graduate),
@@ -203,9 +190,23 @@ in each state differs from what we would expect based on the demographics
 (age, sex, education, local population density) of those voters. So we post stratify on NWNH
 voters in each state, with and without state/race interactions.
 
-It’s also interesting to look at turnout „gaps“: differences in the turnout rate
+It’s also interesting to look at turnout "gaps": differences in the turnout rate
 between NWNH voters and WNH voters.  Rather than showing differences among states,
 these might highlight how policies and organizing within a state affect the
-NWNH population and WNH population differently.
-Clicking the link below will bring you some more information about those.
-click the link below for more detail about the demographics-only gap and the total gap.
+NWNH population and WNH population differently. To save space here,
+we look at the gaps in a [separate note][note_link].
+
+## Three initial questions (and answers) about voter turnout and race
+
+Now we’re positioned to be able to answer three questions about each state’s NWNH turnout:
+
+1. How much worse (or better) was each state’s NWNH turnout in 2016 compared with what one would have expected?
+2. How did each state’s NWNH turnout change from 2012 to 2016?
+
+(1) Observed vs. expected NWNH turnout in 2016 by state:
+Below we look *only* at the “State NWNH Turnout Effect”, taking
+the difference of the estimated NWNH turnout in a state and subtracting
+the estimated NWNH turnout *based on the demographics alone*.
+PA is at the top with 4 point better-than-expected
+turnout of NWNH voters and AZ is at the bottom, with 5 point
+worse-than-expected turnout of NWNH voters.

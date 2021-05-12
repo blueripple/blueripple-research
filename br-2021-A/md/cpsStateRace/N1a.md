@@ -1,5 +1,4 @@
-Turnout Gaps
-____________
+# Turnout Gaps
 
 In the chart below, we look at the 2016 state turnout gaps
 (along with 90% percent confidence intervals) estimated

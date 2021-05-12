@@ -44,6 +44,8 @@ import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Time.Calendar            as Time
+import qualified Data.Time.Clock               as Time
 --import qualified Data.Vinyl as V
 --import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
@@ -227,9 +229,12 @@ cpsVAnalysis = do
       notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
 --      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
       postPath = htmlDir <> "/post"
-
+  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+  let pubDate =  curDate
   K.newPandoc
-    (K.PandocInfo postPath $ one ("pagetitle","State-Specific Gaps"))
+    (K.PandocInfo postPath
+     $ BR.brAddDates False pubDate curDate
+     $ one ("pagetitle","State-Specific Gaps"))
     $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
 {-
   K.newPandoc
@@ -378,7 +383,12 @@ cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let rstDir = "br-2021-A/RST/cpsStateRace/"
+      mdDir = "br-2021-A/md/cpsStateRace/"
       addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
+      addMarkDownFromFile fp = K.liftKnit (T.readFile $ fp ) >>= K.addMarkDown
+      addMarkDownFromFileWithRefs refs fp = do
+        fText <- K.liftKnit (T.readFile $ fp )
+        K.addMarkDown $ fText <> "\n" <> refs
 
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
@@ -573,10 +583,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
 
-
+  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+  let pubDate =  curDate
   K.newPandoc
-    (K.PandocInfo (notesPath "1") $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
-    addRSTFromFile $ rstDir ++ "N1a.rst"
+    (K.PandocInfo (notesPath "1")
+      $ BR.brAddDates False pubDate curDate
+      $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
+    addMarkDownFromFile $ mdDir ++ "N1a.md"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -585,7 +598,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          True
          False
          (FV.ViewConfig 500 1000 5)
-    addRSTFromFile $ rstDir ++ "N1b.rst"
+    addMarkDownFromFile $ mdDir ++ "N1b.md"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -594,7 +607,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          True
          False
          (FV.ViewConfig 500 1000 5)
-    addRSTFromFile $ rstDir ++ "N1c.rst"
+    addMarkDownFromFile $ mdDir ++ "N1c.md"
     _ <- K.knitEither (hfToVLData rtDiffIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -604,9 +617,8 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          False
          (FV.ViewConfig 500 1000 5)
     return ()
-  addRSTFromFile $ rstDir ++ "P1a.rst"
-  K.addRST $ "`Demographic-only gaps and total gaps. <" <> notesURL "1" <> ">`_"
-  addRSTFromFile $ rstDir ++ "P2.rst"
+  let note1Ref = "[note_link]: " <> notesURL "1"
+  addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1a.md"
   _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
@@ -615,12 +627,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        True
        False
        (FV.ViewConfig 500 1000 5)
-  addRSTFromFile $ rstDir ++ "P3.rst"
+  addMarkDownFromFile $ mdDir ++ "P3.md"
   res2012_C <- runModel [2012]
   (_, _, _, _, dNWNH_2012, _) <- K.ignoreCacheTime res2012_C
   let dNWNH_h_2012 = toHeidiFrame "2012" dNWNH_2012
       dNWNH_h_2012_2016 = dNWNH_h_2012 <> dNWNH_h_2016
-  K.logLE K.Info $ show dNWNH_h_2012_2016
   _ <- K.knitEither (hfToVLData dNWNH_h_2012) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
@@ -635,13 +646,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
       oneSigStates =  M.keys
                       $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2016
   combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2016
-  addRSTFromFile $ rstDir ++ "P4.rst"
+  addMarkDownFromFile $ mdDir ++ "P4.md"
   _ <- K.knitEither (hfToVLData combinedOneSig_h) >>=
        K.addHvega' Nothing Nothing True
        . turnoutGapScatter
        ("State NWNH Turnout Effect: 2012 vs. 2016")
        (FV.ViewConfig 500 500 5)
-  addRSTFromFile $ rstDir ++ "P5.rst"
+  addMarkDownFromFile $ mdDir ++ "P5.md"
   let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
       sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
       significantPersistent = M.keys
@@ -670,7 +681,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   let dNWNH_h_2012_2016 = toHeidiFrame "2012 & 2016" dNWNH_2012_2016
 --  let diffIMR_2012_2016 = MapRow.joinKeyedMapRows rtDiffIMR_2012 $ stateDiffFromAvgMRs 2016
-  addRSTFromFile $ rstDir ++ "P6.rst"
+  addMarkDownFromFile $ mdDir ++ "P6.md"
   _ <-  K.knitEither (hfToVLData  dNWNH_h_2012_2016) >>=
         K.addHvega Nothing Nothing
         . coefficientChart
