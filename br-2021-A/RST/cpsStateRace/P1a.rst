@@ -1,5 +1,9 @@
 Voter Turnout And Race
-++++++++++++++++++++++
+************************
+
+============
+Introduction
+============
 
 As we've written about `before <https://blueripple.github.io/research/mrp-model/p3/main.html>`_,
 voter turnout varies widely among demographic groups.
@@ -58,8 +62,9 @@ let’s dive into the analysis.
 We’re going to start with two detailed sections about the underlying data and approach,
 describe our model, and then pose and answer three initial questions about voter turnout and race
 
+============
 In This Post
-____________
+============
 
 - Intro (1): Our Data—The CPS-VRS and ACS
 - Intro (2): MRP—A Quick Primer
@@ -67,8 +72,9 @@ ____________
 - Three initial questions (and answers) about voter turnout and race.
 - Conclusions
 
+================================================================================================
 Intro (1): Our Data–The American Community Survey and the CPS Voting and Registration Supplement
-________________________________________________________________________________________________
+================================================================================================
 
 Each year, the U.S. Census Bureau (USCB) conducts the “American Community Survey” which, for our purposes,
 is an update to the decennial census.  Surveys are sent to ~3.5 million
@@ -133,8 +139,9 @@ subtleties in turnout?
 
 That's where MRP comes in.
 
+============================
 Intro(2): MRP—A Quick Primer
-____________________________
+============================
 
 Though there might not be many people in any one Age/Sex/Education/Race/State group, each person
 surveyed has many things in common with many people in other groups.  The **MR** part of **MRP** stands
@@ -162,8 +169,9 @@ The fact that some groups are very small, making probabilistic inference difficu
 will show up in our results as large confidence intervals.
 Partial-pooling helps, but only so much.
 
+===============
 Our Basic Model
-_______________
+===============
 
 Our basic model includes age (under 45 or 45-and-over),
 sex (female or male), education (non-college-graduate or college-graduate),

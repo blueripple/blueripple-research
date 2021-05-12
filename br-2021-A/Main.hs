@@ -16,67 +16,68 @@
 module Main where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.CCES as CCES
+--import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
+--import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Keyed as BRK
-import qualified BlueRipple.Data.Loaders as BR
+--import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanMRP as MRP
-import qualified BlueRipple.Model.StanCCES as BRS
+--import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Utilities.FramesUtils as BRF
-import qualified BlueRipple.Utilities.TableUtils as BR
-import qualified BlueRipple.Utilities.Heidi as BR
+--import qualified BlueRipple.Utilities.FramesUtils as BRF
+--import qualified BlueRipple.Utilities.TableUtils as BR
+--import qualified BlueRipple.Utilities.Heidi as BR
 
 import qualified Control.Foldl as FL
-import qualified Data.GenericTrie as GT
-import qualified Data.List as List
+--import qualified Data.GenericTrie as GT
+--import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.MapRow as MapRow
 
-import qualified Data.Semigroup as Semigroup
+--import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
-import qualified Data.Vinyl as V
-import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Text.IO as T
+--import qualified Data.Vinyl as V
+--import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
 import qualified Frames as F
-import qualified Control.MapReduce as MR
+--import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
-import qualified Frames.Folds as FF
+--import qualified Frames.Folds as FF
 import qualified Frames.Heidi as FH
-import qualified Frames.SimpleJoins  as FJ
+--import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
-import qualified Frames.Visualization.VegaLite.Correlation as FV
-import qualified Frames.Visualization.VegaLite.Histogram as FV
+--import qualified Frames.Visualization.VegaLite.Correlation as FV
+--import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Heidi
 --import qualified Heidi.Data.Frame.Algorithms.HashMap as Heidi
-
+{-
 import Graphics.Vega.VegaLite.Configuration as FV
   ( AxisBounds (DataMinMax),
     ViewConfig (ViewConfig),
   )
+-}
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Heidi as HV
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
+--import qualified Frames.Visualization.VegaLite.Data as FV
 
-import qualified Visualization.VegaLite.Histogram as VL
+--import qualified Visualization.VegaLite.Histogram as VL
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
-import qualified Optics
-import Optics.Operators
+--import qualified Optics
+--import Optics.Operators
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
@@ -84,7 +85,7 @@ import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified CmdStan as CS
-import qualified Stan.RScriptBuilder as SR
+--import qualified Stan.RScriptBuilder as SR
 --import qualified Text.Pandoc.Class as Pandoc
 --import qualified Text.Blaze.Html5              as BH
 
@@ -377,6 +378,7 @@ cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let rstDir = "br-2021-A/RST/cpsStateRace/"
+      addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
 
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
@@ -571,11 +573,10 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
 
-  K.addRSTFromFile $ rstDir ++ "P1a.rst"
-  K.addRST $ "`Demographic-only gaps and total gaps. <" <> notesURL "1" <> ">`_"
+
   K.newPandoc
     (K.PandocInfo (notesPath "1") $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
-    K.addRSTFromFile $ rstDir ++ "N1a.rst"
+    addRSTFromFile $ rstDir ++ "N1a.rst"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -584,7 +585,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          True
          False
          (FV.ViewConfig 500 1000 5)
-    K.addRSTFromFile $ rstDir ++ "N1b.rst"
+    addRSTFromFile $ rstDir ++ "N1b.rst"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -593,7 +594,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          True
          False
          (FV.ViewConfig 500 1000 5)
-    K.addRSTFromFile $ rstDir ++ "N1c.rst"
+    addRSTFromFile $ rstDir ++ "N1c.rst"
     _ <- K.knitEither (hfToVLData rtDiffIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -603,7 +604,9 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          False
          (FV.ViewConfig 500 1000 5)
     return ()
-  K.addRSTFromFile $ rstDir ++ "P2.rst"
+  addRSTFromFile $ rstDir ++ "P1a.rst"
+  K.addRST $ "`Demographic-only gaps and total gaps. <" <> notesURL "1" <> ">`_"
+  addRSTFromFile $ rstDir ++ "P2.rst"
   _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
@@ -612,13 +615,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        True
        False
        (FV.ViewConfig 500 1000 5)
-  K.addRSTFromFile $ rstDir ++ "P3.rst"
+  addRSTFromFile $ rstDir ++ "P3.rst"
   res2012_C <- runModel [2012]
   (_, _, _, _, dNWNH_2012, _) <- K.ignoreCacheTime res2012_C
   let dNWNH_h_2012 = toHeidiFrame "2012" dNWNH_2012
       dNWNH_h_2012_2016 = dNWNH_h_2012 <> dNWNH_h_2016
   K.logLE K.Info $ show dNWNH_h_2012_2016
-  _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
+  _ <- K.knitEither (hfToVLData dNWNH_h_2012) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
        ("State NWNH Turnout Effect (2012)")
@@ -626,30 +629,27 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        True
        False
        (FV.ViewConfig 500 1000 5)
-  let filterState states x = M.filterWithKey (\k _ -> k `elem` states) x
+  let filterState states =  K.knitMaybe "row missing State col" . Heidi.filterA (fmap (`elem` states) . Heidi.txt [Heidi.mkTyN "State"])
       sig lo hi = lo * hi > 0
       oneSig [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA || sig loB hiB then Just () else Nothing
       oneSigStates =  M.keys
                       $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2016
-  combinedOneSig_h <- K.knitMaybe "row missing State col"
-                      $ Heidi.filterA (\r -> (`elem` oneSigStates) <$> Heidi.txt [Heidi.mkTyN "State"] r) $ dNWNH_h_2012_2016
-  K.addRSTFromFile $ rstDir ++ "P4.rst"
+  combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2016
+  addRSTFromFile $ rstDir ++ "P4.rst"
   _ <- K.knitEither (hfToVLData combinedOneSig_h) >>=
        K.addHvega' Nothing Nothing True
        . turnoutGapScatter
        ("State NWNH Turnout Effect: 2012 vs. 2016")
        (FV.ViewConfig 500 500 5)
-  K.addRSTFromFile $ rstDir ++ "P5.rst"
+  addRSTFromFile $ rstDir ++ "P5.rst"
   let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
       sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
       significantPersistent = M.keys
                               $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigBoth)) dNWNH_2012 dNWNH_2016
       significantMove = M.keys
                         $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigMove)) dNWNH_2012 dNWNH_2016
-  significantMove_h <-  K.knitMaybe "row missing State col"
-                        $ Heidi.filterA (\r -> (`elem` significantMove) <$> Heidi.txt [Heidi.mkTyN "State"] r) $ dNWNH_h_2012_2016
-  signifcantPersistent_h <- K.knitMaybe "row missing State col"
-                            $ Heidi.filterA (\r -> (`elem` significantPersistent) <$> Heidi.txt [Heidi.mkTyN "State"] r) $ dNWNH_h_2012_2016
+  significantMove_h <- filterState significantMove dNWNH_h_2012_2016
+  signifcantPersistent_h <- filterState significantPersistent dNWNH_h_2012_2016
   _ <-  K.knitEither (hfToVLData  signifcantPersistent_h) >>=
         K.addHvega Nothing Nothing
         . coefficientChart
@@ -670,7 +670,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   let dNWNH_h_2012_2016 = toHeidiFrame "2012 & 2016" dNWNH_2012_2016
 --  let diffIMR_2012_2016 = MapRow.joinKeyedMapRows rtDiffIMR_2012 $ stateDiffFromAvgMRs 2016
-  K.addRSTFromFile $ rstDir ++ "P6.rst"
+  addRSTFromFile $ rstDir ++ "P6.rst"
   _ <-  K.knitEither (hfToVLData  dNWNH_h_2012_2016) >>=
         K.addHvega Nothing Nothing
         . coefficientChart
