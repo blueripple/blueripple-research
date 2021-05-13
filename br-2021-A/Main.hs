@@ -593,7 +593,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("NWNH/WNH Turnout Gap without State-specific effects (2016)")
+         ("VOC/WNH Turnout Gap without State-specific effects (2016)")
          (sortedStates rtDiffNI_2016)
          True
          False
@@ -602,7 +602,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     _ <- K.knitEither (hfToVLData rtDiffWIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("NWNH/WNH Turnout Gaps with State-specific effects (2016)")
+         ("VOC/WNH Turnout Gaps with State-specific effects (2016)")
          (sortedStates rtDiffWI_2016)
          True
          False
@@ -611,7 +611,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     _ <- K.knitEither (hfToVLData rtDiffIh_2016) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("NWNH/WNH State-specific contribution to turnout gap (2016)")
+         ("VOC/WNH State-specific contribution to turnout gap (2016)")
          (sortedStates rtDiffI_2016)
          True
          False
@@ -622,7 +622,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
-       ("State NWNH Turnout Effect (2016)")
+       ("State-Specific VOC Turnout (2016)")
        (sortedStates dNWNH_2016)
        True
        False
@@ -635,7 +635,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <- K.knitEither (hfToVLData dNWNH_h_2012) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
-       ("State NWNH Turnout Effect (2012)")
+       ("State=Specific VOC Turnout (2012)")
        (sortedStates dNWNH_2012)
        True
        False
@@ -650,7 +650,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <- K.knitEither (hfToVLData combinedOneSig_h) >>=
        K.addHvega' Nothing Nothing True
        . turnoutGapScatter
-       ("State NWNH Turnout Effect: 2012 vs. 2016")
+       ("State-Specific VOC Turnout: 2012 vs. 2016")
        (FV.ViewConfig 500 500 5)
   addMarkDownFromFile $ mdDir ++ "P5.md"
   let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
@@ -664,7 +664,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <-  K.knitEither (hfToVLData  signifcantPersistent_h) >>=
         K.addHvega Nothing Nothing
         . coefficientChart
-        ("State NWNH Turnout Effect: significant *and* persistent effects in 2012 and 2016")
+        ("State-Specific VOC Turnout: significant *and* persistent effects in 2012 and 2016")
         (sortedStates dNWNH_2012)
         False
         False
@@ -672,11 +672,12 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <- K.knitEither (hfToVLData significantMove_h) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
-       ("State NWNH Turnout Effect: significant *changes* 2012 to 2016")
+       ("State-Specific Turnout: significant *changes* 2012 to 2016")
        (sortedStates dNWNH_2012)
        False
        False
        (FV.ViewConfig 400 400 5)
+{-
   res2012_2016_C <- runModel [2012, 2016]
   (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   let dNWNH_h_2012_2016 = toHeidiFrame "2012 & 2016" dNWNH_2012_2016
@@ -690,6 +691,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
         True
         False
         (FV.ViewConfig 500 1000 5)
+-}
   return ()
 
 
