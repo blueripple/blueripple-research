@@ -12,7 +12,7 @@ improved significantly between 2012 and 2016.
 
 ## Focusing on State-Specific Turnout Effects
 
-As we've written about [before](https://blueripple.github.io/research/mrp-model/p3/main.html)
+As we've written about [before](https://blueripple.github.io/research/mrp-model/p3/main.html),
 voter turnout varies widely among demographic groups.
 Younger voters and voters of color
 tend to vote for Democrats, but smaller fractions of those voters cast a vote in most elections.
@@ -26,7 +26,7 @@ distributions of age and education, etc.
 
 But group-level turnout varies widely by state
 *even once we account for the demographic differences among them*,
-which we are calling the "state=specific" effect and explore in detail below.
+which we are calling the "state-specific" effect and explore in detail below.
 Some possible reasons include:
 
 - Specific state policies which encourage or discourage voting by regulating early
