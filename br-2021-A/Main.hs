@@ -29,7 +29,7 @@ import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Utilities.KnitUtils as BR
 --import qualified BlueRipple.Utilities.FramesUtils as BRF
 --import qualified BlueRipple.Utilities.TableUtils as BR
---import qualified BlueRipple.Utilities.Heidi as BR
+import qualified BlueRipple.Utilities.Heidi as BR
 
 import qualified Control.Foldl as FL
 --import qualified Data.GenericTrie as GT
@@ -80,6 +80,7 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
 --import qualified Optics
 --import Optics.Operators
+import qualified Polysemy
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
@@ -234,7 +235,7 @@ cpsVAnalysis = do
   K.newPandoc
     (K.PandocInfo postPath
      $ BR.brAddDates False pubDate curDate
-     $ one ("pagetitle","State-Specific Gaps"))
+     $ one ("pagetitle","State-Specific VOC Turnout"))
     $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
 {-
   K.newPandoc
@@ -556,7 +557,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
-  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
+  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH_2016, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
   let toHeidiFrame :: Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
@@ -584,12 +585,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                       ]
 
       dNWNH_h_2016 = toHeidiFrame "2016" dNWNH_2016
-      rtDiffNIh_2016 = toHeidiFrame "2016" rtDiffNI_2016
-      rtDiffWIh_2016 = toHeidiFrame "2016" rtDiffWI_2016
-      rtDiffIh_2016 = toHeidiFrame "2016" rtDiffI_2016
+      rtNWNH_h_2016 = toHeidiFrame "2016" rtNWNH_2016
 
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
+      filterState states =  K.knitMaybe "row missing State col" . Heidi.filterA (fmap (`elem` states) . Heidi.txt [Heidi.mkTyN "State"])
   electionIntegrity2016 <- K.ignoreCacheTimeM BR.electionIntegrityByState2016
   let electionIntegrityh = Heidi.frameFromList
                            $ fmap FH.recordToHeidiRow
@@ -606,6 +606,10 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     (K.PandocInfo (notesPath "1")
       $ BR.brAddDates False pubDate curDate
       $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
+    let rtDiffNIh_2016 = toHeidiFrame "2016" rtDiffNI_2016
+        rtDiffWIh_2016 = toHeidiFrame "2016" rtDiffWI_2016
+        rtDiffIh_2016 = toHeidiFrame "2016" rtDiffI_2016
+
     addMarkDownFromFile $ mdDir ++ "N1a.md"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
          K.addHvega Nothing Nothing
@@ -635,7 +639,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          (FV.ViewConfig 500 1000 5)
     return ()
   let note1Ref = "[note_link]: " <> notesURL "1"
-  addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1a.md"
+  addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1.md"
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2016) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
@@ -644,56 +648,76 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        True
        True
        (FV.ViewConfig 500 1000 5)
+  addMarkDownFromFile $ mdDir ++ "P2.md"
+  let sig lo hi = lo * hi > 0
+      sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
+  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])
+  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "Total"])
+  let nwnh_sig =  Heidi.leftOuterJoin
+                  [Heidi.mkTyN "State"]
+                  [Heidi.mkTyN "State"]
+                  dNWNH_sig
+                  rtNWNH_sig
+  K.logLE K.Info $ show nwnh_sig
   addMarkDownFromFile $ mdDir ++ "P3.md"
-  res2012_C <- runModel [2012]
-  (_, _, _, _, dNWNH_2012, _) <- K.ignoreCacheTime res2012_C
-  let dNWNH_h_2012 = toHeidiFrame "2012" dNWNH_2012
-      dNWNH_h_2012_2016 = dNWNH_h_2012 <> dNWNH_h_2016
-  _ <- K.knitEither (hfToVLData dNWNH_h_2012) >>=
-       K.addHvega Nothing Nothing
-       . coefficientChart
-       ("State=Specific VOC Turnout (2012)")
-       (sortedStates dNWNH_2012)
-       True
-       False
-       (FV.ViewConfig 500 1000 5)
-  let filterState states =  K.knitMaybe "row missing State col" . Heidi.filterA (fmap (`elem` states) . Heidi.txt [Heidi.mkTyN "State"])
-      sig lo hi = lo * hi > 0
-      oneSig [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA || sig loB hiB then Just () else Nothing
-      oneSigStates =  M.keys
-                      $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2016
-  combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2016
-  addMarkDownFromFile $ mdDir ++ "P4.md"
-  _ <- K.knitEither (hfToVLData combinedOneSig_h) >>=
-       K.addHvega' Nothing Nothing True
-       . turnoutGapScatter
-       ("State-Specific VOC Turnout: 2012 vs. 2016")
-       (FV.ViewConfig 500 500 5)
-  addMarkDownFromFile $ mdDir ++ "P5.md"
-  let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
-      sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
-      significantPersistent = M.keys
-                              $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigBoth)) dNWNH_2012 dNWNH_2016
-      significantMove = M.keys
-                        $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigMove)) dNWNH_2012 dNWNH_2016
-  significantMove_h <- filterState significantMove dNWNH_h_2012_2016
-  signifcantPersistent_h <- filterState significantPersistent dNWNH_h_2012_2016
-  _ <-  K.knitEither (hfToVLData  signifcantPersistent_h) >>=
-        K.addHvega Nothing Nothing
-        . coefficientChart
-        ("State-Specific VOC Turnout: significant *and* persistent effects in 2012 and 2016")
-        (sortedStates dNWNH_2012)
-        False
-        False
-        (FV.ViewConfig 400 400 5)
-  _ <- K.knitEither (hfToVLData significantMove_h) >>=
-       K.addHvega Nothing Nothing
-       . coefficientChart
-       ("State-Specific Turnout: significant *changes* 2012 to 2016")
-       (sortedStates dNWNH_2012)
-       False
-       False
-       (FV.ViewConfig 400 400 5)
+  K.newPandoc
+    (K.PandocInfo (notesPath "2")
+     $ BR.brAddDates False pubDate curDate
+     $ one ("pagetitle","State-Specific gaps, 2012 & Both stuff")) $ do
+    res2012_C <- Polysemy.raise $ runModel [2012]
+    (_, _, _, _, dNWNH_2012, _)  <- Polysemy.raise $ K.ignoreCacheTime res2012_C
+    let dNWNH_h_2012 = toHeidiFrame "2012" dNWNH_2012
+        dNWNH_PEI_h_2012  = Heidi.leftOuterJoin
+                            [Heidi.mkTyN "State"]
+                            [Heidi.mkTyN "state_abbreviation"]
+                            dNWNH_h_2012
+                            electionIntegrityh
+        dNWNH_h_2012_2016 = dNWNH_PEI_h_2012 <> dNWNH_PEI_h_2016
+    _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2012) >>=
+         K.addHvega Nothing Nothing
+         . coefficientChart
+         ("State=Specific VOC Turnout (2012)")
+         (sortedStates dNWNH_2012)
+         True
+         True
+         (FV.ViewConfig 500 1000 5)
+
+    let oneSig [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA || sig loB hiB then Just () else Nothing
+        oneSigStates =  M.keys
+                        $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2016
+    combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2016
+    addMarkDownFromFile $ mdDir ++ "P4.md"
+    _ <- K.knitEither (hfToVLDataPEI combinedOneSig_h) >>=
+         K.addHvega' Nothing Nothing True
+         . turnoutGapScatter
+         ("State-Specific VOC Turnout: 2012 vs. 2016")
+         (FV.ViewConfig 500 500 5)
+    addMarkDownFromFile $ mdDir ++ "P5.md"
+    let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
+        sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
+        significantPersistent = M.keys
+                                $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigBoth)) dNWNH_2012 dNWNH_2016
+        significantMove = M.keys
+                          $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const sigMove)) dNWNH_2012 dNWNH_2016
+    significantMove_h <- filterState significantMove dNWNH_h_2012_2016
+    signifcantPersistent_h <- filterState significantPersistent dNWNH_h_2012_2016
+    _ <-  K.knitEither (hfToVLData  signifcantPersistent_h) >>=
+          K.addHvega Nothing Nothing
+          . coefficientChart
+          ("State-Specific VOC Turnout: significant *and* persistent effects in 2012 and 2016")
+          (sortedStates dNWNH_2012)
+          False
+          False
+          (FV.ViewConfig 400 400 5)
+    _ <- K.knitEither (hfToVLData significantMove_h) >>=
+         K.addHvega Nothing Nothing
+         . coefficientChart
+         ("State-Specific Turnout: significant *changes* 2012 to 2016")
+         (sortedStates dNWNH_2012)
+         False
+         False
+         (FV.ViewConfig 400 400 5)
+    return ()
 {-
   res2012_2016_C <- runModel [2012, 2016]
   (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
@@ -727,7 +751,7 @@ coefficientChart title sortedStates showAvg colorIsRating vc vlData =
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
       encColor = if colorIsRating
-                 then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative]
+                 then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
                  else GV.color [GV.MName "Year", GV.MmType GV.Nominal]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
@@ -758,12 +782,13 @@ turnoutGapScatter ::  --(Functor f, Foldable f)
                   -> GV.VegaLite
 turnoutGapScatter title vc@(FV.ViewConfig w h _) vlData =
   let --vlData = MapRow.toVLData M.toList [] vlData -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
-      foldMids = GV.pivot "Year" "mid" [GV.PiGroupBy ["State"]]
+      foldMids = GV.pivot "Year" "mid" [GV.PiGroupBy ["State","ratingstate"]]
       gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
       encY = GV.position GV.Y [GV.PName "2016", GV.PmType GV.Quantitative]
       encX = GV.position GV.X [GV.PName "2012", GV.PmType GV.Quantitative]
+      encColor = GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
       label = GV.text [GV.TName "State", GV.TmType GV.Nominal]
-      enc = GV.encoding . encX . encY
+      enc = GV.encoding . encX . encY . encColor
 
 --      enc45_X = GV.position GV.X [GV.PName "2016", GV.PmType GV.Quantitative, gapScale, GV.PAxis [GV.AxNoTitle]]
 --      mark45 = GV.mark GV.Line

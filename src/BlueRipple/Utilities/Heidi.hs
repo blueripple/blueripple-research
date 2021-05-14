@@ -28,3 +28,9 @@ tcKeyToTextValue tcs = Heidi.VPText $ Text.intercalate "_" $ fmap tcAsText tcs w
 
 gatherSet :: (Functor f, Foldable f) => [Heidi.TC] -> f Text -> Set [Heidi.TC]
 gatherSet prefixTC = Set.fromList . Foldable.toList . fmap (\t -> reverse $ Heidi.mkTyN (toString t) : prefixTC)
+
+
+rekeyCol :: Heidi.TrieKey k => k -> k -> Heidi.Row k v -> Either Text (Heidi.Row k v)
+rekeyCol oldKey newKey r = case Heidi.lookup oldKey r of
+  Nothing -> Left $ "old Key not found in BlueRipple.Utilities.Heidi.rekeyCol"
+  Just v -> Right $ Heidi.insert newKey v $ Heidi.delete oldKey r

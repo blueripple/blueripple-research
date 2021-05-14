@@ -54,6 +54,7 @@ import qualified Data.Text.Read                as T
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.Curry              as V
+import qualified Data.Vinyl.Recursive          as V
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI

@@ -96,7 +96,8 @@ presidentialElectionsWithIncumbency = do
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
 type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
-                             , BR.PEIRatingstate
+                             , BR.PEIRatingstate]
+                             {-
                              , BR.PEILaws, BR.PEILawsi
                              , BR.PEIProcedures, BR.PEIProceduresi
                              , BR.PEIBoundaries, BR.PEIBoundariesi
@@ -108,9 +109,10 @@ type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
                              , BR.PEICount, BR.PEICounti
                              , BR.PEIResults, BR.PEIResultsi
                              , BR.PEIEMBs, BR.PEIEMBsi]
-
+-}
 type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStateFIPS
-                                , BR.PEIRatingstate
+                                , BR.PEIRatingstate]
+{-
                                 , BR.PEILaws, BR.PEILawsi
                                 , BR.PEIProcedures, BR.PEIProceduresi
                                 , BR.PEIBoundaries, BR.PEIBoundariesi
@@ -122,7 +124,7 @@ type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStat
                                 , BR.PEICount, BR.PEICounti
                                 , BR.PEIResults, BR.PEIResultsi
                                 , BR.PEIEMBs, BR.PEIEMBsi]
-
+-}
 electionIntegrityByState2016 ::  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec ElectionIntegrityCols))
 electionIntegrityByState2016 = cachedMaybeFrameLoader

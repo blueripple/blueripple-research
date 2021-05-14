@@ -228,4 +228,8 @@ the difference of the estimated VOC turnout in a state and
 the estimated VOC turnout *based on the demographics alone*.
 PA is at the top with 4 point better-than-expected
 turnout of VOC and AZ is at the bottom, with 5 point
-worse-than-expected turnout of VOC.
+worse-than-expected turnout of VOC. As inspiration to further
+questions, we add a 2016
+["Election Integrity"](https://www.electoralintegrityproject.com)
+rating for each state, computed by surveying experts and averaging their
+responses across a variety of election-related topics.
