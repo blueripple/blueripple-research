@@ -95,6 +95,51 @@ presidentialElectionsWithIncumbency = do
   --  K.clearIfPresent "data/presidentialWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
+type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
+                             , BR.PEIRatingstate
+                             , BR.PEILaws, BR.PEILawsi
+                             , BR.PEIProcedures, BR.PEIProceduresi
+                             , BR.PEIBoundaries, BR.PEIBoundariesi
+                             , BR.PEIVotereg, BR.PEIVoteregi
+                             , BR.PEIPartyreg, BR.PEIPartyregi
+                             , BR.PEIMedia, BR.PEIMediai
+                             , BR.PEIFinance, BR.PEIFinancei
+                             , BR.PEIVoting, BR.PEIVotingi
+                             , BR.PEICount, BR.PEICounti
+                             , BR.PEIResults, BR.PEIResultsi
+                             , BR.PEIEMBs, BR.PEIEMBsi]
+
+type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStateFIPS
+                                , BR.PEIRatingstate
+                                , BR.PEILaws, BR.PEILawsi
+                                , BR.PEIProcedures, BR.PEIProceduresi
+                                , BR.PEIBoundaries, BR.PEIBoundariesi
+                                , BR.PEIVotereg, BR.PEIVoteregi
+                                , BR.PEIPartyreg, BR.PEIPartyregi
+                                , BR.PEIMedia, BR.PEIMediai
+                                , BR.PEIFinance, BR.PEIFinancei
+                                , BR.PEIVoting, BR.PEIVotingi
+                                , BR.PEICount, BR.PEICounti
+                                , BR.PEIResults, BR.PEIResultsi
+                                , BR.PEIEMBs, BR.PEIEMBsi]
+
+electionIntegrityByState2016 ::  (K.KnitEffects r, BR.CacheEffects r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec ElectionIntegrityCols))
+electionIntegrityByState2016 = cachedMaybeFrameLoader
+                               @(F.RecordColumns BR.ElectionIntegrityByState2016)
+                               @ElectionIntegrityColsRaw
+                               (DataSets $ T.pack BR.electionIntegrityByState2016CSV)
+                               Nothing
+                               Nothing
+                               id
+                               (F.rcast @ElectionIntegrityCols . addCols)
+                               Nothing "electionIntegrityByState2016.bin"
+  where
+    addCols = (FT.addName @BR.PEIStateAbbreviation @BR.StateAbbreviation)
+              . (FT.addName @BR.PEIYear @BR.Year)
+              . (FT.addName @BR.PEIStateFIPS @BR.StateFIPS)
+
+
 cdFromPUMA2012Loader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   Int ->

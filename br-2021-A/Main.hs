@@ -22,7 +22,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 --import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Keyed as BRK
---import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanMRP as MRP
 --import qualified BlueRipple.Model.StanCCES as BRS
@@ -575,6 +575,14 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                       ,HV.asNumber "mid"
                                       ,HV.asNumber "hi"
                                       ]
+      hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
+                                         ,HV.asStr "Year"
+                                         ,HV.asNumber "lo"
+                                         ,HV.asNumber "mid"
+                                         ,HV.asNumber "hi"
+                                         ,HV.asNumber "ratingstate"
+                                      ]
+
       dNWNH_h_2016 = toHeidiFrame "2016" dNWNH_2016
       rtDiffNIh_2016 = toHeidiFrame "2016" rtDiffNI_2016
       rtDiffWIh_2016 = toHeidiFrame "2016" rtDiffWI_2016
@@ -582,7 +590,16 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
-
+  electionIntegrity2016 <- K.ignoreCacheTimeM BR.electionIntegrityByState2016
+  let electionIntegrityh = Heidi.frameFromList
+                           $ fmap FH.recordToHeidiRow
+                           $ FL.fold FL.list electionIntegrity2016
+      dNWNH_PEI_h_2016  = Heidi.leftOuterJoin
+                          [Heidi.mkTyN "State"]
+                          [Heidi.mkTyN "state_abbreviation"]
+                          dNWNH_h_2016
+                          electionIntegrityh
+  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDate =  curDate
   K.newPandoc
@@ -619,13 +636,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     return ()
   let note1Ref = "[note_link]: " <> notesURL "1"
   addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1a.md"
-  _ <- K.knitEither (hfToVLData dNWNH_h_2016) >>=
+  _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2016) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
        ("State-Specific VOC Turnout (2016)")
        (sortedStates dNWNH_2016)
        True
-       False
+       True
        (FV.ViewConfig 500 1000 5)
   addMarkDownFromFile $ mdDir ++ "P3.md"
   res2012_C <- runModel [2012]
@@ -705,12 +722,12 @@ coefficientChart :: --(Functor f, Foldable f)
 --                 -> (f a -> Either Text GV.Data)
 --                 -> f a --(MapRow.MapRow GV.DataValue)
                  -> GV.VegaLite
-coefficientChart title sortedStates showAvg colorIsDelta vc vlData =
+coefficientChart title sortedStates showAvg colorIsRating vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
       encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
-      encColor = if colorIsDelta
-                 then GV.color [GV.MName "delta", GV.MmType GV.Quantitative, GV.MScale [GV.SScheme "blueorange" []]]
+      encColor = if colorIsRating
+                 then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative]
                  else GV.color [GV.MName "Year", GV.MmType GV.Nominal]
       xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]

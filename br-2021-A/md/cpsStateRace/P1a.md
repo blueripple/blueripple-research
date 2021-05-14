@@ -117,10 +117,11 @@ and group populations from the ACS.
 
 
 Crucially, CPS-VRS data
-[seems to under-report the gaps between White and non-White voters.]
-(https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf)
+[seems to under-report the gaps between White and non-White voters.](https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf)
 So all of our results looking at race-specific turnout
-should be viewed skeptically: the gaps are likely larger than we see in the data.
+should be viewed skeptically: the gaps are likely larger than we see in the data,
+though it's unclear if this comes from over-estimating VOC turnout or under-estimating
+WNH turnout.
 There are other publically available
 surveys which, when possible, validate survey reponses via state voter files,
 primarily the
