@@ -22,6 +22,9 @@ import qualified Heidi
 
 
 -- functions for gather/spread on typical row type
+heidiColKey :: Text -> [Heidi.TC]
+heidiColKey = pure . Heidi.mkTyN . toString
+
 tcKeyToTextValue :: [Heidi.TC] -> Heidi.VP
 tcKeyToTextValue tcs = Heidi.VPText $ Text.intercalate "_" $ fmap tcAsText tcs where
   tcAsText tc = let n = Heidi.tcTyN tc in toText $ if null n then Heidi.tcTyCon tc else n

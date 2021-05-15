@@ -62,6 +62,8 @@ import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Heidi
+import Lens.Micro.Platform ((^?))
+
 --import qualified Heidi.Data.Frame.Algorithms.HashMap as Heidi
 {-
 import Graphics.Vega.VegaLite.Configuration as FV
@@ -671,21 +673,29 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_State-Specific"])
   rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_Total"])
   rtWNH_sig <- filterState sigStates2016 rtWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH_Total"])
-  let k = [Heidi.mkTyN "State"]
-      nwnh_sig = Heidi.leftOuterJoin k k citByState
+  let k = BR.heidiColKey "State"
+      nwnh_sig' = Heidi.leftOuterJoin k k citByState
                  $ Heidi.leftOuterJoin k k dNWNH_sig
                  $ Heidi.leftOuterJoin k k rtNWNH_sig rtWNH_sig
-      compute_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
-        vocT <- Heidi.lookup "VOC_Total" r
-        wnhT <- Heidi.lookup "WNH_Total" r
-        voc <- Heidi.lookup "NWNH_Cit" r
-        wnh <- Heidi.lookup "WNH_Cit" r
-        vocSST <- Heidi.lookup "VOC_State-Specific" r
+  let add_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
+        vocT <- r ^? Heidi.double (BR.heidiColKey "VOC_Total")
+        wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH_Total")
+        voc <- r ^? Heidi.int (BR.heidiColKey "NWNH_Cit")
+        wnh <- r ^? Heidi.int (BR.heidiColKey "WNH_Cit")
+        vocSST <- r ^? Heidi.double (BR.heidiColKey "VOC_State-Specific")
         let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
-            voc_dem = turnout - vocT - vocSST
-        return voc_dem
---  nwnh_sig' <-
-  K.logLE K.Info $ show nwnh_sig
+            voc_dem = vocT - turnout - vocSST
+        return
+          $ Heidi.insert (BR.heidiColKey "VOC_Demographic") (Heidi.VPDouble voc_dem)
+          $ Heidi.insert (BR.heidiColKey "VOC_State-Delta") (Heidi.VPDouble $ voc_dem + vocSST) r
+  nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
+  let hfToVLDataBreakdown = HV.rowsToVLData [] [HV.asStr "State"
+                                               ,HV.asNumber "VOC_Total"
+                                               ,HV.asNumber "VOC_State-Specific"
+                                               ,HV.asNumber "VOC_Demographic"
+                                               ,HV.asNumber "VOC_State-Delta"
+                                               ]
+
   addMarkDownFromFile $ mdDir ++ "P3.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
