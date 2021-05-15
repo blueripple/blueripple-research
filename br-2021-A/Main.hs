@@ -52,7 +52,7 @@ import qualified Data.Vector as Vector
 import qualified Frames as F
 --import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
---import qualified Frames.Folds as FF
+import qualified Frames.Folds as FF
 import qualified Frames.Heidi as FH
 --import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
@@ -493,6 +493,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
+                                                                          , Map Text [Double]
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
@@ -512,9 +513,10 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
             rtDiffNI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffNI"
             rtDiffI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffI"
             rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NWNH_State"
+            rtWNH_WI <- parseAndIndexPctsWith id "WI_ACS_WNH_State"
             dNWNH <- parseAndIndexPctsWith id "dNWNH"
             dWNH <- parseAndIndexPctsWith id "dWNH"
-            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, dNWNH, dWNH)
+            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
 
   K.logLE K.Info "Building json data wrangler and model code..."
 --  let year = 2016
@@ -557,7 +559,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
   res2016_C <- runModel [2016]
-  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH_2016, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
+  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH_2016, rtWNH_2016, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
   let toHeidiFrame :: Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
@@ -586,6 +588,21 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
       dNWNH_h_2016 = toHeidiFrame "2016" dNWNH_2016
       rtNWNH_h_2016 = toHeidiFrame "2016" rtNWNH_2016
+      rtWNH_h_2016 = toHeidiFrame "2016" rtWNH_2016
+  data2016 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2016]) dataAllYears_C
+  let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
+                 $ FMR.concatFold
+                 $ FMR.mapReduceFold
+                 (FMR.unpackFilterRow $ \r -> if b then wnh r else not $ wnh r)
+                 (FMR.assignKeysAndData @'[BR.StateAbbreviation] @'[PUMS.Citizens])
+                 (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+      (nwnhCitByState, wnhCitByState) = FL.fold ((,) <$> wnhFld False <*> wnhFld True) $ BRE.pumsRows data2016
+
+  citByState <- K.knitEither $ do
+    let k = [Heidi.mkTyN "state_abbreviation"]
+    wnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "WNH_Cit"]) wnhCitByState
+    nwnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "NWNH_Cit"]) nwnhCitByState
+    traverse (BR.rekeyCol [Heidi.mkTyN "state_abbreviation"] [Heidi.mkTyN "State"]) $ Heidi.leftOuterJoin k k nwnh wnh
 
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
@@ -651,13 +668,23 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   addMarkDownFromFile $ mdDir ++ "P2.md"
   let sig lo hi = lo * hi > 0
       sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
-  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])
-  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "Total"])
-  let nwnh_sig =  Heidi.leftOuterJoin
-                  [Heidi.mkTyN "State"]
-                  [Heidi.mkTyN "State"]
-                  dNWNH_sig
-                  rtNWNH_sig
+  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_State-Specific"])
+  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_Total"])
+  rtWNH_sig <- filterState sigStates2016 rtWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH_Total"])
+  let k = [Heidi.mkTyN "State"]
+      nwnh_sig = Heidi.leftOuterJoin k k citByState
+                 $ Heidi.leftOuterJoin k k dNWNH_sig
+                 $ Heidi.leftOuterJoin k k rtNWNH_sig rtWNH_sig
+      compute_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
+        vocT <- Heidi.lookup "VOC_Total" r
+        wnhT <- Heidi.lookup "WNH_Total" r
+        voc <- Heidi.lookup "NWNH_Cit" r
+        wnh <- Heidi.lookup "WNH_Cit" r
+        vocSST <- Heidi.lookup "VOC_State-Specific" r
+        let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
+            voc_dem = turnout - vocT - vocSST
+        return voc_dem
+--  nwnh_sig' <-
   K.logLE K.Info $ show nwnh_sig
   addMarkDownFromFile $ mdDir ++ "P3.md"
   K.newPandoc
@@ -665,7 +692,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
      $ BR.brAddDates False pubDate curDate
      $ one ("pagetitle","State-Specific gaps, 2012 & Both stuff")) $ do
     res2012_C <- Polysemy.raise $ runModel [2012]
-    (_, _, _, _, dNWNH_2012, _)  <- Polysemy.raise $ K.ignoreCacheTime res2012_C
+    (_, _, _, _, _, dNWNH_2012, _)  <- Polysemy.raise $ K.ignoreCacheTime res2012_C
     let dNWNH_h_2012 = toHeidiFrame "2012" dNWNH_2012
         dNWNH_PEI_h_2012  = Heidi.leftOuterJoin
                             [Heidi.mkTyN "State"]
@@ -720,7 +747,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     return ()
 {-
   res2012_2016_C <- runModel [2012, 2016]
-  (_, _, rtDiffI_2012_2016, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
+  (_, _, rtDiffI_2012_2016, _, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   let dNWNH_h_2012_2016 = toHeidiFrame "2012 & 2016" dNWNH_2012_2016
 --  let diffIMR_2012_2016 = MapRow.joinKeyedMapRows rtDiffIMR_2012 $ stateDiffFromAvgMRs 2016
   addMarkDownFromFile $ mdDir ++ "P6.md"
