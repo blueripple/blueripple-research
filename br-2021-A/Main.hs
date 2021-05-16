@@ -657,7 +657,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          False
          (FV.ViewConfig 500 1000 5)
     return ()
-  let note1Ref = "[note_link]: " <> notesURL "1"
+  let note1Ref = "[note1_link]: " <> notesURL "1"
   addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1.md"
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2016) >>=
        K.addHvega Nothing Nothing
@@ -670,9 +670,9 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   addMarkDownFromFile $ mdDir ++ "P2.md"
   let sig lo hi = lo * hi > 0
       sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
-  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])
-  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"])
-  rtWNH_sig <- filterState sigStates2016 rtWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"])
+  dNWNH_sig <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
+  rtNWNH_sig <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
+  rtWNH_sig <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
   let k = BR.heidiColKey "State"
       nwnh_sig' = Heidi.leftOuterJoin k k citByState
                  $ Heidi.leftOuterJoin k k dNWNH_sig
@@ -700,15 +700,28 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                                ,HV.asStr "VOC Turnout Component"
                                                ,HV.asNumber "Turnout"
                                                ]
-  _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
+  _ <- filterState sigStates2016 nwnh_sig_long
+       >>= K.knitEither . hfToVLDataBreakdown  >>=
          K.addHvega Nothing Nothing
          . componentsChart
          ("VOC Turnout Components (2016)")
-         (sortedStates dNWNH_2016)
+         (Just $ sortedStates dNWNH_2016)
          (FV.ViewConfig 300 50 5)
-  addMarkDownFromFile $ mdDir ++ "P3.md"
+  let note2Ref = "[note2_link]: " <> notesURL "2"
+  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
+     $ BR.brAddDates False pubDate curDate
+     $ one ("pagetitle","VOC Turnout Components for all states")) $ do
+    _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
+         K.addHvega Nothing Nothing
+         . componentsChart
+         ("VOC Turnout Components (2016)")
+         Nothing
+         (FV.ViewConfig 300 50 5)
+    return ()
+  K.newPandoc
+    (K.PandocInfo (notesPath "3")
      $ BR.brAddDates False pubDate curDate
      $ one ("pagetitle","State-Specific gaps, 2012 & Both stuff")) $ do
     res2012_C <- Polysemy.raise $ runModel [2012]
@@ -783,9 +796,10 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   return ()
 
 
-componentsChart :: Text -> [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
-componentsChart title sortedStates vc@(FV.ViewConfig w h _) vlData =
+componentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
   let compSort = GV.CustomSort $ GV.Strings ["State-Specific", "Demographic", "VOC - State Average"]
+      stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) $ mSortedStates
       encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
                                  , GV.PmType GV.Nominal
                                  , GV.PNoTitle
@@ -798,7 +812,7 @@ componentsChart title sortedStates vc@(FV.ViewConfig w h _) vlData =
                                       , GV.PmType GV.Quantitative
                                       , GV.PAxis [GV.AxTitle "Turnout Change", GV.AxOrient o]
                                       , GV.PScale [GV.SDomain $ GV.DNumbers [-0.25, 0.25]]]
-      encState = GV.row [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates]]
+      encState = GV.row ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
 
       enc = GV.encoding . encComp . encTurnout GV.SBottom . encState
       labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
