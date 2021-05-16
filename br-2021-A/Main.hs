@@ -689,13 +689,23 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
           $ Heidi.insert (BR.heidiColKey "VOC_Demographic") (Heidi.VPDouble voc_dem)
           $ Heidi.insert (BR.heidiColKey "VOC_State-Delta") (Heidi.VPDouble $ voc_dem + vocSST) r
   nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
+  let nwnh_sig_long = Heidi.gatherWith
+                      BR.tcKeyToTextValue
+                      (BR.gatherSet [] ["VOC_State-Specific", "VOC_Demographic", "VOC_State-Delta"])
+                      (BR.heidiColKey "VOC Turnout Component")
+                      (BR.heidiColKey "Turnout")
+                      nwnh_sig
+  K.logLE K.Info $ show nwnh_sig_long
   let hfToVLDataBreakdown = HV.rowsToVLData [] [HV.asStr "State"
-                                               ,HV.asNumber "VOC_Total"
-                                               ,HV.asNumber "VOC_State-Specific"
-                                               ,HV.asNumber "VOC_Demographic"
-                                               ,HV.asNumber "VOC_State-Delta"
+                                               ,HV.asStr "VOC Turnout Component"
+                                               ,HV.asNumber "Turnout"
                                                ]
-
+  _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
+         K.addHvega Nothing Nothing
+         . componentsChart
+         ("VOC Turnout Components (2016)")
+         (sortedStates dNWNH_2016)
+         (FV.ViewConfig 300 50 5)
   addMarkDownFromFile $ mdDir ++ "P3.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
@@ -772,6 +782,19 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 -}
   return ()
 
+
+componentsChart :: Text -> [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+componentsChart title sortedStates vc vlData =
+  let encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
+                                 , GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""]
+                                 , GV.PSort [GV.CustomSort $ GV.Strings ["VOC_State-Delta", "VOC_Demographic", "VOC_State-Specific"]]]
+                . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal]
+      encTurnout = GV.position GV.X [GV.PName "Turnout", GV.PmType GV.Quantitative]
+      encState = GV.row [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates]]
+
+      enc = GV.encoding . encComp . encTurnout . encState
+      mark = GV.mark GV.Bar []
+  in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
 coefficientChart :: --(Functor f, Foldable f)
                  Text
