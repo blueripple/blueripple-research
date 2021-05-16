@@ -602,8 +602,8 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
   citByState <- K.knitEither $ do
     let k = [Heidi.mkTyN "state_abbreviation"]
-    wnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "WNH_Cit"]) wnhCitByState
-    nwnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "NWNH_Cit"]) nwnhCitByState
+    wnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "WNH VEP"]) wnhCitByState
+    nwnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "NWNH VEP"]) nwnhCitByState
     traverse (BR.rekeyCol [Heidi.mkTyN "state_abbreviation"] [Heidi.mkTyN "State"]) $ Heidi.leftOuterJoin k k nwnh wnh
 
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
@@ -670,28 +670,28 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   addMarkDownFromFile $ mdDir ++ "P2.md"
   let sig lo hi = lo * hi > 0
       sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
-  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_State-Specific"])
-  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC_Total"])
-  rtWNH_sig <- filterState sigStates2016 rtWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH_Total"])
+  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])
+  rtNWNH_sig <- filterState sigStates2016 rtNWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"])
+  rtWNH_sig <- filterState sigStates2016 rtWNH_h_2016 >>= traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"])
   let k = BR.heidiColKey "State"
       nwnh_sig' = Heidi.leftOuterJoin k k citByState
                  $ Heidi.leftOuterJoin k k dNWNH_sig
                  $ Heidi.leftOuterJoin k k rtNWNH_sig rtWNH_sig
   let add_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
-        vocT <- r ^? Heidi.double (BR.heidiColKey "VOC_Total")
-        wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH_Total")
-        voc <- r ^? Heidi.int (BR.heidiColKey "NWNH_Cit")
-        wnh <- r ^? Heidi.int (BR.heidiColKey "WNH_Cit")
-        vocSST <- r ^? Heidi.double (BR.heidiColKey "VOC_State-Specific")
+        vocT <- r ^? Heidi.double (BR.heidiColKey "VOC Total")
+        wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH Total")
+        voc <- r ^? Heidi.int (BR.heidiColKey "NWNH VEP")
+        wnh <- r ^? Heidi.int (BR.heidiColKey "WNH VEP")
+        vocSST <- r ^? Heidi.double (BR.heidiColKey "State-Specific")
         let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
             voc_dem = vocT - turnout - vocSST
         return
-          $ Heidi.insert (BR.heidiColKey "VOC_Demographic") (Heidi.VPDouble voc_dem)
-          $ Heidi.insert (BR.heidiColKey "VOC_State-Delta") (Heidi.VPDouble $ voc_dem + vocSST) r
+          $ Heidi.insert (BR.heidiColKey "Demographic") (Heidi.VPDouble voc_dem)
+          $ Heidi.insert (BR.heidiColKey "VOC - State Average") (Heidi.VPDouble $ voc_dem + vocSST) r
   nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
   let nwnh_sig_long = Heidi.gatherWith
                       BR.tcKeyToTextValue
-                      (BR.gatherSet [] ["VOC_State-Specific", "VOC_Demographic", "VOC_State-Delta"])
+                      (BR.gatherSet [] ["State-Specific", "Demographic", "VOC - State Average"])
                       (BR.heidiColKey "VOC Turnout Component")
                       (BR.heidiColKey "Turnout")
                       nwnh_sig
@@ -784,17 +784,35 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 
 componentsChart :: Text -> [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
-componentsChart title sortedStates vc vlData =
-  let encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
-                                 , GV.PmType GV.Nominal, GV.PAxis [GV.AxTitle ""]
-                                 , GV.PSort [GV.CustomSort $ GV.Strings ["VOC_State-Delta", "VOC_Demographic", "VOC_State-Specific"]]]
-                . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal]
-      encTurnout = GV.position GV.X [GV.PName "Turnout", GV.PmType GV.Quantitative]
+componentsChart title sortedStates vc@(FV.ViewConfig w h _) vlData =
+  let compSort = GV.CustomSort $ GV.Strings ["State-Specific", "Demographic", "VOC - State Average"]
+      encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
+                                 , GV.PmType GV.Nominal
+                                 , GV.PNoTitle
+                                 , GV.PSort [compSort]
+                                 ]
+                . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal
+                           , GV.MSort [compSort]]
+
+      encTurnout o = GV.position GV.X [GV.PName "Turnout"
+                                      , GV.PmType GV.Quantitative
+                                      , GV.PAxis [GV.AxTitle "Turnout Change", GV.AxOrient o]
+                                      , GV.PScale [GV.SDomain $ GV.DNumbers [-0.25, 0.25]]]
       encState = GV.row [GV.FName "State", GV.FmType GV.Nominal, GV.FSort [GV.CustomSort $ GV.Strings sortedStates]]
 
-      enc = GV.encoding . encComp . encTurnout . encState
-      mark = GV.mark GV.Bar []
-  in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
+      enc = GV.encoding . encComp . encTurnout GV.SBottom . encState
+      labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
+                                  ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
+                                  ]
+      labelSpecs = [labelSpec 0.1 0.05 "Lower Turnout"
+                   , labelSpec 0.1 0.95 "Higher Turnout"
+                   ]
+      barMark = GV.mark GV.Bar []
+      barSpec = GV.asSpec [enc [], barMark]
+      res = GV.resolve . GV.resolution (GV.RAxis [(GV.ChX, GV.Independent)
+                                                  ,(GV.ChY, GV.Independent)]
+                                       )
+  in FV.configuredVegaLite vc [FV.title title, enc [], barMark, vlData]
 
 coefficientChart :: --(Functor f, Foldable f)
                  Text
