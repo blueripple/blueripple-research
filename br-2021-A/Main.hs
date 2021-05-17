@@ -706,7 +706,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          . componentsChart
          ("VOC Turnout Components (2016)")
          (Just $ sortedStates dNWNH_2016)
-         (FV.ViewConfig 300 50 5)
+         (FV.ViewConfig 450 30 5)
   let note2Ref = "[note2_link]: " <> notesURL "2"
   addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3.md"
   K.newPandoc
@@ -718,7 +718,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          . componentsChart
          ("VOC Turnout Components (2016)")
          Nothing
-         (FV.ViewConfig 300 50 5)
+         (FV.ViewConfig 450 30 5)
     return ()
   K.newPandoc
     (K.PandocInfo (notesPath "3")
@@ -804,6 +804,7 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                  , GV.PmType GV.Nominal
                                  , GV.PNoTitle
                                  , GV.PSort [compSort]
+                                 , GV.PAxis [GV.AxLabels False, GV.AxTicks False]
                                  ]
                 . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal
                            , GV.MSort [compSort]]
