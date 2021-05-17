@@ -665,18 +665,29 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        ("State-Specific VOC Turnout (2016)")
        (sortedStates dNWNH_2016)
        True
-       True
+       False
        (FV.ViewConfig 500 1000 5)
-  addMarkDownFromFile $ mdDir ++ "P2.md"
+  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
       sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
-  dNWNH_sig <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
-  rtNWNH_sig <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
-  rtWNH_sig <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
+  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016
+  _ <- K.knitEither (hfToVLDataPEI dNWNH_sig) >>=
+       K.addHvega Nothing Nothing
+       . coefficientChart
+       ("State-Specific VOC Turnout (2016)")
+       (sortedStates dNWNH_2016)
+       True
+       False
+       (FV.ViewConfig 400 400 5)
+  addMarkDownFromFile $ mdDir ++ "P2.md"
+  -- PEI scatter here
+  dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
+  rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
+  rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
   let k = BR.heidiColKey "State"
       nwnh_sig' = Heidi.leftOuterJoin k k citByState
-                 $ Heidi.leftOuterJoin k k dNWNH_sig
-                 $ Heidi.leftOuterJoin k k rtNWNH_sig rtWNH_sig
+                 $ Heidi.leftOuterJoin k k dNWNH_renamed
+                 $ Heidi.leftOuterJoin k k rtNWNH_renamed rtWNH_renamed
   let add_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
         vocT <- r ^? Heidi.double (BR.heidiColKey "VOC Total")
         wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH Total")
