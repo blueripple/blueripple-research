@@ -701,7 +701,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
         wnh <- r ^? Heidi.int (BR.heidiColKey "WNH VEP")
         vocSST <- r ^? Heidi.double (BR.heidiColKey "State-Specific")
         let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
-            voc_dem = vocT - turnout - vocSST
+            voc_dem = vocT - wnhT - vocSST
         return
           $ Heidi.insert (BR.heidiColKey "Demographic") (Heidi.VPDouble voc_dem)
           $ Heidi.insert (BR.heidiColKey "VOC - State Average") (Heidi.VPDouble $ voc_dem + vocSST) r
@@ -724,20 +724,20 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        >>= K.knitEither . hfToVLDataBreakdown  >>=
        K.addHvega Nothing Nothing
        . componentsChart
-       ("VOC Turnout Components (2016)")
+       ("VOC/WNH Turnout Gap Components (2016)")
        (Just $ sortedStates dNWNH_2016)
-       (FV.ViewConfig 450 30 5)
+       (FV.ViewConfig 175 40 5)
   addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3b.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
      $ BR.brAddDates False pubDate curDate
-     $ one ("pagetitle","VOC Turnout Components for all states")) $ do
+     $ one ("pagetitle","VOC/WNH Turnout Components for all states")) $ do
     _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
          K.addHvega Nothing Nothing
          . componentsChart
          ("VOC Turnout Components (2016)")
          Nothing
-         (FV.ViewConfig 450 30 5)
+         (FV.ViewConfig 175 40 5)
     return ()
   K.newPandoc
     (K.PandocInfo (notesPath "3")
@@ -820,7 +820,7 @@ peiScatterChart :: Text -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 peiScatterChart title vc vlData =
   let encVOCTurnout = GV.position GV.Y [GV.PName "mid"
                                        , GV.PmType GV.Quantitative
-                                       , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
+                                       , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout SHift (% Eligible)"]]
       encEI = GV.position GV.X [GV.PName "votingi"
                                , GV.PmType GV.Quantitative
                                , GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Ease/Fairness of Voting (out of 100)"]]
@@ -844,22 +844,23 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
       encTurnout o = GV.position GV.X [GV.PName "Turnout"
                                       , GV.PmType GV.Quantitative
                                       , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible)", GV.AxOrient o]
-                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 25, 25]]]
-      encState = GV.row ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
+                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 26, 26]]]
+      encState = GV.facetFlow ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
 
-      enc = GV.encoding . encComp . encTurnout GV.SBottom . encState
+      enc = GV.encoding . encComp . encTurnout GV.SBottom -- . encState
       labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
                                   ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
                                   ]
       labelSpecs = [labelSpec 0.1 0.05 "Lower Turnout"
                    , labelSpec 0.1 0.95 "Higher Turnout"
                    ]
+
       barMark = GV.mark GV.Bar []
       barSpec = GV.asSpec [enc [], barMark]
       res = GV.resolve . GV.resolution (GV.RAxis [(GV.ChX, GV.Independent)
                                                   ,(GV.ChY, GV.Independent)]
                                        )
-  in FV.configuredVegaLite vc [FV.title title, enc [], barMark, vlData]
+  in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
 
 coefficientChart :: --(Functor f, Foldable f)
                  Text
@@ -889,8 +890,8 @@ coefficientChart title sortedStates showAvg colorIsRating vc vlData =
       specBar = GV.asSpec [encB [], markBar]
       specLine = GV.asSpec [encL [], markLine]
       specPoint = GV.asSpec [encL [], markPoint]
-      encXZero = GV.position GV.X [GV.PDatum (GV.Number 0), GV.PAxis [GV.AxNoTitle]]
-      encXMean = GV.position GV.X [GV.PName "mid", GV.PAggregate GV.Mean, GV.PAxis [GV.AxNoTitle]]
+      encXZero = GV.position GV.X [GV.PDatum (GV.Number 0)]
+      encXMean = GV.position GV.X [GV.PName "mid", GV.PAggregate GV.Mean]
       specZero = GV.asSpec [(GV.encoding . encXZero) [], GV.mark GV.Rule [GV.MColor "skyblue"]]
       specMean = GV.asSpec [(GV.encoding . encXMean) [], GV.mark GV.Rule [GV.MColor "orange"]]
       layers = GV.layer $ [specBar, specPoint, specZero] ++ if showAvg then [specMean] else []
