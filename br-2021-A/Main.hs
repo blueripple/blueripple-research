@@ -570,9 +570,9 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
         f (s, [lo, mid, hi]) = Heidi.rowFromList
                                  $ concat [(valToLabeledKV "State" s)
                                           , (valToLabeledKV "Year" y)
-                                          , (valToLabeledKV "lo" $ lo - mid)
-                                          , (valToLabeledKV "mid" mid)
-                                          , (valToLabeledKV "hi" $ hi - mid)
+                                          , (valToLabeledKV "lo" $ 100 * (lo - mid))
+                                          , (valToLabeledKV "mid" $ 100 * mid)
+                                          , (valToLabeledKV "hi" $ 100 * (hi - mid))
                                         ]
       hfToVLData = HV.rowsToVLData [] [HV.asStr "State"
                                       ,HV.asStr "Year"
@@ -586,6 +586,8 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                          ,HV.asNumber "mid"
                                          ,HV.asNumber "hi"
                                          ,HV.asNumber "ratingstate"
+                                         ,HV.asNumber "votingi"
+
                                       ]
 
       dNWNH_h_2016 = toHeidiFrame "2016" dNWNH_2016
@@ -683,8 +685,8 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2016) >>=
        K.addHvega Nothing Nothing
        .peiScatterChart
-       ("State-Specific VOC Turnout vs. Election Integrity")
-       (FV.ViewConfig 500 500 5)
+       ("State-Specific VOC Turnout vs. Voting Integrity")
+       (FV.ViewConfig 400 400 5)
   dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
   rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
   rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
@@ -816,13 +818,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 peiScatterChart :: Text -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 peiScatterChart title vc vlData =
-  let encX = GV.position GV.X [GV.PName "mid"
-                              , GV.PmType GV.Quantitative
-                              , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
-      encY = GV.position GV.Y [GV.PName "ratingstate"
-                              , GV.PmType GV.Quantitative
-                              , GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Election Integrity"]]
-      enc = GV.encoding . encX . encY
+  let encVOCTurnout = GV.position GV.Y [GV.PName "mid"
+                                       , GV.PmType GV.Quantitative
+                                       , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
+      encEI = GV.position GV.X [GV.PName "votingi"
+                               , GV.PmType GV.Quantitative
+                               , GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Ease/Fairness of Voting (out of 100)"]]
+      enc = GV.encoding . encVOCTurnout . encEI
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
@@ -841,8 +843,8 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
 
       encTurnout o = GV.position GV.X [GV.PName "Turnout"
                                       , GV.PmType GV.Quantitative
-                                      , GV.PAxis [GV.AxTitle "Turnout Change", GV.AxOrient o]
-                                      , GV.PScale [GV.SDomain $ GV.DNumbers [-0.25, 0.25]]]
+                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible)", GV.AxOrient o]
+                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 25, 25]]]
       encState = GV.row ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
 
       enc = GV.encoding . encComp . encTurnout GV.SBottom . encState
@@ -872,7 +874,7 @@ coefficientChart :: --(Functor f, Foldable f)
 coefficientChart title sortedStates showAvg colorIsRating vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
-      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "Turnout Shift (% Eligible)"]]
       encColor = if colorIsRating
                  then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
                  else GV.color [GV.MName "Year", GV.MmType GV.Nominal]

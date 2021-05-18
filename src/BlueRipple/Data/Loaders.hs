@@ -96,7 +96,9 @@ presidentialElectionsWithIncumbency = do
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
 type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
-                             , BR.PEIRatingstate]
+                             , BR.PEIRatingstate
+                             , BR.PEIVoting, BR.PEIVotingi
+                             ]
                              {-
                              , BR.PEILaws, BR.PEILawsi
                              , BR.PEIProcedures, BR.PEIProceduresi
@@ -111,7 +113,9 @@ type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
                              , BR.PEIEMBs, BR.PEIEMBsi]
 -}
 type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStateFIPS
-                                , BR.PEIRatingstate]
+                                , BR.PEIRatingstate
+                                , BR.PEIVoting, BR.PEIVotingi
+                                ]
 {-
                                 , BR.PEILaws, BR.PEILawsi
                                 , BR.PEIProcedures, BR.PEIProceduresi
@@ -120,7 +124,6 @@ type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStat
                                 , BR.PEIPartyreg, BR.PEIPartyregi
                                 , BR.PEIMedia, BR.PEIMediai
                                 , BR.PEIFinance, BR.PEIFinancei
-                                , BR.PEIVoting, BR.PEIVotingi
                                 , BR.PEICount, BR.PEICounti
                                 , BR.PEIResults, BR.PEIResultsi
                                 , BR.PEIEMBs, BR.PEIEMBsi]
