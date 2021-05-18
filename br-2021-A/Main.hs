@@ -680,7 +680,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        False
        (FV.ViewConfig 400 400 5)
   addMarkDownFromFile $ mdDir ++ "P2.md"
-  -- PEI scatter here
+  _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2016) >>=
+       K.addHvega Nothing Nothing
+       .peiScatterChart
+       ("State-Specific VOC Turnout vs. Election Integrity")
+       (FV.ViewConfig 500 500 5)
   dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
   rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
   rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
@@ -711,15 +715,17 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                                                ,HV.asStr "VOC Turnout Component"
                                                ,HV.asNumber "Turnout"
                                                ]
+
+  let note2Ref = "[note2_link]: " <> notesURL "2"
+  addMarkDownFromFile $ mdDir ++ "P3.md"
   _ <- filterState sigStates2016 nwnh_sig_long
        >>= K.knitEither . hfToVLDataBreakdown  >>=
-         K.addHvega Nothing Nothing
-         . componentsChart
-         ("VOC Turnout Components (2016)")
-         (Just $ sortedStates dNWNH_2016)
-         (FV.ViewConfig 450 30 5)
-  let note2Ref = "[note2_link]: " <> notesURL "2"
-  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3.md"
+       K.addHvega Nothing Nothing
+       . componentsChart
+       ("VOC Turnout Components (2016)")
+       (Just $ sortedStates dNWNH_2016)
+       (FV.ViewConfig 450 30 5)
+  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3b.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
      $ BR.brAddDates False pubDate curDate
@@ -806,6 +812,15 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 -}
   return ()
 
+
+
+peiScatterChart :: Text -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+peiScatterChart title vc vlData =
+  let encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
+      encY = GV.position GV.Y [GV.PName "ratingstate", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Election Integrity"]]
+      enc = GV.encoding . encX . encY
+      mark = GV.mark GV.Circle []
+  in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
 componentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
