@@ -816,10 +816,14 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
 peiScatterChart :: Text -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 peiScatterChart title vc vlData =
-  let encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
-      encY = GV.position GV.Y [GV.PName "ratingstate", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Election Integrity"]]
+  let encX = GV.position GV.X [GV.PName "mid"
+                              , GV.PmType GV.Quantitative
+                              , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout"]]
+      encY = GV.position GV.Y [GV.PName "ratingstate"
+                              , GV.PmType GV.Quantitative
+                              , GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Election Integrity"]]
       enc = GV.encoding . encX . encY
-      mark = GV.mark GV.Circle []
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
 componentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
