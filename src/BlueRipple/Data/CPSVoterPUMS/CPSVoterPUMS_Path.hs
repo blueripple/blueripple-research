@@ -6,7 +6,7 @@ import qualified Frames.TH as F
 dataDir = "../bigData/IPUMS/"
 
 cpsVoterPUMSCSV :: FilePath
-cpsVoterPUMSCSV = dataDir ++ "CPS_Voting_2008to2018.csv"
+cpsVoterPUMSCSV = dataDir ++ "CPS_Voting_2006to2020.csv"
 
 cpsVoterPUMSRowGen = (F.rowGen cpsVoterPUMSCSV) { F.tablePrefix = "CPS"
                                                 , F.separator = ","

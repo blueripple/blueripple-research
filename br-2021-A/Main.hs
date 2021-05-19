@@ -704,11 +704,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
             voc_dem = vocT - wnhT - vocSST
         return
           $ Heidi.insert (BR.heidiColKey "Demographic") (Heidi.VPDouble voc_dem)
-          $ Heidi.insert (BR.heidiColKey "VOC - State Average") (Heidi.VPDouble $ voc_dem + vocSST) r
+          $ Heidi.insert (BR.heidiColKey "VOC - WNH") (Heidi.VPDouble $ voc_dem + vocSST) r
   nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
   let nwnh_sig_long = Heidi.gatherWith
                       BR.tcKeyToTextValue
-                      (BR.gatherSet [] ["State-Specific", "Demographic", "VOC - State Average"])
+                      (BR.gatherSet [] ["State-Specific", "Demographic", "VOC - WNH"])
                       (BR.heidiColKey "VOC Turnout Component")
                       (BR.heidiColKey "Turnout")
                       nwnh_sig
@@ -726,7 +726,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        . componentsChart
        ("VOC/WNH Turnout Gap Components (2016)")
        (Just $ sortedStates dNWNH_2016)
-       (FV.ViewConfig 175 40 5)
+       (FV.ViewConfig 200 40 5)
   addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3b.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
@@ -737,7 +737,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          . componentsChart
          ("VOC Turnout Components (2016)")
          Nothing
-         (FV.ViewConfig 175 40 5)
+         (FV.ViewConfig 200 40 5)
     return ()
   K.newPandoc
     (K.PandocInfo (notesPath "3")
@@ -820,7 +820,7 @@ peiScatterChart :: Text -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 peiScatterChart title vc vlData =
   let encVOCTurnout = GV.position GV.Y [GV.PName "mid"
                                        , GV.PmType GV.Quantitative
-                                       , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout SHift (% Eligible)"]]
+                                       , GV.PAxis [GV.AxTitle "State-Specific VOC Turnout Shift (% Eligible VOC)"]]
       encEI = GV.position GV.X [GV.PName "votingi"
                                , GV.PmType GV.Quantitative
                                , GV.PScale [GV.SZero False], GV.PAxis [GV.AxTitle "Ease/Fairness of Voting (out of 100)"]]
@@ -830,7 +830,7 @@ peiScatterChart title vc vlData =
 
 componentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
 componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
-  let compSort = GV.CustomSort $ GV.Strings ["State-Specific", "Demographic", "VOC - State Average"]
+  let compSort = GV.CustomSort $ GV.Strings ["State-Specific", "Demographic", "VOC - WNH"]
       stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) $ mSortedStates
       encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
                                  , GV.PmType GV.Nominal
@@ -839,11 +839,12 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                  , GV.PAxis [GV.AxLabels False, GV.AxTicks False]
                                  ]
                 . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal
-                           , GV.MSort [compSort]]
+                           , GV.MSort [compSort]
+                           , GV.MLegend [GV.LOrient GV.LOBottom]]
 
       encTurnout o = GV.position GV.X [GV.PName "Turnout"
                                       , GV.PmType GV.Quantitative
-                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible)", GV.AxOrient o]
+                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible VOC)", GV.AxOrient o]
                                       , GV.PScale [GV.SDomain $ GV.DNumbers [negate 26, 26]]]
       encState = GV.facetFlow ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
 
@@ -855,7 +856,7 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                    , labelSpec 0.1 0.95 "Higher Turnout"
                    ]
 
-      barMark = GV.mark GV.Bar []
+      barMark = GV.mark GV.Bar [GV.MTooltip GV.TTEncoding]
       barSpec = GV.asSpec [enc [], barMark]
       res = GV.resolve . GV.resolution (GV.RAxis [(GV.ChX, GV.Independent)
                                                   ,(GV.ChY, GV.Independent)]
