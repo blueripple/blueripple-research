@@ -205,9 +205,9 @@ expandInterval label (t, vals)  = do
           _ -> Left "Wrong length list in what should be a (lo, mid, hi) interval"
 
 subSampleCCES :: K.KnitEffects r => Word32 -> Int -> BRE.CCESAndPUMS -> K.Sem r BRE.CCESAndPUMS
-subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist cats) = do
+subSampleCCES seed samples (BRE.CCESAndPUMS cces cps pums dist) = do
   subSampledCCES <- K.liftKnit @IO $ BR.sampleFrame seed samples cces
-  return $ BRE.CCESAndPUMS subSampledCCES cps pums dist cats
+  return $ BRE.CCESAndPUMS subSampledCCES cps pums dist
 
 countInCategory :: (Eq a, Num b) => (F.Record rs -> b) -> (F.Record rs -> a) -> [a] -> FL.Fold (F.Record rs) [(a, b)]
 countInCategory count key as =
@@ -302,7 +302,7 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
             stzPrior = normal 0.01
         alphaE <- SB.intercept "alpha" (normal 2)
 
-        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
+        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
                                   True
                                   fePrior
                                   cdDataRT
@@ -433,11 +433,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
             fePrior = normal 2
             sumToZeroPrior = normal 0.01
         alphaE <- SB.intercept "alpha" (normal 2)
-        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDataR)
+        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
                                   True
                                   fePrior
                                   cdDataRT
-                                  (MRP.FixedEffects 2 districtPredictors)
+                                  (MRP.FixedEffects 1 densityPredictor)
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
 --        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
@@ -560,8 +560,8 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
           (Just 15)
 
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
-  res2016_C <- runModel [2016]
-  (rtDiffWI_2016, rtDiffNI_2016, rtDiffI_2016, rtNWNH_2016, rtWNH_2016, dNWNH_2016, dWNH_2016) <- K.ignoreCacheTime res2016_C
+  res2020_C <- runModel [2020]
+  (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
   let toHeidiFrame :: Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
@@ -590,17 +590,17 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
                                       ]
 
-      dNWNH_h_2016 = toHeidiFrame "2016" dNWNH_2016
-      rtNWNH_h_2016 = toHeidiFrame "2016" rtNWNH_2016
-      rtWNH_h_2016 = toHeidiFrame "2016" rtWNH_2016
-  data2016 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2016]) dataAllYears_C
+      dNWNH_h_2020 = toHeidiFrame "2020" dNWNH_2020
+      rtNWNH_h_2020 = toHeidiFrame "2020" rtNWNH_2020
+      rtWNH_h_2020 = toHeidiFrame "2020" rtWNH_2020
+  data2020 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2020]) dataAllYears_C
   let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
                  $ FMR.concatFold
                  $ FMR.mapReduceFold
                  (FMR.unpackFilterRow $ \r -> if b then wnh r else not $ wnh r)
                  (FMR.assignKeysAndData @'[BR.StateAbbreviation] @'[PUMS.Citizens])
                  (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-      (nwnhCitByState, wnhCitByState) = FL.fold ((,) <$> wnhFld False <*> wnhFld True) $ BRE.pumsRows data2016
+      (nwnhCitByState, wnhCitByState) = FL.fold ((,) <$> wnhFld False <*> wnhFld True) $ BRE.pumsRows data2020
 
   citByState <- K.knitEither $ do
     let k = [Heidi.mkTyN "state_abbreviation"]
@@ -611,14 +611,14 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
       filterState states =  K.knitMaybe "row missing State col" . Heidi.filterA (fmap (`elem` states) . Heidi.txt [Heidi.mkTyN "State"])
-  electionIntegrity2016 <- K.ignoreCacheTimeM BR.electionIntegrityByState2016
+  electionIntegrity <- K.ignoreCacheTimeM BR.electionIntegrityByState2018
   let electionIntegrityh = Heidi.frameFromList
                            $ fmap FH.recordToHeidiRow
-                           $ FL.fold FL.list electionIntegrity2016
-      dNWNH_PEI_h_2016  = Heidi.leftOuterJoin
+                           $ FL.fold FL.list electionIntegrity
+      dNWNH_PEI_h_2020  = Heidi.leftOuterJoin
                           [Heidi.mkTyN "State"]
                           [Heidi.mkTyN "state_abbreviation"]
-                          dNWNH_h_2016
+                          dNWNH_h_2020
                           electionIntegrityh
   K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
@@ -627,69 +627,69 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     (K.PandocInfo (notesPath "1")
       $ BR.brAddDates False pubDate curDate
       $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
-    let rtDiffNIh_2016 = toHeidiFrame "2016" rtDiffNI_2016
-        rtDiffWIh_2016 = toHeidiFrame "2016" rtDiffWI_2016
-        rtDiffIh_2016 = toHeidiFrame "2016" rtDiffI_2016
+    let rtDiffNIh_2020 = toHeidiFrame "2020" rtDiffNI_2020
+        rtDiffWIh_2020 = toHeidiFrame "2020" rtDiffWI_2020
+        rtDiffIh_2020 = toHeidiFrame "2020" rtDiffI_2020
 
     addMarkDownFromFile $ mdDir ++ "N1a.md"
-    _ <- K.knitEither (hfToVLData rtDiffNIh_2016) >>=
+    _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("VOC/WNH Turnout Gap without State-specific effects (2016)")
-         (sortedStates rtDiffNI_2016)
+         ("VOC/WNH Turnout Gap without State-specific effects (2020)")
+         (sortedStates rtDiffNI_2020)
          True
          False
          (FV.ViewConfig 500 1000 5)
     addMarkDownFromFile $ mdDir ++ "N1b.md"
-    _ <- K.knitEither (hfToVLData rtDiffWIh_2016) >>=
+    _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("VOC/WNH Turnout Gaps with State-specific effects (2016)")
-         (sortedStates rtDiffWI_2016)
+         ("VOC/WNH Turnout Gaps with State-specific effects (2020)")
+         (sortedStates rtDiffWI_2020)
          True
          False
          (FV.ViewConfig 500 1000 5)
     addMarkDownFromFile $ mdDir ++ "N1c.md"
-    _ <- K.knitEither (hfToVLData rtDiffIh_2016) >>=
+    _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
-         ("VOC/WNH State-specific contribution to turnout gap (2016)")
-         (sortedStates rtDiffI_2016)
+         ("VOC/WNH State-specific contribution to turnout gap (2020)")
+         (sortedStates rtDiffI_2020)
          True
          False
          (FV.ViewConfig 500 1000 5)
     return ()
   let note1Ref = "[note1_link]: " <> notesURL "1"
   addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1.md"
-  _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2016) >>=
+  _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
-       ("State-Specific VOC Turnout (2016)")
-       (sortedStates dNWNH_2016)
+       ("State-Specific VOC Turnout (2020)")
+       (sortedStates dNWNH_2020)
        True
        False
        (FV.ViewConfig 500 1000 5)
   addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
-      sigStates2016 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2016
-  dNWNH_sig <- filterState sigStates2016 dNWNH_PEI_h_2016
+      sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2020
+  dNWNH_sig <- filterState sigStates2020 dNWNH_PEI_h_2020
   _ <- K.knitEither (hfToVLDataPEI dNWNH_sig) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
-       ("State-Specific VOC Turnout (2016)")
-       (sortedStates dNWNH_2016)
+       ("State-Specific VOC Turnout (2020)")
+       (sortedStates dNWNH_2020)
        True
        False
        (FV.ViewConfig 400 400 5)
   addMarkDownFromFile $ mdDir ++ "P2.md"
-  _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2016) >>=
+  _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
        .peiScatterChart
        ("State-Specific VOC Turnout vs. Voting Integrity")
        (FV.ViewConfig 400 400 5)
-  dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2016
-  rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2016
-  rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2016
+  dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
+  rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2020
+  rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2020
   let k = BR.heidiColKey "State"
       nwnh_sig' = Heidi.leftOuterJoin k k citByState
                  $ Heidi.leftOuterJoin k k dNWNH_renamed
@@ -720,12 +720,12 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
   let note2Ref = "[note2_link]: " <> notesURL "2"
   addMarkDownFromFile $ mdDir ++ "P3.md"
-  _ <- filterState sigStates2016 nwnh_sig_long
+  _ <- filterState sigStates2020 nwnh_sig_long
        >>= K.knitEither . hfToVLDataBreakdown  >>=
        K.addHvega Nothing Nothing
        . componentsChart
-       ("VOC/WNH Turnout Gap Components (2016)")
-       (Just $ sortedStates dNWNH_2016)
+       ("VOC/WNH Turnout Gap Components (2020)")
+       (Just $ sortedStates dNWNH_2020)
        (FV.ViewConfig 200 40 5)
   addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3b.md"
   K.newPandoc
@@ -735,10 +735,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
     _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
          K.addHvega Nothing Nothing
          . componentsChart
-         ("VOC Turnout Components (2016)")
+         ("VOC Turnout Components (2020)")
          Nothing
          (FV.ViewConfig 200 40 5)
     return ()
+{-
   K.newPandoc
     (K.PandocInfo (notesPath "3")
      $ BR.brAddDates False pubDate curDate
@@ -751,7 +752,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
                             [Heidi.mkTyN "state_abbreviation"]
                             dNWNH_h_2012
                             electionIntegrityh
-        dNWNH_h_2012_2016 = dNWNH_PEI_h_2012 <> dNWNH_PEI_h_2016
+        dNWNH_h_2012_2020 = dNWNH_PEI_h_2012 <> dNWNH_PEI_h_2020
     _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2012) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -763,13 +764,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
 
     let oneSig [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA || sig loB hiB then Just () else Nothing
         oneSigStates =  M.keys
-                        $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2016
-    combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2016
+                        $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2020
+    combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2020
     addMarkDownFromFile $ mdDir ++ "P4.md"
     _ <- K.knitEither (hfToVLDataPEI combinedOneSig_h) >>=
          K.addHvega' Nothing Nothing True
          . turnoutGapScatter
-         ("State-Specific VOC Turnout: 2012 vs. 2016")
+         ("State-Specific VOC Turnout: 2012 vs. 2020")
          (FV.ViewConfig 500 500 5)
     addMarkDownFromFile $ mdDir ++ "P5.md"
     let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
@@ -797,6 +798,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
          False
          (FV.ViewConfig 400 400 5)
     return ()
+-}
 {-
   res2012_2016_C <- runModel [2012, 2016]
   (_, _, rtDiffI_2012_2016, _, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C

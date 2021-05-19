@@ -131,7 +131,7 @@ type ElectionIntegrityColsRaw = [BR.PEIYear, BR.PEIStateAbbreviation, BR.PEIStat
 electionIntegrityByState2016 ::  (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec ElectionIntegrityCols))
 electionIntegrityByState2016 = cachedMaybeFrameLoader
-                               @(F.RecordColumns BR.ElectionIntegrityByState2016)
+                               @(F.RecordColumns BR.ElectionIntegrityByState)
                                @ElectionIntegrityColsRaw
                                (DataSets $ T.pack BR.electionIntegrityByState2016CSV)
                                Nothing
@@ -139,6 +139,23 @@ electionIntegrityByState2016 = cachedMaybeFrameLoader
                                id
                                (F.rcast @ElectionIntegrityCols . addCols)
                                Nothing "electionIntegrityByState2016.bin"
+  where
+    addCols = (FT.addName @BR.PEIStateAbbreviation @BR.StateAbbreviation)
+              . (FT.addName @BR.PEIYear @BR.Year)
+              . (FT.addName @BR.PEIStateFIPS @BR.StateFIPS)
+
+
+electionIntegrityByState2018 ::  (K.KnitEffects r, BR.CacheEffects r) =>
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec ElectionIntegrityCols))
+electionIntegrityByState2018 = cachedMaybeFrameLoader
+                               @(F.RecordColumns BR.ElectionIntegrityByState)
+                               @ElectionIntegrityColsRaw
+                               (DataSets $ T.pack BR.electionIntegrityByState2018CSV)
+                               Nothing
+                               Nothing
+                               id
+                               (F.rcast @ElectionIntegrityCols . addCols)
+                               Nothing "electionIntegrityByState2018.bin"
   where
     addCols = (FT.addName @BR.PEIStateAbbreviation @BR.StateAbbreviation)
               . (FT.addName @BR.PEIYear @BR.Year)

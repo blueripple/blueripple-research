@@ -184,32 +184,33 @@ type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
 type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome] V.++ ElectionR
+type DistrictDemDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome]
 type AllCatR = '[BR.Year] V.++ CPSPredictorR
 data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCDR
                                , cpsVRows :: F.FrameRec CPSVByCDR
                                , pumsRows :: F.FrameRec PUMSByCDR
-                               , districtRows :: F.FrameRec DistrictDataR
-                               , allCategoriesRows :: F.FrameRec AllCatR
+                               , districtRows :: F.FrameRec DistrictDemDataR
+--                               , allCategoriesRows :: F.FrameRec AllCatR
                                } deriving (Generic)
 
 ccesAndPUMSForYear :: Int -> CCESAndPUMS -> CCESAndPUMS
 ccesAndPUMSForYear y = ccesAndPUMSForYears [y]
 
 ccesAndPUMSForYears :: [Int] -> CCESAndPUMS -> CCESAndPUMS
-ccesAndPUMSForYears ys (CCESAndPUMS cces cpsV pums dist cats) =
+ccesAndPUMSForYears ys (CCESAndPUMS cces cpsV pums dist) =
   let f :: (FI.RecVec rs, F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
       f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-  in CCESAndPUMS (f cces) (f cpsV) (f pums) (f dist) (f cats)
+  in CCESAndPUMS (f cces) (f cpsV) (f pums) (f dist)
 
 
 instance S.Serialize CCESAndPUMS where
-  put (CCESAndPUMS cces cpsV pums dist cats) = S.put (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats)
-  get = (\(cces, cpsV, pums, dist, cats) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame pums) (FS.unSFrame dist) (FS.unSFrame cats)) <$> S.get
+  put (CCESAndPUMS cces cpsV pums dist) = S.put (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist)
+  get = (\(cces, cpsV, pums, dist) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame pums) (FS.unSFrame dist)) <$> S.get
 
 instance Flat.Flat CCESAndPUMS where
-  size (CCESAndPUMS cces cpsV pums dist cats) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats) n
-  encode (CCESAndPUMS cces cpsV pums dist cats) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist, FS.SFrame cats)
-  decode = (\(cces, cpsV, pums, dist, cats) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame pums) (FS.unSFrame dist) (FS.unSFrame cats)) <$> Flat.decode
+  size (CCESAndPUMS cces cpsV pums dist) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist) n
+  encode (CCESAndPUMS cces cpsV pums dist) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist)
+  decode = (\(cces, cpsV, pums, dist) -> CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame pums) (FS.unSFrame dist)) <$> Flat.decode
 
 pumsMR :: forall ks f m.(Foldable f
                         , Ord (F.Record ks)
@@ -406,6 +407,12 @@ pumsReKey r =
      F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
 
+acsCopy2018to2020 :: F.FrameRec PUMSByCDR -> F.FrameRec PUMSByCDR
+acsCopy2018to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2018 rows) where
+  year2018 r = F.rgetField @BR.Year r == 2018
+  changeYear2020 r = F.rputField @BR.Year 2020 r
+
+
 type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
@@ -423,7 +430,9 @@ prepCCESAndPums clearCache = do
       pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
       pumsByCD :: F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec PUMSByCDR)
       pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest 2012) (pumsReKey . F.rcast) cdFromPUMA pums
-  pumsByCD_C <- BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
+  pumsByCD_C <- fmap (fmap acsCopy2018to2020)
+                $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
+                $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   cpsVByCD_C <- cpsCountedTurnoutByCD
   -- first, do the turnout corrections
@@ -463,9 +472,10 @@ prepCCESAndPums clearCache = do
                  (FMR.assignKeysAndData @CDKeyR)
                  (FMR.foldAndAddKey diInnerFold)
         diByCD = FL.fold diFold pumsCDFixed
-        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
-        fHouseElex = FL.prefilterM (return . earliest 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
-    flattenedHouseData <- K.knitEither $ FL.foldM fHouseElex houseElections
+{-
+--        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
+--        fHouseElex = FL.prefilterM (return . earliest 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
+--    flattenedHouseData <- K.knitEither $ FL.foldM fHouseElex houseElections
     let fhdPlusDC = flattenedHouseData
                     <> F.toFrame [ 2012 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
                                    2014 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
@@ -502,7 +512,8 @@ prepCCESAndPums clearCache = do
              e <- [minBound..],
              r <- [minBound..],
              eth <- [minBound..]]
-    return $ CCESAndPUMS cces cpsVFixed pumsCDFixed districtData (F.toFrame $ fmap F.rcast $ cats)
+-}
+    return $ CCESAndPUMS cces cpsVFixed pumsCDFixed diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
