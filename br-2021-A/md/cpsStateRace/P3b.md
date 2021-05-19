@@ -11,15 +11,14 @@ and we believe that some of the shifts we see are too large to be explained by o
 But it’s important to be mindful of the limits of this sort of analysis.
 
 ## The Big Questions
-- What is or isn't happening in PA, SC and NV to produce improved VOC turnout?
-Conversely, what is or isn't happening in AZ, IA, FL and MA to depress VOC turnout?
-Understanding that ought to help improve VOC turnout in a number of states.
+- What is or isn't happening in DE, AL, PA, MI, NJ and CA to produce improved VOC turnout?
+Conversely, what is or isn't happening WA, IL, KS, NH, MA, and KY to depress VOC turnout?
+Understanding that might help improve VOC turnout in a number of states.
 
 - Why is the demographic component so large?  In this piece, we've been focusing on state-specific
 effects, because we are interested in state-level solutions, especially organizing
 around VOC turnout and against suppressive state-policy.  But looming over all of this is
 the fact that VOC turnout, especially Hispanic and Asian turnout, lag WNH turnout
-nationwide.  That tips lots of elections to Republicans in places where Dems ought
+nationwide---by more than 11 points in 2020, by no means an atypical year.
+That tips lots of elections to Republicans in places where Dems ought
 to be competitive, especially state-legislative and house seats.
-
-- Was this all similar in 2020?  We're waiting on the CPS-VRS microdata
