@@ -16,11 +16,12 @@
 module Main where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 --import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
---import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
@@ -39,6 +40,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.MapRow as MapRow
 
+import qualified Data.Monoid as Monoid
 --import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here, i)
@@ -46,8 +48,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
---import qualified Data.Vinyl as V
---import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
 import qualified Frames as F
 --import qualified Control.MapReduce as MR
@@ -217,14 +219,11 @@ countInCategory count key as =
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- BRE.prepCCESAndPums False
-  cpsV <- BRE.cpsVRows <$> K.ignoreCacheTime data_C
-  let cpsCountsByYear = FMR.concatFold
-                        $ FMR.mapReduceFold
-                        FMR.noUnpack
-                        (FMR.assignKeysAndData @'[BR.Year] @'[BRCF.Count])
-                        (FMR.foldAndAddKey $ fmap (FT.recordSingleton @BRCF.Count) $ FL.premap (F.rgetField @BRCF.Count) FL.sum)
-  BR.logFrame $ FL.fold cpsCountsByYear cpsV
+  data_C <- BRE.prepCCESAndPums True
+--  cpsV <- BRE.cpsVRows <$> K.ignoreCacheTime data_C
+  return ()
+{-
+
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
   let htmlDir = "turnoutModel/stateSpecificGaps/"
@@ -243,6 +242,8 @@ cpsVAnalysis = do
   K.newPandoc
     (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
+-}
+
 -}
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
@@ -558,8 +559,11 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
           (Just 1000)
           (Just 0.99)
           (Just 15)
-
+  -- Diagnostics
 --  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
+
+
+  -- End Diagnostics
   res2020_C <- runModel [2020]
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
@@ -940,3 +944,25 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) vlData =
      (GV.vlSchema 5 (Just 1) Nothing Nothing)
      vc
      [FV.title title, GV.layer ([{-specPts ,-} stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
+
+
+
+
+{-
+cpsCountedTurnoutByCD' :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (F.FrameRec BRE.CPSVByCDR)
+cpsCountedTurnoutByCD' = do
+  let afterYear y r = F.rgetField @BR.Year r >= y
+      possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
+      citizen r = F.rgetField @DT.IsCitizen r
+      includeRow r = afterYear 2012 r &&  possible r && citizen r
+      voted r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
+      wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
+      fld = BRCF.weightedCountFold @_ @(CPS.CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])
+            (\r -> F.rcast @BRE.CDKeyR r `V.rappend` CPS.cpsKeysToASER4H True (F.rcast r))
+            (F.rcast  @[ET.VotedYNC, CPS.CPSVoterPUMSWeight, BR.CountyWeight])
+            includeRow
+            voted
+            wgt
+  cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
+  return . FL.fold fld
+-}

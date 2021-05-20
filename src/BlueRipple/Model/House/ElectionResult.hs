@@ -435,10 +435,12 @@ prepCCESAndPums clearCache = do
                 $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
   cpsVByCD_C <- cpsCountedTurnoutByCD
+  K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
   -- first, do the turnout corrections
   stateTurnout_C <- BR.stateTurnoutLoader
   let achenHurDeps = (,,) <$> cpsVByCD_C <*> pumsByCD_C <*> stateTurnout_C
       achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD achenHurCacheKey
   cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
     K.logLE K.Info "Doing Ghitza/Gelman logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
@@ -449,6 +451,7 @@ prepCCESAndPums clearCache = do
     let adjVoters r = F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
     return $ fmap (F.rcast @CPSVByCDR . adjVoters) adjCPSProb
   houseElections_C <- BR.houseElectionsWithIncumbency
+  K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "Post Achen/Hur"
   let deps = (,,,) <$> countedCCES_C <*> cpsV_AchenHur_C <*> pumsByCD_C <*> houseElections_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -472,48 +475,42 @@ prepCCESAndPums clearCache = do
                  (FMR.assignKeysAndData @CDKeyR)
                  (FMR.foldAndAddKey diInnerFold)
         diByCD = FL.fold diFold pumsCDFixed
-{-
---        fHouseElex :: FL.FoldM (Either Text) (F.Record BR.HouseElectionColsI) (F.FrameRec (CDKeyR V.++ ElectionR))
---        fHouseElex = FL.prefilterM (return . earliest 2012) $ FL.premapM (return . F.rcast) $ electionF @CDKeyR
---    flattenedHouseData <- K.knitEither $ FL.foldM fHouseElex houseElections
-    let fhdPlusDC = flattenedHouseData
-                    <> F.toFrame [ 2012 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2014 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2016 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil,
-                                   2018 F.&: "DC" F.&: 1 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
-                                 ]
-    let (districtData, missing) = FJ.leftJoinWithMissing @CDKeyR diByCD fhdPlusDC --flattenedHouseData
-    when (not $ null missing) $ K.knitError $ "Missing keys in join of density/income data and election data: " <> show missing
-  -- categories!
-    let sortedMedian :: RealFrac a => [a] -> Either Text a
-        sortedMedian xs
-          | null xs = Left "Attempt to take median of an empty list!"
-          | odd len = Right $ xs List.!! mid
-          | otherwise = Right $ evenMedian where
-              len = length xs
-              mid = len `div` 2
-              evenMedian = (xs List.!! mid + xs List.!! (mid+1)) / 2
-        median = sortedMedian . List.sort
-        medianF :: [F.Record [DT.PopPerSqMile, DT.AvgIncome]] -> Either Text (F.Record [DT.PopPerSqMile, DT.AvgIncome])
-        medianF xs = do
-          medianD <- median $ fmap (F.rgetField @DT.PopPerSqMile) $ xs
-          medianI <- median $ fmap (F.rgetField @DT.AvgIncome) $ xs
-          return $ medianD F.&: medianI F.&: V.RNil
-        mDIFold = FMR.mapReduceFoldM
-                  (FMR.generalizeUnpack FMR.noUnpack)
-                  (FMR.generalizeAssign $ FMR.assignKeysAndData @'[BR.Year] @[DT.PopPerSqMile, DT.AvgIncome])
-                  (FMR.ReduceFoldM $ \k -> fmap (k `V.rappend`) $ FMR.postMapM medianF $ FL.generalize FL.list)
-    medians <- K.knitEither $ FL.foldM mDIFold diByCD
-    let cats :: [F.Record ([DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC] V.++ [BR.Year, DT.PopPerSqMile, DT.AvgIncome])]
-          = [(a F.&: s F.&: e F.&: r F.&: eth F.&: meds) |
-             meds <- medians,
-             a <- [minBound..],
-             s <- [minBound..],
-             e <- [minBound..],
-             r <- [minBound..],
-             eth <- [minBound..]]
--}
+
     return $ CCESAndPUMS cces cpsVFixed pumsCDFixed diByCD -- (F.toFrame $ fmap F.rcast $ cats)
+
+
+race5FromCPS :: F.Record CPSVByCDR -> DT.Race5
+race5FromCPS r =
+  let race4A = F.rgetField @DT.RaceAlone4C r
+      hisp = F.rgetField @DT.HispC r
+  in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+cpsDiagnostics :: K.KnitEffects r => Text -> F.FrameRec CPSVByCDR -> K.Sem r ()
+cpsDiagnostics t cpsByCD = K.wrapPrefix "cpsDiagnostics" $ do
+  let cpsCountsByYearFld = FMR.concatFold
+                           $ FMR.mapReduceFold
+                           FMR.noUnpack
+                           (FMR.assignKeysAndData @'[BR.Year] @'[BRCF.Count, BRCF.WeightedCount])
+                           (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  K.logLE K.Diagnostic t
+  K.logLE K.Diagnostic "cps counts by year"
+  BR.logFrame $ FL.fold cpsCountsByYearFld cpsByCD
+  let isYear y r = F.rgetField @BR.Year r == y
+      turnoutByRaceFld year mState =
+        let stateFilter r = All $ maybe True (\s -> F.rgetField @BR.StateAbbreviation r == s) mState
+            fltr r = getAll $ All (F.rgetField @BR.Year r == year) <> stateFilter r
+        in FMR.concatFold
+           $ FMR.mapReduceFold
+           (FMR.unpackFilterRow fltr)
+           (FMR.assign
+             (FT.recordSingleton @DT.Race4C . DT.race4FromRace5 . race5FromCPS)
+             (F.rcast @[BRCF.WeightedCount, BRCF.WeightedSuccesses]))
+           (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  let (allCounts, nvCounts) = FL.fold ((,) <$> turnoutByRaceFld 2020 Nothing <*> turnoutByRaceFld 2020 (Just "NV")) cpsByCD
+  K.logLE K.Diagnostic $ "All (county-weighted) by race: "
+  BR.logFrame allCounts
+  K.logLE K.Diagnostic $ "NV (county-weighted) by race: "
+  BR.logFrame nvCounts
 
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
