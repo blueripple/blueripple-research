@@ -219,11 +219,8 @@ countInCategory count key as =
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- BRE.prepCCESAndPums True
+  data_C <- BRE.prepCCESAndPums False
 --  cpsV <- BRE.cpsVRows <$> K.ignoreCacheTime data_C
-  return ()
-{-
-
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
   let htmlDir = "turnoutModel/stateSpecificGaps/"
@@ -244,7 +241,7 @@ cpsVAnalysis = do
     $ cpsModelTest False $ K.liftActionWithCacheTime data_C
 -}
 
--}
+
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do

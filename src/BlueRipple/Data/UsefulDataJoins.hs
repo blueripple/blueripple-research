@@ -196,6 +196,7 @@ adjustWeightsForStateTotals
     , F.ElemOf (ks V.++ PCols p V.++ BR.EWCols) p
     , F.ElemOf (ks V.++ PCols p V.++ BR.EWCols) BR.ElectoralWeight
     , FI.RecVec (ks V.++ PCols p V.++ BR.EWCols)
+    , Show (F.Record ((ks V.++ PCols '(V.Fst p, Int)) V.++ BR.EWCols))
     )
   => F.Frame BR.StateTurnout
   -> F.FrameRec (BR.WithYS ks V.++ PCols p V.++ BR.EWCols)
@@ -210,7 +211,9 @@ demographicsWithAdjTurnoutByState
   :: forall catCols p ks js effs
   . ( K.KnitEffects effs
     , FJ.CanLeftJoinM (js V.++ catCols) ((BR.WithYS ks) V.++ catCols V.++ (PCols p)) (js V.++ catCols V.++ BR.EWCols)
-    , (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) ~ (((ks V.++ catCols) V.++ PCols p) V.++ BR.EWCols)
+    , (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) ~ (((ks V.++ catCols) V.++ PCols p) V.++ BR.EWCols
+                                                                                                                  )
+
     , V.RMap (js V.++ catCols)
     , V.ReifyConstraint Show V.ElField (js V.++ catCols)
     , V.RecordToList (js V.++ catCols)
@@ -234,6 +237,10 @@ demographicsWithAdjTurnoutByState
     , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
     , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
     , (ks V.++ catCols V.++ PCols p V.++ BR.EWCols) ~ (ks V.++ catCols V.++ (PCols p V.++ BR.EWCols))
+    , Show (F.Record ((ks V.++ catCols)
+                           V.++ '[ '("PopCountOf", BR.PopCountOfT), p,
+                                   BR.ElectoralWeightSource, BR.ElectoralWeightOf,
+                                   BR.ElectoralWeight]))
     )
   => F.Frame BR.StateTurnout
   -> F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PCols p))
@@ -336,6 +343,10 @@ rollupAdjustAndJoin
    , (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ BR.EWCols)) F.⊆ BR.WithYS (ks V.++ catCols V.++ BR.EWCols)
    , V.RecApplicative (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ BR.EWCols))
    , FI.RecVec (F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ BR.EWCols))
+   , Show (F.Record ((ks V.++ catCols)
+                           V.++ '[ '("PopCountOf", BR.PopCountOfT), p,
+                                   BR.ElectoralWeightSource, BR.ElectoralWeightOf,
+                                   BR.ElectoralWeight]))
    )
   => F.Frame BR.StateTurnout
   -> F.FrameRec (as V.++ (BR.WithYS ks) V.++ catCols V.++ (PCols p))
@@ -400,6 +411,14 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , (F.RDeleteAll catCols (catCols V.++ BR.EWCols))  F.⊆ (ACSCols V.++ (catCols V.++ BR.EWCols))
     , (catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll]) F.⊆ (ACSColsCD V.++ (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) V.++ '[BR.VotedPctOfAll])
     , (F.RDelete BR.ElectoralWeight (catCols V.++ PEWCols BR.ACSCount)) F.⊆ (ACSColsCD V.++ catCols V.++ PEWCols BR.ACSCount)
+    , V.ReifyConstraint Show V.ElField (catCols
+                                        V.++ '[ '("PopCountOf", BR.PopCountOfT), '("ACSCount", Int),
+                                                BR.ElectoralWeightSource, BR.ElectoralWeightOf,
+                                                BR.ElectoralWeight])
+    , V.RecordToList (catCols
+                       V.++ '[ '("PopCountOf", BR.PopCountOfT), '("ACSCount", Int),
+                               BR.ElectoralWeightSource, BR.ElectoralWeightOf,
+                               BR.ElectoralWeight])
     )
   => T.Text
   -> K.ActionWithCacheTime r (F.FrameRec (BR.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))

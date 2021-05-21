@@ -30,6 +30,8 @@ import qualified Knit.Report                   as K
 import qualified Data.Array                    as A
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
+import qualified Data.Vector                   as V
+import qualified Data.Vector.Storable                   as VS
 import qualified Control.Foldl                 as FL
 
 import qualified Frames                        as F
@@ -42,21 +44,32 @@ import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CG
-import Numeric (Floating(log))
 
+import qualified Numeric.Optimization.Algorithms.HagerZhang05
+                                               as HZ
+
+import qualified Numeric.NLOPT as NL
+
+import Numeric (Floating(log, log1p))
+
+import qualified Say
 
 logit :: Floating a => a -> a
-logit x = log (x / (1 - x))
+logit x = log x - log1p (negate x) -- log (x / (1 - x))
 
 invLogit :: Floating a => a -> a
-invLogit x = 1 / (1 + exp (-x))
+invLogit x =  1 / (1 + exp (negate x))
+
+dInvLogit :: Floating a => a -> a
+dInvLogit x = z / ((1 + z) * (1 + z)) where
+  z = exp $ negate x
 
 adjSumA :: (Floating a, A.Ix b) => a -> A.Array b Int -> A.Array b a -> a
 adjSumA x population unadjTurnoutP =
   let popAndUT =
         zip (realToFrac <$> A.elems population) (A.elems unadjTurnoutP)
-      f delta (n, sigma) = n * invLogit (logit sigma + delta)
-  in  FL.fold (FL.premap (f x) FL.sum) popAndUT
+      f (n, sigma) = n * invLogit (logit sigma + x)
+  in  FL.fold (FL.premap f FL.sum) popAndUT
 
 votesErrorA
   :: (A.Ix b, Floating a) => Int -> A.Array b Int -> A.Array b a -> a -> a
@@ -75,7 +88,7 @@ findDeltaA totalVotes population unadjTurnoutP = do
         votesErrorA totalVotes population (fmap realToFrac unadjTurnoutP) x
       params = CG.defaultParameters { CG.printFinal  = False
                                     , CG.printParams = False
-                                    , CG.verbose     = CG.Quiet
+                                    , CG.verbose     = CG.Verbose
                                     }
       grad_tol = 0.0000001
   ([delta], _result, _stat) <- CG.optimize params grad_tol [0] cost
@@ -86,18 +99,31 @@ adjTurnoutP :: Floating a => a -> A.Array b a -> A.Array b a
 adjTurnoutP delta unadjTurnoutP =
   let adj x = invLogit (logit x + delta) in fmap adj unadjTurnoutP
 
-
 -- here we redo with a different data structure
-data Pair a b = Pair !a !b
-adjSumF :: Floating a => a -> FL.Fold (Pair Int a) a
+--adjP :: (Ord a, Floating a) => a -> a -> a
+adjP p x = p' / (p' + (1 - p') * exp (negate x))
+  where p' = if 1 - p < 1e-6 then 0.99999 else p
+
+
+data Pair a b = Pair !a !b deriving (Show)
+adjSumF :: (Ord a, Floating a) => a -> FL.Fold (Pair Int a) a
 adjSumF delta =
-  let f (Pair n sigma) = realToFrac n * invLogit (logit sigma + delta)
+  let f (Pair n sigma) = realToFrac n * adjP sigma delta --invLogit (logit sigma + delta)
   in  FL.premap f FL.sum
 
-votesErrorF :: Floating a => Int -> a -> FL.Fold (Pair Int a) a
-votesErrorF totalVotes delta =
-  let x = realToFrac totalVotes in fmap (abs . (x -)) (adjSumF delta)
+adjSumdF :: Floating a => a -> FL.Fold (Pair Int a) a
+adjSumdF delta =
+  let f (Pair n sigma) = realToFrac n * dInvLogit (logit sigma + delta)
+  in  FL.premap f FL.sum
 
+votesErrorF :: (Ord a, Floating a) => Int -> a -> FL.Fold (Pair Int a) a
+votesErrorF totalVotes delta = abs (votes - adjSumF delta) where
+  votes = realToFrac totalVotes
+
+dVotesErrorF :: (Floating a, Ord a) => Int -> a -> FL.Fold (Pair Int a) a
+dVotesErrorF totalVotes delta =
+  let f c dc = if c >= 0 then dc else -dc
+  in f <$> adjSumF delta <*> adjSumdF delta
 
 findDelta
   :: (Floating a, Real a, Foldable f, Functor f)
@@ -106,15 +132,30 @@ findDelta
   -> IO Double
 findDelta totalVotes dat = do
   let toAnyRealFrac (Pair n x) = Pair n $ realToFrac x
-      cost :: Floating b => [b] -> b
-      cost [x] = FL.fold (votesErrorF totalVotes x) (fmap toAnyRealFrac dat)
-      params = CG.defaultParameters { CG.printFinal  = False
-                                    , CG.printParams = False
-                                    , CG.verbose     = CG.Quiet
-                                    }
+      mappedDat = fmap toAnyRealFrac dat
+--      cost :: Floating b => b -> b
+      cost x = FL.fold (votesErrorF totalVotes x) mappedDat
+      costHZ = HZ.VFunction $ \v -> cost (v V.! 0)
+      costNL v = cost (v VS.! 0)
+      gCost x = FL.fold (dVotesErrorF totalVotes x) mappedDat
+      gCostHZ = HZ.VGradient $ \v -> V.fromList [gCost $ v V.! 0]
+      paramsHZ = HZ.defaultParameters { HZ.printFinal  = False
+                                      , HZ.printParams = False
+                                      , HZ.verbose     = CG.Verbose
+                                      }
+
       grad_tol = 0.0000001
-      getRes ([x], _, _) = x
-  getRes <$> CG.optimize params grad_tol [0] cost
+      getResHZ (v, _, _) = v VS.! 0
+--   getResHZ <$> HZ.optimize paramsHZ grad_tol (V.fromList [0]) costHZ gCostHZ Nothing
+  let stopNL = NL.MinimumValue 1 :| [NL.ObjectiveRelativeTolerance 1e-6]
+      algoNL = NL.NELDERMEAD costNL [NL.LowerBounds (VS.fromList [-10])] Nothing
+      problemNL = NL.LocalProblem 1 stopNL algoNL
+  case NL.minimizeLocal problemNL (VS.fromList [0]) of
+    Left res -> error $ show res
+    Right (NL.Solution c dv res) -> do
+--      Say.say $ show res
+      return $ dv VS.! 0
+
 
 
 adjTurnoutLong
@@ -127,16 +168,21 @@ adjTurnoutLong
      , F.ElemOf rs t --F.ElemOf (cs V.++ '[p, t]) t
      , Foldable f
      , Functor f
+     , Show (F.Record rs)
      )
   => Int
   -> f (F.Record rs) --(cs V.++ '[p, t])
   -> IO (f (F.Record rs)) --(cs V.++ '[p, t])
 adjTurnoutLong total unAdj = do
-  let adj d x = invLogit (logit x + d)
-  delta <- findDelta total
-    $ fmap (\r -> Pair (F.rgetField @p r) (F.rgetField @t r)) unAdj
-  return $ fmap (\r -> flip (F.rputField @t) r $ adj delta $ F.rgetField @t r)
-                unAdj
+  let adj d x = adjP x d -- invLogit (logit x + d)
+      toPair r = Pair (F.rgetField @p r) (F.rgetField @t r)
+  delta <- findDelta total $ fmap toPair unAdj
+  let res =  fmap (\r -> flip (F.rputField @t) r $ adj delta $ F.rgetField @t r) unAdj
+      showFld = FL.premap toPair FL.list
+--  Say.say $ "AdjTurnoutLong-before: " <> show (FL.fold showFld unAdj)
+--  Say.say $ "delta=" <> show delta
+--  Say.say $ "AdjTurnoutLong-after: " <> show (FL.fold showFld res)
+  return res
 
 
 -- Want a generic fold such that given:
@@ -162,6 +208,7 @@ adjTurnoutFold
      , V.Snd p ~ Int
      , V.Snd t ~ Double
      , FI.RecVec (WithYS rs)
+     , Show (F.Record rs)
      )
   => f BR.StateTurnout
   -> FL.FoldM
@@ -174,7 +221,7 @@ adjTurnoutFold stateTurnoutFrame =
         (FL.premap
          (\r ->
             ( getKey r
-            , F.rgetField @BR.VotesHighestOffice r
+            , F.rgetField @BR.BallotsCountedVEP r
             )
          )
          FL.map
@@ -184,13 +231,15 @@ adjTurnoutFold stateTurnoutFrame =
       assignM = FMR.generalizeAssign $ FMR.splitOnKeys @'[BR.Year, BR.StateAbbreviation] -- @(cs V.++ '[p, t])
       adjustF ks =
         let
-          vtM = M.lookup ks vtbsMap
-          f x = case vtM of
+          tM = M.lookup ks vtbsMap
+          f x = case tM of
             Nothing ->
               K.knitError
                 ("Failed to find " <> show ks <> " in state turnout."
                 )
-            Just vts -> K.liftKnit $ adjTurnoutLong @p @t @rs vts x
+            Just t -> K.liftKnit $ do
+              let totalP = FL.fold (FL.premap (F.rgetField @p) FL.sum) x
+              adjTurnoutLong @p @t @rs (round $ t * realToFrac totalP) x
         in
           FMR.postMapM f $ FL.generalize FL.list
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
