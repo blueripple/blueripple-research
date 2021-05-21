@@ -681,7 +681,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates dNWNH_2020)
        True
        False
-       (FV.ViewConfig 400 400 5)
+       (FV.ViewConfig 600 400 5)
   addMarkDownFromFile $ mdDir ++ "P2.md"
   _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
