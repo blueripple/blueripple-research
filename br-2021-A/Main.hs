@@ -683,11 +683,16 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        False
        (FV.ViewConfig 600 400 5)
   addMarkDownFromFile $ mdDir ++ "P2.md"
-  _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
-       K.addHvega Nothing Nothing
-       .peiScatterChart
-       ("State-Specific VOC Turnout vs. Voting Integrity")
-       (FV.ViewConfig 400 400 5)
+  K.newPandoc
+  (K.PandocInfo (unusedPath "Integrity")
+    $ BR.brAddDates False pubDate curDate
+    $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
+    addMarkDownFromFile $ mdDir ++ "Integrity1.md"
+    _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
+         K.addHvega Nothing Nothing
+         .peiScatterChart
+         ("State-Specific VOC Turnout vs. Voting Integrity")
+         (FV.ViewConfig 400 400 5)
   dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
   rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2020
   rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2020
