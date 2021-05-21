@@ -728,7 +728,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
        ("VOC/WNH Turnout Gap Components (2020)")
        (Just $ sortedStates dNWNH_2020)
        (FV.ViewConfig 200 40 5)
-  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P3b.md"
+  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P4.md"
   K.newPandoc
     (K.PandocInfo (notesPath "2")
      $ BR.brAddDates False pubDate curDate
@@ -767,13 +767,13 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
         oneSigStates =  M.keys
                         $ M.merge M.dropMissing M.dropMissing (M.zipWithMaybeMatched (const oneSig)) dNWNH_2012 dNWNH_2020
     combinedOneSig_h <- filterState oneSigStates dNWNH_h_2012_2020
-    addMarkDownFromFile $ mdDir ++ "P4.md"
+    addMarkDownFromFile $ mdDir ++ "N3a.md"
     _ <- K.knitEither (hfToVLDataPEI combinedOneSig_h) >>=
          K.addHvega' Nothing Nothing True
          . turnoutGapScatter
          ("State-Specific VOC Turnout: 2012 vs. 2020")
          (FV.ViewConfig 500 500 5)
-    addMarkDownFromFile $ mdDir ++ "P5.md"
+    addMarkDownFromFile $ mdDir ++ "N3b.md"
     let sigBoth [loA,_ , hiA] [loB,_ , hiB] = if sig loA hiA && sig loB hiB && loA * loB > 0 then Just () else Nothing
         sigMove [loA,_ , hiA] [loB,_ , hiB] = if hiA < loB || hiB < loA then Just () else Nothing
         significantPersistent = M.keys
@@ -805,7 +805,7 @@ cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsSt
   (_, _, rtDiffI_2012_2016, _, _, dNWNH_2012_2016, _) <- K.ignoreCacheTime res2012_2016_C
   let dNWNH_h_2012_2016 = toHeidiFrame "2012 & 2016" dNWNH_2012_2016
 --  let diffIMR_2012_2016 = MapRow.joinKeyedMapRows rtDiffIMR_2012 $ stateDiffFromAvgMRs 2016
-  addMarkDownFromFile $ mdDir ++ "P6.md"
+  addMarkDownFromFile $ mdDir ++ "N4.md"
   _ <-  K.knitEither (hfToVLData  dNWNH_h_2012_2016) >>=
         K.addHvega Nothing Nothing
         . coefficientChart
@@ -866,20 +866,17 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                        )
   in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
 
-coefficientChart :: --(Functor f, Foldable f)
-                 Text
+coefficientChart :: Text
                  -> [Text]
                  -> Bool
                  -> Bool
                  -> FV.ViewConfig
                  -> GV.Data
---                 -> (f a -> Either Text GV.Data)
---                 -> f a --(MapRow.MapRow GV.DataValue)
                  -> GV.VegaLite
 coefficientChart title sortedStates showAvg colorIsRating vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
-      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "Turnout Shift (% Eligible)"]]
+      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "Turnout Shift (% Eligible VOC)"]]
       encColor = if colorIsRating
                  then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
                  else GV.color [GV.MName "Year", GV.MmType GV.Nominal]
@@ -941,25 +938,3 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) vlData =
      (GV.vlSchema 5 (Just 1) Nothing Nothing)
      vc
      [FV.title title, GV.layer ([{-specPts ,-} stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
-
-
-
-
-{-
-cpsCountedTurnoutByCD' :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (F.FrameRec BRE.CPSVByCDR)
-cpsCountedTurnoutByCD' = do
-  let afterYear y r = F.rgetField @BR.Year r >= y
-      possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
-      citizen r = F.rgetField @DT.IsCitizen r
-      includeRow r = afterYear 2012 r &&  possible r && citizen r
-      voted r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
-      wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
-      fld = BRCF.weightedCountFold @_ @(CPS.CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])
-            (\r -> F.rcast @BRE.CDKeyR r `V.rappend` CPS.cpsKeysToASER4H True (F.rcast r))
-            (F.rcast  @[ET.VotedYNC, CPS.CPSVoterPUMSWeight, BR.CountyWeight])
-            includeRow
-            voted
-            wgt
-  cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
-  return . FL.fold fld
--}

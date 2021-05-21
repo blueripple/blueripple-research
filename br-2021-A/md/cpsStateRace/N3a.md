@@ -1,0 +1,4 @@
+We can compare 2012 to 2016 a few ways.  We start by plotting the estimated effect for 2016 vs 2012,
+excluding any state for which the 2012 and 2016 confidence intervals both include 0. States in the
+upper right all had VOC turnout exceeding expectations in both years and the lower left is populated
+by states with VOC turnout below expectations in both years.
