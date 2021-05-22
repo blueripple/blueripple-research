@@ -2,12 +2,19 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
-module BlueRipple.Configuration where
+module BlueRipple.Configuration
+  (module BlueRipple.Configuration
+  , module Path
+  ) where
 
 import           Data.String.Here               ( i )
 import qualified Data.Text as T
 import qualified Path
+import qualified Path.IO as Path
 import           Path (Path, Abs, Rel, Dir, File, PathException, (</>))
+import qualified Data.Time.Calendar as Time
+import qualified Say
+
 brReadMore :: T.Text
 brReadMore = [i|
 *Want to read more from Blue Ripple?
@@ -65,62 +72,101 @@ brLocalRoot = "posts/"
 -- 1. Putting post documents in the right place in a tree for both draft and post
 -- 2. Support Unused bits, existing only in dev.
 -- 3. Help forming the correct URLs for links in either case
-data Output = Draft | Post
+--data Output = Draft | Post deriving (Show)
+
+data NoteName = Used Text | Unused Text deriving (Show)
+
+data PubTime = Unpublished | Published Time.Day deriving (Show)
+
+data PostStage = LocalDraft | OnlineDraft | OnlinePublished deriving (Show)
+
+data PubTimes =  PubTimes { initialPT :: PubTime
+                          , updatePT  :: Maybe PubTime
+                          } deriving (Show)
+
+data PostInfo = PostInfo PostStage PubTimes
+
 data PostPaths a = PostPaths { inputsDir :: Path a Dir -- place to put inputs (markDown, etc.)
-                             , draftHtmlDir :: Path a Dir --
-                             , postHtmlDir :: Path a Dir -- local html location, to be pushed to github pages
-                             , postUrlRoute :: Path Abs Dir -- URL root for post links, without "https:/"
-                             }
+                             , localDraftDir :: Path a Dir
+                             , onlineDraftDir :: Path a Dir
+                             , onlinePubDir :: Path a Dir -- local html location, to be pushed to github pages
+                             , draftUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
+                             , pubUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
+                             } deriving (Show)
+
+absPostPaths :: Path Abs Dir -> PostPaths Rel -> PostPaths Abs
+absPostPaths s (PostPaths i ld pd pp dr pr) = PostPaths (s </> i) (s </> ld) (s </> pd) (s </> pp) dr pr
+
+defaultLocalRoot :: Path Abs Dir
+defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
+
+noteRelDir :: Path Rel Dir
+noteRelDir = [Path.reldir|Notes|]
+
+unusedRelDir :: Path Rel Dir
+unusedRelDir = [Path.reldir|Unused|]
+
+postPaths :: MonadIO m => Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> m (PostPaths Abs)
+postPaths localRoot iP ldP postRel = do
+  let pp = absPostPaths
+           localRoot
+           $ PostPaths
+           ([Path.reldir|research|] </> iP)
+           ([Path.reldir|research|] </> ldP)
+           ([Path.reldir||blueripple.github.io/Draft|] </> postRel)
+           ([Path.reldir||blueripple.github.io|] </> postRel)
+           ([Path.absdir|/blueripplepolitics.org/Draft|] </> postRel)
+           ([Path.absdir|/blueripplepolitics.org/|] </> postRel)
+  Say.say "If necessary, creating post input directories"
+  let iNotesP = inputsDir pp </> noteRelDir
+      iUnusedP =   inputsDir pp </> unusedRelDir
+  Say.say $ toText $ Path.toFilePath iNotesP
+  Path.ensureDir iNotesP
+  Say.say $ toText $ Path.toFilePath iUnusedP
+  Path.ensureDir iUnusedP
+  return pp
 
 
 markDownPath :: PostPaths a -> Path a Dir
 markDownPath pp = inputsDir pp Path.</> [Path.reldir|md|]
 
-notesMDPath ::  PostPaths a -> Text -> Either Text (Path a File)
-notesMDPath pp noteName =
-  first show
-  $ fmap (\s -> markDownPath pp </> [Path.reldir|Notes|] </> s) $ Path.parseRelFile $ toString noteName
+noteInputPath ::  PostPaths a -> NoteName -> Text -> Either Text (Path a File)
+noteInputPath pp noteName noteFileEnd = do
+  pTail <- first show
+           $ case noteName of
+               Used t -> fmap (\s -> [Path.reldir|Notes|] </> s) $ Path.parseRelFile $ toString (t <> noteFileEnd)
+               Unused t ->   fmap (\s -> [Path.reldir|Unused|] </> s) $ Path.parseRelFile $ toString (t <> noteFileEnd)
+  return $ markDownPath pp </> pTail
 
-unusedMDPath ::  PostPaths a -> Text -> Either Text (Path a File)
-unusedMDPath pp uName =
-  first show
-  $ fmap (\s -> markDownPath pp </> [Path.reldir|Unused|] </> s) $ Path.parseRelFile $ toString uName
-
-postPath :: PostPaths a -> Output -> Path a File
-postPath pp = \case
-  Draft -> draftHtmlDir pp </> [Path.relfile|post.html|]
-  Post -> postHtmlDir pp </> [Path.relfile|post.html|]
-
-absPostPaths :: Path Abs Dir -> PostPaths Rel -> PostPaths Abs
-absPostPaths s (PostPaths i d p r) = PostPaths (s </> i) (s </> d) (s </> p) r
-
-defaultLocalRoot :: Path Abs Dir
-defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
-
-resDir :: Path Rel Dir
-resDir = [Path.reldir|research|]
-
-gpDir :: Path Rel Dir
-gpDir = [Path.reldir||blueripple.github.io|]
-
-postPaths :: Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> PostPaths Abs
-postPaths localRoot iP dhP phP relRoute =
-  absPostPaths localRoot
-  $ PostPaths
-    (resDir </> iP)
-    (resDir </> dhP)
-    (gpDir </> phP)
-    ([Path.absdir|/blueripplepolitics.org/|] </> relRoute)
+postPath :: PostPaths a -> PostInfo -> Path a File
+postPath pp (PostInfo ps _) = case ps of
+  LocalDraft -> localDraftDir pp </> [Path.relfile|post.html|]
+  OnlineDraft -> onlineDraftDir pp </>  [Path.relfile|post.html|]
+  OnlinePublished -> onlinePubDir pp </> [Path.relfile|post.html|]
 
 
-noteRelDir :: Path Rel Dir
-noteRelDir = [Path.reldir|Notes|]
 
-noteUrl :: PostPaths Abs -> Output -> Text -> Either Text Text
-noteUrl pp o noteName = do
-  noteNameRelFile <- first show $ Path.parseRelFile (toString $ noteName <> ".html")
+-- Unused do not get put on github pages
+notePath :: PostPaths a -> PostInfo -> NoteName -> Either Text (Path a File)
+notePath pp (PostInfo ps _) nn = do
+  let parseRel = first show . Path.parseRelFile . toString
+  case nn of
+    Unused t -> fmap (\s -> localDraftDir pp </> unusedRelDir </> s) $ parseRel t
+    Used t -> case ps of
+      LocalDraft -> fmap (\s -> localDraftDir pp </> noteRelDir </> s) $ parseRel t
+      OnlineDraft -> fmap (\s -> onlineDraftDir pp </> noteRelDir </> s) $ parseRel t
+      OnlinePublished ->fmap (\s -> onlinePubDir pp </> noteRelDir </> s) $ parseRel t
+
+
+-- | Given PostPaths, post info and a note name, produce the link URL
+noteUrl :: PostPaths Abs -> PostInfo -> NoteName -> Either Text Text
+noteUrl pp (PostInfo ps _) noteName = do
+  noteNameRelFile <- case noteName of
+    Used t -> first show $ Path.parseRelFile (toString $ t <> ".html")
+    Unused t -> Left $ "Cannot link to unused note (" <> t <> ")"
   let noteRelFile :: Path Rel File = noteRelDir </> noteNameRelFile
-      noteUrl = case o of
-        Draft -> Path.toFilePath noteRelFile
-        Post -> "https:/" <> Path.toFilePath (postUrlRoute pp </> noteRelFile)
+      noteUrl = case ps of
+        LocalDraft -> Path.toFilePath noteRelFile
+        OnlineDraft -> "https:/" <> Path.toFilePath (draftUrlRoot pp </> noteRelFile)
+        OnlinePublished -> "https:/" <> Path.toFilePath (pubUrlRoot pp </> noteRelFile)
   return $ toText noteUrl

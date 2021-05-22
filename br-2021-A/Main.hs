@@ -15,6 +15,8 @@
 
 module Main where
 
+import qualified BlueRipple.Configuration as BR
+
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 --import qualified BlueRipple.Data.CCES as CCES
@@ -377,13 +379,27 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (Just 15)
   return ()
 
+cpsStateRacePostDir = [BRC.reldir|br-2021-A/posts/cpsStateRace|]
+cpsStateRaceInputs = cpsStateRacePostDir BRC.</> [BRC.reldir|inputs|]
+cpsStateRaceLocalDraft = cpsStateRacePostDir BRC.</> [BRC.reldir|draft|]
+cpsStateRaceOnline =  [BRC.reldir|research/Turnout/StateSpecific_1|]
+
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
              -> (Text -> Text)
              -> (Text -> Text)
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-  let rstDir = "br-2021-A/RST/cpsStateRace/"
+  let postPaths = BRC.postPaths
+                  BRC.defaultLocalRoot
+                  cpsStateRaceInputs
+                  cpsStateRaceLocalDrafts
+                  cpsStateRaceOnline
+
+
+
+
+      rstDir = "br-2021-A/RST/cpsStateRace/"
       mdDir = "br-2021-A/md/cpsStateRace/"
       addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
       addMarkDownFromFile fp = K.liftKnit (T.readFile $ fp ) >>= K.addMarkDown

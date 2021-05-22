@@ -1,8 +1,10 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,6 +14,8 @@
 --{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module BlueRipple.Utilities.KnitUtils where
+
+import qualified BlueRipple.Configuration as BRC
 
 import qualified Control.Arrow as Arrow
 import qualified Control.Exception as EX
@@ -24,6 +28,7 @@ import qualified Data.Map as M
 import qualified Data.Sequence as Seq
 import qualified Data.Serialize as S
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
@@ -44,6 +49,8 @@ import qualified Knit.Report as K
 import qualified Knit.Report.Cache as KC
 import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
 import qualified Knit.Utilities.Streamly as KStreamly
+import qualified Path
+import qualified Path.IO as Path
 import qualified Polysemy as P
 import Polysemy.Error (Error)
 import Relude.Extra as Relude
@@ -127,6 +134,79 @@ brAddDates updated pubDate updateDate tMap =
                )
              else M.empty
    in tMap <> pubT <> updT
+
+brAddNoteMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
+brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do
+  notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".md")
+  fText <- K.liftKnit (T.readFile $ Path.toFilePath notePath)
+  K.addMarkDown $ case mRefs of
+                    Nothing -> fText
+                    Just refs -> fText <> "\n" <> refs
+
+brAddNoteMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> K.Sem r ()
+brAddNoteMarkDownFromFile  pp nn noteFileEnd = brAddNoteMarkDownFromFileWith pp nn noteFileEnd Nothing
+
+
+brAddNoteRSTFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
+brAddNoteRSTFromFileWith pp nn noteFileEnd mRefs = do
+  notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".rst")
+  fText <- K.liftKnit (T.readFile $ Path.toFilePath notePath)
+  K.addRST $ case mRefs of
+               Nothing -> fText
+               Just refs -> fText <> "\n" <> refs
+
+brAddNoteRSTFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> K.Sem r ()
+brAddNoteRSTFromFile  pp nn noteFileEnd = brAddNoteRSTFromFileWith pp nn noteFileEnd Nothing
+
+
+brDatesFromPostInfo :: K.KnitEffects r => BRC.PostInfo -> K.Sem r (M.Map String String)
+brDatesFromPostInfo (BRC.PostInfo _ (BRC.PubTimes ppt mUpt)) = do
+  let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
+      getCurrentDay :: K.KnitEffects r => K.Sem r Time.Day
+      getCurrentDay = (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+      dayFromPT = \case
+        BRC.Unpublished -> formatTime <$> getCurrentDay
+        BRC.Published d -> return $ formatTime d
+  pt <- dayFromPT ppt
+  let mp = one ("published", pt)
+  case mUpt of
+    Nothing -> return mp
+    (Just upt) -> do
+      ut <- dayFromPT upt
+      return $ mp <> one ("updated", ut)
+
+
+brNewPost :: K.KnitMany r
+          => BRC.PostPaths Path.Abs
+          -> BRC.PostInfo
+          -> Text
+          -> K.Sem (K.ToPandoc ': r) ()
+          -> K.Sem r ()
+brNewPost pp pi pageTitle content = do
+  dates <- brDatesFromPostInfo pi
+  let postPath = BRC.postPath pp pi
+      pageConfig = dates <> one ("pagetitle", toString pageTitle)
+  K.newPandoc (K.PandocInfo (toText $ Path.toFilePath postPath) pageConfig) content
+
+brNewNote :: K.KnitMany r
+          => BRC.PostPaths Path.Abs
+          -> BRC.PostInfo
+          -> BRC.NoteName
+          -> Text
+          -> K.Sem (K.ToPandoc ': r) ()
+          -> K.Sem r (Maybe Text)
+brNewNote pp pi nn pageTitle content = do
+  dates <- brDatesFromPostInfo pi
+  notePath <- K.knitEither $ BRC.notePath pp pi nn
+  let pageConfig = dates <> one ("pagetitle", toString pageTitle)
+  K.newPandoc (K.PandocInfo (toText $ Path.toFilePath notePath) pageConfig) content
+  case nn of
+    BRC.Unused _ -> return Nothing
+    BRC.Used _ -> Just <$> (K.knitEither $ BRC.noteUrl pp pi nn)
+
+--  let noteParent = Path.parent notePath
+--  K.logLE K.Info $ "If necessary, creating note path \"" <> toText (Path.toFilePath noteParent)
+
 
 logFrame ::
   (K.KnitEffects r, Foldable f, Show (F.Record rs)) =>
