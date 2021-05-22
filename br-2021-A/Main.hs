@@ -218,6 +218,22 @@ countInCategory count key as =
   let countF a = fmap (a,) $ FL.prefilter ((== a) . key) $ FL.premap count FL.sum
   in traverse countF as
 
+postDir = [BRC.reldir|br-2021-A/posts|]
+postInputs p = postDir BRC.</> p BRC.</> [BRC.reldir|inputs|]
+postLocalDraft p = postDir BRC.</> p BRC.</> [BRC.reldir|draft|]
+postOnline p =  [BRC.reldir|research/Turnout|] BRC.</> p
+
+postPaths :: Text -> K.Sem r BRC.PostPaths
+postPaths t = do
+  postSpecificP <- K.knitEither $ first show $ Path.parseRelFile t
+  K.liftKnit
+    $ BRC.postPaths
+    BRC.defaultLocalRoot
+    postInputs postSpecificP
+    postLocalDraft postSpecificP
+    postOnline postSpecificP
+
+
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
@@ -225,13 +241,15 @@ cpsVAnalysis = do
 --  cpsV <- BRE.cpsVRows <$> K.ignoreCacheTime data_C
 --  dat <- K.ignoreCacheTime data_C
 --  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
-  let htmlDir = "turnoutModel/stateSpecificGaps/"
-      notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
-      notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
+--  let htmlDir = "turnoutModel/stateSpecificGaps/"
+--      notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
+--      notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
 --      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
       postPath = htmlDir <> "/post"
   curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
   let pubDate =  curDate
+  let postInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
+
   K.newPandoc
     (K.PandocInfo postPath
      $ BR.brAddDates False pubDate curDate
@@ -379,33 +397,25 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (Just 15)
   return ()
 
-cpsStateRacePostDir = [BRC.reldir|br-2021-A/posts/cpsStateRace|]
+cpsStateRacePostDir = [BRC.reldir|br-2021-A/posts/cpsStateSpecific1|]
 cpsStateRaceInputs = cpsStateRacePostDir BRC.</> [BRC.reldir|inputs|]
 cpsStateRaceLocalDraft = cpsStateRacePostDir BRC.</> [BRC.reldir|draft|]
 cpsStateRaceOnline =  [BRC.reldir|research/Turnout/StateSpecific_1|]
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
-             -> (Text -> Text)
-             -> (Text -> Text)
+             -> BRC.PostInfo
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsStateRace clearCaches notesPath notesURL dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-  let postPaths = BRC.postPaths
-                  BRC.defaultLocalRoot
-                  cpsStateRaceInputs
-                  cpsStateRaceLocalDrafts
-                  cpsStateRaceOnline
+cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
-
-
-
-      rstDir = "br-2021-A/RST/cpsStateRace/"
-      mdDir = "br-2021-A/md/cpsStateRace/"
-      addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
-      addMarkDownFromFile fp = K.liftKnit (T.readFile $ fp ) >>= K.addMarkDown
-      addMarkDownFromFileWithRefs refs fp = do
-        fText <- K.liftKnit (T.readFile $ fp )
-        K.addMarkDown $ fText <> "\n" <> refs
+  let postInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
+--      rstDir = "br-2021-A/RST/cpsStateRace/"
+--      mdDir = "br-2021-A/md/cpsStateRace/"
+--      addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
+--      addMarkDownFromFile fp = K.liftKnit (T.readFile $ fp ) >>= K.addMarkDown
+--      addMarkDownFromFileWithRefs refs fp = do
+--        fText <- K.liftKnit (T.readFile $ fp )
+--        K.addMarkDown $ fText <> "\n" <> refs
 
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
