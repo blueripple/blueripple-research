@@ -250,7 +250,7 @@ cpsVAnalysis = do
 --      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
 --      postPath = htmlDir <> "/post"
 
-  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C

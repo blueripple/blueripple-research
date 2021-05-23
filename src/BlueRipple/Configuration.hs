@@ -113,10 +113,10 @@ postPaths localRoot iP ldP postRel = do
            $ PostPaths
            ([Path.reldir|research|] </> iP)
            ([Path.reldir|research|] </> ldP)
-           ([Path.reldir||blueripple.github.io/Draft|] </> postRel)
-           ([Path.reldir||blueripple.github.io|] </> postRel)
-           ([Path.absdir|/blueripplepolitics.org/Draft|] </> postRel)
-           ([Path.absdir|/blueripplepolitics.org/|] </> postRel)
+           ([Path.reldir|blueripple.github.io/Draft|] </> postRel)
+           ([Path.reldir|blueripple.github.io|] </> postRel)
+           ([Path.absdir|/blueripple.github.io/Draft|] </> postRel)
+           ([Path.absdir|/blueripple.github.io|] </> postRel)
   Say.say "If necessary, creating post input directories"
   let iNotesP = inputsDir pp </> noteRelDir
       iUnusedP =   inputsDir pp </> unusedRelDir

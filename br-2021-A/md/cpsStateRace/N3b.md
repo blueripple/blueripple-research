@@ -1,6 +1,0 @@
-Examining in a little more detail, we’ll first look at all the state-specific effects
-which are significant (90% confidence that
-the effect is not 0) and persistent (same direction) in *both* 2012 and 2016. Then we’ll look at
-state-specific effects which have
-changed significantly between 2012
-and 2016, that is those for which the 2016 confidence interval is outside the 2012 confidence interval.
