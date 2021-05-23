@@ -142,9 +142,9 @@ noteInputPath pp noteName noteFileEnd = do
 
 postPath :: PostPaths a -> PostInfo -> Path a File
 postPath pp (PostInfo ps _) = case ps of
-  LocalDraft -> localDraftDir pp </> [Path.relfile|post.html|]
-  OnlineDraft -> onlineDraftDir pp </>  [Path.relfile|post.html|]
-  OnlinePublished -> onlinePubDir pp </> [Path.relfile|post.html|]
+  LocalDraft -> localDraftDir pp </> [Path.relfile|post|]
+  OnlineDraft -> onlineDraftDir pp </>  [Path.relfile|post|]
+  OnlinePublished -> onlinePubDir pp </> [Path.relfile|post|]
 
 
 

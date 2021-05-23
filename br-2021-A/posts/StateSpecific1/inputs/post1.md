@@ -222,7 +222,7 @@ It’s also interesting to look at turnout "gaps": differences in the turnout ra
 between VOC and WNH voters.  Rather than showing differences among states,
 these might highlight how policies and organizing within a state affect the
 VOC population and WNH population differently. To save space here,
-we look at the gaps in a [separate note][note1_link].
+we look at the gaps in a [separate note][gapNote_link].
 
 ## Four initial questions (and answers) about voter turnout and race
 

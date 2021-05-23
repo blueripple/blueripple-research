@@ -148,7 +148,7 @@ main = do
 
   case resE of
     Right namedDocs ->
-      K.writeAllPandocResultsWithInfoAsHtml "house_model" namedDocs
+      K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err -> putStrLn $ "Pandoc Error: " ++ show err
 
 type PctTurnout = "PctTurnout" F.:-> Double
@@ -709,7 +709,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          ("State-Specific VOC Turnout vs. Voting Integrity")
          (FV.ViewConfig 400 400 5)
     BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "1"
-  let componentNoteName = BR.Unused "Compononents"
+  let componentNoteName = BR.Unused "Components"
   _ <- BR.brNewNote postPaths postInfo componentNoteName "Components of State-Specific Turnout" $ do
     dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
     rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2020
@@ -752,7 +752,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          ("VOC/WNH Turnout Gap Components (2020)")
          (Just $ sortedStates dNWNH_2020)
          (FV.ViewConfig 200 40 5)
-    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "2"
+    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "1"
 --    addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P4.md"
 --  K.newPandoc
 --    (K.PandocInfo (notesPath "2")
