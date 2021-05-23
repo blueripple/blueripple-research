@@ -127,8 +127,10 @@ postPaths localRoot iP ldP postRel = do
   return pp
 
 
-markDownPath :: PostPaths a -> Path a Dir
-markDownPath pp = inputsDir pp Path.</> [Path.reldir|md|]
+postInputPath :: PostPaths a -> Text -> Either Text (Path a File)
+postInputPath pp postFileEnd = do
+  pTail <- first show $ Path.parseRelFile $ toString $ "post" <> postFileEnd
+  return $ inputsDir pp </> pTail
 
 noteInputPath ::  PostPaths a -> NoteName -> Text -> Either Text (Path a File)
 noteInputPath pp noteName noteFileEnd = do
@@ -136,7 +138,7 @@ noteInputPath pp noteName noteFileEnd = do
            $ case noteName of
                Used t -> fmap (\s -> [Path.reldir|Notes|] </> s) $ Path.parseRelFile $ toString (t <> noteFileEnd)
                Unused t ->   fmap (\s -> [Path.reldir|Unused|] </> s) $ Path.parseRelFile $ toString (t <> noteFileEnd)
-  return $ markDownPath pp </> pTail
+  return $ inputsDir pp </> pTail
 
 postPath :: PostPaths a -> PostInfo -> Path a File
 postPath pp (PostInfo ps _) = case ps of

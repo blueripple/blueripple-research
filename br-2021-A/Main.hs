@@ -86,6 +86,8 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
 --import qualified Optics
 --import Optics.Operators
+import qualified Path
+import Path (Rel, Abs, Dir, File)
 import qualified Polysemy
 
 import qualified Stan.ModelConfig as SC
@@ -218,17 +220,17 @@ countInCategory count key as =
   let countF a = fmap (a,) $ FL.prefilter ((== a) . key) $ FL.premap count FL.sum
   in traverse countF as
 
-postDir = [BRC.reldir|br-2021-A/posts|]
-postInputs p = postDir BRC.</> p BRC.</> [BRC.reldir|inputs|]
-postLocalDraft p = postDir BRC.</> p BRC.</> [BRC.reldir|draft|]
-postOnline p =  [BRC.reldir|research/Turnout|] BRC.</> p
+postDir = [Path.reldir|br-2021-A/posts|]
+postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
+postLocalDraft p = postDir BR.</> p BR.</> [Path.reldir|draft|]
+postOnline p =  [Path.reldir|research/Turnout|] BR.</> p
 
-postPaths :: Text -> K.Sem r BRC.PostPaths
+postPaths :: Text -> K.Sem r BR.PostPaths
 postPaths t = do
   postSpecificP <- K.knitEither $ first show $ Path.parseRelFile t
   K.liftKnit
-    $ BRC.postPaths
-    BRC.defaultLocalRoot
+    $ BR.postPaths
+    BR.defaultLocalRoot
     postInputs postSpecificP
     postLocalDraft postSpecificP
     postOnline postSpecificP
@@ -245,26 +247,22 @@ cpsVAnalysis = do
 --      notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
 --      notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
 --      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
-      postPath = htmlDir <> "/post"
-  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDate =  curDate
-  let postInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
+--      postPath = htmlDir <> "/post"
 
-  K.newPandoc
-    (K.PandocInfo postPath
-     $ BR.brAddDates False pubDate curDate
-     $ one ("pagetitle","State-Specific VOC Turnout"))
-    $ cpsStateRace False notesPath notesURL $ K.liftActionWithCacheTime data_C
+  let cpsSS1PostInfo = PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+      cpsSS1Paths = postPaths "StateSpecific1"
+  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
+    $ cpsStateRace False cpsSS1PostPaths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
 {-
-  K.newPandoc
-    (K.PandocInfo "Model Test" $ one ("pagetitle","Model Test"))
-    $ cpsModelTest False $ K.liftActionWithCacheTime data_C
+  let cpsMTPostInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
+      cpsMTPaths = postPaths "ModelTest"
+  BR.brNewPost cpsMTPaths cpsMTPostInfo "ModelTest"
+    $ cpsModelTest False cpsMTPaths cpsMTPostInfo $ K.liftActionWithCacheTime data_C
 -}
 
 
-
-cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> BR.PostPaths -> BR.PostInfo -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
+cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let year = 2018
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
@@ -397,18 +395,13 @@ cpsModelTest clearCaches dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
     (Just 15)
   return ()
 
-cpsStateRacePostDir = [BRC.reldir|br-2021-A/posts/cpsStateSpecific1|]
-cpsStateRaceInputs = cpsStateRacePostDir BRC.</> [BRC.reldir|inputs|]
-cpsStateRaceLocalDraft = cpsStateRacePostDir BRC.</> [BRC.reldir|draft|]
-cpsStateRaceOnline =  [BRC.reldir|research/Turnout/StateSpecific_1|]
-
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
-             -> BRC.PostInfo
+             -> BR.PostPaths
+             -> BR.PostInfo
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
-  let postInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
 --      rstDir = "br-2021-A/RST/cpsStateRace/"
 --      mdDir = "br-2021-A/md/cpsStateRace/"
 --      addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
@@ -417,12 +410,12 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
 --        fText <- K.liftKnit (T.readFile $ fp )
 --        K.addMarkDown $ fText <> "\n" <> refs
 
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
+  let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
         SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
---        SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
+  --        SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
         SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
 --        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
@@ -582,11 +575,7 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
           (Just 1000)
           (Just 0.99)
           (Just 15)
-  -- Diagnostics
---  K.logLE K.Info $ show (FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) $ BRE.ccesRows dat) <> " people surveyed in mrpData.modeled"
 
-
-  -- End Diagnostics
   res2020_C <- runModel [2020]
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
@@ -647,18 +636,14 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
                           [Heidi.mkTyN "state_abbreviation"]
                           dNWNH_h_2020
                           electionIntegrityh
-  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
-  curDate <-  (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
-  let pubDate =  curDate
-  K.newPandoc
-    (K.PandocInfo (notesPath "1")
-      $ BR.brAddDates False pubDate curDate
-      $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
+--  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
+  let gapNoteName = BR.Used "gaps"
+  mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
     let rtDiffNIh_2020 = toHeidiFrame "2020" rtDiffNI_2020
         rtDiffWIh_2020 = toHeidiFrame "2020" rtDiffWI_2020
         rtDiffIh_2020 = toHeidiFrame "2020" rtDiffI_2020
 
-    addMarkDownFromFile $ mdDir ++ "N1a.md"
+    BR.brAddNoteMarkDownFromFile postPaths gapNoteName "1"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -667,7 +652,7 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
          True
          False
          (FV.ViewConfig 500 1000 5)
-    addMarkDownFromFile $ mdDir ++ "N1b.md"
+    BR.brAddNoteMarkDownFromFile postPaths gapNoteName "2"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -676,7 +661,7 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
          True
          False
          (FV.ViewConfig 500 1000 5)
-    addMarkDownFromFile $ mdDir ++ "N1c.md"
+    BR.brAddNoteMarkDownFromFile postPaths gapNoteName "3"
     _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
          K.addHvega Nothing Nothing
          . coefficientChart
@@ -686,8 +671,10 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
          False
          (FV.ViewConfig 500 1000 5)
     return ()
-  let note1Ref = "[note1_link]: " <> notesURL "1"
-  addMarkDownFromFileWithRefs note1Ref $ mdDir ++ "P1.md"
+  gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
+  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "1"  (Just gapNoteRef)
+--  addMarkDownFromFileWithRefs gapNoteRef $ mdDir ++ "P1.md"
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
        . coefficientChart
@@ -696,7 +683,8 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
        True
        False
        (FV.ViewConfig 500 1000 5)
-  addMarkDownFromFile $ mdDir ++ "P1b.md"
+  BR.brAddPostMarkDownFromFile postPaths "1b"
+--  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2020
   dNWNH_sig <- filterState sigStates2020 dNWNH_PEI_h_2020
@@ -708,12 +696,12 @@ cpsStateRace clearCaches postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $
        True
        False
        (FV.ViewConfig 600 400 5)
-  addMarkDownFromFile $ mdDir ++ "P2.md"
-  K.newPandoc
-  (K.PandocInfo (unusedPath "Integrity")
-    $ BR.brAddDates False pubDate curDate
-    $ one ("pagetitle","State-Specific gaps, Note 1")) $ do
-    addMarkDownFromFile $ mdDir ++ "Integrity1.md"
+  BR.brAddPostMarkDownFromFile postPaths "2"
+--  addMarkDownFromFile $ mdDir ++ "P2.md"
+  let integrityNoteName = BR.Unused "ElectionIntegrity"
+  _ <- BR.brNewNote postPaths postInfo integrityNoteName "Election Integrity & State-Specific Turnout Effects" $ do
+    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "1"
+--    addMarkDownFromFile $ mdDir ++ "Integrity1.md"
     _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
          K.addHvega Nothing Nothing
          .peiScatterChart

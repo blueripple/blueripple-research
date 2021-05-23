@@ -135,6 +135,18 @@ brAddDates updated pubDate updateDate tMap =
              else M.empty
    in tMap <> pubT <> updT
 
+brAddPostMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> Maybe Text -> K.Sem r ()
+brAddPostMarkDownFromFileWith pp postFileEnd mRefs = do
+  postInputPath <- K.knitEither $ BRC.postInputPath pp postFileEnd
+  fText <- K.liftKnit (T.readFile $ Path.toFilePath postInputPath)
+  K.addMarkDown $ case mRefs of
+                    Nothing -> fText
+                    Just refs -> fText <> "\n" <> refs
+
+
+brAddPostMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> K.Sem r ()
+brAddPostMarkDownFromFile pp postFileEnd = brAddPostMarkDownFromFileWith pp postFileEnd Nothing
+
 brAddNoteMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do
   notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".md")
