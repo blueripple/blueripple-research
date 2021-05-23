@@ -225,15 +225,16 @@ postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
 postLocalDraft p = postDir BR.</> p BR.</> [Path.reldir|draft|]
 postOnline p =  [Path.reldir|research/Turnout|] BR.</> p
 
-postPaths :: Text -> K.Sem r BR.PostPaths
+postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
+          => Text
+          -> K.Sem r (BR.PostPaths BR.Abs)
 postPaths t = do
-  postSpecificP <- K.knitEither $ first show $ Path.parseRelFile t
-  K.liftKnit
-    $ BR.postPaths
+  postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
+  BR.postPaths
     BR.defaultLocalRoot
-    postInputs postSpecificP
-    postLocalDraft postSpecificP
-    postOnline postSpecificP
+    (postInputs postSpecificP)
+    (postLocalDraft postSpecificP)
+    (postOnline postSpecificP)
 
 
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
@@ -249,10 +250,10 @@ cpsVAnalysis = do
 --      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
 --      postPath = htmlDir <> "/post"
 
-  let cpsSS1PostInfo = PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
-      cpsSS1Paths = postPaths "StateSpecific1"
+  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
-    $ cpsStateRace False cpsSS1PostPaths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
 {-
   let cpsMTPostInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
       cpsMTPaths = postPaths "ModelTest"
@@ -261,7 +262,7 @@ cpsVAnalysis = do
 -}
 
 
-cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> BR.PostPaths -> BR.PostInfo -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
+cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> BR.PostPaths BR.Abs -> BR.PostInfo -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let year = 2018
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
@@ -397,7 +398,7 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
-             -> BR.PostPaths
+             -> BR.PostPaths BR.Abs
              -> BR.PostInfo
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
@@ -707,57 +708,62 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          .peiScatterChart
          ("State-Specific VOC Turnout vs. Voting Integrity")
          (FV.ViewConfig 400 400 5)
-  dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
-  rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2020
-  rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2020
-  let k = BR.heidiColKey "State"
-      nwnh_sig' = Heidi.leftOuterJoin k k citByState
-                 $ Heidi.leftOuterJoin k k dNWNH_renamed
-                 $ Heidi.leftOuterJoin k k rtNWNH_renamed rtWNH_renamed
-  let add_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
-        vocT <- r ^? Heidi.double (BR.heidiColKey "VOC Total")
-        wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH Total")
-        voc <- r ^? Heidi.int (BR.heidiColKey "NWNH VEP")
-        wnh <- r ^? Heidi.int (BR.heidiColKey "WNH VEP")
-        vocSST <- r ^? Heidi.double (BR.heidiColKey "State-Specific")
-        let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
-            voc_dem = vocT - wnhT - vocSST
-        return
-          $ Heidi.insert (BR.heidiColKey "Demographic") (Heidi.VPDouble voc_dem)
-          $ Heidi.insert (BR.heidiColKey "VOC - WNH") (Heidi.VPDouble $ voc_dem + vocSST) r
-  nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
-  let nwnh_sig_long = Heidi.gatherWith
-                      BR.tcKeyToTextValue
-                      (BR.gatherSet [] ["State-Specific", "Demographic", "VOC - WNH"])
-                      (BR.heidiColKey "VOC Turnout Component")
-                      (BR.heidiColKey "Turnout")
-                      nwnh_sig
-  K.logLE K.Info $ show nwnh_sig_long
-  let hfToVLDataBreakdown = HV.rowsToVLData [] [HV.asStr "State"
-                                               ,HV.asStr "VOC Turnout Component"
-                                               ,HV.asNumber "Turnout"
-                                               ]
+    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "1"
+  let componentNoteName = BR.Unused "Compononents"
+  _ <- BR.brNewNote postPaths postInfo componentNoteName "Components of State-Specific Turnout" $ do
+    dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
+    rtNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "VOC Total"]) rtNWNH_h_2020
+    rtWNH_renamed <-  traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "WNH Total"]) rtWNH_h_2020
+    let k = BR.heidiColKey "State"
+        nwnh_sig' = Heidi.leftOuterJoin k k citByState
+                    $ Heidi.leftOuterJoin k k dNWNH_renamed
+                    $ Heidi.leftOuterJoin k k rtNWNH_renamed rtWNH_renamed
+        add_nwnh_dem r = K.knitMaybe "Missing column when computing nwnh_dem" $ do
+          vocT <- r ^? Heidi.double (BR.heidiColKey "VOC Total")
+          wnhT <- r ^? Heidi.double (BR.heidiColKey "WNH Total")
+          voc <- r ^? Heidi.int (BR.heidiColKey "NWNH VEP")
+          wnh  <- r ^? Heidi.int (BR.heidiColKey "WNH VEP")
+          vocSST <- r ^? Heidi.double (BR.heidiColKey "State-Specific")
+          let turnout = ((vocT * realToFrac voc) + (wnhT * realToFrac wnh))/realToFrac (voc + wnh)
+              voc_dem = vocT - wnhT - vocSST
+          return
+            $ Heidi.insert (BR.heidiColKey "Demographic") (Heidi.VPDouble voc_dem)
+            $ Heidi.insert (BR.heidiColKey "VOC - WNH") (Heidi.VPDouble $ voc_dem + vocSST) r
+    nwnh_sig <- traverse add_nwnh_dem nwnh_sig'
+    let nwnh_sig_long = Heidi.gatherWith
+                        BR.tcKeyToTextValue
+                        (BR.gatherSet [] ["State-Specific", "Demographic", "VOC - WNH"])
+                        (BR.heidiColKey "VOC Turnout Component")
+                        (BR.heidiColKey "Turnout")
+                        nwnh_sig
+    K.logLE K.Info $ show nwnh_sig_long
+    let hfToVLDataBreakdown = HV.rowsToVLData [] [HV.asStr "State"
+                                                 ,HV.asStr "VOC Turnout Component"
+                                                 ,HV.asNumber "Turnout"
+                                                 ]
 
-  let note2Ref = "[note2_link]: " <> notesURL "2"
-  addMarkDownFromFile $ mdDir ++ "P3.md"
-  _ <- filterState sigStates2020 nwnh_sig_long
-       >>= K.knitEither . hfToVLDataBreakdown  >>=
-       K.addHvega Nothing Nothing
-       . componentsChart
-       ("VOC/WNH Turnout Gap Components (2020)")
-       (Just $ sortedStates dNWNH_2020)
-       (FV.ViewConfig 200 40 5)
-  addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P4.md"
-  K.newPandoc
-    (K.PandocInfo (notesPath "2")
-     $ BR.brAddDates False pubDate curDate
-     $ one ("pagetitle","VOC/WNH Turnout Components for all states")) $ do
-    _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
+--    let note2Ref = "[note2_link]: " <> notesURL "2"
+
+--    addMarkDownFromFile $ mdDir ++ "P3.md"
+    _ <- filterState sigStates2020 nwnh_sig_long
+         >>= K.knitEither . hfToVLDataBreakdown  >>=
          K.addHvega Nothing Nothing
          . componentsChart
-         ("VOC Turnout Components (2020)")
-         Nothing
+         ("VOC/WNH Turnout Gap Components (2020)")
+         (Just $ sortedStates dNWNH_2020)
          (FV.ViewConfig 200 40 5)
+    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "2"
+--    addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P4.md"
+--  K.newPandoc
+--    (K.PandocInfo (notesPath "2")
+--     $ BR.brAddDates False pubDate curDate
+--     $ one ("pagetitle","VOC/WNH Turnout Components for all states")) $ do
+    _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
+      K.addHvega Nothing Nothing
+      . componentsChart
+      ("VOC Turnout Components (2020)")
+      Nothing
+      (FV.ViewConfig 200 40 5)
     return ()
 {-
   K.newPandoc
