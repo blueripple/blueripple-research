@@ -2,18 +2,14 @@
 
 ### Key Points In This Post
 
-- Voters-of-color--all but White-Non-Hispanic (WNH)--often vote at lower rates
-than
-- We model 2020 general election turnout,
-concluding that the state-to-state variations in the
-turnout of voters-of-color (VOC) is unlikely to be
-explained by demographics alone.
+- Voters-of-color (VOC) often vote at lower rates than White-non-Hispanic (WNH) voters.
+This "turnout gap" varies strongly between states.
+Different VOC (younger or older, male or female, level of education and race/ethnicity)
+vote at different rates.  Is this the source of the state-to-state variation?
+- We model 2020 general election turnout, concluding that state-to-state variations in the
+VOC turnout are *unlikely* to be explained by demographics alone.
 - State-specific VOC turnout was high in CO, AL, PA, GA and MI and low in
 WA, IL, MA, NH and FL.
-- The state-specific component of VOC turnout is usually smaller than
-the demographic component.  Neverthelesss, it's important: elections
-can be very close and because it reflects what is happening at the state level.
-
 
 ## Focusing on State-Specific Turnout Effects
 
@@ -27,7 +23,9 @@ with a college degree.
 
 Unsurprisingly, group-level turnout varies by state:
 each state has a different mix of eligible voters, with different
-distributions of age and education, etc.
+distributions of age and education, etc.  Below we chart the modeled
+2020 VOC turnout, to illustrate the range seen among the states + DC:
+
 
 But group-level turnout varies widely by state
 *even once we account for the demographic differences among them*,

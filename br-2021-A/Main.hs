@@ -241,16 +241,7 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
---  cpsV <- BRE.cpsVRows <$> K.ignoreCacheTime data_C
---  dat <- K.ignoreCacheTime data_C
---  K.absorbPandocMonad $ Pandoc.setResourcePath ["br-2021-A/RST"]
---  let htmlDir = "turnoutModel/stateSpecificGaps/"
---      notesPath x = htmlDir <> "Notes/" <> x -- where does the file go?
---      notesURL x = "Notes/" <> x <> ".html" -- how do we link to it in test?
---      notesURL x = "http://blueripple.github.io/Other/StateTurnout/Notes/" <> x <> ".html"
---      postPath = htmlDir <> "/post"
-
-  let cpsSS1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
@@ -402,15 +393,6 @@ cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              -> BR.PostInfo
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-
---      rstDir = "br-2021-A/RST/cpsStateRace/"
---      mdDir = "br-2021-A/md/cpsStateRace/"
---      addRSTFromFile fp = K.liftKnit (T.readFile fp) >>= K.addRST
---      addMarkDownFromFile fp = K.liftKnit (T.readFile $ fp ) >>= K.addMarkDown
---      addMarkDownFromFileWithRefs refs fp = do
---        fText <- K.liftKnit (T.readFile $ fp )
---        K.addMarkDown $ fText <> "\n" <> refs
-
   let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
@@ -539,9 +521,6 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
             return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
 
   K.logLE K.Info "Building json data wrangler and model code..."
---  let year = 2016
---      data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
---  dataAllYears <- K.ignoreCacheTime dataAllYears_C
 
   let cpsVCodeBuilder = dataAndCodeBuilder
                         (round . F.rgetField @BRCF.WeightedCount)
