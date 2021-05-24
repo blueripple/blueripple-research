@@ -1,14 +1,11 @@
-([Click here][note2_link]
-to see these breakdowns for all 50 states and DC)
-
-The split between the turnout shift from "VOC Demographics" vs. "State-Specific"
-state itself is strongly influenced by what we include in the model
-and how we include it.
-Perhaps if we added other factors, e.g., religion or median-income, shifts that
-appear to be state-specific would instead turn out to be explained by the other factors.
-We have included the biggest factors that tend to correlate with voter turnout,
-and we believe that some of the shifts we see are too large to be explained by other factors.
-But it’s important to be mindful of the limits of this sort of analysis.
+\(2) In particular, in 2020, CO, AL, PA, GA, and MI have clearly positive state-specific
+VOC turnout and WA, IL, MA, NH, and FL have clearly negative state-specific
+VOC turnout. One hypothesis we have is that the state-specific component of VOC
+turnout reflects some balance between voter-suppression and organizing in each state.
+And that might be reflected somewhat in this list: there is always organizing in the swing-states,
+like PA and MI, and organizing in GA was obviously a big factor.
+There's a history of Black-voter-organizing in AL. CO might be because of mail-in voting.
+On the negative side, it's less clear.
 
 ## The Big Questions
 - What is or isn't happening in CO, AL, PA, GA and MI to produce improved VOC turnout?

@@ -521,7 +521,6 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
             return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
 
   K.logLE K.Info "Building json data wrangler and model code..."
-
   let cpsVCodeBuilder = dataAndCodeBuilder
                         (round . F.rgetField @BRCF.WeightedCount)
                         (round . F.rgetField @BRCF.WeightedSuccesses)
@@ -617,77 +616,87 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                           dNWNH_h_2020
                           electionIntegrityh
 --  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
+  let rtDiffNIh_2020 = toHeidiFrame "2020" rtDiffNI_2020
+      rtDiffWIh_2020 = toHeidiFrame "2020" rtDiffWI_2020
+      rtDiffIh_2020 = toHeidiFrame "2020" rtDiffI_2020
+
   let gapNoteName = BR.Used "gaps"
   mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
-    let rtDiffNIh_2020 = toHeidiFrame "2020" rtDiffNI_2020
-        rtDiffWIh_2020 = toHeidiFrame "2020" rtDiffWI_2020
-        rtDiffIh_2020 = toHeidiFrame "2020" rtDiffI_2020
 
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "1"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
-         . coefficientChart
-         ("VOC/WNH Turnout Gap without State-specific effects (2020)")
+         . turnoutChart
+         ("VOC/WNH Turnout Gap: Demographics Only")
          (sortedStates rtDiffNI_2020)
-         True
-         False
-         (FV.ViewConfig 500 1000 5)
+         (TurnoutChartOptions True True False (Just 22) $ Just "Turnout Gap (%)")
+         (FV.ViewConfig 600 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "2"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
          K.addHvega Nothing Nothing
-         . coefficientChart
-         ("VOC/WNH Turnout Gaps with State-specific effects (2020)")
+         . turnoutChart
+         ("VOC/WNH Turnout Gaps: Demographics & State-Specific Effects")
          (sortedStates rtDiffWI_2020)
-         True
-         False
-         (FV.ViewConfig 500 1000 5)
+         (TurnoutChartOptions True True False (Just 35) $ Just "Turnout Gap (%)")
+         (FV.ViewConfig 600 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "3"
     _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
          K.addHvega Nothing Nothing
-         . coefficientChart
-         ("VOC/WNH State-specific contribution to turnout gap (2020)")
+         . turnoutChart
+         ("VOC/WNH State-Specific Turnout Gap")
          (sortedStates rtDiffI_2020)
-         True
-         False
-         (FV.ViewConfig 500 1000 5)
+         (TurnoutChartOptions False True False (Just 25) $ Just "State-Specific Turnout Gap (%)")
+         (FV.ViewConfig 600 1000 5)
     return ()
   gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
   let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "1"  (Just gapNoteRef)
---  addMarkDownFromFileWithRefs gapNoteRef $ mdDir ++ "P1.md"
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
+  _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC/WNH Turnout Gaps")
+       (sortedStates rtDiffWI_2020)
+       (TurnoutChartOptions True True False (Just 35) $ Just "Turnout Gap (%)")
+       (FV.ViewConfig 600 1000 5)
+{-  _ <- K.knitEither (hfToVLDataPEI rtNWNH_h_2020) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC Turnout (2020)")
+       (sortedStates rtNWNH_2020)
+       (TurnoutChartOptions True True False Nothing (Just "VOC Turnout (% Eligible VOC)"))
+       (FV.ViewConfig 600 1000 5) -}
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterVOCTurnout"  (Just gapNoteRef)
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
-       . coefficientChart
+       . turnoutChart
        ("State-Specific VOC Turnout (2020)")
        (sortedStates dNWNH_2020)
-       True
-       False
-       (FV.ViewConfig 500 1000 5)
-  BR.brAddPostMarkDownFromFile postPaths "1b"
+       (TurnoutChartOptions False True False (Just 12) Nothing)
+       (FV.ViewConfig 600 1000 5)
+  BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2020
   dNWNH_sig <- filterState sigStates2020 dNWNH_PEI_h_2020
   _ <- K.knitEither (hfToVLDataPEI dNWNH_sig) >>=
        K.addHvega Nothing Nothing
-       . coefficientChart
-       ("State-Specific VOC Turnout (2020)")
+       . turnoutChart
+       ("Significant State-Specific VOC Turnout (2020)")
        (sortedStates dNWNH_2020)
-       True
-       False
+       (TurnoutChartOptions False True False (Just 12) Nothing)
        (FV.ViewConfig 600 400 5)
-  BR.brAddPostMarkDownFromFile postPaths "2"
+  BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 --  addMarkDownFromFile $ mdDir ++ "P2.md"
   let integrityNoteName = BR.Unused "ElectionIntegrity"
   _ <- BR.brNewNote postPaths postInfo integrityNoteName "Election Integrity & State-Specific Turnout Effects" $ do
-    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "1"
+    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "_intro"
 --    addMarkDownFromFile $ mdDir ++ "Integrity1.md"
     _ <- K.knitEither (hfToVLDataPEI  dNWNH_PEI_h_2020) >>=
          K.addHvega Nothing Nothing
          .peiScatterChart
          ("State-Specific VOC Turnout vs. Voting Integrity")
          (FV.ViewConfig 400 400 5)
-    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "1"
+    BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "_afterScatter"
   let componentNoteName = BR.Unused "Components"
   _ <- BR.brNewNote postPaths postInfo componentNoteName "Components of State-Specific Turnout" $ do
     dNWNH_renamed <- traverse (K.knitEither . BR.rekeyCol [Heidi.mkTyN "mid"] [Heidi.mkTyN "State-Specific"])  dNWNH_PEI_h_2020
@@ -720,10 +729,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                                                  ,HV.asStr "VOC Turnout Component"
                                                  ,HV.asNumber "Turnout"
                                                  ]
-
---    let note2Ref = "[note2_link]: " <> notesURL "2"
-
---    addMarkDownFromFile $ mdDir ++ "P3.md"
+    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "_intro"
     _ <- filterState sigStates2020 nwnh_sig_long
          >>= K.knitEither . hfToVLDataBreakdown  >>=
          K.addHvega Nothing Nothing
@@ -731,7 +737,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          ("VOC/WNH Turnout Gap Components (2020)")
          (Just $ sortedStates dNWNH_2020)
          (FV.ViewConfig 200 40 5)
-    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "1"
+    BR.brAddNoteMarkDownFromFile postPaths componentNoteName "_afterSigComponents"
 --    addMarkDownFromFileWithRefs note2Ref $ mdDir ++ "P4.md"
 --  K.newPandoc
 --    (K.PandocInfo (notesPath "2")
@@ -800,8 +806,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          ("State-Specific Turnout: significant *changes* 2012 to 2016")
          (sortedStates dNWNH_2012)
          False
-         False
-         (FV.ViewConfig 400 400 5)
+         False         (FV.ViewConfig 400 400 5)
     return ()
 -}
 {-
@@ -870,21 +875,30 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                        )
   in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
 
-coefficientChart :: Text
+data TurnoutChartOptions = TurnoutChartOptions { showMean :: Bool
+                                               , showZero :: Bool
+                                               , colorIsRating :: Bool
+                                               , symmetricX :: Maybe Double
+                                               , mXLabel :: Maybe Text
+                                               }
+
+turnoutChart :: Text
                  -> [Text]
-                 -> Bool
-                 -> Bool
+                 -> TurnoutChartOptions
                  -> FV.ViewConfig
                  -> GV.Data
                  -> GV.VegaLite
-coefficientChart title sortedStates showAvg colorIsRating vc vlData =
+turnoutChart title sortedStates chartOptions vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
-      encX = GV.position GV.X [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle "Turnout Shift (% Eligible VOC)"]]
-      encColor = if colorIsRating
+      xLabel = fromMaybe "Turnout Shift (% Eligible VOC)" $ mXLabel chartOptions
+      xScale = case symmetricX chartOptions of
+        Nothing -> []
+        Just x -> [GV.PScale [GV.SDomain $ GV.DNumbers [negate x, x]]]
+      encX = GV.position GV.X $ [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]] ++ xScale
+      encColor = if colorIsRating chartOptions
                  then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
                  else GV.color [GV.MName "Year", GV.MmType GV.Nominal]
-      xScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.45, 0.45]]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
       encL = GV.encoding . encX . encY  . encColor
@@ -899,7 +913,9 @@ coefficientChart title sortedStates showAvg colorIsRating vc vlData =
       encXMean = GV.position GV.X [GV.PName "mid", GV.PAggregate GV.Mean]
       specZero = GV.asSpec [(GV.encoding . encXZero) [], GV.mark GV.Rule [GV.MColor "skyblue"]]
       specMean = GV.asSpec [(GV.encoding . encXMean) [], GV.mark GV.Rule [GV.MColor "orange"]]
-      layers = GV.layer $ [specBar, specPoint, specZero] ++ if showAvg then [specMean] else []
+      layers = GV.layer $ [specBar, specPoint]
+               ++ (if showMean chartOptions then [specMean] else [])
+               ++ (if showZero chartOptions then [specZero] else [])
       spec = GV.asSpec [layers]
   in FV.configuredVegaLite vc [FV.title title, layers , vlData]
 
