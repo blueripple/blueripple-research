@@ -26,7 +26,8 @@ reports/MRP/data
 .knit-haskell-cache
 .flat-kh-cache
 bigData
-posts
+/posts
+draft/*.html
 testbed/*.csv
 GA.html
 stan.html
