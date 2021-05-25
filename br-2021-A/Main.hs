@@ -631,6 +631,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                           electionIntegrityh
 --  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
   let rtDiffNIh_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
+      rtDiffNIh_2020_NI  = toHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
       rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
       rtDiffIh_2020 = toHeidiFrame "2020" "State-Spercific Turnout Gap"rtDiffI_2020
 
@@ -674,6 +675,13 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (FV.ViewConfig 600 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterVOCTurnout"
   _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC/WNH Turnout Gap: Demographics Only")
+       (sortedStates rtDiffNI_2020)
+       (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
+       (FV.ViewConfig 600 1000 5)
+  _ <- K.knitEither (hfToVLData (rtDiffNIh_2020 <> rtDiffNIh_2020_NI)) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
        ("VOC/WNH Turnout Gap: Demographics Only")
