@@ -422,8 +422,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       dataAndCodeBuilder :: Typeable modelRow
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
+                         -> Bool
                          -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
-      dataAndCodeBuilder totalF succF = do
+      dataAndCodeBuilder totalF succF withStateRace = do
         cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
         vTotal <- SB.addCountData "T" totalF
         vSucc <- SB.addCountData "S" succF
@@ -446,11 +447,17 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
         gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
         gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
         gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
-        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
         let dist = SB.binomialLogitDist vSucc vTotal
-            logitPE_sample = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
-            logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState]
-            logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
+        (logitPE_sample, logitPE) <- case withStateRace of
+          True -> do
+            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
+            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
+                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState])
+          False ->
+            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
+                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE])
+
+        let logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
         SB.sampleDistV dist logitPE_sample
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE
@@ -525,7 +532,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                         (round . F.rgetField @BRCF.WeightedCount)
                         (round . F.rgetField @BRCF.WeightedSuccesses)
 
-      dataWranglerAndCode data_C years = do
+      dataWranglerAndCode data_C years withStateRace = do
         dat <- K.ignoreCacheTime data_C
         let (districts, states) = FL.fold
                                   ((,)
@@ -536,15 +543,15 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
             cpsVGroups = cpsVGroupBuilder districts states
 
         K.knitEither
-          $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVCodeBuilder dat (SB.ToFoldable BRE.cpsVRows)
+          $ MRP.buildDataWranglerAndCode cpsVGroups () (cpsVCodeBuilder withStateRace) dat (SB.ToFoldable BRE.cpsVRows)
 
-      runModel years = do
+      runModel years withStateRace = do
         let data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
-        (dw, stanCode) <- dataWranglerAndCode data_C years
+        (dw, stanCode) <- dataWranglerAndCode data_C years withStateRace
         MRP.runMRPModel
           False
           (Just "br-2021-A/stan/cpsV")
-          ("stateXrace")
+          ("stateXrace" <> if withStateRace then "" else "_NI")
           ("stateXrace" <> (T.intercalate "_" $ fmap show years))
           dw
           stanCode
@@ -555,8 +562,11 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
           (Just 0.99)
           (Just 15)
 
-  res2020_C <- runModel [2020]
+  res2020_C <- runModel [2020] True
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
+
+  res2020_NI_C <- runModel [2020] False
+  (rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI) <- K.ignoreCacheTime res2020_NI_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
   let toHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
@@ -662,7 +672,15 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffWI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
-  BR.brAddPostMarkDownFromFileWith postPaths "_afterVOCTurnout"  (Just gapNoteRef)
+  BR.brAddPostMarkDownFromFile postPaths "_afterVOCTurnout"
+  _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC/WNH Turnout Gap: Demographics Only")
+       (sortedStates rtDiffNI_2020)
+       (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
+       (FV.ViewConfig 600 1000 5)
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterDemographicOnly"  (Just gapNoteRef)
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
        . turnoutChart

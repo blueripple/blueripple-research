@@ -24,14 +24,23 @@ with a college degree.
 Unsurprisingly, group-level turnout varies by state:
 each state has a different mix of eligible voters, with different
 distributions of age and education, etc.  We are interested in the
-different impact that state-level policies have on VOC vs WNHV so
+impact of state-level policies on turnout of VOC vs WNHV, so
 we look at the turnout gap, the difference between VOC turnout and
-WNHV turnout in order to avoid confusion coming fromt the overall level
-of turnout in each state.
+WNHV turnout–positive “gaps” indicate higher turnout among VOC, negative
+indicate higher turnout among WHNV[^1].
 
-Below we chart the modeled 2020 turnout gap in each state
+[^1]: We could look instead at the state-specific
+    effect on VOC turnout alone, but variations among states in *overall* turnout
+    makes this difficult to interpret.
+
+Below we chart the 2020 turnout gap in each state
 along with the average gap
 (about -9%, marked by a vertical orange line)
 to illustrate the range seen among the states (and DC).  Since these
-turnout estimates are produced from a model–more on this below–we also
+turnout estimates are produced from a model[^2] we also
 include 90% confidence intervals for our estimates.
+
+[^2]: As we’ll discuss below, the data on the demographic makeup of voters is sparse.
+    So we don’t *know* the demographics of all voters. We use an MRP model of that sparse
+    data to infer the demographics of all the voters, and these inferences have uncertaintly,
+    reflected in the confidence intervals.
