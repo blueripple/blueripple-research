@@ -559,24 +559,27 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
-  let toHeidiFrame :: Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-      toHeidiFrame y m = Heidi.frameFromList $ fmap f $ M.toList m where
+  let toHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+      toHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
         f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
         f (s, [lo, mid, hi]) = Heidi.rowFromList
                                  $ concat [(valToLabeledKV "State" s)
                                           , (valToLabeledKV "Year" y)
+                                          , (valToLabeledKV "Type" t)
                                           , (valToLabeledKV "lo" $ 100 * (lo - mid))
                                           , (valToLabeledKV "mid" $ 100 * mid)
                                           , (valToLabeledKV "hi" $ 100 * (hi - mid))
                                         ]
       hfToVLData = HV.rowsToVLData [] [HV.asStr "State"
                                       ,HV.asStr "Year"
+                                      ,HV.asStr "Type"
                                       ,HV.asNumber "lo"
                                       ,HV.asNumber "mid"
                                       ,HV.asNumber "hi"
                                       ]
       hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
                                          ,HV.asStr "Year"
+                                         ,HV.asStr "Type"
                                          ,HV.asNumber "lo"
                                          ,HV.asNumber "mid"
                                          ,HV.asNumber "hi"
@@ -585,9 +588,10 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
                                       ]
 
-      dNWNH_h_2020 = toHeidiFrame "2020" dNWNH_2020
-      rtNWNH_h_2020 = toHeidiFrame "2020" rtNWNH_2020
-      rtWNH_h_2020 = toHeidiFrame "2020" rtWNH_2020
+      dNWNH_h_2020 = toHeidiFrame "2020" "State-Specific VOC Turnout" dNWNH_2020
+      rtDiffNI_h_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
+      rtNWNH_h_2020 = toHeidiFrame "2020" "VOC Turnout" rtNWNH_2020
+      rtWNH_h_2020 = toHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
   data2020 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2020]) dataAllYears_C
   let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
                  $ FMR.concatFold
@@ -616,9 +620,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                           dNWNH_h_2020
                           electionIntegrityh
 --  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
-  let rtDiffNIh_2020 = toHeidiFrame "2020" rtDiffNI_2020
-      rtDiffWIh_2020 = toHeidiFrame "2020" rtDiffWI_2020
-      rtDiffIh_2020 = toHeidiFrame "2020" rtDiffI_2020
+  let rtDiffNIh_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
+      rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
+      rtDiffIh_2020 = toHeidiFrame "2020" "State-Spercific Turnout Gap"rtDiffI_2020
 
   let gapNoteName = BR.Used "gaps"
   mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
@@ -629,7 +633,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
          (sortedStates rtDiffNI_2020)
-         (TurnoutChartOptions True True False (Just 22) $ Just "Turnout Gap (%)")
+         (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
          (FV.ViewConfig 600 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "2"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
@@ -637,7 +641,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          . turnoutChart
          ("VOC/WNH Turnout Gaps: Demographics & State-Specific Effects")
          (sortedStates rtDiffWI_2020)
-         (TurnoutChartOptions True True False (Just 35) $ Just "Turnout Gap (%)")
+         (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
          (FV.ViewConfig 600 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "3"
     _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
@@ -645,7 +649,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          . turnoutChart
          ("VOC/WNH State-Specific Turnout Gap")
          (sortedStates rtDiffI_2020)
-         (TurnoutChartOptions False True False (Just 25) $ Just "State-Specific Turnout Gap (%)")
+         (TurnoutChartOptions False True ColorIsType (Just 25) $ Just "State-Specific Turnout Gap (%)")
          (FV.ViewConfig 600 1000 5)
     return ()
   gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
@@ -656,22 +660,15 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("VOC/WNH Turnout Gaps")
        (sortedStates rtDiffWI_2020)
-       (TurnoutChartOptions True True False (Just 35) $ Just "Turnout Gap (%)")
+       (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
-{-  _ <- K.knitEither (hfToVLDataPEI rtNWNH_h_2020) >>=
-       K.addHvega Nothing Nothing
-       . turnoutChart
-       ("VOC Turnout (2020)")
-       (sortedStates rtNWNH_2020)
-       (TurnoutChartOptions True True False Nothing (Just "VOC Turnout (% Eligible VOC)"))
-       (FV.ViewConfig 600 1000 5) -}
   BR.brAddPostMarkDownFromFileWith postPaths "_afterVOCTurnout"  (Just gapNoteRef)
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
        ("State-Specific VOC Turnout (2020)")
        (sortedStates dNWNH_2020)
-       (TurnoutChartOptions False True False (Just 12) Nothing)
+       (TurnoutChartOptions False True ColorIsYear (Just 12) Nothing)
        (FV.ViewConfig 600 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"
@@ -683,7 +680,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("Significant State-Specific VOC Turnout (2020)")
        (sortedStates dNWNH_2020)
-       (TurnoutChartOptions False True False (Just 12) Nothing)
+       (TurnoutChartOptions False True ColorIsYear (Just 12) Nothing)
        (FV.ViewConfig 600 400 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 --  addMarkDownFromFile $ mdDir ++ "P2.md"
@@ -875,9 +872,12 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                        )
   in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
 
+
+data TurnoutChartColor = ColorIsYear | ColorIsVotingIntegrity | ColorIsType
+
 data TurnoutChartOptions = TurnoutChartOptions { showMean :: Bool
                                                , showZero :: Bool
-                                               , colorIsRating :: Bool
+                                               , colorIs :: TurnoutChartColor
                                                , symmetricX :: Maybe Double
                                                , mXLabel :: Maybe Text
                                                }
@@ -896,9 +896,10 @@ turnoutChart title sortedStates chartOptions vc vlData =
         Nothing -> []
         Just x -> [GV.PScale [GV.SDomain $ GV.DNumbers [negate x, x]]]
       encX = GV.position GV.X $ [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]] ++ xScale
-      encColor = if colorIsRating chartOptions
-                 then GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
-                 else GV.color [GV.MName "Year", GV.MmType GV.Nominal]
+      encColor = case colorIs chartOptions of
+                   ColorIsVotingIntegrity -> GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
+                   ColorIsYear -> GV.color [GV.MName "Year", GV.MmType GV.Nominal]
+                   ColorIsType -> GV.color [GV.MName "Type", GV.MmType GV.Nominal]
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
       encL = GV.encoding . encX . encY  . encColor

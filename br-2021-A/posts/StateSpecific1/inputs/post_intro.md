@@ -31,7 +31,7 @@ of turnout in each state.
 
 Below we chart the modeled 2020 turnout gap in each state
 along with the average gap
-(a bit over 60%, marked by a vertical orange line)
+(about -9%, marked by a vertical orange line)
 to illustrate the range seen among the states (and DC).  Since these
 turnout estimates are produced from a model–more on this below–we also
 include 90% confidence intervals for our estimates.
