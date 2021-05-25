@@ -1,0 +1,1393 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Components of State-Specific Turnout</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .brTable {
+      font-size: 180t
+  }
+  .brTableTitle {
+      text-align: center;
+      font-size:  14pt
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 600px) {
+     .content-wrapper {
+	 margin-left: 150px;
+	 margin-right: 150px
+     }
+  }
+  @media screen and (max-width: 600px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;
+  }
+  table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+
+</style>
+
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<div class="published">May 25, 2021 </div>
+<p>How much of the difference between VOC and WNH is state-specific? We continue to focus on the states with clearly non-zero (90% confidence) state-specific VOC turnout effects and look at the demographic <em>and</em> state-specific components on one chart. Below, the difference between VOC and average turnout in a state (red) is broken into two components: the state-specific portion (blue) and the "demographic" component (orange) which comes from the nationwide turnout rates of the demographic mix of VOC in that particular state.</p>
+<figure id="figure_9">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 40,
+    "padding": 5,
+    "width": 200,
+    "title": "VOC/WNH Turnout Gap Components (2020)",
+    "data": {
+        "format": {
+            "parse": {}
+        },
+        "values": [
+            {
+                "Turnout": 3.809999999999995,
+                "State": "AL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 3.768,
+                "State": "AL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": 4.1999999999995374e-2,
+                "State": "AL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -3.029999999999987,
+                "State": "CO",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 4.045,
+                "State": "CO",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -7.074999999999987,
+                "State": "CO",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.090000000000003,
+                "State": "FL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -1.601,
+                "State": "FL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -9.489000000000004,
+                "State": "FL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": 1.6699999999999946,
+                "State": "GA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 2.945,
+                "State": "GA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -1.2750000000000052,
+                "State": "GA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -16.39999999999999,
+                "State": "IL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -4.19,
+                "State": "IL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.20999999999999,
+                "State": "IL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -17.490000000000002,
+                "State": "MA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -3.46,
+                "State": "MA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -14.030000000000001,
+                "State": "MA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -1.8199999999999934,
+                "State": "MI",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.844,
+                "State": "MI",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.6639999999999935,
+                "State": "MI",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -16.440000000000005,
+                "State": "NH",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -3.319,
+                "State": "NH",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -13.121000000000006,
+                "State": "NH",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -1.8199999999999927,
+                "State": "PA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 3.004,
+                "State": "PA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -4.823999999999993,
+                "State": "PA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -27.629999999999995,
+                "State": "WA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -8.405999999999999,
+                "State": "WA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -19.223999999999997,
+                "State": "WA",
+                "VOC Turnout Component": "Demographic"
+            }
+        ]
+    },
+    "spec": {
+        "encoding": {
+            "y": {
+                "title": null,
+                "axis": {
+                    "labels": false,
+                    "ticks": false
+                },
+                "type": "nominal",
+                "sort": [
+                    "State-Specific",
+                    "Demographic",
+                    "VOC - WNH"
+                ],
+                "field": "VOC Turnout Component"
+            },
+            "x": {
+                "axis": {
+                    "orient": "bottom",
+                    "title": "Turnout Change (% Eligible VOC)"
+                },
+                "type": "quantitative",
+                "scale": {
+                    "domain": [
+                        -26,
+                        26
+                    ]
+                },
+                "field": "Turnout"
+            },
+            "color": {
+                "legend": {
+                    "orient": "bottom"
+                },
+                "type": "nominal",
+                "sort": [
+                    "State-Specific",
+                    "Demographic",
+                    "VOC - WNH"
+                ],
+                "field": "VOC Turnout Component"
+            }
+        },
+        "mark": {
+            "type": "bar",
+            "tooltip": {
+                "content": "encoding"
+            }
+        }
+    },
+    "autosize": {
+        "resize": true,
+        "contains": "padding",
+        "type": "pad"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 40,
+            "discreteHeight": 40,
+            "continuousWidth": 200,
+            "discreteWidth": 200
+        }
+    },
+    "facet": {
+        "type": "nominal",
+        "sort": [
+            "CO",
+            "AL",
+            "PA",
+            "GA",
+            "SC",
+            "MO",
+            "IN",
+            "MI",
+            "DE",
+            "MD",
+            "MT",
+            "TN",
+            "NJ",
+            "MN",
+            "WI",
+            "NM",
+            "NE",
+            "WV",
+            "DC",
+            "ME",
+            "OH",
+            "VA",
+            "NC",
+            "MS",
+            "ID",
+            "OK",
+            "WY",
+            "AK",
+            "SD",
+            "RI",
+            "VT",
+            "AR",
+            "ND",
+            "NV",
+            "AZ",
+            "CA",
+            "CT",
+            "NY",
+            "HI",
+            "OR",
+            "IA",
+            "FL",
+            "LA",
+            "TX",
+            "UT",
+            "KS",
+            "KY",
+            "NH",
+            "MA",
+            "IL",
+            "WA"
+        ],
+        "field": "State"
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "columns": 3
+};
+vegaEmbed('#figure_9',vlSpec,{"renderer": "canvas"});</script>
+</figure>
+<p>The split between the turnout shift from "VOC Demographics" vs. "State-Specific" state itself is strongly influenced by what we include in the model and how we include it. Perhaps if we added other factors, e.g., religion or median-income, shifts that appear to be state-specific would instead turn out to be explained by the other factors. We have included the biggest factors that tend to correlate with voter turnout, and we believe that some of the shifts we see are too large to be explained by other factors. But it’s important to be mindful of the limits of this sort of analysis.</p>
+<p>Below we chart the component breakdowns for all 50 states.</p>
+<figure id="figure_10">
+<script type="text/javascript">var vlSpec=
+{
+    "height": 40,
+    "padding": 5,
+    "width": 200,
+    "title": "VOC Turnout Components (2020)",
+    "data": {
+        "format": {
+            "parse": {}
+        },
+        "values": [
+            {
+                "Turnout": -17.68,
+                "State": "AK",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 3.681e-2,
+                "State": "AK",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -17.71681,
+                "State": "AK",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": 3.809999999999995,
+                "State": "AL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 3.768,
+                "State": "AL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": 4.1999999999995374e-2,
+                "State": "AL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -5.859999999999999,
+                "State": "AR",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -6.412e-3,
+                "State": "AR",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -5.853587999999999,
+                "State": "AR",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -12.899999999999999,
+                "State": "AZ",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.2947,
+                "State": "AZ",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.605299999999998,
+                "State": "AZ",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.379999999999995,
+                "State": "CA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.3125,
+                "State": "CA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -11.067499999999995,
+                "State": "CA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -3.029999999999987,
+                "State": "CO",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 4.045,
+                "State": "CO",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -7.074999999999987,
+                "State": "CO",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -12.540000000000006,
+                "State": "CT",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.6942,
+                "State": "CT",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -11.845800000000006,
+                "State": "CT",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -14.419999999999995,
+                "State": "DC",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.3896,
+                "State": "DC",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -14.809599999999994,
+                "State": "DC",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -2.1000000000000085,
+                "State": "DE",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.778,
+                "State": "DE",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.8780000000000086,
+                "State": "DE",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.090000000000003,
+                "State": "FL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -1.601,
+                "State": "FL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -9.489000000000004,
+                "State": "FL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": 1.6699999999999946,
+                "State": "GA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 2.945,
+                "State": "GA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -1.2750000000000052,
+                "State": "GA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -16.18,
+                "State": "HI",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.9596,
+                "State": "HI",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -15.2204,
+                "State": "HI",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -10.39,
+                "State": "IA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -1.355,
+                "State": "IA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -9.035,
+                "State": "IA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -13.130000000000003,
+                "State": "ID",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 6.319e-2,
+                "State": "ID",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -13.193190000000003,
+                "State": "ID",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -16.39999999999999,
+                "State": "IL",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -4.19,
+                "State": "IL",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.20999999999999,
+                "State": "IL",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -2.409999999999996,
+                "State": "IN",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 2.062,
+                "State": "IN",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -4.471999999999996,
+                "State": "IN",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -15.58999999999999,
+                "State": "KS",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -2.972,
+                "State": "KS",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.61799999999999,
+                "State": "KS",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.590000000000003,
+                "State": "KY",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -3.1390000000000002,
+                "State": "KY",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -8.451000000000004,
+                "State": "KY",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -7.759999999999998,
+                "State": "LA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -1.7690000000000001,
+                "State": "LA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -5.990999999999998,
+                "State": "LA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -17.490000000000002,
+                "State": "MA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -3.46,
+                "State": "MA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -14.030000000000001,
+                "State": "MA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -2.1499999999999915,
+                "State": "MD",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.6709999999999998,
+                "State": "MD",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.8209999999999913,
+                "State": "MD",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -9.16000000000001,
+                "State": "ME",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.2731,
+                "State": "ME",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -9.43310000000001,
+                "State": "ME",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -1.8199999999999934,
+                "State": "MI",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.844,
+                "State": "MI",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.6639999999999935,
+                "State": "MI",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -6.570000000000007,
+                "State": "MN",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.2930000000000001,
+                "State": "MN",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -7.8630000000000075,
+                "State": "MN",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -0.8199999999999932,
+                "State": "MO",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 2.444,
+                "State": "MO",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.263999999999993,
+                "State": "MO",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.119999999999997,
+                "State": "MT",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.641,
+                "State": "MT",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.760999999999997,
+                "State": "MT",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -4.939999999999998,
+                "State": "NC",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.1037,
+                "State": "NC",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -5.043699999999998,
+                "State": "NC",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -14.749999999999993,
+                "State": "ND",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -4.8979999999999996e-2,
+                "State": "ND",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -14.701019999999993,
+                "State": "ND",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -10.210000000000008,
+                "State": "NE",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.5077,
+                "State": "NE",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -10.717700000000008,
+                "State": "NE",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -16.440000000000005,
+                "State": "NH",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -3.319,
+                "State": "NH",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -13.121000000000006,
+                "State": "NH",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -5.550000000000011,
+                "State": "NJ",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.555,
+                "State": "NJ",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -7.105000000000011,
+                "State": "NJ",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -13.840000000000003,
+                "State": "NM",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.5202,
+                "State": "NM",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -14.360200000000003,
+                "State": "NM",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -10.920000000000002,
+                "State": "NV",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.10510000000000001,
+                "State": "NV",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -10.814900000000002,
+                "State": "NV",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -12.699999999999996,
+                "State": "NY",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.8956000000000001,
+                "State": "NY",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -11.804399999999996,
+                "State": "NY",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -5.719999999999999,
+                "State": "OH",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.1502,
+                "State": "OH",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -5.870199999999999,
+                "State": "OH",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.469999999999999,
+                "State": "OK",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 5.8449999999999995e-2,
+                "State": "OK",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -11.52845,
+                "State": "OK",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -12.950000000000003,
+                "State": "OR",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -0.9605,
+                "State": "OR",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -11.989500000000003,
+                "State": "OR",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -1.8199999999999927,
+                "State": "PA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 3.004,
+                "State": "PA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -4.823999999999993,
+                "State": "PA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -12.449999999999996,
+                "State": "RI",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 7.487000000000001e-3,
+                "State": "RI",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -12.457486999999995,
+                "State": "RI",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": 2.0000000000003126e-2,
+                "State": "SC",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 2.934,
+                "State": "SC",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -2.913999999999997,
+                "State": "SC",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -18.230000000000004,
+                "State": "SD",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.845e-2,
+                "State": "SD",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -18.248450000000005,
+                "State": "SD",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -1.18,
+                "State": "TN",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.5959999999999999,
+                "State": "TN",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -2.776,
+                "State": "TN",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -11.570000000000007,
+                "State": "TX",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -2.343,
+                "State": "TX",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -9.227000000000007,
+                "State": "TX",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -19.379999999999995,
+                "State": "UT",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -2.83,
+                "State": "UT",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -16.549999999999997,
+                "State": "UT",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -6.239999999999995,
+                "State": "VA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.128,
+                "State": "VA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -6.367999999999995,
+                "State": "VA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -6.190000000000012,
+                "State": "VT",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 1.02e-4,
+                "State": "VT",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -6.190102000000012,
+                "State": "VT",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -27.629999999999995,
+                "State": "WA",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": -8.405999999999999,
+                "State": "WA",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -19.223999999999997,
+                "State": "WA",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -7.829999999999998,
+                "State": "WI",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.7707999999999999,
+                "State": "WI",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -8.600799999999998,
+                "State": "WI",
+                "VOC Turnout Component": "Demographic"
+            },
+            {
+                "Turnout": -3.3699999999999903,
+                "State": "WV",
+                "VOC Turnout Component": "VOC - WNH"
+            },
+            {
+                "Turnout": 0.48710000000000003,
+                "State": "WV",
+                "VOC Turnout Component": "State-Specific"
+            },
+            {
+                "Turnout": -3.85709999999999,
+                "State": "WV",
+                "VOC Turnout Component": "Demographic"
+            }
+        ]
+    },
+    "spec": {
+        "encoding": {
+            "y": {
+                "title": null,
+                "axis": {
+                    "labels": false,
+                    "ticks": false
+                },
+                "type": "nominal",
+                "sort": [
+                    "State-Specific",
+                    "Demographic",
+                    "VOC - WNH"
+                ],
+                "field": "VOC Turnout Component"
+            },
+            "x": {
+                "axis": {
+                    "orient": "bottom",
+                    "title": "Turnout Change (% Eligible VOC)"
+                },
+                "type": "quantitative",
+                "scale": {
+                    "domain": [
+                        -26,
+                        26
+                    ]
+                },
+                "field": "Turnout"
+            },
+            "color": {
+                "legend": {
+                    "orient": "bottom"
+                },
+                "type": "nominal",
+                "sort": [
+                    "State-Specific",
+                    "Demographic",
+                    "VOC - WNH"
+                ],
+                "field": "VOC Turnout Component"
+            }
+        },
+        "mark": {
+            "type": "bar",
+            "tooltip": {
+                "content": "encoding"
+            }
+        }
+    },
+    "autosize": {
+        "resize": true,
+        "contains": "padding",
+        "type": "pad"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 40,
+            "discreteHeight": 40,
+            "continuousWidth": 200,
+            "discreteWidth": 200
+        }
+    },
+    "facet": {
+        "type": "nominal",
+        "field": "State"
+    },
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "columns": 3
+};
+vegaEmbed('#figure_10',vlSpec,{"renderer": "canvas"});</script>
+</figure>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>
