@@ -692,7 +692,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("VOC/WNH Turnout Gap: Demographics Only")
        (sortedStates rtDiffNI_2020)
-       (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
+       (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
 
   BR.brAddPostMarkDownFromFileWith postPaths "_afterDemographicOnly"  (Just gapNoteRef)
