@@ -27,7 +27,7 @@ reports/MRP/data
 .flat-kh-cache
 bigData
 /posts
-draft/*/.html
+*/posts/*/draft/*.html
 testbed/*.csv
 GA.html
 stan.html
