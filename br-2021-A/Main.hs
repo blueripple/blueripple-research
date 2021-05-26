@@ -637,7 +637,6 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
   let gapNoteName = BR.Used "gaps"
   mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
-
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "1"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
@@ -675,6 +674,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (FV.ViewConfig 600 1000 5)
   let niComparisonNoteName = BR.Used "NI_Comparison"
   mNIComparisonNoteUrl <- BR.brNewNote postPaths postInfo niComparisonNoteName "Comparison of Models with no State/Race Interactions" $ do
+    BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_intro"
     _ <- K.knitEither (hfToVLData (rtDiffNIh_2020 <> rtDiffNIh_2020_NI)) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
