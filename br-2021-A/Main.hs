@@ -673,7 +673,19 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffWI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
-  BR.brAddPostMarkDownFromFile postPaths "_afterVOCTurnout"
+  let niComparisonNoteName = BR.Used "NI_Comparison"
+  mNIComparisonNoteUrl <- BR.brNewNote postPaths postInfo niComparisonNoteName "Comparison of Models with no State/Race Interactions" $ do
+    _ <- K.knitEither (hfToVLData (rtDiffNIh_2020 <> rtDiffNIh_2020_NI)) >>=
+         K.addHvega Nothing Nothing
+         . turnoutChart
+         ("VOC/WNH Turnout Gap: Demographics Only")
+         (sortedStates rtDiffNI_2020)
+         (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
+         (FV.ViewConfig 600 1000 5)
+    return ()
+  niComparisonNoteUrl <- K.knitMaybe "NI comparison Note Url is Nothing" $ mNIComparisonNoteUrl
+  let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterVOCTurnout" (Just niComparisonNoteRef)
   _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
@@ -681,13 +693,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffNI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
-  _ <- K.knitEither (hfToVLData (rtDiffNIh_2020 <> rtDiffNIh_2020_NI)) >>=
-       K.addHvega Nothing Nothing
-       . turnoutChart
-       ("VOC/WNH Turnout Gap: Demographics Only")
-       (sortedStates rtDiffNI_2020)
-       (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
-       (FV.ViewConfig 600 1000 5)
+
   BR.brAddPostMarkDownFromFileWith postPaths "_afterDemographicOnly"  (Just gapNoteRef)
   _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
        K.addHvega Nothing Nothing
