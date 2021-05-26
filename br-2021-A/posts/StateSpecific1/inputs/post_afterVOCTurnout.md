@@ -11,4 +11,4 @@ We chart this below.
     the two situations separately: the presence of the interaction term
     in the model shifts the other parameters. But this introduces
     complications when trying to estimate confidence intervals for various quantities.
-    For more details, [click here.][niComparison_link]
+    [Click here,][niComparison_link] for more details.

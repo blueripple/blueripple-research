@@ -1,11 +1,19 @@
-We want to focus on the *state-specific* turnout gap:
-what remains of the gap after we account for the part which comes from
-turnout among different types of voters and the demographic makeup of the state.
-To do this we compute four post-stratifications--VOC and WHNV turnout with and without interaction--
-and take the appropraite differences.  When we do all this in the same model fit we can also
-compute a confidence interval of that difference.  If we compute the with interaction and without
-interaction models separately, we can still compute the differences, but we lose the ability
-to estimate a confidence interval for the difference.
-But we should check tha the non-interaction turnout computed with the full model is similar
-to what we would find if we estimated without the interaction term.  We chart this below.
-Results from the full model are in blue and the non-interaction model in orange.
+We want to focus on the *state-specific* turnout gap, i.e.,
+what remains of the gap after we account for the "demographic" part, coming from
+national-level turnout among different types of voters
+combined with the demographic makeup of the state.
+To do this we compute four post-stratifications--
+VOC and WHNV turnout with and without state/race interaction (SRI)--
+then take the appropriate differences.  If we do this in the same Monte-Carlo
+model fit we can also
+estimate a confidence interval of that difference.
+When we estimate the with-SRI and without-SRI
+models separately, we lose the ability
+to estimate confidence intervals for the difference.
+
+But adding the SRI term shifts the other parameters some,
+so we check that estimating the "demographic" turnout
+with the full model is similar
+to estimating without the SRI term. The estimates and confidence intervals for
+both models are shown below.
+Results from the full model are in blue and the no-SRI model in orange.

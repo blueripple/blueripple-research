@@ -682,6 +682,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          (sortedStates rtDiffNI_2020)
          (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
          (FV.ViewConfig 600 1000 5)
+    BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_analysis"
     return ()
   niComparisonNoteUrl <- K.knitMaybe "NI comparison Note Url is Nothing" $ mNIComparisonNoteUrl
   let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
