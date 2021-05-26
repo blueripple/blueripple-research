@@ -9,5 +9,6 @@ We chart this below.
 
 [^3]: We post-stratify with and without the interaction term.  We *should* model
     the two situations separately: the presence of the interaction term
-    in the model can shift other parameters. But this introduces
+    in the model shifts the other parameters. But this introduces
     complications when trying to estimate confidence intervals for various quantities.
+    For more details, [click here.][niComparison_link]
