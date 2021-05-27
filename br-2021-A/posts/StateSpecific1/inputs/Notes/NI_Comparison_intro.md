@@ -1,3 +1,5 @@
+#### Model Check: Demographic Turnout Gaps
+
 We want to focus on the *state-specific* turnout gap, i.e.,
 what remains of the gap after we account for the "demographic" part, coming from
 national-level turnout among different types of voters
@@ -17,3 +19,5 @@ with the full model is similar
 to estimating without the SRI term. The estimates and confidence intervals for
 both models are shown below.
 Results from the full model are in blue and the no-SRI model in orange.
+NB: the x-axis here is different from the charts in the main post in order
+to emphasize the differences between the models.

@@ -198,7 +198,9 @@ brNewPost pp pi pageTitle content = do
   dates <- brDatesFromPostInfo pi
   let postPath = BRC.postPath pp pi
       pageConfig = dates <> one ("pagetitle", toString pageTitle)
-  K.newPandoc (K.PandocInfo (toText $ Path.toFilePath postPath) pageConfig) content
+  K.newPandoc (K.PandocInfo (toText $ Path.toFilePath postPath) pageConfig) $ do
+    content
+    brAddMarkDown BRC.brReadMore
 
 brNewNote :: K.KnitMany r
           => BRC.PostPaths Path.Abs

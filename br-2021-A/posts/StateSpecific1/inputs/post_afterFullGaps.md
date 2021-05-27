@@ -4,11 +4,11 @@ Can this gap be explained by demographic differences alone?
 The VOC in AL are mostly Black while the VOC in WA are mostly Hispanic.  Black
 voters turned out at higher rates than Hispanic voters nationwide.  Perhaps
 this explains the turnout gap between WA and PA? Using our model, we can
-estimate the gaps that would result if there were no state-specific effects[^3].
+estimate the gaps that would result if there were no state-specific effects[^modelCompare].
 We chart this below.
 
-[^3]: We post-stratify the full model but with and without the interaction term.
+[^modelCompare]: We post-stratify the full model but with and without the interaction term.
     We should *model* the two situations separately: the presence of the interaction term
     in the model shifts the other parameters. But this introduces
     complications when trying to estimate confidence intervals for various quantities.
-    [Click here,][niComparison_link] for more details.
+    [Click here][niComparison_link] for more details.

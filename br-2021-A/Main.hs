@@ -241,7 +241,7 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
-  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
@@ -633,7 +633,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   let rtDiffNIh_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
       rtDiffNIh_2020_NI  = toHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
       rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
-      rtDiffIh_2020 = toHeidiFrame "2020" "State-Spercific Turnout Gap"rtDiffI_2020
+      rtDiffIh_2020 = toHeidiFrame "2020" "State-Spercific Turnout Gap" rtDiffI_2020
 
   let gapNoteName = BR.Used "gaps"
   mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
@@ -675,18 +675,22 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   let niComparisonNoteName = BR.Used "NI_Comparison"
   mNIComparisonNoteUrl <- BR.brNewNote postPaths postInfo niComparisonNoteName "Comparison of Models with no State/Race Interactions" $ do
     BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_intro"
-    _ <- K.knitEither (hfToVLData (rtDiffNIh_2020 <> rtDiffNIh_2020_NI)) >>=
+    full <- K.knitMaybe "Error changing to model types for demographic only comparison note"
+      $ traverse (Heidi.at (BR.heidiColKey "Type") $ const (Just $ Just $ Heidi.VPText "Full Model")) rtDiffNIh_2020
+    noSRI <- K.knitMaybe "Error changing to model types for demographic only comparison note"
+      $ traverse (Heidi.at (BR.heidiColKey "Type") $ const (Just $ Just $ Heidi.VPText "No SRI Model")) rtDiffNIh_2020_NI
+    _ <- K.knitEither (hfToVLData (full <> noSRI)) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
          (sortedStates rtDiffNI_2020)
-         (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
+         (TurnoutChartOptions True True ColorIsType Nothing $ Just "Turnout Gap (%)")
          (FV.ViewConfig 600 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_analysis"
     return ()
   niComparisonNoteUrl <- K.knitMaybe "NI comparison Note Url is Nothing" $ mNIComparisonNoteUrl
   let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "_afterVOCTurnout" (Just niComparisonNoteRef)
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterFullGaps" (Just niComparisonNoteRef)
   _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
@@ -700,19 +704,19 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("State-Specific Turnout Gap (2020)")
        (sortedStates rtDiffI_2020)
-       (TurnoutChartOptions False True ColorIsYear Nothing Nothing)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing)
        (FV.ViewConfig 600 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
-      sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) dNWNH_2020
-  dNWNH_sig <- filterState sigStates2020 dNWNH_PEI_h_2020
-  _ <- K.knitEither (hfToVLDataPEI dNWNH_sig) >>=
+      sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) rtDiffI_2020
+  rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
+  _ <- K.knitEither (hfToVLDataPEI rtNWNH_sig) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
        ("Significant State-Specific VOC Turnout (2020)")
-       (sortedStates dNWNH_2020)
-       (TurnoutChartOptions False True ColorIsYear (Just 12) Nothing)
+       (sortedStates rtDiffI_2020)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing)
        (FV.ViewConfig 600 400 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 --  addMarkDownFromFile $ mdDir ++ "P2.md"
@@ -923,7 +927,7 @@ turnoutChart :: Text
 turnoutChart title sortedStates chartOptions vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
       encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
-      xLabel = fromMaybe "Turnout Shift (% Eligible VOC)" $ mXLabel chartOptions
+      xLabel = fromMaybe "Turnout Gap (%)" $ mXLabel chartOptions
       xScale = case symmetricX chartOptions of
         Nothing -> []
         Just x -> [GV.PScale [GV.SDomain $ GV.DNumbers [negate x, x]]]
