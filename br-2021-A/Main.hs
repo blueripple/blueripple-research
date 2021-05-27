@@ -694,14 +694,13 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffNI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
        (FV.ViewConfig 600 1000 5)
-
   BR.brAddPostMarkDownFromFileWith postPaths "_afterDemographicOnly"  (Just gapNoteRef)
-  _ <- K.knitEither (hfToVLDataPEI dNWNH_PEI_h_2020) >>=
+  _ <- K.knitEither (hfToVLDataPEI rtDiffIh_2020) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
-       ("State-Specific VOC Turnout (2020)")
-       (sortedStates dNWNH_2020)
-       (TurnoutChartOptions False True ColorIsYear (Just 12) Nothing)
+       ("State-Specific Turnout Gap (2020)")
+       (sortedStates rtDiffI_2020)
+       (TurnoutChartOptions False True ColorIsYear Nothing Nothing)
        (FV.ViewConfig 600 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"

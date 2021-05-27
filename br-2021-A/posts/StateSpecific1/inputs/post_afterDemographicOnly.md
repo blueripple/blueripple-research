@@ -1,9 +1,10 @@
-Demographic differences account for much but not all of the variations in VOC turnout
-among states. VOC turnout varies significantly by state
-*even once we account for the demographic differences among them*. For example, approximately 24 points
-of the 32 point difference between AL and WA is state-specific and 8 points is demographic.
+Demographic differences account for some but not all of the variations in VOC turnout
+among states. That is, VOC turnout varies significantly by state
+*even once we account for the demographic differences among the states.* For example,
+only 8 of the 32 point difference between AL and WA is demographic.  The other 24
+is state-specific.
 
-Here are some reasons why there might be state-specific effects on turnout:
+Why might there be state-specific effects on turnout?
 
 - Specific state policies may encourage or discourage voting by regulating early
   voting, vote-by-mail, poll hours, ID requirements and other aspects of voter access.
@@ -12,15 +13,17 @@ Here are some reasons why there might be state-specific effects on turnout:
   boosts turnout in demographically specific ways.
 - State and local elections have their own dynamics, energizing certain groups of voters.
 
-There’s been a great deal of focus on understanding how much voter
-organizing and suppression affected turnout in 2020,
+There’s been a great deal of focus on voter
+organizing and suppression and how that affected turnout in 2020,
 particularly in GA, where Dems prevailed, and FL and TX, where we did not.
-This prompts our interest in state-specific effects on turnout.
-We first need a baseline view of state-level turnout across demographic groups.
-Our starting point in this post is to model turnout,
-using data from the Current Population Survey Voter and Registration Supplement (CPS-VRS)
-and the American Community Survey (ACS), both produced by the US Census bureau. We're also going to
-explain a bit about [MRP modeling](https://www.youtube.com/watch?v=bq9c1zsR9NM>),
+This prompts our interest in a data-informed view of state-specific turnout.
+
+Modeling this is somewhat complicated!
+First we need a baseline view of state-level turnout across demographic groups.
+Our model uses data from the Current Population Survey Voter and Registration Supplement (CPS-VRS)
+and the American Community Survey (ACS), both produced by the US Census bureau and we'll
+explain a bit about those below. We're also going to
+talk briefly about [MRP modeling](https://www.youtube.com/watch?v=bq9c1zsR9NM>),
 anchoring this and further analyses based on similar models.
 
 Three quick caveats before we dig in.
@@ -28,17 +31,16 @@ Three quick caveats before we dig in.
 1. It is our firm belief
 that voting should be easy for everyone,
 regardless of demographics or partisan identity,
-and all measures to suppress voting are wrong.
-2. We acknowledge that lumping all VOC together is simplistic and reductive,
+and all measures to suppress voting are wrong. Under all circumstances
+we support vote-by-mail and more polling places, open for longer hours on more days, etc.
+2. Lumping all VOC together is simplistic and reductive,
 because it ignores many other non-racial/ethnic factors that affect turnout.
 But we are particularly interested in the interplay of voter suppression and organizing,
 where race/ethnicity is a big factor.
-3. Any conclusions we can make linking turnout to state voting policies
+3. Any conclusions linking turnout to state voting policies
 will be suggestive at best, because these analyses are
 [notoriously difficult](<https://scholar.princeton.edu/sites/default/files/jmummolo/files/jop_voterid_print.pdf>).
-Standard surveys don’t collect the right type or amount of data to track within-state
-differences over time among subsets of voters with enough consistency
-to do anything more than generate interesting hypotheses.
+Standard surveys don’t give us enough reliable data to make strong conclusions.
 
 Let’s dive into the analysis.
 We’re going to start with two detailed sections about the underlying data and approach,
@@ -58,7 +60,7 @@ Each year, the U.S. Census Bureau (USCB) conducts the
 [“American Community Survey” ](https://www.census.gov/programs-surveys/acs)
 which, for our purposes,
 is an update to the decennial census.  Surveys are sent to ~3.5 million
-households, so it’s not a complete count.  There is also less geographic specificity
+households; it’s not a complete count.  There is also less geographic specificity
 to the reported results than the decennial census.
 The decennial census reports results down to the “block” level, whereas
 much of the ACS data is available only at the "Public Use Microdata Area" (PUMA) level—
@@ -72,8 +74,8 @@ In addition, each election year,
 the USCB produces the
 [Voting and Registration Supplement](https://www.census.gov/topics/public-sector/voting.html)
 to the Current Population Survey (CPS-VRS),
-by asking approximately 100,000 people nationwide
-for their registration status and if they voted in the general election.
+asking approximately 100,000 people nationwide
+if they voted in the general election.
 Responses are paired with county of residence, demographic information
 (age, sex, race, ethnicity, education, etc.),
 allowing estimation of voter turnout among various groups and in various places.
@@ -83,13 +85,13 @@ The survey responses are “self-reported” and not independently validated,
 so there are
 [reporting errors](http://www.electproject.org/home/voter-turnout/cps-methodology)
 that tend to overestimate turnout in a way which differs systematically
-among states. To account for this, we adjust the turnout probabilities from the CPS
+among states. To account for this, we adjust the turnout probabilities from the CPS-VRS
 so that when they are post-stratified across the voting eligible population (VEP)
 of each state, we get the correct total turnout.  This was first suggested by
 [Achen and Hur](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf)
 and we follow the procedure outlined by
 [Ghitza and Gelman](http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf)
-(p. 769), to compute the adjustment for each state/year, using the vote totals from
+(p. 769), to compute the adjustment for each state, using the vote totals from
 [United States Election Project](http://www.electproject.org/home/voter-turnout/voter-turnout-data)
 and group populations from the ACS.
 
@@ -103,8 +105,9 @@ There are other publically available
 surveys which, when possible, validate survey reponses via state voter files,
 primarily the
 [CCES](https://cces.gov.harvard.edu).  That survey is smaller: approximately
-50,000 people surveyed each year, with about 40,000 validated voters. For the sake of a
-first analysis, we will start with the CPS data.
+50,000 people surveyed each year, with about 40,000 validated voters. For this post,
+we stick to the CPS-VRS because it's bigger. In a future post, we may repeat this analysis
+with the 2020 CCES survey.
 
 The 100,000 people surveyed by the CPS-VRS are distributed throughout the country, so there
 will only be a limited number of people in each state, particularly less populous ones.
@@ -140,7 +143,11 @@ to the best estimates.
 Once we have estimates for every group in every state, we turn them into
 turnout numbers via post-stratification: multiplying
 the estimated probabilities by the actual number of people in each group,
-and adding these up to figure out how many people are likely to vote.
+and adding these up to figure out how many people are likely to vote. Without
+post-stratification, we'd need to analyze where the CPS-VRS was or was not
+representative of the population.  Instead, we use CPS-VRS to estimate
+group level probabilities and then weight them using the actual populations
+in each state.
 
 The Monte-Carlo modeling produces confidence intervals for the parameters,
 *and* the post-stratifications that use them.
@@ -161,11 +168,11 @@ since turnout varies widely among these groups.
 
 We add a congressional-district-level population-density
 factor and interactions between education and a binary race term—a simplification
-of the race categories to White-non-Hispanic (WNH) and non-White-non-Hispanic (NWNH):
+of the race categories to White-non-Hispanic (WNH) and non-WNH:
 a term in the model that estimates the effect of being, e.g.,
 White-non-Hispanic (WNH) *and* college-educated over and above the
 effects of being in either category separately. Crucially,
-we also include an interaction between state and WNH/VOC,
+we also include an interaction between state and VOC/WNHV,
 a term which estimates the *state-dependent* portion of the VOC turnout.
 
 We fit a multi-level model, allowing partial-pooling in the estimate of
@@ -187,24 +194,18 @@ So we post-stratify on VOC in each state, with and without state/race interactio
 We don't yet have ACS data for 2020,
 so for now we are using 2018 ACS data in our post-stratifications.
 
-It’s also interesting to look at turnout "gaps": differences in the turnout rate
-between VOC and WNH voters.  Rather than showing differences among states,
-these might highlight how policies and organizing within a state affect the
-VOC population and WNH population differently. The gaps are also somewhat
-more complicated to analyze since they depend on VOC turnout *and* WNH turnout.
-To save space here, we look at the gaps in a [separate note][gapNote_link].
-
 ## Two initial questions (and answers) about voter turnout and race
 
 Now we’re in a position to answer two questions about each state’s VOC turnout:
 
-- *How much worse (or better) was each state’s VOC turnout in 2016 compared with what one would have expected from demographics alone?*
+- *How much worse (or better) was each state’s turnout gap
+  in 2016 compared with what one would have expected from demographics alone?*
 - *Which states have significant (positive or negative) state-specific effects?*
 
-\(1) Observed vs. expected VOC turnout in 2020 by state:
-Below we look *only* at the “State-Specific VOC Turnout”, taking
-the difference of the estimated VOC turnout in a state and
-the estimated VOC turnout *based on the demographics alone*.
-CO is at the top with 4 point better-than-expected
-turnout of VOC and WA is at the bottom, with 8 point
-worse-than-expected turnout of VOC.
+\(1) Observed vs. expected turnout gaps in 2020 by state:
+Below we look *only* at the “State-Specific Turnout gap”, taking
+the difference of the estimated turnout gap in a state and
+the estimated demographic turnout gap.
+CO is at the top with 7 point better-than-expected
+turnout gap and WA is at the bottom, with 16 point
+worse-than-expected turnout gap.
