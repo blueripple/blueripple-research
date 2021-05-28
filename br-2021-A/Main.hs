@@ -217,7 +217,7 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
-  let cpsSS1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
@@ -610,44 +610,45 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       rtDiffNIh_2020_NI  = toHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
       rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
       rtDiffIh_2020 = toHeidiFrame "2020" "State-Specific Turnout Gap" rtDiffI_2020
-
-  let gapNoteName = BR.Used "gaps"
-  mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
+  let chartW = 650
+  let gapNoteName = BR.Unused "gaps"
+  _ <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "1"
     _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
          (sortedStates rtDiffNI_2020)
-         (TurnoutChartOptions True True ColorIsType (Just 22) $ Just "Turnout Gap (%)")
-         (FV.ViewConfig 600 1000 5)
+         (TurnoutChartOptions True True ColorIsType (Just 22) (Just "Turnout Gap (%)") False)
+         (FV.ViewConfig chartW 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "2"
     _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gaps: Demographics & State-Specific Effects")
          (sortedStates rtDiffWI_2020)
-         (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
-         (FV.ViewConfig 600 1000 5)
+         (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
+         (FV.ViewConfig chartW 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "3"
     _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH State-Specific Turnout Gap")
          (sortedStates rtDiffI_2020)
-         (TurnoutChartOptions False True ColorIsType (Just 25) $ Just "State-Specific Turnout Gap (%)")
-         (FV.ViewConfig 600 1000 5)
+         (TurnoutChartOptions False True ColorIsType (Just 25) (Just "State-Specific Turnout Gap (%)") False)
+         (FV.ViewConfig chartW 1000 5)
     return ()
-  gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
-  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
+  --gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
+--  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
-       K.addHvega Nothing Nothing
+       K.addHvega Nothing
+       (Just "Figure 1: Modeled VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gaps")
        (sortedStates rtDiffWI_2020)
-       (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
-       (FV.ViewConfig 600 1000 5)
+       (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
+       (FV.ViewConfig chartW 1000 5)
   let niComparisonNoteName = BR.Used "NI_Comparison"
   mNIComparisonNoteUrl <- BR.brNewNote postPaths postInfo niComparisonNoteName "Comparison of Models with no State/Race Interactions" $ do
     BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_intro"
@@ -660,40 +661,43 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
          (sortedStates rtDiffNI_2020)
-         (TurnoutChartOptions True True ColorIsType Nothing $ Just "Turnout Gap (%)")
-         (FV.ViewConfig 600 1000 5)
+         (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
+         (FV.ViewConfig chartW 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths niComparisonNoteName "_analysis"
     return ()
   niComparisonNoteUrl <- K.knitMaybe "NI comparison Note Url is Nothing" $ mNIComparisonNoteUrl
   let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_afterFullGaps" (Just niComparisonNoteRef)
   _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
-       K.addHvega Nothing Nothing
+       K.addHvega Nothing
+       (Just "Figure 2: Modeled demographic-only VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gap: Demographics Only")
        (sortedStates rtDiffNI_2020)
-       (TurnoutChartOptions True True ColorIsType (Just 35) $ Just "Turnout Gap (%)")
-       (FV.ViewConfig 600 1000 5)
-  BR.brAddPostMarkDownFromFileWith postPaths "_afterDemographicOnly"  (Just gapNoteRef)
+       (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
+       (FV.ViewConfig chartW 1000 5)
+  BR.brAddPostMarkDownFromFile postPaths "_afterDemographicOnly"
   _ <- K.knitEither (hfToVLDataPEI rtDiffIh_2020) >>=
-       K.addHvega Nothing Nothing
+       K.addHvega Nothing
+       (Just "Figure 3: Modeled state-specific (= total gap - demographic gap) turnout gaps in the 2020 general election.")
        . turnoutChart
        ("State-Specific Turnout Gap (2020)")
        (sortedStates rtDiffI_2020)
-       (TurnoutChartOptions False True ColorIsType Nothing Nothing)
-       (FV.ViewConfig 600 1000 5)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig chartW 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) rtDiffI_2020
   rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
   _ <- K.knitEither (hfToVLDataPEI rtNWNH_sig) >>=
-       K.addHvega Nothing Nothing
+       K.addHvega Nothing
+       (Just "Figure 4: Modeled state-specific turnout gaps in the 2020 general election. Clearly non-zero only.")
        . turnoutChart
        ("Significant State-Specific VOC Turnout (2020)")
        (sortedStates rtDiffI_2020)
-       (TurnoutChartOptions False True ColorIsType (Just 23) Nothing)
-       (FV.ViewConfig 600 400 5)
+       (TurnoutChartOptions False True ColorIsType (Just 23) Nothing False)
+       (FV.ViewConfig chartW 400 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 --  addMarkDownFromFile $ mdDir ++ "P2.md"
   let integrityNoteName = BR.Unused "ElectionIntegrity"
@@ -892,6 +896,7 @@ data TurnoutChartOptions = TurnoutChartOptions { showMean :: Bool
                                                , colorIs :: TurnoutChartColor
                                                , symmetricX :: Maybe Double
                                                , mXLabel :: Maybe Text
+                                               , legend :: Bool
                                                }
 
 turnoutChart :: Text
@@ -908,10 +913,11 @@ turnoutChart title sortedStates chartOptions vc vlData =
         Nothing -> []
         Just x -> [GV.PScale [GV.SDomain $ GV.DNumbers [negate x, x]]]
       encX = GV.position GV.X $ [GV.PName "mid", GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle xLabel]] ++ xScale
+      leg = if legend chartOptions then [] else [GV.MLegend []]
       encColor = case colorIs chartOptions of
-                   ColorIsVotingIntegrity -> GV.color [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"]
-                   ColorIsYear -> GV.color [GV.MName "Year", GV.MmType GV.Nominal]
-                   ColorIsType -> GV.color [GV.MName "Type", GV.MmType GV.Nominal]
+                   ColorIsVotingIntegrity -> GV.color $ [GV.MName "ratingstate", GV.MmType GV.Quantitative, GV.MTitle "Election Integrity Rating"] ++ leg
+                   ColorIsYear -> GV.color $ [GV.MName "Year", GV.MmType GV.Nominal] ++ leg
+                   ColorIsType -> GV.color $ [GV.MName "Type", GV.MmType GV.Nominal] ++ leg
       encXLo = GV.position GV.XError [GV.PName "lo"]
       encXHi = GV.position GV.XError2 [GV.PName "hi"]
       encL = GV.encoding . encX . encY  . encColor

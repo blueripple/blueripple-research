@@ -3,13 +3,18 @@
 ### Key Points In This Post
 
 - Voters-of-color (VOC) often vote at lower rates than white-non-Hispanic voters (WNHV).
-  This "turnout gap" varies strongly between states.
-  Different VOC (younger or older, male or female, level of education and race/ethnicity)
-  vote at different rates.  Is this the source of the state-to-state variation?
-- We model 2020 general election turnout, concluding that state-to-state variations in the
-  VOC turnout are unlikely to be explained by demographics alone.
-- State-specific turnout gaps were clearly better than expected in CO, AL, PA, GA and MI
-  and clearly worse than expected  in WA, IL, MA, NH and FL.
+  This “turnout gap” varies strongly among states.
+- One reason states’ turnout gaps may differ is demographic: different subgroups of VOC/WNHV
+  (differing in age, sex, level of education and/or race/ethnicity)
+  vote at different rates, so the precise demographic makeup in a particular state matters.
+  But other factors,
+  like state-specific voting policies and strength of get-out-the-vote organizing, could also
+  play a role.
+- Our model of 2020 general election turnout suggests that non-demographic factors
+  are a large component of the state-to-state variability in the gap between VOC
+  and WNHV turnout.
+- These non-demographic, state-specific factors shrunk or reversed turnout gaps
+  in CO, AL, PA, GA and MI and widened them in WA, IL, MA, NH and FL.
 
 ## Focusing on State-Specific Turnout Effects
 
@@ -18,7 +23,7 @@ voter turnout varies widely among demographic groups.
 Younger voters and voters of color
 tend to vote for Democrats, but smaller fractions of those voters cast a vote in most elections.
 Similarly, white voters without a college degree, who
-are more likely to vote for Republicans, are less likely to vote than White voters
+are more likely to vote for Republicans, are less likely to vote than white voters
 with a college degree.
 
 Unsurprisingly, group-level turnout varies by state:

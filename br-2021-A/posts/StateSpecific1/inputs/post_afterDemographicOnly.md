@@ -44,7 +44,8 @@ Standard surveys don’t give us enough reliable data to make strong conclusions
 
 Let’s dive into the analysis.
 We’re going to start with two detailed sections about the underlying data and approach,
-describe our model, and then pose and answer two initial questions about voter turnout and race.
+describe our model, and then pose and answer two initial questions about the
+VOC/WHNV turnout gap.
 
 ### Post Roadmap
 
@@ -223,7 +224,9 @@ Now we’re in a position to answer two questions about each state’s VOC turno
 \(1) Observed vs. expected turnout gaps in 2020 by state:
 Below we look only at the *state-specific* turnout gap, taking
 the difference of the full turnout gap in a state and
-the demographic turnout gap.
+the demographic turnout gap. That is, the chart below is, in a sense,
+the difference of fig.1, the total VOC/WHNV turnout gap, and fig. 2, the
+demographic turnout gap.
 CO and AL are at the top with ~8 point better-than-expected
 turnout gaps while WA, something of an outlier, is at the bottom,
 with a 16 point worse-than-expected turnout gap.
