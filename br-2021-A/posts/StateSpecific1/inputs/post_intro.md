@@ -2,7 +2,7 @@
 
 ### Key Points In This Post
 
-- Voters-of-color (VOC) often vote at lower rates than White-non-Hispanic voters (WNHV).
+- Voters-of-color (VOC) often vote at lower rates than white-non-Hispanic voters (WNHV).
   This "turnout gap" varies strongly between states.
   Different VOC (younger or older, male or female, level of education and race/ethnicity)
   vote at different rates.  Is this the source of the state-to-state variation?
@@ -17,7 +17,7 @@ As we've written about [before](https://blueripple.github.io/research/mrp-model/
 voter turnout varies widely among demographic groups.
 Younger voters and voters of color
 tend to vote for Democrats, but smaller fractions of those voters cast a vote in most elections.
-Similarly, White voters without a college degree, who
+Similarly, white voters without a college degree, who
 are more likely to vote for Republicans, are less likely to vote than White voters
 with a college degree.
 

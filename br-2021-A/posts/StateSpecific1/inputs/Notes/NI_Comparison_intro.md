@@ -14,7 +14,7 @@ models separately, we lose the ability
 to estimate a confidence intervals for the difference.
 
 But adding the SRI term shifts the other parameters some,
-so we should check that estimating the "demographic" turnout
+so we it’s worth checking that estimating the "demographic" turnout
 with the full model is similar
 to estimating without the SRI term. The estimates and confidence intervals for
 both models are shown below.

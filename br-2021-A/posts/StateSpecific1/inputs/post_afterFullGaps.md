@@ -5,10 +5,11 @@ The VOC in AL are mostly Black while the VOC in WA are mostly Hispanic.  Black
 voters turned out at higher rates than Hispanic voters nationwide.  Perhaps
 this explains the turnout gap between WA and PA? Using our model, we can
 estimate the gaps that would result if there were no state-specific effects[^modelCompare].
-We chart this below.
+We chart this (on the same scale) below.
 
 [^modelCompare]: We post-stratify the full model but with and without the interaction term.
-    We should *model* the two situations separately: the presence of the interaction term
-    in the model shifts the other parameters. But this introduces
-    complications when trying to estimate confidence intervals for various quantities.
+    We could instead model the two situations separately: the presence of the interaction term
+    in the full model shifts the other parameters. But using two models, one for the
+    demographic effects and a different one for state-specific effects, complicates
+    the estimation of confidence intervals for various quantities.
     [Click here][niComparison_link] for more details.

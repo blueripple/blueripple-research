@@ -1,14 +1,14 @@
 Demographic differences account for some but not all of the variations in turnout
 gaps among states. That is, turnout gaps vary significantly by state
-*even once we account for the demographic differences among the states.* For example,
-only 8 of the 32 point difference bewteen the AL and WA trunout gaps is demographic in origin.
+*even once we account for the demographic differences among them.* For example,
+only 8 of the 32 point difference between the AL and WA turnout gaps is demographic in origin.
 The other 24 is state-specific, i.e., has something to do with AL and WA in particular.
 
 Why might there be state-specific effects on turnout?
 
 - Specific state policies may encourage or discourage voting by regulating early
   voting, vote-by-mail, poll hours, ID requirements and other aspects of voter access.
-  The policies often disproportiantely affects certain voters.
+  The policies often disproportionately affects certain voters.
 - Grassroots organizing and campaigning, both largely local,
   boosts turnout in demographically specific ways.
 - State and local elections have their own dynamics, energizing certain groups of voters.
@@ -64,7 +64,7 @@ households (of about 125 million) so it’s not a complete count.
 There is also less geographic specificity
 to the reported results than the decennial census.
 The decennial census reports results down to the “block” level, whereas
-much of the ACS data is available only at the “Public Use Microdata Area” (PUMA) level—
+much of the ACS data is available only at the “Public Use Micro-data Area” (PUMA) level—
 each PUMA has about 100,000 people.  Still, this is enough granularity for most work
 at the state or congressional-district level.
 We use 2018 ACS data rather than the 2010 decennial census because it provides a more up-to-date
@@ -97,14 +97,14 @@ and we follow the procedure outlined by
 and group populations from the ACS.
 
 Crucially, CPS-VRS data
-[seems to under-report the turnout gaps between White and non-White voters.
+[seems to under-report the turnout gaps between white and non-white voters.
 ](https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf)
 So all of our results looking at race-specific turnout
 should be viewed skeptically: the gaps are likely larger than we see in the data,
 though it's unclear if this comes from over-estimating VOC turnout or under-estimating
 WNH turnout.
-There are other publically available
-surveys which, when possible, validate survey reponses via state voter files,
+There are other publicly available
+surveys which, when possible, validate survey responses via state voter files,
 primarily the
 [CCES](https://cces.gov.harvard.edu).  That survey is smaller: approximately
 50,000 people surveyed each year, with about 40,000 validated voters. For this post,
@@ -184,7 +184,7 @@ We add a congressional-district-level population-density
 factor and interactions between education and a binary race term—a simplification
 of the race categories to white-non-Hispanic (WNH) and non-WNH:
 a term in the model that estimates the effect of being, e.g.,
-White-non-Hispanic (WNH) *and* college-educated over and above the
+white-non-Hispanic (WNH) *and* college-educated over and above the
 effects of being in either category separately. Crucially,
 we also include an interaction between state and VOC/WNHV,
 a term which estimates the *state-dependent* portion of the turnout gap.

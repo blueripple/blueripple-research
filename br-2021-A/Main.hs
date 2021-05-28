@@ -28,22 +28,16 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Model.StanMRP as MRP
---import qualified BlueRipple.Model.StanCCES as BRS
 import qualified BlueRipple.Utilities.KnitUtils as BR
---import qualified BlueRipple.Utilities.FramesUtils as BRF
---import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified BlueRipple.Utilities.Heidi as BR
 
 import qualified Control.Foldl as FL
---import qualified Data.GenericTrie as GT
---import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.MapRow as MapRow
 
 import qualified Data.Monoid as Monoid
---import qualified Data.Semigroup as Semigroup
 import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
@@ -54,38 +48,22 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
 import qualified Frames as F
---import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.Heidi as FH
---import qualified Frames.SimpleJoins  as FJ
 import qualified Frames.Transform  as FT
---import qualified Frames.Visualization.VegaLite.Correlation as FV
---import qualified Frames.Visualization.VegaLite.Histogram as FV
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 import qualified Heidi
 import Lens.Micro.Platform ((^?))
 
---import qualified Heidi.Data.Frame.Algorithms.HashMap as Heidi
-{-
-import Graphics.Vega.VegaLite.Configuration as FV
-  ( AxisBounds (DataMinMax),
-    ViewConfig (ViewConfig),
-  )
--}
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Heidi as HV
---import qualified Frames.Visualization.VegaLite.Data as FV
-
---import qualified Visualization.VegaLite.Histogram as VL
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
---import qualified Optics
---import Optics.Operators
 import qualified Path
 import Path (Rel, Abs, Dir, File)
 import qualified Polysemy
@@ -96,9 +74,7 @@ import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified CmdStan as CS
---import qualified Stan.RScriptBuilder as SR
---import qualified Text.Pandoc.Class as Pandoc
---import qualified Text.Blaze.Html5              as BH
+
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -633,7 +609,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   let rtDiffNIh_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
       rtDiffNIh_2020_NI  = toHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
       rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
-      rtDiffIh_2020 = toHeidiFrame "2020" "State-Spercific Turnout Gap" rtDiffI_2020
+      rtDiffIh_2020 = toHeidiFrame "2020" "State-Specific Turnout Gap" rtDiffI_2020
 
   let gapNoteName = BR.Used "gaps"
   mGapNoteUrl <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
@@ -716,7 +692,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("Significant State-Specific VOC Turnout (2020)")
        (sortedStates rtDiffI_2020)
-       (TurnoutChartOptions False True ColorIsType Nothing Nothing)
+       (TurnoutChartOptions False True ColorIsType (Just 23) Nothing)
        (FV.ViewConfig 600 400 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 --  addMarkDownFromFile $ mdDir ++ "P2.md"
