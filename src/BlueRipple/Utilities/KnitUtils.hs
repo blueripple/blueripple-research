@@ -117,6 +117,11 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                   $ exts
             }
 
+brAddAnchor :: K.KnitOne r => T.Text -> K.Sem r Text
+brAddAnchor t = do
+  brAddMarkDown $ "<a name=\"" <> t <> "\"></a>"
+  return $ "#" <> t
+
 brLineBreak :: K.KnitOne r => K.Sem r ()
 brLineBreak = brAddMarkDown "\\\n"
 

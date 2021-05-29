@@ -7,9 +7,9 @@ this explains the turnout gap between WA and PA? Using our model, we can
 estimate the gaps that would result if there were no state-specific effects[^modelCompare].
 We chart this (on the same scale) below.
 
-[^modelCompare]: We post-stratify the full model but with and without the interaction term.
-    We could instead model the two situations separately: the presence of the interaction term
-    in the full model shifts the other parameters. But using two models, one for the
+[^modelCompare]: We post-stratify with and without the state/race interaction term.
+    We could instead model the two situations separately since the presence of the interaction term
+    in the model shifts the other parameters. But using two models, one for the
     demographic effects and a different one for state-specific effects, complicates
     the estimation of confidence intervals for various quantities.
     [Click here][niComparison_link] for more details.

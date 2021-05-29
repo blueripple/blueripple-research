@@ -5,7 +5,7 @@
 - Voters-of-color (VOC) often vote at lower rates than white-non-Hispanic voters (WNHV).
   This “turnout gap” varies strongly among states.
 - One reason states’ turnout gaps may differ is demographic: different subgroups of VOC/WNHV
-  (differing in age, sex, level of education and/or race/ethnicity)
+  (differing, for ecample, in age, sex, level of education and/or race/ethnicity)
   vote at different rates, so the precise demographic makeup in a particular state matters.
   But other factors,
   like state-specific voting policies and strength of get-out-the-vote organizing, could also
@@ -48,5 +48,5 @@ include 90% confidence intervals for our estimates.
 
 [^whyModel]: As we’ll discuss below, the data on the demographic makeup of voters is sparse.
     So we don’t *know* the demographics of all voters. We use an MRP model of that sparse
-    data to infer the demographics of all the voters, and these inferences have uncertaintly,
+    data to infer the demographics of all the voters, and these inferences have uncertainty,
     reflected in the confidence intervals.

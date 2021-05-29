@@ -23,7 +23,9 @@ First we need a baseline view of state-level turnout across demographic groups.
 Our model uses data from the Current Population Survey Voter and Registration Supplement (CPS-VRS)
 and the American Community Survey (ACS), both produced by the US Census bureau and we'll
 explain a bit about those below. We're also going to
-talk briefly about [MRP modeling](https://www.youtube.com/watch?v=bq9c1zsR9NM>),
+talk briefly about MRP modeling
+([Click here](https://www.youtube.com/watch?v=bq9c1zsR9NM>)
+for a good 3 minute explanatory video about MRP),
 anchoring this and further analyses based on similar models.
 
 Three quick caveats before we dig in.
@@ -31,8 +33,8 @@ Three quick caveats before we dig in.
 1. It is our firm belief
 that voting should be easy for everyone,
 regardless of demographics or partisan identity,
-and all measures to suppress voting are wrong. Under all circumstances
-we support vote-by-mail and more polling places, open for longer hours on more days, etc.
+and all measures to suppress voting are wrong.
+We support vote-by-mail and more polling places, open for longer hours on more days, etc.
 2. Lumping all VOC together is simplistic and reductive,
 because it ignores many other non-racial/ethnic factors that affect turnout.
 But we are particularly interested in the interplay of voter suppression and organizing,
@@ -106,14 +108,14 @@ though it's unclear if this comes from over-estimating VOC turnout or under-esti
 WNH turnout.
 There are other publicly available
 surveys which, when possible, validate survey responses via state voter files,
-primarily the
+for example the
 [CCES](https://cces.gov.harvard.edu).  That survey is smaller: approximately
 50,000 people surveyed each year, with about 40,000 validated voters. For this post,
-we stick to the CPS-VRS because it's bigger. In a future post, we may repeat this analysis
-with the 2020 CCES survey.
+we stick to the CPS-VRS because it's bigger. When the data is available,
+we may repeat this analysis with the 2020 CCES survey.
 
 The 100,000 people surveyed by the CPS-VRS are distributed throughout the country, so there
-will only be a limited number of people in each state, particularly less populous ones.
+will be a limited number of people in each state, particularly less populous ones.
 Once you start breaking those people down by demographic groups, the number of people
 per group gets quite small.  For example, our model has binary groupings for age, sex and
 education and a 4-category grouping for race and ethnicity. Considering
@@ -182,17 +184,19 @@ For race/ethnicity, we‘re using a slightly richer set of categories,
 since turnout varies widely among these groups.
 
 We add a congressional-district-level population-density
-factor and interactions between education and a binary race term—a simplification
-of the race categories to white-non-Hispanic (WNH) and non-WNH:
+factor and interactions between education and VOC/WHNV,
 a term in the model that estimates the effect of being, e.g.,
 white-non-Hispanic (WNH) *and* college-educated over and above the
 effects of being in either category separately. Crucially,
 we also include an interaction between state and VOC/WNHV,
 a term which estimates the *state-dependent* portion of the turnout gap.
 
-We fit a multi-level model, allowing partial-pooling in the estimate of
-the national turnout by race, turnout probability in each state,
-and for the interaction between state and race.
+We fit a binomial model, estimating the probability that voters in each subgroup will vote.
+The model uses partial-pooling in the national turnout by race,
+turnout probability in each state,
+and for the interaction between state and race, allowing the data to determine the best
+balance among these for estimating the turnout of a particular subgroup.
+
 A more complex model might:
 
 - Expand the categories: e.g., including religion or marital status.
@@ -223,11 +227,12 @@ Now we’re in a position to answer two questions about each state’s VOC turno
 
 \(1) Observed vs. expected turnout gaps in 2020 by state:
 Below we look only at the *state-specific* turnout gap, taking
-the difference of the full turnout gap in a state and
-the demographic turnout gap. That is, the chart below is, in a sense,
-the difference of fig.1, the total VOC/WHNV turnout gap, and fig. 2, the
-demographic turnout gap. We chart these gaps on the same scale as the
+the difference of the full turnout gap in a state
+([figure 1](#figure_fullGap))
+and the demographic turnout gap
+([figure 2](#figure_demographicOnly)).
+We chart these gaps on the same scale as the
 previous two charts so comparing magnitudes is straightforward.
-CO and AL are at the top with ~8 point better-than-expected
+CO and AL are at the top with 8 point better-than-expected
 turnout gaps while WA, something of an outlier, is at the bottom,
 with a 16 point worse-than-expected turnout gap.

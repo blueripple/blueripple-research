@@ -1,10 +1,15 @@
 \(2) In particular, in 2020, CO, AL, PA, GA, and MI have clearly positive state-specific
 turnout gaps and WA, IL, MA, NH, and FL have clearly negative state-specific
-turnout gaps. One hypothesis we have is that the state-specific gaps
+turnout gaps.
+
+One hypothesis we have is that the state-specific gaps
 reflect some balance between voter-suppression and organizing in each state.
-That might be reflected somewhat in this list: there is always organizing in the swing-states,
-like PA and MI, and organizing in GA was obviously a big factor.
-There's a history of Black-voter-organizing in AL. CO might be because of mail-in voting.
+That might be reflected somewhat in this list: there is strong and consistent organizing
+in the swing-states, like PA and MI, and organizing in GA was obviously a big factor.
+There's a history of Black-voter-organizing in AL which might explain the positive state-specific
+effect. CO might have a smaller-than-expected gap because of universal mail-in voting, though
+so does WA, NV and OR.
+
 On the negative side, it's less clear, though FL has a long and storied history of voter
 suppression.
 

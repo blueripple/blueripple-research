@@ -642,7 +642,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 --  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
-       K.addHvega Nothing
+       K.addHvega
+       (Just "figure_fullGap")
        (Just "Figure 1: Modeled VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gaps")
@@ -669,7 +670,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_afterFullGaps" (Just niComparisonNoteRef)
   _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
-       K.addHvega Nothing
+       K.addHvega
+       (Just "figure_demographicOnly")
        (Just "Figure 2: Modeled demographic-only VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gap: Demographics Only")
@@ -737,7 +739,6 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                         (BR.heidiColKey "VOC Turnout Component")
                         (BR.heidiColKey "Turnout")
                         nwnh_sig
-    K.logLE K.Info $ show nwnh_sig_long
     let hfToVLDataBreakdown = HV.rowsToVLData [] [HV.asStr "State"
                                                  ,HV.asStr "VOC Turnout Component"
                                                  ,HV.asNumber "Turnout"
