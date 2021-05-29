@@ -683,7 +683,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        . turnoutChart
        ("State-Specific Turnout Gap (2020)")
        (sortedStates rtDiffI_2020)
-       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (TurnoutChartOptions False True ColorIsType (Just 35) Nothing False)
        (FV.ViewConfig chartW 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
 --  addMarkDownFromFile $ mdDir ++ "P1b.md"

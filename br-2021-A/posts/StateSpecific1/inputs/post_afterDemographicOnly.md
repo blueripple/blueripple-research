@@ -226,7 +226,8 @@ Below we look only at the *state-specific* turnout gap, taking
 the difference of the full turnout gap in a state and
 the demographic turnout gap. That is, the chart below is, in a sense,
 the difference of fig.1, the total VOC/WHNV turnout gap, and fig. 2, the
-demographic turnout gap.
+demographic turnout gap. We chart these gaps on the same scale as the
+previous two charts so comparing magnitudes is straightforward.
 CO and AL are at the top with ~8 point better-than-expected
 turnout gaps while WA, something of an outlier, is at the bottom,
 with a 16 point worse-than-expected turnout gap.
