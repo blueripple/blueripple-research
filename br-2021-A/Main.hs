@@ -747,7 +747,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
     _ <- filterState sigStates2020 nwnh_sig_long
          >>= K.knitEither . hfToVLDataBreakdown  >>=
          K.addHvega Nothing Nothing
-         . componentsChart
+         . gapComponentsChart
          ("VOC/WNH Turnout Gap Components (2020)")
          (Just $ sortedStates dNWNH_2020)
          (FV.ViewConfig 200 40 5)
@@ -759,7 +759,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 --     $ one ("pagetitle","VOC/WNH Turnout Components for all states")) $ do
     _ <- K.knitEither (hfToVLDataBreakdown nwnh_sig_long) >>=
       K.addHvega Nothing Nothing
-      . componentsChart
+      . gapComponentsChart
       ("VOC Turnout Components (2020)")
       Nothing
       (FV.ViewConfig 200 40 5)
@@ -854,8 +854,45 @@ peiScatterChart title vc vlData =
       mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
   in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
 
-componentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
-componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
+ssGapComponentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+ssGapComponentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
+  let compSort = GV.CustomSort $ GV.Strings ["VOC", "WNHV"]
+      stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) $ mSortedStates
+      encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
+                                 , GV.PmType GV.Nominal
+                                 , GV.PNoTitle
+                                 , GV.PSort [compSort]
+                                 , GV.PAxis [GV.AxLabels False, GV.AxTicks False]
+                                 ]
+                . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal
+                           , GV.MSort [compSort]
+                           , GV.MLegend [GV.LOrient GV.LOBottom]]
+
+      encTurnout o = GV.position GV.X [GV.PName "Turnout"
+                                      , GV.PmType GV.Quantitative
+                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible VOC)", GV.AxOrient o]
+                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 26, 26]]]
+      encState = GV.facetFlow ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
+
+      enc = GV.encoding . encComp . encTurnout GV.SBottom -- . encState
+      labelSpec x y l = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PNumber $ x * w]) . (GV.position GV.Y [GV.PNumber $ y * h]) $ []
+                                  ,GV.mark GV.Text [GV.MText l, GV.MFont "Verdana" ]
+                                  ]
+      labelSpecs = [labelSpec 0.1 0.05 "Lower Turnout"
+                   , labelSpec 0.1 0.95 "Higher Turnout"
+                   ]
+
+      barMark = GV.mark GV.Bar [GV.MTooltip GV.TTEncoding]
+      barSpec = GV.asSpec [enc [], barMark]
+      res = GV.resolve . GV.resolution (GV.RAxis [(GV.ChX, GV.Independent)
+                                                  ,(GV.ChY, GV.Independent)]
+                                       )
+  in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
+
+
+
+gapComponentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+gapComponentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
   let compSort = GV.CustomSort $ GV.Strings ["State-Specific", "Demographic", "VOC - WNH"]
       stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) $ mSortedStates
       encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
@@ -888,6 +925,8 @@ componentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                                   ,(GV.ChY, GV.Independent)]
                                        )
   in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
+
+
 
 
 data TurnoutChartColor = ColorIsYear | ColorIsVotingIntegrity | ColorIsType

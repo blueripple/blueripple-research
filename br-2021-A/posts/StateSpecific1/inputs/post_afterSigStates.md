@@ -2,6 +2,11 @@
 turnout gaps and WA, IL, MA, NH, and FL have clearly negative state-specific
 turnout gaps.
 
+Let’s drill down on these in even more detail. First, for the postive
+state=specific gaps, we examine how much of each
+comes from higher-than-expected VOC turnout and how much from
+lower-than expected WHNV turnout.
+
 One hypothesis we have is that the state-specific gaps
 reflect some balance between voter-suppression and organizing in each state.
 That might be reflected somewhat in this list: there is strong and consistent organizing
