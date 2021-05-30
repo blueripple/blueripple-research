@@ -574,7 +574,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
                                       ]
 
-      dNWNH_h_2020 = toHeidiFrame "2020" "State-Specific VOC Turnout" dNWNH_2020
+      dNWNH_h_2020 = toHeidiFrame "2020" "VOC" dNWNH_2020
+      dWNH_h_2020 = toHeidiFrame "2020" "WHNV" dWNH_2020
       rtDiffNI_h_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
       rtNWNH_h_2020 = toHeidiFrame "2020" "VOC Turnout" rtNWNH_2020
       rtWNH_h_2020 = toHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
@@ -688,7 +689,6 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (TurnoutChartOptions False True ColorIsType (Just 35) Nothing False)
        (FV.ViewConfig chartW 1000 5)
   BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
---  addMarkDownFromFile $ mdDir ++ "P1b.md"
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) rtDiffI_2020
   rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
@@ -700,8 +700,18 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 23) Nothing False)
        (FV.ViewConfig chartW 400 5)
+{-
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
---  addMarkDownFromFile $ mdDir ++ "P2.md"
+  -- zoom in on components of gaps
+  _ <- K.knitEither (hfToVLData (dNWNH_h_2020 <> dWNH_h_2020)) >>=
+       K.addHvega Nothing
+       (Just "Figure 5: VOC/WHNV components of significant gaps.")
+       . ssGapComponentsChart
+       ("VOC/WNHV compoonents of Significant Gaps")
+       (Just $ sortedStates rtDiffI_2020)
+       (FV.ViewConfig 100 30 5)
+-}
+
   let integrityNoteName = BR.Unused "ElectionIntegrity"
   _ <- BR.brNewNote postPaths postInfo integrityNoteName "Election Integrity & State-Specific Turnout Effects" $ do
     BR.brAddNoteMarkDownFromFile postPaths integrityNoteName "_intro"
@@ -858,20 +868,21 @@ ssGapComponentsChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.V
 ssGapComponentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
   let compSort = GV.CustomSort $ GV.Strings ["VOC", "WNHV"]
       stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) $ mSortedStates
-      encComp = GV.position GV.Y [GV.PName "VOC Turnout Component"
+      encComp = GV.position GV.Y [GV.PName "Type"
                                  , GV.PmType GV.Nominal
                                  , GV.PNoTitle
                                  , GV.PSort [compSort]
                                  , GV.PAxis [GV.AxLabels False, GV.AxTicks False]
                                  ]
-                . GV.color [GV.MName "VOC Turnout Component", GV.MmType GV.Nominal
+                . GV.color [GV.MName "Type", GV.MmType GV.Nominal
                            , GV.MSort [compSort]
                            , GV.MLegend [GV.LOrient GV.LOBottom]]
 
-      encTurnout o = GV.position GV.X [GV.PName "Turnout"
+      encTurnout o = GV.position GV.X [GV.PName "mid"
                                       , GV.PmType GV.Quantitative
-                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible VOC)", GV.AxOrient o]
-                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 26, 26]]]
+                                      , GV.PAxis [GV.AxTitle "Turnout Change (% Eligible)", GV.AxOrient o]
+--                                      , GV.PScale [GV.SDomain $ GV.DNumbers [negate 26, 26]]
+                                      ]
       encState = GV.facetFlow ([GV.FName "State", GV.FmType GV.Nominal]  ++ stateSort)
 
       enc = GV.encoding . encComp . encTurnout GV.SBottom -- . encState

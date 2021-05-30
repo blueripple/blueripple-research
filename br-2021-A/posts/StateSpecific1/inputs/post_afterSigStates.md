@@ -2,21 +2,16 @@
 turnout gaps and WA, IL, MA, NH, and FL have clearly negative state-specific
 turnout gaps.
 
-Let’s drill down on these in even more detail. First, for the postive
-state=specific gaps, we examine how much of each
-comes from higher-than-expected VOC turnout and how much from
-lower-than expected WHNV turnout.
-
 One hypothesis we have is that the state-specific gaps
-reflect some balance between voter-suppression and organizing in each state.
+reflect a push and pull between voter-suppression and organizing in each state.
 That might be reflected somewhat in this list: there is strong and consistent organizing
 in the swing-states, like PA and MI, and organizing in GA was obviously a big factor.
 There's a history of Black-voter-organizing in AL which might explain the positive state-specific
 effect. CO might have a smaller-than-expected gap because of universal mail-in voting, though
-so does WA, NV and OR.
+WA, NV and OR also have universal vote-by-mail.
 
-On the negative side, it's less clear, though FL has a long and storied history of voter
-suppression.
+On the negative side, it's less clear, though FL has a long and sordid history of voter
+suppression. M
 
 ## The Big Questions
 - What is or isn't happening in CO, AL, PA, GA and MI to improve turnout gaps?
