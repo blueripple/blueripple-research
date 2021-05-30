@@ -7,11 +7,22 @@ reflect a push and pull between voter-suppression and organizing in each state.
 That might be reflected somewhat in this list: there is strong and consistent organizing
 in the swing-states, like PA and MI, and organizing in GA was obviously a big factor.
 There's a history of Black-voter-organizing in AL which might explain the positive state-specific
-effect. CO might have a smaller-than-expected gap because of universal mail-in voting, though
-WA, NV and OR also have universal vote-by-mail.
+effect. CO has had a smaller than expectred turnout gap since 2014, since they
+instituted universal vote-by-mail (UVBM), though
+WA, NV and OR also have UVBM and those state-specific gaps are small or negative[^vbm].
+
+[^vbm]: The case of CO and NV are a reminder that we are using a particular data source which
+    doesn’t always agree with other sources.  CO and NV are states where most of the VOC are Hispanic.
+    According to exit polls, Hispanic voters in NV had the highest turnout of Hispanic
+    voters in any state, somewhere north of 70%.  Exit polls
+    showed CO with high Hispanic turnout as well, but not nearly as high.  But the CPS-VRS
+    data shows much higher VOC turnout in CO (79%) than in NV (58%).
+
+[^CO]: CO has had a very small turnout gap since 2014, when it instituted universal vote-by-mail.
+
 
 On the negative side, it's less clear, though FL has a long and sordid history of voter
-suppression. M
+suppression.
 
 ## The Big Questions
 - What is or isn't happening in CO, AL, PA, GA and MI to improve turnout gaps?

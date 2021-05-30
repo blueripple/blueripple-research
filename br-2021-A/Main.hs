@@ -616,17 +616,17 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 23) Nothing False)
        (FV.ViewConfig chartW 400 5)
-
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
+{-
   -- zoom in on components of gaps
   _ <- K.knitEither (hfToVLData (dNWNH_h_2020 <> dWNH_h_2020)) >>=
        K.addHvega Nothing
        (Just "Figure 5: VOC/WHNV components of significant gaps.")
        . ssGapComponentsChart
-       ("VOC/WNHV compoonents of Significant Gaps")
+       ("VOC/WNHV components of Significant Gaps")
        (Just $ sortedStates rtDiffI_2020)
        (FV.ViewConfig 100 30 5)
-
+-}
 
   let integrityNoteName = BR.Unused "ElectionIntegrity"
   _ <- BR.brNewNote postPaths postInfo integrityNoteName "Election Integrity & State-Specific Turnout Effects" $ do
