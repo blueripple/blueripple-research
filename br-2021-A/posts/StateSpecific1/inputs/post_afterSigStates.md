@@ -7,22 +7,30 @@ reflect a push and pull between voter-suppression and organizing in each state.
 That might be reflected somewhat in this list: there is strong and consistent organizing
 in the swing-states, like PA and MI, and organizing in GA was obviously a big factor.
 There's a history of Black-voter-organizing in AL which might explain the positive state-specific
-effect. CO has had a smaller than expectred turnout gap since 2014, since they
-instituted universal vote-by-mail (UVBM), though
-WA, NV and OR also have UVBM and those state-specific gaps are small or negative[^vbm].
+effect. CO has had a smaller than expected turnout gap since 2014,
+since instituting universal vote-by-mail (UVBM). However, UVBM does not predict
+positive state-specific effects:
+WA, NV and OR also have UVBM and those state-specific gaps are small or negative[^VBM].
 
-[^vbm]: The case of CO and NV are a reminder that we are using a particular data source which
+[^CO]: CO has had a very small turnout gap since 2014, when it instituted universal vote-by-mail.
+
+[^VBM]: The case of CO and NV are a reminder that we are using a particular data source which
     doesn’t always agree with other sources.  CO and NV are states where most of the VOC are Hispanic.
     According to exit polls, Hispanic voters in NV had the highest turnout of Hispanic
     voters in any state, somewhere north of 70%.  Exit polls
     showed CO with high Hispanic turnout as well, but not nearly as high.  But the CPS-VRS
     data shows much higher VOC turnout in CO (79%) than in NV (58%).
 
-[^CO]: CO has had a very small turnout gap since 2014, when it instituted universal vote-by-mail.
-
-
-On the negative side, it's less clear, though FL has a long and sordid history of voter
-suppression.
+The negative state-specific effects are more confusing.
+FL has a long and sordid history of voter suppression, so maybe that explains
+why the state-specific effect is gap-widening.
+WA is a UVBM state and,
+according to the CPS-VRS, in the 2016 election,
+the turnout gap was about -8pts (59% to 67%) but in 2020 it’s -16% (54% to 80%),
+the change somewhat from a drop in VOC voting but more from a sharp rise in WHNV
+voting. IL is a similar story, at smaller magnitude. We have fewer ideas what might
+have led to increased WHNV turnout while VOC turnout remained nearly level.  Maybe
+effective targeted advertising and organizing aimed at WHNV voters?
 
 ## The Big Questions
 - What is or isn't happening in CO, AL, PA, GA and MI to improve turnout gaps?

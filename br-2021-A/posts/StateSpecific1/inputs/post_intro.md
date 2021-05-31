@@ -10,7 +10,8 @@
   But other factors,
   like state-specific voting policies and strength of get-out-the-vote organizing, could also
   play a role.
-- Our model of 2020 general election turnout suggests that non-demographic factors
+- Our model of 2020 general election turnout—based on turnout data from the census—
+  suggests that non-demographic factors
   are a large component of the state-to-state variability in the gap between VOC
   and WNHV turnout.
 - These non-demographic, state-specific factors shrunk or reversed turnout gaps
@@ -46,7 +47,9 @@ to illustrate the range seen among the states (and DC).  Since these
 turnout estimates are produced from a model[^whyModel] we also
 include 90% confidence intervals for our estimates.
 
-[^whyModel]: As we’ll discuss below, the data on the demographic makeup of voters is sparse.
+[^whyModel]: As we’ll discuss below, the CPS data on the demographic makeup of voters is sparse.
     So we don’t *know* the demographics of all voters. We use an MRP model of that sparse
     data to infer the demographics of all the voters, and these inferences have uncertainty,
-    reflected in the confidence intervals.
+    reflected in the confidence intervals.  There are other sources of uncertainty
+    (survey methods, etc.) that we are not quantifying here,
+    so these confidence intervals are probably too small.
