@@ -78,13 +78,13 @@ ccesDataLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithC
 ccesDataLoader = K.wrapPrefix "ccesDataLoader" $ do
   K.logLE K.Info "Loading/Building CCES data"
   BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
-    (BR.LocalData $ toText ccesCSV)
+    (BR.LocalData $ toText cces2020CSV)
     Nothing
     Nothing
     fixCCESRow
     transformCCESRow
     Nothing
-    "cces.bin"
+    "cces_2006_2020.bin"
 
 type CCES_MRP_Raw = '[ CCESYear
                      , CCESCaseId
