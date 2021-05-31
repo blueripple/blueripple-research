@@ -148,8 +148,11 @@ ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
 
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 
+wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+
 ra4WhiteNonGrad r = ra4White r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
 ccesGroupBuilder = do
@@ -171,7 +174,6 @@ race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
-
 
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
@@ -276,24 +278,49 @@ rawCPSTurnout clearCache dat_C = do
     return $ FL.fold fld joined
 
 
+data SSTData = SSTD_CPS | SSTD_CCES deriving (Eq, Ord, Show)
+nameSSTData :: SSTData -> Text
+nameSSTData SSTD_CPS = "cpsV"
+nameSSTData SSTD_CCES = "cces"
 
-cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
-             => Bool
-             -> BR.PostPaths BR.Abs
-             -> BR.PostInfo
-             -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
-cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
-  let cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
+stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
+                          => Bool -- include state/race interaction term?
+                          -> SSTData
+                          -> [Int]
+                          -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+                          -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]
+                                                              , Map Text [Double]
+                                                              , Map Text [Double]
+                                                              , Map Text [Double]
+                                                              , Map Text [Double]
+                                                              , Map Text [Double]
+                                                              , Map Text [Double]
+                                                              )
+                                     )
+stateSpecificTurnoutModel withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
+  let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
+      jsonDataName = "stateXrace_" <> nameSSTData dataSource <> "_" <> (T.intercalate "_" $ fmap show years)
+
+      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
         SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
         SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-  --        SB.addGroup "White" $ SB.makeIndexFromEnum ra4White
         SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
---        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
         SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
         SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
         SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
+        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+
+      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
+      ccesGroupBuilder districts states = do
+        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnhCCES
+        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGradCCES
         SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
 
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
@@ -301,9 +328,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
         $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
         $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
         $ SB.addRowMap "WNH"  wnh
---      $ SB.addRowMap "White" ra4White --(F.rgetField @DT.RaceAlone4C)
         $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
---        $ SB.addRowMap "Ethnicity" (F.rgetField @DT.HispC)
         $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
         $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
@@ -315,6 +340,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                          -> Bool
                          -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF withStateRace = do
+        -- data & model
         cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
         vTotal <- SB.addCountData "T" totalF
         vSucc <- SB.addCountData "S" succF
@@ -330,9 +356,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
         gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
---        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
         gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
---        gEthE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Ethnicity"
         gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
         gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
         gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
@@ -349,6 +373,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
         let logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
         SB.sampleDistV dist logitPE_sample
+
+        -- generated quantities
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood dist logitPE
 
@@ -375,14 +401,12 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
         (SB.StanVar whiteNI _) <- postStratByState "NI" logitPE' acsData_W
         (SB.StanVar nonWhiteNI _) <- postStratByState "NI" logitPE' acsData_NW
 
-
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
-          SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name whiteWI `SB.minus` SB.name nonWhiteWI
-          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name whiteNI `SB.minus` SB.name nonWhiteNI
+          SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI
+          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name nonWhiteNI `SB.minus` SB.name whiteNI
           SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
           SB.stanDeclareRHS "dNWNH" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name nonWhiteNI
           SB.stanDeclareRHS "dWNH" psType "" $ SB.name whiteWI `SB.minus` SB.name whiteNI
-
         return ()
 
       extractTestResults :: K.KnitEffects r
@@ -408,9 +432,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults psIndexIM $ Vector.map f v
 
-            rtDiffWI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffWI"
-            rtDiffNI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffNI"
-            rtDiffI <- parseAndIndexPctsWith (reverse . fmap negate) "rtDiffI"
+            rtDiffWI <- parseAndIndexPctsWith id "rtDiffWI"
+            rtDiffNI <- parseAndIndexPctsWith id "rtDiffNI"
+            rtDiffI <- parseAndIndexPctsWith id "rtDiffI"
             rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NWNH_State"
             rtWNH_WI <- parseAndIndexPctsWith id "WI_ACS_WNH_State"
             dNWNH <- parseAndIndexPctsWith id "dNWNH"
@@ -418,11 +442,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
             return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
 
   K.logLE K.Info "Building json data wrangler and model code..."
-  let cpsVCodeBuilder = dataAndCodeBuilder
-                        (round . F.rgetField @BRCF.WeightedCount)
-                        (round . F.rgetField @BRCF.WeightedSuccesses)
-
-      dataWranglerAndCode data_C years withStateRace = do
+  let dataWranglerAndCode data_C years withStateRace = do
         dat <- K.ignoreCacheTime data_C
         let (districts, states) = FL.fold
                                   ((,)
@@ -430,32 +450,50 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                                    <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
                                   )
                                   $ BRE.districtRows dat
-            cpsVGroups = cpsVGroupBuilder districts states
-
         K.knitEither
-          $ MRP.buildDataWranglerAndCode cpsVGroups () (cpsVCodeBuilder withStateRace) dat (SB.ToFoldable BRE.cpsVRows)
+          $ case dataSource of
+              SSTD_CPS -> do
+                let codeBuilder = dataAndCodeBuilder
+                                  (round . F.rgetField @BRCF.WeightedCount)
+                                  (round . F.rgetField @BRCF.WeightedSuccesses)
+                    groups = cpsVGroupBuilder districts states
+                    dataRows = BRE.cpsVRows
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat (SB.ToFoldable dataRows)
+              SSTD_CCES -> do
+                let codeBuilder =  dataAndCodeBuilder
+                                   (F.rgetField @BRE.Surveyed)
+                                   (F.rgetField @BRE.TVotes)
+                    groups = ccesGroupBuilder districts states
+                    dataRows = BRE.ccesRows
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat (SB.ToFoldable dataRows)
 
-      runModel years withStateRace = do
-        let data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
-        (dw, stanCode) <- dataWranglerAndCode data_C years withStateRace
-        MRP.runMRPModel
-          False
-          (Just "br-2021-A/stan/cpsV")
-          ("stateXrace" <> if withStateRace then "" else "_NI")
-          ("stateXrace" <> (T.intercalate "_" $ fmap show years))
-          dw
-          stanCode
-          "S"
-          extractTestResults
-          data_C
-          (Just 1000)
-          (Just 0.99)
-          (Just 15)
+      data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
+  (dw, stanCode) <- dataWranglerAndCode data_C years withStateRace
+  MRP.runMRPModel
+    False
+    (Just modelDir)
+    ("stateXrace" <> if withStateRace then "" else "_NI")
+    jsonDataName
+    dw
+    stanCode
+    "S"
+    extractTestResults
+    data_C
+    (Just 1000)
+    (Just 0.99)
+    (Just 15)
 
-  res2020_C <- runModel [2020] True
+cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+             => Bool
+             -> BR.PostPaths BR.Abs
+             -> BR.PostInfo
+             -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
+cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+
+  res2020_C <- stateSpecificTurnoutModel True SSTD_CPS [2020] dataAllYears_C
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
-  res2020_NI_C <- runModel [2020] False
+  res2020_NI_C <- stateSpecificTurnoutModel False SSTD_CPS [2020] dataAllYears_C
   (rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI) <- K.ignoreCacheTime res2020_NI_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
