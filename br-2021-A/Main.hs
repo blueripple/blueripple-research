@@ -226,8 +226,13 @@ cpsVAnalysis = do
   data_C <- BRE.prepCCESAndPums False
   let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 5 31)  Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
-  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC Turnout"
+  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished  Nothing)
+  cpsSS2Paths <- postPaths "StateSpecific2"
+  BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps: CPS vs. CCES"
+    $ stateRaceCPSvsCCES False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+
 {-
   let cpsMTPostInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
       cpsMTPaths = postPaths "ModelTest"
@@ -284,7 +289,8 @@ nameSSTData SSTD_CPS = "cpsV"
 nameSSTData SSTD_CCES = "cces"
 
 stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
-                          => Bool -- include state/race interaction term?
+                          => Bool -- clear cache
+                          -> Bool -- include state/race interaction term?
                           -> SSTData
                           -> [Int]
                           -> K.ActionWithCacheTime r BRE.CCESAndPUMS
@@ -297,7 +303,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double]
                                                               )
                                      )
-stateSpecificTurnoutModel withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
+stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
   let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
       jsonDataName = "stateXrace_" <> nameSSTData dataSource <> "_" <> (T.intercalate "_" $ fmap show years)
 
@@ -470,7 +476,7 @@ stateSpecificTurnoutModel withStateRace dataSource years dataAllYears_C =  K.wra
       data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
   (dw, stanCode) <- dataWranglerAndCode data_C years withStateRace
   MRP.runMRPModel
-    False
+    clearCaches
     (Just modelDir)
     ("stateXrace" <> if withStateRace then "" else "_NI")
     jsonDataName
@@ -483,17 +489,33 @@ stateSpecificTurnoutModel withStateRace dataSource years dataAllYears_C =  K.wra
     (Just 0.99)
     (Just 15)
 
+
+stateRaceCPSvsCCES :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+                   => Bool
+                   -> BR.PostPaths BR.Abs
+                   -> BR.PostInfo
+                   -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+                   -> K.Sem r ()
+stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "stateRaceCPSvsCCES" $ do
+ cps2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
+ (_, _, cpsDiffI_2020, _, _, _, _) <- K.ignoreCacheTime cps2020_C
+ cces2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
+ (_, _, ccesDiffI_2020, _, _, _, _) <- K.ignoreCacheTime cces2020_C
+ return ()
+
+
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
              -> BR.PostPaths BR.Abs
              -> BR.PostInfo
-             -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
+             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+             -> K.Sem r ()
 cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
-  res2020_C <- stateSpecificTurnoutModel True SSTD_CPS [2020] dataAllYears_C
+  res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
   (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
 
-  res2020_NI_C <- stateSpecificTurnoutModel False SSTD_CPS [2020] dataAllYears_C
+  res2020_NI_C <- stateSpecificTurnoutModel clearCaches False SSTD_CPS [2020] dataAllYears_C
   (rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI) <- K.ignoreCacheTime res2020_NI_C
 
   let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
