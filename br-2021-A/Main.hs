@@ -567,12 +567,37 @@ stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix 
       ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
   _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
        K.addHvega Nothing Nothing
-       . turnoutChart
-       ("VOC/WNH Turnout Gap (2016): CPS vs CCES")
-       (sortedStates cpsDiffI)
-       (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
-       (FV.ViewConfig 500 1000 5)
+       . cpsVsCcesScatter
+       ("Turnout Gap: CPS vs CCES (2016)")
+       (FV.ViewConfig 600 600 5)
   return ()
+
+-- 2 x 2
+cpsVsCcesScatter ::  --(Functor f, Foldable f)
+  Text
+  -> FV.ViewConfig
+  -> GV.Data
+  -> GV.VegaLite
+cpsVsCcesScatter title vc@(FV.ViewConfig w h _) vlData =
+  let --vlData = MapRow.toVLData M.toList [] vlData -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+      foldMids = GV.pivot "Type" "mid" [GV.PiGroupBy ["State"]]
+--      gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
+      encY = GV.position GV.Y [GV.PName "CPS", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "CCES", GV.PmType GV.Quantitative]
+      label = GV.text [GV.TName "State", GV.TmType GV.Nominal]
+      enc = GV.encoding . encX . encY
+      specXaxis = GV.asSpec [GV.encoding . (GV.position GV.Y [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      specYaxis = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      stateLabelSpec = GV.asSpec [(enc . label) [], GV.mark GV.Text [GV.MTooltip GV.TTData]]
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+      transform = GV.transform . foldMids
+      specPts = GV.asSpec [enc [], mark]
+  in FV.configuredVegaLiteSchema
+     (GV.vlSchema 5 (Just 1) Nothing Nothing)
+     vc
+     [FV.title title, GV.layer ([specPts, stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
+
+
 
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
