@@ -226,8 +226,8 @@ cpsVAnalysis = do
   data_C <- BRE.prepCCESAndPums False
   let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 5 31)  Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
-  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
-    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+--  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
+--    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
   let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished  Nothing)
   cpsSS2Paths <- postPaths "StateSpecific2"
   BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps: CPS vs. CCES"
@@ -253,7 +253,7 @@ type Voted = "Voted" F.:-> Double
 
 type RawTurnout = [BR.Year, BR.StateAbbreviation, VoterTypeC, ET.ElectoralWeight]
 type RawTurnoutR = F.Record RawTurnout
-type RawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BRE.CPSPredictorR
+type CPSRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BRE.CPSPredictorR
 
 rawCPSTurnout :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
@@ -278,8 +278,44 @@ rawCPSTurnout clearCache dat_C = do
             (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, VoterTypeC])
             (FMR.foldAndAddKey rawProbFld)
   BR.retrieveOrMakeFrame cacheKey dat_C $ \dat -> do
-    let (joined, missing) = FJ.leftJoinWithMissing @RawTurnoutJoinCols (BRE.cpsVRows dat) (BRE.pumsRows dat)
-    when (not $ null missing) $ K.knitError "rawCPSTurnout: Missing keys from cpsData in pumsData"
+    let (joined, missing) = FJ.leftJoinWithMissing @CPSRawTurnoutJoinCols (BRE.cpsVRows dat) (BRE.pumsRows dat)
+    when (not $ null missing) $ K.knitError "rawCPSTurnout: pumsData is missing keys from cpsData"
+    return $ FL.fold fld joined
+
+type CCESRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                              V.++  [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
+
+rawCCESTurnout :: (K.KnitEffects r, BR.CacheEffects r)
+              => Bool
+              -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+              -> K.Sem r (K.ActionWithCacheTime r (F.Frame RawTurnoutR))
+rawCCESTurnout clearCache dat_C = do
+  let cacheKey = "model/turnout/ccesRaw.bin"
+  when clearCache $ BR.clearIfPresentD cacheKey
+  let getEW r = realToFrac (F.rgetField @BRE.TVotes r) / realToFrac (F.rgetField @BRE.Surveyed r)
+      ewC = FT.recordSingleton @ET.ElectoralWeight . getEW
+      vtC r = FT.recordSingleton @VoterTypeC $ if (wnh r) then WNHV else VOC
+      newCols r = ewC r `V.rappend` vtC r
+      ew = F.rgetField @ET.ElectoralWeight
+      cit = realToFrac . F.rgetField @PUMS.Citizens
+      rawProbFld :: FL.Fold (F.Record [PUMS.Citizens, ET.ElectoralWeight]) (F.Record '[ET.ElectoralWeight])
+      rawProbFld = (\x y -> FT.recordSingleton @ET.ElectoralWeight $ x/y)
+                   <$> FL.premap (\r -> ew r * cit r) FL.sum
+                   <*> FL.premap cit FL.sum
+      fld = FMR.concatFold
+            $ FMR.mapReduceFold
+            (FMR.simpleUnpack $ FT.mutate newCols)
+            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, VoterTypeC])
+            (FMR.foldAndAddKey rawProbFld)
+  BR.retrieveOrMakeFrame cacheKey dat_C $ \dat -> do
+    let addR5ToPUMS r = FT.recordSingleton @DT.Race5C
+                        $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+        pumsWithRace5 = fmap (FT.mutate addR5ToPUMS) $ BRE.pumsRows dat
+        electionYears = [2014, 2016, 2018, 2020]
+        isElectionYear r = F.rgetField @BR.Year r `elem` electionYears
+        eYearCCES = F.filterFrame isElectionYear $ BRE.ccesRows dat
+    let (joined, missing) = FJ.leftJoinWithMissing @CCESRawTurnoutJoinCols eYearCCES pumsWithRace5
+    when (not $ null missing) $ K.knitError $ "rawCCESTurnout: pumsData is missing keys from ccesData: " <> show missing
     return $ FL.fold fld joined
 
 
@@ -489,6 +525,30 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
     (Just 0.99)
     (Just 15)
 
+valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
+
+modelToHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+modelToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
+  f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
+  f (s, [lo, mid, hi]) = Heidi.rowFromList
+                         $ concat [(valToLabeledKV "State" s)
+                                  , (valToLabeledKV "Year" y)
+                                  , (valToLabeledKV "Type" t)
+                                  , (valToLabeledKV "lo" $ 100 * (lo - mid))
+                                  , (valToLabeledKV "mid" $ 100 * mid)
+                                  , (valToLabeledKV "hi" $ 100 * (hi - mid))
+                                  ]
+
+
+modelHeidiToVLData = HV.rowsToVLData [] [HV.asStr "State"
+                                        ,HV.asStr "Year"
+                                        ,HV.asStr "Type"
+                                        ,HV.asNumber "lo"
+                                        ,HV.asNumber "mid"
+                                        ,HV.asNumber "hi"
+                                        ]
+
+sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
 
 stateRaceCPSvsCCES :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                    => Bool
@@ -497,11 +557,22 @@ stateRaceCPSvsCCES :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                    -> K.ActionWithCacheTime r BRE.CCESAndPUMS
                    -> K.Sem r ()
 stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "stateRaceCPSvsCCES" $ do
- cps2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
- (_, _, cpsDiffI_2020, _, _, _, _) <- K.ignoreCacheTime cps2020_C
- cces2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
- (_, _, ccesDiffI_2020, _, _, _, _) <- K.ignoreCacheTime cces2020_C
- return ()
+  rawCCEST_C <- rawCCESTurnout False dataAllYears_C
+  K.ignoreCacheTime rawCCEST_C >>= BR.logFrame
+  cps_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2016] dataAllYears_C
+  (_, _, cpsDiffI, _, _, _, _) <- K.ignoreCacheTime cps_C
+  cces_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2016] dataAllYears_C
+  (_, _, ccesDiffI, _, _, _, _) <- K.ignoreCacheTime cces_C
+  let cpsDiffI_h = modelToHeidiFrame "2016" "CPS" cpsDiffI
+      ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
+  _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC/WNH Turnout Gap (2016): CPS vs CCES")
+       (sortedStates cpsDiffI)
+       (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
+       (FV.ViewConfig 500 1000 5)
+  return ()
 
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
@@ -518,26 +589,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   res2020_NI_C <- stateSpecificTurnoutModel clearCaches False SSTD_CPS [2020] dataAllYears_C
   (rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI) <- K.ignoreCacheTime res2020_NI_C
 
-  let valToLabeledKV l = FH.labelAndFlatten l . Heidi.toVal
-  let toHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-      toHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
-        f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
-        f (s, [lo, mid, hi]) = Heidi.rowFromList
-                                 $ concat [(valToLabeledKV "State" s)
-                                          , (valToLabeledKV "Year" y)
-                                          , (valToLabeledKV "Type" t)
-                                          , (valToLabeledKV "lo" $ 100 * (lo - mid))
-                                          , (valToLabeledKV "mid" $ 100 * mid)
-                                          , (valToLabeledKV "hi" $ 100 * (hi - mid))
-                                        ]
-      hfToVLData = HV.rowsToVLData [] [HV.asStr "State"
-                                      ,HV.asStr "Year"
-                                      ,HV.asStr "Type"
-                                      ,HV.asNumber "lo"
-                                      ,HV.asNumber "mid"
-                                      ,HV.asNumber "hi"
-                                      ]
-      hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
+  let hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
                                          ,HV.asStr "Year"
                                          ,HV.asStr "Type"
                                          ,HV.asNumber "lo"
@@ -548,11 +600,11 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
                                       ]
 
-      dNWNH_h_2020 = toHeidiFrame "2020" "VOC" dNWNH_2020
-      dWNH_h_2020 = toHeidiFrame "2020" "WHNV" dWNH_2020
-      rtDiffNI_h_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
-      rtNWNH_h_2020 = toHeidiFrame "2020" "VOC Turnout" rtNWNH_2020
-      rtWNH_h_2020 = toHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
+      dNWNH_h_2020 = modelToHeidiFrame "2020" "VOC" dNWNH_2020
+      dWNH_h_2020 = modelToHeidiFrame "2020" "WHNV" dWNH_2020
+      rtDiffNI_h_2020 = modelToHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
+      rtNWNH_h_2020 = modelToHeidiFrame "2020" "VOC Turnout" rtNWNH_2020
+      rtWNH_h_2020 = modelToHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
   data2020 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2020]) dataAllYears_C
   rawCPST_C <- rawCPSTurnout False dataAllYears_C
   K.ignoreCacheTime rawCPST_C >>= BR.logFrame
@@ -570,7 +622,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
     nwnh <- traverse (BR.rekeyCol [Heidi.mkTyN "Citizens"] [Heidi.mkTyN "NWNH VEP"]) nwnhCitByState
     traverse (BR.rekeyCol [Heidi.mkTyN "state_abbreviation"] [Heidi.mkTyN "State"]) $ Heidi.leftOuterJoin k k nwnh wnh
 
-  let sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
+  let
       addCols l y m = M.fromList [("Label", GV.Str l), ("Year", GV.Str y)] <> m
       filterState states =  K.knitMaybe "row missing State col" . Heidi.filterA (fmap (`elem` states) . Heidi.txt [Heidi.mkTyN "State"])
   electionIntegrity <- K.ignoreCacheTimeM BR.electionIntegrityByState2018
@@ -583,15 +635,15 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                           dNWNH_h_2020
                           electionIntegrityh
 --  K.logLE K.Info $ show $ FL.fold FL.length electionIntegrityh
-  let rtDiffNIh_2020 = toHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
-      rtDiffNIh_2020_NI  = toHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
-      rtDiffWIh_2020 = toHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
-      rtDiffIh_2020 = toHeidiFrame "2020" "State-Specific Turnout Gap" rtDiffI_2020
+  let rtDiffNIh_2020 = modelToHeidiFrame "2020" "Demographic Turnout Gap" rtDiffNI_2020
+      rtDiffNIh_2020_NI  = modelToHeidiFrame "2020" "Demographic Turnout Gap (NI model)" rtDiffNI_2020_NI
+      rtDiffWIh_2020 = modelToHeidiFrame "2020" "Full Turnout Gap" rtDiffWI_2020
+      rtDiffIh_2020 = modelToHeidiFrame "2020" "State-Specific Turnout Gap" rtDiffI_2020
   let chartW = 650
   let gapNoteName = BR.Unused "gaps"
   _ <- BR.brNewNote postPaths postInfo gapNoteName "Modeled VOC/WNH Turnout Gaps" $ do
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "1"
-    _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
+    _ <- K.knitEither (modelHeidiToVLData rtDiffNIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
@@ -599,7 +651,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          (TurnoutChartOptions True True ColorIsType (Just 22) (Just "Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "2"
-    _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
+    _ <- K.knitEither (modelHeidiToVLData rtDiffWIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gaps: Demographics & State-Specific Effects")
@@ -607,7 +659,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
     BR.brAddNoteMarkDownFromFile postPaths gapNoteName "3"
-    _ <- K.knitEither (hfToVLData rtDiffIh_2020) >>=
+    _ <- K.knitEither (modelHeidiToVLData rtDiffIh_2020) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH State-Specific Turnout Gap")
@@ -618,7 +670,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   --gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
 --  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
   BR.brAddPostMarkDownFromFile postPaths "_intro"
-  _ <- K.knitEither (hfToVLData rtDiffWIh_2020) >>=
+  _ <- K.knitEither (modelHeidiToVLData rtDiffWIh_2020) >>=
        K.addHvega
        (Just "figure_fullGap")
        (Just "Figure 1: Modeled VOC/WHNV turnout gaps in the 2020 general election.")
@@ -634,7 +686,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       $ traverse (Heidi.at (BR.heidiColKey "Type") $ const (Just $ Just $ Heidi.VPText "Full Model")) rtDiffNIh_2020
     noSRI <- K.knitMaybe "Error changing to model types for demographic only comparison note"
       $ traverse (Heidi.at (BR.heidiColKey "Type") $ const (Just $ Just $ Heidi.VPText "No SRI Model")) rtDiffNIh_2020_NI
-    _ <- K.knitEither (hfToVLData (full <> noSRI)) >>=
+    _ <- K.knitEither (modelHeidiToVLData (full <> noSRI)) >>=
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
@@ -646,7 +698,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   niComparisonNoteUrl <- K.knitMaybe "NI comparison Note Url is Nothing" $ mNIComparisonNoteUrl
   let niComparisonNoteRef = "[niComparison_link]: " <> niComparisonNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_afterFullGaps" (Just niComparisonNoteRef)
-  _ <- K.knitEither (hfToVLData rtDiffNIh_2020) >>=
+  _ <- K.knitEither (modelHeidiToVLData rtDiffNIh_2020) >>=
        K.addHvega
        (Just "figure_demographicOnly")
        (Just "Figure 2: Modeled demographic-only VOC/WHNV turnout gaps in the 2020 general election.")
@@ -679,7 +731,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   BR.brAddPostMarkDownFromFile postPaths "_afterSigStates"
 {-
   -- zoom in on components of gaps
-  _ <- K.knitEither (hfToVLData (dNWNH_h_2020 <> dWNH_h_2020)) >>=
+  _ <- K.knitEither (modelHeidiToVLData (dNWNH_h_2020 <> dWNH_h_2020)) >>=
        K.addHvega Nothing
        (Just "Figure 5: VOC/WHNV components of significant gaps.")
        . ssGapComponentsChart
