@@ -224,14 +224,16 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
-  let cpsSS1PostInfo = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3)  Nothing)
+
+  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
---  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished  Nothing)
---  cpsSS2Paths <- postPaths "StateSpecific2"
---  BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps: CPS vs. CCES"
---    $ stateRaceCPSvsCCES False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+
+  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  cpsSS2Paths <- postPaths "StateSpecific2"
+  BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps Over Time"
+    $ gapsOverTime False cpsSS2Paths cpsSS2PostInfo $ K.liftActionWithCacheTime data_C
 
 {-
   let cpsMTPostInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
@@ -550,55 +552,25 @@ modelHeidiToVLData = HV.rowsToVLData [] [HV.asStr "State"
 
 sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
 
-stateRaceCPSvsCCES :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
-                   => Bool
-                   -> BR.PostPaths BR.Abs
-                   -> BR.PostInfo
-                   -> K.ActionWithCacheTime r BRE.CCESAndPUMS
-                   -> K.Sem r ()
-stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "stateRaceCPSvsCCES" $ do
-  rawCCEST_C <- rawCCESTurnout False dataAllYears_C
-  K.ignoreCacheTime rawCCEST_C >>= BR.logFrame
-  cps_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2016] dataAllYears_C
-  (_, _, cpsDiffI, _, _, _, _) <- K.ignoreCacheTime cps_C
-  cces_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2016] dataAllYears_C
-  (_, _, ccesDiffI, _, _, _, _) <- K.ignoreCacheTime cces_C
-  let cpsDiffI_h = modelToHeidiFrame "2016" "CPS" cpsDiffI
-      ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
-  _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
-       K.addHvega Nothing Nothing
-       . cpsVsCcesScatter
-       ("Turnout Gap: CPS vs CCES (2016)")
-       (FV.ViewConfig 600 600 5)
+gapsOverTime :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+             => Bool
+             -> BR.PostPaths BR.Abs
+             -> BR.PostInfo
+             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+             -> K.Sem r ()
+gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsOverTime" $ do
+  K.logLE K.Info $ "Re-building gapsOverTime post"
+  let doYear (y, t) = do
+        res_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [y] dataAllYears_C
+        (_, _, rtDiffI, _, _, _, _) <- K.ignoreCacheTime res_C
+        return $ modelToHeidiFrame (show y) t rtDiffI
+  diffsByYear <- traverse doYear [(2012, "Presidential")
+                                 ,(2014, "Mid-term")
+                                 ,(2016, "Presidential")
+                                 ,(2018, "Mid-term")
+                                 ,(2020, "Presidential")
+                                 ]
   return ()
-
--- 2 x 2
-cpsVsCcesScatter ::  --(Functor f, Foldable f)
-  Text
-  -> FV.ViewConfig
-  -> GV.Data
-  -> GV.VegaLite
-cpsVsCcesScatter title vc@(FV.ViewConfig w h _) vlData =
-  let --vlData = MapRow.toVLData M.toList [] vlData -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
-      foldMids = GV.pivot "Type" "mid" [GV.PiGroupBy ["State"]]
---      gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
-      encY = GV.position GV.Y [GV.PName "CPS", GV.PmType GV.Quantitative]
-      encX = GV.position GV.X [GV.PName "CCES", GV.PmType GV.Quantitative]
-      label = GV.text [GV.TName "State", GV.TmType GV.Nominal]
-      enc = GV.encoding . encX . encY
-      specXaxis = GV.asSpec [GV.encoding . (GV.position GV.Y [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
-      specYaxis = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
-      stateLabelSpec = GV.asSpec [(enc . label) [], GV.mark GV.Text [GV.MTooltip GV.TTData]]
-      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
-      transform = GV.transform . foldMids
-      specPts = GV.asSpec [enc [], mark]
-  in FV.configuredVegaLiteSchema
-     (GV.vlSchema 5 (Just 1) Nothing Nothing)
-     vc
-     [FV.title title, GV.layer ([specPts, stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
-
-
-
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
@@ -990,9 +962,6 @@ gapComponentsChart title mSortedStates vc@(FV.ViewConfig w h _) vlData =
                                        )
   in FV.configuredVegaLite vc [FV.title title, GV.specification barSpec, encState, GV.columns 3, vlData]
 
-
-
-
 data TurnoutChartColor = ColorIsYear | ColorIsVotingIntegrity | ColorIsType
 
 data TurnoutChartOptions = TurnoutChartOptions { showMean :: Bool
@@ -1218,3 +1187,55 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
     (Just 0.99)
     (Just 15)
   return ()
+
+---
+
+stateRaceCPSvsCCES :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+                   => Bool
+                   -> BR.PostPaths BR.Abs
+                   -> BR.PostInfo
+                   -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+                   -> K.Sem r ()
+stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "stateRaceCPSvsCCES" $ do
+  rawCCEST_C <- rawCCESTurnout False dataAllYears_C
+  K.ignoreCacheTime rawCCEST_C >>= BR.logFrame
+  cps_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2016] dataAllYears_C
+  (_, _, cpsDiffI, _, _, _, _) <- K.ignoreCacheTime cps_C
+  cces_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2016] dataAllYears_C
+  (_, _, ccesDiffI, _, _, _, _) <- K.ignoreCacheTime cces_C
+  let cpsDiffI_h = modelToHeidiFrame "2016" "CPS" cpsDiffI
+      ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
+  _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
+       K.addHvega Nothing Nothing
+       . cpsVsCcesScatter
+       ("Turnout Gap: CPS vs CCES (2016)")
+       (FV.ViewConfig 600 600 5)
+  return ()
+
+-- 2 x 2
+cpsVsCcesScatter ::  --(Functor f, Foldable f)
+  Text
+  -> FV.ViewConfig
+  -> GV.Data
+  -> GV.VegaLite
+cpsVsCcesScatter title vc@(FV.ViewConfig w h _) vlData =
+  let --vlData = MapRow.toVLData M.toList [] vlData -- [GV.Parse [("Year", GV.FoDate "%Y")]] rows
+      foldMids = GV.pivot "Type" "mid" [GV.PiGroupBy ["State"]]
+--      gapScale = GV.PScale [GV.SDomain $ GV.DNumbers [-0.11, 0.12]]
+      encY = GV.position GV.Y [GV.PName "CPS", GV.PmType GV.Quantitative]
+      encX = GV.position GV.X [GV.PName "CCES", GV.PmType GV.Quantitative]
+      label = GV.text [GV.TName "State", GV.TmType GV.Nominal]
+      enc = GV.encoding . encX . encY
+      specXaxis = GV.asSpec [GV.encoding . (GV.position GV.Y [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      specYaxis = GV.asSpec [GV.encoding . (GV.position GV.X [GV.PDatum $ GV.Number 0]) $ [],  GV.mark GV.Rule []]
+      stateLabelSpec = GV.asSpec [(enc . label) [], GV.mark GV.Text [GV.MTooltip GV.TTData]]
+      mark = GV.mark GV.Point [GV.MTooltip GV.TTData]
+      transform = GV.transform . foldMids
+      specPts = GV.asSpec [enc [], mark]
+  in FV.configuredVegaLiteSchema
+     (GV.vlSchema 5 (Just 1) Nothing Nothing)
+     vc
+     [FV.title title, GV.layer ([specPts, stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
+
+
+--
