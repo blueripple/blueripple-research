@@ -224,14 +224,14 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
-  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 5 31)  Nothing)
+  let cpsSS1PostInfo = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3)  Nothing)
   cpsSS1Paths <- postPaths "StateSpecific1"
---  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
---    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
-  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished  Nothing)
-  cpsSS2Paths <- postPaths "StateSpecific2"
-  BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps: CPS vs. CCES"
-    $ stateRaceCPSvsCCES False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
+    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+--  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished  Nothing)
+--  cpsSS2Paths <- postPaths "StateSpecific2"
+--  BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps: CPS vs. CCES"
+--    $ stateRaceCPSvsCCES False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
 
 {-
   let cpsMTPostInfo = PostInfo BRC.LocalDraft (BRC.PubTimes BRC.Unpublished Nothing)
@@ -735,9 +735,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   BR.brAddPostMarkDownFromFile postPaths "_afterDemographicOnly"
   _ <- K.knitEither (hfToVLDataPEI rtDiffIh_2020) >>=
        K.addHvega Nothing
-       (Just "Figure 3: Modeled state-specific (= total gap - demographic gap) turnout gaps in the 2020 general election.")
+       (Just "Figure 3: Modeled state-specific contribution (= total gap - demographic gap) to turnout gaps in the 2020 general election.")
        . turnoutChart
-       ("State-Specific Turnout Gap (2020)")
+       ("State-Specific Contribution to Turnout Gap (2020)")
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 35) Nothing False)
        (FV.ViewConfig chartW 1000 5)
@@ -747,9 +747,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
   _ <- K.knitEither (hfToVLDataPEI rtNWNH_sig) >>=
        K.addHvega Nothing
-       (Just "Figure 4: Modeled state-specific turnout gaps in the 2020 general election. Clearly non-zero only.")
+       (Just "Figure 4: Modeled state-specific contribution to turnout gaps in the 2020 general election. Clearly non-zero only.")
        . turnoutChart
-       ("Significant State-Specific VOC Turnout (2020)")
+       ("Significant State-Specific Contribution to VOC/WHNV Turnout Gaps (2020)")
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 23) Nothing False)
        (FV.ViewConfig chartW 400 5)
