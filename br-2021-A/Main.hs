@@ -570,6 +570,14 @@ gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsO
                                  ,(2018, "Mid-term")
                                  ,(2020, "Presidential")
                                  ]
+  _ <- K.knitEither (modelHeidiToVLData $ mconcat diffsByYear) >>=
+       K.addHvega Nothing Nothing
+       . turnoutChart
+       ("VOC/WNH Turnout Gap")
+       (["AL","CO","PA","GA", "MI", "FL", "NH","MA", "IL", "WA"])
+       (TurnoutChartOptions True True ColorIsYear Nothing (Just "Turnout Gap (%)") False)
+       (FV.ViewConfig 500 1000 5)
+
   return ()
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
