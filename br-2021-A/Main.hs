@@ -284,6 +284,36 @@ rawCPSTurnout clearCache dat_C = do
     when (not $ null missing) $ K.knitError "rawCPSTurnout: pumsData is missing keys from cpsData"
     return $ FL.fold fld joined
 
+
+
+rawCPSToHeidiFrame :: F.FrameRec RawTurnout -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+rawCPSToHeidiFrame rs = Heidi.frameFromList $ fmap f $ FL.fold FL.list $ FL.fold outerFld rs where
+  innerFld :: FL.Fold (F.Record [VoterTypeC, ET.ElectoralWeight]) (F.Record ['("gap", Double), '("sigma", Double)])
+  innerFld =
+    let p = F.rgetField @ET.ElectoralWeight
+        sp r = let x = p r in x * (1 - x)
+        vp r = sp r * sp r
+        sgn r = if F.rgetField @VoterTypeC r == VOC then 1 else -1
+        gFld = FL.premap (\r -> sgn r * p r) FL.sum
+        sFld = sqrt <$> FL.premap vp FL.sum
+    in  (\x y -> x F.&: y F.&: V.RNil) <$> gFld <*> sFld
+  outerFld :: FL.Fold RawTurnoutR (F.FrameRec [BR.Year, BR.StateAbbreviation, '("gap", Double), '("sigma", Double)])
+  outerFld = FMR.concatFold
+             $ FMR.mapReduceFold
+             FMR.noUnpack
+             (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation])
+             (FMR.foldAndAddKey innerFld)
+  gap = F.rgetField @'("gap", Double)
+  sigma = F.rgetField @'("sigma", Double)
+  f r = Heidi.rowFromList
+        $ concat [(valToLabeledKV "State" $ F.rgetField @BR.StateAbbreviation r)
+                 , (valToLabeledKV "Year" $ show @Text $ F.rgetField @BR.Year r)
+                 , (valToLabeledKV "Type" ("CPS Binomial" :: Text))
+                 , (valToLabeledKV "lo" $ negate $ 100 * 0.88 * sigma r)
+                 , (valToLabeledKV "mid" $ 100 * gap r)
+                 , (valToLabeledKV "hi" $ 100 * 0.88 * sigma r)
+                 ]
+
 type CCESRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
                               V.++  [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
@@ -317,7 +347,7 @@ rawCCESTurnout clearCache dat_C = do
         isElectionYear r = F.rgetField @BR.Year r `elem` electionYears
         eYearCCES = F.filterFrame isElectionYear $ BRE.ccesRows dat
     let (joined, missing) = FJ.leftJoinWithMissing @CCESRawTurnoutJoinCols eYearCCES pumsWithRace5
-    when (not $ null missing) $ K.knitError $ "rawCCESTurnout: pumsData is missing keys from ccesData: " <> show missing
+    unless (null missing) $ K.knitError $ "rawCCESTurnout: pumsData is missing keys from ccesData: " <> show missing
     return $ FL.fold fld joined
 
 
@@ -541,9 +571,30 @@ modelToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
                                   , (valToLabeledKV "hi" $ 100 * (hi - mid))
                                   ]
 
+modelToHeidiFrame' :: Int -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+modelToHeidiFrame' y t m = Heidi.frameFromList $ fmap f $ M.toList m where
+  f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
+  f (s, [lo, mid, hi]) = Heidi.rowFromList
+                         $ concat [(valToLabeledKV "State" s)
+                                  , (valToLabeledKV "Year" y)
+                                  , (valToLabeledKV "Type" t)
+                                  , (valToLabeledKV "lo" $ 100 * (lo - mid))
+                                  , (valToLabeledKV "mid" $ 100 * mid)
+                                  , (valToLabeledKV "hi" $ 100 * (hi - mid))
+                                  ]
+
+
 
 modelHeidiToVLData = HV.rowsToVLData [] [HV.asStr "State"
                                         ,HV.asStr "Year"
+                                        ,HV.asStr "Type"
+                                        ,HV.asNumber "lo"
+                                        ,HV.asNumber "mid"
+                                        ,HV.asNumber "hi"
+                                        ]
+
+modelHeidiToVLData' = HV.rowsToVLData [] [HV.asStr "State"
+                                        ,HV.asNumber "Year"
                                         ,HV.asStr "Type"
                                         ,HV.asNumber "lo"
                                         ,HV.asNumber "mid"
@@ -563,22 +614,51 @@ gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsO
   let doYear (y, t) = do
         res_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [y] dataAllYears_C
         (_, _, rtDiffI, _, _, _, _) <- K.ignoreCacheTime res_C
-        return $ modelToHeidiFrame (show y) t rtDiffI
+        return $ modelToHeidiFrame' y t rtDiffI
   diffsByYear <- traverse doYear [(2012, "Presidential")
                                  ,(2014, "Mid-term")
                                  ,(2016, "Presidential")
                                  ,(2018, "Mid-term")
                                  ,(2020, "Presidential")
                                  ]
-  _ <- K.knitEither (modelHeidiToVLData $ mconcat diffsByYear) >>=
+{-
+  _ <- K.knitEither (modelHeidiToVLData' $ mconcat diffsByYear) >>=
        K.addHvega Nothing Nothing
        . turnoutChart
        ("VOC/WNH Turnout Gap")
        (["AL","CO","PA","GA", "MI", "FL", "NH","MA", "IL", "WA"])
        (TurnoutChartOptions True True ColorIsYear Nothing (Just "Turnout Gap (%)") False)
        (FV.ViewConfig 500 1000 5)
-
+-}
+  _ <- K.knitEither (modelHeidiToVLData' $ mconcat diffsByYear) >>=
+       K.addHvega
+       Nothing
+       (Just "State-Specific Turnout Gaps over Time (NB: Each state has its own turnout scale)")
+       . gapsOverTimeChart
+       ("State-Specific VOC/WNH Turnout Gap (2012 - 2020)")
+       Nothing
+       (FV.ViewConfig 120 100 5)
   return ()
+
+gapsOverTimeChart :: Text -> Maybe [Text] -> FV.ViewConfig -> GV.Data -> GV.VegaLite
+gapsOverTimeChart title mSortedStates vc dat =
+  let stateSort = maybe [] (\x -> [GV.FSort [GV.CustomSort $ GV.Strings x]]) mSortedStates
+      tScale = [] --[GV.PScale [GV.SDomain $ GV.DNumbers [-30,40]]]
+      encYear = GV.position GV.X [GV.PName "Year", GV.PmType GV.Quantitative, GV.PAxis [GV.AxFormatAsNum, GV.AxFormat "d"]]
+      encTLo = GV.position GV.YError $ [GV.PName "lo", GV.PmType GV.Quantitative] ++ tScale
+      encTMid = GV.position GV.Y $ [GV.PName "mid", GV.PmType GV.Quantitative] ++  tScale
+      encTHi = GV.position GV.YError2 $ [GV.PName "hi", GV.PmType GV.Quantitative] ++ tScale
+      encState = GV.facetFlow ([GV.FName "State", GV.FmType GV.Nominal] ++ stateSort)
+      encoding = GV.encoding . encYear . encTLo . encTMid . encTHi
+      markBand = GV.mark GV.ErrorBand []
+      markMid = GV.mark GV.Line [GV.MSize 1, GV.MColor "orange"]
+      encZeroY = GV.position GV.Y [GV.PDatum $ GV.Number 0]
+      resolve = GV.resolve . GV.resolution (GV.RScale [(GV.ChY, GV.Independent)])
+      stateBandSpec = GV.asSpec [(GV.encoding . encYear . encTLo . encTMid . encTHi) [], markBand]
+      stateLineSpec = GV.asSpec [(GV.encoding . encYear . encTMid) [], markMid]
+      zeroSpec = GV.asSpec [(GV.encoding . encZeroY . encYear) [], GV.mark GV.Line []]
+      stateSpec = GV.asSpec $ [GV.layer [stateBandSpec, zeroSpec, stateLineSpec]]
+  in FV.configuredVegaLite vc [FV.title title, GV.specification stateSpec, encState, resolve [], GV.columns 4, dat]
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
@@ -612,7 +692,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       rtWNH_h_2020 = modelToHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
   data2020 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2020]) dataAllYears_C
   rawCPST_C <- rawCPSTurnout False dataAllYears_C
-  K.ignoreCacheTime rawCPST_C >>= BR.logFrame
+  rawCPST <- K.ignoreCacheTime rawCPST_C
+  let rawCPS2020_h = rawCPSToHeidiFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) rawCPST
+--  BR.logFrame rawCPST
   let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
                  $ FMR.concatFold
                  $ FMR.mapReduceFold
