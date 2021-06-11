@@ -230,7 +230,7 @@ cpsVAnalysis = do
   BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
     $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
 
-  let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS2PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS2Paths <- postPaths "StateSpecific2"
   BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps Over Time"
     $ gapsOverTime False cpsSS2Paths cpsSS2PostInfo $ K.liftActionWithCacheTime data_C
