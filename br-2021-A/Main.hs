@@ -621,15 +621,7 @@ gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsO
                                  ,(2018, "Mid-term")
                                  ,(2020, "Presidential")
                                  ]
-{-
-  _ <- K.knitEither (modelHeidiToVLData' $ mconcat diffsByYear) >>=
-       K.addHvega Nothing Nothing
-       . turnoutChart
-       ("VOC/WNH Turnout Gap")
-       (["AL","CO","PA","GA", "MI", "FL", "NH","MA", "IL", "WA"])
-       (TurnoutChartOptions True True ColorIsYear Nothing (Just "Turnout Gap (%)") False)
-       (FV.ViewConfig 500 1000 5)
--}
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
   _ <- K.knitEither (modelHeidiToVLData' $ mconcat diffsByYear) >>=
        K.addHvega
        Nothing
@@ -658,7 +650,12 @@ gapsOverTimeChart title mSortedStates vc dat =
       stateLineSpec = GV.asSpec [(GV.encoding . encYear . encTMid) [], markMid]
       zeroSpec = GV.asSpec [(GV.encoding . encZeroY . encYear) [], GV.mark GV.Line []]
       stateSpec = GV.asSpec $ [GV.layer [stateBandSpec, zeroSpec, stateLineSpec]]
-  in FV.configuredVegaLite vc [FV.title title, GV.specification stateSpec, encState, resolve [], GV.columns 4, dat]
+  in FV.configuredVegaLite vc [FV.title title
+                              , GV.specification stateSpec
+                              , encState
+--                              , resolve []
+                              , GV.columns 4
+                              , dat]
 
 cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
@@ -694,7 +691,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   rawCPST_C <- rawCPSTurnout False dataAllYears_C
   rawCPST <- K.ignoreCacheTime rawCPST_C
   let rawCPS2020_h = rawCPSToHeidiFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) rawCPST
---  BR.logFrame rawCPST
+  BR.logFrame rawCPST
   let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
                  $ FMR.concatFold
                  $ FMR.mapReduceFold
@@ -756,8 +753,18 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
     return ()
   -- NoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
   --  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
-  let naiveModelNoteName = BR.Used "Naive Model"
+  let naiveModelNoteName = BR.Used "Naive_Model"
   mNaiveModelUrl <- BR.brNewNote postPaths postInfo naiveModelNoteName "Models of VOC/WNH Turnout Gaps" $ do
+    BR.brAddNoteMarkDownFromFile postPaths naiveModelNoteName "_intro"
+    _ <- K.knitEither (modelHeidiToVLData (rtDiffWIh_2020 <> rawCPS2020_h)) >>=
+           K.addHvega
+           (Just "figure_naiveCompare")
+           (Just "Comparison of post-stratified simple Binomial model to MRP.")
+           . turnoutChart
+           ("VOC/WNH Turnout Gaps")
+           (sortedStates rtDiffWI_2020)
+           (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
+           (FV.ViewConfig chartW 1000 5)
     return ()
   naiveModelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mNaiveModelUrl
   let naiveModelRef = "[niNaiveModel_link]: " <> naiveModelNoteUrl
