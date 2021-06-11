@@ -53,3 +53,5 @@ include 90% confidence intervals for our estimates.
     reflected in the confidence intervals.  There are other sources of uncertainty
     (survey methods, etc.) that we are not quantifying here,
     so these confidence intervals are probably too small.
+    [Click here][niNaiveModel_link] for a comparison between our MRP model and a much
+    simpler model of the same data.

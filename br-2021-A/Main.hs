@@ -754,9 +754,14 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          (TurnoutChartOptions False True ColorIsType (Just 25) (Just "State-Specific Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
     return ()
-  --gapNoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
---  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
+  -- NoteUrl <- K.knitMaybe "gap Note Url is Nothing" $ mGapNoteUrl
+  --  let gapNoteRef = "[gapNote_link]: " <> gapNoteUrl
+  let naiveModelNoteName = BR.Used "Naive Model"
+  mNaiveModelUrl <- BR.brNewNote postPaths postInfo naiveModelNoteName "Models of VOC/WNH Turnout Gaps" $ do
+    return ()
+  naiveModelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mNaiveModelUrl
+  let naiveModelRef = "[niNaiveModel_link]: " <> naiveModelNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just naiveModelRef)
   _ <- K.knitEither (modelHeidiToVLData rtDiffWIh_2020) >>=
        K.addHvega
        (Just "figure_fullGap")
