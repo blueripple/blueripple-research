@@ -404,6 +404,28 @@ modelHeidiToVLData' = HV.rowsToVLData [] [HV.asStr "State"
                                         ]
 
 sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
+sortedDistricts x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
+
+districtModelToHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+districtModelToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
+  f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
+  f (s, [lo, mid, hi]) = Heidi.rowFromList
+                         $ concat [(valToLabeledKV "CD" s)
+                                  , (valToLabeledKV "Year" y)
+                                  , (valToLabeledKV "Type" t)
+                                  , (valToLabeledKV "lo" $ 100 * (lo - mid))
+                                  , (valToLabeledKV "mid" $ 100 * mid)
+                                  , (valToLabeledKV "hi" $ 100 * (hi - mid))
+                                  ]
+
+districtModelHeidiToVLData = HV.rowsToVLData [] [HV.asStr "CD"
+                                                ,HV.asStr "Year"
+                                                ,HV.asStr "Type"
+                                                ,HV.asNumber "lo"
+                                                ,HV.asNumber "mid"
+                                                ,HV.asNumber "hi"
+                                        ]
+
 
 districtSpecificTurnout :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                         => Bool
@@ -416,6 +438,16 @@ districtSpecificTurnout clearCaches postPaths postInfo dataAllYears_C = K.wrapPr
   modeledTurnout_C <- districtSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
   (_,_, rtDiffI,_,_,_,_) <- K.ignoreCacheTime modeledTurnout_C
   K.logLE K.Info $ "District result has " <> show (M.size rtDiffI) <> " rows."
+  let rtDiffIh_2020 = districtModelToHeidiFrame "2020" "District-Specific" rtDiffI
+  _ <- K.knitEither (districtModelHeidiToVLData rtDiffIh_2020) >>=
+       K.addHvega Nothing
+       (Just "District-specific turnout gaps")
+       . turnoutChart
+       "District-Specific Contribution to Turnout Gap (2020)"
+       "CD"
+       (sortedDistricts rtDiffI)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig 600 5000 5)
   return ()
 
 gapsOverTime :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
@@ -546,6 +578,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
+         "State"
          (sortedStates rtDiffNI_2020)
          (TurnoutChartOptions True True ColorIsType (Just 22) (Just "Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
@@ -554,6 +587,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gaps: Demographics & State-Specific Effects")
+         "State"
          (sortedStates rtDiffWI_2020)
          (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
@@ -562,6 +596,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH State-Specific Turnout Gap")
+         "State"
          (sortedStates rtDiffI_2020)
          (TurnoutChartOptions False True ColorIsType (Just 25) (Just "State-Specific Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
@@ -577,6 +612,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
            (Just "Comparison of post-stratified simple Binomial model to MRP.")
            . turnoutChart
            ("VOC/WNH Turnout Gaps")
+           "State"
            (sortedStates rtDiffWI_2020)
            (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
            (FV.ViewConfig chartW 1000 5)
@@ -590,6 +626,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (Just "Figure 1: Modeled VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gaps")
+       "State"
        (sortedStates rtDiffWI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
        (FV.ViewConfig chartW 1000 5)
@@ -604,6 +641,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
          K.addHvega Nothing Nothing
          . turnoutChart
          ("VOC/WNH Turnout Gap: Demographics Only")
+         "State"
          (sortedStates rtDiffNI_2020)
          (TurnoutChartOptions True True ColorIsType Nothing (Just "Turnout Gap (%)") False)
          (FV.ViewConfig chartW 1000 5)
@@ -618,6 +656,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (Just "Figure 2: Modeled demographic-only VOC/WHNV turnout gaps in the 2020 general election.")
        . turnoutChart
        ("VOC/WNH Turnout Gap: Demographics Only")
+       "State"
        (sortedStates rtDiffNI_2020)
        (TurnoutChartOptions True True ColorIsType (Just 35) (Just "Turnout Gap (%)") False)
        (FV.ViewConfig chartW 1000 5)
@@ -627,6 +666,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (Just "Figure 3: Modeled state-specific contribution (= total gap - demographic gap) to turnout gaps in the 2020 general election.")
        . turnoutChart
        ("State-Specific Contribution to Turnout Gap (2020)")
+       "State"
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 35) Nothing False)
        (FV.ViewConfig chartW 1000 5)
@@ -639,6 +679,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (Just "Figure 4: Modeled state-specific contribution to turnout gaps in the 2020 general election. Clearly non-zero only.")
        . turnoutChart
        ("Significant State-Specific Contribution to VOC/WHNV Turnout Gaps (2020)")
+       "State"
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 23) Nothing False)
        (FV.ViewConfig chartW 400 5)
@@ -890,14 +931,15 @@ data TurnoutChartOptions = TurnoutChartOptions { showMean :: Bool
                                                }
 
 turnoutChart :: Text
-                 -> [Text]
-                 -> TurnoutChartOptions
-                 -> FV.ViewConfig
-                 -> GV.Data
-                 -> GV.VegaLite
-turnoutChart title sortedStates chartOptions vc vlData =
+             -> Text
+             -> [Text]
+             -> TurnoutChartOptions
+             -> FV.ViewConfig
+             -> GV.Data
+             -> GV.VegaLite
+turnoutChart title yName sortedY chartOptions vc vlData =
   let --vlData = MapRow.toVLData M.toList [] rows --[GV.Parse [("Year", GV.FoDate "%Y")]] rows
-      encY = GV.position GV.Y [GV.PName "State", GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedStates]]
+      encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Nominal, GV.PSort [GV.CustomSort $ GV.Strings sortedY]]
       xLabel = fromMaybe "Turnout Gap (%)" $ mXLabel chartOptions
       xScale = case symmetricX chartOptions of
         Nothing -> []
@@ -1118,7 +1160,7 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
-                         (SB.GroupTypeTag @Text "State")
+                         (SB.GroupTypeTag @Text "CD")
                          groupIndexes
             let parseAndIndexPctsWith f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
