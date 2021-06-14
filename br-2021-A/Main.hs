@@ -436,16 +436,16 @@ districtSpecificTurnout :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 districtSpecificTurnout clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "districtSpecificTurnout" $ do
   K.logLE K.Info $ "Re-building districtSpecificTurnout post"
   modeledTurnout_C <- districtSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
-  (_,_, rtDiffI,_,_,_,_) <- K.ignoreCacheTime modeledTurnout_C
-  K.logLE K.Info $ "District result has " <> show (M.size rtDiffI) <> " rows."
-  let rtDiffIh_2020 = districtModelToHeidiFrame "2020" "District-Specific" rtDiffI
-  _ <- K.knitEither (districtModelHeidiToVLData rtDiffIh_2020) >>=
+  (fullGap, stateGap, demographicGap, districtSpecificGap, districtOnlyGap) <- K.ignoreCacheTime modeledTurnout_C
+  K.logLE K.Info $ "District result has " <> show (M.size districtSpecificGap) <> " rows."
+  let hDistrictSpecificGap = districtModelToHeidiFrame "2020" "District-Specific" districtSpecificGap
+  _ <- K.knitEither (districtModelHeidiToVLData hDistrictSpecificGap) >>=
        K.addHvega Nothing
        (Just "District-specific turnout gaps")
        . turnoutChart
        "District-Specific Contribution to Turnout Gap (2020)"
        "CD"
-       (sortedDistricts rtDiffI)
+       (sortedDistricts districtSpecificGap)
        (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
        (FV.ViewConfig 600 5000 5)
   return ()
@@ -1024,8 +1024,6 @@ districtSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double]
                                                               , Map Text [Double]
                                                               , Map Text [Double]
-                                                              , Map Text [Double]
-                                                              , Map Text [Double]
                                                               )
                                      )
 districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYears_C =
@@ -1095,9 +1093,9 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
         gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
         gCDE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "CD"
         let dist = SB.binomialLogitDist vSucc vTotal
+        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
         (logitPE_sample, logitPE) <- case withSDRace of
           True -> do
-            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
             (gWNHCDV, gWNHCD) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "CD"
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHStateV, gWNHCDV]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHState, gWNHCD])
@@ -1105,7 +1103,8 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE])
 
-        let logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
+        let logitPE_NI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
+            logitPE_SI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState, gCDE]
         SB.sampleDistV dist logitPE_sample
 
         -- generated quantities
@@ -1132,21 +1131,21 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 
         (SB.StanVar whiteWI psType) <- postStratByState "WI" logitPE acsData_W
         (SB.StanVar nonWhiteWI _) <- postStratByState "WI" logitPE acsData_NW
-        (SB.StanVar whiteNI _) <- postStratByState "NI" logitPE' acsData_W
-        (SB.StanVar nonWhiteNI _) <- postStratByState "NI" logitPE' acsData_NW
+        (SB.StanVar whiteNI _) <- postStratByState "NI" logitPE_NI acsData_W
+        (SB.StanVar nonWhiteNI _) <- postStratByState "NI" logitPE_NI acsData_NW
+        (SB.StanVar whiteSI _) <- postStratByState "SI" logitPE_SI acsData_W
+        (SB.StanVar nonWhiteSI _) <- postStratByState "SI" logitPE_SI acsData_NW
 
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
-          SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI
-          SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name nonWhiteNI `SB.minus` SB.name whiteNI
-          SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
-          SB.stanDeclareRHS "dNWNH" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name nonWhiteNI
-          SB.stanDeclareRHS "dWNH" psType "" $ SB.name whiteWI `SB.minus` SB.name whiteNI
+          SB.stanDeclareRHS "fullGap" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI
+          SB.stanDeclareRHS "stateGap" psType "" $ SB.name nonWhiteSI `SB.minus` SB.name whiteSI
+          SB.stanDeclareRHS "demographicGap" psType "" $ SB.name nonWhiteNI `SB.minus` SB.name whiteNI
+          SB.stanDeclareRHS "districtSpecificGap" psType "" $ SB.name "fullGap" `SB.minus` SB.name "demographicGap"
+          SB.stanDeclareRHS "districtOnlyGap" psType "" $ SB.name "fullGap" `SB.minus` SB.name "stateGap"
         return ()
 
       extractTestResults :: K.KnitEffects r
                          => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double]
-                                                                          , Map Text [Double]
-                                                                          , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
@@ -1166,14 +1165,12 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults psIndexIM $ Vector.map f v
 
-            rtDiffWI <- parseAndIndexPctsWith id "rtDiffWI"
-            rtDiffNI <- parseAndIndexPctsWith id "rtDiffNI"
-            rtDiffI <- parseAndIndexPctsWith id "rtDiffI"
-            rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NWNH_CD"
-            rtWNH_WI <- parseAndIndexPctsWith id "WI_ACS_WNH_CD"
-            dNWNH <- parseAndIndexPctsWith id "dNWNH"
-            dWNH <- parseAndIndexPctsWith id "dWNH"
-            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
+            fullGap <- parseAndIndexPctsWith id "fullGap"
+            stateGap <- parseAndIndexPctsWith id "stateGap"
+            demographicGap <- parseAndIndexPctsWith id "demographicGap"
+            districtSpecificGap <- parseAndIndexPctsWith id "districtSpecificGap"
+            districtOnlyGap <- parseAndIndexPctsWith id "districtOnlyGap"
+            return (fullGap, stateGap, demographicGap, districtSpecificGap, districtOnlyGap)
 
   K.logLE K.Info "Building json data wrangler and model code..."
   let dataWranglerAndCode data_C years withSDRace = do
