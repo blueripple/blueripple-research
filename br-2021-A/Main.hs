@@ -236,7 +236,7 @@ cpsVAnalysis = do
   BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps Over Time"
     $ gapsOverTime False cpsSS2Paths cpsSS2PostInfo $ K.liftActionWithCacheTime data_C
 
-  let cpsSS3PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS3PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS3Paths <- postPaths "StateSpecific3"
   BR.brNewPost cpsSS3Paths cpsSS3PostInfo "District-Specific Turnout Gaps Over Time"
     $ districtSpecificTurnout False cpsSS3Paths cpsSS3PostInfo $ K.liftActionWithCacheTime data_C
@@ -448,6 +448,7 @@ districtSpecificTurnout :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                         -> K.Sem r ()
 districtSpecificTurnout clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "districtSpecificTurnout" $ do
   K.logLE K.Info $ "Re-building districtSpecificTurnout post"
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
   modeledTurnout_C <- districtSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
   (fullGap, stateGap, demographicGap, districtSpecificGap, districtOnlyGap) <- K.ignoreCacheTime modeledTurnout_C
   K.logLE K.Info $ "District result has " <> show (M.size districtSpecificGap) <> " rows."
@@ -467,7 +468,8 @@ districtSpecificTurnout clearCaches postPaths postInfo dataAllYears_C = K.wrapPr
        "CD"
        (sortedDistricts districtSpecificGap)
        (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
-       (FV.ViewConfig 600 250 5)
+       (FV.ViewConfig 500 250 5)
+
   _ <- K.knitEither (districtModelHeidiToVLData gaDistrictOG) >>=
        K.addHvega Nothing
        (Just "GA District-Only turnout gaps")
@@ -1208,15 +1210,19 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "CD")
                          groupIndexes
-            let parseAndIndexPctsWith f vn = do
+{-            stateIndexIM <- SB.getGroupIndex
+                            (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
+                            (SB.GroupTypeTag @Text "State")
+                            groupIndexes -}
+            let parseAndIndexPctsWith idx f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
-                  indexStanResults psIndexIM $ Vector.map f v
+                  indexStanResults idx $ Vector.map f v
 
-            fullGap <- parseAndIndexPctsWith id "fullGap"
-            stateGap <- parseAndIndexPctsWith id "stateGap"
-            demographicGap <- parseAndIndexPctsWith id "demographicGap"
-            districtSpecificGap <- parseAndIndexPctsWith id "districtSpecificGap"
-            districtOnlyGap <- parseAndIndexPctsWith id "districtOnlyGap"
+            fullGap <- parseAndIndexPctsWith psIndexIM id "fullGap"
+            stateGap <- parseAndIndexPctsWith psIndexIM id "stateGap"
+            demographicGap <- parseAndIndexPctsWith psIndexIM id "demographicGap"
+            districtSpecificGap <- parseAndIndexPctsWith psIndexIM id "districtSpecificGap"
+            districtOnlyGap <- parseAndIndexPctsWith psIndexIM id "districtOnlyGap"
             return (fullGap, stateGap, demographicGap, districtSpecificGap, districtOnlyGap)
 
   K.logLE K.Info "Building json data wrangler and model code..."
