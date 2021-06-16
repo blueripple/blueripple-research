@@ -43,6 +43,7 @@ import qualified Data.Monoid as Monoid
 import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
+import qualified Text.Read as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
@@ -235,7 +236,7 @@ cpsVAnalysis = do
   BR.brNewPost cpsSS2Paths cpsSS2PostInfo "State-Specific Turnout Gaps Over Time"
     $ gapsOverTime False cpsSS2Paths cpsSS2PostInfo $ K.liftActionWithCacheTime data_C
 
-  let cpsSS3PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let cpsSS3PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   cpsSS3Paths <- postPaths "StateSpecific3"
   BR.brNewPost cpsSS3Paths cpsSS3PostInfo "District-Specific Turnout Gaps Over Time"
     $ districtSpecificTurnout False cpsSS3Paths cpsSS3PostInfo $ K.liftActionWithCacheTime data_C
@@ -406,17 +407,29 @@ modelHeidiToVLData' = HV.rowsToVLData [] [HV.asStr "State"
 sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
 sortedDistricts x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
 
-districtModelToHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-districtModelToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
-  f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
-  f (s, [lo, mid, hi]) = Heidi.rowFromList
-                         $ concat [(valToLabeledKV "CD" s)
-                                  , (valToLabeledKV "Year" y)
-                                  , (valToLabeledKV "Type" t)
-                                  , (valToLabeledKV "lo" $ 100 * (lo - mid))
-                                  , (valToLabeledKV "mid" $ 100 * mid)
-                                  , (valToLabeledKV "hi" $ 100 * (hi - mid))
-                                  ]
+stateAndCD :: Text -> Either Text (Text, Int)
+stateAndCD t = do
+  let state = T.take 2 t
+  cd <- case T.readMaybe $ toString $ T.drop 3 t of
+    Nothing -> Left $ "Failed to parse " <> t <> " as state and CD"
+    Just n -> pure n
+  return (state, cd)
+
+districtModelToHeidiFrame :: Text -> Text -> Map Text [Double] -> Either Text (Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP))
+districtModelToHeidiFrame y t m = Heidi.frameFromList <$> (traverse f $ M.toList m) where
+  f :: (Text, [Double]) -> Either Text (Heidi.Row [Heidi.TC] Heidi.VP)
+  f (s, [lo, mid, hi]) = do
+    (state, nCD) <- stateAndCD s
+    return $ Heidi.rowFromList
+      $ concat [(valToLabeledKV "CD" s)
+               , (valToLabeledKV "State" state)
+               , (valToLabeledKV "district" nCD)
+               , (valToLabeledKV "Year" y)
+               , (valToLabeledKV "Type" t)
+               , (valToLabeledKV "lo" $ 100 * (lo - mid))
+               , (valToLabeledKV "mid" $ 100 * mid)
+               , (valToLabeledKV "hi" $ 100 * (hi - mid))
+               ]
 
 districtModelHeidiToVLData = HV.rowsToVLData [] [HV.asStr "CD"
                                                 ,HV.asStr "Year"
@@ -438,16 +451,50 @@ districtSpecificTurnout clearCaches postPaths postInfo dataAllYears_C = K.wrapPr
   modeledTurnout_C <- districtSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
   (fullGap, stateGap, demographicGap, districtSpecificGap, districtOnlyGap) <- K.ignoreCacheTime modeledTurnout_C
   K.logLE K.Info $ "District result has " <> show (M.size districtSpecificGap) <> " rows."
-  let hDistrictSpecificGap = districtModelToHeidiFrame "2020" "District-Specific" districtSpecificGap
-  _ <- K.knitEither (districtModelHeidiToVLData hDistrictSpecificGap) >>=
+  hDistrictSpecificGap <- K.knitEither $  districtModelToHeidiFrame "2020" "District-Specific" districtSpecificGap
+  hDistrictOnlyGap <- K.knitEither $  districtModelToHeidiFrame "2020" "District-Specific" districtOnlyGap
+  let inState :: Text -> Heidi.Row [Heidi.TC] Heidi.VP -> Bool
+      inState s r = maybe False (== s) $ r ^? Heidi.text (BR.heidiColKey "State")
+  let gaDistrictSG = Heidi.filter (inState "GA")  hDistrictSpecificGap
+      gaDistrictOG = Heidi.filter (inState "GA")  hDistrictOnlyGap
+      txDistrictSG = Heidi.filter (inState "TX")  hDistrictSpecificGap
+      txDistrictOG = Heidi.filter (inState "TX")  hDistrictOnlyGap
+  _ <- K.knitEither (districtModelHeidiToVLData gaDistrictSG) >>=
        K.addHvega Nothing
-       (Just "District-specific turnout gaps")
+       (Just "GA District-specific turnout gaps")
        . turnoutChart
-       "District-Specific Contribution to Turnout Gap (2020)"
+       "GA District-Specific Contribution to Turnout Gap (2020)"
        "CD"
        (sortedDistricts districtSpecificGap)
        (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
-       (FV.ViewConfig 600 5000 5)
+       (FV.ViewConfig 600 250 5)
+  _ <- K.knitEither (districtModelHeidiToVLData gaDistrictOG) >>=
+       K.addHvega Nothing
+       (Just "GA District-Only turnout gaps")
+       . turnoutChart
+       "GA District-Only Contribution to Turnout Gap (2020)"
+       "CD"
+       (sortedDistricts districtOnlyGap)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig 600 250 5)
+  _ <- K.knitEither (districtModelHeidiToVLData txDistrictSG) >>=
+       K.addHvega Nothing
+       (Just "TX District-specific turnout gaps")
+       . turnoutChart
+       "TX District-Specific Contribution to Turnout Gap (2020)"
+       "CD"
+       (sortedDistricts districtSpecificGap)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig 600 500 5)
+  _ <- K.knitEither (districtModelHeidiToVLData txDistrictOG) >>=
+       K.addHvega Nothing
+       (Just "TX District-Only turnout gaps")
+       . turnoutChart
+       "TX District-Only Contribution to Turnout Gap (2020)"
+       "CD"
+       (sortedDistricts districtOnlyGap)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig 600 500 5)
   return ()
 
 gapsOverTime :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
