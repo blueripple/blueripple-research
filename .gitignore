@@ -22,6 +22,7 @@ house_model
 *.png
 .Rdata
 .Rhistory
+.DS_Store
 reports/MRP/data
 .knit-haskell-cache
 .flat-kh-cache
