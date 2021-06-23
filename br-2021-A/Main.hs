@@ -1391,9 +1391,13 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
           SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI
           SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name nonWhiteNI `SB.minus` SB.name whiteNI
-          SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
+          gapsE <- SB.useVar
+                   <$> (SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI")
           SB.stanDeclareRHS "dNWNH" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name nonWhiteNI
           SB.stanDeclareRHS "dWNH" psType "" $ SB.name whiteWI `SB.minus` SB.name whiteNI
+          SB.stanDeclareRHS "varGap" SB.StanReal "<lower=0>" $ SB.function "variance" (SB.name "rtDiffI" :| [])
+          SB.stanDeclareRHS "gapRank" (SB.StanArray [SB.NamedDim "State"] SB.StanInt) "<lower=1>"
+            $ SB.function "sort_indices_desc" (SB.name "rtDiffI" :| [])
         return ()
 
       extractTestResults :: K.KnitEffects r
