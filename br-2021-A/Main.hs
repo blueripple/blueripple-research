@@ -35,6 +35,7 @@ import qualified BlueRipple.Utilities.Heidi as BR
 
 import qualified Control.Foldl as FL
 import qualified Data.IntMap as IM
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.MapRow as MapRow
@@ -44,6 +45,7 @@ import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
 import qualified Text.Read as T
+import qualified Text.Printf as Printf
 import qualified Data.Text.IO as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Time.Clock               as Time
@@ -378,6 +380,19 @@ modelToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
                                   , (valToLabeledKV "hi" $ 100 * (hi - mid))
                                   ]
 
+rankToHeidiFrame :: Text -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+rankToHeidiFrame y t m = Heidi.frameFromList $ fmap f $ M.toList m where
+  f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
+  f (s, [lo, mid, hi]) = Heidi.rowFromList
+                         $ concat [(valToLabeledKV "State" s)
+                                  , (valToLabeledKV "Year" y)
+                                  , (valToLabeledKV "Type" t)
+                                  , (valToLabeledKV "lo" $ (lo - mid))
+                                  , (valToLabeledKV "mid" $ mid)
+                                  , (valToLabeledKV "hi" $ (hi - mid))
+                                  ]
+
+
 modelToHeidiFrame' :: Int -> Text -> Map Text [Double] -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
 modelToHeidiFrame' y t m = Heidi.frameFromList $ fmap f $ M.toList m where
   f :: (Text, [Double]) -> Heidi.Row [Heidi.TC] Heidi.VP
@@ -407,6 +422,7 @@ modelHeidiToVLData' = HV.rowsToVLData [] [HV.asStr "State"
                                         ]
 
 sortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
+revSortedStates x = fst <$> (sortOn (\(_,[_,x,_]) -> x) $ M.toList x)
 sortedDistricts x = fst <$> (sortOn (\(_,[_,x,_]) -> -x) $ M.toList x)
 
 stateAndCD :: Text -> Either Text (Text, Int)
@@ -511,7 +527,7 @@ gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsO
   K.logLE K.Info $ "Re-building gapsOverTime post"
   let doYear (y, t) = do
         res_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [y] dataAllYears_C
-        (_, _, rtDiffI, _, _, _, _) <- K.ignoreCacheTime res_C
+        ((_, _, rtDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime res_C
         return $ modelToHeidiFrame' y t rtDiffI
   diffsByYear <- traverse doYear [(2012, "Presidential")
                                  ,(2014, "Mid-term")
@@ -564,10 +580,10 @@ cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
   res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
-  (rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020) <- K.ignoreCacheTime res2020_C
+  ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange) <- K.ignoreCacheTime res2020_C
 
   res2020_NI_C <- stateSpecificTurnoutModel clearCaches False SSTD_CPS [2020] dataAllYears_C
-  (rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI) <- K.ignoreCacheTime res2020_NI_C
+  ((rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI), _, _) <- K.ignoreCacheTime res2020_NI_C
 
   let hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
                                          ,HV.asStr "Year"
@@ -721,7 +737,29 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (sortedStates rtDiffI_2020)
        (TurnoutChartOptions False True ColorIsType (Just 35) Nothing False)
        (FV.ViewConfig chartW 1000 5)
-  BR.brAddPostMarkDownFromFile postPaths "_afterStateSpecific"
+  K.logLE K.Diagnostic $ "gapVar=" <> show gapVar
+  K.logLE K.Diagnostic $ "gapRange=" <> show gapRange
+  let rankNoteName = BR.Used "RankStatistics"
+  mRankNoteUrl <- BR.brNewNote postPaths postInfo rankNoteName "Modeled Ranks of State-Specific Gaps" $ do
+    BR.brAddNoteMarkDownFromFile postPaths rankNoteName "_intro"
+    BR.brAddMarkDown $ "Doing this gives a standard-deviation of "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapVar List.!! 1)))
+      <> "% with a 90% confidence interval of "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapVar List.!! 0)))
+      <> "% to "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapVar List.!! 2)))
+      <> "%."
+    BR.brAddMarkDown $ "And range of "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapRange List.!! 1)))
+      <> "% with a 90% confidence interval of "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapRange List.!! 0)))
+      <> "% to "
+      <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapRange List.!! 2)))
+      <> "%."
+    return ()
+  rankNoteUrl <- K.knitMaybe "Rank Note Url is Nothing" $ mRankNoteUrl
+  let rankNoteRef = "[rankNote_link]: " <> rankNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterStateSpecific" (Just rankNoteRef)
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) rtDiffI_2020
   rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
@@ -1277,13 +1315,15 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                           -> SSTData
                           -> [Int]
                           -> K.ActionWithCacheTime r BRE.CCESAndPUMS
-                          -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]
+                          -> K.Sem r (K.ActionWithCacheTime r ((Map Text [Double]
                                                               , Map Text [Double]
                                                               , Map Text [Double]
                                                               , Map Text [Double]
                                                               , Map Text [Double]
                                                               , Map Text [Double]
-                                                              , Map Text [Double]
+                                                              , Map Text [Double])
+                                                              , [Double]
+                                                              , [Double]
                                                               )
                                      )
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
@@ -1393,23 +1433,30 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
           SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI
           SB.stanDeclareRHS "rtDiffNI" psType "" $ SB.name nonWhiteNI `SB.minus` SB.name whiteNI
-          gapsE <- SB.useVar
-                   <$> (SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI")
+          SB.stanDeclareRHS "rtDiffI" psType "" $ SB.name "rtDiffWI" `SB.minus` SB.name "rtDiffNI"
           SB.stanDeclareRHS "dNWNH" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name nonWhiteNI
           SB.stanDeclareRHS "dWNH" psType "" $ SB.name whiteWI `SB.minus` SB.name whiteNI
-          SB.stanDeclareRHS "varGap" SB.StanReal "<lower=0>" $ SB.function "variance" (SB.name "rtDiffI" :| [])
-          SB.stanDeclareRHS "gapRank" (SB.StanArray [SB.NamedDim "State"] SB.StanInt) "<lower=1>"
-            $ SB.function "sort_indices_desc" (SB.name "rtDiffI" :| [])
+          let rtDiffArg = SB.name "rtDiffI" :| []
+          SB.stanDeclareRHS "varGap" SB.StanReal "<lower=0>" $ SB.function "variance" rtDiffArg
+          SB.stanDeclareRHS "rangeGap" SB.StanReal "<lower=0>" $ SB.function "max" rtDiffArg `SB.minus` SB.function "min" rtDiffArg
+{-
+          gapRanksE <- SB.useVar <$> SB.stanDeclare "gapRank" (SB.StanArray [SB.NamedDim "State"] SB.StanInt) "<lower=0>"
+          SB.stanForLoopB "n" Nothing "State"
+            $ SB.addExprLine "gapRanks for loop"
+            $ gapRanksE `SB.eq` SB.function "rank" (SB.name "rtDiffI" :| [SB.name "n"])
+-}
         return ()
 
       extractTestResults :: K.KnitEffects r
-                         => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double]
+                         => SC.ResultAction r d SB.DataSetGroupIntMaps () ((Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
                                                                           , Map Text [Double]
-                                                                          , Map Text [Double]
+                                                                          , Map Text [Double])
+                                                                          , [Double]
+                                                                          , [Double]
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
@@ -1432,7 +1479,9 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             rtWNH_WI <- parseAndIndexPctsWith id "WI_ACS_WNH_State"
             dNWNH <- parseAndIndexPctsWith id "dNWNH"
             dWNH <- parseAndIndexPctsWith id "dWNH"
-            return (rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH)
+            gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
+            gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
+            return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange)
 
   K.logLE K.Info "Building json data wrangler and model code..."
   let dataWranglerAndCode data_C years withStateRace = do
@@ -1624,9 +1673,9 @@ stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix 
   rawCCEST_C <- rawCCESTurnout False dataAllYears_C
   K.ignoreCacheTime rawCCEST_C >>= BR.logFrame
   cps_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2016] dataAllYears_C
-  (_, _, cpsDiffI, _, _, _, _) <- K.ignoreCacheTime cps_C
+  ((_, _, cpsDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime cps_C
   cces_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2016] dataAllYears_C
-  (_, _, ccesDiffI, _, _, _, _) <- K.ignoreCacheTime cces_C
+  ((_, _, ccesDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime cces_C
   let cpsDiffI_h = modelToHeidiFrame "2016" "CPS" cpsDiffI
       ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
   _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
