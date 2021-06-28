@@ -1324,6 +1324,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double])
                                                               , [Double]
                                                               , [Double]
+                                                              , Map Text (Map Text [Double])
                                                               )
                                      )
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
@@ -1439,12 +1440,9 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
           let rtDiffArg = SB.name "rtDiffI" :| []
           SB.stanDeclareRHS "varGap" SB.StanReal "<lower=0>" $ SB.function "variance" rtDiffArg
           SB.stanDeclareRHS "rangeGap" SB.StanReal "<lower=0>" $ SB.function "max" rtDiffArg `SB.minus` SB.function "min" rtDiffArg
-{-
-          gapRanksE <- SB.useVar <$> SB.stanDeclare "gapRank" (SB.StanArray [SB.NamedDim "State"] SB.StanInt) "<lower=0>"
-          SB.stanForLoopB "n" Nothing "State"
-            $ SB.addExprLine "gapRanks for loop"
-            $ gapRanksE `SB.eq` SB.function "rank" (SB.name "rtDiffI" :| [SB.name "n"])
--}
+          stanPairwiseDifferenceMatrix
+          SB.stanDeclareRHS "gapPairwiseDiffs" (SB.StanMatrix (SB.NamedDim "State", SB.NamedDim "State")) ""
+            $ SB.function "pairwiseDifferenceMatrix" (rtDiffArg)
         return ()
 
       extractTestResults :: K.KnitEffects r
@@ -1457,6 +1455,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                                                                           , Map Text [Double])
                                                                           , [Double]
                                                                           , [Double]
+                                                                          , Map Text (Map Text [Double])
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
@@ -1481,6 +1480,9 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             dWNH <- parseAndIndexPctsWith id "dWNH"
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
+            gapDiffsParsed <- SP.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
+
+
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange)
 
   K.logLE K.Info "Building json data wrangler and model code..."
@@ -1526,6 +1528,17 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
     (Just 15)
 
 --
+
+stanPairwiseDifferenceMatrix :: SB.StanBuilderM env d r ()
+stanPairwiseDifferenceMatrix = SB.addFunctionsOnce "differenceMatrix" $ do
+  SB.declareStanFunction "matrix pairwiseDifferenceMatrix(vector x)" $ do
+    SB.addStanLine "int N = num_elements(x)"
+    SB.addStanLine "matrix[N,N] diffs"
+    SB.stanForLoop "k" Nothing "N" $ const $ do
+      SB.stanForLoop "l" Nothing "k" $ const $ do
+        SB.addStanLine "diffs[k, l] = x[k] - x[l]"
+        SB.addStanLine "diffs[l, k] = x[l] - x[k]"
+    SB.addStanLine "return diffs"
 
 cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> BR.PostPaths BR.Abs -> BR.PostInfo -> K.ActionWithCacheTime r BRE.CCESAndPUMS -> K.Sem r ()
 cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do

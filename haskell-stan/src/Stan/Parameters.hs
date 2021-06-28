@@ -20,7 +20,7 @@ import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Text.Read as R
 
---import qualified GHC.TypeNats as Nat
+import GHC.TypeLits as TE
 
 data Dim = D0 | D1 | D2 | D3 | D4
 
@@ -30,6 +30,10 @@ type family NTuple (n :: Dim) where
   NTuple D2 = (Int, Int)
   NTuple D3 = (Int, Int, Int)
   NTuple D4 = (Int, Int, Int, Int)
+
+
+
+
 
 class IndexFunction (n :: Dim) where
   tupleToIndex :: Int -> NTuple n -> NTuple n -> Int
@@ -75,6 +79,29 @@ instance Functor (ParameterStatistics dim) where
 -- This may well not be what you mean in >1 dimension !!
 instance Foldable (ParameterStatistics dim) where
   foldMap f = foldMap f . getVector
+
+type family InnerSliced (n :: Dim) (a :: Type) :: Type where
+  InnerSliced D0 _ = TE.TypeError (TE.Text "Cannot Slice 0 dimensional (scalar) results.")
+  InnerSliced D1 a = ParameterStatistics D1 a
+  InnerSliced D2 a = ParameterStatistics D1 (ParameterStatistics D1 a)
+  InnerSliced D3 a = ParameterStatistics D2 (ParameterStatistics D1 a)
+  InnerSliced D4 a = ParameterStatistics D3 (ParameterStatistics D1 a)
+
+class InnerSlice (n :: Dim) where
+  innerSlice :: ParameterStatistics n a -> InnerSliced n a
+
+instance InnerSlice D0 where
+  innerSlice = undefined
+
+instance InnerSlice D1  where
+  innerSlice = id
+
+instance InnerSlice D2 where
+  innerSlice ps@(ParameterStatistics offset _ _) = ParameterStatistics offset outerSize v where
+    (outerSize, innerSize) = getDims ps
+    nextSlice vec
+      = let (slice, rest) = V.splitAt innerSize vec in (ParameterStatistics offset innerSize slice, rest)
+    v = V.unfoldrExactN outerSize nextSlice (getVector ps)
 
 getDims :: ParameterStatistics dim a -> NTuple dim
 getDims (ParameterStatistics _ x _) = x
