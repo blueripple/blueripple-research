@@ -20,7 +20,7 @@ module Main where
 import qualified BlueRipple.Configuration as BR
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.CPSVoterPUMS as CPS
+--import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 --import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
@@ -37,18 +37,18 @@ import qualified Control.Foldl as FL
 import qualified Data.IntMap as IM
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
-import qualified Data.Map.Merge.Strict as M
+--import qualified Data.Map.Merge.Strict as M
 import qualified Data.MapRow as MapRow
 
-import qualified Data.Monoid as Monoid
+--import qualified Data.Monoid as Monoid
 import qualified Data.Set as S
 import Data.String.Here (here, i)
 import qualified Data.Text as T
 import qualified Text.Read as T
 import qualified Text.Printf as Printf
-import qualified Data.Text.IO as T
+--import qualified Data.Text.IO as T
 import qualified Data.Time.Calendar            as Time
-import qualified Data.Time.Clock               as Time
+--import qualified Data.Time.Clock               as Time
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
@@ -74,7 +74,7 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Numeric
 import qualified Path
 import Path (Rel, Abs, Dir, File)
-import qualified Polysemy
+--import qualified Polysemy
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
@@ -527,7 +527,7 @@ gapsOverTime clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "gapsO
   K.logLE K.Info $ "Re-building gapsOverTime post"
   let doYear (y, t) = do
         res_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [y] dataAllYears_C
-        ((_, _, rtDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime res_C
+        ((_, _, rtDiffI, _, _, _, _), _, _, _) <- K.ignoreCacheTime res_C
         return $ modelToHeidiFrame' y t rtDiffI
   diffsByYear <- traverse doYear [(2012, "Presidential")
                                  ,(2014, "Mid-term")
@@ -580,10 +580,10 @@ cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
   res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2020] dataAllYears_C
-  ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange) <- K.ignoreCacheTime res2020_C
+  ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange, gapDiffs) <- K.ignoreCacheTime res2020_C
 
   res2020_NI_C <- stateSpecificTurnoutModel clearCaches False SSTD_CPS [2020] dataAllYears_C
-  ((rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI), _, _) <- K.ignoreCacheTime res2020_NI_C
+  ((rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI), _, _, _) <- K.ignoreCacheTime res2020_NI_C
 
   let hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
                                          ,HV.asStr "Year"
@@ -739,8 +739,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (FV.ViewConfig chartW 1000 5)
   K.logLE K.Diagnostic $ "gapVar=" <> show gapVar
   K.logLE K.Diagnostic $ "gapRange=" <> show gapRange
-  let rankNoteName = BR.Used "RankStatistics"
-  mRankNoteUrl <- BR.brNewNote postPaths postInfo rankNoteName "Modeled Ranks of State-Specific Gaps" $ do
+  let rankNoteName = BR.Used "Differences"
+  mRankNoteUrl <- BR.brNewNote postPaths postInfo rankNoteName "Modeled Differences of State-Specific Gaps" $ do
     BR.brAddNoteMarkDownFromFile postPaths rankNoteName "_intro"
     BR.brAddMarkDown $ "Doing this gives a standard-deviation of "
       <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapVar List.!! 1)))
@@ -756,6 +756,18 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       <> "% to "
       <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapRange List.!! 2)))
       <> "%."
+--    K.logLE K.Diagnostic $ show gapDiffs
+    caDiffs <- K.knitMaybe "Couldn't find CA in gapDiffs" $ M.lookup "CA" gapDiffs
+    let caDiffsh = modelToHeidiFrame "2020" "State-Specific Gap Differences from CA" caDiffs
+    _ <- K.knitEither (modelHeidiToVLData caDiffsh) >>=
+       K.addHvega Nothing
+       (Just "Modeled differences between CA state-specific Gap and the given state")
+       . turnoutChart
+       ("Difference from CA")
+       "State"
+       (sortedStates caDiffs)
+       (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
+       (FV.ViewConfig chartW 1000 5)
     return ()
   rankNoteUrl <- K.knitMaybe "Rank Note Url is Nothing" $ mRankNoteUrl
   let rankNoteRef = "[rankNote_link]: " <> rankNoteUrl
@@ -1324,7 +1336,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double])
                                                               , [Double]
                                                               , [Double]
---                                                              , Map Text (Map Text [Double])
+                                                              , Map Text (Map Text [Double])
                                                               )
                                      )
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
@@ -1455,7 +1467,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                                                                           , Map Text [Double])
                                                                           , [Double]
                                                                           , [Double]
-  --                                                                        , Map Text (Map Text [Double])
+                                                                          , Map Text (Map Text [Double])
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
@@ -1467,6 +1479,9 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
+
+--            let indexPctsWith f vn = do
+
             let parseAndIndexPctsWith f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults psIndexIM $ Vector.map f v
@@ -1481,7 +1496,9 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
             gapDiffsParsed <- SP.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
-            return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange)
+            gapDiffs' <-  traverse (indexStanResults psIndexIM . SP.getVector . fmap CS.percents) $ SP.innerSlice gapDiffsParsed
+            gapDiffs <- indexStanResults psIndexIM $ SP.getVector gapDiffs'
+            return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange, gapDiffs)
 
   K.logLE K.Info "Building json data wrangler and model code..."
   let dataWranglerAndCode data_C years withStateRace = do
@@ -1684,9 +1701,9 @@ stateRaceCPSvsCCES clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix 
   rawCCEST_C <- rawCCESTurnout False dataAllYears_C
   K.ignoreCacheTime rawCCEST_C >>= BR.logFrame
   cps_C <- stateSpecificTurnoutModel clearCaches True SSTD_CPS [2016] dataAllYears_C
-  ((_, _, cpsDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime cps_C
+  ((_, _, cpsDiffI, _, _, _, _), _, _, _) <- K.ignoreCacheTime cps_C
   cces_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2016] dataAllYears_C
-  ((_, _, ccesDiffI, _, _, _, _), _, _) <- K.ignoreCacheTime cces_C
+  ((_, _, ccesDiffI, _, _, _, _), _, _, _) <- K.ignoreCacheTime cces_C
   let cpsDiffI_h = modelToHeidiFrame "2016" "CPS" cpsDiffI
       ccesDiffI_h = modelToHeidiFrame "2016" "CCES" ccesDiffI
   _ <- K.knitEither (modelHeidiToVLData (cpsDiffI_h <> ccesDiffI_h)) >>=
