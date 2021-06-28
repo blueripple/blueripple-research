@@ -31,10 +31,6 @@ type family NTuple (n :: Dim) where
   NTuple D3 = (Int, Int, Int)
   NTuple D4 = (Int, Int, Int, Int)
 
-
-
-
-
 class IndexFunction (n :: Dim) where
   tupleToIndex :: Int -> NTuple n -> NTuple n -> Int
   indexToTuple :: Int -> NTuple n -> Int -> NTuple n
@@ -102,6 +98,23 @@ instance InnerSlice D2 where
     nextSlice vec
       = let (slice, rest) = V.splitAt innerSize vec in (ParameterStatistics offset innerSize slice, rest)
     v = V.unfoldrExactN outerSize nextSlice (getVector ps)
+
+instance InnerSlice D3 where
+  innerSlice ps@(ParameterStatistics offset _ _) = ParameterStatistics offset outerDims v where
+    (oR, oC, innerSize) = getDims ps
+    outerDims = (oR, oC)
+    nextSlice vec
+      = let (slice, rest) = V.splitAt innerSize vec in (ParameterStatistics offset innerSize slice, rest)
+    v = V.unfoldrExactN (oR * oC) nextSlice (getVector ps)
+
+instance InnerSlice D4 where
+  innerSlice ps@(ParameterStatistics offset _ _) = ParameterStatistics offset outerDims v where
+    (oA, oB, oC, innerSize) = getDims ps
+    outerDims = (oA, oB, oC)
+    nextSlice vec
+      = let (slice, rest) = V.splitAt innerSize vec in (ParameterStatistics offset innerSize slice, rest)
+    v = V.unfoldrExactN (oA * oB * oC) nextSlice (getVector ps)
+
 
 getDims :: ParameterStatistics dim a -> NTuple dim
 getDims (ParameterStatistics _ x _) = x

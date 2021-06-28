@@ -1324,7 +1324,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double])
                                                               , [Double]
                                                               , [Double]
-                                                              , Map Text (Map Text [Double])
+--                                                              , Map Text (Map Text [Double])
                                                               )
                                      )
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
@@ -1455,7 +1455,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                                                                           , Map Text [Double])
                                                                           , [Double]
                                                                           , [Double]
-                                                                          , Map Text (Map Text [Double])
+  --                                                                        , Map Text (Map Text [Double])
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
@@ -1481,8 +1481,6 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
             gapDiffsParsed <- SP.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
-
-
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange)
 
   K.logLE K.Info "Building json data wrangler and model code..."
