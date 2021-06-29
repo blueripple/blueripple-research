@@ -125,3 +125,20 @@ index2D :: forall ki kj r a.
            )
         => IntMap.IntMap ki -> IntMap.IntMap kj -> M.Array r M.Ix2 a -> Either Text (Map ki (Map kj a))
 index2D imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
+
+{-
+index3D :: forall ki kj kk r a.
+           (Show ki
+           , Ord ki
+           , Show kj
+           , Ord kj
+           , Show kk
+           , Ord kk
+           , M.Load (M.R (M.R r)) M.Ix1 a
+           , M.Load (M.R r) M.Ix2 a
+           , M.Load r M.Ix3 a
+           )
+        => IntMap.IntMap ki -> IntMap.IntMap kj -> IntMap.IntMap kk -> M.Array r M.Ix3 a
+        -> Either Text (Map ki (Map kj (Map kk a)))
+index3D imi imj imk a = M.traverseA @M.B (index1D imk) (M.outerSlices $ M.compute @M.B a) >>= index2D imi imj
+-}
