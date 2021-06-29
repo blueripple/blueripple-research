@@ -16,6 +16,7 @@ import qualified Stan.Parameters as Parameters
 
 import qualified Control.Foldl as FL
 import qualified Data.List as L
+import qualified Data.IntMap as IntMap
 import qualified Data.Map as Map
 import qualified Data.Massiv.Array as M
 --import qualified Data.Vector as V
@@ -101,3 +102,26 @@ parse4D name m = do
   (ni, nj, nk, nl) <- maybeToRight ("No parameters with name " <> name <> " in parse4D?") $ FL.fold fldIndices indexed
   let ordered = snd <$> sortWith (Parameters.tupleToIndex @Parameters.D4 1 (ni, nj, nk, nl) . fst) indexed
   return $ M.unfoldlS_ (M.Sz4 ni nj nk nl) (\l -> (L.tail l, L.head l)) ordered
+
+-- we compute before indexing since we will need the actual values to put in the map(s)
+-- Also simplifies the constraints
+
+index1D :: (Show k, Ord k, M.Load r M.Ix1  a) => IntMap.IntMap k -> M.Vector r a -> Either Text (Map k a)
+index1D im v = do
+  let M.Sz1 ni = M.size v
+  when (IntMap.size im /= ni)
+    $ Left
+    $ "Mismatched sizes in Stan.Parameters.Massiv.index1D. Result vector has "
+    <> show ni <> " results and IntMap = " <> show im
+  return $ Map.fromList $ zip (IntMap.elems im) (M.toList $ M.compute @M.B v)
+
+index2D :: forall ki kj r a.
+           (Show ki
+           , Ord ki
+           , Show kj
+           , Ord kj
+           , M.Load (M.R r) M.Ix1 a
+           , M.Load r M.Ix2 a
+           )
+        => IntMap.IntMap ki -> IntMap.IntMap kj -> M.Array r M.Ix2 a -> Either Text (Map ki (Map kj a))
+index2D imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a) >>= index1D imi

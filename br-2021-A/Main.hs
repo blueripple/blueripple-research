@@ -81,6 +81,7 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
+import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
 
 
@@ -739,9 +740,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (FV.ViewConfig chartW 1000 5)
   K.logLE K.Diagnostic $ "gapVar=" <> show gapVar
   K.logLE K.Diagnostic $ "gapRange=" <> show gapRange
-  let rankNoteName = BR.Used "Differences"
-  mRankNoteUrl <- BR.brNewNote postPaths postInfo rankNoteName "Modeled Differences of State-Specific Gaps" $ do
-    BR.brAddNoteMarkDownFromFile postPaths rankNoteName "_intro"
+  let diffNoteName = BR.Used "Differences"
+  mDiffNoteUrl <- BR.brNewNote postPaths postInfo diffNoteName "Modeled Differences of State-Specific Gaps" $ do
+    BR.brAddNoteMarkDownFromFile postPaths diffNoteName "_intro"
     BR.brAddMarkDown $ "Doing this gives a standard-deviation of "
       <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapVar List.!! 1)))
       <> "% with a 90% confidence interval of "
@@ -769,9 +770,9 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
        (TurnoutChartOptions False True ColorIsType Nothing Nothing False)
        (FV.ViewConfig chartW 1000 5)
     return ()
-  rankNoteUrl <- K.knitMaybe "Rank Note Url is Nothing" $ mRankNoteUrl
-  let rankNoteRef = "[rankNote_link]: " <> rankNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "_afterStateSpecific" (Just rankNoteRef)
+  diffNoteUrl <- K.knitMaybe "Rank Note Url is Nothing" $ mDiffNoteUrl
+  let diffNoteRef = "[rankNote_link]: " <> diffNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterStateSpecific" (Just diffNoteRef)
   let sig lo hi = lo * hi > 0
       sigStates2020 = M.keys $ M.filter (\[lo, _, hi] -> sig lo hi) rtDiffI_2020
   rtNWNH_sig <- filterState sigStates2020 rtDiffIh_2020
@@ -1495,9 +1496,14 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             dWNH <- parseAndIndexPctsWith id "dWNH"
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
+{-
             gapDiffsParsed <- SP.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
             gapDiffs' <-  traverse (indexStanResults psIndexIM . SP.getVector . fmap CS.percents) $ SP.innerSlice gapDiffsParsed
             gapDiffs <- indexStanResults psIndexIM $ SP.getVector gapDiffs'
+-}
+            gapDiffPctsMA <- fmap CS.percents <$> SPM.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
+            gapDiffs <- SPM.index2D psIndexIM psIndexIM $ gapDiffPctsMA
+
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange, gapDiffs)
 
   K.logLE K.Info "Building json data wrangler and model code..."
