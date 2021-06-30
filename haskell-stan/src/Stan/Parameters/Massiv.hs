@@ -106,7 +106,10 @@ parse4D name m = do
 -- we compute before indexing since we will need the actual values to put in the map(s)
 -- Also simplifies the constraints
 
-index1D :: (Show k, Ord k, M.Load r M.Ix1  a) => IntMap.IntMap k -> M.Vector r a -> Either Text (Map k a)
+index1D :: (Show k, Ord k, M.Load r M.Ix1  a)
+        => IntMap.IntMap k
+        -> M.Vector r a
+        -> Either Text (Map k a)
 index1D im v = do
   let M.Sz1 ni = M.size v
   when (IntMap.size im /= ni)
@@ -123,10 +126,13 @@ index2D :: forall ki kj r a.
            , M.Load (M.R r) M.Ix1 a
            , M.Load r M.Ix2 a
            )
-        => IntMap.IntMap ki -> IntMap.IntMap kj -> M.Array r M.Ix2 a -> Either Text (Map ki (Map kj a))
+        => IntMap.IntMap ki
+        -> IntMap.IntMap kj
+        -> M.Array r M.Ix2 a
+        -> Either Text (Map ki (Map kj a))
 index2D imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
 
-{-
+
 index3D :: forall ki kj kk r a.
            (Show ki
            , Ord ki
@@ -138,7 +144,31 @@ index3D :: forall ki kj kk r a.
            , M.Load (M.R r) M.Ix2 a
            , M.Load r M.Ix3 a
            )
-        => IntMap.IntMap ki -> IntMap.IntMap kj -> IntMap.IntMap kk -> M.Array r M.Ix3 a
+        => IntMap.IntMap ki
+        -> IntMap.IntMap kj
+        -> IntMap.IntMap kk
+        -> M.Array r M.Ix3 a
         -> Either Text (Map ki (Map kj (Map kk a)))
-index3D imi imj imk a = M.traverseA @M.B (index1D imk) (M.outerSlices $ M.compute @M.B a) >>= index2D imi imj
--}
+index3D imi imj imk a = M.traverseA @M.B (index2D imj imk) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
+
+index4D :: forall ki kj kk kl r a.
+           (Show ki
+           , Ord ki
+           , Show kj
+           , Ord kj
+           , Show kk
+           , Ord kk
+           , Show kl
+           , Ord kl
+           , M.Load (M.R (M.R (M.R r))) M.Ix1 a
+           , M.Load (M.R (M.R r)) M.Ix2 a
+           , M.Load (M.R r) M.Ix3 a
+           , M.Load r M.Ix4 a
+           )
+        => IntMap.IntMap ki
+        -> IntMap.IntMap kj
+        -> IntMap.IntMap kk
+        -> IntMap.IntMap kl
+        -> M.Array r M.Ix4 a
+        -> Either Text (Map ki (Map kj (Map kk (Map kl a))))
+index4D imi imj imk iml a = M.traverseA @M.B (index3D imj imk iml) (M.outerSlices $ M.compute @M.B a) >>= index1D imi

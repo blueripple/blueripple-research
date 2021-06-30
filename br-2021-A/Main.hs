@@ -1496,13 +1496,8 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             dWNH <- parseAndIndexPctsWith id "dWNH"
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
-{-
-            gapDiffsParsed <- SP.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
-            gapDiffs' <-  traverse (indexStanResults psIndexIM . SP.getVector . fmap CS.percents) $ SP.innerSlice gapDiffsParsed
-            gapDiffs <- indexStanResults psIndexIM $ SP.getVector gapDiffs'
--}
-            gapDiffPctsMA <- fmap CS.percents <$> SPM.parse2D "gapPairwiseDiffs" (CS.paramStats summary)
-            gapDiffs <- SPM.index2D psIndexIM psIndexIM $ gapDiffPctsMA
+            gapDiffs <- (fmap CS.percents <$> SPM.parse2D "gapPairwiseDiffs" (CS.paramStats summary)) >>= SPM.index2D psIndexIM psIndexIM
+--            gapDiffs <-  $ gapDiffPctsMA
 
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange, gapDiffs)
 
