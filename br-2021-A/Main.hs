@@ -17,6 +17,8 @@
 
 module Main where
 
+import qualified Data.Massiv.Array
+
 import qualified BlueRipple.Configuration as BR
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
@@ -757,9 +759,8 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       <> "% to "
       <> toText @String (Printf.printf "%.1f" (100 * sqrt (gapRange List.!! 2)))
       <> "%."
---    K.logLE K.Diagnostic $ show gapDiffs
-    caDiffs <- K.knitMaybe "Couldn't find CA in gapDiffs" $ M.lookup "CA" gapDiffs
-    let caDiffsh = modelToHeidiFrame "2020" "State-Specific Gap Differences from CA" caDiffs
+    let caDiffs = M.mapKeysMonotonic fst $ M.filterWithKey (\k _ -> snd k == "CA") gapDiffs
+        caDiffsh = modelToHeidiFrame "2020" "State-Specific Gap Differences from CA" caDiffs
     _ <- K.knitEither (modelHeidiToVLData caDiffsh) >>=
        K.addHvega Nothing
        (Just "Modeled differences between CA state-specific Gap and the given state")
@@ -1337,7 +1338,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
                                                               , Map Text [Double])
                                                               , [Double]
                                                               , [Double]
-                                                              , Map Text (Map Text [Double])
+                                                              , Map (Text, Text) [Double]
                                                               )
                                      )
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
@@ -1468,21 +1469,19 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                                                                           , Map Text [Double])
                                                                           , [Double]
                                                                           , [Double]
-                                                                          , Map Text (Map Text [Double])
+                                                                          , Map (Text, Text) [Double]
                                                                           )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
           eb <- K.ignoreCacheTime eb_C
+          K.logLE K.Diagnostic $ "gapDiffs'=" <> show gapDiffs'
           K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "State")
                          groupIndexes
-
---            let indexPctsWith f vn = do
-
             let parseAndIndexPctsWith f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults psIndexIM $ Vector.map f v
@@ -1497,8 +1496,6 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             gapVariance <- CS.percents . SP.getScalar <$> SP.parseScalar "varGap"  (CS.paramStats summary)
             gapRange <- CS.percents . SP.getScalar <$> SP.parseScalar "rangeGap"  (CS.paramStats summary)
             gapDiffs <- (fmap CS.percents <$> SPM.parse2D "gapPairwiseDiffs" (CS.paramStats summary)) >>= SPM.index2D psIndexIM psIndexIM
---            gapDiffs <-  $ gapDiffPctsMA
-
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange, gapDiffs)
 
   K.logLE K.Info "Building json data wrangler and model code..."

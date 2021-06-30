@@ -35,7 +35,7 @@ parseScalar  name = maybeToRight ("Failed to find scalar \"" <> name <> "\" in p
 onlyNamed :: Text -> Map String CS.StanStatistic -> Map String CS.StanStatistic
 onlyNamed name = Map.filterWithKey (\k _ -> name == fst (T.break (== '[') (toText k)))
 
-parse1D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Vector M.DS CS.StanStatistic)
+parse1D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Vector M.DL CS.StanStatistic)
 parse1D name m = do
   let parseOneE (t, s) = do
         inds <- Parameters.parseIndex @Parameters.D1 (toText t)
@@ -43,7 +43,7 @@ parse1D name m = do
   indexed <- traverse parseOneE $ Map.toList $ onlyNamed name m
   ni <- maybeToRight ("No parameters with name " <> name <> " in parse1D?") $ FL.fold (FL.premap fst FL.maximum) indexed
   let ordered = snd <$> sortWith fst indexed
-  return $ M.sunfoldrExactN (M.Sz ni) (\l -> (L.head l, L.tail l)) ordered
+  return $ M.unfoldrS_ (M.Sz ni) (\l -> (L.head l, L.tail l)) ordered
 
 
 parse2D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Array M.DL M.Ix2 CS.StanStatistic)
@@ -61,7 +61,8 @@ parse2D name m = do
       fldIndices = f <$> fldNI <*> fldNJ
   (ni, nj) <- maybeToRight ("No parameters with name " <> name <> " in parse2D?") $ FL.fold fldIndices indexed
   let ordered = snd <$> sortWith (Parameters.tupleToIndex @Parameters.D2 1 (ni, nj) . fst) indexed
-  return $ M.unfoldlS_ (M.Sz2 ni nj) (\l -> (L.tail l, L.head l)) ordered
+--  return $ M.unfoldlS_ (M.Sz2 ni nj) (\l -> (L.tail l, L.head l)) ordered
+  return $ M.unfoldrS_ (M.Sz2 ni nj) (\l -> (L.head l, L.tail l)) ordered
 
 parse3D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Array M.DL M.Ix3 CS.StanStatistic)
 parse3D name m = do
@@ -80,7 +81,7 @@ parse3D name m = do
       fldIndices = f <$> fldNI <*> fldNJ <*> fldNK
   (ni, nj, nk) <- maybeToRight ("No parameters with name " <> name <> " in parse3D?") $ FL.fold fldIndices indexed
   let ordered = snd <$> sortWith (Parameters.tupleToIndex @Parameters.D3 1 (ni, nj, nk) . fst) indexed
-  return $ M.unfoldlS_ (M.Sz3 ni nj nk) (\l -> (L.tail l, L.head l)) ordered
+  return $ M.unfoldrS_ (M.Sz3 ni nj nk) (\l -> (L.head l, L.tail l)) ordered
 
 parse4D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Array M.DL M.Ix4 CS.StanStatistic)
 parse4D name m = do
@@ -101,7 +102,7 @@ parse4D name m = do
       fldIndices = f <$> fldNI <*> fldNJ <*> fldNK <*> fldNL
   (ni, nj, nk, nl) <- maybeToRight ("No parameters with name " <> name <> " in parse4D?") $ FL.fold fldIndices indexed
   let ordered = snd <$> sortWith (Parameters.tupleToIndex @Parameters.D4 1 (ni, nj, nk, nl) . fst) indexed
-  return $ M.unfoldlS_ (M.Sz4 ni nj nk nl) (\l -> (L.tail l, L.head l)) ordered
+  return $ M.unfoldrS_ (M.Sz4 ni nj nk nl) (\l -> (L.head l, L.tail l)) ordered
 
 -- we compute before indexing since we will need the actual values to put in the map(s)
 -- Also simplifies the constraints
@@ -118,6 +119,22 @@ index1D im v = do
     <> show ni <> " results and IntMap = " <> show im
   return $ Map.fromList $ zip (IntMap.elems im) (M.toList $ M.compute @M.B v)
 
+addIndexedMapLayer :: (Ord ka, Ord kb, Ord kc, M.Load r M.Ix1  (Map kb a))
+              => (ka -> kb -> kc)
+              -> IntMap.IntMap ka
+              -> M.Vector r (Map kb a)
+              -> Either Text (Map kc a)
+addIndexedMapLayer combineKeys ima vb  = do
+  let M.Sz1 nb = M.size vb
+      na = IntMap.size ima
+  when (na /= nb)
+    $ Left
+    $ "Mismatched sizes in Stan.Parameters.Massiv.addIndexedMapLayer. There are"
+    <> show nb <> " maps and the indexing intMap has size " <> show na
+  let f ka (kb, a) = (combineKeys ka kb, a)
+      g (ka, bMap) =  f ka <$> Map.toList bMap
+  return $ Map.fromList (zip (IntMap.elems ima) (M.toList $ M.compute @M.B vb) >>= g)
+
 index2D :: forall ki kj r a.
            (Show ki
            , Ord ki
@@ -129,8 +146,25 @@ index2D :: forall ki kj r a.
         => IntMap.IntMap ki
         -> IntMap.IntMap kj
         -> M.Array r M.Ix2 a
+        -> Either Text (Map (ki,kj) a)
+index2D imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a)
+                    >>= addIndexedMapLayer (,) imi
+
+
+index2D' :: forall ki kj r a.
+           (Show ki
+           , Ord ki
+           , Show kj
+           , Ord kj
+           , M.Load (M.R r) M.Ix1 a
+           , M.Load r M.Ix2 a
+           )
+        => IntMap.IntMap ki
+        -> IntMap.IntMap kj
+        -> M.Array r M.Ix2 a
         -> Either Text (Map ki (Map kj a))
-index2D imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
+index2D' imi imj a = M.traverseA @M.B (index1D imj) (M.outerSlices $ M.compute @M.B a)
+                    >>= index1D imi
 
 
 index3D :: forall ki kj kk r a.
@@ -148,8 +182,9 @@ index3D :: forall ki kj kk r a.
         -> IntMap.IntMap kj
         -> IntMap.IntMap kk
         -> M.Array r M.Ix3 a
-        -> Either Text (Map ki (Map kj (Map kk a)))
-index3D imi imj imk a = M.traverseA @M.B (index2D imj imk) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
+        -> Either Text (Map (ki, kj, kk) a)
+index3D imi imj imk a = M.traverseA @M.B (index2D imj imk) (M.outerSlices $ M.compute @M.B a)
+                        >>= addIndexedMapLayer (\ki (kj, kk) -> (ki, kj, kk)) imi
 
 index4D :: forall ki kj kk kl r a.
            (Show ki
@@ -170,5 +205,6 @@ index4D :: forall ki kj kk kl r a.
         -> IntMap.IntMap kk
         -> IntMap.IntMap kl
         -> M.Array r M.Ix4 a
-        -> Either Text (Map ki (Map kj (Map kk (Map kl a))))
-index4D imi imj imk iml a = M.traverseA @M.B (index3D imj imk iml) (M.outerSlices $ M.compute @M.B a) >>= index1D imi
+        -> Either Text (Map (ki, kj, kk, kl) a)
+index4D imi imj imk iml a = M.traverseA @M.B (index3D imj imk iml) (M.outerSlices $ M.compute @M.B a)
+                            >>= addIndexedMapLayer (\ki (kj, kk, kl) -> (ki, kj, kk, kl)) imi
