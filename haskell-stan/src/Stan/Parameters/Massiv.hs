@@ -35,6 +35,8 @@ parseScalar  name = maybeToRight ("Failed to find scalar \"" <> name <> "\" in p
 onlyNamed :: Text -> Map String CS.StanStatistic -> Map String CS.StanStatistic
 onlyNamed name = Map.filterWithKey (\k _ -> name == fst (T.break (== '[') (toText k)))
 
+-- These need to be right folds for the strides to be right!!
+
 parse1D ::  Text -> Map String CS.StanStatistic -> Either T.Text (M.Vector M.DL CS.StanStatistic)
 parse1D name m = do
   let parseOneE (t, s) = do
