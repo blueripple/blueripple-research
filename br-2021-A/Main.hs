@@ -1475,7 +1475,6 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
           eb <- K.ignoreCacheTime eb_C
-          K.logLE K.Diagnostic $ "gapDiffs'=" <> show gapDiffs'
           K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
