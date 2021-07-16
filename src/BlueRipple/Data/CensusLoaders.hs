@@ -34,6 +34,7 @@ import qualified Data.Serialize as S
 import qualified Flat
 import qualified Frames                        as F
 import qualified Frames.Melt                        as F
+import qualified Frames.RecF as F
 import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Transform as FT
@@ -42,6 +43,7 @@ import qualified Frames.Aggregation as FA
 import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
+import qualified BlueRipple.Data.ElectionTypes as ET
 
 F.declareColumn "Count" ''Int
 
@@ -162,8 +164,8 @@ type LoadedCensusTablesBySLD
 
 censusTablesBySLD  :: (K.KnitEffects r
                               , BR.CacheEffects r)
-                           => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
-censusTablesBySLD = do
+                           => ET.DistrictType -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
+censusTablesBySLD dt = do
   let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
                    , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
                    , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
@@ -175,22 +177,32 @@ censusTablesBySLD = do
                              <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
       makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
-        return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs
+        return $ frameFromTableRows BRC.unSLDPrefix keyRec (BRC.tableYear ty) vTRs
+{-
+        let dtC = FT.recordSingleton @ET.DistrictTypeC dt
+            addDT r = r --F.rgetField @BR.StateFips r F.&: dtC F.&: F.rdel @BR.StateFips r
+            f = addDT <$>
+        return f
+-}
+--      dtC = FT.recordSingleton @ET.DistrictTypeC dt
+      addDT :: forall rs. (rs F.⊆ ((BR.Year ': BR.StateFips ': rs)))
+        => F.Record (BR.Year ': BR.StateFips ': rs) -> F.Record ([BR.Year, BR.StateFips, ET.DistrictTypeC] V.++ rs)
+      addDT r = F.rgetField @BR.Year r F.&: F.rgetField @BR.StateFips r F.&: dt F.&: F.rcast @rs r
       doOneYear (ty, f) = do
-        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.CDPrefix (tableDescriptions ty) $ toString f)
+        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.SLDPrefix (tableDescriptions ty) $ toString f)
         K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
-        fRaceBySexByAge <- makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
+        fRaceBySexByAge <- fmap addDT <$> makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Citizenship Tables..."
-        fRaceBySexByCitizenship <- makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
+        fRaceBySexByCitizenship <- fmap addDT <$> makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
-        fRaceBySexByEducation <- makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
+        fRaceBySexByEducation <- fmap addDT <$> makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Employment Tables..."
-        fRaceBySexByAgeByEmployment <- makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
+        fRaceBySexByAgeByEmployment <- fmap addDT <$> makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
         let fldSumAges = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @(CensusRow BRC.CDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
+                       (FMR.assignKeysAndData @(CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
         return $ CensusTables
