@@ -107,15 +107,41 @@ type Office = "Office" F.:-> OfficeT
 instance FV.ToVLDataValue (F.ElField Office) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
+data DistrictType = Congressional | StateUpper | StateLower deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+
+instance S.Serialize DistrictType
+instance B.Binary DistrictType
+instance Flat.Flat DistrictType
+instance Grouping DistrictType
+
+instance FCSV.ShowCSV DistrictType
+
+derivingUnbox
+  "DistrictType"
+  [t|DistrictType -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+
+type instance FI.VectorFor DistrictType = UVec.Vector
+
+type DistrictTypeC = "DistrictType" F.:-> DistrictType
+
+instance FV.ToVLDataValue (F.ElField DistrictTypeC) where
+  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+
+type DistrictNumber = "DistrictNumber" F.:-> Int
+instance FV.ToVLDataValue (F.ElField DistrictNumber) where
+  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
+
 type Votes = "Votes" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField Votes) where
-  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
 type TotalVotes = "TotalVotes" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
-  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
 data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
@@ -143,7 +169,7 @@ instance FV.ToVLDataValue (F.ElField PrefType) where
 type ElectoralWeight = "ElectoralWeight" F.:-> Double
 
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
-  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ V.getField x)
 
 data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
@@ -203,7 +229,7 @@ ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 type CVAP = "CVAP" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField CVAP) where
-  toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
+  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
 data VoteWhyNot
   = VWN_PhysicallyUnable

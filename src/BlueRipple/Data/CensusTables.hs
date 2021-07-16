@@ -12,6 +12,7 @@
 module BlueRipple.Data.CensusTables where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.KeyedTables as KT
 import qualified BlueRipple.Data.Keyed as K
@@ -41,6 +42,7 @@ F.declareColumn "TotalIncome" ''Double
 
 type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
+type SLDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber]
 type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome]
 
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }

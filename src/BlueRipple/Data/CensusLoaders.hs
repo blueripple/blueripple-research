@@ -155,6 +155,57 @@ censusTablesByDistrict = do
     neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
     return $ sconcat neTables
 
+---
+type LoadedCensusTablesBySLD
+  = CensusTables BRC.SLDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
+
+
+censusTablesBySLD  :: (K.KnitEffects r
+                              , BR.CacheEffects r)
+                           => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
+censusTablesBySLD = do
+  let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
+                   , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
+                   , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
+                   , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
+                   ]
+      tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
+                             <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
+                             <> KT.allTableDescriptions BRC.sexByEducation (BRC.sexByEducationPrefix ty)
+                             <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
+      makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
+        vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
+        return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs
+      doOneYear (ty, f) = do
+        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.CDPrefix (tableDescriptions ty) $ toString f)
+        K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
+        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
+        fRaceBySexByAge <- makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
+        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Citizenship Tables..."
+        fRaceBySexByCitizenship <- makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
+        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
+        fRaceBySexByEducation <- makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
+        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Employment Tables..."
+        fRaceBySexByAgeByEmployment <- makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
+        let fldSumAges = FMR.concatFold
+                       $ FMR.mapReduceFold
+                       FMR.noUnpack
+                       (FMR.assignKeysAndData @(CensusRow BRC.CDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
+                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+            fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
+        return $ CensusTables
+          (fmap F.rcast $ fRaceBySexByAge)
+          (fmap F.rcast $ fRaceBySexByCitizenship)
+          (fmap F.rcast $ fRaceBySexByEducation)
+          (fmap F.rcast $ fRaceBySexByEmployment)
+  dataDeps <- traverse (K.fileDependency . toString . snd) fileByYear
+  let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
+  K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/tables.bin" dataDep $ const $ do
+    tables <- traverse doOneYear fileByYear
+    neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
+    return $ sconcat neTables
+---
+
 sexByAgeKeyRec :: (DT.Sex, BRC.Age14) -> F.Record [BRC.Age14C, DT.SexC]
 sexByAgeKeyRec (s, a) = a F.&: s F.&: V.RNil
 {-# INLINE sexByAgeKeyRec #-}
