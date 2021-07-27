@@ -51,3 +51,5 @@ georgia/stan
 /*.eventlog
 br-2021-A/stan
 stan/mrp
+/hie.yaml
+/.vscode/
