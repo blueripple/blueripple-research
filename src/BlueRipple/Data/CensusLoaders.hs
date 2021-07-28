@@ -163,13 +163,11 @@ type LoadedCensusTablesBySLD
 
 
 censusTablesBySLD  :: (K.KnitEffects r
-                              , BR.CacheEffects r)
-                           => ET.DistrictType -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
+                      , BR.CacheEffects r)
+                   => ET.DistrictType
+                   -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
 censusTablesBySLD dt = do
-  let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
-                   , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
-                   , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
-                   , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
+  let fileByYear = [ (BRC.TY2018, censusDataDir <> "/va_2018_sldl_Raw.csv")
                    ]
       tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
@@ -178,13 +176,6 @@ censusTablesBySLD dt = do
       makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
         return $ frameFromTableRows BRC.unSLDPrefix keyRec (BRC.tableYear ty) vTRs
-{-
-        let dtC = FT.recordSingleton @ET.DistrictTypeC dt
-            addDT r = r --F.rgetField @BR.StateFips r F.&: dtC F.&: F.rdel @BR.StateFips r
-            f = addDT <$>
-        return f
--}
---      dtC = FT.recordSingleton @ET.DistrictTypeC dt
       addDT :: forall rs. (rs F.⊆ ((BR.Year ': BR.StateFips ': rs)))
         => F.Record (BR.Year ': BR.StateFips ': rs) -> F.Record ([BR.Year, BR.StateFips, ET.DistrictTypeC] V.++ rs)
       addDT r = F.rgetField @BR.Year r F.&: F.rgetField @BR.StateFips r F.&: dt F.&: F.rcast @rs r
