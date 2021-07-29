@@ -27,6 +27,8 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.Heidi as BR
+import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Data.CensusLoaders as BRC
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
@@ -62,7 +64,7 @@ import qualified Path
 import Path (Rel, Abs, Dir, File)
 --import qualified Polysemy
 
-{-
+
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
@@ -70,7 +72,7 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
--}
+
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -129,6 +131,27 @@ postPaths t = do
     (postInputs postSpecificP)
     (postLocalDraft postSpecificP)
     (postOnline postSpecificP)
+
+-- data
+data SLDModelData = SLDModelData
+  {
+    ccesRows :: F.FrameRec BRE.CCESByCDR
+  , cpsVRows :: F.FrameRec BRE.CPSVByCDR
+  , sldTables :: BRC.LoadedCensusTablesByCD
+  } deriving (Generic)
+
+instance Flat.Flat SLDModelData where
+  size (SLDModelData cces cps sld) n = Flat.size (FS.SFrame cces, FS.SFrame cps, sld) n
+  encode (SLDModelData cces cps sld) = Flat.encode (FS.SFrame cces, FS.SFrame cps, sld)
+  decode = (\(ccesSF, cpsSF, sld)) -> SLDModelData (FS.unSFrame ccesSF) (FS.unSFrame cpsSF) sld <$> Flat.decode
+
+prepSLDModelData :: K.Sem r (K.ActionWithCacheTime r SLDModelData)
+prepSLDModelData = do
+  ccesAndCPS_C <- BRE.prepCCESAndPums
+  sld_C <- BRC.censusTablesBySLD
+  rearrange (BRE.CCESAndPums cces cps _ _) ()
+
+
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
