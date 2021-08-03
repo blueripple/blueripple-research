@@ -33,7 +33,7 @@ import qualified Data.Vector.Generic as GVec
 import qualified Data.Serialize as S
 import qualified Flat
 import qualified Frames                        as F
-import qualified Frames.Melt                        as F
+import qualified Frames.Melt                   as F
 import qualified Frames.RecF as F
 import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
@@ -80,7 +80,6 @@ instance (FieldC S.Serialize a
          , KeysSC p d [s, r, c]
          , KeysSC p d [s, e, r]
          , KeysSC p d [s, r, l]
-
          ) =>
          S.Serialize (CensusTables p d a s e r c l) where
   put (CensusTables f1 f2 f3 f4) = S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4)

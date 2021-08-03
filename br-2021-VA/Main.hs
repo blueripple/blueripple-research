@@ -147,10 +147,10 @@ instance Flat.Flat SLDModelData where
 
 prepSLDModelData :: K.Sem r (K.ActionWithCacheTime r SLDModelData)
 prepSLDModelData = do
-  ccesAndCPS_C <- BRE.prepCCESAndPums
+  ccesAndCps_C <- BRE.prepCCESAndPums
   sld_C <- BRC.censusTablesBySLD
-  rearrange (BRE.CCESAndPums cces cps _ _) ()
-
+  f (BRE.CCESAndPums cces cps _ _) sld = SLDModelData cces cps sld
+  return $ f <$> ccesAndCps_C <*> sld_C
 
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
