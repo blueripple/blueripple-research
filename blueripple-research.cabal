@@ -404,6 +404,8 @@ executable br-2021-VA
   build-depends: base
                , blueripple-research
                , blueripple-data-sets
+               , haskell-stan
+               , hs-cmdstan
                , pandoc
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude

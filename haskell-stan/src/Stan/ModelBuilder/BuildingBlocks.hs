@@ -29,20 +29,37 @@ addIntData :: (Typeable d, Typeable r0)
            -> Maybe Int
            -> (r0 -> Int)
            -> SB.StanBuilderM env d r0 SME.StanVar
-addIntData varName mLower mUpper f = do
+addIntData = addIntData' SB.ModeledRowTag
+
+addIntData' :: (Typeable d, Typeable r0)
+            => SB.RowTypeTag r
+            -> SME.StanName
+            -> Maybe Int
+            -> Maybe Int
+            -> (r -> Int)
+            -> SB.StanBuilderM env d r0 SME.StanVar
+addIntData' rtt varName mLower mUpper f = do
   let stanType =  SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SME.StanInt
       bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
                  (Just l, Nothing) -> "<lower=" <> show l <> ">"
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.addColumnJson SB.ModeledRowTag varName Nothing stanType bounds f
+  SB.addColumnJson rtt varName Nothing stanType bounds f
+
 
 addCountData :: forall r0 d env.(Typeable d, Typeable r0)
              => SME.StanName
              -> (r0 -> Int)
              -> SB.StanBuilderM env d r0 SME.StanVar
-addCountData varName f = addIntData varName (Just 0) Nothing f
+addCountData = addCountData' SB.ModeledRowTag
+
+addCountData' :: forall r r0 d env.(Typeable d, Typeable r0)
+             => SB.RowTypeTag r
+             -> SME.StanName
+             -> (r -> Int)
+             -> SB.StanBuilderM env d r0 SME.StanVar
+addCountData' rtt varName f = addIntData' rtt varName (Just 0) Nothing f
 
 intercept :: forall env r d. (Typeable d, Typeable r) => Text -> SME.StanExpr -> SB.StanBuilderM env r d SB.StanExpr
 intercept iName alphaPriorE = do
@@ -52,10 +69,13 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return alphaE
 
-sampleDistV :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-sampleDistV sDist args =  SB.inBlock SB.SBModel $ do
+sampleDistV :: forall args env d r0.Typeable r0 => SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
+sampleDistV = sampleDistV' (SB.ModeledRowTag @r0)
+
+sampleDistV' :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
+sampleDistV' rtt sDist args =  SB.inBlock SB.SBModel $ do
   let samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
-  SB.addExprLine "sampleDistV" $ SME.vectorizedOne SB.modeledDataIndexName  samplingE
+  SB.addExprLine "sampleDistV" $ SME.vectorizedOne (SB.dsName rtt)  samplingE
 
 generateLogLikelihood :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
 generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
