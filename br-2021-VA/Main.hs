@@ -156,7 +156,6 @@ prepSLDModelData clearCaches = do
   let rearrangeCached (BRE.CCESAndPUMS cces cps _ _) x = SLDModelData cces cps x
   return $ rearrangeCached <$> ccesAndCPS_C <*> sld_C
 
-
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
