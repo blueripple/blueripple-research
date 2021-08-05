@@ -107,11 +107,13 @@ generatePosteriorPrediction' _ _ _ _ = SB.stanBuildError $ "Variable argument to
 
 fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanVar
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
+  fixedEffectsQR_Data thinSuffix matrix rowKey colKey
+  fixedEffectsQR_Parameters thinSuffix matrix colKey
+{-
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
       r = "R" <> thinSuffix <> "_ast"
       qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
-  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
   SB.inBlock SB.SBTransformedData $ do
     SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
     SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
@@ -125,11 +127,45 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
     SB.stanDeclareRHS q qMatrixType "" qRHS
     SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
+  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
   SB.inBlock SB.SBTransformedParameters $ do
     SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
-  let qMatrix = SME.StanVar q qMatrixType
+-}
+  let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
+      q = "Q" <> thinSuffix <> "_ast"
+      qMatrix = SME.StanVar q qMatrixType
   return qMatrix
+
+fixedEffectsQR_Data :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanName
+fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
+  let ri = "R" <> thinSuffix <> "_ast_inverse"
+      q = "Q" <> thinSuffix <> "_ast"
+      r = "R" <> thinSuffix <> "_ast"
+      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
+  SB.inBlock SB.SBTransformedData $ do
+    SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
+    SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
+    SB.stanForLoopB "k" Nothing colKey $ do
+      SB.addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
+      SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
+    let srE =  SB.function "sqrt" (one $ SB.indexSize rowKey `SB.minus` SB.scalar "1")
+        qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
+        rRHS = SB.function "qr_thin_R" (one $ SB.name $ "centered_" <> matrix) `SB.divide` srE
+        riRHS = SB.function "inverse" (one $ SB.name r)
+    SB.stanDeclareRHS q qMatrixType "" qRHS
+    SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
+    SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
+  return matrix
+
+fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.StanIndexKey -> SB.StanBuilderM env d r ()
+fixedEffectsQR_Parameters thinSuffix matrix colKey = do
+  let ri = "R" <> thinSuffix <> "_ast_inverse"
+  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+  SB.inBlock SB.SBTransformedParameters $ do
+    SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+    SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
+
 
 diagVectorFunction :: SB.StanBuilderM env d r Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
