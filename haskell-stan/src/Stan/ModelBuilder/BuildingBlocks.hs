@@ -77,24 +77,31 @@ sampleDistV' rtt sDist args =  SB.inBlock SB.SBModel $ do
   let samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne (SB.dsName rtt)  samplingE
 
-generateLogLikelihood :: SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-generateLogLikelihood sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
-  let dim = SME.NamedDim SB.modeledDataIndexName
+generateLogLikelihood :: forall args env d r0. Typeable r0 => SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
+generateLogLikelihood = generateLogLikelihood' (SB.ModeledRowTag @r0)
+
+generateLogLikelihood' :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
+generateLogLikelihood' rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
+  let dataSetName = SB.dsName rtt
+      dim = SME.NamedDim dataSetName
   SB.stanDeclare "log_lik" (SME.StanVector dim) ""
-  SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ do
+  SB.stanForLoopB "n" Nothing dataSetName $ do
     let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
-        rhsE = SMD.familyLDF sDist SB.modeledDataIndexName args
+        rhsE = SMD.familyLDF sDist dataSetName args
         llE = lhsE `SME.eq` rhsE
     SB.addExprLine "log likelihood (in Generated Quantitites)" llE
 
-generatePosteriorPrediction :: SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
-generatePosteriorPrediction sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
+generatePosteriorPrediction :: forall args env d r0. Typeable r0 => SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
+generatePosteriorPrediction = generatePosteriorPrediction' (SB.ModeledRowTag @r0)
+
+generatePosteriorPrediction' :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
+generatePosteriorPrediction' rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist k args
       ppE = SME.indexBy (SME.name ppName) k `SME.eq` rngE
   SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing SB.modeledDataIndexName $ SB.addExprLine "generatePosteriorPrediction" ppE
+  SB.stanForLoopB "n" Nothing (SB.dsName rtt) $ SB.addExprLine "generatePosteriorPrediction" ppE
   return sv
-generatePosteriorPrediction _ _ _ = SB.stanBuildError $ "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
+generatePosteriorPrediction' _ _ _ _ = SB.stanBuildError $ "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
 --
 
@@ -123,7 +130,6 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
   let qMatrix = SME.StanVar q qMatrixType
   return qMatrix
-
 
 diagVectorFunction :: SB.StanBuilderM env d r Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
