@@ -30,6 +30,7 @@ import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Model.StanMRP as MRP
+import qualified BlueRipple.Data.CountFolds as BRCF
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
@@ -74,6 +75,9 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
+import Stan.ModelBuilder (addUnIndexedDataSet)
+import BlueRipple.Data.DataFrames (totalIneligibleFelon')
+import Frames.CSV (prefixInference)
 
 
 yamlAuthor :: T.Text
@@ -140,12 +144,13 @@ data SLDModelData = SLDModelData
     ccesRows :: F.FrameRec BRE.CCESByCDR
   , cpsVRows :: F.FrameRec BRE.CPSVByCDR
   , sldTables :: BRC.LoadedCensusTablesBySLD
+  , districtRows :: F.FrameRec BRE.DistrictDemDataR
   } deriving (Generic)
 
 instance Flat.Flat SLDModelData where
-  size (SLDModelData cces cps sld) n = Flat.size (FS.SFrame cces, FS.SFrame cps, sld) n
-  encode (SLDModelData cces cps sld) = Flat.encode (FS.SFrame cces, FS.SFrame cps, sld)
-  decode = (\(ccesSF, cpsSF, sld) -> SLDModelData (FS.unSFrame ccesSF) (FS.unSFrame cpsSF) sld) <$> Flat.decode
+  size (SLDModelData cces cps sld dd) n = Flat.size (FS.SFrame cces, FS.SFrame cps, sld, FS.SFrame dd) n
+  encode (SLDModelData cces cps sld dd) = Flat.encode (FS.SFrame cces, FS.SFrame cps, sld, FS.SFrame dd)
+  decode = (\(ccesSF, cpsSF, sld, dd) -> SLDModelData (FS.unSFrame ccesSF) (FS.unSFrame cpsSF) sld (FS.unSFrame dd)) <$> Flat.decode
 
 prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
                  => Bool
@@ -153,7 +158,7 @@ prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
 prepSLDModelData clearCaches = do
   ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
   sld_C <- BRC.censusTablesBySLD
-  let rearrangeCached (BRE.CCESAndPUMS cces cps _ _) x = SLDModelData cces cps x
+  let rearrangeCached (BRE.CCESAndPUMS cces cps _ dist) x = SLDModelData cces cps x dist
   return $ rearrangeCached <$> ccesAndCPS_C <*> sld_C
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
@@ -181,28 +186,64 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
       jsonDataName = "stateLeg_ASR"
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
+        SB.addGroup "CD_CPS" $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroup "State_CPS" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroup "Race_CPS" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
+        SB.addGroup "WNH_CPS" $ SB.makeIndexFromEnum wnh
+        SB.addGroup "Sex_CPS" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroup "Education_CPS" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "WhiteNonGrad_CPS" $ SB.makeIndexFromEnum wnhNonGrad
 
       ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
       ccesGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnhCCES
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGradCCES
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+        SB.addGroup "CD_CCES" $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroup "State_CCES" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroup "Race_CCES" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+        SB.addGroup "WNH_CCES" $ SB.makeIndexFromEnum wnhCCES
+        SB.addGroup "Sex_CCES" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroup "Education_CCES" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroup "WhiteNonGrad_CCES" $ SB.makeIndexFromEnum wnhNonGradCCES
 
-      dataAndCodeBuilder :: Typeable modelRow => (modelRow -> Int) -> (modelRow -> Int) -> Bool -> MRP.BuilderM modelRow SLDModelData ()
-      dataAndCodeBuilder = undefined
-
+      dataAndCodeBuilder :: Typeable modelRow => MRP.BuilderM modelRow SLDModelData ()
+      dataAndCodeBuilder = do
+        -- data
+        cdDataRT <- addUnIndexedDataSet "CD" (SB.ToFoldable districtRows)
+        ccesDataRT <- addUnIndexedDataSet "CCES" (SB.ToFoldable ccesRows)
+        cpsDataRT <- addUnIndexedDataSet "CPS" (SB.ToFoldable cpsVRows)
+        cpsCVAP <- SB.addCountData' @(F.Record BRE.CPSVByCDR) cpsDataRT "CVAP" (round . F.rgetField @BRCF.WeightedCount)
+        cpsVotes <- SB.addCountData' @(F.Record BRE.CPSVByCDR) cpsDataRT "VOTED" (round . F.rgetField @BRCF.WeightedSuccesses)
+        ccesVotes <- SB.addCountData' @(F.Record BRE.CCESByCDR) ccesDataRT "VOTED_C" (F.rgetField @BRE.DVotes)
+        ccesDVotes <- SB.addCountData' @(F.Record BRE.CCESByCDR) ccesDataRT "DVOTES_C" (F.rgetField @BRE.DVotes)
+        -- model
+        let normal x = SB.normal Nothing $ SB.scalar $ show x
+            binaryPrior = normal 2
+            sigmaPrior = normal 2
+            fePrior = normal 2
+        -- Turnout (from CPS)
+        alphaT <- SB.intercept "alphaT" (normal 2)
+        (feCDT, xBetaT, betaT) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
+                                  True
+                                  fePrior
+                                  cdDataRT
+                                  (MRP.FixedEffects 1 densityPredictor)
+        gSexT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CPS"
+        gRaceT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CPS"
+        let distT = SB.binomialLogitDist cpsVotes cpsCVAP
+            logitT_sample = SB.multiOp "+" $ alphaT :| [feCDT, gSexT, gRaceT]
+        SB.sampleDistV' cpsDataRT distT logitT_sample
+        -- Preference
+        alphaP <- SB.intercept "alphaP" (normal 2)
+        (feCDP, xBetaP, betaP) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
+                                  True
+                                  fePrior
+                                  cdDataRT
+                                  (MRP.FixedEffects 1 densityPredictor)
+        gSexP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CCES"
+        gRaceP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CCES"
+        let distP = SB.binomialLogitDist ccesVotes ccesDVotes
+            logitP_sample = SB.multiOp "+" $ alphaP :| [feCDP, gSexP, gRaceP]
+        SB.sampleDistV' ccesDataRT distP logitP_sample
+        return ()
   return ()
 
 
@@ -217,3 +258,4 @@ wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.Hisp
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+densityPredictor r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)]
