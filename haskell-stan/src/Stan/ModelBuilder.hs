@@ -210,8 +210,17 @@ indexFold printK start =  Foldl.Fold step init done where
     keyedList = zip (Set.toList s) [start..]
     mapToInt = Map.fromList keyedList
 
-type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
-type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
+-- Index makers for one row type
+newtype GroupIndexMakers r = GroupIndexMakers (DHash.DHashMap GroupTypeTag (MakeIndex r))
+-- Indexes for one row type, madeusing the IndexMaker in GroupIndexMakerDHM
+newtype GroupIndexes r = GroupIndexes (DHash.DHashMap GroupTypeTag (IndexMap r))
+
+{-
+-- Index makers stored by row type. NB: this has no type parameters.
+type RowIndexMakersDHM = DHash.DHashMap RowTypeTag GroupIndexMakerDHM
+-- Indexes by row type
+type RowIndexesDHM = DHash.DHashMap RowTypeTag GroupIndexDHM
+-}
 
 -- For post-stratification
 newtype RowMap r k = RowMap (r -> k)
@@ -220,12 +229,12 @@ type GroupRowMap r = DHash.DHashMap GroupTypeTag (RowMap r)
 emptyGroupRowMap :: GroupRowMap r
 emptyGroupRowMap = DHash.empty
 
-addRowMap :: Typeable k => Text -> (r -> k) -> GroupRowMap r -> GroupRowMap r
-addRowMap t f grm = DHash.insert (GroupTypeTag t) (RowMap f) grm
+addRowMap :: Typeable k => GroupTypeTag k -> (r -> k) -> GroupRowMap r -> GroupRowMap r
+addRowMap gtt f grm = DHash.insert gtt (RowMap f) grm
 
 data DataToIntMap d r k = DataToIntMap (ToFoldable d r -> d -> Either Text (IntMap k))
 newtype GroupIntMapBuilders d r = GroupIntMapBuilders (DHash.DHashMap GroupTypeTag (DataToIntMap d r))
-type DataSetGroupIntMapBuilders d = DHash.DHashMap RowTypeTag (GroupIntMapBuilders d)
+--type DataSetGroupIntMapBuilders d = DHash.DHashMap RowTypeTag (GroupIntMapBuilders d)
 
 newtype GroupIntMaps r = GroupIntMaps (DHash.DHashMap GroupTypeTag IntMap.IntMap)
 type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
@@ -262,7 +271,7 @@ addIntMapBuilder rtt gtt imF dsgimb =
 --        Left $ taggedGroupName gtt <> " already has an index for data-set \"" <> dsName rtt <> "\""
 
 
-buildIntMaps :: forall d r0. RowBuilderDHM d r0 -> DataSetGroupIntMapBuilders d -> d -> Either Text DataSetGroupIntMaps
+buildIntMaps :: forall d. RowBuilderDHM d -> DataSetGroupIntMapBuilders d -> d -> Either Text DataSetGroupIntMaps
 buildIntMaps rowBuilders intMapBldrs d = DHash.traverseWithKey f intMapBldrs where
   f :: RowTypeTag r -> GroupIntMapBuilders d r -> Either Text (GroupIntMaps r)
   f rtt (GroupIntMapBuilders gimb) = case DHash.lookup rtt rowBuilders of
@@ -281,12 +290,23 @@ makeMainIndexes makerMap rs = (dhm, gm) where
 groupIntMap :: IndexMap r k -> IntMap.IntMap k
 groupIntMap (IndexMap _ _ im) = im
 
-data RowInfo d r = RowInfo { toFoldable :: ToFoldable d r
-                           , jsonSeries :: JSONSeriesFold r
-                           }
+data RowInfo d r = RowInfo
+                   { toFoldable :: ToFoldable d r
+                   , groupIndexMakers :: GroupIndexMakerDHM r
+                   , groupIntMapBuilders :: GroupIntMapBuilders d r
+                   , jsonSeries :: JSONSeriesFold r
+                   }
 
-newRowInfo :: forall d r0 r. ToFoldable d r -> RowInfo d r
-newRowInfo tf groupName  = RowInfo tf mempty
+data BuiltRowInfo = BuiltRowInfo
+                    {
+                      toFoldable :: ToFoldable d r
+                    , groupIndexes :: GroupIndexDHM r
+                    , groupIntMaps :: GroupIntMaps d r
+                    , jsonSeries :: JSONSeriesFold r
+                    }
+
+--newRowInfo :: forall d r. ToFoldable d r -> RowInfo d r
+--newRowInfo tf groupName  = RowInfo tf mempty mempty
 
 {-
 indexedRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
@@ -305,8 +325,8 @@ unIndexedRowInfo tf groupName  = RowInfo tf mempty (const $ Left $ groupName <> 
 data RowTypeTag r where
   RowTypeTag :: Typeable r => Text -> RowTypeTag r
 
-dsName :: RowTypeTag r -> Text
-dsName (RowTypeTag n) = n
+dataSetName :: RowTypeTag r -> Text
+dataSetName (RowTypeTag n) = n
 
 -- we need the empty constructors here to bring in the Typeable constraints in the GADT
 instance GADT.GEq RowTypeTag where
@@ -367,13 +387,13 @@ addGroupIndexes = do
           Nothing -> return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
--}
 
-buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap RowTypeTag (JSONRowFold d))
+
+buildJSONF :: forall env d.(Typeable d) => StanBuilderM env d (DHash.DHashMap RowTypeTag (JSONRowFold d))
 buildJSONF = do
   gim <- asks $ groupIndexByType . groupEnv
   rbs <- rowBuilders <$> get
-  let buildRowJSONFolds :: RowInfo d r0 r -> StanBuilderM env d r0 (JSONRowFold d r)
+  let buildRowJSONFolds :: RowInfo d r -> StanBuilderM env d (JSONRowFold d r)
       buildRowJSONFolds (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF) = do
         case getIndexF gim of
           Right rowIndexF -> do
@@ -382,6 +402,7 @@ buildJSONF = do
             return $ JSONRowFold (ToFoldable $ Foldl.fold intMapF . toData) jsonF
           Left _ -> return $ JSONRowFold (ToFoldable toData) jsonF
   DHash.traverse buildRowJSONFolds rbs
+-}
 
 newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
 newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap)
@@ -401,7 +422,7 @@ alreadyDeclared sd@(ScopedDeclarations dms) (SME.StanVar sn st) =
                               else Left $ sn <> " already declared (with different type)!"
     Left _ -> return ()
 
-addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d r0 SME.StanVar
+addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d SME.StanVar
 addVarInScope sn st = do
   let sv = SME.StanVar sn st
       newDVs dvs = do
@@ -415,18 +436,18 @@ addVarInScope sn st = do
     Left errMsg -> stanBuildError errMsg
     Right newBS -> put newBS >> return sv
 
-getVar :: StanName -> StanBuilderM env d r0 StanVar
+getVar :: StanName -> StanBuilderM env d StanVar
 getVar sn = do
   sd <- declaredVars <$> get
   case varLookup sd sn of
     Right sv -> return sv
     Left errMsg -> stanBuildError errMsg
 
-addScope :: StanBuilderM env d r0 ()
+addScope :: StanBuilderM env d ()
 addScope = modify (modifyDeclaredVars f) where
   f (ScopedDeclarations dmNE) = ScopedDeclarations $ (DeclarationMap Map.empty) :| toList dmNE
 
-dropScope :: StanBuilderM env d r0 ()
+dropScope :: StanBuilderM env d ()
 dropScope = do
   ScopedDeclarations dmNE <- declaredVars <$> get
   let (_, mx) = NE.uncons dmNE
@@ -434,36 +455,36 @@ dropScope = do
     Nothing -> stanBuildError $ "Attempt to drop outermost scope!"
     Just dmNE' -> modify (modifyDeclaredVars $ const $ ScopedDeclarations dmNE)
 
-scoped :: StanBuilderM env d r0 a -> StanBuilderM env d r0 a
+scoped :: StanBuilderM env d a -> StanBuilderM env d a
 scoped x = do
   addScope
   a <- x
   dropScope
   return a
 
-data BuilderState d r0 = BuilderState { declaredVars :: !ScopedDeclarations
-                                      , indexBindings :: !SME.VarBindingStore
-                                      , rowBuilders :: !(RowBuilderDHM d r0)
-                                      , hasFunctions :: !(Set.Set Text)
-                                      , code :: !StanCode
-                                      , indexBuilders :: !(DataSetGroupIntMapBuilders d)
-                                      }
+data BuilderState d = BuilderState { declaredVars :: !ScopedDeclarations
+                                   , indexBindings :: !SME.VarBindingStore
+                                   , rowBuilders :: !(RowBuilderDHM d)
+                                   , hasFunctions :: !(Set.Set Text)
+                                   , code :: !StanCode
+                                   , indexBuilders :: !(DataSetGroupIntMapBuilders d)
+                                   }
 
-modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d r -> BuilderState d r
+modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d -> BuilderState d
 modifyDeclaredVars f (BuilderState dv vbs rb hf c ib) = BuilderState (f dv) vbs rb hf c ib
 
 modifyDeclaredVarsA :: Applicative t
                     => (ScopedDeclarations -> t ScopedDeclarations)
-                    -> BuilderState d r
-                    -> t (BuilderState d r)
+                    -> BuilderState d
+                    -> t (BuilderState d)
 modifyDeclaredVarsA f (BuilderState dv vbs rb hf c ib) = (\x -> BuilderState x vbs rb hf c ib) <$> f dv
 
 modifyIndexBindings :: (VarBindingStore -> VarBindingStore)
-                    -> BuilderState d r
-                    -> BuilderState d r
+                    -> BuilderState d
+                    -> BuilderState d
 modifyIndexBindings f (BuilderState dv vbs rb hf c ib) = BuilderState dv (f vbs) rb hf c ib
 
-withUseBindings :: Map SME.StanIndexKey SME.StanExpr -> StanBuilderM env d r0 a -> StanBuilderM env d r0 a
+withUseBindings :: Map SME.StanIndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
 withUseBindings ubs m = do
   oldBindings <- indexBindings <$> get
   modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbs) -> SME.VarBindingStore ubs dbs)
@@ -472,67 +493,70 @@ withUseBindings ubs m = do
   return a
 
 modifyRowBuildersA :: Applicative t
-                   => (RowBuilderDHM d r -> t (RowBuilderDHM d r))
-                   -> BuilderState d r
-                   -> t (BuilderState d r)
+                   => (RowBuilderDHM d -> t (RowBuilderDHM d))
+                   -> BuilderState d
+                   -> t (BuilderState d)
 modifyRowBuildersA f (BuilderState dv vbs rb hf c ib) = (\x -> BuilderState dv vbs x hf c ib) <$> f rb
 
 modifyIndexBuildersA :: Applicative t
                      => (DataSetGroupIntMapBuilders d -> t (DataSetGroupIntMapBuilders d))
-                     -> BuilderState d r
-                     -> t (BuilderState d r)
+                     -> BuilderState d
+                     -> t (BuilderState d)
 modifyIndexBuildersA f (BuilderState dv vbs rb hf c ib) = (\x -> BuilderState dv vbs rb hf  c x) <$> f ib
 
 
-modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState d r -> BuilderState d r
+modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState d -> BuilderState d
 modifyFunctionNames f (BuilderState dv vbs rb hf c ib) = BuilderState dv vbs rb (f hf) c ib
 
-initialBuilderState :: (Typeable d, Typeable r, Foldable f) => (d -> f r) -> BuilderState d r
-initialBuilderState toModeled =
+initialBuilderState :: Typeable d => BuilderState d
+initialBuilderState =
   BuilderState
   (ScopedDeclarations $ (DeclarationMap Map.empty) :| [])
   SME.noBindings
-  (initialRowBuilders toModeled)
+  initialRowBuilders
   Set.empty
   emptyStanCode
   emptyIntMapBuilders
 
-newtype StanGroupBuilderM r0 a
-  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupIndexMakerDHM r0)) a }
-  deriving (Functor, Applicative, Monad, MonadState (GroupIndexMakerDHM r0))
+newtype StanGroupBuilderM a
+  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State RowIndexMakersDHM) a }
+  deriving (Functor, Applicative, Monad, MonadState RowIndexMakersDHM)
 
-data GroupEnv r0 = GroupEnv { groupIndexByType :: GroupIndexDHM r0
-                            , groupIndexByName :: Map Text (IntIndex r0)
-                            }
-stanGroupBuildError :: Text -> StanGroupBuilderM r0 a
+data GroupEnv = GroupEnv { groupIndexByType :: RowIndexesDHM
+--                         , groupIndexByName :: Map Text (IntIndex r0)
+                         }
+stanGroupBuildError :: Text -> StanGroupBuilderM a
 stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
 
-addGroup :: forall r k.Typeable k => Text -> MakeIndex r k -> StanGroupBuilderM r ()
-addGroup gName mkIndex = do
-  let gtt = GroupTypeTag @k gName
-  gim <- get
-  case DHash.lookup gtt gim of
-    Nothing -> put $ DHash.insert gtt mkIndex gim
-    Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> gName <> "\") at the same type as one already in group index builder map"
+addGroupForRow :: forall r k.Typeable k => GroupTypeTag k -> RowTypeTag r -> MakeIndex r k -> StanGroupBuilderM ()
+addGroupForRow gtt rtt mkIndex = do
+  rims <- get
+  let gims = fromMaybe DHash.empty $ DHash.lookup rtt rims of
+  case DHash.lookup gtt gims of
+    Nothing -> put $ DHash.insert rtt $ DHash.insert gtt mkIndex gims
+    Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dsName rtt
 
-runStanGroupBuilder :: Foldable f => StanGroupBuilderM r () -> f r -> Either Text (GroupEnv r)
+runStanGroupBuilder :: Foldable f => StanGroupBuilderM () -> f r -> Either Text GroupEnv
 runStanGroupBuilder sgb rs =
-  let (resE, gmi) = flip runState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
+  let (resE, rims) = flip runState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
       (byType, byName) = makeMainIndexes gmi rs
   in fmap (const $ GroupEnv byType byName) resE
 
-data StanEnv env r0 = StanEnv { userEnv :: !env, groupEnv :: !(GroupEnv r0) }
+data StanEnv env = StanEnv
+                   { userEnv :: !env
+                   , groupEnv :: !GroupEnv
+                   }
 
-newtype StanBuilderM env d r0 a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT (StanEnv env r0) (State (BuilderState d r0))) a }
-                                deriving (Functor, Applicative, Monad, MonadReader (StanEnv env r0), MonadState (BuilderState d r0))
+newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT (StanEnv env) (State (BuilderState d))) a }
+                             deriving (Functor, Applicative, Monad, MonadReader (StanEnv env), MonadState (BuilderState d))
 
-askUserEnv :: StanBuilderM env d r0 env
+askUserEnv :: StanBuilderM env d env
 askUserEnv = asks userEnv
 
-askGroupEnv :: StanBuilderM env d r0 (GroupEnv r0)
+askGroupEnv :: StanBuilderM env d GroupEnv
 askGroupEnv = asks groupEnv
 
-addFunctionsOnce :: Text -> StanBuilderM env d r0 () -> StanBuilderM env d r0 ()
+addFunctionsOnce :: Text -> StanBuilderM env d () -> StanBuilderM env d ()
 addFunctionsOnce functionsName fCode = do
   (BuilderState vars ibs rowBuilders fsNames code ims) <- get
   if functionsName `Set.member` fsNames
@@ -542,22 +566,23 @@ addFunctionsOnce functionsName fCode = do
              modify $ modifyFunctionNames $ Set.insert functionsName
          )
 
-addIndexedDataSet :: (Typeable r, Typeable d, Typeable k)
-                  => Text
-                  -> ToFoldable d r
-                  -> (r -> k)
-                  -> StanBuilderM env d r0 (RowTypeTag r)
-addIndexedDataSet name toFoldable toKey = do
+addDataSet :: (Typeable r, Typeable d, Typeable k)
+           => Text
+           -> ToFoldable d r
+           -> GroupIndexMakerDHM r
+           -> StanBuilderM env d (RowTypeTag r)
+addDataSet name toFoldable gims = do
   let rtt = RowTypeTag name
   (BuilderState vars ibs rowBuilders fsNames code ims) <- get
   case DHash.lookup rtt rowBuilders of
     Just _ -> stanBuildError "Attempt to add 2nd data set with same type and name"
     Nothing -> do
-      let rowInfo = indexedRowInfo toFoldable name toKey
+      let rowInfo = RowInfo toFoldable gims mempty
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars ibs newRowBuilders fsNames code ims)
   return rtt
 
+{-
 addUnIndexedDataSet :: (Typeable r, Typeable d)
                     => Text
                     -> ToFoldable d r
@@ -572,7 +597,7 @@ addUnIndexedDataSet name toFoldable = do
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)
   return rtt
-
+-}
 addIndexIntMapFld :: forall r k env d r0.
                   RowTypeTag r
                   -> GroupTypeTag k
