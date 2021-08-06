@@ -268,28 +268,69 @@ addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
                 -> SB.RowTypeTag r
                 -> FixedEffects r
                 -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
-addFixedEffects thinQR fePrior rtt (FixedEffects n vecF) = do
-  let suffix = SB.dsSuffix rtt
+addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
+  let suffix = SB.dsSuffix feRTT
       uSuffix = SB.underscoredIf suffix
-  SB.add2dMatrixJson rtt "X" (Just suffix) "" (SB.NamedDim $ SB.dsName rtt) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) (SB.dsName rtt) ("X_" <> SB.dsName rtt <> "_Cols") -- code for parameters and transformed parameters
+      feDataName = SB.dsName feRTT
+  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataName) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataName ("X_" <> feDataName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = if T.null suffix
-           then SB.indexBy (SB.name "Q_ast") (SB.dsName rtt)
-           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") (SB.dsName rtt)
+           then SB.indexBy (SB.name "Q_ast") feDataName
+           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataName
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
       eX = if T.null suffix
-           then SB.indexBy (SB.name "centered_X") (SB.dsName rtt)
-           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) (SB.dsName rtt)
+           then SB.indexBy (SB.name "centered_X") feDataName
+           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataName
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, eXBeta, eBeta)
+
+addFixedEffectsData :: forall r d r0.(Typeable d, Typeable r0)
+                    => SB.RowTypeTag r
+                    -> FixedEffects r
+                    -> BuilderM r0 d ()
+addFixedEffectsData feRTT (FixedEffects n vecF) = do
+  let suffix = SB.dsSuffix feRTT
+      uSuffix = SB.underscoredIf suffix
+      feDataName = SB.dsName feRTT
+  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataName) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataName ("X_" <> feDataName <> "_Cols") -- code for parameters and transformed parameters
+  return ()
+
+addFixedEffectsParametersAndPriors :: forall r1 r2 d r0.(Typeable d, Typeable r0)
+                                   => Bool
+                                   -> SB.StanExpr
+                                   -> SB.RowTypeTag r1
+                                   -> SB.RowTypeTag r2
+                                   -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+addFixedEffectsParametersAndPriors thinQR fePrior feRTT dataRTT = do
+  let feSuffix = SB.dsSuffix feRTT
+      dataSuffix = SB.dsSuffix dataRTT
+      uSuffix = SB.underscoredIf feSuffix <> SB.underscoredIf dataSuffix
+      feDataName = SB.dsName feRTT
+  SB.fixedEffectsQR_Parameters uSuffix ("X" <> uSuffix) ("X_" <> feDataName <> "_Cols")
+  -- model
+  SB.inBlock SB.SBModel $ do
+    let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
+    SB.addExprLine "addFixedEffects" e
+--    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
+  let eQ = SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataName
+      eTheta = SB.name $ "thetaX" <> uSuffix
+      eQTheta = eQ `SB.times` eTheta
+      eX = SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataName
+      eBeta = SB.name $ "betaX" <> uSuffix
+      eXBeta = eX `SB.times` eBeta
+      feExpr = if thinQR then eQTheta else eXBeta
+  return (feExpr, eXBeta, eBeta)
+
+
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where

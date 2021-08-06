@@ -1,0 +1,121 @@
+cradle:
+  cabal:
+    - path: "./haskell-stan/src"
+      component: "blueripple-research:lib:haskell-stan"
+
+    - path: "./hvega-utils/src"
+      component: "blueripple-research:lib:hvega-utils"
+
+    - path: "./src"
+      component: "lib:blueripple-research"
+
+    - path: "./mission/mission.hs"
+      component: "blueripple-research:exe:mission"
+
+    - path: "./reports/PreferenceModel/preference_model.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/PreferenceModel/Common.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/PreferenceModel/Methods.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/PreferenceModel/PM2018.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/PreferenceModel/ExitPolls.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/PreferenceModel/AcrossTime.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/Explainer/WWCV.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/Paths_blueripple_research.hs"
+      component: "blueripple-research:exe:preference-model"
+
+    - path: "./reports/MRP/MRP.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/Common.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/PreferenceModel/Common.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/WWC.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/Pools.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/DeltaVPV.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/Kentucky.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/Wisconsin.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/TurnoutGaps.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/ElectoralWeights.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/Language.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/BidenVsWWC.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/DistrictClusters.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/MRP/ElectoralWeights.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./reports/Visualizations/StatePrefs.hs"
+      component: "blueripple-research:exe:mrp-model"
+
+    - path: "./stan/Main.hs"
+      component: "blueripple-research:exe:stan-models"
+
+    - path: "./georgia/Main.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./georgia/GA_DataPaths.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./georgia/GA_DataFrames.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./georgia/Data.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./georgia/Models.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./georgia/Parsers.hs"
+      component: "blueripple-research:exe:ga-work"
+
+    - path: "./FEC-data/Main.hs"
+      component: "blueripple-research:exe:FEC-data"
+
+    - path: "./FEC-data/FromDB.hs"
+      component: "blueripple-research:exe:FEC-data"
+
+    - path: "./house-data/Main.hs"
+      component: "blueripple-research:exe:house-data"
+
+    - path: "./reports/Main.hs"
+      component: "blueripple-research:exe:house-data"
+
+    - path: "./testbed/Main.hs"
+      component: "blueripple-research:exe:testbed"
+
+    - path: "../data-sets/src"
+      component: "lib:blueripple-data-sets"

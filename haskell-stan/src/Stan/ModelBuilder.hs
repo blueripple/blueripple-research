@@ -133,11 +133,6 @@ applyToFoldable fld (ToFoldable f) = Foldl.fold fld . f
 applyToFoldableM :: Monad m => Foldl.FoldM m row a -> ToFoldable d row -> d -> m a
 applyToFoldableM fldM (ToFoldable f) = Foldl.foldM fldM . f
 
-{-
-data ToEFoldable d row where
-  ToEFoldable :: Foldable f => (d -> Either Text (f row)) -> ToEFoldable d row
--}
-
 data GroupTypeTag k where
   GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
 
@@ -204,15 +199,6 @@ makeIndexFromFoldable _ h allKs = GivenIndex asMap h where
   listKs = ordNub $ Foldl.fold Foldl.list allKs
   asMap = Map.fromList $ zip listKs [1..]
 
---makeSupplementalIndex :: (Foldable f, Ord k) => Text -> f k -> MakeIndex r k
---makeSupplementalIndex gn ks = SupplementalIndex
-{-
-  size = Map.size asMap
-  index k = case Map.lookup k asMap of
-    Just n -> Right n
-    Nothing -> Left $ "Index lookup failed for k=" <> printK k <> " in index built from foldable collection of k."
--}
-
 makeIndexByCounting :: Ord k => (k -> Text) -> (r -> k) -> MakeIndex r k
 makeIndexByCounting printK h = FoldToIndex (Foldl.premap h $ indexFold printK 1) h
 
@@ -223,7 +209,6 @@ indexFold printK start =  Foldl.Fold step init done where
   done s = mapToInt where
     keyedList = zip (Set.toList s) [start..]
     mapToInt = Map.fromList keyedList
---    toIntE k = maybe (Left $ "Lookup failed for \"" <> printK k <> "\"") Right $ Map.lookup k mapToInt
 
 type GroupIndexMakerDHM r = DHash.DHashMap GroupTypeTag (MakeIndex r)
 type GroupIndexDHM r = DHash.DHashMap GroupTypeTag (IndexMap r)
@@ -296,10 +281,14 @@ makeMainIndexes makerMap rs = (dhm, gm) where
 groupIntMap :: IndexMap r k -> IntMap.IntMap k
 groupIntMap (IndexMap _ _ im) = im
 
-data RowInfo d r0 r = RowInfo { toFoldable :: ToFoldable d r
-                              , jsonSeries :: JSONSeriesFold r
-                              , indexMaker :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int) }
+data RowInfo d r = RowInfo { toFoldable :: ToFoldable d r
+                           , jsonSeries :: JSONSeriesFold r
+                           }
 
+newRowInfo :: forall d r0 r. ToFoldable d r -> RowInfo d r
+newRowInfo tf groupName  = RowInfo tf mempty
+
+{-
 indexedRowInfo :: forall d r0 r k. Typeable k => ToFoldable d r -> Text -> (r -> k) -> RowInfo d r0 r
 indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
   im :: GroupIndexDHM r0 -> Either Text (r -> Either Text Int)
@@ -310,64 +299,51 @@ indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
 
 unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
 unIndexedRowInfo tf groupName  = RowInfo tf mempty (const $ Left $ groupName <> " is unindexed.")
+-}
 
 -- key for dependepent map.
 data RowTypeTag r where
-  ModeledRowTag :: Typeable r => RowTypeTag r
   RowTypeTag :: Typeable r => Text -> RowTypeTag r
 
-modeledDataIndexName :: Text
-modeledDataIndexName = "modeled"
-
 dsName :: RowTypeTag r -> Text
-dsName ModeledRowTag = modeledDataIndexName
 dsName (RowTypeTag n) = n
-
-dsSuffix :: RowTypeTag r -> Text
-dsSuffix ModeledRowTag = ""
-dsSuffix (RowTypeTag n) = n
-
 
 -- we need the empty constructors here to bring in the Typeable constraints in the GADT
 instance GADT.GEq RowTypeTag where
-  geq a@(ModeledRowTag) b@(ModeledRowTag) =
-    case Reflection.eqTypeRep (Reflection.typeOf a) (Reflection.typeOf b) of
-       Just Reflection.HRefl -> Just Reflection.Refl
-  geq ModeledRowTag (RowTypeTag _) = Nothing
   geq rta@(RowTypeTag n1) rtb@(RowTypeTag n2) =
     case Reflection.eqTypeRep (Reflection.typeOf rta) (Reflection.typeOf rtb) of
       Just Reflection.HRefl -> if (n1 == n2) then Just Reflection.Refl else Nothing
       _ -> Nothing
 
 instance Hashable.Hashable (Some.Some RowTypeTag) where
-  hash (Some.Some ModeledRowTag) = Hashable.hash ("modeled" :: Text)
   hash (Some.Some (RowTypeTag n)) = Hashable.hash n
-  hashWithSalt m (Some.Some ModeledRowTag) = hashWithSalt m ("modeled" :: Text)
   hashWithSalt m (Some.Some (RowTypeTag n)) = hashWithSalt m n
 
 -- the key is a name for the data-set.  The tag carries the toDataSet function
-type RowBuilder d r0 = DSum.DSum RowTypeTag (RowInfo d r0)
-type RowBuilderDHM d r0 = DHash.DHashMap RowTypeTag (RowInfo d r0)
+type RowBuilder d = DSum.DSum RowTypeTag (RowInfo d)
+type RowBuilderDHM d = DHash.DHashMap RowTypeTag (RowInfo d)
 
-initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d r0
+{-
+initialRowBuilders :: (Typeable d, Typeable row, Foldable f) => (d -> f row) -> RowBuilderDHM d
 initialRowBuilders toModeled =
   DHash.fromList [ModeledRowTag DSum.:=> (RowInfo (ToFoldable toModeled) mempty (const $ Left $ "Modeled data set needs no index but one was asked for."))]
+-}
 
-addFoldToDBuilder :: forall d r0 r.(Typeable d)
+addFoldToDBuilder :: forall d r.(Typeable d)
                   => RowTypeTag r
                   -> Stan.StanJSONF r Aeson.Series
-                  -> RowBuilderDHM d r0
-                  -> Maybe (RowBuilderDHM d r0)
+                  -> RowBuilderDHM d
+                  -> Maybe (RowBuilderDHM d)
 addFoldToDBuilder rtt fld rbm =
   case DHash.lookup rtt rbm of
     Nothing -> Nothing --DHash.insert rtt (RowInfo (JSONSeriesFold fld) (const Nothing)) rbm
-    Just (RowInfo tf (JSONSeriesFold fld') gi)
-      -> Just $ DHash.insert rtt (RowInfo tf (JSONSeriesFold $ fld' <> fld) gi) rbm
+    Just (RowInfo tf (JSONSeriesFold fld'))
+      -> Just $ DHash.insert rtt (RowInfo tf (JSONSeriesFold $ fld' <> fld)) rbm
 
-buildJSONSeries :: forall d r0 f. RowBuilderDHM d r0 -> d -> Either Text Aeson.Series
+buildJSONSeries :: forall d f. RowBuilderDHM d -> d -> Either Text Aeson.Series
 buildJSONSeries rbm d =
-  let foldOne :: RowBuilder d r0 -> Either Text Aeson.Series
-      foldOne ((RowTypeTag _ ) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld) _)) = Foldl.foldM fld (h d)
+  let foldOne :: RowBuilder d -> Either Text Aeson.Series
+      foldOne ((RowTypeTag _) DSum.:=> (RowInfo (ToFoldable h) (JSONSeriesFold fld))) = Foldl.foldM fld (h d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
 data JSONRowFold d r = JSONRowFold (ToFoldable d r) (Stan.StanJSONF r Aeson.Series)
@@ -377,7 +353,8 @@ buildJSONFromRows d rowFoldMap = do
   let toSeriesOne (rtt DSum.:=> JSONRowFold (ToFoldable tf) fld) = Foldl.foldM fld (tf d)
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
-addGroupIndexes :: (Typeable d, Typeable r0) => StanBuilderM env d r0 ()
+{-
+addGroupIndexes :: (Typeable d) => StanBuilderM env d ()
 addGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
       buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap mII {-(IntIndex gSize mIntF)-} _ _)) =
@@ -390,6 +367,7 @@ addGroupIndexes = do
           Nothing -> return ()
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
+-}
 
 buildJSONF :: forall env d r0 .(Typeable d, Typeable r0) => StanBuilderM env d r0 (DHash.DHashMap RowTypeTag (JSONRowFold d))
 buildJSONF = do

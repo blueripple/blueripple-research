@@ -219,13 +219,13 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             binaryPrior = normal 2
             sigmaPrior = normal 2
             fePrior = normal 2
-        -- Turnout (from CPS)
+        MRP.addFixedEffectsData @(F.Record BRE.DistrictDemDataR) cdDataRT (MRP.FixedEffects 1 densityPredictor)
         alphaT <- SB.intercept "alphaT" (normal 2)
-        (feCDT, xBetaT, betaT) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
+        (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors @(F.Record BRE.DistrictDemDataR)
                                   True
                                   fePrior
                                   cdDataRT
-                                  (MRP.FixedEffects 1 densityPredictor)
+                                  cpsDataRT
         gSexT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CPS"
         gRaceT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CPS"
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
@@ -233,11 +233,11 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         SB.sampleDistV' cpsDataRT distT logitT_sample
         -- Preference
         alphaP <- SB.intercept "alphaP" (normal 2)
-        (feCDP, xBetaP, betaP) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
+        (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors @(F.Record BRE.DistrictDemDataR)
                                   True
                                   fePrior
                                   cdDataRT
-                                  (MRP.FixedEffects 1 densityPredictor)
+                                  ccesDataRT
         gSexP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CCES"
         gRaceP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CCES"
         let distP = SB.binomialLogitDist ccesVotes ccesDVotes
