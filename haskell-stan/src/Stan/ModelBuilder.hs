@@ -300,11 +300,12 @@ intMapsForDataSetFoldM  imbs = DHash.traverse id imbs
 indexBuildersForDataSetFold :: GroupIndexMakers r -> FL.Fold r (GroupIndex r)
 indexBuildersForDataSetFold gims = DHash.traverse makeIndexMapF gims
 
-buildGroupIndexesAndIntMaps :: d -> GroupIndexAndIntMapMakers r -> Either Text (GroupIndexesAndIntMaps r)
+-- build a new RowInfo from the row index and IntMap builders
+buildGroupIndexesAndIntMaps :: d -> GroupIndexAndIntMapMakers d r -> Either Text (RowInfo d r)
 buildGroupIndexesAndIntMaps d (GroupIndexAndIntMapMakers tf ims imbs) = FL.foldM fldM $ tf d  where
   gisFld = indexBuildersForDataSetFold ri
   imsFldM = intMapsForDataSetFoldM ri
-  fldM = GroupIndexesAndIntMaps <$> pure tf <*> Fold.generalize gisFld <*> imsFldM
+  fldM = RowInfo <$> pure tf <*> Fold.generalize gisFld <*> imsFldM <*> pure mempty
 
 
 {-
@@ -343,14 +344,14 @@ data RowInfo d r = RowInfo
                    }
 -}
 
-data RowInfo d r = IndexedRowInfo
+data RowInfo d r = RowInfo
                    {
-                     groupIndexesAndIntMaps :: GroupIndexesAndIntMaps d r
+                     toFoldable :: ToFoldable d r
+                   , groupIndexes :: GroupIndexes r
+                   , groupIntMaps :: GroupIntMaps r
                    , jsonSeries :: JSONSeriesFold r
                    }
 
-toFoldable :: RowInfo d r -> ToFoldable d r
-toFoldable (RowInfo (GroupIndexesAndIntMaps tf _ _) _) = tf
 
 
 --newRowInfo :: forall d r. ToFoldable d r -> RowInfo d r
@@ -570,26 +571,47 @@ initialBuilderState =
 --  emptyIntMapBuilders
 
 
-newtype StanGroupBuilderM a
-  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State RowIndexMakersDHM) a }
-  deriving (Functor, Applicative, Monad, MonadState RowIndexMakersDHM)
+type RowInfoMakers d = DHash.DHash RowTypeTag (GroupIndexAndIntMapMakers d)
 
+newtype StanGroupBuilderM d a
+  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (RowInfoMakers d)) a }
+  deriving (Functor, Applicative, Monad, MonadState (RowInfoMakers d))
+{-
 data GroupEnv = GroupEnv { groupIndexByType :: RowIndexesDHM
---                         , groupIndexByName :: Map Text (IntIndex r0)
-                         }
-stanGroupBuildError :: Text -> StanGroupBuilderM a
+                         , groupIndexByName :: Map Text (IntIndex r0)
+
+-}
+stanGroupBuildError :: Text -> StanGroupBuilderM d a
 stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
 
-
-addGroupForRow :: forall r k.Typeable k => GroupTypeTag k -> RowTypeTag r -> MakeIndex r k -> StanGroupBuilderM ()
-addGroupForRow gtt rtt mkIndex = do
+addDataSetToGroupBuilder :: RowTypeTag r -> ToFoldable d r -> StanGroupBuilderM d ()
+addDataSetToGroupBuilder rtt tf = do
   rims <- get
-  let gims = fromMaybe DHash.empty $ DHash.lookup rtt rims of
-  case DHash.lookup gtt gims of
-    Nothing -> put $ DHash.insert rtt $ DHash.insert gtt mkIndex gims
-    Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dsName rtt
+  case DHash.lookup rtt rims of
+    Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf DHash.empty DHash.empty)
+    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
 
-runStanGroupBuilder :: Foldable f => StanGroupBuilderM () -> f r -> Either Text GroupEnv
+
+addGroupForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> MakeIndex r k -> StanGroupBuilderM d ()
+addGroupForDataSet gtt rtt mkIndex = do
+  rims <- get
+  case DHash.lookup rtt rims of
+    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
+    Just (GroupIndexAndIntMapMakers tf gims gimbs) -> case DHash.lookup gtt gims of
+      Nothing -> put $ DHash.insert rtt $ GroupIndexAndIntMapMakers tf (DHash.insert gtt mkIndex gims) gimbs
+      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+
+addGroupIntMapForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> DataToIntMap r k -> StanGroupBuilderM d ()
+addGroupIntMapForDataSet gtt rtt mkIntMap = do
+  rims <- get
+  case DHash.lookup rtt rims of
+    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
+    Just (GroupIndexAndIntMapMakers tf gims gimbs) -> case DHash.lookup gtt gimbs of
+      Nothing -> put $ DHash.insert rtt $ GroupIndexAndIntMapMakers tf gims (DHash.insert gtt mkIntMap gimbs)
+      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+
+-- HERE
+runStanGroupBuilder :: StanGroupBuilderM d () -> d -> Either Text (BuilderState d)
 runStanGroupBuilder sgb rs =
   let (resE, rims) = flip runState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
       (byType, byName) = makeMainIndexes gmi rs
