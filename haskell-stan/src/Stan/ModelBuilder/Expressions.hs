@@ -255,18 +255,18 @@ multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
 
 --data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
-data VarBindingStore = VarBindingStore { useBindings :: Map StanIndexKey StanExpr
+data VarBindingStore = VarBindingStore { useBindings :: Map Text (Map StanIndexKey StanExpr)
                                        , declarationBindings :: Map StanIndexKey StanExpr
                                        } deriving (Show)
 
-bindings :: Map StanIndexKey StanExpr -> Map StanIndexKey StanExpr -> VarBindingStore
+bindings :: Map Text (Map StanIndexKey StanExpr) -> Map StanIndexKey StanExpr -> VarBindingStore
 bindings = VarBindingStore
 
 noBindings :: VarBindingStore
 noBindings = bindings mempty mempty
 
-lookupUseBinding :: StanIndexKey -> VarBindingStore -> Maybe StanExpr
-lookupUseBinding k (VarBindingStore bm _) = Map.lookup k bm
+lookupUseBinding :: Text -> StanIndexKey -> VarBindingStore -> Maybe StanExpr
+lookupUseBinding dsName k (VarBindingStore bm _) = Map.lookup k >>= Map.lookup dsName bm
 
 lookupDeclarationBinding :: StanIndexKey -> VarBindingStore -> Maybe StanExpr
 lookupDeclarationBinding k (VarBindingStore _ dms) = Map.lookup k dms

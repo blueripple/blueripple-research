@@ -23,45 +23,30 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 import Prelude hiding (All)
 import qualified Data.Map as Map
 
-addIntData :: (Typeable d, Typeable r0)
-           => SME.StanName
-           -> Maybe Int
-           -> Maybe Int
-           -> (r0 -> Int)
-           -> SB.StanBuilderM env d r0 SME.StanVar
-addIntData = addIntData' SB.ModeledRowTag
-
-addIntData' :: (Typeable d, Typeable r0)
+addIntData :: (Typeable d)
             => SB.RowTypeTag r
             -> SME.StanName
             -> Maybe Int
             -> Maybe Int
             -> (r -> Int)
-            -> SB.StanBuilderM env d r0 SME.StanVar
-addIntData' rtt varName mLower mUpper f = do
-  let stanType =  SB.StanArray [SB.NamedDim SB.modeledDataIndexName] SME.StanInt
+            -> SB.StanBuilderM env d SME.StanVar
+addIntData rtt varName mLower mUpper f = do
+  let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanInt
       bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
                  (Just l, Nothing) -> "<lower=" <> show l <> ">"
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.addColumnJson rtt varName Nothing stanType bounds f
+  SB.addColumnJson rtt varName stanType bounds f
 
-
-addCountData :: forall r0 d env.(Typeable d, Typeable r0)
-             => SME.StanName
-             -> (r0 -> Int)
-             -> SB.StanBuilderM env d r0 SME.StanVar
-addCountData = addCountData' SB.ModeledRowTag
-
-addCountData' :: forall r r0 d env.(Typeable d, Typeable r0)
+addCountData :: forall r d env.(Typeable d)
              => SB.RowTypeTag r
              -> SME.StanName
              -> (r -> Int)
-             -> SB.StanBuilderM env d r0 SME.StanVar
-addCountData' rtt varName f = addIntData' rtt varName (Just 0) Nothing f
+             -> SB.StanBuilderM env d SME.StanVar
+addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
 
-intercept :: forall env r d. (Typeable d, Typeable r) => Text -> SME.StanExpr -> SB.StanBuilderM env r d SB.StanExpr
+intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanExpr
 intercept iName alphaPriorE = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   let alphaE = SB.name iName
@@ -69,43 +54,33 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return alphaE
 
-sampleDistV :: forall args env d r0.Typeable r0 => SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-sampleDistV = sampleDistV' (SB.ModeledRowTag @r0)
+sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
+sampleDistV rtt sDist args =  SB.inBlock SB.SBModel $ do
+  let dsName = SB.dataSetName rtt
+      samplingE = SMD.familySampleF sDist dsName args
+  SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
 
-sampleDistV' :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-sampleDistV' rtt sDist args =  SB.inBlock SB.SBModel $ do
-  let samplingE = SMD.familySampleF sDist SB.modeledDataIndexName args
-  SB.addExprLine "sampleDistV" $ SME.vectorizedOne (SB.dsName rtt)  samplingE
-
-generateLogLikelihood :: forall args env d r0. Typeable r0 => SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-generateLogLikelihood = generateLogLikelihood' (SB.ModeledRowTag @r0)
-
-generateLogLikelihood' :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 ()
-generateLogLikelihood' rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
-  let dataSetName = SB.dsName rtt
-      dim = SME.NamedDim dataSetName
+generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
+generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
+  let dsName = SB.dataSetName rtt
+      dim = SME.NamedDim dsName
   SB.stanDeclare "log_lik" (SME.StanVector dim) ""
-  SB.stanForLoopB "n" Nothing dataSetName $ do
+  SB.stanForLoopB "n" Nothing dsName $ do
     let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
-        rhsE = SMD.familyLDF sDist dataSetName args
+        rhsE = SMD.familyLDF sDist dsName args
         llE = lhsE `SME.eq` rhsE
     SB.addExprLine "log likelihood (in Generated Quantitites)" llE
 
-generatePosteriorPrediction :: forall args env d r0. Typeable r0 => SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
-generatePosteriorPrediction = generatePosteriorPrediction' (SB.ModeledRowTag @r0)
-
-generatePosteriorPrediction' :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d r0 SME.StanVar
-generatePosteriorPrediction' rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
+generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
+generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist k args
       ppE = SME.indexBy (SME.name ppName) k `SME.eq` rngE
   SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing (SB.dsName rtt) $ SB.addExprLine "generatePosteriorPrediction" ppE
+  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" ppE
   return sv
-generatePosteriorPrediction' _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
+generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
---
-
-fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanVar
+fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d SME.StanVar
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
   fixedEffectsQR_Data thinSuffix matrix rowKey colKey
   fixedEffectsQR_Parameters thinSuffix matrix colKey
@@ -114,7 +89,7 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
       qMatrix = SME.StanVar q qMatrixType
   return qMatrix
 
-fixedEffectsQR_Data :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d r SME.StanName
+fixedEffectsQR_Data :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d SME.StanName
 fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
@@ -135,7 +110,7 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
   return matrix
 
-fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.StanIndexKey -> SB.StanBuilderM env d r ()
+fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.StanIndexKey -> SB.StanBuilderM env d ()
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
   SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
@@ -144,7 +119,7 @@ fixedEffectsQR_Parameters thinSuffix matrix colKey = do
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
 
 
-diagVectorFunction :: SB.StanBuilderM env d r Text
+diagVectorFunction :: SB.StanBuilderM env d Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
 --  SB.addStanLine "int vec_size = num_elements(ii)"
   SB.addStanLine "vector[N] out_vec"

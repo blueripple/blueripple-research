@@ -20,7 +20,7 @@ import Prelude hiding (All)
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 
-sumToZeroFunctions :: SB.StanBuilderM env d r0 ()
+sumToZeroFunctions :: SB.StanBuilderM env d ()
 sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
   SB.declareStanFunction "vector Q_sum_to_zero_QR(int N)" $ do
     SB.addStanLine "vector [2*N] Q_r"
@@ -44,7 +44,7 @@ rawName :: Text -> Text
 rawName t = t <> "_raw"
 
 
-sumToZeroQR :: SB.StanVar -> SB.StanBuilderM env d r0 ()
+sumToZeroQR :: SB.StanVar -> SB.StanBuilderM env d ()
 sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
   sumToZeroFunctions
   let vDim = SB.dimToText sd
@@ -64,7 +64,7 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
 --    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
 sumToZeroQR (SB.StanVar varName _) = SB.stanBuildError $ "Non vector type given to sumToZeroQR (varName=" <> varName <> ")"
 
-softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
+softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
 softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBModel $ do
@@ -72,7 +72,7 @@ softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
     SB.addExprLines "softSumToZero" [expr]
 softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
 
-weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d r0 ()
+weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()
 weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn sumToZeroPrior = do
 --  let dSize = SB.dimToText sd
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
@@ -91,7 +91,7 @@ weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vect
 
 data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
 
-rescaledSumToZero :: SumToZero -> SB.StanVar ->  SB.StanVar -> SB.StanBuilderM env d r0 ()
+rescaledSumToZero :: SumToZero -> SB.StanVar ->  SB.StanVar -> SB.StanBuilderM env d ()
 rescaledSumToZero STZNone beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn st) = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)

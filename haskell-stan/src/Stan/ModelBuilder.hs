@@ -427,28 +427,26 @@ buildJSONFromRows d rowFoldMap = do
   let toSeriesOne (rtt DSum.:=> JSONRowFold (ToFoldable tf) fld) = Foldl.foldM fld (tf d)
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
-{-
 addGroupIndexes :: (Typeable d) => StanBuilderM env d ()
 addGroupIndexes = do
-  let buildIndexJSONFold :: (Typeable d, Typeable r0) => DSum.DSum GroupTypeTag (IndexMap r0) -> StanBuilderM env d r0 ()
-      buildIndexJSONFold ((GroupTypeTag gName) DSum.:=> (IndexMap mII {-(IntIndex gSize mIntF)-} _ _)) =
-        case mII of
-          Just (IntIndex gSize mIntF) -> do
-            addFixedIntJson' ("J_" <> gName) (Just 2) gSize
-            _ <- addColumnMJson ModeledRowTag gName Nothing (SME.StanArray [SME.NamedDim modeledDataIndexName] SME.StanInt) "<lower=1>" mIntF
-            addDeclBinding gName $ SME.name $ "J_" <> gName
-            addUseBinding gName $ SME.indexBy (SME.name gName) modeledDataIndexName
-          Nothing -> return ()
+  let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> DSum.DSum GroupTypeTag (IndexMap r) -> StanBuilderM env d ()
+      buildIndexJSONFold rtt ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _ _)) = do
+        let dsName = dataSetName rtt
+        addFixedIntJson ("J_" <> gName) (Just 2) gSize
+        _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
+        addDeclBinding gName $ SME.name $ "J_" <> gName
+        addUseBinding gName $ SME.indexBy (SME.name gName) dsName
   gim <- asks $ groupIndexByType . groupEnv
   traverse_ buildIndexJSONFold $ DHash.toList gim
 
 
+{-
 buildJSONF :: forall env d.(Typeable d) => StanBuilderM env d (DHash.DHashMap RowTypeTag (JSONRowFold d))
 buildJSONF = do
-  gim <- asks $ groupIndexByType . groupEnv
+--  gim <- asks $ groupIndexByType . groupEnv
   rbs <- rowBuilders <$> get
   let buildRowJSONFolds :: RowInfo d r -> StanBuilderM env d (JSONRowFold d r)
-      buildRowJSONFolds (RowInfo (ToFoldable toData) (JSONSeriesFold jsonF) getIndexF) = do
+      buildRowJSONFolds (RowInfo (ToFoldable toData) _ _ (JSONSeriesFold jsonF)) = do
         case getIndexF gim of
           Right rowIndexF -> do
             -- FE data can have rows which are not in model.  We just ignore them
