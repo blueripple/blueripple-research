@@ -232,7 +232,9 @@ newtype GroupIntMapBuilders r = GroupIntMapBuilders (DHash.DHashMap GroupTypeTag
 
 -- r is a Phantom type here
 newtype GroupIntMaps r = GroupIntMaps (DHash.DHashMap GroupTypeTag IntMap.IntMap)
---type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
+type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
+
+
 
 data GroupIndexAndIntMapMakers d r = GroupIndexAndIntMapMakers (ToFoldable d r) (GroupIndexMakers r) (GroupIntMapBuilders r)
 
@@ -302,12 +304,19 @@ intMapsForDataSetFoldM (GroupIntMapBuilders imbs) = GroupIntMaps <$> DHash.trave
 indexBuildersForDataSetFold :: GroupIndexMakers r -> Foldl.Fold r (GroupIndexes r)
 indexBuildersForDataSetFold (GroupIndexMakers gims) = GroupIndexes <$> DHash.traverse makeIndexMapF gims
 
+useBindingsFromGroupIndexMakers :: RowTypeTag r -> GroupIndexMakers r -> Map SME.IndexKey SME.StanExpr
+useBindingsFromGroupIndexMakers rtt (GroupIndexMakers gims) = Map.fromList l where
+  l = fmap g $ DHash.toList gims
+  g (gtt DSum.:=> _) = let gn = taggedGroupName gtt in (gn, SME.indexBy (SME.name gn) $ dataSetName rtt)
+
+
 -- build a new RowInfo from the row index and IntMap builders
-buildGroupIndexesAndIntMaps :: d -> GroupIndexAndIntMapMakers d r -> Either Text (RowInfo d r)
-buildGroupIndexesAndIntMaps d (GroupIndexAndIntMapMakers tf@(ToFoldable f) ims imbs) = Foldl.foldM fldM $ f d  where
+buildGroupIndexesAndIntMaps :: d -> RowTypeTag r -> GroupIndexAndIntMapMakers d r -> Either Text (RowInfo d r)
+buildGroupIndexesAndIntMaps d rtt (GroupIndexAndIntMapMakers tf@(ToFoldable f) ims imbs) = Foldl.foldM fldM $ f d  where
   gisFld = indexBuildersForDataSetFold ims
   imsFldM = intMapsForDataSetFoldM imbs
-  fldM = RowInfo tf <$> Foldl.generalize gisFld <*> imsFldM <*> pure mempty
+  useBindings = useBindingsFromGroupIndexMakers rtt ims
+  fldM = RowInfo tf useBindings <$> Foldl.generalize gisFld <*> imsFldM <*> pure mempty
 
 
 {-
@@ -349,12 +358,18 @@ data RowInfo d r = RowInfo
 data RowInfo d r = RowInfo
                    {
                      toFoldable :: ToFoldable d r
+                   , useBindings :: Map SME.IndexKey SME.StanExpr
                    , groupIndexes :: GroupIndexes r
                    , groupIntMaps :: GroupIntMaps r
                    , jsonSeries :: JSONSeriesFold r
                    }
 
 
+dataSetGroupIntMaps :: RowInfos d -> DataSetGroupIntMaps
+dataSetGroupIntMaps = DHash.map groupIntMaps
+
+dataSetGroupIntMapsM :: StanBuilderM env d DataSetGroupIntMaps
+dataSetGroupIntMapsM = dataSetGroupIntMaps . rowBuilders <$> get
 
 --newRowInfo :: forall d r. ToFoldable d r -> RowInfo d r
 --newRowInfo tf groupName  = RowInfo tf mempty mempty
@@ -411,19 +426,19 @@ addFoldToDBuilder :: forall d r.(Typeable d)
 addFoldToDBuilder rtt fld ris =
   case DHash.lookup rtt ris of
     Nothing -> Nothing --DHash.insert rtt (RowInfo (JSONSeriesFold fld) (const Nothing)) rbm
-    Just (RowInfo x y z (JSONSeriesFold fld'))
-      -> Just $ DHash.insert rtt (RowInfo x y z (JSONSeriesFold $ fld' <> fld)) ris
+    Just (RowInfo x ubs y z (JSONSeriesFold fld'))
+      -> Just $ DHash.insert rtt (RowInfo x ubs y z (JSONSeriesFold $ fld' <> fld)) ris
 
 buildJSONSeries :: forall d f. RowInfos d -> d -> Either Text Aeson.Series
 buildJSONSeries rbm d =
   let foldOne :: RowBuilder d -> Either Text Aeson.Series
-      foldOne ((RowTypeTag _) DSum.:=> ri@(RowInfo (ToFoldable f) _ _ (JSONSeriesFold fld))) = Foldl.foldM fld (f d)
+      foldOne ((RowTypeTag _) DSum.:=> ri@(RowInfo (ToFoldable f) _ _ _ (JSONSeriesFold fld))) = Foldl.foldM fld (f d)
   in mconcat <$> (traverse foldOne $ DHash.toList rbm)
 
 data JSONRowFold d r = JSONRowFold (ToFoldable d r) (Stan.StanJSONF r Aeson.Series)
 
-buildJSONFromRows :: d -> DHash.DHashMap RowTypeTag (JSONRowFold d) -> Either Text Aeson.Series
-buildJSONFromRows d rowFoldMap = do
+buildJSONFromRows :: DHash.DHashMap RowTypeTag (JSONRowFold d) -> d -> Either Text Aeson.Series
+buildJSONFromRows rowFoldMap d = do
   let toSeriesOne (rtt DSum.:=> JSONRowFold (ToFoldable tf) fld) = Foldl.foldM fld (tf d)
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
@@ -436,10 +451,10 @@ buildGroupIndexes = do
         addFixedIntJson ("J_" <> gName) (Just 2) gSize
         _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.name $ "J_" <> gName
-        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
+--        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
         return Nothing
       buildRowFolds :: (Typeable d) => RowTypeTag r -> RowInfo d r -> StanBuilderM env d (Maybe r)
-      buildRowFolds rtt (RowInfo _ (GroupIndexes gis) _ _) = do
+      buildRowFolds rtt (RowInfo _ _ (GroupIndexes gis) _ _) = do
         _ <- DHash.traverseWithKey (buildIndexJSONFold rtt) gis
         return Nothing
   rowInfos <- rowBuilders <$> get
@@ -450,7 +465,7 @@ buildJSONF :: forall env d.(Typeable d) => StanBuilderM env d (DHash.DHashMap Ro
 buildJSONF = do
   rowInfos <- rowBuilders <$> get
   let buildRowJSONFolds :: RowInfo d r -> StanBuilderM env d (JSONRowFold d r)
-      buildRowJSONFolds (RowInfo tf _ _ (JSONSeriesFold jsonF)) = return $ JSONRowFold tf jsonF
+      buildRowJSONFolds (RowInfo tf _ _ _ (JSONSeriesFold jsonF)) = return $ JSONRowFold tf jsonF
 {-
       buildRowJSONFolds (RowInfo (ToFoldable toData) gis _ (JSONSeriesFold jsonF)) = do
         case getIndexF gim of
@@ -549,7 +564,7 @@ modifyIndexBindingsA :: Applicative t
                      -> t (BuilderState d)
 modifyIndexBindingsA f (BuilderState dv vbs rb cj hf c) = (\x -> BuilderState dv x rb cj hf c) <$> f vbs
 
-withUseBindings :: Map Text (Map SME.IndexKey SME.StanExpr) -> StanBuilderM env d a -> StanBuilderM env d a
+withUseBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
 withUseBindings ubs m = do
   oldBindings <- indexBindings <$> get
   modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbs) -> SME.VarBindingStore ubs dbs)
@@ -637,7 +652,7 @@ addGroupIntMapForDataSet gtt rtt mkIntMap = do
 runStanGroupBuilder :: Typeable d=> StanGroupBuilderM d () -> d -> Either Text (BuilderState d)
 runStanGroupBuilder sgb d = do
   let (resE, rims) = usingState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
-  rowInfos <- DHash.traverse (buildGroupIndexesAndIntMaps d) rims
+  rowInfos <- DHash.traverseWithKey (buildGroupIndexesAndIntMaps d) rims
   return $ initialBuilderState rowInfos
 
 {-
@@ -797,15 +812,13 @@ addDeclBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
 addDeclBinding k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore ubm (Map.insert k e dbm)
 
-addUseBinding :: Text -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addUseBinding dsName k e = do
+addUseBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addUseBinding k e = do
   --modify $ modifyIndexBindings f where
   let f (SME.VarBindingStore ubm dbm) = do
-        case Map.lookup dsName ubm of
-          Nothing -> Right $ SME.VarBindingStore (Map.insert dsName (Map.singleton k e) ubm) dbm
-          Just m -> case Map.lookup k m of
-            Nothing -> Right $ SME.VarBindingStore (Map.insert dsName (Map.insert k e m) ubm) dbm
-            Just _ -> Left $ "Attempt to add a use binding where one already exists. data-set=" <> dsName <> "; index-key=" <> show k
+        case Map.lookup k ubm of
+            Nothing -> Right $ SME.VarBindingStore (Map.insert k e ubm) dbm
+            Just _ -> Left $ "Attempt to add a use binding where one already exists: index-key=" <> show k
   oldBuilderState <- get
   case modifyIndexBindingsA f oldBuilderState of
     Right newBuilderState -> put newBuilderState
@@ -1054,13 +1067,12 @@ stanForLoop counter mStart end loopF = do
   addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
   bracketed 2 $ loopF counter
 
-stanForLoopB :: RowTypeTag r
-             -> Text
+stanForLoopB :: Text
              -> Maybe SME.StanExpr
              -> IndexKey
-             -> StanBuilderM env d a
-             -> StanBuilderM env d a
-stanForLoopB rtt counter mStartE k x = do
+             -> SME.StanExpr
+             -> StanBuilderM env d ()
+stanForLoopB counter mStartE k x = do
   endE <- getDeclBinding k
   let start = fromMaybe (SME.scalar "1") mStartE
       forE = SME.spaced (SME.name "for")
@@ -1070,8 +1082,8 @@ stanForLoopB rtt counter mStartE k x = do
              (start `SME.nextTo` (SME.bare ":") `SME.nextTo` endE)
   printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
-    addUseBinding (dataSetName rtt) k (SME.name counter)
-    bracketed 2 x
+    addUseBinding "forLoop" k (SME.name counter)
+    bracketed 2 $ addExprLine "forLoopB" $ lookupUsingKey "forLoop" x
 
 
 data StanPrintable = StanLiteral Text | StanExpression Text

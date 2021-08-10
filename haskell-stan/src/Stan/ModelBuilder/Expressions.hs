@@ -256,21 +256,21 @@ multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
 
 --data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
-data VarBindingStore = VarBindingStore { useBindings :: Map Text (Map IndexKey StanExpr)
+data VarBindingStore = VarBindingStore { useBindings :: Map IndexKey StanExpr
                                        , declarationBindings :: Map IndexKey StanExpr
                                        } deriving (Show)
 
-bindings :: Map Text (Map IndexKey StanExpr) -> Map IndexKey StanExpr -> VarBindingStore
+bindings :: Map IndexKey StanExpr -> Map IndexKey StanExpr -> VarBindingStore
 bindings = VarBindingStore
 
 noBindings :: VarBindingStore
 noBindings = bindings mempty mempty
 
-lookupUseBinding :: Text -> IndexKey -> VarBindingStore -> Maybe StanExpr
-lookupUseBinding dsName k (VarBindingStore bm _) = Map.lookup dsName bm >>= Map.lookup k
+lookupUseBinding :: IndexKey -> VarBindingStore -> Maybe StanExpr
+lookupUseBinding k (VarBindingStore ubm _) = Map.lookup k ubm
 
 lookupDeclarationBinding :: IndexKey -> VarBindingStore -> Maybe StanExpr
-lookupDeclarationBinding k (VarBindingStore _ dms) = Map.lookup k dms
+lookupDeclarationBinding k (VarBindingStore _ dbm) = Map.lookup k dbm
 
 showKeys :: VarBindingStore -> Text
 showKeys (VarBindingStore bms dms) =
@@ -295,10 +295,10 @@ printExprWithLookupContext vbs lc e = do
     Right ue -> Right $ Rec.cata writeCodeAlg ue
 
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
-printExpr vbs = printExprWithLookupContext vbs None
+printExpr vbs = printExprWithLookupContext vbs Use
 
-printExpr' :: VarBindingStore -> Text -> StanExpr -> Either Text Text
-printExpr' vbs dsName e = Rec.hyloM (return . writeCodeAlg) (toCodeCoAlg vbs) (AnaS (Use dsName) mempty, e)
+printExpr' :: VarBindingStore -> StanExpr -> Either Text Text
+printExpr' vbs e = Rec.hyloM (return . writeCodeAlg) (toCodeCoAlg vbs) (AnaS Use mempty, e)
 {-
 printExpr :: VarBindingStore -> StanExpr -> Either Text Text
 printExpr vbs e = do
@@ -316,7 +316,7 @@ keepIndex :: Set IndexKey -> StanExpr -> Bool
 keepIndex vks (Fix.Fix (IndexF k)) = not $ Set.member k vks
 keepIndex _ _ = True
 
-data LookupContext = None | Use DataSetKey | Declare deriving (Show, Eq, Ord)
+data LookupContext = Use | Declare deriving (Show, Eq, Ord)
 
 data AnaS = AnaS { lContext :: LookupContext, vectorizedIndexes :: Set IndexKey}
 
@@ -339,13 +339,12 @@ type CodeExpr = Fix.Fix CodeExprF
 toCodeCoAlg ::  VarBindingStore -> (AnaS, StanExpr) -> Either Text (CodeExprF (AnaS, StanExpr))
 toCodeCoAlg vbs (as, Fix.Fix (IndexF k)) = do
   case lContext as of
-    Use dsName -> case lookupUseBinding dsName k vbs of
+    Use -> case lookupUseBinding k vbs of
       Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> show vbs
       Just ie -> return $ AsIsCF (as, ie)
     Declare ->   case lookupDeclarationBinding k vbs of
       Nothing -> Left $ "re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> show vbs
       Just ie -> return $ AsIsCF (as, ie)
-    None -> Left "Cannot resolve index without an active Lookup context. (LookupContext == None)"
 toCodeCoAlg _ (AnaS _ vks, Fix.Fix (LookupCtxtF lc e)) = do
   return $ AsIsCF (AnaS lc vks, e)
 toCodeCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ AsIsCF $ (as, tExprToExpr te)

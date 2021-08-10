@@ -60,10 +60,10 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
 
-buildDataWranglerAndCode :: (Typeable d, Typeable modeledRow)
-                         => SB.StanGroupBuilderM modeledRow ()
+buildDataWranglerAndCode :: (Typeable d)
+                         => SB.StanGroupBuilderM d ()
                          -> env
-                         -> SB.StanBuilderM env d modeledRow ()
+                         -> SB.StanBuilderM env d ()
                          -> d
                          -> SB.ToFoldable d modeledRow
                          -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
@@ -76,7 +76,7 @@ buildDataWranglerAndCode groupM env builderM d (SB.ToFoldable toFoldable) =
         intMapBuilders <- SB.indexBuilders <$> get
         return
           $ SC.Wrangle SC.TransientIndex
-          $ \d -> (SB.buildIntMaps rowBuilders intMapBuilders d, flip SB.buildJSONFromRows jsonRowBuilders)
+          $ \d -> (SB.buildIntMaps rowBuilders intMapBuilders d, SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d toFoldable env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ c _, dw) -> (dw, c)) resE
 
