@@ -427,34 +427,40 @@ buildJSONFromRows d rowFoldMap = do
   let toSeriesOne (rtt DSum.:=> JSONRowFold (ToFoldable tf) fld) = Foldl.foldM fld (tf d)
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
-addGroupIndexes :: (Typeable d) => StanBuilderM env d ()
-addGroupIndexes = do
-  let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> DSum.DSum GroupTypeTag (IndexMap r) -> StanBuilderM env d ()
-      buildIndexJSONFold rtt ((GroupTypeTag gName) DSum.:=> (IndexMap (IntIndex gSize mIntF) _ _)) = do
+-- The Maybe return values are there just to satisfy the (returned) type of DHash.traverseWithKey
+buildGroupIndexes :: (Typeable d) => StanBuilderM env d ()
+buildGroupIndexes = do
+  let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM env d (Maybe k)
+      buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _) = do
         let dsName = dataSetName rtt
         addFixedIntJson ("J_" <> gName) (Just 2) gSize
         _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.name $ "J_" <> gName
-        addUseBinding gName $ SME.indexBy (SME.name gName) dsName
-  gim <- asks $ groupIndexByType . groupEnv
-  traverse_ buildIndexJSONFold $ DHash.toList gim
+        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
+        return Nothing
+      buildRowFolds :: (Typeable d) => RowTypeTag r -> RowInfo d r -> StanBuilderM env d (Maybe r)
+      buildRowFolds rtt (RowInfo _ (GroupIndexes gis) _ _) = do
+        _ <- DHash.traverseWithKey (buildIndexJSONFold rtt) gis
+        return Nothing
+  rowInfos <- rowBuilders <$> get
+  _ <- DHash.traverseWithKey buildRowFolds rowInfos
+  return ()
 
-
-{-
 buildJSONF :: forall env d.(Typeable d) => StanBuilderM env d (DHash.DHashMap RowTypeTag (JSONRowFold d))
 buildJSONF = do
---  gim <- asks $ groupIndexByType . groupEnv
-  rbs <- rowBuilders <$> get
+  rowInfos <- rowBuilders <$> get
   let buildRowJSONFolds :: RowInfo d r -> StanBuilderM env d (JSONRowFold d r)
-      buildRowJSONFolds (RowInfo (ToFoldable toData) _ _ (JSONSeriesFold jsonF)) = do
+      buildRowJSONFolds (RowInfo tf _ _ (JSONSeriesFold jsonF)) = return $ JSONRowFold tf jsonF
+{-
+      buildRowJSONFolds (RowInfo (ToFoldable toData) gis _ (JSONSeriesFold jsonF)) = do
         case getIndexF gim of
           Right rowIndexF -> do
             -- FE data can have rows which are not in model.  We just ignore them
             let intMapF = Foldl.Fold (\im r -> either (const im) (\n -> IntMap.insert n r im) $ rowIndexF r) IntMap.empty id
             return $ JSONRowFold (ToFoldable $ Foldl.fold intMapF . toData) jsonF
           Left _ -> return $ JSONRowFold (ToFoldable toData) jsonF
-  DHash.traverse buildRowJSONFolds rbs
 -}
+  DHash.traverse buildRowJSONFolds rowInfos
 
 newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
 newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap)
@@ -537,7 +543,13 @@ modifyIndexBindings :: (VarBindingStore -> VarBindingStore)
                     -> BuilderState d
 modifyIndexBindings f (BuilderState dv vbs rb cj hf c) = BuilderState dv (f vbs) rb cj hf c
 
-withUseBindings :: Map SME.StanIndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
+modifyIndexBindingsA :: Applicative t
+                     => (VarBindingStore -> t VarBindingStore)
+                     -> BuilderState d
+                     -> t (BuilderState d)
+modifyIndexBindingsA f (BuilderState dv vbs rb cj hf c) = (\x -> BuilderState dv x rb cj hf c) <$> f vbs
+
+withUseBindings :: Map Text (Map SME.IndexKey SME.StanExpr) -> StanBuilderM env d a -> StanBuilderM env d a
 withUseBindings ubs m = do
   oldBindings <- indexBindings <$> get
   modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbs) -> SME.VarBindingStore ubs dbs)
@@ -774,20 +786,30 @@ stanBuildMaybe msg = maybe (stanBuildError msg) return
 stanBuildEither :: Either Text a -> StanBuilderM ev d a
 stanBuildEither = either stanBuildError return
 
-getDeclBinding :: StanIndexKey -> StanBuilderM env d SME.StanExpr
+getDeclBinding :: IndexKey -> StanBuilderM env d SME.StanExpr
 getDeclBinding k = do
   SME.VarBindingStore _ dbm <- indexBindings <$> get
   case Map.lookup k dbm of
     Nothing -> stanBuildError $ "declaration key (\"" <> k <> "\") not in binding store."
     Just e -> return e
 
-addDeclBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addDeclBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
 addDeclBinding k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore ubm (Map.insert k e dbm)
 
-addUseBinding :: StanIndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addUseBinding k e = modify $ modifyIndexBindings f where
-  f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore (Map.insert k e ubm) dbm
+addUseBinding :: Text -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addUseBinding dsName k e = do
+  --modify $ modifyIndexBindings f where
+  let f (SME.VarBindingStore ubm dbm) = do
+        case Map.lookup dsName ubm of
+          Nothing -> Right $ SME.VarBindingStore (Map.insert dsName (Map.singleton k e) ubm) dbm
+          Just m -> case Map.lookup k m of
+            Nothing -> Right $ SME.VarBindingStore (Map.insert dsName (Map.insert k e m) ubm) dbm
+            Just _ -> Left $ "Attempt to add a use binding where one already exists. data-set=" <> dsName <> "; index-key=" <> show k
+  oldBuilderState <- get
+  case modifyIndexBindingsA f oldBuilderState of
+    Right newBuilderState -> put newBuilderState
+    Left err -> stanBuildError err
 
 indexBindingScope :: StanBuilderM env d a -> StanBuilderM env d a
 indexBindingScope x = do
@@ -898,7 +920,7 @@ addFixedIntJson' name mLower n = do
 
 -- These get re-added each time something adds a column built from the data-set.
 -- But we only need it once per data set.
-addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> SME.StanIndexKey -> StanBuilderM env d SME.StanVar
+addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> SME.IndexKey -> StanBuilderM env d SME.StanVar
 addLengthJson rtt name iKey = do
   addDeclBinding iKey (SME.name name)
   addJsonUnchecked rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
@@ -924,7 +946,7 @@ addColumnJson rtt name st sc toX = do
   let fullName = name <> "_" <> dsName
   addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
 
-addColumnMJson :: (Typeable d, Typeable r, Aeson.ToJSON x)
+addColumnMJson :: (Typeable d, Aeson.ToJSON x)
                => RowTypeTag r
                -> Text
                -> SME.StanType
@@ -1032,12 +1054,13 @@ stanForLoop counter mStart end loopF = do
   addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
   bracketed 2 $ loopF counter
 
-stanForLoopB :: Text
+stanForLoopB :: RowTypeTag r
+             -> Text
              -> Maybe SME.StanExpr
-             -> StanIndexKey
+             -> IndexKey
              -> StanBuilderM env d a
              -> StanBuilderM env d a
-stanForLoopB counter mStartE k x = do
+stanForLoopB rtt counter mStartE k x = do
   endE <- getDeclBinding k
   let start = fromMaybe (SME.scalar "1") mStartE
       forE = SME.spaced (SME.name "for")
@@ -1047,7 +1070,7 @@ stanForLoopB counter mStartE k x = do
              (start `SME.nextTo` (SME.bare ":") `SME.nextTo` endE)
   printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
-    addUseBinding k (SME.name counter)
+    addUseBinding (dataSetName rtt) k (SME.name counter)
     bracketed 2 x
 
 
@@ -1082,7 +1105,7 @@ printExprM context e = do
     Left err -> stanBuildError $ context <> ": " <> err
 
 addExprLine :: Text -> SME.StanExpr -> StanBuilderM env d ()
-addExprLine context = printExprM context >=> addStanLine
+addExprLine context  = printExprM context  >=> addStanLine
 
 addExprLines :: Traversable t => Text -> t SME.StanExpr -> StanBuilderM env d ()
 addExprLines context = traverse_ (addExprLine context)

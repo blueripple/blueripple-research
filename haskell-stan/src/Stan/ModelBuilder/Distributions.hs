@@ -22,25 +22,25 @@ import Prelude hiding (All)
 
 
 data StanDist args where
-  StanDist :: (SME.StanIndexKey -> args -> SME.StanExpr)
-           -> (SME.StanIndexKey -> args -> SME.StanExpr)
-           -> (SME.StanIndexKey -> args -> SME.StanExpr)
-           -> (SME.StanIndexKey -> args -> SME.StanExpr)
+  StanDist :: (SME.IndexKey -> args -> SME.StanExpr)
+           -> (SME.IndexKey -> args -> SME.StanExpr)
+           -> (SME.IndexKey -> args -> SME.StanExpr)
+           -> (SME.IndexKey -> args -> SME.StanExpr)
            -> StanDist args
 
-familySampleF :: StanDist args -> SME.StanIndexKey -> args -> SME.StanExpr
+familySampleF :: StanDist args -> SME.IndexKey -> args -> SME.StanExpr
 familySampleF (StanDist s _ _ _) = s
 
-familyLDF :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
+familyLDF :: StanDist args -> SME.IndexKey  -> args -> SME.StanExpr
 familyLDF (StanDist _ ldf _ _) = ldf
 
-familyRNG :: StanDist args -> SME.StanIndexKey -> args -> SME.StanExpr
+familyRNG :: StanDist args -> SME.IndexKey -> args -> SME.StanExpr
 familyRNG (StanDist _ _ rng _) = rng
 
-familyExp :: StanDist args -> SME.StanIndexKey  -> args -> SME.StanExpr
+familyExp :: StanDist args -> SME.IndexKey  -> args -> SME.StanExpr
 familyExp (StanDist _ _ _ e) = e
 
-vec :: SME.StanIndexKey -> SME.StanVar -> SME.StanExpr
+vec :: SME.IndexKey -> SME.StanVar -> SME.StanExpr
 vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
 
 binomialLogitDist :: SME.StanVar -> SME.StanVar -> StanDist SME.StanExpr
