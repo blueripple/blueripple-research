@@ -1177,13 +1177,13 @@ ccesGroupBuilder districts states = do
 
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
 pumsPSGroupRowMap = SB.addRowMap (SB.GroupTypeTag "CD") districtKey
-  $ SB.addRowMap (SB.GroupTypeTag "State") (F.rgetField @BR.StateAbbreviation)
-  $ SB.addRowMap (SB.GroupTypeTag "Sex") (F.rgetField @DT.SexC)
-  $ SB.addRowMap (SB.GroupTypeTag "WNH")  wnh
-  $ SB.addRowMap (SB.GroupTypeTag "Race") (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
-  $ SB.addRowMap (SB.GroupTypeTag "Age") (F.rgetField @DT.SimpleAgeC)
-  $ SB.addRowMap (SB.GroupTypeTag "Education") (F.rgetField @DT.CollegeGradC)
-  $ SB.addRowMap (SB.GroupTypeTag "WhiteNonGrad") wnhNonGrad
+  $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
+  $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
+  $ SB.addRowMap wnhGroup  wnh
+  $ SB.addRowMap raceGroup (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
+  $ SB.addRowMap ageGroup (F.rgetField @DT.SimpleAgeC)
+  $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
+  $ SB.addRowMap wngGroup wnhNonGrad
   $ SB.emptyGroupRowMap
 
 
@@ -1382,68 +1382,7 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
   let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
       jsonDataName = "stateXrace_" <> nameSSTData dataSource <> "_" <> (T.intercalate "_" $ fmap show years)
-{-
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
-      cpsVGroupBuilder districts states = do
-        cpsVTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "CD") cpsVTag $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") cpsVTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Race") cpsVTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WNH") cpsVTag $ SB.makeIndexFromEnum wnh
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Sex") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Education") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WhiteNonGrad") cpsVTag $ SB.makeIndexFromEnum wnhNonGrad
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Age") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-        SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
-        return ()
 
-      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
-      ccesGroupBuilder districts states = do
-        ccesTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "CD") ccesTag $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") ccesTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Race") ccesTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WNH") ccesTag $ SB.makeIndexFromEnum wnhCCES
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Sex") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Education") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WhiteNonGrad") ccesTag $ SB.makeIndexFromEnum wnhNonGradCCES
-        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Age") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-        SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
-        return ()
-{-
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
-      cpsVGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-
-      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
-      ccesGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnhCCES
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGradCCES
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
--}
-      pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-      pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
-        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-        $ SB.addRowMap "WNH"  wnh
-        $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
-        $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
-        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
-        $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
-        $ SB.emptyGroupRowMap
--}
       dataAndCodeBuilder :: forall modelRow. Typeable modelRow
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
@@ -1504,7 +1443,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                 modelDataRT
                 dataSet
                 pumsPSGroupRowMap
-                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad", "State"])
+                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"])
                 (realToFrac . F.rgetField @PUMS.Citizens)
                 MRP.PSShare
                 (Just $ SB.GroupTypeTag @Text "State")

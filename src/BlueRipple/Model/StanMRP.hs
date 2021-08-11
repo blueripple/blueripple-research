@@ -69,6 +69,7 @@ buildDataWranglerAndCode :: (Typeable d)
 buildDataWranglerAndCode groupM env builderM d =
   let builderWithWrangler = do
         --SB.addGroupIndexes
+        SB.buildGroupIndexes
         builderM
         jsonRowBuilders <- SB.buildJSONF
         --rowBuilders <- SB.rowBuilders <$> get
@@ -289,7 +290,7 @@ addFixedEffects :: forall r d.(Typeable d)
 addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.add2dMatrixJson feRTT ("X" <> uSuffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
