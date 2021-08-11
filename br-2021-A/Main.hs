@@ -85,6 +85,13 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
 
 
 yamlAuthor :: T.Text
@@ -159,7 +166,7 @@ wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @
 ra4WhiteNonGrad r = ra4White r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-
+{-
 ccesGroupBuilder :: SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
 ccesGroupBuilder = do
   SB.addGroup "CD" $ SB.makeIndexByCounting show districtKey
@@ -168,6 +175,7 @@ ccesGroupBuilder = do
   SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+-}
 
 race5FromPUMS :: F.Record BRE.PUMSByCDR -> DT.Race5
 race5FromPUMS r =
@@ -180,12 +188,12 @@ race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
-
+{-
 catsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.AllCatR)
 catsPSGroupRowMap = SB.addRowMap @Text "State" (const "NY-21")
                     $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
                     $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC) SB.emptyGroupRowMap
-
+-}
 indexStanResults :: (Show k, Ord k) => IM.IntMap k -> Vector.Vector a -> Either Text (Map k a)
 indexStanResults im v = do
   when (IM.size im /= Vector.length v)
@@ -1114,6 +1122,70 @@ turnoutGapScatter title vc@(FV.ViewConfig w h _) vlData =
      [FV.title title, GV.layer ([{-specPts ,-} stateLabelSpec, specXaxis, specYaxis]), transform [], vlData]
 
 
+cdGroup :: SB.GroupTypeTag Text
+cdGroup = SB.GroupTypeTag "CD"
+
+stateGroup :: SB.GroupTypeTag Text
+stateGroup = SB.GroupTypeTag "State"
+
+ageGroup :: SB.GroupTypeTag DT.SimpleAge
+ageGroup = SB.GroupTypeTag "Age"
+
+sexGroup :: SB.GroupTypeTag DT.Sex
+sexGroup = SB.GroupTypeTag "Sex"
+
+educationGroup :: SB.GroupTypeTag DT.CollegeGrad
+educationGroup = SB.GroupTypeTag "Education"
+
+raceGroup :: SB.GroupTypeTag DT.Race4
+raceGroup = SB.GroupTypeTag "Race"
+
+wnhGroup :: SB.GroupTypeTag Bool
+wnhGroup = SB.GroupTypeTag "WNH"
+
+wngGroup :: SB.GroupTypeTag Bool
+wngGroup = SB.GroupTypeTag "WNG"
+
+cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+cpsVGroupBuilder districts states = do
+  cpsVTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
+  SB.addGroupIndexForDataSet cdGroup cpsVTag $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup cpsVTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup cpsVTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
+  SB.addGroupIndexForDataSet wnhGroup cpsVTag $ SB.makeIndexFromEnum wnh
+  SB.addGroupIndexForDataSet sexGroup cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup cpsVTag $ SB.makeIndexFromEnum wnhNonGrad
+  SB.addGroupIndexForDataSet ageGroup cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
+  return ()
+
+
+ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+ccesGroupBuilder districts states = do
+  ccesTag <- SB.addDataSetToGroupBuilder "CCES" (SB.ToFoldable BRE.ccesRows)
+  SB.addGroupIndexForDataSet cdGroup ccesTag $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup ccesTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup ccesTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+  SB.addGroupIndexForDataSet wnhGroup ccesTag $ SB.makeIndexFromEnum wnhCCES
+  SB.addGroupIndexForDataSet sexGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup ccesTag $ SB.makeIndexFromEnum wnhNonGradCCES
+  SB.addGroupIndexForDataSet ageGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
+  return ()
+
+pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
+pumsPSGroupRowMap = SB.addRowMap (SB.GroupTypeTag "CD") districtKey
+  $ SB.addRowMap (SB.GroupTypeTag "State") (F.rgetField @BR.StateAbbreviation)
+  $ SB.addRowMap (SB.GroupTypeTag "Sex") (F.rgetField @DT.SexC)
+  $ SB.addRowMap (SB.GroupTypeTag "WNH")  wnh
+  $ SB.addRowMap (SB.GroupTypeTag "Race") (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
+  $ SB.addRowMap (SB.GroupTypeTag "Age") (F.rgetField @DT.SimpleAgeC)
+  $ SB.addRowMap (SB.GroupTypeTag "Education") (F.rgetField @DT.CollegeGradC)
+  $ SB.addRowMap (SB.GroupTypeTag "WhiteNonGrad") wnhNonGrad
+  $ SB.emptyGroupRowMap
+
 
 --
 districtSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
@@ -1134,49 +1206,18 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
   let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
       jsonDataName = "districtXrace_" <> nameSSTData dataSource <> "_" <> (T.intercalate "_" $ fmap show years)
 
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
-      cpsVGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGrad
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-
-      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
-      ccesGroupBuilder districts states = do
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnhCCES
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGradCCES
-        SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-
-      pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-      pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
-        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
-        $ SB.addRowMap "WNH"  wnh
-        $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
-        $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
-        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
-        $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
-        $ SB.emptyGroupRowMap
-
-      dataAndCodeBuilder :: Typeable modelRow
+      dataAndCodeBuilder :: forall modelRow. Typeable modelRow
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF withSDRace = do
         -- data & model
-        cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-        vTotal <- SB.addCountData "T" totalF
-        vSucc <- SB.addCountData "S" succF
+--        cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+        modelDataRT <- SB.dataSetTag @modelRow "CPSV"
+        cdDataRT <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CD"
+        vTotal <- SB.addCountData modelDataRT "T" totalF
+        vSucc <- SB.addCountData modelDataRT "S" succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
             sigmaPrior = normal 2
@@ -1188,18 +1229,18 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
-        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
-        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
-        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
-        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
-        gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
-        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
-        gCDE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "CD"
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
+        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup
+        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup
+        gCDE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone cdGroup
         let dist = SB.binomialLogitDist vSucc vTotal
-        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
+        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup
         (logitPE_sample, logitPE) <- case withSDRace of
           True -> do
-            (gWNHCDV, gWNHCD) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "CD"
+            (gWNHCDV, gWNHCD) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup cdGroup
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHStateV, gWNHCDV]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHState, gWNHCD])
           False ->
@@ -1208,23 +1249,24 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 
         let logitPE_NI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
             logitPE_SI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState, gCDE]
-        SB.sampleDistV dist logitPE_sample
+        SB.sampleDistV modelDataRT dist logitPE_sample
 
         -- generated quantities
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-        SB.generateLogLikelihood dist logitPE
+        SB.generateLogLikelihood modelDataRT dist logitPE
 
-        acsData_W <- SB.addUnIndexedDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_W pumsPSGroupRowMap
+        acsData_W <- SB.addDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
 
-        acsData_NW <- SB.addUnIndexedDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_NW pumsPSGroupRowMap
+        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
 
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification
                 dist
                 modelExp
                 (Just nameHead)
+                modelDataRT
                 dataSet
                 pumsPSGroupRowMap
                 (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad", "State"])
@@ -1264,10 +1306,6 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
                          (SB.GroupTypeTag @Text "CD")
                          groupIndexes
-{-            stateIndexIM <- SB.getGroupIndex
-                            (SB.ModeledRowTag @(F.Record BRE.CPSVByCDR))
-                            (SB.GroupTypeTag @Text "State")
-                            groupIndexes -}
             let parseAndIndexPctsWith idx f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map f v
@@ -1291,19 +1329,19 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
         K.knitEither
           $ case dataSource of
               SSTD_CPS -> do
-                let codeBuilder = dataAndCodeBuilder
+                let codeBuilder = dataAndCodeBuilder @(F.Record BRE.CPSVByCDR)
                                   (round . F.rgetField @BRCF.WeightedCount)
                                   (round . F.rgetField @BRCF.WeightedSuccesses)
                     groups = cpsVGroupBuilder districts states
                     dataRows = BRE.cpsVRows
-                MRP.buildDataWranglerAndCode groups () (codeBuilder withSDRace) dat (SB.ToFoldable dataRows)
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withSDRace) dat
               SSTD_CCES -> do
-                let codeBuilder =  dataAndCodeBuilder
+                let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESByCDR)
                                    (F.rgetField @BRE.Surveyed)
                                    (F.rgetField @BRE.TVotes)
                     groups = ccesGroupBuilder districts states
                     dataRows = BRE.ccesRows
-                MRP.buildDataWranglerAndCode groups () (codeBuilder withSDRace) dat (SB.ToFoldable dataRows)
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withSDRace) dat
 
       data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
   (dw, stanCode) <- dataWranglerAndCode data_C years withSDRace
@@ -1344,7 +1382,35 @@ stateSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
 stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYears_C =  K.wrapPrefix "stateSpecificTurnoutModel" $ do
   let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
       jsonDataName = "stateXrace_" <> nameSSTData dataSource <> "_" <> (T.intercalate "_" $ fmap show years)
+{-
+      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+      cpsVGroupBuilder districts states = do
+        cpsVTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "CD") cpsVTag $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") cpsVTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Race") cpsVTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WNH") cpsVTag $ SB.makeIndexFromEnum wnh
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Sex") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Education") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WhiteNonGrad") cpsVTag $ SB.makeIndexFromEnum wnhNonGrad
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Age") cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+        SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
+        return ()
 
+      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+      ccesGroupBuilder districts states = do
+        ccesTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "CD") ccesTag $ SB.makeIndexFromFoldable show districtKey districts
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") ccesTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Race") ccesTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WNH") ccesTag $ SB.makeIndexFromEnum wnhCCES
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Sex") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Education") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "WhiteNonGrad") ccesTag $ SB.makeIndexFromEnum wnhNonGradCCES
+        SB.addGroupIndexForDataSet (SB.GroupTypeTag "Age") ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+        SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
+        return ()
+{-
       cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
       cpsVGroupBuilder districts states = do
         SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
@@ -1366,7 +1432,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         SB.addGroup "Education" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
         SB.addGroup "WhiteNonGrad" $ SB.makeIndexFromEnum wnhNonGradCCES
         SB.addGroup "Age" $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-
+-}
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
       pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
         $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
@@ -1377,17 +1443,19 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
         $ SB.addRowMap "WhiteNonGrad" wnhNonGrad
         $ SB.emptyGroupRowMap
-
-      dataAndCodeBuilder :: Typeable modelRow
+-}
+      dataAndCodeBuilder :: forall modelRow. Typeable modelRow
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF withStateRace = do
         -- data & model
-        cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-        vTotal <- SB.addCountData "T" totalF
-        vSucc <- SB.addCountData "S" succF
+  --      cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+        modelDataRT <- SB.dataSetTag @modelRow "CPSV"
+        cdDataRT <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CD"
+        vTotal <- SB.addCountData modelDataRT "T" totalF
+        vSucc <- SB.addCountData modelDataRT "S" succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
             sigmaPrior = normal 2
@@ -1399,16 +1467,16 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
-        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
-        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race"
-        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
-        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
-        gWNGE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WhiteNonGrad"
-        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
+        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup
+        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup
         let dist = SB.binomialLogitDist vSucc vTotal
         (logitPE_sample, logitPE) <- case withStateRace of
           True -> do
-            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
+            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState])
           False ->
@@ -1416,23 +1484,24 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE])
 
         let logitPE' = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
-        SB.sampleDistV dist logitPE_sample
+        SB.sampleDistV modelDataRT dist logitPE_sample
 
         -- generated quantities
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-        SB.generateLogLikelihood dist logitPE
+        SB.generateLogLikelihood modelDataRT dist logitPE
 
-        acsData_W <- SB.addUnIndexedDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_W pumsPSGroupRowMap
+        acsData_W <- SB.addDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
 
-        acsData_NW <- SB.addUnIndexedDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_NW pumsPSGroupRowMap
+        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
 
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification
                 dist
                 modelExp
                 (Just nameHead)
+                modelDataRT
                 dataSet
                 pumsPSGroupRowMap
                 (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad", "State"])
@@ -1509,19 +1578,19 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         K.knitEither
           $ case dataSource of
               SSTD_CPS -> do
-                let codeBuilder = dataAndCodeBuilder
+                let codeBuilder = dataAndCodeBuilder @(F.Record BRE.CPSVByCDR)
                                   (round . F.rgetField @BRCF.WeightedCount)
                                   (round . F.rgetField @BRCF.WeightedSuccesses)
                     groups = cpsVGroupBuilder districts states
                     dataRows = BRE.cpsVRows
-                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat (SB.ToFoldable dataRows)
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat
               SSTD_CCES -> do
-                let codeBuilder =  dataAndCodeBuilder
+                let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESByCDR)
                                    (F.rgetField @BRE.Surveyed)
                                    (F.rgetField @BRE.TVotes)
                     groups = ccesGroupBuilder districts states
                     dataRows = BRE.ccesRows
-                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat (SB.ToFoldable dataRows)
+                MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat
 
       data_C = fmap (BRE.ccesAndPUMSForYears years) dataAllYears_C
   (dw, stanCode) <- dataWranglerAndCode data_C years withStateRace
@@ -1541,7 +1610,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
 
 --
 
-stanPairwiseDifferenceMatrix :: SB.StanBuilderM env d r ()
+stanPairwiseDifferenceMatrix :: SB.StanBuilderM env d ()
 stanPairwiseDifferenceMatrix = SB.addFunctionsOnce "differenceMatrix" $ do
   SB.declareStanFunction "matrix pairwiseDifferenceMatrix(vector x)" $ do
     SB.addStanLine "int N = num_elements(x)"
@@ -1556,8 +1625,28 @@ cpsModelTest :: (K.KnitOne r, BR.CacheEffects r) => Bool -> BR.PostPaths BR.Abs 
 cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
   let year = 2018
       data_C = fmap (BRE.ccesAndPUMSForYear year) dataAllYears_C
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
-      cpsVGroupBuilder districts states = do
+
+      ageSexGroup :: SB.GroupTypeTag (DT.SimpleAge, DT.Sex)
+      ageSexGroup = SB.GroupTypeTag "AgeSex"
+      ageEduGroup :: SB.GroupTypeTag (DT.SimpleAge, DT.CollegeGrad)
+      ageEduGroup = SB.GroupTypeTag "AgeEdu"
+      ageRaceGroup :: SB.GroupTypeTag (DT.SimpleAge, DT.Race4)
+      ageRaceGroup = SB.GroupTypeTag "AgeRace"
+      sexEduGroup :: SB.GroupTypeTag (DT.Sex, DT.CollegeGrad)
+      sexEduGroup = SB.GroupTypeTag "SexEdu"
+      sexRaceGroup :: SB.GroupTypeTag (DT.Sex, DT.Race4)
+      sexRaceGroup = SB.GroupTypeTag "SexRace"
+      eduRaceGroup :: SB.GroupTypeTag (DT.CollegeGrad, DT.Race4)
+      eduRaceGroup = SB.GroupTypeTag "RaceEdu"
+
+
+
+
+
+      groupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+      groupBuilder districts states = do
+        cpsVGroupBuilder districts states
+        cpsVTag <- SB.getDataSetTag @(F.Record BRE.CPSVByCDR) "CPSV"
         let age = F.rgetField @DT.SimpleAgeC
             sex = F.rgetField @DT.SexC
             edu = F.rgetField @DT.CollegeGradC
@@ -1568,40 +1657,33 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
             sexEdu r = (sex r, edu r)
             sexRace r = (sex r, race r)
             eduRace r = (edu r, race r)
-        SB.addGroup "CD" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "Age" $ SB.makeIndexFromEnum age
-        SB.addGroup "Sex" $ SB.makeIndexFromEnum sex
-        SB.addGroup "Education" $ SB.makeIndexFromEnum edu
-        SB.addGroup "Race" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroup "AgeSex" $ SB.makeIndexFromFoldable show ageSex BRK.elements
-        SB.addGroup "AgeEdu" $ SB.makeIndexFromFoldable show ageEdu BRK.elements
-        SB.addGroup "AgeRace" $ SB.makeIndexFromFoldable show ageRace BRK.elements
-        SB.addGroup "SexEdu" $ SB.makeIndexFromFoldable show sexEdu BRK.elements
-        SB.addGroup "SexRace" $ SB.makeIndexFromFoldable show sexRace BRK.elements
-        SB.addGroup "EduRace" $ SB.makeIndexFromFoldable show eduRace BRK.elements
-
-
---        SB.addGroup "State" $ SB.SupplementalIndex states --SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
---        SB.addGroup "Ethnicity" $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
---        SB.addGroup "WNH" $ SB.makeIndexFromEnum wnh
+        SB.addGroupIndexForDataSet ageSexGroup cpsVTag $ SB.makeIndexFromFoldable show ageSex BRK.elements
+        SB.addGroupIndexForDataSet ageEduGroup cpsVTag $ SB.makeIndexFromFoldable show ageEdu BRK.elements
+        SB.addGroupIndexForDataSet ageRaceGroup cpsVTag $ SB.makeIndexFromFoldable show ageRace BRK.elements
+        SB.addGroupIndexForDataSet sexEduGroup cpsVTag $ SB.makeIndexFromFoldable show sexEdu BRK.elements
+        SB.addGroupIndexForDataSet sexRaceGroup cpsVTag $ SB.makeIndexFromFoldable show sexRace BRK.elements
+        SB.addGroupIndexForDataSet eduRaceGroup cpsVTag $ SB.makeIndexFromFoldable show eduRace BRK.elements
+        return ()
 
       pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-      pumsPSGroupRowMap = SB.addRowMap "CD" districtKey
-        $ SB.addRowMap "State" (F.rgetField @BR.StateAbbreviation)
-        $ SB.addRowMap "Race" (DT.race4FromRace5 . race5FromPUMS)
-        $ SB.addRowMap "Sex" (F.rgetField @DT.SexC)
+      pumsPSGroupRowMap = SB.addRowMap cdGroup districtKey
+        $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
+        $ SB.addRowMap raceGroup (DT.race4FromRace5 . race5FromPUMS)
+        $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
 --        $ SB.addRowMap "Education" (F.rgetField @DT.CollegeGradC)
 --        $ SB.addRowMap "Age" (F.rgetField @DT.SimpleAgeC)
         $ SB.emptyGroupRowMap
 
-      dataAndCodeBuilder :: Typeable modelRow
+      dataAndCodeBuilder :: forall modelRow. Typeable modelRow
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
-                         -> MRP.BuilderM modelRow BRE.CCESAndPUMS ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS ()
       dataAndCodeBuilder totalF succF = do
-        cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
-        vTotal <- SB.addCountData "T" totalF
-        vSucc <- SB.addCountData "S"  succF
+  --      cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
+        modelDataRT <- SB.dataSetTag @modelRow "CPSV"
+        cdDataRT <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CD"
+        vTotal <- SB.addCountData modelDataRT "T" totalF
+        vSucc <- SB.addCountData modelDataRT "S"  succF
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 1
             sigmaPrior = normal 1
@@ -1615,25 +1697,25 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
 
-        gAgeE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Age"
-        gSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex"
-        gEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Education"
-        gRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "Race"
-        gAgeSexE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeSex"
-        gAgeEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeEdu"
-        gAgeRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "AgeRace"
-        gSexEduE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "SexEdu"
-        gSexRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "SexRace"
-        gEduRaceE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZQR "EduRace"
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR raceGroup
+        gAgeSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageSexGroup
+        gAgeEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageEduGroup
+        gAgeRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageRaceGroup
+        gSexEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexEduGroup
+        gSexRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexRaceGroup
+        gEduRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR eduRaceGroup
 
---        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "WNH"
---        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "State"
---        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "WNH" "State"
+--        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone wnhGroup
+--        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone stateGroup
+--        (gWNHStateEV, gWNHStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone wnhGroup stateGroup
 --        gEthE <- MRP.addMRGroup binaryPrior nonBinaryPrior SB.STZNone "Ethnicity"
---        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone "Race" "State"
+--        (gRaceStateEV, gRaceStateE) <- MRP.addNestedMRGroup sigmaPrior SB.STZNone raveGroup stateGroup
         let dist = SB.binomialLogitDist vSucc vTotal
             logitPE = SB.multiOp "+" $ alphaE :| [feCDE, gAgeE, gSexE, gEduE, gRaceE, gAgeSexE, gAgeEduE, gAgeRaceE, gSexEduE, gSexRaceE, gEduRaceE]
-        SB.sampleDistV dist logitPE
+        SB.sampleDistV modelDataRT dist logitPE
 {-
         acsData <- SB.addUnIndexedDataSet "ACS" (SB.ToFoldable BRE.pumsRows)
         SB.addDataSetIndexes acsData pumsPSGroupRowMap
@@ -1659,7 +1741,7 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 
   K.logLE K.Info "Building json data wrangler and model code..."
   dat <- K.ignoreCacheTime data_C
-  let cpsVBuilder = dataAndCodeBuilder
+  let cpsVBuilder = dataAndCodeBuilder @(F.Record BRE.CPSVByCDR)
                     (round . F.rgetField @BRCF.WeightedCount)
                     (round . F.rgetField @BRCF.WeightedSuccesses)
       (districts, states) = FL.fold
@@ -1668,9 +1750,9 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                               <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
                             )
                             $ BRE.districtRows dat
-      cpsVGroups = cpsVGroupBuilder districts states
+      cpsVGroups = groupBuilder districts states
   (dw, stanCode) <- K.knitEither
-    $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat (SB.ToFoldable BRE.cpsVRows)
+    $ MRP.buildDataWranglerAndCode cpsVGroups () cpsVBuilder dat
   res_C <- MRP.runMRPModel
     False
     (Just "br-2021-A/stan/cpsV")

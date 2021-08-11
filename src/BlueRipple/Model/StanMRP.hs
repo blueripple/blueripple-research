@@ -59,7 +59,6 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
-import qualified Stan.ModelBuilder as DB
 
 buildDataWranglerAndCode :: (Typeable d)
                          => SB.StanGroupBuilderM d ()
@@ -74,12 +73,12 @@ buildDataWranglerAndCode groupM env builderM d =
         jsonRowBuilders <- SB.buildJSONF
         --rowBuilders <- SB.rowBuilders <$> get
         --intMapBuilders <- SB.indexBuilders <$> get
-        intMapBuilder <- SB.intMapBuilder
+        intMapsBuilder <- SB.intMapsBuilder
         return
           $ SC.Wrangle SC.TransientIndex
-          $ \d -> (intMapBuilder d, SB.buildJSONFromRows jsonRowBuilders)
+          $ \d -> (intMapsBuilder d, SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d env groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ _ _ c _, dw) -> (dw, c)) resE
+  in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
 
 
 runMRPModel :: (K.KnitEffects r
@@ -149,7 +148,7 @@ type BuilderM d = SB.StanBuilderM () d
 --getIndexes :: BuilderM d (Map Text (SB.IntIndex modeledRow))
 --getIndexes = SB.groupIndexByName <$> SB.askGroupEnv
 
-getIntIndex :: SB.RowTypeTag r -> SB.GroupTypeTag k -> BuilderM d (SB.IntIndex k)
+getIntIndex :: SB.RowTypeTag r -> SB.GroupTypeTag k -> BuilderM d (SB.IntIndex r)
 getIntIndex rtt gtt = do
   rowInfos <- SB.rowBuilders <$> get
   case DHash.lookup rtt rowInfos of
@@ -160,12 +159,12 @@ getIntIndex rtt gtt = do
                             <> SB.taggedGroupName gtt
                             <> "\" not present in indexes for \""
                             <> SB.dataSetName rtt <> "\""
-                 Just im -> rowToGroupIndex im
+                 Just im -> return $ SB.rowToGroupIndex im
 
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: Typeable d
            => SB.RowTypeTag r
-           => SB.StanExpr
+           -> SB.StanExpr
            -> SB.StanExpr
            -> SB.SumToZero
            -> SB.GroupTypeTag k
@@ -205,17 +204,17 @@ addNestedMRGroup ::  Typeable d
                  => SB.RowTypeTag r
                  -> SB.StanExpr
                  -> SB.SumToZero
-                 -> SB.GroupTypeTag k -- e.g., sex
-                 -> SB.GroupTypeTag k -- partially pooled, e.g., state
-                 -> BuilderM r d (SB.StanExpr, SB.StanExpr)
+                 -> SB.GroupTypeTag k1 -- e.g., sex
+                 -> SB.GroupTypeTag k2 -- partially pooled, e.g., state
+                 -> BuilderM d (SB.StanExpr, SB.StanExpr)
 addNestedMRGroup rtt sigmaPrior stz nonPooledGtt pooledGtt = do
   let nonPooledGN = SB.taggedGroupName nonPooledGtt
       pooledGN = SB.taggedGroupName pooledGtt
       dsName = SB.dataSetName rtt
       suffix = nonPooledGN <> "_" <> pooledGN
       suffixed x = x <> "_" <> suffix
-  (SB.IntIndex pooledIndexSize _) <- getIndex pooledGN
-  (SB.IntIndex nonPooledIndexSize _) <- getIndex nonPooledGN
+  (SB.IntIndex pooledIndexSize _) <- getIntIndex rtt pooledGtt
+  (SB.IntIndex nonPooledIndexSize _) <- getIntIndex rtt nonPooledGtt
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ") with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
@@ -281,28 +280,28 @@ emptyFixedEffects = DHash.empty
 -- 'X * beta' (or 'Q * theta') model term expression
 -- 'X * beta' and just 'beta' for post-stratification
 -- The latter is for use in post-stratification at fixed values of the fixed effects.
-addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
+addFixedEffects :: forall r d.(Typeable d)
                 => Bool
                 -> SB.StanExpr
                 -> SB.RowTypeTag r
                 -> FixedEffects r
-                -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+                -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = if T.null suffix
+  let eQ = if T.null feDataSetName
            then SB.indexBy (SB.name "Q_ast") feDataSetName
            else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataSetName
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
-      eX = if T.null suffix
+      eX = if T.null feDataSetName
            then SB.indexBy (SB.name "centered_X") feDataSetName
            else SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataSetName
       eBeta = SB.name $ "betaX" <> uSuffix
@@ -317,7 +316,7 @@ addFixedEffectsData :: forall r d. (Typeable d)
 addFixedEffectsData feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   return ()
 
@@ -376,11 +375,11 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
       modelDataSetName = SB.dataSetName rttModel
       psGroupName = maybe "" SB.taggedGroupName mPSGroup
       uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
-      psSuffix = dsName <> uPSGroupName
+      psSuffix = psDataSetName <> uPSGroupName
       namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
       sizeName = "N_" <> namedPS
   SB.addDeclBinding namedPS (SB.name sizeName)
-  rowInfos <- rowBuilders <$> get
+  rowInfos <- SB.rowBuilders <$> get
   modelGroupsDHM <- do
     case DHash.lookup rttModel rowInfos of
       Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
@@ -398,35 +397,36 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
   checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
   -- we don't need the PS group to be present on the RHS, but it could be
   let groupMapsToCheck = maybe groupMaps (\x -> DHash.delete x groupMaps) mPSGroup
-  checkGroupSubset "PS Spec" "All Groups" groupMapsToCheck allGroups
+  checkGroupSubset "PS Spec" "All Groups" groupMapsToCheck modelGroupsDHM
   toFoldable <- case DHash.lookup rttPS rowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
   intKeyF <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt modelGroupsDHM
+    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
-    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
+--    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
+    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h
     return $ eIntF . h
   -- add the data set for the json builders
 
   -- size of post-stratification result
   -- e.g., N_PS_ACS_State
-  SB.addJson rtt sizeName SB.StanInt "<lower=0>"
+  SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
     $ SJ.valueToPairF sizeName
     $ fmap (A.toJSON . Set.size)
     $ FL.premapM intKeyF
     $ FL.generalize FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
-      weightArrayType = SB.StanVector $ SB.NamedDim dsName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
-  wgtsV <-  SB.addJson rtt (namedPS <> "_wgts") weightArrayType ""
+      weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+  wgtsV <-  SB.addJson rttPS (namedPS <> "_wgts") weightArrayType ""
             $ SJ.valueToPairF (namedPS <> "_wgts")
             $ SJ.jsonArrayF weightF
   SB.inBlock SB.SBGeneratedQuantities $ do
     let errCtxt = "addPostStratification"
-        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> dsName) dsName
+        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> psDataSetName) psDataSetName
         useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
     case mPSGroup of
@@ -437,14 +437,14 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
             wgtSumE <- if psType == PSShare
                        then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
                        else return SB.nullE
-            SB.stanForLoopB "n" Nothing dsName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args --expCode
+            SB.stanForLoopB "n" Nothing psDataSetName $ do
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist psDataSetName args --expCode
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
             when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
       Just (SB.GroupTypeTag gn) -> do
-        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> dsName) dsName) useBindings
+        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName) useBindings
         SB.withUseBindings useBindings' $ do
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
@@ -452,8 +452,8 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
             wgtSumE <- if psType == PSShare
                        then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim namedPS)) "" zeroVec
                        else return SB.nullE
-            SB.stanForLoopB "n" Nothing dsName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist dsName args
+            SB.stanForLoopB "n" Nothing psDataSetName $ do
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist psDataSetName args
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
             when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do

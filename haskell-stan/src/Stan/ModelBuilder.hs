@@ -247,7 +247,7 @@ buildIntMapBuilderF eIntF keyF = DataToIntMap $ Foldl.FoldM step (return IntMap.
 
 
 
-{-
+
 getGroupIndex :: forall d r k. Typeable k
               => RowTypeTag r
               -> GroupTypeTag k
@@ -255,11 +255,11 @@ getGroupIndex :: forall d r k. Typeable k
               -> Either Text (IntMap k)
 getGroupIndex rtt gtt groupIndexes =
   case DHash.lookup rtt groupIndexes of
-    Nothing -> Left $ "\"" <> dsName rtt <> "\" not found in data-set group int maps."
+    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps."
     Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
-      Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dsName rtt <> "\""
+      Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
-
+{-
 
 emptyIntMapBuilders :: DataSetGroupIntMapBuilders d
 emptyIntMapBuilders = DHash.empty
@@ -398,10 +398,10 @@ indexedRowInfo tf groupName keyF = RowInfo tf mempty im where
              Nothing -> Left $ "indexedRowInfo: lookup of group=" <> groupName <> " failed."
              Just (IndexMap _ g _) -> Right (g . keyF)
 
-
-unIndexedRowInfo :: forall d r0 r. ToFoldable d r -> Text -> RowInfo d r0 r
-unIndexedRowInfo tf groupName  = RowInfo tf mempty (const $ Left $ groupName <> " is unindexed.")
 -}
+unIndexedRowInfo :: forall d r. ToFoldable d r -> Text -> RowInfo d r
+unIndexedRowInfo tf groupName  = RowInfo tf mempty (GroupIndexes DHash.empty) (GroupIntMapBuilders DHash.empty) mempty
+
 
 -- key for dependepent map.
 data RowTypeTag r where
@@ -643,6 +643,14 @@ data GroupEnv = GroupEnv { groupIndexByType :: RowIndexesDHM
 stanGroupBuildError :: Text -> StanGroupBuilderM d a
 stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
 
+getDataSetTag :: forall r d. Typeable r => Text -> StanGroupBuilderM d (RowTypeTag r)
+getDataSetTag name = do
+  let rtt = RowTypeTag @r name
+  infoMakers <- get
+  case DHash.lookup rtt infoMakers of
+    Nothing -> stanGroupBuildError $ "getDataSetTag: No data-set \"" <> name <> "\" found in group builder."
+    Just _ -> return rtt
+
 addDataSetToGroupBuilder :: forall d r. Typeable r =>  Text -> ToFoldable d r -> StanGroupBuilderM d (RowTypeTag r)
 addDataSetToGroupBuilder dsName tf = do
   rims <- get
@@ -692,6 +700,14 @@ newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (Re
 askUserEnv :: StanBuilderM env d env
 askUserEnv = ask
 
+dataSetTag :: forall r env d. Typeable r => Text -> StanBuilderM env d (RowTypeTag r)
+dataSetTag name = do
+  let rtt :: RowTypeTag r = RowTypeTag name
+  rowInfos <- rowBuilders <$> get
+  case DHash.lookup rtt rowInfos of
+    Nothing -> stanBuildError $ "Requested data-set \"" <> name <> "\" is missing from row builders. Perhaps you forgot to add it in the groupBuilder or model code?"
+    Just _ -> return rtt
+
 addFunctionsOnce :: Text -> StanBuilderM env d () -> StanBuilderM env d ()
 addFunctionsOnce functionsName fCode = do
   (BuilderState vars ibs rowBuilders cj fsNames code) <- get
@@ -718,20 +734,22 @@ addIntMapBuilder rtt gtt dim = do
             newRowInfos = DHash.insert rtt newRowInfo rowInfos
         put $ BuilderState vars ib newRowInfos jf hf code
 
-intMapBuilder :: forall d env. StanBuilderM env d (d -> Either Text DataSetGroupIntMaps)
-intMapBuilder = do
-  rowInfos <- rowBuilders <$> get
+intMapsBuilder :: forall d env. StanBuilderM env d (d -> Either Text DataSetGroupIntMaps)
+intMapsBuilder = intMapsFromRowInfos . rowBuilders <$> get
+
+intMapsFromRowInfos :: RowInfos d -> d -> Either Text DataSetGroupIntMaps
+intMapsFromRowInfos rowInfos d =
   let f :: d -> RowInfo d r -> Either Text (GroupIntMaps r)
       f d (RowInfo (ToFoldable h) _ _ gims _) = Foldl.foldM (intMapsForDataSetFoldM gims) (h d)
-  return $ \d -> DHash.traverse (f d) rowInfos
+  in DHash.traverse (f d) rowInfos
 
 {-
-addDataSet :: (Typeable r, Typeable d, Typeable k)
+addIndexedDataSet :: ()
            => Text
            -> ToFoldable d r
            -> GroupIndexMakerDHM r
            -> StanBuilderM env d (RowTypeTag r)
-addDataSet name toFoldable gims = do
+addIndexedDataSet name toFoldable gims = do
   let rtt = RowTypeTag name
   (BuilderState vars ibs rowBuilders fsNames code ims) <- get
   case DHash.lookup rtt rowBuilders of
@@ -742,12 +760,13 @@ addDataSet name toFoldable gims = do
       put (BuilderState vars ibs newRowBuilders fsNames code ims)
   return rtt
 -}
-{-
-addUnIndexedDataSet :: (Typeable r, Typeable d)
-                    => Text
-                    -> ToFoldable d r
-                    -> StanBuilderM env d r0 (RowTypeTag r)
-addUnIndexedDataSet name toFoldable = do
+
+
+addDataSet :: Typeable r
+           => Text
+           -> ToFoldable d r
+           -> StanBuilderM env d (RowTypeTag r)
+addDataSet name toFoldable = do
   let rtt = RowTypeTag name
   (BuilderState vars ibs rowBuilders modelExprs code ims) <- get
   case DHash.lookup rtt rowBuilders of
@@ -757,7 +776,7 @@ addUnIndexedDataSet name toFoldable = do
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)
   return rtt
--}
+
 {-
 addIndexIntMapFld :: forall r k env d r0.
                   RowTypeTag r
@@ -788,30 +807,37 @@ addIndexIntMap rtt gtt im = do
       let ibs' = addIntMapBuilder rtt gtt f ibs
       put $  BuilderState vars ib rowBuilders fsNames code ibs'
 
+-}
 
-addDataSetIndexes ::  forall r k env d r0. (Typeable d)
-                    => RowTypeTag r
-                    -> GroupRowMap r
-                    -> StanBuilderM env d r0 ()
-addDataSetIndexes rtt grm = do
-  git <- groupIndexByType <$> askGroupEnv
-  let lengthName = "N_" <> dsName rtt
-  addLengthJson rtt lengthName (dsName rtt)
+addDataSetIndexes ::  Typeable d
+                    => RowTypeTag rData
+                    -> RowTypeTag rIndexTo
+                    -> GroupRowMap rData
+                    -> StanBuilderM env d ()
+addDataSetIndexes rttData rttIndexTo grm = do
+  rowInfos <- rowBuilders <$> get
+  (GroupIndexes gis) <- case DHash.lookup rttIndexTo rowInfos of
+    Nothing -> stanBuildError $ "addDataSetIndexes: index-to data-set \"" <> dataSetName rttIndexTo <> "\" not found in rowBuilders."
+    Just ri -> return $ groupIndexes ri
+--  git <- groupIndexByType <$> askGroupEnv
+  let lengthName = "N_" <> dataSetName rttData
+  addLengthJson rttData lengthName (dataSetName rttData)
   let f (gtt DSum.:=> (RowMap h)) =
-        let name = taggedGroupName gtt <> "_" <> dsSuffix rtt
-        in case DHash.lookup gtt git of
+        let name = taggedGroupName gtt <> "_" <> dataSetName rttData
+        in case DHash.lookup gtt gis of
           Nothing -> stanBuildError $ "addDataSetIndexes: Group=" <> taggedGroupName gtt
-                     <> " missing from GroupEnv. Perhaps a group index needs to be added, "
-                     <> "either to modeled data or manually in the code-builder?"
+                     <> " missing from index-to data-set \"" <> dataSetName rttIndexTo
+                     <> "\". Perhaps a group index needs to be added, "
+                     <> " to that data-set?"
           Just (IndexMap _ gE _) -> do
             addJson
-              rtt
+              rttData
               name
-              (SME.StanArray [SME.NamedDim $ dsName rtt] SME.StanInt)
+              (SME.StanArray [SME.NamedDim $ dataSetName rttData] SME.StanInt)
               "<lower=1>"
               (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
   traverse_ f $ DHash.toList grm
--}
+
 
 {-
 runStanBuilder' :: forall f env d a. (Typeable d)
