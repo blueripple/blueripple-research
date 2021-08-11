@@ -357,11 +357,11 @@ data RowInfo d r = RowInfo
 
 data RowInfo d r = RowInfo
                    {
-                     toFoldable :: ToFoldable d r
-                   , useBindings :: Map SME.IndexKey SME.StanExpr
-                   , groupIndexes :: GroupIndexes r
-                   , groupIntMaps :: GroupIntMaps r
-                   , jsonSeries :: JSONSeriesFold r
+                     toFoldable    :: ToFoldable d r
+                   , expressionBindings :: Map SME.IndexKey SME.StanExpr
+                   , groupIndexes  :: GroupIndexes r
+                   , groupIntMaps  :: GroupIntMaps r
+                   , jsonSeries    :: JSONSeriesFold r
                    }
 
 
@@ -543,6 +543,13 @@ data BuilderState d = BuilderState { declaredVars :: !ScopedDeclarations
                                    , code :: !StanCode
 --                                   , indexBuilders :: !(DataSetGroupIntMapBuilders d)
                                    }
+
+setDataSetForBindings :: RowTypeTag r -> StanBuilderM env d ()
+setDataSetForBindings rtt = do
+  rowInfos <- rowBuilders <$> get
+  case DHash.lookup rtt rowInfos of
+    Nothing -> stanBuildError $ "Data-set=\"" <> dataSetName rtt <> "\" is not present in rowBuilders."
+    Just ri -> modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbm) -> SME.VarBindingStore (expressionBindings ri) dbm)
 
 modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d -> BuilderState d
 modifyDeclaredVars f (BuilderState dv vbs rb cj hf c) = BuilderState (f dv) vbs rb cj hf c
@@ -789,7 +796,7 @@ runStanBuilder :: (Typeable d)
                -> Either Text (BuilderState d, a)
 runStanBuilder d userEnv sgb sb = do
   builderState <- runStanGroupBuilder sgb d
-  let (resE, bs) = usingState builderState . usingReaderT userEnv . runExceptT $ unStanBuilderM sb
+  let (resE, bs) = usingState builderState . usingReaderT userEnv . runExceptT $ unStanBuilderM $ sb
   fmap (bs,) resE
 
 stanBuildError :: Text -> StanBuilderM env d a
@@ -1070,8 +1077,8 @@ stanForLoop counter mStart end loopF = do
 stanForLoopB :: Text
              -> Maybe SME.StanExpr
              -> IndexKey
-             -> SME.StanExpr
-             -> StanBuilderM env d ()
+             -> StanBuilderM env d a
+             -> StanBuilderM env d a
 stanForLoopB counter mStartE k x = do
   endE <- getDeclBinding k
   let start = fromMaybe (SME.scalar "1") mStartE
@@ -1082,8 +1089,8 @@ stanForLoopB counter mStartE k x = do
              (start `SME.nextTo` (SME.bare ":") `SME.nextTo` endE)
   printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
-    addUseBinding "forLoop" k (SME.name counter)
-    bracketed 2 $ addExprLine "forLoopB" $ lookupUsingKey "forLoop" x
+    addUseBinding k (SME.name counter)
+    bracketed 2 x
 
 
 data StanPrintable = StanLiteral Text | StanExpression Text

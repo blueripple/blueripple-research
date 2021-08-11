@@ -59,25 +59,26 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
+import qualified Stan.ModelBuilder as DB
 
 buildDataWranglerAndCode :: (Typeable d)
                          => SB.StanGroupBuilderM d ()
                          -> env
                          -> SB.StanBuilderM env d ()
                          -> d
-                         -> SB.ToFoldable d modeledRow
                          -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
-buildDataWranglerAndCode groupM env builderM d (SB.ToFoldable toFoldable) =
+buildDataWranglerAndCode groupM env builderM d =
   let builderWithWrangler = do
-        SB.addGroupIndexes
-        _ <- builderM
+        --SB.addGroupIndexes
+        builderM
         jsonRowBuilders <- SB.buildJSONF
-        rowBuilders <- SB.rowBuilders <$> get
-        intMapBuilders <- SB.indexBuilders <$> get
+        --rowBuilders <- SB.rowBuilders <$> get
+        --intMapBuilders <- SB.indexBuilders <$> get
+        dataSetGroupIntMaps <- SB.dataSetGroupIntMapsM
         return
           $ SC.Wrangle SC.TransientIndex
-          $ \d -> (SB.buildIntMaps rowBuilders intMapBuilders d, SB.buildJSONFromRows jsonRowBuilders)
-      resE = SB.runStanBuilder d toFoldable env groupM builderWithWrangler
+          $ const (dataSetGroupIntMaps, SB.buildJSONFromRows jsonRowBuilders)
+      resE = SB.runStanBuilder d env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ c _, dw) -> (dw, c)) resE
 
 
@@ -143,22 +144,36 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       ()
       data_C
 
-type BuilderM modeledRow d = SB.StanBuilderM () d modeledRow
+type BuilderM d = SB.StanBuilderM () d
 
-getIndexes :: BuilderM modeledRow d (Map Text (SB.IntIndex modeledRow))
-getIndexes = SB.groupIndexByName <$> SB.askGroupEnv
+--getIndexes :: BuilderM d (Map Text (SB.IntIndex modeledRow))
+--getIndexes = SB.groupIndexByName <$> SB.askGroupEnv
 
-getIndex :: GroupName -> BuilderM modeledRow d (SB.IntIndex modeledRow)
-getIndex gn = do
-  indexMap <- getIndexes
-  case (Map.lookup gn indexMap) of
-    Nothing -> SB.stanBuildError $ "No group index found for group with name=\"" <> gn <> "\""
-    Just i -> return i
+getIntIndex :: SB.RowTypeTag r -> SB.GroupTypeTag k -> BuilderM d (SB.IntIndex k)
+getIntIndex rtt gtt = do
+  rowInfos <- SB.rowBuilders <$> get
+  case DHash.lookup rtt rowInfos of
+    Nothing -> SB.stanBuildError $ "StanMRP.getIntIndex: \"" <> SB.dataSetName rtt <> "\" not present in row builders."
+    Just ri -> case DHash.lookup gtt ((\(SB.GroupIndexes x) -> x) $ SB.groupIndexes ri) of
+                 Nothing -> SB.stanBuildError
+                            $ "StanMRP.getIntIndex: \""
+                            <> SB.taggedGroupName gtt
+                            <> "\" not present in indexes for \""
+                            <> SB.dataSetName rtt <> "\""
+                 Just im -> rowToGroupIndex im
 
 -- Basic group declarations, indexes and Json are produced automatically
-addMRGroup :: (Typeable d, Typeable r) => SB.StanExpr -> SB.StanExpr -> SB.SumToZero -> GroupName -> BuilderM r d SB.StanExpr
-addMRGroup binaryPrior sigmaPrior stz gn = do
-  (SB.IntIndex indexSize _) <- getIndex gn
+addMRGroup :: Typeable d
+           => SB.RowTypeTag r
+           => SB.StanExpr
+           -> SB.StanExpr
+           -> SB.SumToZero
+           -> SB.GroupTypeTag k
+           -> BuilderM d SB.StanExpr
+addMRGroup rtt binaryPrior sigmaPrior stz gtt = do
+  SB.setDataSetForBindings rtt
+  (SB.IntIndex indexSize _) <- getIntIndex rtt gtt
+  let gn = SB.taggedGroupName gtt
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = "eps_" <> gn
@@ -186,14 +201,18 @@ addMRGroup binaryPrior sigmaPrior stz gn = do
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
 --- return expression for sampling and one for everything else
-addNestedMRGroup ::  (Typeable d, Typeable r)
-                 => SB.StanExpr
+addNestedMRGroup ::  Typeable d
+                 => SB.RowTypeTag r
+                 -> SB.StanExpr
                  -> SB.SumToZero
-                 -> GroupName -- e.g., sex
-                 -> GroupName -- partially pooled, e.g., state
+                 -> SB.GroupTypeTag k -- e.g., sex
+                 -> SB.GroupTypeTag k -- partially pooled, e.g., state
                  -> BuilderM r d (SB.StanExpr, SB.StanExpr)
-addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
-  let suffix = nonPooledGN <> "_" <> pooledGN
+addNestedMRGroup rtt sigmaPrior stz nonPooledGtt pooledGtt = do
+  let nonPooledGN = SB.taggedGroupName nonPooledGtt
+      pooledGN = SB.taggedGroupName pooledGtt
+      dsName = SB.dataSetName rtt
+      suffix = nonPooledGN <> "_" <> pooledGN
       suffixed x = x <> "_" <> suffix
   (SB.IntIndex pooledIndexSize _) <- getIndex pooledGN
   (SB.IntIndex nonPooledIndexSize _) <- getIndex nonPooledGN
@@ -207,14 +226,14 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
           SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
         SB.rescaledSumToZero stz epsVar sigmaVar
         (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
-          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
+          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
           let yE = SB.useVar yv
               be = SB.bracket
                    $ SB.csExprs (SB.indexBy (SB.name $ suffixed "eps") pooledGN :|
                                   [SB.indexBy (SB.name $ suffixed "-eps") pooledGN]
                                 )
               epsE =  SB.indexBy be nonPooledGN
-          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName
+          SB.stanForLoopB "n" Nothing dsName
             $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
 
           return (yE, epsE)
@@ -230,8 +249,8 @@ addNestedMRGroup  sigmaPrior stz nonPooledGN pooledGN = do
                      $ SB.function "diag_pre_multiply" (SB.useVar sigmaV :| [SB.useVar betaRawV])
           b <- SB.stanDeclareRHS (suffixed "beta") betaType ""
                $ eDPM
-          y <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim SB.modeledDataIndexName) ""
-          SB.stanForLoopB "n" Nothing SB.modeledDataIndexName
+          y <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
+          SB.stanForLoopB "n" Nothing dsName
             $ SB.addExprLine "nestedMRGroup (NB.TransformedParameters)"
             $ SB.useVar y `SB.eq` SB.useVar b
           return (y, b)
@@ -269,62 +288,59 @@ addFixedEffects :: forall r d r0.(Typeable d, Typeable r0)
                 -> FixedEffects r
                 -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
-  let suffix = SB.dsSuffix feRTT
-      uSuffix = SB.underscoredIf suffix
-      feDataName = SB.dsName feRTT
-  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataName ("X_" <> feDataName <> "_Cols") -- code for parameters and transformed parameters
+  let feDataSetName = SB.dataSetName feRTT
+      uSuffix = SB.underscoredIf feDataSetName
+  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = if T.null suffix
-           then SB.indexBy (SB.name "Q_ast") feDataName
-           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataName
+           then SB.indexBy (SB.name "Q_ast") feDataSetName
+           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataSetName
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
       eX = if T.null suffix
-           then SB.indexBy (SB.name "centered_X") feDataName
-           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataName
+           then SB.indexBy (SB.name "centered_X") feDataSetName
+           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataSetName
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, eXBeta, eBeta)
 
-addFixedEffectsData :: forall r d r0.(Typeable d, Typeable r0)
+addFixedEffectsData :: forall r d. (Typeable d)
                     => SB.RowTypeTag r
                     -> FixedEffects r
-                    -> BuilderM r0 d ()
+                    -> BuilderM d ()
 addFixedEffectsData feRTT (FixedEffects n vecF) = do
-  let suffix = SB.dsSuffix feRTT
-      uSuffix = SB.underscoredIf suffix
-      feDataName = SB.dsName feRTT
-  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataName ("X_" <> feDataName <> "_Cols") -- code for parameters and transformed parameters
+  let feDataSetName = SB.dataSetName feRTT
+      uSuffix = SB.underscoredIf feDataSetName
+  SB.add2dMatrixJson feRTT "X" (Just suffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   return ()
 
-addFixedEffectsParametersAndPriors :: forall r1 r2 d r0.(Typeable d, Typeable r0)
+addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool
                                    -> SB.StanExpr
                                    -> SB.RowTypeTag r1
                                    -> SB.RowTypeTag r2
-                                   -> BuilderM r0 d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+                                   -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
 addFixedEffectsParametersAndPriors thinQR fePrior feRTT dataRTT = do
-  let feSuffix = SB.dsSuffix feRTT
-      dataSuffix = SB.dsSuffix dataRTT
-      uSuffix = SB.underscoredIf feSuffix <> SB.underscoredIf dataSuffix
-      feDataName = SB.dsName feRTT
-  SB.fixedEffectsQR_Parameters uSuffix ("X" <> uSuffix) ("X_" <> feDataName <> "_Cols")
+  let feDataSetName = SB.dataSetName feRTT
+      modeledDataSetName = SB.dataSetName dataRTT
+      uSuffix = SB.underscoredIf feDataSetName <> SB.underscoredIf modeledDataSetName
+  SB.fixedEffectsQR_Parameters uSuffix ("X" <> uSuffix) ("X_" <> feDataSetName <> "_Cols")
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataName
+  let eQ = SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataSetName
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
-      eX = SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataName
+      eX = SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataSetName
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta

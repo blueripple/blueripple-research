@@ -68,8 +68,7 @@ generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
   SB.stanForLoopB "n" Nothing dsName $ do
     let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
         rhsE = SMD.familyLDF sDist dsName args
-        llE = lhsE `SME.eq` rhsE
-    SB.addExprLine "log likelihood (in Generated Quantitites)" llE
+    SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
@@ -80,7 +79,7 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.Nam
   return sv
 generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
-fixedEffectsQR :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d SME.StanVar
+fixedEffectsQR :: Text -> SME.StanName -> SME.IndexKey -> SME.IndexKey -> SB.StanBuilderM env d SME.StanVar
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
   fixedEffectsQR_Data thinSuffix matrix rowKey colKey
   fixedEffectsQR_Parameters thinSuffix matrix colKey
@@ -89,7 +88,7 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
       qMatrix = SME.StanVar q qMatrixType
   return qMatrix
 
-fixedEffectsQR_Data :: Text -> SME.StanName -> SME.StanIndexKey -> SME.StanIndexKey -> SB.StanBuilderM env d SME.StanName
+fixedEffectsQR_Data :: Text -> SME.StanName -> SME.IndexKey -> SME.IndexKey -> SB.StanBuilderM env d SME.StanName
 fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
@@ -110,7 +109,7 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
   return matrix
 
-fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.StanIndexKey -> SB.StanBuilderM env d ()
+fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d ()
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
   SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
