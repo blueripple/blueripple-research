@@ -74,10 +74,10 @@ buildDataWranglerAndCode groupM env builderM d =
         jsonRowBuilders <- SB.buildJSONF
         --rowBuilders <- SB.rowBuilders <$> get
         --intMapBuilders <- SB.indexBuilders <$> get
-        dataSetGroupIntMaps <- SB.dataSetGroupIntMapsM
+        intMapBuilder <- SB.intMapBuilder
         return
           $ SC.Wrangle SC.TransientIndex
-          $ const (dataSetGroupIntMaps, SB.buildJSONFromRows jsonRowBuilders)
+          $ \d -> (intMapBuilder d, SB.buildJSONFromRows jsonRowBuilders)
       resE = SB.runStanBuilder d env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ c _, dw) -> (dw, c)) resE
 
@@ -357,30 +357,37 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
 data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable d, Typeable r0, Typeable r, Typeable k)
+addPostStratification :: (Typeable d) -- ,Typeable r, Typeable k)
                       => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
                       -> args -- required args, e.g., total counts for binomial
                       -> Maybe Text
-                      -> SB.RowTypeTag r
-                      -> SB.GroupRowMap r -- group mappings for PS data
+                      -> SB.RowTypeTag rModel
+                      -> SB.RowTypeTag rPS
+                      -> SB.GroupRowMap rPS -- group mappings for PS data
                       -> Set.Set Text -- subset of groups to loop over
-                      -> (r -> Double) -- PS weight
+                      -> (rPS -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
-                      -> BuilderM r0 d SB.StanVar
-addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psType mPSGroup = do
+                      -> BuilderM d SB.StanVar
+addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
-      dsName = SB.dsName rtt
+      psDataSetName = SB.dataSetName rttPS
+      modelDataSetName = SB.dataSetName rttModel
       psGroupName = maybe "" SB.taggedGroupName mPSGroup
       uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
       psSuffix = dsName <> uPSGroupName
       namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
       sizeName = "N_" <> namedPS
   SB.addDeclBinding namedPS (SB.name sizeName)
-  allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
-  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ allGroups
-  let checkGroupSubset n1 n2 gs1 gs2 = do
+  rowInfos <- rowBuilders <$> get
+  modelGroupsDHM <- do
+    case DHash.lookup rttModel rowInfos of
+      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
+      Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
+  -- allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
+  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ modelGroupsDHM
+      checkGroupSubset n1 n2 gs1 gs2 = do
         let gDiff = DHash.difference gs1 gs2
         when (DHash.size gDiff /= 0)
           $ SB.stanBuildError
@@ -392,14 +399,13 @@ addPostStratification sDist args mNameHead rtt groupMaps modelGroups weightF psT
   -- we don't need the PS group to be present on the RHS, but it could be
   let groupMapsToCheck = maybe groupMaps (\x -> DHash.delete x groupMaps) mPSGroup
   checkGroupSubset "PS Spec" "All Groups" groupMapsToCheck allGroups
-  rowBuilders <- SB.rowBuilders <$> get
-  toFoldable <- case DHash.lookup rtt rowBuilders of
-    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> SB.dsName rtt <> ") not found in rowBuilders."
-    Just (SB.RowInfo tf _ _) -> return tf
-  intKeyF  <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
+  toFoldable <- case DHash.lookup rttPS rowInfos of
+    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
+    Just (SB.RowInfo tf _ _ _ _) -> return tf
+  intKeyF <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt allGroups
+    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames allGroups) $ DHash.lookup gtt modelGroupsDHM
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
     SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
     return $ eIntF . h
