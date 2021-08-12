@@ -886,7 +886,10 @@ addDeclBinding k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore ubm (Map.insert k e dbm)
 
 addUseBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addUseBinding k e = do
+addUseBinding k e = modify $ modifyIndexBindings f where
+  f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore (Map.insert k e ubm) dbm
+{-
+  do
   --modify $ modifyIndexBindings f where
   let f (SME.VarBindingStore ubm dbm) = do
         case Map.lookup k ubm of
@@ -896,6 +899,7 @@ addUseBinding k e = do
   case modifyIndexBindingsA f oldBuilderState of
     Right newBuilderState -> put newBuilderState
     Left err -> stanBuildError err
+-}
 
 indexBindingScope :: StanBuilderM env d a -> StanBuilderM env d a
 indexBindingScope x = do

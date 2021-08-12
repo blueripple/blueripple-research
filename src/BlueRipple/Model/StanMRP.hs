@@ -408,7 +408,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
     SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
 --    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
-    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h
+--    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??
     return $ eIntF . h
   -- add the data set for the json builders
 
