@@ -73,7 +73,7 @@ toSLDPrefix sf dn pop d pwd inc sm sk
 instance CSV.FromNamedRecord SLDPrefix where
   parseNamedRecord r = toSLDPrefix
                        <$> r .: "StateFIPS"
-                       <*> r .: "District"
+                       <*> r .: "DistrictNumber"
                        <*> r .: "TotalPopulation"
                        <*> r .: "PopPerSqMile"
                        <*> r .: "pwPopPerSqMile"

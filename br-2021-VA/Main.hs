@@ -75,9 +75,22 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
-import Stan.ModelBuilder (addUnIndexedDataSet)
-import BlueRipple.Data.DataFrames (totalIneligibleFelon')
+--import Stan.ModelBuilder (addUnIndexedDataSet)
+import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import Frames.CSV (prefixInference)
+import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Data.CountFolds as BRCF
+import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Data.CCES as BRE
+import qualified Data.Vinyl.Core as V
+import BlueRipple.Model.House.ElectionResult (ccesDataToModelRows)
+import qualified Frames.SimpleJoins as FJ
+import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Model.House.ElectionResult as BRE
+import qualified BlueRipple.Data.Keyed as BRK
+import qualified Frames.MapReduce as FMR
+import qualified Frames.MapReduce as FMR
+import qualified BlueRipple.Data.Keyed as BRK
 
 
 yamlAuthor :: T.Text
@@ -139,18 +152,38 @@ postPaths t = do
     (postOnline postSpecificP)
 
 -- data
+type CPSCVAP = "CPSCVAP" F.:-> Int
+type CPSVoters = "CPSVoters" F.:-> Int
+type CCESSurveyed = "CPSSurveyed" F.:-> Int
+type CCESVoters = "CCESVoters" F.:-> Int
+type CCESDVotes = "CCESDVotes" F.:-> Int
+type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoters, CCESDVotes]
+
+type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
 data SLDModelData = SLDModelData
   {
-    ccesRows :: F.FrameRec BRE.CCESByCDR
-  , cpsVRows :: F.FrameRec BRE.CPSVByCDR
+    cpsVAndccesRows :: F.FrameRec CPSAndCCESR
   , sldTables :: BRC.LoadedCensusTablesBySLD
   , districtRows :: F.FrameRec BRE.DistrictDemDataR
   } deriving (Generic)
 
 instance Flat.Flat SLDModelData where
-  size (SLDModelData cces cps sld dd) n = Flat.size (FS.SFrame cces, FS.SFrame cps, sld, FS.SFrame dd) n
-  encode (SLDModelData cces cps sld dd) = Flat.encode (FS.SFrame cces, FS.SFrame cps, sld, FS.SFrame dd)
-  decode = (\(ccesSF, cpsSF, sld, dd) -> SLDModelData (FS.unSFrame ccesSF) (FS.unSFrame cpsSF) sld (FS.unSFrame dd)) <$> Flat.decode
+  size (SLDModelData v sld dd) n = Flat.size (FS.SFrame v, sld, FS.SFrame dd) n
+  encode (SLDModelData v sld dd) = Flat.encode (FS.SFrame v, sld, FS.SFrame dd)
+  decode = (\(v, sld, dd) -> SLDModelData (FS.unSFrame v) sld (FS.unSFrame dd)) <$> Flat.decode
+
+{-
+addRaceAlone4 r =
+  let r5 = F.rgetField @Race5C r
+      rA4 = DT.raceAlone
+  in r F.<+> FT.recordSingleton @DT.RaceAloneC
+
+  :: F.Record BRE.CCESPredictorR -> F.Record BRE.CPSPredictorR
+ccesPredictorToCpsPredictor r =
+  let f :: F.Record '[DT.Race5C] -> F.Record '[DT.RaceAlone4C]
+      f = F.rgetField @DT
+-}
 
 prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
                  => Bool
@@ -158,8 +191,32 @@ prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
 prepSLDModelData clearCaches = do
   ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
   sld_C <- BRC.censusTablesBySLD
-  let rearrangeCached (BRE.CCESAndPUMS cces cps _ dist) x = SLDModelData cces cps x dist
-  return $ rearrangeCached <$> ccesAndCPS_C <*> sld_C
+  let deps = (,) <$> ccesAndCPS_C <*> sld_C
+      cacheKey = "model/stateLeg/SLD_VA.bin"
+  BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld) -> do
+    let (BRE.CCESAndPUMS ccesRows cpsVRows _ distRows) = ccesAndCPS
+        cpsVCols :: F.Record BRE.CPSVByCDR -> F.Record [CPSCVAP, CPSVoters]
+        cpsVCols r = round (F.rgetField @BRCF.WeightedCount r) F.&: round (F.rgetField @BRCF.WeightedSuccesses r) F.&: V.RNil
+        cpsPredictor :: F.Record BRE.CPSVByCDR -> F.Record PredictorR
+        cpsPredictor r = F.rcast $  r F.<+> FT.recordSingleton @DT.Race5C (race5FromCPS r)
+        cpsRow r = F.rcast @BRE.CDKeyR r F.<+> cpsPredictor r F.<+> cpsVCols r
+        cpsForJoin = cpsRow <$> cpsVRows
+        ccesVCols :: F.Record BRE.CCESByCDR -> F.Record [CCESSurveyed, CCESVoters, CCESDVotes]
+        ccesVCols r = F.rgetField @BRE.Surveyed r F.&: F.rgetField @BRE.TVotes r F.&: F.rgetField @BRE.DVotes r F.&: V.RNil
+        ccesRow r = F.rcast @(BRE.CDKeyR V.++ PredictorR) r F.<+> ccesVCols r
+        -- cces data will be missing some rows.  We add zeros.
+        ccesForJoin' = ccesRow <$> ccesRows
+        defaultCCESV :: F.Record [CCESSurveyed, CCESVoters, CCESDVotes] = 0 F.&: 0 F.&: 0 F.&: V.RNil
+        ccesForJoinFld = FMR.concatFold
+                         $ FMR.mapReduceFold
+                         FMR.noUnpack
+                         (FMR.assignKeysAndData @BRE.CDKeyR @(PredictorR V.++ [CCESSurveyed, CCESVoters, CCESDVotes]))
+                         (FMR.makeRecsWithKey id $ FMR.ReduceFold (const $ BRK.addDefaultRec @PredictorR defaultCCESV))
+        ccesForJoin = FL.fold ccesForJoinFld ccesForJoin'
+        (cpsAndCces, missing) = FJ.leftJoinWithMissing @(BRE.CDKeyR V.++ PredictorR) cpsForJoin ccesForJoin
+    unless (null missing) $ K.knitError $ "Missing keys in cpsV/cces join: " <> show missing
+    --BR.logFrame cpsAndCces
+    return $ SLDModelData cpsAndCces sld distRows
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
@@ -178,8 +235,10 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         -> K.Sem r ()
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
+  modelData_C <- prepSLDModelData False
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
+{-
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r SLDModelData -> K.Sem r ()
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   let modelDir = "br-2021-VA/stan/"
@@ -246,7 +305,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         return ()
   return ()
 
-
+-}
 race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
 race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
