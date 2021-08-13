@@ -4,8 +4,8 @@ We want to focus on the *state-specific* turnout gap, i.e.,
 what remains of the gap after we account for the "demographic" part, coming from
 national-level turnout among different types of voters
 combined with the demographic makeup of the state.
-To do this we compute four post-stratifications–
-VOC and WHNV turnout with and without state/race interaction (SRI)–
+To do this we compute four post-stratifications–VOC and WHNV
+turnout with and without state/race interaction (SRI)–
 then take the appropriate differences.  If we do this in the same Monte-Carlo
 model fit we can also
 estimate a confidence interval for that difference.

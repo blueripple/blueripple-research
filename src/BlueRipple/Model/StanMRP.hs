@@ -68,12 +68,9 @@ buildDataWranglerAndCode :: (Typeable d)
                          -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
 buildDataWranglerAndCode groupM env builderM d =
   let builderWithWrangler = do
-        --SB.addGroupIndexes
         SB.buildGroupIndexes
         builderM
-``        jsonF <- SB.buildJSONFromDataM
-        --rowBuilders <- SB.rowBuilders <$> get
-        --intMapBuilders <- SB.indexBuilders <$> get
+        jsonF <- SB.buildJSONFromDataM
         intMapsBuilder <- SB.intMapsBuilder
         return
           $ SC.Wrangle SC.TransientIndex
