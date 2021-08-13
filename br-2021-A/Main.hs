@@ -1487,7 +1487,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
                          (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) "ACS_WNH")
-                         (SB.GroupTypeTag @Text "State")
+                         stateGroup
                          groupIndexes
             let parseAndIndexPctsWith f vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)

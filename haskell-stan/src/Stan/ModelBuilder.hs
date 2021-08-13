@@ -493,6 +493,17 @@ buildJSONF = do
 -}
   DHash.traverse buildRowJSONFolds rowInfos
 
+buildJSONFromDataM :: Typeable d => StanBuilderM env d (d -> Either Text Aeson.Series)
+buildJSONFromDataM = do
+  (JSONSeriesFold constJSONFld) <- constJSON <$> get
+  dataSetJSON <- buildJSONF
+  return $ \d ->
+    let c = Foldl.foldM constJSONFld (Just ())
+        ds =  buildJSONFromRows dataSetJSON d
+    in (<>) <$> c <*> ds
+
+
+
 newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
 newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap)
 
@@ -728,7 +739,7 @@ addIntMapBuilder rtt gtt dim = do
   case DHash.lookup rtt rowInfos of
     Nothing -> stanBuildError $ "addIntMapBuilders: Data-set \"" <> dataSetName rtt <> " not present in rowBuilders."
     Just (RowInfo tf ebs gis (GroupIntMapBuilders gimbs) js) -> case DHash.lookup gtt gimbs of
-      Just _ -> stanBuildError $ "addIntMapBuilder: Group \"" <> taggedGroupName gtt <> "\" is already present for data-set \"" <> dataSetName rtt <> "\"."
+      Just _ -> return () --stanBuildError $ "addIntMapBuilder: Group \"" <> taggedGroupName gtt <> "\" is already present for data-set \"" <> dataSetName rtt <> "\"."
       Nothing -> do
         let newRowInfo = RowInfo tf ebs gis (GroupIntMapBuilders $ DHash.insert gtt dim gimbs) js
             newRowInfos = DHash.insert rtt newRowInfo rowInfos
@@ -1031,10 +1042,10 @@ addColumnJson rtt name st sc toX = do
     SME.StanInt -> stanBuildError $ "SME.StanInt (scalar) given as type in addColumnJson. " <> nameSuffixMsg name dsName
     SME.StanReal -> stanBuildError $ "SME.StanReal (scalar) given as type in addColumnJson. " <> nameSuffixMsg name dsName
     _ -> return ()
-  let sizeName = "N_" <> dsName
+  let sizeName = "N" <> underscoredIf dsName
   addLengthJson rtt sizeName dsName -- ??
-  let fullName = name <> "_" <> dsName
-  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayF toX)
+--  let fullName = name <> "_" <> dsName
+  addJson rtt name st sc (Stan.valueToPairF name $ Stan.jsonArrayF toX)
 
 addColumnMJson :: (Typeable d, Aeson.ToJSON x)
                => RowTypeTag r
@@ -1051,8 +1062,8 @@ addColumnMJson rtt name st sc toMX = do
     _ -> return ()
   let sizeName = "N_" <> dsName
   addLengthJson rtt sizeName dsName -- ??
-  let fullName = name <> "_" <> dsName
-  addJson rtt fullName st sc (Stan.valueToPairF fullName $ Stan.jsonArrayEF toMX)
+--  let fullName = name <> "_" <> dsName
+  addJson rtt name st sc (Stan.valueToPairF name $ Stan.jsonArrayEF toMX)
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
 add2dMatrixJson :: (Typeable d)
@@ -1064,11 +1075,12 @@ add2dMatrixJson :: (Typeable d)
                 -> (r -> Vector.Vector Double) -> StanBuilderM env d SME.StanVar
 add2dMatrixJson rtt name sc rowDim cols vecF = do
   let dsName = dataSetName rtt
-  let colName = "K" <> "_" <> name
-      colDimName = name <> "_Cols"
+      wdName = name <> underscoredIf dsName
+      colName = "K" <> "_" <> wdName
+      colDimName = wdName <> "_Cols"
   addFixedIntJson colName Nothing cols
   addDeclBinding colDimName (SME.name colName)
-  addColumnJson rtt name (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
+  addColumnJson rtt wdName (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d
 modifyCode' f bs = let newCode = f $ code bs in bs { code = newCode }

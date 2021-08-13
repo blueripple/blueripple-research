@@ -71,13 +71,13 @@ buildDataWranglerAndCode groupM env builderM d =
         --SB.addGroupIndexes
         SB.buildGroupIndexes
         builderM
-        jsonRowBuilders <- SB.buildJSONF
+``        jsonF <- SB.buildJSONFromDataM
         --rowBuilders <- SB.rowBuilders <$> get
         --intMapBuilders <- SB.indexBuilders <$> get
         intMapsBuilder <- SB.intMapsBuilder
         return
           $ SC.Wrangle SC.TransientIndex
-          $ \d -> (intMapsBuilder d, SB.buildJSONFromRows jsonRowBuilders)
+          $ \d -> (intMapsBuilder d, jsonF)
       resE = SB.runStanBuilder d env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
 
@@ -290,7 +290,7 @@ addFixedEffects :: forall r d.(Typeable d)
 addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT ("X" <> uSuffix) "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
@@ -408,7 +408,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
     SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
 --    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
---    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??
+    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??
     return $ eIntF . h
   -- add the data set for the json builders
 
