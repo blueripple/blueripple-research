@@ -46,6 +46,7 @@ import qualified Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Aggregation as FA
 import qualified Frames.Folds as FF
 import qualified Frames.Heidi as FH
 import qualified Frames.SimpleJoins as FJ
@@ -91,6 +92,13 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified Frames.MapReduce as FMR
 import qualified Frames.MapReduce as FMR
 import qualified BlueRipple.Data.Keyed as BRK
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified BlueRipple.Data.CensusTables as BRC
+import qualified Frames.MapReduce as FMR
+import qualified Frames.MapReduce as FMR
+import qualified Frames.MapReduce as FMR
+import qualified Frames.MapReduce.General as FMR
 
 
 yamlAuthor :: T.Text
@@ -159,6 +167,25 @@ type CCESVoters = "CCESVoters" F.:-> Int
 type CCESDVotes = "CCESDVotes" F.:-> Int
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoters, CCESDVotes]
+
+type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
+type SLDDemograhicsR = BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ [DT.SexC, DT.CollegeGradC, DT.Race4C, DT.HispC, BRC.Count]
+
+-- fold the census table into an SLDDemographics table
+sldDemographicsFld :: FL.Fold (F.Record CensusSERR) (F.FrameRec SLDDemographicsR)
+sldDemographicsFld = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @(BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
+                     (FMR.makeRecsWithKey id $ FMR.ReduceFoldM $ const f) where
+  f :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, BRC.Count]) (F.FrameRec [DT.CollegeGradC, DT.Race4C, DT.HispC, BRC.Count])
+  f =
+    let collegeGrad r = let ed4 = F.rgetField @BRC.Education4C r in ed4 == BRC.E4_CollegeGrad
+        rkmEd :: FA.RecordKeyMap '[BRC.Education4C] '[DT.CollegeGradC]
+        rkmEd r =  F.recordSingleton @DT.CollegeGrad $ if F.rgetField @BRC.Education4C r == BRC.E4_CollegeGrad then DT.Grad else DT.NonGrad
+        rkmRE :: FA.RecordKeyMap '[BRC.RaceEthinicity] [DT.Race4C, DT.HispC]
+
+
 
 type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
 data SLDModelData = SLDModelData
@@ -238,6 +265,21 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelData_C <- prepSLDModelData False
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
+
+
+groupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM SLDModelData ()
+groupBuilder districts states = do
+  voterData <- SB.addDataSetToGroupBuilder "VData" (SB.ToFoldable cpsVAndccesRows)
+  SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet ageGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+
+--sldPSGroupRowMap :: SB.GroupRowMap (F.Record  )
+
+
 {-
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r SLDModelData -> K.Sem r ()
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
@@ -306,6 +348,30 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   return ()
 
 -}
+cdGroup :: SB.GroupTypeTag Text
+cdGroup = SB.GroupTypeTag "CD"
+
+stateGroup :: SB.GroupTypeTag Text
+stateGroup = SB.GroupTypeTag "State"
+
+ageGroup :: SB.GroupTypeTag DT.SimpleAge
+ageGroup = SB.GroupTypeTag "Age"
+
+sexGroup :: SB.GroupTypeTag DT.Sex
+sexGroup = SB.GroupTypeTag "Sex"
+
+educationGroup :: SB.GroupTypeTag DT.CollegeGrad
+educationGroup = SB.GroupTypeTag "Education"
+
+raceGroup :: SB.GroupTypeTag DT.Race4
+raceGroup = SB.GroupTypeTag "Race"
+
+wnhGroup :: SB.GroupTypeTag Bool
+wnhGroup = SB.GroupTypeTag "WNH"
+
+wngGroup :: SB.GroupTypeTag Bool
+wngGroup = SB.GroupTypeTag "WNG"
+
 race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
 race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
