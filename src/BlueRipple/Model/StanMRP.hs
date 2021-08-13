@@ -78,7 +78,6 @@ buildDataWranglerAndCode groupM env builderM d =
       resE = SB.runStanBuilder d env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
 
-
 runMRPModel :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
@@ -143,22 +142,6 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
 
 type BuilderM d = SB.StanBuilderM () d
 
---getIndexes :: BuilderM d (Map Text (SB.IntIndex modeledRow))
---getIndexes = SB.groupIndexByName <$> SB.askGroupEnv
-
-getIntIndex :: SB.RowTypeTag r -> SB.GroupTypeTag k -> BuilderM d (SB.IntIndex r)
-getIntIndex rtt gtt = do
-  rowInfos <- SB.rowBuilders <$> get
-  case DHash.lookup rtt rowInfos of
-    Nothing -> SB.stanBuildError $ "StanMRP.getIntIndex: \"" <> SB.dataSetName rtt <> "\" not present in row builders."
-    Just ri -> case DHash.lookup gtt ((\(SB.GroupIndexes x) -> x) $ SB.groupIndexes ri) of
-                 Nothing -> SB.stanBuildError
-                            $ "StanMRP.getIntIndex: \""
-                            <> SB.taggedGroupName gtt
-                            <> "\" not present in indexes for \""
-                            <> SB.dataSetName rtt <> "\""
-                 Just im -> return $ SB.rowToGroupIndex im
-
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: Typeable d
            => SB.RowTypeTag r
@@ -169,7 +152,7 @@ addMRGroup :: Typeable d
            -> BuilderM d SB.StanExpr
 addMRGroup rtt binaryPrior sigmaPrior stz gtt = do
   SB.setDataSetForBindings rtt
-  (SB.IntIndex indexSize _) <- getIntIndex rtt gtt
+  (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
   let gn = SB.taggedGroupName gtt
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
@@ -211,8 +194,8 @@ addNestedMRGroup rtt sigmaPrior stz nonPooledGtt pooledGtt = do
       dsName = SB.dataSetName rtt
       suffix = nonPooledGN <> "_" <> pooledGN
       suffixed x = x <> "_" <> suffix
-  (SB.IntIndex pooledIndexSize _) <- getIntIndex rtt pooledGtt
-  (SB.IntIndex nonPooledIndexSize _) <- getIntIndex rtt nonPooledGtt
+  (SB.IntIndex pooledIndexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt pooledGtt
+  (SB.IntIndex nonPooledIndexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt nonPooledGtt
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ") with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
   let nonPooledBinary = do

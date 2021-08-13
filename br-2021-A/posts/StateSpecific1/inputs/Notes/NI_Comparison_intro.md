@@ -11,7 +11,7 @@ model fit we can also
 estimate a confidence interval for that difference.
 When we estimate the with-SRI and without-SRI
 models separately, we lose the ability
-to estimate a confidence intervals for the difference.
+to estimate confidence intervals for the difference.
 
 But adding the SRI term shifts the other parameters some,
 so we it’s worth checking that estimating the "demographic" turnout
