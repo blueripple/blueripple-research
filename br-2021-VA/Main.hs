@@ -160,39 +160,67 @@ type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoters, CCESDVotes]
 
 type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
-type SLDDemographicsR = BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count]
+type SLDRecodedR = BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count]
+type SLDDemographicsR = '[BR.StateAbbreviation] V.++ SLDRecodedR
 
--- fold the census table into an SLDDemographics table
-sldDemographicsFld :: FL.Fold (F.Record CensusSERR) (F.FrameRec SLDDemographicsR)
-sldDemographicsFld = FMR.concatFold
-                     $ FMR.mapReduceFold
-                     FMR.noUnpack
-                     (FMR.assignKeysAndData @(BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
-                     (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const f) where
-  f :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, BRC.Count]) (F.FrameRec [DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count])
-  f =
-    let ed4ToCG ed4 = if ed4 == BRC.E4_CollegeGrad then DT.Grad else DT.NonGrad
-        edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
-          g DT.Grad BRC.E4_CollegeGrad = True
-          g DT.Grad _ = False
-          g _ _ = True
-        edAggFRec = BRK.toAggFRec edAggF
+sldDemographicsRecode ::  F.FrameRec CensusSERR -> F.FrameRec SLDRecodedR
+sldDemographicsRecode rows =
+  let --fld1 :: FL.Fold
+      --  (F.Record (BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC, BRC.Count]))
+      --  (F.FrameRec (BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC, BRC.RaceEthnicityC, BRC.Count]))
 
-        raceAggFRec :: BRK.AggFRec Bool '[DT.RaceAlone4C, DT.HispC] '[BRC.RaceEthnicityC]
-        raceAggFRec = BRK.AggF $ \r1 r2  -> h (F.rgetField @DT.RaceAlone4C r1) (F.rgetField @DT.HispC r1) (F.rgetField @BRC.RaceEthnicityC r2) where
-          h :: DT.RaceAlone4 -> DT.Hisp -> BRC.RaceEthnicity -> Bool
-          h _ DT.Hispanic BRC.E_Hispanic = True
-          h DT.RA4_White DT.NonHispanic BRC.E_WhiteNonHispanic = True
-          h DT.RA4_White _ BRC.R_White = True
-          h DT.RA4_Black _ BRC.R_Black = True
-          h DT.RA4_Asian _ BRC.R_Asian = True
-          h DT.RA4_Other _ BRC.R_Other = True
-          h _ _ _ = False
+      fld1 = FMR.concatFold
+             $ FMR.mapReduceFold
+             FMR.noUnpack
+             (FMR.assignKeysAndData @(BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
+             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const edFld)
+      fld2 = FMR.concatFold
+             $ FMR.mapReduceFold
+             FMR.noUnpack
+             (FMR.assignKeysAndData @(BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
+             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
 
-        aggFRec = BRK.aggFProductRec edAggFRec raceAggFRec
-        collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @BRC.Count) $ FL.premap (F.rgetField @BRC.Count) FL.sum
-    in fmap F.toFrame $ BRK.aggFoldAllRec aggFRec collapse
-
+      edFld :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, BRC.Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, BRC.Count])
+      edFld  = let ed4ToCG ed4 = if ed4 == BRC.E4_CollegeGrad then DT.Grad else DT.NonGrad
+                   edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
+                     g DT.Grad BRC.E4_CollegeGrad = True
+                     g DT.Grad _ = False
+                     g _ _ = True
+                   edAggFRec = BRK.toAggFRec edAggF
+                   raceAggFRec :: BRK.AggFRec Bool '[BRC.RaceEthnicityC] '[BRC.RaceEthnicityC] = BRK.toAggFRec BRK.aggFId
+                   aggFRec = BRK.aggFProductRec edAggFRec raceAggFRec
+                   collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @BRC.Count) $ FL.premap (F.rgetField @BRC.Count) FL.sum
+               in fmap F.toFrame $ BRK.aggFoldAllRec aggFRec collapse
+      reFld ::  FL.Fold (F.Record [BRC.RaceEthnicityC, BRC.Count]) (F.FrameRec [DT.RaceAlone4C, DT.HispC, BRC.Count])
+      reFld =
+        let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rgetField @BRC.Count) FL.sum
+            wFld = withRE BRC.R_White
+            bFld = withRE BRC.R_Black
+            aFld = withRE BRC.R_Asian
+            oFld = withRE BRC.R_Other
+            hFld = withRE BRC.E_Hispanic
+            wnhFld = withRE BRC.E_WhiteNonHispanic
+            makeRec :: DT.RaceAlone4 -> DT.Hisp -> Int -> F.Record [DT.RaceAlone4C, DT.HispC, BRC.Count]
+            makeRec ra4 e c = ra4 F.&: e F.&: c F.&: V.RNil
+            recode w b a o h wnh =
+              let wh = w - wnh
+                  oh = min o (h - wh) --assumes most Hispanic people who don't choose white, choose "other"
+                  onh = o - oh
+                  bh = h - wh - oh
+                  bnh = b - bh
+              in F.toFrame
+                 [
+                   makeRec DT.RA4_White DT.Hispanic wh
+                 , makeRec DT.RA4_White DT.NonHispanic wnh
+                 , makeRec DT.RA4_Black DT.Hispanic bh
+                 , makeRec DT.RA4_Black DT.NonHispanic bnh
+                 , makeRec DT.RA4_Asian DT.Hispanic 0
+                 , makeRec DT.RA4_Asian DT.NonHispanic a
+                 , makeRec DT.RA4_Other DT.Hispanic oh
+                 , makeRec DT.RA4_Other DT.NonHispanic onh
+                 ]
+        in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
+  in FL.fold fld2 (FL.fold fld1 rows)
 
 
 
@@ -227,11 +255,12 @@ prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
 prepSLDModelData clearCaches = do
   ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
   sld_C <- BRC.censusTablesBySLD
-  let deps = (,) <$> ccesAndCPS_C <*> sld_C
+  stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
+  let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
       cacheKey = "model/stateLeg/SLD_VA.bin"
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld) -> do
+  BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
     let (BRE.CCESAndPUMS ccesRows cpsVRows _ distRows) = ccesAndCPS
         cpsVCols :: F.Record BRE.CPSVByCDR -> F.Record [CPSCVAP, CPSVoters]
         cpsVCols r = round (F.rgetField @BRCF.WeightedCount r) F.&: round (F.rgetField @BRCF.WeightedSuccesses r) F.&: V.RNil
@@ -255,9 +284,12 @@ prepSLDModelData clearCaches = do
     unless (null missing) $ K.knitError $ "Missing keys in cpsV/cces join: " <> show missing
     --BR.logFrame cpsAndCces
     K.logLE K.Info $ "Re-folding census table..."
-    let sldSER = FL.fold sldDemographicsFld $ BRC.sexEducationRace sld
+    let sldSER' = sldDemographicsRecode $ BRC.sexEducationRace sld
+    -- add state abbreviations
+        (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
+                              $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     BR.logFrame sldSER
-    return $ SLDModelData cpsAndCces sldSER distRows
+    return $ SLDModelData cpsAndCces (F.rcast <$> sldSER) distRows
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
@@ -291,7 +323,14 @@ groupBuilder districts states = do
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
 
---sldPSGroupRowMap :: SB.GroupRowMap (F.Record  )
+sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
+sldPSGroupRowMap = SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
+                   $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
+                   $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
+                   $ SB.addRowMap raceGroup (\r -> DT.race4FromRace5 $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+                   $ SB.emptyGroupRowMap
+--  $ SB.addRowMap wnhGroup wnh
+--  $ SB.addRowMap wngGroup wnhNonGrad
 
 
 {-
@@ -388,6 +427,12 @@ wngGroup = SB.GroupTypeTag "WNG"
 
 race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
 race5FromCPS r =
+  let race4A = F.rgetField @DT.RaceAlone4C r
+      hisp = F.rgetField @DT.HispC r
+  in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+race5FromCensus :: F.Record BRE.CPSVByCDR -> DT.Race5
+race5FromCensus r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
