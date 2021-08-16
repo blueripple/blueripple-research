@@ -259,7 +259,6 @@ prepSLDModelData clearCaches = do
   let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
       cacheKey = "model/stateLeg/SLD_VA.bin"
   when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
     let (BRE.CCESAndPUMS ccesRows cpsVRows _ distRows) = ccesAndCPS
         cpsVCols :: F.Record BRE.CPSVByCDR -> F.Record [CPSCVAP, CPSVoters]
@@ -288,7 +287,7 @@ prepSLDModelData clearCaches = do
     -- add state abbreviations
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-    BR.logFrame sldSER
+    -- BR.logFrame sldSER
     return $ SLDModelData cpsAndCces (F.rcast <$> sldSER) distRows
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
@@ -309,6 +308,7 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
   modelData_C <- prepSLDModelData False
+  _ <- stateLegModel False modelData_C
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
 
@@ -322,6 +322,8 @@ groupBuilder districts states = do
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+  SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
+  return ()
 
 sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
 sldPSGroupRowMap = SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
@@ -333,74 +335,87 @@ sldPSGroupRowMap = SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
 --  $ SB.addRowMap wngGroup wnhNonGrad
 
 
-{-
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r SLDModelData -> K.Sem r ()
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
+  K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
       jsonDataName = "stateLeg_ASR"
-      cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CPSVByCDR) ()
-      cpsVGroupBuilder districts states = do
-        SB.addGroup "CD_CPS" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State_CPS" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race_CPS" $ SB.makeIndexFromEnum (DT.race4FromRace5 . race5FromCPS)
-        SB.addGroup "WNH_CPS" $ SB.makeIndexFromEnum wnh
-        SB.addGroup "Sex_CPS" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education_CPS" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad_CPS" $ SB.makeIndexFromEnum wnhNonGrad
-
-      ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM (F.Record BRE.CCESByCDR) ()
-      ccesGroupBuilder districts states = do
-        SB.addGroup "CD_CCES" $ SB.makeIndexFromFoldable show districtKey districts
-        SB.addGroup "State_CCES" $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-        SB.addGroup "Race_CCES" $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-        SB.addGroup "WNH_CCES" $ SB.makeIndexFromEnum wnhCCES
-        SB.addGroup "Sex_CCES" $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-        SB.addGroup "Education_CCES" $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-        SB.addGroup "WhiteNonGrad_CCES" $ SB.makeIndexFromEnum wnhNonGradCCES
-
-      dataAndCodeBuilder :: Typeable modelRow => MRP.BuilderM modelRow SLDModelData ()
+      dataAndCodeBuilder :: MRP.BuilderM SLDModelData ()
       dataAndCodeBuilder = do
         -- data
-        cdDataRT <- addUnIndexedDataSet "CD" (SB.ToFoldable districtRows)
-        ccesDataRT <- addUnIndexedDataSet "CCES" (SB.ToFoldable ccesRows)
-        cpsDataRT <- addUnIndexedDataSet "CPS" (SB.ToFoldable cpsVRows)
-        cpsCVAP <- SB.addCountData' @(F.Record BRE.CPSVByCDR) cpsDataRT "CVAP" (round . F.rgetField @BRCF.WeightedCount)
-        cpsVotes <- SB.addCountData' @(F.Record BRE.CPSVByCDR) cpsDataRT "VOTED" (round . F.rgetField @BRCF.WeightedSuccesses)
-        ccesVotes <- SB.addCountData' @(F.Record BRE.CCESByCDR) ccesDataRT "VOTED_C" (F.rgetField @BRE.DVotes)
-        ccesDVotes <- SB.addCountData' @(F.Record BRE.CCESByCDR) ccesDataRT "DVOTES_C" (F.rgetField @BRE.DVotes)
-        -- model
+        voteData <- SB.dataSetTag @(F.Record CPSAndCCESR) "VData"
+        cdData <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CDData"
+        MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
+
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
             sigmaPrior = normal 2
             fePrior = normal 2
-        MRP.addFixedEffectsData @(F.Record BRE.DistrictDemDataR) cdDataRT (MRP.FixedEffects 1 densityPredictor)
+        cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
+        cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
+
         alphaT <- SB.intercept "alphaT" (normal 2)
-        (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors @(F.Record BRE.DistrictDemDataR)
+        (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
-                                  cdDataRT
-                                  cpsDataRT
-        gSexT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CPS"
-        gRaceT <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CPS"
+                                  cdData
+                                  (Just "T")
+        gSexT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "T")
+        gEduT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "T")
+        gRaceT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone raceGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
             logitT_sample = SB.multiOp "+" $ alphaT :| [feCDT, gSexT, gRaceT]
-        SB.sampleDistV' cpsDataRT distT logitT_sample
+        SB.sampleDistV voteData distT logitT_sample
         -- Preference
-        alphaP <- SB.intercept "alphaP" (normal 2)
-        (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors @(F.Record BRE.DistrictDemDataR)
+        ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
+        ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
+        alphaP <- SB.intercept "alpahP" (normal 2)
+        (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
-                                  cdDataRT
-                                  ccesDataRT
-        gSexP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Sex_CCES"
-        gRaceP <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone "Race_CCES"
+                                  cdData
+                                  (Just "P")
+        gSexP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "P")
+        gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
+        gRaceP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone raceGroup (Just "P")
+
         let distP = SB.binomialLogitDist ccesVotes ccesDVotes
             logitP_sample = SB.multiOp "+" $ alphaP :| [feCDP, gSexP, gRaceP]
-        SB.sampleDistV' ccesDataRT distP logitP_sample
+        SB.sampleDistV voteData distP logitP_sample
         return ()
+
+      extractResults :: K.KnitEffects r
+                     => SC.ResultAction r d SB.DataSetGroupIntMaps () ()
+      extractResults = SC.UseSummary f where
+        f _ _ _ = return ()
+--      dataWranglerAndCode :: K.ActionWithCacheTime r SLDModelData
+--                          -> K.Sem r (SC.DataWrangler SLDModelData SB.DataSetGroupIntMaps (), SB.StanCode)
+      dataWranglerAndCode data_C = do
+        dat <-  K.ignoreCacheTime data_C
+        let (districts, states) = FL.fold
+                                  ((,)
+                                   <$> (FL.premap districtKey FL.list)
+                                   <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
+                                  )
+                                  $ districtRows dat
+            groups = groupBuilder districts states
+        K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
+  (dw, stanCode) <- dataWranglerAndCode dat_C
+  _ <- MRP.runMRPModel
+    clearCaches
+    (Just modelDir)
+    ("sldTest")
+    jsonDataName
+    dw
+    stanCode
+    "DVOTES_C"
+    extractResults
+    dat_C
+    (Just 1000)
+    (Just 0.8)
+    (Just 10)
   return ()
 
--}
 cdGroup :: SB.GroupTypeTag Text
 cdGroup = SB.GroupTypeTag "CD"
 

@@ -1229,18 +1229,18 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
-        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
-        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup
-        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
-        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
-        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup
-        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup
-        gCDE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone cdGroup
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup Nothing
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup Nothing
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup Nothing
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup Nothing
+        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup Nothing
+        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup Nothing
+        gCDE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone cdGroup Nothing
         let dist = SB.binomialLogitDist vSucc vTotal
-        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup
+        (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup Nothing
         (logitPE_sample, logitPE) <- case withSDRace of
           True -> do
-            (gWNHCDV, gWNHCD) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup cdGroup
+            (gWNHCDV, gWNHCD) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup cdGroup Nothing
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHStateV, gWNHCDV]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, gWNHState, gWNHCD])
           False ->
@@ -1401,21 +1401,21 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             fePrior = normal 2
             sumToZeroPrior = normal 0.01
         alphaE <- SB.intercept "alpha" (normal 2)
-        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects @(F.Record BRE.DistrictDemDataR)
+        (feCDE, xBetaE, betaE) <- MRP.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
                                   True
                                   fePrior
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
-        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
-        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup
-        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
-        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
-        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup
-        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup Nothing
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone raceGroup Nothing
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup Nothing
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup Nothing
+        gWNGE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone wngGroup Nothing
+        gStateE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone stateGroup Nothing
         let dist = SB.binomialLogitDist vSucc vTotal
         (logitPE_sample, logitPE) <- case withStateRace of
           True -> do
-            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup
+            (gWNHStateV, gWNHState) <- MRP.addNestedMRGroup modelDataRT sigmaPrior SB.STZNone wnhGroup stateGroup Nothing
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHStateV]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gWNHState])
           False ->
@@ -1547,8 +1547,6 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
     (Just 0.99)
     (Just 15)
 
---
-
 stanPairwiseDifferenceMatrix :: SB.StanBuilderM env d ()
 stanPairwiseDifferenceMatrix = SB.addFunctionsOnce "differenceMatrix" $ do
   SB.declareStanFunction "matrix pairwiseDifferenceMatrix(vector x)" $ do
@@ -1577,10 +1575,6 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       sexRaceGroup = SB.GroupTypeTag "SexRace"
       eduRaceGroup :: SB.GroupTypeTag (DT.CollegeGrad, DT.Race4)
       eduRaceGroup = SB.GroupTypeTag "RaceEdu"
-
-
-
-
 
       groupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
       groupBuilder districts states = do
@@ -1636,16 +1630,16 @@ cpsModelTest clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
                                   cdDataRT
                                   (MRP.FixedEffects 1 densityPredictor)
 
-        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup
-        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup
-        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup
-        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR raceGroup
-        gAgeSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageSexGroup
-        gAgeEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageEduGroup
-        gAgeRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageRaceGroup
-        gSexEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexEduGroup
-        gSexRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexRaceGroup
-        gEduRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR eduRaceGroup
+        gAgeE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone ageGroup Nothing
+        gSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone sexGroup Nothing
+        gEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZNone educationGroup Nothing
+        gRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR raceGroup Nothing
+        gAgeSexE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageSexGroup Nothing
+        gAgeEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageEduGroup Nothing
+        gAgeRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR ageRaceGroup Nothing
+        gSexEduE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexEduGroup Nothing
+        gSexRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR sexRaceGroup Nothing
+        gEduRaceE <- MRP.addMRGroup modelDataRT binaryPrior sigmaPrior SB.STZQR eduRaceGroup Nothing
 
 --        gWNHE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone wnhGroup
 --        gStateE <- MRP.addMRGroup binaryPrior sigmaPrior SB.STZNone stateGroup
