@@ -159,7 +159,7 @@ data MakeIndex r k where
 data IndexMap r k = IndexMap
                     { rowToGroupIndex :: IntIndex r,
                       groupKeyToGroupIndex :: k -> Either Text Int,
-                      groupIndexToGroupKey :: IntMap.IntMap k
+                      grupIndexToGroupKey :: IntMap.IntMap k
                     }
 
 unusedIntIndex :: IntIndex r
@@ -433,12 +433,22 @@ data BuilderState d = BuilderState { declaredVars :: !ScopedDeclarations
                                    , code :: !StanCode
                                    }
 
-setDataSetForBindings :: RowTypeTag r -> StanBuilderM env d ()
-setDataSetForBindings rtt = do
+getDataSetBindings :: RowTypeTag r -> StanBuilderM env d (Map SME.IndexKey SME.StanExpr)
+getDataSetBindings rtt = do
   rowInfos <- rowBuilders <$> get
   case DHash.lookup rtt rowInfos of
-    Nothing -> stanBuildError $ "Data-set=\"" <> dataSetName rtt <> "\" is not present in rowBuilders."
-    Just ri -> modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbm) -> SME.VarBindingStore (expressionBindings ri) dbm)
+    Nothing -> stanBuildError $ "getDataSetForBindings: Data-set=\"" <> dataSetName rtt <> "\" is not present in rowBuilders."
+    Just ri -> return $ expressionBindings ri
+
+
+setDataSetForBindings :: RowTypeTag r -> StanBuilderM env d ()
+setDataSetForBindings rtt = do
+  newUseBindings <- getDataSetBindings rtt
+  modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbm) -> SME.VarBindingStore newUseBindings dbm)
+
+useDataSetForBindings :: RowTypeTag r -> StanBuilderM env d a -> StanBuilderM env d a
+useDataSetForBindings rtt x = getDataSetBindings rtt >>= flip withUseBindings x
+
 
 modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d -> BuilderState d
 modifyDeclaredVars f (BuilderState dv vbs rb cj hf c) = BuilderState (f dv) vbs rb cj hf c
@@ -520,6 +530,16 @@ addDataSetToGroupBuilder dsName tf = do
       put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rims
       return rtt
     Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
+
+
+  rims <- get
+  let rtt = RowTypeTag @r dsName
+  case DHash.lookup rtt rims of
+    Nothing -> do
+      put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rims
+      return rtt
+    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
+
 
 addGroupIndexForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> MakeIndex r k -> StanGroupBuilderM d ()
 addGroupIndexForDataSet gtt rtt mkIndex = do
@@ -632,6 +652,7 @@ addDataSetIndexes rttData rttIndexTo grm = do
                      <> "\". Perhaps a group index needs to be added, "
                      <> " to that data-set?"
           Just (IndexMap _ gE _) -> do
+            addUseBindingToDataSet rttData (taggedGroupName gtt) $ SME.indexBy (SME.name name) $ dataSetName rttData
             addJson
               rttData
               name
@@ -639,6 +660,8 @@ addDataSetIndexes rttData rttIndexTo grm = do
               "<lower=1>"
               (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
   traverse_ f $ DHash.toList grm
+
+
 
 indexMap :: RowTypeTag r -> GroupTypeTag k -> StanBuilderM env d (IndexMap r k)
 indexMap rtt gtt = do
@@ -687,6 +710,19 @@ addDeclBinding k e = modify $ modifyIndexBindings f where
 addUseBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
 addUseBinding k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore (Map.insert k e ubm) dbm
+
+addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addUseBindingToDataSet rtt key e = do
+  let dataNotFoundErr = "Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
+      keyAlreadyBoundErr = "IndexKey \"" <> show key <> "\" alredy present in use bindings for data-set \"" <> dataSetName rtt <> "\"."
+      f rowInfos = do
+        (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
+        maybe (Left keyAlreadyBoundErr) Right $ Map.lookup key ebs
+        let ebs' = Map.insert key e ebs
+        return $ DHash.insert rtt (RowInfo tf ebs' gis gimbs js) rowInfos
+  bs <- get
+  bs' <- stanBuildEither $ modifyRowInfosA f bs
+  put bs'
 
 indexBindingScope :: StanBuilderM env d a -> StanBuilderM env d a
 indexBindingScope x = do
@@ -851,6 +887,7 @@ add2dMatrixJson rtt name sc rowDim cols vecF = do
       colDimName = wdName <> "_Cols"
   addFixedIntJson colName Nothing cols
   addDeclBinding colDimName (SME.name colName)
+--  addUseBinding colDimName (SME.name colName)
   addColumnJson rtt wdName (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d

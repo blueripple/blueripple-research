@@ -345,6 +345,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         -- data
         voteData <- SB.dataSetTag @(F.Record CPSAndCCESR) "VData"
         cdData <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CDData"
+        SB.setDataSetForBindings voteData
         MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x

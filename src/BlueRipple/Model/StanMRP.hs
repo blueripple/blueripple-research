@@ -316,18 +316,19 @@ addFixedEffectsParametersAndPriors thinQR fePrior feRTT mVarSuffix = do
       modeledDataSetName = fromMaybe "" mVarSuffix
       pSuffix = SB.underscoredIf feDataSetName
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-  (vTheta, vBeta) <- SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) ("X" <> pSuffix <> "_Cols")
+  SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) ("X" <> pSuffix <> "_Cols")
+  let eTheta = SB.name $ "thetaX" <> uSuffix
+      eBeta  = SB.name $ "betaX" <> uSuffix
   SB.inBlock SB.SBModel $ do
-    let e = SME.useVar vTheta `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffects" e
+    let e = eTheta `SB.vectorSample` fePrior
+    SB.addExprLine "addFixedEffectsParametersAndPriors" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") feDataSetName
-      eQTheta = eQ `SB.times` SME.useVar vTheta
+      eQTheta = eQ `SB.times` eTheta
       eX = SB.indexBy (SB.name ("centered_X" <> pSuffix)) feDataSetName
-      eBeta = SB.name $ "betaX" <> uSuffix
-      eXBeta = eX `SB.times` SME.useVar vBeta
+      eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, eXBeta, SME.useVar vBeta)
+  return (feExpr, eXBeta, eBeta)
 
 
 
@@ -410,12 +411,13 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
             $ SJ.jsonArrayF weightF
   SB.inBlock SB.SBGeneratedQuantities $ do
     let errCtxt = "addPostStratification"
-        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> psDataSetName) psDataSetName
-        useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
+--        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> psDataSetName) psDataSetName
+--        useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
-    case mPSGroup of
-      Nothing -> do
-        SB.withUseBindings useBindings $ do
+    SB.useDataSetForBindings rttPS $ do
+      case mPSGroup of
+        Nothing -> do
+--          SB.withUseBindings useBindings $ do
           psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
           SB.bracketed 2 $ do
             wgtSumE <- if psType == PSShare
@@ -427,9 +429,11 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
             when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
-      Just (SB.GroupTypeTag gn) -> do
-        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName) useBindings
-        SB.withUseBindings useBindings' $ do
+        Just (SB.GroupTypeTag gn) -> do
+          SB.addUseBinding namedPS $ SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName
+--        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName) useBindings
+  --      SB.withUseBindings useBindings' $ do
+
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
           SB.bracketed 2 $ do

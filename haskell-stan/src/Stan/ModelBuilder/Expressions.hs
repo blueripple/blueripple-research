@@ -342,7 +342,7 @@ toCodeCoAlg vbs (as, Fix.Fix (IndexF k)) = do
     Use -> case lookupUseBinding k vbs of
       Nothing -> Left $ if Map.null (useBindings vbs)
                         then "var-index map is empty.  Mayb eyou forgot to choose which data set is used for binding via setDataSetForBindings ?"
-                        else "re-indexing key \"" <> k <> "\" not found in var-index-map: " <> show vbs
+                        else "re-indexing key \"" <> k <> "\" not found in useBindings: " <> show vbs
 
       Just ie -> return $ AsIsCF (as, ie)
     Declare ->   case lookupDeclarationBinding k vbs of

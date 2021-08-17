@@ -109,15 +109,14 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
   return matrix
 
-fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar)
+fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d ()
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
-  vTheta <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
-  vBeta <- SB.inBlock SB.SBTransformedParameters $ do
-    x <- SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+  SB.inBlock SB.SBTransformedParameters $ do
+    SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
-    return x
-  return (vTheta, vBeta)
+  return ()
 
 
 diagVectorFunction :: SB.StanBuilderM env d Text
