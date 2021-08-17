@@ -51,6 +51,8 @@ import qualified Say
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
+import qualified Data.GADT.Show as GADT
+import Knit.Report.Input.Visualization.Diagrams (ReifiedIndexedLens')
 
 type FunctionsBlock = T.Text
 
@@ -297,6 +299,9 @@ instance GADT.GEq RowTypeTag where
       Just Reflection.HRefl -> if (n1 == n2) then Just Reflection.Refl else Nothing
       _ -> Nothing
 
+instance GADT.GShow RowTypeTag where
+  gshowsPrec _ rtt s = s ++ toString (dataSetName rtt)
+
 instance Hashable.Hashable (Some.Some RowTypeTag) where
   hash (Some.Some (RowTypeTag n)) = Hashable.hash n
   hashWithSalt m (Some.Some (RowTypeTag n)) = hashWithSalt m n
@@ -367,8 +372,8 @@ buildJSONFromDataM = do
 
 
 
-newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType)
-newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap)
+newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType) deriving (Show)
+newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap) deriving (Show)
 
 varLookup :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
 varLookup (ScopedDeclarations dms) sn = go $ toList dms where
@@ -432,6 +437,14 @@ data BuilderState d = BuilderState { declaredVars :: !ScopedDeclarations
                                    , hasFunctions :: !(Set.Set Text)
                                    , code :: !StanCode
                                    }
+
+dumpBuilderState :: BuilderState d -> Text
+dumpBuilderState (BuilderState dvs ibs ris js hf c) =
+  "Declared Vars: " <> show dvs
+  <> "\n index-bindings: " <> show ibs
+  <> "\n row-info-keys: " <> show (DHash.keys ris)
+  <> "\n functions: " <> show hf
+
 
 getDataSetBindings :: RowTypeTag r -> StanBuilderM env d (Map SME.IndexKey SME.StanExpr)
 getDataSetBindings rtt = do
@@ -521,7 +534,10 @@ getDataSetTag name = do
     Nothing -> stanGroupBuildError $ "getDataSetTag: No data-set \"" <> name <> "\" found in group builder."
     Just _ -> return rtt
 
-addDataSetToGroupBuilder :: forall d r. Typeable r =>  Text -> ToFoldable d r -> StanGroupBuilderM d (RowTypeTag r)
+addDataSetToGroupBuilder :: forall d r. Typeable r
+                         => Text
+                         -> ToFoldable d r
+                         -> StanGroupBuilderM d (RowTypeTag r)
 addDataSetToGroupBuilder dsName tf = do
   rims <- get
   let rtt = RowTypeTag @r dsName
@@ -532,16 +548,12 @@ addDataSetToGroupBuilder dsName tf = do
     Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
 
 
-  rims <- get
-  let rtt = RowTypeTag @r dsName
-  case DHash.lookup rtt rims of
-    Nothing -> do
-      put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rims
-      return rtt
-    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
 
-
-addGroupIndexForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> MakeIndex r k -> StanGroupBuilderM d ()
+addGroupIndexForDataSet :: forall r k d.Typeable k
+                        => GroupTypeTag k
+                        -> RowTypeTag r
+                        -> MakeIndex r k
+                        -> StanGroupBuilderM d ()
 addGroupIndexForDataSet gtt rtt mkIndex = do
   rims <- get
   case DHash.lookup rtt rims of
@@ -578,7 +590,11 @@ dataSetTag name = do
   let rtt :: RowTypeTag r = RowTypeTag name
   rowInfos <- rowBuilders <$> get
   case DHash.lookup rtt rowInfos of
-    Nothing -> stanBuildError $ "Requested data-set \"" <> name <> "\" is missing from row builders. Perhaps you forgot to add it in the groupBuilder or model code?"
+    Nothing -> stanBuildError
+               $ "Requested data-set "
+               <> name
+               <> " is missing from row builders. Perhaps you forgot to add it in the groupBuilder or model code?"
+               <> "\n data-sets=" <> show (DHash.keys rowInfos)
     Just _ -> return rtt
 
 addFunctionsOnce :: Text -> StanBuilderM env d () -> StanBuilderM env d ()
@@ -630,6 +646,12 @@ addDataSet name toFoldable = do
           newRowBuilders = DHash.insert rtt rowInfo rowBuilders
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)
   return rtt
+
+{-
+dataSetsCrosswalk :: Typeable d
+                  => RowTypeTag rFrom
+                  -> RowTypeTag rTo
+-}
 
 addDataSetIndexes ::  Typeable d
                     => RowTypeTag rData
@@ -688,7 +710,9 @@ runStanBuilder d userEnv sgb sb =
   in fmap (bs,) resE
 
 stanBuildError :: Text -> StanBuilderM env d a
-stanBuildError t = StanBuilderM $ ExceptT (pure $ Left t)
+stanBuildError t = do
+  builderText <- dumpBuilderState <$> get
+  StanBuilderM $ ExceptT (pure $ Left $ t <> "\nBuilder:\n" <> builderText)
 
 stanBuildMaybe :: Text -> Maybe a -> StanBuilderM env d a
 stanBuildMaybe msg = maybe (stanBuildError msg) return

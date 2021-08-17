@@ -63,6 +63,7 @@ import qualified Graphics.Vega.VegaLite.Heidi as HV
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
+import qualified Text.Pandoc.Error as Pandoc
 import qualified Numeric
 import qualified Path
 import Path (Rel, Abs, Dir, File)
@@ -89,6 +90,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified Stan.ModelBuilder as SB
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified Frames.MapReduce as FMR
+import qualified Text.Pandoc as Pandoc
 --import qualified Frames.MapReduce.General as FMR
 
 
@@ -131,7 +133,7 @@ main = do
   case resE of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
-    Left err -> putStrLn $ "Pandoc Error: " ++ show err
+    Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 
 postDir = [Path.reldir|br-2021-VA/posts|]
@@ -322,7 +324,7 @@ groupBuilder districts states = do
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-  SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
+  cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
   return ()
 
 sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
@@ -345,6 +347,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         -- data
         voteData <- SB.dataSetTag @(F.Record CPSAndCCESR) "VData"
         cdData <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CDData"
+--        SB.addDataSetIndexes voteData cdData (SB.addRowMap cdGroup districtKey SB.emptyGroupRowMap)
         SB.setDataSetForBindings voteData
         MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
 
@@ -400,6 +403,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   )
                                   $ districtRows dat
             groups = groupBuilder districts states
+            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
+        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
   _ <- MRP.runMRPModel
