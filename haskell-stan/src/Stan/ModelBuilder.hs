@@ -158,10 +158,12 @@ data MakeIndex r k where
   FoldToIndex :: Ord k =>  (Foldl.Fold r (Map k Int)) -> (r -> k) -> MakeIndex r k
 --  SupplementalIndex :: (Ord k, Foldable f) => f k -> MakeIndex r k
 
+
 data IndexMap r k = IndexMap
                     { rowToGroupIndex :: IntIndex r,
                       groupKeyToGroupIndex :: k -> Either Text Int,
-                      grupIndexToGroupKey :: IntMap.IntMap k
+                      groupIndexToGroupKey :: IntMap.IntMap k,
+                      rowToGroup :: r -> k
                     }
 
 unusedIntIndex :: IntIndex r
@@ -179,7 +181,7 @@ mapToIndexMap :: Ord k => (r -> k) -> Map k Int -> IndexMap r k
 mapToIndexMap h m = indexMap where
   lookupK = mapLookupE (const "key not found when building given index") m
   intIndex = IntIndex (Map.size m) (lookupK . h)
-  indexMap = IndexMap intIndex lookupK (toIntMap m)
+  indexMap = IndexMap intIndex lookupK (toIntMap m) h
 
 makeIndexMapF :: MakeIndex r k -> Foldl.Fold r (IndexMap r k)
 makeIndexMapF (GivenIndex m h) = pure $ mapToIndexMap h m
@@ -270,7 +272,7 @@ buildRowInfo d rtt (GroupIndexAndIntMapMakers tf@(ToFoldable f) ims imbs) = Fold
   fld = RowInfo tf useBindings <$> gisFld <*> pure imbs <*> pure mempty
 
 groupIntMap :: IndexMap r k -> IntMap.IntMap k
-groupIntMap (IndexMap _ _ im) = im
+groupIntMap (IndexMap _ _ im _) = im
 
 data RowInfo d r = RowInfo
                    {
@@ -339,7 +341,7 @@ buildJSONFromRows rowFoldMap d = do
 buildGroupIndexes :: (Typeable d) => StanBuilderM env d ()
 buildGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM env d (Maybe k)
-      buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _) = do
+      buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
         addFixedIntJson ("J_" <> gName) (Just 2) gSize
         _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
@@ -562,6 +564,16 @@ addGroupIndexForDataSet gtt rtt mkIndex = do
       Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
       Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
 
+addGroupIndexForCrosswalk :: forall k r d.
+                          Typeable k
+                          => RowTypeTag r
+                          -> MakeIndex r k
+                          -> StanGroupBuilderM d ()
+addGroupIndexForCrosswalk rtt mkIndex = do
+  let gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rtt)
+  addGroupIndexForDataSet gttX rtt mkIndex
+
+
 addGroupIntMapForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> DataToIntMap r k -> StanGroupBuilderM d ()
 addGroupIntMapForDataSet gtt rtt mkIntMap = do
   rims <- get
@@ -647,11 +659,30 @@ addDataSet name toFoldable = do
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)
   return rtt
 
-{-
-dataSetsCrosswalk :: Typeable d
-                  => RowTypeTag rFrom
-                  -> RowTypeTag rTo
--}
+
+dataSetsCrosswalkName :: RowTypeTag rFrom -> RowTypeTag rTo -> SME.StanName
+dataSetsCrosswalkName rttFrom rttTo = dataSetName rttFrom <> "_" <> dataSetName rttTo
+
+
+-- build an index from each data-sets relationship to the common group.
+-- add Json and use-binding
+addDataSetsCrosswalk :: forall k rFrom rTo env d.
+                        (Typeable d, Typeable k)
+                     => RowTypeTag rFrom
+                     -> RowTypeTag rTo
+                     -> GroupTypeTag k
+                     -> StanBuilderM env d ()
+addDataSetsCrosswalk  rttFrom rttTo gtt = do
+  let gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rttTo)
+  fromToGroup <- rowToGroup <$> indexMap rttFrom gtt -- rFrom -> k
+  toGroupToIndexE <- groupKeyToGroupIndex <$> indexMap rttTo gttX -- k -> Either Text Int
+  let xWalkName = dataSetsCrosswalkName rttFrom rttTo
+      xWalkType = SME.StanArray [SME.NamedDim $ dataSetName rttFrom] SME.StanInt
+      xWalkF = toGroupToIndexE . fromToGroup
+  addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
+  addUseBindingToDataSet rttFrom xWalkName $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
+  return ()
+
 
 addDataSetIndexes ::  Typeable d
                     => RowTypeTag rData
@@ -673,7 +704,7 @@ addDataSetIndexes rttData rttIndexTo grm = do
                      <> " missing from index-to data-set \"" <> dataSetName rttIndexTo
                      <> "\". Perhaps a group index needs to be added, "
                      <> " to that data-set?"
-          Just (IndexMap _ gE _) -> do
+          Just (IndexMap _ gE _ _) -> do
             addUseBindingToDataSet rttData (taggedGroupName gtt) $ SME.indexBy (SME.name name) $ dataSetName rttData
             addJson
               rttData
@@ -738,10 +769,14 @@ addUseBinding k e = modify $ modifyIndexBindings f where
 addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
 addUseBindingToDataSet rtt key e = do
   let dataNotFoundErr = "Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
-      keyAlreadyBoundErr = "IndexKey \"" <> show key <> "\" alredy present in use bindings for data-set \"" <> dataSetName rtt <> "\"."
+      keyAlreadyBoundErr ebs = "IndexKey \""
+                               <> show key
+                               <> "\" alredy present in use bindings for data-set \""
+                               <> dataSetName rtt
+                               <> "\".\nExisting bindings: " <> show ebs
       f rowInfos = do
         (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
-        maybe (Left keyAlreadyBoundErr) Right $ Map.lookup key ebs
+        maybe (Right ()) (const $ Left $ keyAlreadyBoundErr ebs) $ Map.lookup key ebs
         let ebs' = Map.insert key e ebs
         return $ DHash.insert rtt (RowInfo tf ebs' gis gimbs js) rowInfos
   bs <- get

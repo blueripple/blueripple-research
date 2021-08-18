@@ -264,16 +264,18 @@ emptyFixedEffects = DHash.empty
 -- 'X * beta' (or 'Q * theta') model term expression
 -- 'X * beta' and just 'beta' for post-stratification
 -- The latter is for use in post-stratification at fixed values of the fixed effects.
-addFixedEffects :: forall r d.(Typeable d)
+addFixedEffects :: forall r1 r2 d.(Typeable d)
                 => Bool
                 -> SB.StanExpr
-                -> SB.RowTypeTag r
-                -> FixedEffects r
+                -> SB.RowTypeTag r1
+                -> SB.RowTypeTag r2
+                -> FixedEffects r1
                 -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
-addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
-  let feDataSetName = SB.dataSetName feRTT
+addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
+  let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+      rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
+  SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
@@ -281,13 +283,13 @@ addFixedEffects thinQR fePrior feRTT (FixedEffects n vecF) = do
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = if T.null feDataSetName
-           then SB.indexBy (SB.name "Q_ast") feDataSetName
-           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") feDataSetName
+           then SB.indexBy (SB.name "Q_ast") rowIndexKey
+           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") rowIndexKey
       eTheta = SB.name $ "thetaX" <> uSuffix
       eQTheta = eQ `SB.times` eTheta
       eX = if T.null feDataSetName
-           then SB.indexBy (SB.name "centered_X") feDataSetName
-           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) feDataSetName
+           then SB.indexBy (SB.name "centered_X") rowIndexKey
+           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) rowIndexKey
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
@@ -309,13 +311,15 @@ addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool
                                    -> SB.StanExpr
                                    -> SB.RowTypeTag r1
+                                   -> SB.RowTypeTag r2
                                    -> Maybe Text
                                    -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
-addFixedEffectsParametersAndPriors thinQR fePrior feRTT mVarSuffix = do
-  let feDataSetName = SB.dataSetName feRTT
+addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
+  let feDataSetName = SB.dataSetName rttFE
       modeledDataSetName = fromMaybe "" mVarSuffix
       pSuffix = SB.underscoredIf feDataSetName
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
+      rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
   SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) ("X" <> pSuffix <> "_Cols")
   let eTheta = SB.name $ "thetaX" <> uSuffix
       eBeta  = SB.name $ "betaX" <> uSuffix
@@ -323,9 +327,9 @@ addFixedEffectsParametersAndPriors thinQR fePrior feRTT mVarSuffix = do
     let e = eTheta `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") feDataSetName
+  let eQ = SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") rowIndexKey
       eQTheta = eQ `SB.times` eTheta
-      eX = SB.indexBy (SB.name ("centered_X" <> pSuffix)) feDataSetName
+      eX = SB.indexBy (SB.name ("centered_X" <> pSuffix)) rowIndexKey
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, eXBeta, eBeta)
@@ -389,7 +393,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
   intKeyF <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ eIntF _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
+    SB.IndexMap _ eIntF _ _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
     SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
 --    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
     SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??

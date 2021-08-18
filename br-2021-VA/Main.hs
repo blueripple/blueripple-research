@@ -325,6 +325,7 @@ groupBuilder districts states = do
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
+  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   return ()
 
 sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
@@ -347,8 +348,9 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         -- data
         voteData <- SB.dataSetTag @(F.Record CPSAndCCESR) "VData"
         cdData <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CDData"
---        SB.addDataSetIndexes voteData cdData (SB.addRowMap cdGroup districtKey SB.emptyGroupRowMap)
+        SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
+
         MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
@@ -363,6 +365,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   True
                                   fePrior
                                   cdData
+                                  voteData
                                   (Just "T")
         gSexT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "T")
         gEduT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "T")
@@ -378,12 +381,13 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   True
                                   fePrior
                                   cdData
+                                  voteData
                                   (Just "P")
         gSexP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "P")
         gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
         gRaceP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone raceGroup (Just "P")
 
-        let distP = SB.binomialLogitDist ccesVotes ccesDVotes
+        let distP = SB.binomialLogitDist ccesDVotes ccesVotes
             logitP_sample = SB.multiOp "+" $ alphaP :| [feCDP, gSexP, gRaceP]
         SB.sampleDistV voteData distP logitP_sample
         return ()
@@ -403,8 +407,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   )
                                   $ districtRows dat
             groups = groupBuilder districts states
-            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
-        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
+--            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
+--        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
   _ <- MRP.runMRPModel
