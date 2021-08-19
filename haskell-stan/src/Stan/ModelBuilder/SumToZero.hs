@@ -59,9 +59,10 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
 --    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
   SB.inBlock SB.SBTransformedParameters
     $ SB.stanDeclareRHS varName st "" $ SB.function "sum_to_zero_QR" (SB.name (varName <> "_stz") :| [SB.name ("Q_r_" <> varName)])
-  SB.inBlock SB.SBModel
-    $ SB.addExprLines "sumToZeroQR" $ [SB.name varName `SB.vectorSample` SD.stdNormal]
+--  SB.inBlock SB.SBModel
+--    $ SB.addExprLines "sumToZeroQR" $ [SB.name varName `SB.vectorSample` SD.stdNormal]
 --    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
+  return ()
 sumToZeroQR (SB.StanVar varName _) = SB.stanBuildError $ "Non vector type given to sumToZeroQR (varName=" <> varName <> ")"
 
 softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
@@ -91,29 +92,64 @@ weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vect
 
 data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
 
-rescaledSumToZero :: SumToZero -> SB.StanVar ->  SB.StanVar -> SB.StanBuilderM env d ()
-rescaledSumToZero STZNone beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn st) = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+data PopulationModelParameterization = Centered | NonCentered
+
+populationBeta :: PopulationModelParameterization -> SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d SB.StanVar
+populationBeta NonCentered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
+--  SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+  SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
+  rbv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
+  SB.inBlock SB.SBModel $ do
+     let sigmaPriorL =  SB.name sn `SB.vectorSample` sigmaPriorE
+         betaRawPriorL = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
+     SB.addExprLines "rescaledSumToZero (No sum)" [sigmaPriorL, betaRawPriorL]
+  return rbv
+
+populationBeta Centered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
+--  SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+--  bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
+  SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
+  SB.inBlock SB.SBModel $ do
+     let sigmaPriorL =  SB.name sn `SB.vectorSample` sigmaPriorE
+         betaRawPriorL = SB.name bn `SB.vectorSample` SB.normal Nothing (SB.name sn)
+     SB.addExprLines "rescaledSumToZero (No sum)" [sigmaPriorL, betaRawPriorL]
+  return beta
+
+
+rescaledSumToZero :: SumToZero -> PopulationModelParameterization -> SB.StanVar ->  SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()
+rescaledSumToZero STZNone pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
+  (SB.StanVar bn bt) <- populationBeta pmp beta sigmaName sigmaPriorE
+  SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  return ()
+{-
   SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
      SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
-rescaledSumToZero (STZSoft prior) beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
-  softSumToZero (SB.StanVar (rawName bn) bt)  prior
+-}
+rescaledSumToZero (STZSoft prior) pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
+  bv <- populationBeta pmp beta sigmaName sigmaPriorE
+  softSumToZero bv {- (SB.StanVar (rawName bn) bt) -} prior
+{-
   SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
      SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
-rescaledSumToZero (STZSoftWeighted gV prior) beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
-  weightedSoftSumToZero (SB.StanVar (rawName bn) bt)  gV prior
+-}
+rescaledSumToZero (STZSoftWeighted gV prior) pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
+  bv <- populationBeta pmp beta sigmaName sigmaPriorE
+  weightedSoftSumToZero bv {-(SB.StanVar (rawName bn) bt) -}  gV prior
+{-
   SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
      let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
      SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
   return ()
-rescaledSumToZero STZQR beta@(SB.StanVar bn bt) sigma@(SB.StanVar sn _) = do
-  sumToZeroQR (SB.StanVar (rawName bn) bt)
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
+-}
+rescaledSumToZero STZQR pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
+  bv <- populationBeta pmp beta sigmaName sigmaPriorE
+  sumToZeroQR bv
+--  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   return ()

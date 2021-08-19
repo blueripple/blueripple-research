@@ -367,25 +367,25 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   cdData
                                   voteData
                                   (Just "T")
-        gSexT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "T")
-        gEduT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "T")
-        gRaceT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone raceGroup (Just "T")
+        gSexT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone SB.Centered sexGroup (Just "T")
+--        gEduT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "T")
+        gRaceT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone SB.Centered raceGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
             logitT_sample = SB.multiOp "+" $ alphaT :| [feCDT, gSexT, gRaceT]
         SB.sampleDistV voteData distT logitT_sample
         -- Preference
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
-        alphaP <- SB.intercept "alpahP" (normal 2)
+        alphaP <- SB.intercept "alphaP" (normal 2)
         (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
                                   cdData
                                   voteData
                                   (Just "P")
-        gSexP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone sexGroup (Just "P")
-        gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
-        gRaceP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone raceGroup (Just "P")
+        gSexP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone SB.Centered sexGroup (Just "P")
+--        gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
+        gRaceP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone SB.Centered raceGroup (Just "P")
 
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
             logitP_sample = SB.multiOp "+" $ alphaP :| [feCDP, gSexP, gRaceP]

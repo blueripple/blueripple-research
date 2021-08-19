@@ -61,6 +61,8 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
 
+type BuilderM d = SB.StanBuilderM () d
+
 buildDataWranglerAndCode :: (Typeable d)
                          => SB.StanGroupBuilderM d ()
                          -> env
@@ -141,18 +143,17 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       ()
       data_C
 
-type BuilderM d = SB.StanBuilderM () d
-
 -- Basic group declarations, indexes and Json are produced automatically
 addMRGroup :: Typeable d
            => SB.RowTypeTag r
            -> SB.StanExpr
            -> SB.StanExpr
            -> SB.SumToZero
+           -> SB.PopulationModelParameterization
            -> SB.GroupTypeTag k
            -> Maybe Text
-           -> BuilderM d SB.StanExpr
-addMRGroup rtt binaryPrior sigmaPrior stz gtt mVarSuffix = do
+           -> SB.StanBuilderM env d SB.StanExpr
+addMRGroup rtt binaryPrior sigmaPrior stz pmp gtt mVarSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
   let gn = SB.taggedGroupName gtt
@@ -172,13 +173,13 @@ addMRGroup rtt binaryPrior sigmaPrior stz gtt mVarSuffix = do
         return modelTerm
   let nonBinaryGroup = do
         let modelTerm = SB.indexBy (SB.name $ gs "beta") gn
-        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
-        SB.inBlock SB.SBModel $ do
-          let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
-          SB.addExprLine "addMRGroup" sigmaPriorE
+--        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
+--        SB.inBlock SB.SBModel $ do
+--          let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
+--          SB.addExprLine "addMRGroup" sigmaPriorE
 --          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
         let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim gn)
-        SB.rescaledSumToZero stz betaVar sigmaVar
+        SB.rescaledSumToZero stz pmp betaVar (gs "sigma") sigmaPrior
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
@@ -187,11 +188,12 @@ addNestedMRGroup ::  Typeable d
                  => SB.RowTypeTag r
                  -> SB.StanExpr
                  -> SB.SumToZero
+                 -> SB.PopulationModelParameterization
                  -> SB.GroupTypeTag k1 -- e.g., sex
                  -> SB.GroupTypeTag k2 -- partially pooled, e.g., state
                  -> Maybe Text
-                 -> BuilderM d (SB.StanExpr, SB.StanExpr)
-addNestedMRGroup rtt sigmaPrior stz nonPooledGtt pooledGtt mVarSuffix = do
+                 -> SB.StanBuilderM env d (SB.StanExpr, SB.StanExpr)
+addNestedMRGroup rtt sigmaPrior stz pmp nonPooledGtt pooledGtt mVarSuffix = do
   let nonPooledGN = SB.taggedGroupName nonPooledGtt
       pooledGN = SB.taggedGroupName pooledGtt
       dsName = SB.dataSetName rtt
@@ -202,12 +204,12 @@ addNestedMRGroup rtt sigmaPrior stz nonPooledGtt pooledGtt mVarSuffix = do
   when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ") with size <2 in nestedMRGroup!"
   when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
   let nonPooledBinary = do
-        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
+--        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
         let epsVar = SB.StanVar (suffixed "eps") (SB.StanVector $ SB.NamedDim pooledGN)
-        SB.inBlock SB.SBModel $ do
-          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
-          SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
-        SB.rescaledSumToZero stz epsVar sigmaVar
+--        SB.inBlock SB.SBModel $ do
+--          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
+--          SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
+        SB.rescaledSumToZero stz pmp epsVar (suffixed "sigma") sigmaPrior
         (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
           let yE = SB.useVar yv
