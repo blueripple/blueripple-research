@@ -412,7 +412,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
   _ <- MRP.runMRPModel
-    clearCaches
+    True
     (Just modelDir)
     ("sldTest")
     jsonDataName
@@ -421,7 +421,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     "DVOTES_C"
     extractResults
     dat_C
-    (Just 1000)
+    (Just 300)
     (Just 0.8)
     (Just 10)
   return ()

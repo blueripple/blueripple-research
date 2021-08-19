@@ -91,12 +91,11 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
 
 data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
-
+data GroupModel = NonHierarchical | Hierarchical
 data PopulationModelParameterization = Centered | NonCentered
 
 populationBeta :: PopulationModelParameterization -> SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d SB.StanVar
 populationBeta NonCentered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
---  SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
   rbv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBModel $ do
@@ -106,8 +105,6 @@ populationBeta NonCentered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
   return rbv
 
 populationBeta Centered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
---  SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
---  bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
   SB.inBlock SB.SBModel $ do
      let sigmaPriorL =  SB.name sn `SB.vectorSample` sigmaPriorE
