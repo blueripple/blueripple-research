@@ -17,6 +17,7 @@
 module Stan.ModelBuilder.SumToZero where
 
 import Prelude hiding (All)
+import qualified Data.Map as Map
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 
@@ -90,10 +91,69 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn
 --    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
 
-data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
-data GroupModel = NonHierarchical | Hierarchical
-data PopulationModelParameterization = Centered | NonCentered
 
+data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
+
+sumToZero :: SB.StanVar -> SumToZero -> SB.StanBuilderM env d ()
+sumToZero _ STZNone = return ()
+sumToZero v (STZSoft p) = softSumToZero v p
+sumToZero v (STZSoftWeighted gn p) = weightedSoftSumToZero v gn p
+sumToZero v STZQR = sumToZeroQR v
+
+
+type HyperParameters = Map SB.StanName (Text, SB.StanExpr) -- name, constraint for declaration, prior
+
+data HierarchicalParameterization = Centered SB.StanExpr
+                                  | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr)
+
+data GroupModel = NonHierarchical SumToZero SB.StanExpr
+                | Hierarchical SumToZero HyperParameters HierarchicalParameterization
+
+
+groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
+groupModel bv@(SB.StanVar bn bt) (NonHierarchical stz priorE) = do
+  bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  sumToZero bv stz
+  SB.inBlock SB.SBModel
+    $ SB.addExprLine "groupModel (NonHierarchical)" $ SB.name bn `SB.vectorSample` priorE
+  return bv
+
+groupModel bv@(SB.StanVar bn bt) (Hierarchical stz hps (Centered betaPrior)) = do
+  bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  sumToZero bv stz
+  addHyperParameters hps
+  SB.inBlock SB.SBModel
+    $ SB.addExprLine "groupModel (Hierarchical, Centered)" $ SB.name bn `SB.vectorSample` betaPrior
+  return bv
+
+groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
+  brv@(SB.StanVar brn _) <- SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+  sumToZero brv stz -- ?
+  bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name brn)
+  addHyperParameters hps
+  SB.inBlock SB.SBModel $ do
+    SB.addExprLine "groupModel (Hierarchical, NonCentered)" $ SB.name brn `SB.vectorSample` rawPrior
+  return bv
+
+addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()
+addHyperParameters hps = do
+   let f (n, (t, e)) = do
+         SB.inBlock SB.SBParameters $ SB.stanDeclare n SB.StanReal t
+         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ SB.name n `SB.vectorSample` e
+   traverse_ f $ Map.toList hps
+
+hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
+hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
+  hpps = one (sigmaName, ("<lower=0>",sigmaPrior))
+  bp = SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
+
+hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
+hierarchicalNonCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
+  hpps = one (sigmaName, ("<lower=0>",sigmaPrior))
+  rp = SB.stdNormal
+  ncF brE = brE `SB.times` SB.name sigmaName
+
+{-
 populationBeta :: PopulationModelParameterization -> SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d SB.StanVar
 populationBeta NonCentered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
@@ -150,3 +210,4 @@ rescaledSumToZero STZQR pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
   sumToZeroQR bv
 --  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
   return ()
+-}

@@ -144,16 +144,16 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       data_C
 
 -- Basic group declarations, indexes and Json are produced automatically
-addMRGroup :: Typeable d
+addGroup :: Typeable d
            => SB.RowTypeTag r
            -> SB.StanExpr
-           -> SB.StanExpr
-           -> SB.SumToZero
-           -> SB.PopulationModelParameterization
+--           -> SB.StanExpr
+--           -> SB.SumToZero
+           -> SB.GroupModel
            -> SB.GroupTypeTag k
            -> Maybe Text
            -> SB.StanBuilderM env d SB.StanExpr
-addMRGroup rtt binaryPrior sigmaPrior stz pmp gtt mVarSuffix = do
+addGroup rtt binaryPrior gm gtt mVarSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
   let gn = SB.taggedGroupName gtt
@@ -179,21 +179,22 @@ addMRGroup rtt binaryPrior sigmaPrior stz pmp gtt mVarSuffix = do
 --          SB.addExprLine "addMRGroup" sigmaPriorE
 --          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
         let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim gn)
-        SB.rescaledSumToZero stz pmp betaVar (gs "sigma") sigmaPrior
+        SB.groupModel betaVar gm
+--        SB.rescaledSumToZero stz pmp betaVar (gs "sigma") sigmaPrior
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
+{-
 --- return expression for sampling and one for everything else
 addNestedMRGroup ::  Typeable d
                  => SB.RowTypeTag r
-                 -> SB.StanExpr
-                 -> SB.SumToZero
-                 -> SB.PopulationModelParameterization
+                 -> SB.GroupModel
+                 -> SB.GroupModel
                  -> SB.GroupTypeTag k1 -- e.g., sex
                  -> SB.GroupTypeTag k2 -- partially pooled, e.g., state
                  -> Maybe Text
                  -> SB.StanBuilderM env d (SB.StanExpr, SB.StanExpr)
-addNestedMRGroup rtt sigmaPrior stz pmp nonPooledGtt pooledGtt mVarSuffix = do
+addNestedMRGroup rtt gm nonPooledGtt pooledGtt mVarSuffix = do
   let nonPooledGN = SB.taggedGroupName nonPooledGtt
       pooledGN = SB.taggedGroupName pooledGtt
       dsName = SB.dataSetName rtt
@@ -209,7 +210,8 @@ addNestedMRGroup rtt sigmaPrior stz pmp nonPooledGtt pooledGtt mVarSuffix = do
 --        SB.inBlock SB.SBModel $ do
 --          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
 --          SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
-        SB.rescaledSumToZero stz pmp epsVar (suffixed "sigma") sigmaPrior
+        SB.groupModel epsVar gm
+--        SB.rescaledSumToZero stz pmp epsVar (suffixed "sigma") sigmaPrior
         (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
           yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
           let yE = SB.useVar yv
@@ -253,7 +255,7 @@ addNestedMRGroup rtt sigmaPrior stz pmp nonPooledGtt pooledGtt mVarSuffix = do
         return (yE, betaE)
 
   if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
-
+-}
 
 type GroupName = Text
 
