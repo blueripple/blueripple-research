@@ -92,7 +92,7 @@ weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
 
 
-data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR
+data SumToZero = STZNone | STZSoft SB.StanExpr | STZSoftWeighted SB.StanName SB.StanExpr | STZQR deriving (Show, Eq)
 
 sumToZero :: SB.StanVar -> SumToZero -> SB.StanBuilderM env d ()
 sumToZero _ STZNone = return ()
@@ -112,7 +112,7 @@ data GroupModel = NonHierarchical SumToZero SB.StanExpr
 
 groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
 groupModel bv@(SB.StanVar bn bt) (NonHierarchical stz priorE) = do
-  bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  when (stz /= STZQR) $ do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
   sumToZero bv stz
   SB.inBlock SB.SBModel
     $ SB.addExprLine "groupModel (NonHierarchical)" $ SB.name bn `SB.vectorSample` priorE

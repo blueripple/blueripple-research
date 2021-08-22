@@ -367,7 +367,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   cdData
                                   voteData
                                   (Just "T")
-        let simpleGroupModel = SB.NonHierarchical SB.STZNone (normal 1)
+        let simpleGroupModel = SB.NonHierarchical SB.STZQR (normal 1)
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
 --        gSexT <- MRP.addGroup voteData binaryPrior (groupModelMR sexGroup "T") sexGroup (Just "T")
