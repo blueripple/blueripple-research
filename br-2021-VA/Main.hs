@@ -91,6 +91,7 @@ import qualified Stan.ModelBuilder as SB
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified Frames.MapReduce as FMR
 import qualified Text.Pandoc as Pandoc
+import qualified Debug.Trace as DT
 --import qualified Frames.MapReduce.General as FMR
 
 
@@ -313,6 +314,7 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   _ <- stateLegModel False modelData_C
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
+race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
 
 groupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM SLDModelData ()
@@ -323,18 +325,19 @@ groupBuilder districts states = do
   SB.addGroupIndexForDataSet ageGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (raceAlone4FromRace5 . F.rgetField @DT.Race5C)
+  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   return ()
 
+
 sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
 sldPSGroupRowMap = SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
                    $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
-                   $ SB.addRowMap raceGroup (F.rgetField @DT.RaceAlone4C)
-                   $ SB.addRowMap hispanicGroup (F.rgetField @DT.HispC)
+                   $ SB.addRowMap raceGroup race5
+--                   $ SB.addRowMap hispanicGroup (F.rgetField @DT.HispC)
                    $ SB.emptyGroupRowMap
 --  $ SB.addRowMap wnhGroup wnh
 --  $ SB.addRowMap wngGroup wnhNonGrad
@@ -389,14 +392,14 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
 --        alphaP <- SB.intercept "alphaP" (normal 2)
-
+{-
         (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
                                   cdData
                                   voteData
                                   (Just "P")
-
+-}
 --        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
 --        gSexP <- MRP.addGroup voteData binaryPrior (groupModelMR sexGroup "P") sexGroup (Just "P")
 --        gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
@@ -406,7 +409,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 --        gRaceP <- MRP.addGroup voteData binaryPrior (groupModelMR raceGroup "P") raceGroup (Just "P")
 
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
-            logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP] --, gRaceP, gHispP]
+            logitP_sample = gRaceP --SB.multiOp "+" $ feCDP :| [gSexP, gRaceP, gHispP] --, gRaceP, gHispP]
         SB.sampleDistV voteData distP logitP_sample
         return ()
 
@@ -459,7 +462,7 @@ sexGroup = SB.GroupTypeTag "Sex"
 educationGroup :: SB.GroupTypeTag DT.CollegeGrad
 educationGroup = SB.GroupTypeTag "Education"
 
-raceGroup :: SB.GroupTypeTag DT.RaceAlone4
+raceGroup :: SB.GroupTypeTag DT.Race5
 raceGroup = SB.GroupTypeTag "Race"
 
 hispanicGroup :: SB.GroupTypeTag DT.Hisp
