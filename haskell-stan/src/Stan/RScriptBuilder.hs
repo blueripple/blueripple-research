@@ -123,11 +123,11 @@ looOne config fitName mLooName nCores =
                  <> rMessageText "Computing r_eff for loo..." <> "\n"
                  <> reName fitName <> " <- relative_eff(exp(" <> llName fitName <> "), cores = " <> show nCores <> ")\n"
                  <> rMessageText "Computing loo.." <> "\n"
-                 <> looName <> " <- loo(" <> llName fitName <> ", r_eff = " <> reName fitName <> ", cores = " <> show nCores <> ")\n"
+                 <> looName <> " <- loo(" <> llName fitName <> ", r_eff=" <> reName fitName <> ", cores=" <> show nCores <> ")\n"
                  <> rMessage looName <> "\n"
                  <> rMessageText "Computing PSIS..."
                  <> psisName <> " <- " <> looName <> "$psis_object" <> "\n"
-                 <> rMessageText ("Placing samples in" <> samplesName) <> "\n"
+                 <> rMessageText ("Placing samples in " <> samplesName) <> "\n"
                  <> samplesName <> " <- " <> rExtract fitName <> "\n"
                  <> rMessageText ("E.g., 'ppc_loo_pit_qq(y,as.matrix(" <> samplesName <> "$y_ppred)," <> psisName <> "$log_weights)'") <> "\n"
   in rScript

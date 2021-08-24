@@ -59,7 +59,7 @@ sampleDistV rtt sDist args =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
       samplingE = SMD.familySampleF sDist dsName args
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
-
+{-
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
 generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
   let dsName = SB.dataSetName rtt
@@ -69,6 +69,22 @@ generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
     let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
         rhsE = SMD.familyLDF sDist dsName args
     SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
+-}
+
+generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
+generateLogLikelihood rtt sDist args =  generateLogLikelihood' rtt (one (sDist, args))
+
+generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, args) -> SB.StanBuilderM env d ()
+generateLogLikelihood' rtt distsAndArgs =  SB.inBlock SB.SBGeneratedQuantities $ do
+  let dsName = SB.dataSetName rtt
+      dim = SME.NamedDim dsName
+  SB.stanDeclare "log_lik" (SME.StanVector dim) ""
+  SB.stanForLoopB "n" Nothing dsName $ do
+    let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
+        oneRhsE (sDist, args) = SMD.familyLDF sDist dsName args
+        rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
+    SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
+
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
