@@ -366,11 +366,12 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         let simpleGroupModel = SB.NonHierarchical SB.STZNone (normal 1)
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
-        {-
+        -- Turnout
         cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
         cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
 
 --        alphaT <- SB.intercept "alphaT" (normal 2)
+
         (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
@@ -378,39 +379,38 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   voteData
                                   (Just "T")
 
---        gSexT <- MRP.addGroup voteData binaryPrior (groupModelMR sexGroup "T") sexGroup (Just "T")
         gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
---        gEduT <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "T")
+        gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
         gRaceT <- MRP.addGroup voteData binaryPrior simpleGroupModel raceGroup (Just "T")
-        gHispT <- MRP.addGroup voteData binaryPrior simpleGroupModel hispanicGroup (Just "T")
---        gRaceT <- MRP.addGroup voteData binaryPrior (groupModelMR raceGroup "T") raceGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
-            logitT_sample = SB.multiOp "+" $ feCDT :| [gSexT, gRaceT, gHispT]
+            logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
         SB.sampleDistV voteData distT logitT_sample
--}
+
         -- Preference
+
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
 --        alphaP <- SB.intercept "alphaP" (normal 2)
-{-
+
         (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
                                   cdData
                                   voteData
                                   (Just "P")
--}
+
 --        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
---        gSexP <- MRP.addGroup voteData binaryPrior (groupModelMR sexGroup "P") sexGroup (Just "P")
---        gEduP <- MRP.addMRGroup voteData binaryPrior sigmaPrior SB.STZNone educationGroup (Just "P")
+        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
+        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
         gRaceP <- MRP.addGroup voteData binaryPrior simpleGroupModel raceGroup (Just "P")
 --        gHispP <- MRP.addGroup voteData binaryPrior simpleGroupModel hispanicGroup (Just "P")
 
 --        gRaceP <- MRP.addGroup voteData binaryPrior (groupModelMR raceGroup "P") raceGroup (Just "P")
 
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
-            logitP_sample = gRaceP --SB.multiOp "+" $ feCDP :| [gSexP, gRaceP, gHispP] --, gRaceP, gHispP]
+            logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP] --, gRaceP, gHispP]
         SB.sampleDistV voteData distP logitP_sample
+
         return ()
 
       extractResults :: K.KnitEffects r
