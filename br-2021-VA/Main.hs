@@ -380,19 +380,20 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
 
 --        alphaT <- SB.intercept "alphaT" (normal 2)
-{-
+
         (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
                                   cdData
                                   voteData
                                   (Just "T")
--}
---        gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
---        gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
+
+        gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
+        gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
         gRaceT <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup) raceGroup (Just "T")
+--        gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
-            logitT_sample = gRaceT --SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
+            logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
         SB.sampleDistV voteData distT logitT_sample
 
         -- Preference
@@ -432,6 +433,9 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 --                          -> K.Sem r (SC.DataWrangler SLDModelData SB.DataSetGroupIntMaps (), SB.StanCode)
       dataWranglerAndCode data_C = do
         dat <-  K.ignoreCacheTime data_C
+        K.logLE K.Info
+          $ "Voter data (CPS and CCES) has "
+          <> show (FL.fold FL.length $ cpsVAndccesRows dat)
         let (districts, states) = FL.fold
                                   ((,)
                                    <$> (FL.premap districtKey FL.list)
@@ -446,7 +450,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   _ <- MRP.runMRPModel
     True
     (Just modelDir)
-    ("sldTest")
+    ("sldTest_H")
     jsonDataName
     dw
     stanCode
@@ -455,7 +459,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     dat_C
     (Just 1000)
     (Just 0.8)
-    (Just 10)
+    (Just 15)
   return ()
 
 cdGroup :: SB.GroupTypeTag Text
