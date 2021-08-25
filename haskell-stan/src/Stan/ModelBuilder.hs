@@ -564,6 +564,26 @@ addGroupIndexForDataSet gtt rtt mkIndex = do
       Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
       Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
 
+
+{-
+addGroupIndexForDataSet' :: forall r k d.Typeable k
+                         => GroupTypeTag k
+                         -> RowTypeTag r
+                         -> Maybe Text
+                         -> MakeIndex r k
+                         -> StanGroupBuilderM d ()
+addGroupIndexForDataSet' gtt rtt mBinding mkIndex = do
+  rims <- get
+  case DHash.lookup rtt rims of
+    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
+    Just (GroupIndexAndIntMapMakers tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
+      Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
+      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+  case mBinding of
+    Nothing -> return ()
+    Just b -> addUseBindingToDataSet rtt b (SME.name $ taggedGroupName gtt)
+-}
+
 addGroupIndexForCrosswalk :: forall k r d.
                           Typeable k
                           => RowTypeTag r
@@ -682,6 +702,24 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
   addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
   addUseBindingToDataSet rttFrom xWalkName $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   return ()
+
+
+duplicateDataSetBindings :: Foldable f => RowTypeTag r -> f (Text, Text) -> StanBuilderM env d ()
+duplicateDataSetBindings rtt dups = do
+  let doOne ebs (current, new) = case Map.lookup current ebs of
+        Nothing -> stanBuildError $ "duplicateDataSetBindings: " <> current <> " is not in existing bindings."
+        Just e -> return $ (new, e)
+  (BuilderState vars ibs rims modelExprs code ims) <- get
+  case DHash.lookup rtt rims of
+    Nothing -> stanBuildError $ "duplicateDataSetBindings: Data-set " <> dataSetName rtt <> " is not in environment."
+    Just (RowInfo tf ebs gis gimbs j) -> do
+      newKVs <- traverse (doOne ebs) (Foldl.fold Foldl.list dups)
+      let newEbs = Map.union ebs $ Map.fromList newKVs
+          newRowInfo = RowInfo tf newEbs gis gimbs j
+          newRowBuilders = DHash.insert rtt newRowInfo rims
+      put (BuilderState vars ibs newRowBuilders modelExprs code ims)
+
+
 
 
 addDataSetIndexes ::  Typeable d

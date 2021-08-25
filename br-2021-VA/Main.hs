@@ -323,18 +323,25 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
 
-groupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM SLDModelData ()
-groupBuilder districts states = do
+groupBuilder :: [Text] -> [Text] -> [Text] -> SB.StanGroupBuilderM SLDModelData ()
+groupBuilder districts states slds = do
   voterData <- SB.addDataSetToGroupBuilder "VData" (SB.ToFoldable cpsVAndccesRows)
   SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet ageGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+--  SB.addGroupIndexForDataSet ageGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+  sldData <- SB.addDataSetToGroupBuilder "SLD_Demographics" (SB.ToFoldable sldTables)
+  SB.addGroupIndexForDataSet sldStateGroup sldData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet sldEducationGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet sldSexGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet sldRaceGroup sldData $ SB.makeIndexFromEnum race5
+  SB.addGroupIndexForDataSet sldGroup sldData $ SB.makeIndexFromFoldable show sldKey slds
+
   return ()
 
 
@@ -415,8 +422,10 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP]
         SB.sampleDistV voteData distP logitP_sample
 -}
-        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
-        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
+--        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
+--        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
+        sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
+
         let getDensity r = realToFrac (F.rgetField @BR.Population r)/F.rgetField @BRC.SqMiles r
         SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing (Vector.singleton . getDensity)
         let densityTE = (SB.indexBy (SB.name "Density_SLD_Demographics") "SLD_Demographics") `SB.times` betaT
@@ -460,7 +469,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                    <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
                                   )
                                   $ districtRows dat
-            groups = groupBuilder districts states
+            slds = FL.fold (FL.premap sldKey FL.list) $ sldTables dat
+            groups = groupBuilder districts states slds
 --            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
@@ -489,17 +499,30 @@ cdGroup = SB.GroupTypeTag "CD"
 stateGroup :: SB.GroupTypeTag Text
 stateGroup = SB.GroupTypeTag "State"
 
+sldStateGroup :: SB.GroupTypeTag Text
+sldStateGroup = SB.GroupTypeTag "SLD_State"
+
 ageGroup :: SB.GroupTypeTag DT.SimpleAge
 ageGroup = SB.GroupTypeTag "Age"
 
 sexGroup :: SB.GroupTypeTag DT.Sex
 sexGroup = SB.GroupTypeTag "Sex"
 
+sldSexGroup :: SB.GroupTypeTag DT.Sex
+sldSexGroup = SB.GroupTypeTag "SLD_Sex"
+
 educationGroup :: SB.GroupTypeTag DT.CollegeGrad
 educationGroup = SB.GroupTypeTag "Education"
 
+sldEducationGroup :: SB.GroupTypeTag DT.CollegeGrad
+sldEducationGroup = SB.GroupTypeTag "SLD_Education"
+
 raceGroup :: SB.GroupTypeTag DT.Race5
 raceGroup = SB.GroupTypeTag "Race"
+
+sldRaceGroup :: SB.GroupTypeTag DT.Race5
+sldRaceGroup = SB.GroupTypeTag "SLD_Race"
+
 
 hispanicGroup :: SB.GroupTypeTag DT.Hisp
 hispanicGroup = SB.GroupTypeTag "Hispanic"

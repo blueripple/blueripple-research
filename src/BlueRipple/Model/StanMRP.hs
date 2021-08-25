@@ -409,13 +409,15 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
     Just gtt -> do
       let errMsg = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                    <> ") is not present in groupMaps: " <> showNames groupMaps
-      SB.RowMap h <- SB.stanBuildMaybe errMsg $  DHash.lookup gtt groupMaps
+      SB.RowMap h <- SB.stanBuildMaybe errMsg $ DHash.lookup gtt groupMaps
       SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
         $ SJ.valueToPairF sizeName
         $ FL.generalize
         $ fmap (A.toJSON . Set.size)
         $ FL.premap h
         $ FL.set
+
+      SB.addColumnJson rttPS namedPS (SB.StanArray [SB.NamedDim namedPS] SB.StanInt) "<lower=0>" (Right . h)
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
@@ -444,20 +446,21 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
             when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
         Just (SB.GroupTypeTag gn) -> do
-          SB.addUseBinding namedPS $ SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName
+--          SB.addUseBinding namedPS $ SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName
+          SB.addUseBinding namedPS $ SB.indexBy (SB.name namedPS) psDataSetName
 --        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName) useBindings
   --      SB.withUseBindings useBindings' $ do
 
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
-          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim psDataSetName) "" zeroVec
+          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
           SB.bracketed 2 $ do
             wgtSumE <- if psType == PSShare
-                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim psDataSetName)) "" zeroVec
+                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim namedPS)) "" zeroVec
                        else return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing psDataSetName $ do
+            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do
               SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
