@@ -22,6 +22,7 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 
 import Prelude hiding (All)
 import qualified Data.Map as Map
+import qualified Data.Vector as V
 
 addIntData :: (Typeable d)
             => SB.RowTypeTag r
@@ -45,6 +46,41 @@ addCountData :: forall r d env.(Typeable d)
              -> (r -> Int)
              -> SB.StanBuilderM env d SME.StanVar
 addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
+
+addRealData :: (Typeable d)
+            => SB.RowTypeTag r
+            -> SME.StanName
+            -> Maybe Double
+            -> Maybe Double
+            -> (r -> Double)
+            -> SB.StanBuilderM env d SME.StanVar
+addRealData rtt varName mLower mUpper f = do
+  let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanReal
+      bounds = case (mLower, mUpper) of
+                 (Nothing, Nothing) -> ""
+                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
+                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
+                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
+  SB.addColumnJson rtt varName stanType bounds f
+
+
+add2dMatrixData :: (Typeable d)
+            => SB.RowTypeTag r
+            -> SME.StanName
+            -> Int
+            -> Maybe Double
+            -> Maybe Double
+            -> (r -> V.Vector Double)
+            -> SB.StanBuilderM env d SME.StanVar
+add2dMatrixData rtt varName cols mLower mUpper f = do
+  let --stanType =  SB.StanMatrix (SB.NamedDim $ SB.dataSetName rtt) (SB.NamedDim colName)
+      bounds = case (mLower, mUpper) of
+                 (Nothing, Nothing) -> ""
+                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
+                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
+                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
+  SB.add2dMatrixJson rtt varName bounds (SB.NamedDim $ SB.dataSetName rtt) cols f --stanType bounds f
+
 
 intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanExpr
 intercept iName alphaPriorE = do

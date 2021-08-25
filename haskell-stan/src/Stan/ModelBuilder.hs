@@ -946,7 +946,7 @@ add2dMatrixJson rtt name sc rowDim cols vecF = do
       colDimName = wdName <> "_Cols"
   addFixedIntJson colName Nothing cols
   addDeclBinding colDimName (SME.name colName)
---  addUseBinding colDimName (SME.name colName)
+  addUseBindingToDataSet rtt colDimName (SME.name colName)
   addColumnJson rtt wdName (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d

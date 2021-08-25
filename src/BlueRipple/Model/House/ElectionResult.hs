@@ -354,11 +354,14 @@ ccesMR earliestYear = BRF.frameCompactMRM
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCCESVotesF
 
-ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
-ccesCountedDemHouseVotesByCD = do
+ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
+ccesCountedDemHouseVotesByCD clearCaches = do
   cces_C <- CCES.ccesDataLoader
---  BR.clearIfPresentD "model/house/ccesByCD.bin"
-  BR.retrieveOrMakeFrame "model/house/ccesByCD.bin" cces_C $ ccesMR 2012
+  let cacheKey = "model/house/ccesByCD.bin"
+  when clearCaches $  BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey cces_C $ \cces -> do
+--    BR.logFrame cces
+    ccesMR 2012 cces
 
 
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
@@ -433,7 +436,7 @@ prepCCESAndPums clearCache = do
   pumsByCD_C <- fmap (fmap acsCopy2018to2020)
                 $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
                 $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
-  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD clearCache
   cpsVByCD_C <- cpsCountedTurnoutByCD
   K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
   -- first, do the turnout corrections
@@ -677,7 +680,7 @@ combineDemoAndElex clearCache cacheKey cdDemographics_C stateDemographics_C = do
 
 --  K.logLE K.Info $ "Senate "
 --  K.ignoreCacheTime senateElection_C >>= BR.logFrame -- . F.filterFrame ((> 2010) . F.rgetField @BR.Year)
-  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD clearCache
   let houseDataDeps = (,,,,,) <$> cdDemographics_C <*> stateDemographics_C <*> houseElections_C <*> senateElections_C <*> presByStateElections_C <*> countedCCES_C
   when clearCache $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeD cacheKey houseDataDeps $ \(cdDemographics, stateDemographics, houseElex, senateElex, presElex, countedCCES) -> do

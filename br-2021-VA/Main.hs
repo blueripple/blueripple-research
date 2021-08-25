@@ -36,6 +36,7 @@ import qualified Control.Foldl as FL
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import Data.String.Here (here, i)
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Time.Calendar            as Time
 --import qualified Data.Time.Clock               as Time
@@ -338,10 +339,10 @@ groupBuilder districts states = do
 
 
 sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
-sldPSGroupRowMap = SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
-                   $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
+sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
                    $ SB.addRowMap raceGroup race5
+--                   $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
 --                   $ SB.addRowMap hispanicGroup (F.rgetField @DT.HispC)
                    $ SB.emptyGroupRowMap
 --  $ SB.addRowMap wnhGroup wnh
@@ -378,11 +379,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         -- Turnout
-{-
         cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
         cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
-
---        alphaT <- SB.intercept "alphaT" (normal 2)
 
         (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                                   True
@@ -398,13 +396,10 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
             logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
         SB.sampleDistV voteData distT logitT_sample
--}
+{-
         -- Preference
-
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
---        alphaP <- SB.intercept "alphaP" (normal 2)
-
         (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
@@ -412,20 +407,38 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   voteData
                                   (Just "P")
 
---        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
---        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
---        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
---        gRaceP <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
-        gRaceP <- MRP.addGroup voteData binaryPrior simpleGroupModel raceGroup (Just "P")
---        gHispP <- MRP.addGroup voteData binaryPrior simpleGroupModel hispanicGroup (Just "P")
-
---        gRaceP <- MRP.addGroup voteData binaryPrior (groupModelMR raceGroup "P") raceGroup (Just "P")
+        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
+        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
+        gRaceP <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
 
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
-            logitP_sample = gRaceP --SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP] --, gRaceP, gHispP]
+            logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP]
         SB.sampleDistV voteData distP logitP_sample
+-}
+        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
+        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
+        let getDensity r = realToFrac (F.rgetField @BR.Population r)/F.rgetField @BRC.SqMiles r
+        SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing (Vector.singleton . getDensity)
+        let densityTE = (SB.indexBy (SB.name "Density_SLD_Demographics") "SLD_Demographics") `SB.times` betaT
+--        let densityTE = (SB.useVar sldDensityV) `SB.times` betaT
+            logitT_ps = SB.multiOp "+" $ densityTE :| [gRaceT, gSexT, gEduT]
+
+        let postStratBySLD =
+              MRP.addPostStratification @SLDModelData
+              ((distT, logitT_ps) :| [])
+              (Nothing)
+              voteData
+              sldData
+              (SB.addRowMap sldGroup sldKey $ sldPSGroupRowMap)
+              (Set.fromList ["Sex", "Race", "Education"])
+              (realToFrac . F.rgetField @BRC.Count)
+              MRP.PSShare
+              (Just sldGroup)
+        postStratBySLD
 
 --        SB.generateLogLikelihood' voteData (one $ (distT, logitT_sample))
+
+
         return ()
 
       extractResults :: K.KnitEffects r
@@ -440,7 +453,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
           $ "Voter data (CPS and CCES) has "
           <> show (FL.fold FL.length $ cpsVAndccesRows dat)
           <> " rows."
-        BR.logFrame $ cpsVAndccesRows dat
+--        BR.logFrame $ cpsVAndccesRows dat
         let (districts, states) = FL.fold
                                   ((,)
                                    <$> (FL.premap districtKey FL.list)
@@ -455,7 +468,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   _ <- MRP.runMRPModel
     True
     (Just modelDir)
-    ("sldTest_NH")
+    ("sld_H")
     jsonDataName
     dw
     stanCode
@@ -466,6 +479,9 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     (Just 0.8)
     (Just 15)
   return ()
+
+sldGroup :: SB.GroupTypeTag Text
+sldGroup = SB.GroupTypeTag "SLD"
 
 cdGroup :: SB.GroupTypeTag Text
 cdGroup = SB.GroupTypeTag "CD"
@@ -506,6 +522,7 @@ race5FromCensus r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
+sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)

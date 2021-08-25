@@ -349,9 +349,9 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
 data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable d) -- ,Typeable r, Typeable k)
-                      => SB.StanDist args -- e.g., sampling distribution connecting outcomes to model
-                      -> args -- required args, e.g., total counts for binomial
+addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
+                      => NonEmpty (SB.StanDist args, args) -- e.g., sampling distribution connecting outcomes to model
+--                      -> args -- required args, e.g., total counts for binomial
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -361,7 +361,7 @@ addPostStratification :: (Typeable d) -- ,Typeable r, Typeable k)
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM d SB.StanVar
-addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
+addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
       psDataSetName = SB.dataSetName rttPS
@@ -394,6 +394,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
   toFoldable <- case DHash.lookup rttPS rowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
+{-
   intKeyF <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
     let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
                        <> ") is not present in Builder groups: " <> tGrps
@@ -402,15 +403,19 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
 --    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
     SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??
     return $ eIntF . h
-  -- add the data set for the json builders
-
-  -- size of post-stratification result
-  -- e.g., N_PS_ACS_State
-  SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
-    $ SJ.valueToPairF sizeName
-    $ fmap (A.toJSON . Set.size)
-    $ FL.premapM intKeyF
-    $ FL.generalize FL.set
+-}
+  case mPSGroup of
+    Nothing -> SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+    Just gtt -> do
+      let errMsg = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                   <> ") is not present in groupMaps: " <> showNames groupMaps
+      SB.RowMap h <- SB.stanBuildMaybe errMsg $  DHash.lookup gtt groupMaps
+      SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+        $ SJ.valueToPairF sizeName
+        $ FL.generalize
+        $ fmap (A.toJSON . Set.size)
+        $ FL.premap h
+        $ FL.set
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
@@ -423,6 +428,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
 --        useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
     SB.useDataSetForBindings rttPS $ do
+      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
       case mPSGroup of
         Nothing -> do
 --          SB.withUseBindings useBindings $ do
@@ -432,7 +438,7 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
                        then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
                        else return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist psDataSetName args --expCode
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
             when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
@@ -443,15 +449,15 @@ addPostStratification sDist args mNameHead rttModel rttPS groupMaps modelGroups 
   --      SB.withUseBindings useBindings' $ do
 
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
-          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
+          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim psDataSetName) "" zeroVec
           SB.bracketed 2 $ do
             wgtSumE <- if psType == PSShare
-                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim namedPS)) "" zeroVec
+                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim psDataSetName)) "" zeroVec
                        else return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.familyExp sDist psDataSetName args
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do
+            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing psDataSetName $ do
               SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV
