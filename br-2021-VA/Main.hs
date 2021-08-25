@@ -301,7 +301,7 @@ prepSLDModelData clearCaches = do
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- fmap (filterVotingDataByYear (==2020)) <$> prepSLDModelData False
+  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
   let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
@@ -369,13 +369,16 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             fePrior = normal 2
 
         let simpleGroupModel = SB.NonHierarchical SB.STZNone (normal 1)
-            hierHPs gn = M.fromList [("mu" <> gn, ("", SB.stdNormal)), ("sigma" <> gn, ("<lower=0>",SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
-            hierGroupModel gtt =
+            muH gn s = "mu" <> s <> "_" <> gn
+            sigmaH gn s = "sigma" <> s <> "_" <> gn
+            hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>",SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
+            hierGroupModel gtt s =
               let gn = SB.taggedGroupName gtt
-              in SB.Hierarchical SB.STZNone (hierHPs gn) (SB.Centered $ SB.normal (Just $ SB.name $ "mu" <> gn) (SB.name $ "sigma" <> gn))
+              in SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         -- Turnout
+{-
         cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
         cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
 
@@ -390,18 +393,18 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 
         gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
         gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
-        gRaceT <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup) raceGroup (Just "T")
+        gRaceT <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
 --        gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
             logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
         SB.sampleDistV voteData distT logitT_sample
-
+-}
         -- Preference
 
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
 --        alphaP <- SB.intercept "alphaP" (normal 2)
-{-
+
         (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                                   True
                                   fePrior
@@ -410,19 +413,19 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                                   (Just "P")
 
 --        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
-        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
-        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
+--        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
+--        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
+--        gRaceP <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
         gRaceP <- MRP.addGroup voteData binaryPrior simpleGroupModel raceGroup (Just "P")
 --        gHispP <- MRP.addGroup voteData binaryPrior simpleGroupModel hispanicGroup (Just "P")
 
 --        gRaceP <- MRP.addGroup voteData binaryPrior (groupModelMR raceGroup "P") raceGroup (Just "P")
 
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
-            logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP] --, gRaceP, gHispP]
+            logitP_sample = gRaceP --SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP] --, gRaceP, gHispP]
         SB.sampleDistV voteData distP logitP_sample
--}
 
-        SB.generateLogLikelihood' voteData (one $ (distT, logitT_sample))
+--        SB.generateLogLikelihood' voteData (one $ (distT, logitT_sample))
         return ()
 
       extractResults :: K.KnitEffects r
@@ -436,6 +439,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         K.logLE K.Info
           $ "Voter data (CPS and CCES) has "
           <> show (FL.fold FL.length $ cpsVAndccesRows dat)
+          <> " rows."
+        BR.logFrame $ cpsVAndccesRows dat
         let (districts, states) = FL.fold
                                   ((,)
                                    <$> (FL.premap districtKey FL.list)
@@ -450,7 +455,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   _ <- MRP.runMRPModel
     True
     (Just modelDir)
-    ("sldTest_H")
+    ("sldTest_NH")
     jsonDataName
     dw
     stanCode
