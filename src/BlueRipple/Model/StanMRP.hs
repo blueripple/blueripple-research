@@ -266,7 +266,7 @@ emptyFixedEffects = DHash.empty
 
 -- returns
 -- 'X * beta' (or 'Q * theta') model term expression
--- 'X * beta' and just 'beta' for post-stratification
+-- VarX -> 'VarX * beta' and just 'beta' for post-stratification
 -- The latter is for use in post-stratification at fixed values of the fixed effects.
 addFixedEffects :: forall r1 r2 d.(Typeable d)
                 => Bool
@@ -274,13 +274,15 @@ addFixedEffects :: forall r1 r2 d.(Typeable d)
                 -> SB.RowTypeTag r1
                 -> SB.RowTypeTag r2
                 -> FixedEffects r1
-                -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+                -> BuilderM d ( SB.StanExpr
+                              , SB.StanVar -> BuilderM d SB.StanVar
+                              , SB.StanExpr)
 addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
   SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
+  f <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
@@ -297,19 +299,17 @@ addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
       eBeta = SB.name $ "betaX" <> uSuffix
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, eXBeta, eBeta)
+  return (feExpr, f, eBeta)
 
 addFixedEffectsData :: forall r d. (Typeable d)
                     => SB.RowTypeTag r
                     -> FixedEffects r
-                    -> BuilderM d ()
+                    -> BuilderM d (SB.StanVar -> BuilderM d SB.StanVar)
 addFixedEffectsData feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
   SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
-
-  return ()
 
 addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool
@@ -317,7 +317,7 @@ addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    -> SB.RowTypeTag r1
                                    -> SB.RowTypeTag r2
                                    -> Maybe Text
-                                   -> BuilderM d (SB.StanExpr, SB.StanExpr, SB.StanExpr)
+                                   -> BuilderM d (SB.StanExpr, SB.StanExpr)
 addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
   let feDataSetName = SB.dataSetName rttFE
       modeledDataSetName = fromMaybe "" mVarSuffix
@@ -336,7 +336,7 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       eX = SB.indexBy (SB.name ("centered_X" <> pSuffix)) rowIndexKey
       eXBeta = eX `SB.times` eBeta
       feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, eXBeta, eBeta)
+  return (feExpr, eBeta)
 
 
 
@@ -346,11 +346,11 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
     Left msg -> Left $ "Indexing error when trying to build IntMap index: " <> msg
     Right n -> Right $ IM.insert n (keyF r) im
 
-data PostStratificationType = PSRaw | PSShare deriving (Eq, Show)
+data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
-                      => NonEmpty (SB.StanDist args, args) -- e.g., sampling distribution connecting outcomes to model
+                      => (SB.IndexKey -> BuilderM d SB.StanExpr) --NonEmpty (SB.StanDist args, args) -- e.g., sampling distribution connecting outcomes to model
 --                      -> args -- required args, e.g., total counts for binomial
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
@@ -361,7 +361,7 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM d SB.StanVar
-addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
+addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
       psDataSetName = SB.dataSetName rttPS
@@ -395,16 +395,6 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
   toFoldable <- case DHash.lookup rttPS rowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
-{-
-  intKeyF <- flip (maybe (return $ const $ Right 1)) mPSGroup $ \gtt -> do
-    let errMsg tGrps = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                       <> ") is not present in Builder groups: " <> tGrps
-    SB.IndexMap _ eIntF _ _ <- SB.stanBuildMaybe (errMsg $ showNames modelGroupsDHM) $ DHash.lookup gtt modelGroupsDHM
-    SB.RowMap h <- SB.stanBuildMaybe (errMsg $ showNames groupMaps) $  DHash.lookup gtt groupMaps
---    SB.addIndexIntMapFld rtt gtt $ buildIntMapBuilderF eIntF h
-    SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF eIntF h -- ??
-    return $ eIntF . h
--}
   case mPSGroup of
     Nothing -> do
       SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
@@ -446,36 +436,47 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
     let errCtxt = "addPostStratification"
         divEq = SB.binOp "/="
     SB.useDataSetForBindings rttPS $ do
-      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
+--      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
       case mPSGroup of
         Nothing -> do
           psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
           SB.bracketed 2 $ do
-            wgtSumE <- if psType == PSShare
-                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
-                       else return SB.nullE
+            wgtSumE <- case psType of
+                         PSShare _ -> fmap SB.useVar
+                                      $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
+                         _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
+              psExpr <-  psExprF psDataSetName
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
-              when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-            when (psType == PSShare) $ SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+              case psType of
+                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.useVar wgtsV)
+                _ -> return ()
+            case psType of
+              PSShare _ -> SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+              _ -> return ()
           return psV
         Just (SB.GroupTypeTag gn) -> do
---          SB.addUseBinding namedPS $ SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName
           SB.addUseBinding namedPS $ SB.indexBy (SB.name namedPS) psDataSetName
---        let useBindings' = Map.insert namedPS (SB.indexBy (SB.name $ gn <> "_" <> psDataSetName) psDataSetName) useBindings
-  --      SB.withUseBindings useBindings' $ do
 
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec
           SB.bracketed 2 $ do
-            wgtSumE <- if psType == PSShare
-                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
-                       else return SB.nullE
+            wgtSumE <- case psType of
+                         PSShare _ -> fmap SB.useVar
+                                      $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
+                         _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
+              psExpr <-  psExprF psDataSetName
+              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
-              when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing indexName $ do
-              SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+              case psType of
+                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
+                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.useVar wgtsV)
+                _ -> return ()
+            case psType of
+              PSShare _ -> SB.stanForLoopB "n" Nothing indexName $ do
+                SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+              _ -> return ()
           return psV

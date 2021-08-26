@@ -34,6 +34,7 @@ import qualified BlueRipple.Data.CountFolds as BRCF
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
+import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
@@ -164,16 +165,14 @@ type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoters, CCESDVotes]
 
 type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
-type SLDRecodedR = BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count]
+type SLDRecodedR = BRC.SLDLocationR
+                   V.++ BRC.ExtensiveDataR
+                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
 type SLDDemographicsR = '[BR.StateAbbreviation] V.++ SLDRecodedR
 
 sldDemographicsRecode ::  F.FrameRec CensusSERR -> F.FrameRec SLDRecodedR
 sldDemographicsRecode rows =
-  let --fld1 :: FL.Fold
-      --  (F.Record (BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC, BRC.Count]))
-      --  (F.FrameRec (BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC, BRC.RaceEthnicityC, BRC.Count]))
-
-      fld1 = FMR.concatFold
+  let fld1 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @(BRC.SLDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
@@ -224,9 +223,9 @@ sldDemographicsRecode rows =
                  , makeRec DT.RA4_Other DT.NonHispanic onh
                  ]
         in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
-  in FL.fold fld2 (FL.fold fld1 rows)
-
-
+      addDensity r = FT.recordSingleton @DT.PopPerSqMile
+                     $ realToFrac (F.rgetField @BR.Population r)/ F.rgetField @BRC.SqMiles r
+  in fmap (FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 
 type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
 data SLDModelData = SLDModelData
@@ -317,7 +316,8 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
 --  modelData_C <- fmap (filterVotingDataByYear (==2020)) <$> prepSLDModelData False
-  _ <- stateLegModel False sldDat_C
+  res_C <- stateLegModel False sldDat_C
+  K.ignoreCacheTime res_C >>= K.logLE K.Info . show
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
@@ -349,14 +349,13 @@ sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
 sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
                    $ SB.addRowMap raceGroup race5
---                   $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
---                   $ SB.addRowMap hispanicGroup (F.rgetField @DT.HispC)
                    $ SB.emptyGroupRowMap
---  $ SB.addRowMap wnhGroup wnh
---  $ SB.addRowMap wngGroup wnhNonGrad
 
 
-stateLegModel :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.ActionWithCacheTime r SLDModelData -> K.Sem r ()
+stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
+              => Bool
+              -> K.ActionWithCacheTime r SLDModelData
+              -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]))
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
@@ -369,7 +368,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
 
-        MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
+        centerF <- MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -389,12 +388,12 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
         cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
 
-        (feCDT, xBetaT, betaT) <- MRP.addFixedEffectsParametersAndPriors
-                                  True
-                                  fePrior
-                                  cdData
-                                  voteData
-                                  (Just "T")
+        (feCDT, betaT) <- MRP.addFixedEffectsParametersAndPriors
+                          True
+                          fePrior
+                          cdData
+                          voteData
+                          (Just "T")
 
         gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
         gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
@@ -403,16 +402,16 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
             logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
         SB.sampleDistV voteData distT logitT_sample
-{-
+
         -- Preference
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
         ccesDVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @CCESDVotes)
-        (feCDP, xBetaP, betaP) <- MRP.addFixedEffectsParametersAndPriors
-                                  True
-                                  fePrior
-                                  cdData
-                                  voteData
-                                  (Just "P")
+        (feCDP, betaP) <- MRP.addFixedEffectsParametersAndPriors
+                          True
+                          fePrior
+                          cdData
+                          voteData
+                          (Just "P")
 
         gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
         gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
@@ -421,28 +420,33 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
             logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP]
         SB.sampleDistV voteData distP logitP_sample
--}
+
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
         sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
         SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex")]
-        let getDensity r = realToFrac (F.rgetField @BR.Population r)/F.rgetField @BRC.SqMiles r
-        SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing (Vector.singleton . getDensity)
-        let densityTE = (SB.indexBy (SB.name "Density_SLD_Demographics") "SLD_Demographics") `SB.times` betaT
---        let densityTE = (SB.useVar sldDensityV) `SB.times` betaT
+        let getDensity = F.rgetField @DT.PopPerSqMile
+        mv <- SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
+        (SB.StanVar cmn _) <- centerF mv
+        let cmE = (SB.indexBy (SB.name cmn) "SLD_Demographics")
+            densityTE = cmE `SB.times` betaT
+            densityPE = cmE `SB.times` betaP
             logitT_ps = SB.multiOp "+" $ densityTE :| [gRaceT, gSexT, gEduT]
---            logitT_ps = SB.multiOp "+" $ gSexT :| [gEduT, gRaceT]
-
+            logitP_ps = SB.multiOp "+" $ densityPE :| [gRaceP, gSexP, gEduP]
+            psExprF ik = do
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik logitT_ps
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik logitP_ps
+              return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
-              ((distT, logitT_ps) :| [])
+              psExprF
               (Nothing)
               voteData
               sldData
               (SB.addRowMap sldGroup sldKey $ sldPSGroupRowMap)
               (Set.fromList ["Sex", "Race", "Education"])
               (realToFrac . F.rgetField @BRC.Count)
-              MRP.PSShare
+              (MRP.PSShare $ Just $ SB.name "pT")
               (Just sldGroup)
         postStratBySLD
 
@@ -452,9 +456,21 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         return ()
 
       extractResults :: K.KnitEffects r
-                     => SC.ResultAction r d SB.DataSetGroupIntMaps () ()
+                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
       extractResults = SC.UseSummary f where
-        f _ _ _ = return ()
+        f summary _ aAndEb_C = do
+          let eb_C = fmap snd aAndEb_C
+          eb <- K.ignoreCacheTime eb_C
+          K.knitEither $ do
+            groupIndexes <- eb
+            psIndexIM <- SB.getGroupIndex
+              (SB.RowTypeTag @(F.Record SLDDemographicsR) "SLD_Demographics")
+              sldGroup
+              groupIndexes
+            let parseAndIndexPctsWith idx g vn = do
+                  v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
+                  indexStanResults idx $ Vector.map g v
+            parseAndIndexPctsWith psIndexIM id "PS_SLD_Demographics_SLD"
 --      dataWranglerAndCode :: K.ActionWithCacheTime r SLDModelData
 --                          -> K.Sem r (SC.DataWrangler SLDModelData SB.DataSetGroupIntMaps (), SB.StanCode)
       dataWranglerAndCode data_C = do
@@ -463,7 +479,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
           $ "Voter data (CPS and CCES) has "
           <> show (FL.fold FL.length $ cpsVAndccesRows dat)
           <> " rows."
---        BR.logFrame $ cpsVAndccesRows dat
+--        BR.logFrame $ sldTables dat
+--        BR.logFrame $ districtRows dat
         let (districts, states) = FL.fold
                                   ((,)
                                    <$> (FL.premap districtKey FL.list)
@@ -476,7 +493,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
-  _ <- MRP.runMRPModel
+  MRP.runMRPModel
     True
     (Just modelDir)
     ("sld_H")
@@ -489,7 +506,6 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     (Just 1000)
     (Just 0.8)
     (Just 15)
-  return ()
 
 sldGroup :: SB.GroupTypeTag Text
 sldGroup = SB.GroupTypeTag "SLD"
@@ -559,3 +575,13 @@ raceAlone4FromRace5 DT.R5_Black = DT.RA4_Black
 raceAlone4FromRace5 DT.R5_Latinx = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Asian = DT.RA4_Asian
 raceAlone4FromRace5 DT.R5_WhiteNonLatinx = DT.RA4_White
+
+indexStanResults :: (Show k, Ord k)
+                 => IM.IntMap k
+                 -> Vector.Vector a
+                 -> Either Text (Map k a)
+indexStanResults im v = do
+  when (IM.size im /= Vector.length v)
+    $ Left $
+    "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " result and IntMap = " <> show im
+  return $ M.fromList $ zip (IM.elems im) (Vector.toList v)

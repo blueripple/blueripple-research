@@ -131,16 +131,24 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.Nam
   return sv
 generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
-fixedEffectsQR :: Text -> SME.StanName -> SME.IndexKey -> SME.IndexKey -> SB.StanBuilderM env d SME.StanVar
+fixedEffectsQR :: Text
+               -> SME.StanName
+               -> SME.IndexKey
+               -> SME.IndexKey
+               -> SB.StanBuilderM env d (SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
-  fixedEffectsQR_Data thinSuffix matrix rowKey colKey
+  f <- fixedEffectsQR_Data thinSuffix matrix rowKey colKey
   fixedEffectsQR_Parameters thinSuffix matrix colKey
   let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
       q = "Q" <> thinSuffix <> "_ast"
       qMatrix = SME.StanVar q qMatrixType
-  return qMatrix
+  return f
 
-fixedEffectsQR_Data :: Text -> SME.StanName -> SME.IndexKey -> SME.IndexKey -> SB.StanBuilderM env d SME.StanName
+fixedEffectsQR_Data :: Text
+                    -> SME.StanName
+                    -> SME.IndexKey
+                    -> SME.IndexKey
+                    -> SB.StanBuilderM env d (SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
 fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
@@ -159,7 +167,17 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
     SB.stanDeclareRHS q qMatrixType "" qRHS
     SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
-  return matrix
+  let centeredX mv@(SME.StanVar sn st) =
+        case st of
+          (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
+            cv <- SB.stanDeclare ("centered_" <> sn) (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) ""
+            SB.stanForLoopB "k" Nothing colKey $ do
+              SB.addStanLine $ "centered_" <>  sn <> "[,k] = " <> sn <> "[,k] - mean_" <> matrix <> "[k]"
+            return cv
+          _ -> SB.stanBuildError
+               $ "fixedEffectsQR_Data (returned StanVar -> StanExpr): "
+               <> " Given matrix doesn't have same dimensions as modeled fixed effects."
+  return centeredX
 
 fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d ()
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
