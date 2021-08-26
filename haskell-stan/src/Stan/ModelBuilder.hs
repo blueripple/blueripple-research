@@ -192,7 +192,11 @@ makeIndexFromEnum h = GivenIndex m h where
   allKs = [minBound..maxBound]
   m = Map.fromList $ zip allKs [1..]
 
-makeIndexFromFoldable :: (Foldable f, Ord k) => (k -> Text) -> (r -> k) -> f k -> MakeIndex r k
+makeIndexFromFoldable :: (Foldable f, Ord k)
+  => (k -> Text)
+  -> (r -> k)
+  -> f k
+  -> MakeIndex r k
 makeIndexFromFoldable _ h allKs = GivenIndex asMap h where
   listKs = ordNub $ Foldl.fold Foldl.list allKs
   asMap = Map.fromList $ zip listKs [1..]

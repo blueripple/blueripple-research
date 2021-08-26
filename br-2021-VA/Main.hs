@@ -46,6 +46,7 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
 import qualified Flat
 import qualified Frames as F
+import qualified Frames.Melt as F
 import qualified Frames.InCore as FI
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Aggregation as FA
@@ -323,7 +324,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
 
-groupBuilder :: [Text] -> [Text] -> [Text] -> SB.StanGroupBuilderM SLDModelData ()
+groupBuilder :: [Text]
+             -> [Text]
+             -> [SLDLocation]
+             -> SB.StanGroupBuilderM SLDModelData ()
 groupBuilder districts states slds = do
   voterData <- SB.addDataSetToGroupBuilder "VData" (SB.ToFoldable cpsVAndccesRows)
   SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
@@ -355,7 +359,7 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
               -> K.ActionWithCacheTime r SLDModelData
-              -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]))
+              -> K.Sem r (K.ActionWithCacheTime r (Map SLDLocation [Double]))
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
@@ -456,7 +460,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         return ()
 
       extractResults :: K.KnitEffects r
-                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double])
+                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map SLDLocation [Double])
       extractResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
@@ -507,7 +511,9 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     (Just 0.8)
     (Just 15)
 
-sldGroup :: SB.GroupTypeTag Text
+type SLDLocation = (Text, ET.DistrictType, Int)
+
+sldGroup :: SB.GroupTypeTag SLDLocation
 sldGroup = SB.GroupTypeTag "SLD"
 
 cdGroup :: SB.GroupTypeTag Text
@@ -562,7 +568,15 @@ race5FromCensus r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
-sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
+--sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
+sldKey :: (F.ElemOf rs BR.StateAbbreviation
+          ,F.ElemOf rs ET.DistrictTypeC
+          ,F.ElemOf rs ET.DistrictNumber)
+       => F.Record rs -> SLDLocation
+sldKey r = (F.rgetField @BR.StateAbbreviation r
+           , F.rgetField @ET.DistrictTypeC r
+           , F.rgetField @ET.DistrictNumber r
+           )
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
