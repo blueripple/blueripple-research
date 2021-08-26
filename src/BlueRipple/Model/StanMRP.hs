@@ -371,6 +371,7 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
       psSuffix = psDataSetName <> uPSGroupName
       namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
       sizeName = "N_" <> namedPS
+      indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
   SB.addDeclBinding namedPS (SB.name sizeName)
   rowInfos <- SB.rowBuilders <$> get
   modelGroupsDHM <- do
@@ -405,19 +406,36 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
     return $ eIntF . h
 -}
   case mPSGroup of
-    Nothing -> SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+    Nothing -> do
+      SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+      return ()
     Just gtt -> do
-      let errMsg = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                   <> ") is not present in groupMaps: " <> showNames groupMaps
-      SB.RowMap h <- SB.stanBuildMaybe errMsg $ DHash.lookup gtt groupMaps
+      rims <- SB.rowBuilders <$> get
+      let psDataMissingErr = "addPostStratification: Post-stratification data-set "
+                             <> psDataSetName
+                             <> " is missing from rowBuilders."
+          groupIndexMissingErr =  "addPostStratification: group "
+                                  <> SB.taggedGroupName gtt
+                                  <> " is missing from post-stratification data-set ("
+                                  <> psDataSetName
+                                  <> ")."
+          groupRowMapMissingErr = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                                  <> ") is not present in groupMaps: " <> showNames groupMaps
+
+      (SB.GroupIndexes gis) <- SB.groupIndexes <$> (SB.stanBuildMaybe psDataMissingErr $ DHash.lookup rttPS rims)
+      kToIntE <- SB.groupKeyToGroupIndex <$> (SB.stanBuildMaybe groupIndexMissingErr $ DHash.lookup gtt gis)
+      SB.RowMap h <- SB.stanBuildMaybe groupRowMapMissingErr $ DHash.lookup gtt groupMaps
+      SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE h -- for extracting results
+      SB.addColumnMJson rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . h)
       SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
         $ SJ.valueToPairF sizeName
-        $ FL.generalize
         $ fmap (A.toJSON . Set.size)
-        $ FL.premap h
-        $ FL.set
+        $ FL.premapM (kToIntE . h)
+        $ FL.generalize FL.set
+      SB.addDeclBinding indexName (SME.name sizeName)
+      SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
+      return ()
 
-      SB.addColumnJson rttPS namedPS (SB.StanArray [SB.NamedDim namedPS] SB.StanInt) "<lower=0>" (Right . h)
   let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
       ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
       weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
@@ -426,14 +444,11 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
             $ SJ.jsonArrayF weightF
   SB.inBlock SB.SBGeneratedQuantities $ do
     let errCtxt = "addPostStratification"
---        indexToPS x = SB.indexBy (SB.name $ x <> "_" <> psDataSetName) psDataSetName
---        useBindings =  Map.fromList $ zip ugNames $ fmap indexToPS ugNames
         divEq = SB.binOp "/="
     SB.useDataSetForBindings rttPS $ do
       let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
       case mPSGroup of
         Nothing -> do
---          SB.withUseBindings useBindings $ do
           psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
           SB.bracketed 2 $ do
             wgtSumE <- if psType == PSShare
@@ -452,15 +467,15 @@ addPostStratification sDistAndArgs mNameHead rttModel rttPS groupMaps modelGroup
   --      SB.withUseBindings useBindings' $ do
 
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
-          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim namedPS) "" zeroVec
+          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec
           SB.bracketed 2 $ do
             wgtSumE <- if psType == PSShare
-                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim namedPS)) "" zeroVec
+                       then fmap SB.useVar $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
                        else return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" $ SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               when (psType == PSShare) $ SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing namedPS $ do
+            when (psType == PSShare) $ SB.stanForLoopB "n" Nothing indexName $ do
               SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
           return psV

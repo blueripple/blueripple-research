@@ -425,12 +425,13 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
         sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
-
+        SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex")]
         let getDensity r = realToFrac (F.rgetField @BR.Population r)/F.rgetField @BRC.SqMiles r
         SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing (Vector.singleton . getDensity)
         let densityTE = (SB.indexBy (SB.name "Density_SLD_Demographics") "SLD_Demographics") `SB.times` betaT
 --        let densityTE = (SB.useVar sldDensityV) `SB.times` betaT
             logitT_ps = SB.multiOp "+" $ densityTE :| [gRaceT, gSexT, gEduT]
+--            logitT_ps = SB.multiOp "+" $ gSexT :| [gEduT, gRaceT]
 
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
