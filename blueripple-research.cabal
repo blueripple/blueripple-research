@@ -50,7 +50,7 @@ common deps
                , massiv >= 0.5.4 && < 0.7
                , microlens-platform >= 0.4.0 && < 0.5
                , map-reduce-folds >= 0.1.0.1
-               , optics >= 0.3 && < 0.4
+               , optics >= 0.3 && < 0.5
                , path >= 0.8 && < 0.9
                , pipes
                , polysemy >= 0.2.1.0 && < 1.6
@@ -402,8 +402,12 @@ executable br-2021-VA
   main-is: Main.hs
   other-modules: VA_DataPaths, VA_DataFrames
   build-depends: base
+               , aeson
+               , lens-aeson
                , blueripple-research
                , blueripple-data-sets
+               , colonnade
+               , blaze-colonnade
                , haskell-stan
                , hs-cmdstan
                , pandoc

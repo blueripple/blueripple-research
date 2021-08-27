@@ -27,12 +27,18 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.Heidi as BR
+import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Data.CountFolds as BRCF
 
+import qualified Colonnade as C
+import qualified Text.Blaze.Colonnade as C
+import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Control.Foldl as FL
+import qualified Data.Aeson as A
+import qualified Data.Aeson.Lens as A
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
@@ -58,8 +64,10 @@ import qualified Frames.Transform  as FT
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
+import Control.Lens.Operators
+
 import qualified Heidi
-import Lens.Micro.Platform ((^?))
+--import Lens.Micro.Platform ((^?))
 
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Heidi as HV
@@ -299,14 +307,69 @@ prepSLDModelData clearCaches = do
     -- BR.logFrame sldSER
     return $ SLDModelData cpsAndCces (F.rcast <$> sldSER) distRows
 
+
+type VotePct = "VotePct" F.:-> Text
+type PartyName = "PartyName" F.:-> Text
+type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, PartyName, ET.Votes, VotePct]
+
+newtype J_SLDResultR = J_SLDResultR (F.Record SLDResultR)
+
+instance A.ToJSON J_SLDResultR where
+  toJSON = undefined
+
+getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDResultR))
+getVAResults fp = do
+  fileDep <-  K.fileDependency fp
+  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
+  BR.retrieveOrMakeFrame "data/SLD/VA_2019_General.bin" fileDep $ \_ -> do
+    mJSON :: Maybe A.Value <- K.liftKnit $ A.decodeFileStrict' fp
+    races <- case mJSON of
+      Nothing -> K.knitError "Error loading VA general json"
+      Just json -> K.knitMaybe "Error Decoding VA General json" $ do
+        racesA <- json ^? A.key "Races"
+        let listOfRaces = racesA ^.. A.values
+            g :: A.Value -> Maybe (F.Record [BR.Candidate, PartyName, ET.Votes, VotePct])
+            g cO = do
+              name <- cO ^?  A.key "BallotName" . A._String
+              party <- cO ^? A.key "PoliticalParty" . A._String
+              votes <- cO ^? A.key "Votes" . A._Integer
+              pct <- cO ^? A.key "Percentage" . A._String
+              return $ name F.&: party F.&: fromInteger votes F.&: pct F.&: V.RNil
+            f raceO = do
+              raceName <- raceO ^? A.key "RaceName"
+              candidatesA <- raceO ^? A.key "Candidates"
+              candidates <- traverse g (candidatesA ^.. A.values)
+              return (raceName, candidates)
+        traverse f listOfRaces
+    K.logLE K.Info $ show races
+    return mempty
+
+
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
-  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
-    $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
+  getVAResults "data/forPosts/VA_2019_General.json"
+  return ()
+--  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
+--    $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
+
+--vaLowerColonnade :: BR.CellStyle (SLDLocation, [Double]) col -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
+vaLowerColonnade cas =
+  let state ((s, d, n), [l, m, u]) = s
+      dType ((s, d, n), [l, m, u]) = d
+      dNum ((s, d, n), [l, m, u]) = n
+      share5 ((s, d, n), [l, m, u]) = l
+      share50 ((s, d, n), [l, m, u]) = m
+      share95 ((s, d, n), [l, m, u]) = u
+  in C.headed "State " (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
+     <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
+
 
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
@@ -318,8 +381,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
 --  modelData_C <- fmap (filterVotingDataByYear (==2020)) <$> prepSLDModelData False
   res_C <- stateLegModel False sldDat_C
-  K.ignoreCacheTime res_C >>= K.logLE K.Info . show
+  res <- K.ignoreCacheTime res_C
+  K.logLE K.Info $ show res
   BR.brAddPostMarkDownFromFile postPaths "_intro"
+  BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) $ M.toList res
 
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
@@ -440,7 +505,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             psExprF ik = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik logitT_ps
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik logitP_ps
-              return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
+              --return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
+              return $ SB.useVar pT `SB.times` SB.useVar pD
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
               psExprF
@@ -498,7 +564,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
   MRP.runMRPModel
-    True
+    clearCaches
     (Just modelDir)
     ("sld_H")
     jsonDataName
