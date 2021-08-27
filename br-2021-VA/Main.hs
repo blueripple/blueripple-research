@@ -45,6 +45,7 @@ import qualified Data.Map.Strict as M
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Text.Read  as T
 import qualified Data.Time.Calendar            as Time
 --import qualified Data.Time.Clock               as Time
 import qualified Data.Vinyl as V
@@ -309,18 +310,27 @@ prepSLDModelData clearCaches = do
 
 
 type VotePct = "VotePct" F.:-> Text
-type PartyName = "PartyName" F.:-> Text
-type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, PartyName, ET.Votes, VotePct]
+type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, ET.Party, ET.Votes, VotePct]
 
-newtype J_SLDResultR = J_SLDResultR (F.Record SLDResultR)
+parseParty :: Text -> Maybe ET.PartyT
+parseParty "Democrat" = Just ET.Democratic
+parseParty "Democratic" = Just ET.Democratic
+parseParty "Republican" = Just ET.Republican
+parseParty _ = Just ET.Other
 
-instance A.ToJSON J_SLDResultR where
-  toJSON = undefined
+parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
+parseVARace raceDesc = do
+  let isLower = T.isInfixOf "Delegates" raceDesc
+      dType = if isLower then ET.StateLower else ET.StateUpper
+  let numText = T.dropWhileEnd (\x -> x /= ')') $  T.dropWhile (\x -> x /= '(') raceDesc
+  dNum :: Int <- T.readMaybe $ toString numText
+  return $ 2019 F.&: "VA" F.&: dType F.&: dNum F.&: V.RNil
 
-getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDResultR))
+
+getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getVAResults fp = do
   fileDep <-  K.fileDependency fp
-  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
+--  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
   BR.retrieveOrMakeFrame "data/SLD/VA_2019_General.bin" fileDep $ \_ -> do
     mJSON :: Maybe A.Value <- K.liftKnit $ A.decodeFileStrict' fp
     races <- case mJSON of
@@ -328,21 +338,41 @@ getVAResults fp = do
       Just json -> K.knitMaybe "Error Decoding VA General json" $ do
         racesA <- json ^? A.key "Races"
         let listOfRaces = racesA ^.. A.values
-            g :: A.Value -> Maybe (F.Record [BR.Candidate, PartyName, ET.Votes, VotePct])
+            g :: A.Value -> Maybe (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct])
             g cO = do
               name <- cO ^?  A.key "BallotName" . A._String
-              party <- cO ^? A.key "PoliticalParty" . A._String
+              party <- cO ^? A.key "PoliticalParty" . A._String >>= parseParty
               votes <- cO ^? A.key "Votes" . A._Integer
               pct <- cO ^? A.key "Percentage" . A._String
               return $ name F.&: party F.&: fromInteger votes F.&: pct F.&: V.RNil
             f raceO = do
-              raceName <- raceO ^? A.key "RaceName"
+              raceRec <- raceO ^? A.key "RaceName" . A._String >>= parseVARace
               candidatesA <- raceO ^? A.key "Candidates"
-              candidates <- traverse g (candidatesA ^.. A.values)
-              return (raceName, candidates)
-        traverse f listOfRaces
-    K.logLE K.Info $ show races
-    return mempty
+              let candidates = catMaybes $ g <$> (candidatesA ^.. A.values)
+              return $ fmap (raceRec F.<+>) candidates
+        races <- traverse f listOfRaces
+        return $ FL.fold candidatesToRaces $ concat races
+    return races
+
+type DVotes = "DVotes" F.:-> Int
+type RVotes = "RVotes" F.:-> Int
+type DShare = "DShare" F.:-> Double
+
+type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, DVotes, RVotes, DShare]
+
+candidatesToRaces :: FL.Fold (F.Record SLDResultR) (F.FrameRec SLDRaceResultR)
+candidatesToRaces = FMR.concatFold
+                    $ FMR.mapReduceFold
+                    FMR.noUnpack
+                    (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
+                    (FMR.foldAndAddKey f) where
+  f :: FL.Fold (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct]) (F.Record [DVotes, RVotes, DShare])
+  f =
+    let party = F.rgetField @ET.Party
+        votes = F.rgetField @ET.Votes
+        dVotes = FL.prefilter ((== ET.Democratic) . party) $ FL.premap votes FL.sum
+        rVotes = FL.prefilter ((== ET.Republican) . party) $ FL.premap votes FL.sum
+    in (\d r -> d F.&: r F.&: realToFrac d/ realToFrac (d + r) F.&: V.RNil) <$> dVotes <*> rVotes
 
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
@@ -351,10 +381,8 @@ vaAnalysis = do
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
   let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
-  getVAResults "data/forPosts/VA_2019_General.json"
-  return ()
---  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
---    $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
+  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
+    $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
 
 --vaLowerColonnade :: BR.CellStyle (SLDLocation, [Double]) col -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
 vaLowerColonnade cas =
@@ -382,9 +410,12 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
 --  modelData_C <- fmap (filterVotingDataByYear (==2020)) <$> prepSLDModelData False
   res_C <- stateLegModel False sldDat_C
   res <- K.ignoreCacheTime res_C
-  K.logLE K.Info $ show res
+--  K.logLE K.Info $ show res
+  vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
+  vaResults <- K.ignoreCacheTime vaResults_C
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) $ M.toList res
+
 
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
