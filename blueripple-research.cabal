@@ -192,6 +192,7 @@ library
                  , BlueRipple.Data.CountFolds
                  , BlueRipple.Data.DemographicTypes
                  , BlueRipple.Data.ElectionTypes
+                 , BlueRipple.Data.ModelingTypes
                  , BlueRipple.Data.CensusTables
                  , BlueRipple.Data.CensusLoaders
                  , BlueRipple.Data.UsefulDataJoins

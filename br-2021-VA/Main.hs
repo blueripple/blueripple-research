@@ -24,6 +24,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.Heidi as BR
@@ -64,6 +65,8 @@ import qualified Frames.Serialize as FS
 import qualified Frames.Transform  as FT
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
+import qualified Frames.Visualization.VegaLite.Data
+                                               as FV
 
 import Control.Lens.Operators
 
@@ -379,25 +382,24 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
 
 --vaLowerColonnade :: BR.CellStyle (SLDLocation, [Double]) col -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
 vaLowerColonnade cas =
-  let state ((s, d, n), [l, m, u]) = s
-      dType ((s, d, n), [l, m, u]) = d
-      dNum ((s, d, n), [l, m, u]) = n
-      share5 ((s, d, n), [l, m, u]) = l
-      share50 ((s, d, n), [l, m, u]) = m
-      share95 ((s, d, n), [l, m, u]) = u
+  let state = F.rgetField @BR.StateAbbreviation
+      dType = F.rgetField @ET.DistrictTypeC
+      dNum = F.rgetField @ET.DistrictNumber
+      share5 = MT.ciLower . F.rgetField @ModeledShare
+      share50 = MT.ciMid . F.rgetField @ModeledShare
+      share95 = MT.ciUpper . F.rgetField @ModeledShare
   in C.headed "State " (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
-
 
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
@@ -407,14 +409,23 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         -> K.Sem r ()
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
---  modelData_C <- fmap (filterVotingDataByYear (==2020)) <$> prepSLDModelData False
-  res_C <- stateLegModel False sldDat_C
-  res <- K.ignoreCacheTime res_C
---  K.logLE K.Info $ show res
+  model_C <- stateLegModel False sldDat_C
+  model <- K.ignoreCacheTime model_C
+  BR.logFrame model
   vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
   vaResults <- K.ignoreCacheTime vaResults_C
+  BR.logFrame vaResults
+  -- join model results with election results
+  let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] model vaResults
+  when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
+  BR.logFrame modelAndResult
   BR.brAddPostMarkDownFromFile postPaths "_intro"
-  BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) $ M.toList res
+  _ <- K.addHvega Nothing Nothing
+       $ modelResultScatterChart
+       "Modeled Vs. Actual"
+       (FV.ViewConfig 600 600 10)
+       (fmap F.rcast modelAndResult)
+  BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) model
 
 
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
@@ -441,7 +452,6 @@ groupBuilder districts states slds = do
   SB.addGroupIndexForDataSet sldSexGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet sldRaceGroup sldData $ SB.makeIndexFromEnum race5
   SB.addGroupIndexForDataSet sldGroup sldData $ SB.makeIndexFromFoldable show sldKey slds
-
   return ()
 
 
@@ -455,7 +465,7 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
               -> K.ActionWithCacheTime r SLDModelData
-              -> K.Sem r (K.ActionWithCacheTime r (Map SLDLocation [Double]))
+              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModelResultsR))
 stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
@@ -557,12 +567,12 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
         return ()
 
       extractResults :: K.KnitEffects r
-                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map SLDLocation [Double])
+                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (FS.SFrameRec ModelResultsR)
       extractResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
           eb <- K.ignoreCacheTime eb_C
-          K.knitEither $ do
+          resultsMap <- K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
               (SB.RowTypeTag @(F.Record SLDDemographicsR) "SLD_Demographics")
@@ -572,6 +582,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map g v
             parseAndIndexPctsWith psIndexIM id "PS_SLD_Demographics_SLD"
+          fmap FS.SFrame $ K.knitEither $ MT.keyedCIsToFrame sldLocationToRec $ M.toList resultsMap
 --      dataWranglerAndCode :: K.ActionWithCacheTime r SLDModelData
 --                          -> K.Sem r (SC.DataWrangler SLDModelData SB.DataSetGroupIntMaps (), SB.StanCode)
       dataWranglerAndCode data_C = do
@@ -594,7 +605,8 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
-  MRP.runMRPModel
+  fmap (fmap FS.unSFrame)
+    $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
     ("sld_H")
@@ -609,6 +621,13 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     (Just 15)
 
 type SLDLocation = (Text, ET.DistrictType, Int)
+
+sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+sldLocationToRec (sa, dt, dn) = sa F.&: dt F.&: dn F.&: V.RNil
+
+type ModeledShare = "ModeledShare" F.:-> MT.ConfidenceInterval
+
+type ModelResultsR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ModeledShare]
 
 sldGroup :: SB.GroupTypeTag SLDLocation
 sldGroup = SB.GroupTypeTag "SLD"
@@ -696,3 +715,26 @@ indexStanResults im v = do
     $ Left $
     "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " result and IntMap = " <> show im
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
+
+
+modelResultScatterChart :: Text
+                        -> FV.ViewConfig
+                        -> F.FrameRec ([ET.DistrictNumber, ModeledShare, DShare])
+                        -> GV.VegaLite
+modelResultScatterChart title vc rows =
+  let toVLDataRec = FV.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FV.asVLData (GV.Number . (*100) . MT.ciMid) "Model Mid"
+                    V.:& FV.asVLData (GV.Number . (*100)) "Election Result"
+                    V.:& V.RNil
+      vlData = FV.recordsToData toVLDataRec rows
+      encModel = GV.position GV.Y [GV.PName "Model Mid"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model Mid"]
+                                  ]
+      encElection = GV.position GV.X [GV.PName "Election Result"
+                                     , GV.PmType GV.Quantitative
+                                     --                               , GV.PScale [GV.SZero False]
+                                     , GV.PAxis [GV.AxTitle "Election Result"]]
+      enc = GV.encoding . encModel . encElection
+      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+  in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
