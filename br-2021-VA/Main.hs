@@ -735,6 +735,14 @@ modelResultScatterChart title vc rows =
                                      , GV.PmType GV.Quantitative
                                      --                               , GV.PScale [GV.SZero False]
                                      , GV.PAxis [GV.AxTitle "Election Result"]]
-      enc = GV.encoding . encModel . encElection
-      mark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
-  in FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
+      enc45 =  GV.position GV.X [GV.PName "Model Mid"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model Mid"]
+                                  ]
+      dotEnc = GV.encoding . encModel . encElection
+      lineEnc = GV.encoding . encModel . enc45
+      dotMark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
+      lineMark = GV.mark GV.Line [GV.MTooltip GV.TTNone]
+      dotSpec = GV.asSpec [dotEnc [], dotMark]
+      lineSpec = GV.asSpec [lineEnc [], lineMark]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec], vlData]
