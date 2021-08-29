@@ -1,0 +1,471 @@
+line number,contest name,choice name,party name,total votes,percent of votes,num Precinct total,num Precinct rptg,over votes,under votes
+1,President of the United States,Donald J. Trump (I) (Rep),NP,2461837,49.25,159,159,0,0
+2,President of the United States,Joseph R. Biden (Dem),NP,2474507,49.51,159,159,0,0
+3,President of the United States,Jo Jorgensen (Lib),NP,62138,1.24,159,159,0,0
+4,US Senate (Perdue),David A. Perdue (I) (Rep),NP,2462617,49.73,159,159,0,0
+5,US Senate (Perdue),Jon Ossoff (Dem),NP,2374519,47.95,159,159,0,0
+6,US Senate (Perdue),Shane Hazel (Lib),NP,115039,2.32,159,159,0,0
+7,US Senate (Loeffler) - Special,Al Bartell (Ind),NP,14640,0.30,159,159,0,0
+8,US Senate (Loeffler) - Special,Allen Buckley (Ind),NP,17954,0.37,159,159,0,0
+9,US Senate (Loeffler) - Special,Doug Collins (Rep),NP,980454,19.95,159,159,0,0
+10,US Senate (Loeffler) - Special,John Fortuin (Grn),NP,15293,0.31,159,159,0,0
+11,US Senate (Loeffler) - Special,Derrick E. Grayson (Rep),NP,51592,1.05,159,159,0,0
+12,US Senate (Loeffler) - Special,Michael Todd Greene (Ind),NP,13293,0.27,159,159,0,0
+13,US Senate (Loeffler) - Special,Annette Davis Jackson (Rep),NP,44335,0.90,159,159,0,0
+14,US Senate (Loeffler) - Special,Deborah Jackson (Dem),NP,324118,6.60,159,159,0,0
+15,US Senate (Loeffler) - Special,Jamesia James (Dem),NP,94406,1.92,159,159,0,0
+16,US Senate (Loeffler) - Special,A. Wayne Johnson (Rep),NP,36176,0.74,159,159,0,0
+17,US Senate (Loeffler) - Special,Tamara Johnson-Shealey (Dem),NP,106767,2.17,159,159,0,0
+18,US Senate (Loeffler) - Special,Matt Lieberman (Dem),NP,136021,2.77,159,159,0,0
+19,US Senate (Loeffler) - Special,Kelly Loeffler (I) (Rep),NP,1273214,25.91,159,159,0,0
+20,US Senate (Loeffler) - Special,Joy Felicia Slade (Dem),NP,44945,0.91,159,159,0,0
+21,US Senate (Loeffler) - Special,Brian Slowinski (Lib),NP,35431,0.72,159,159,0,0
+22,US Senate (Loeffler) - Special,Valencia Stovall (Ind),NP,13318,0.27,159,159,0,0
+23,US Senate (Loeffler) - Special,Ed Tarver (Dem),NP,26333,0.54,159,159,0,0
+24,US Senate (Loeffler) - Special,Kandiss Taylor (Rep),NP,40349,0.82,159,159,0,0
+25,US Senate (Loeffler) - Special,Raphael Warnock (Dem),NP,1617035,32.90,159,159,0,0
+26,US Senate (Loeffler) - Special,Richard Dien Winfield (Dem),NP,28687,0.58,159,159,0,0
+27,Public Service Commission District 4,"Lauren Bubba McDonald, Jr. (I) (Rep)",NP,2415248,49.91,159,159,0,0
+28,Public Service Commission District 4,Daniel Blackman (Dem),NP,2272969,46.97,159,159,0,0
+29,Public Service Commission District 4,Nathan Wilson (Lib),NP,151196,3.12,159,159,0,0
+30,Public Service Commission District 1,Jason Shaw (I) (Rep),NP,2445181,50.11,159,159,0,0
+31,Public Service Commission District 1,Robert G. Bryant (Dem),NP,2255325,46.22,159,159,0,0
+32,Public Service Commission District 1,Elizabeth Melton (Lib),NP,179011,3.67,159,159,0,0
+33,US House District 1,"Earl L. """"Buddy"""" Carter (I) (Rep)",NP,189457,58.35,17,17,0,0
+34,US House District 1,Joyce Marie Griggs (Dem),NP,135238,41.65,17,17,0,0
+35,US House District 2,Don Cole (Rep),NP,111620,40.88,29,29,0,0
+36,US House District 2,Sanford Bishop (I) (Dem),NP,161397,59.12,29,29,0,0
+37,US House District 3,Drew Ferguson (I) (Rep),NP,241526,65.05,13,13,0,0
+38,US House District 3,Val Almonord (Dem),NP,129792,34.95,13,13,0,0
+39,US House District 4,Johsie Cruz Ezammudeen (Rep),NP,69393,19.92,4,4,0,0
+40,US House District 4,"Henry C. """"Hank"""" Johnson, Jr. (I) (Dem)",NP,278906,80.08,4,4,0,0
+41,US House District 5,Angela Stanton-King (Rep),NP,52646,14.85,3,3,0,0
+42,US House District 5,Nikema Williams (Dem),NP,301857,85.15,3,3,0,0
+43,US House District 6,Karen Handel (Rep),NP,180329,45.41,3,3,0,0
+44,US House District 6,Lucy McBath (I) (Dem),NP,216775,54.59,3,3,0,0
+45,US House District 7,Rich McCormick (Rep),NP,180564,48.61,2,2,0,0
+46,US House District 7,Carolyn Bourdeaux (Dem),NP,190900,51.39,2,2,0,0
+47,US House District 8,Austin Scott (I) (Rep),NP,198701,64.52,24,24,0,0
+48,US House District 8,Lindsay Holliday (Dem),NP,109264,35.48,24,24,0,0
+49,US House District 9,Andrew Clyde (Rep),NP,292750,78.58,20,20,0,0
+50,US House District 9,Devin Pandy (Dem),NP,79797,21.42,20,20,0,0
+51,US House District 10,Jody Hice (I) (Rep),NP,235810,62.31,25,25,0,0
+52,US House District 10,Tabitha Johnson-Green (Dem),NP,142636,37.69,25,25,0,0
+53,US House District 11,Barry Loudermilk (I) (Rep),NP,245259,60.43,4,4,0,0
+54,US House District 11,Dana Barrett (Dem),NP,160623,39.57,4,4,0,0
+55,US House District 12,Rick W. Allen (I) (Rep),NP,181038,58.38,19,19,0,0
+56,US House District 12,Liz Johnson (Dem),NP,129061,41.62,19,19,0,0
+57,US House District 13,Becky E. Hites (Rep),NP,81476,22.60,6,6,0,0
+58,US House District 13,David Scott (I) (Dem),NP,279045,77.40,6,6,0,0
+59,US House District 14,Marjorie Taylor Greene (Rep),NP,229827,74.71,12,12,0,0
+60,US House District 14,Kevin Van Ausdal (Dem),NP,77798,25.29,12,12,0,0
+61,State Senate District 1,Ben Watson (I) (Rep),NP,72192,100.00,3,3,0,0
+62,State Senate District 2,"Lester G. Jackson, III (I) (Dem)",NP,62334,100.00,1,1,0,0
+63,State Senate District 3,Sheila McNeill (Rep),NP,63891,100.00,5,5,0,0
+64,State Senate District 4,Billy Hickman (I) (Rep),NP,65492,100.00,6,6,0,0
+65,State Senate Dist 5/Senador Estatal Dist 5,Sheikh Rahman (I) (Dem),NP,44991,100.00,1,1,0,0
+66,State Senate District 6,Harrison Lance (Rep),NP,38891,38.49,2,2,0,0
+67,State Senate District 6,"Jennifer """"Jen"""" Jordan (I) (Dem)",NP,62148,61.51,2,2,0,0
+68,State Senate District 7,Tyler Harper (I) (Rep),NP,56433,100.00,10,10,0,0
+69,State Senate District 8,Russ Goodman (Rep),NP,43324,61.77,7,7,0,0
+70,State Senate District 8,Treva Gear (Dem),NP,26819,38.23,7,7,0,0
+71,State Senate Dist 9/Senador Estatal Dist 9,"P. K. Martin, IV (I) (Rep)",NP,49879,48.04,1,1,0,0
+72,State Senate Dist 9/Senador Estatal Dist 9,Nikki Merritt (Dem),NP,53941,51.96,1,1,0,0
+73,State Senate District 10,Emanuel Jones (I) (Dem),NP,84994,100.00,2,2,0,0
+74,State Senate District 11,Dean Burke (I) (Rep),NP,57018,100.00,8,8,0,0
+75,State Senate District 12,Tracy Taylor (Rep),NP,22546,35.82,11,11,0,0
+76,State Senate District 12,Freddie Powell Sims (I) (Dem),NP,40396,64.18,11,11,0,0
+77,State Senate District 13,Carden H. Summers (I) (Rep),NP,48153,69.45,9,9,0,0
+78,State Senate District 13,Mary Egler (Dem),NP,21178,30.55,9,9,0,0
+79,State Senate District 14,Bruce Thompson (I) (Rep),NP,66534,70.01,3,3,0,0
+80,State Senate District 14,Travis Johnson (Dem),NP,28505,29.99,3,3,0,0
+81,State Senate District 15,Ed Harbison (I) (Dem),NP,48998,100.00,7,7,0,0
+82,State Senate District 16,Marty Harbin (I) (Rep),NP,65626,68.17,4,4,0,0
+83,State Senate District 16,Cinquez Jester (Dem),NP,30643,31.83,4,4,0,0
+84,State Senate District 17,Brian Strickland (I) (Rep),NP,52454,50.94,3,3,0,0
+85,State Senate District 17,Kelly Rose (Dem),NP,50513,49.06,3,3,0,0
+86,State Senate District 18,John F. Kennedy (I) (Rep),NP,71209,100.00,6,6,0,0
+87,State Senate District 19,Blake Tillery (I) (Rep),NP,54197,100.00,11,11,0,0
+88,State Senate District 20,Larry Walker (I) (Rep),NP,57946,64.96,4,4,0,0
+89,State Senate District 20,Julius Newberry Johnson (Dem),NP,31257,35.04,4,4,0,0
+90,State Senate District 21,Brandon Beach (I) (Rep),NP,94143,100.00,2,2,0,0
+91,State Senate District 22,"Harold V. Jones, II (I) (Dem)",NP,60966,100.00,1,1,0,0
+92,State Senate District 23,Max Burns (Rep),NP,46712,59.29,11,11,0,0
+93,State Senate District 23,Ceretta Smith (Dem),NP,32069,40.71,11,11,0,0
+94,State Senate District 24,Lee Anderson (I) (Rep),NP,83776,100.00,8,8,0,0
+95,State Senate District 25,Burt Jones (I) (Rep),NP,61330,67.66,9,9,0,0
+96,State Senate District 25,Veronica Brinson (Dem),NP,29315,32.34,9,9,0,0
+97,State Senate District 26,"David E. Lucas, Sr. (I) (Dem)",NP,53421,100.00,7,7,0,0
+98,State Senate District 27,Greg Dolezal (I) (Rep),NP,87192,70.02,1,1,0,0
+99,State Senate District 27,Brooke Griffiths (Dem),NP,37340,29.98,1,1,0,0
+100,State Senate District 28,Matt Brass (I) (Rep),NP,82691,100.00,5,5,0,0
+101,State Senate District 29,Randy Robertson (I) (Rep),NP,70161,100.00,4,4,0,0
+102,State Senate District 30,Mike Dugan (I) (Rep),NP,58303,67.54,3,3,0,0
+103,State Senate District 30,Montenia Edwards (Dem),NP,28023,32.46,3,3,0,0
+104,State Senate District 31,Jason Anavitarte (Rep),NP,66020,70.86,3,3,0,0
+105,State Senate District 31,Tianna Smith (Dem),NP,27146,29.14,3,3,0,0
+106,State Senate District 32,Kay Kirkpatrick (I) (Rep),NP,63544,55.96,2,2,0,0
+107,State Senate District 32,Christine Triebsch (Dem),NP,50005,44.04,2,2,0,0
+108,State Senate District 33,Michael Rhett (I) (Dem),NP,66207,100.00,1,1,0,0
+109,State Senate District 34,Valencia M. Seay (I) (Dem),NP,64110,100.00,2,2,0,0
+110,State Senate District 35,Donzella James (I) (Dem),NP,82600,100.00,2,2,0,0
+111,State Senate District 36,Nan Orrock (I) (Dem),NP,78536,100.00,1,1,0,0
+112,State Senate District 37,Lindsey Tippins (I) (Rep),NP,60238,57.04,1,1,0,0
+113,State Senate District 37,Vanessa Parker (Dem),NP,45370,42.96,1,1,0,0
+114,State Senate District 38,Horacena Tate (I) (Dem),NP,79748,100.00,2,2,0,0
+115,State Senate District 39 - Special Democratic Primary,Zan Fort,DEM,9636,13.91,1,1,0,0
+116,State Senate District 39 - Special Democratic Primary,Sonya Halpern,DEM,31294,45.19,1,1,0,0
+117,State Senate District 39 - Special Democratic Primary,Jo Anna Potts,DEM,10751,15.52,1,1,0,0
+118,State Senate District 39 - Special Democratic Primary,Linda Pritchett,DEM,17573,25.37,1,1,0,0
+119,State Senate District 40,Garry Guan (Rep),NP,35494,39.50,3,3,0,0
+120,State Senate District 40,Sally Harrell (I) (Dem),NP,54359,60.50,3,3,0,0
+121,State Senate District 41,William Park Freeman (Rep),NP,14828,20.32,2,2,0,0
+122,State Senate District 41,Kim Jackson (Dem),NP,58154,79.68,2,2,0,0
+123,State Senate District 42,Elena Parent (I) (Dem),NP,85202,100.00,1,1,0,0
+124,State Senate District 43,Melanie Williams (Rep),NP,19703,22.50,3,3,0,0
+125,State Senate District 43,Tonya P. Anderson (I) (Dem),NP,67857,77.50,3,3,0,0
+126,State Senate District 44,Benjamin Brooks (Rep),NP,10405,11.82,2,2,0,0
+127,State Senate District 44,Gail Davenport (I) (Dem),NP,77593,88.18,2,2,0,0
+128,State Senate Dist 45/Senador Estatal Dist 45,Clint Dixon (Rep),NP,56965,55.60,1,1,0,0
+129,State Senate Dist 45/Senador Estatal Dist 45,Matielyn Jones (Dem),NP,45493,44.40,1,1,0,0
+130,State Senate District 46,Bill Cowsert (I) (Rep),NP,59278,60.98,3,3,0,0
+131,State Senate District 46,Zachary Perry (Dem),NP,37924,39.02,3,3,0,0
+132,State Senate District 47,Frank Ginn (I) (Rep),NP,60282,65.86,4,4,0,0
+133,State Senate District 47,Dawn Johnson (Dem),NP,31255,34.14,4,4,0,0
+134,State Senate District 48,Matt Reeves (Rep),NP,38358,43.82,2,2,0,0
+135,State Senate District 48,Michelle Au (Dem),NP,49184,56.18,2,2,0,0
+136,State Senate District 49,"Cecil T. """"Butch"""" Miller (I) (Rep)",NP,74684,100.00,1,1,0,0
+137,State Senate District 50,Bo Hatchett (Rep),NP,71693,83.18,8,8,0,0
+138,State Senate District 50,Dee Daley (Dem),NP,14493,16.82,8,8,0,0
+139,State Senate District 51,Steve Gooch (I) (Rep),NP,84767,82.79,8,8,0,0
+140,State Senate District 51,June Krise (Dem),NP,17625,17.21,8,8,0,0
+141,State Senate District 52,Chuck Hufstetler (I) (Rep),NP,57621,76.44,4,4,0,0
+142,State Senate District 52,Charles DeYoung (Dem),NP,17755,23.56,4,4,0,0
+143,State Senate District 53,Jeff Mullis (I) (Rep),NP,66064,100.00,4,4,0,0
+144,State Senate District 54,Chuck Payne (I) (Rep),NP,57768,100.00,4,4,0,0
+145,State Senate District 55,Gloria S. Butler (I) (Dem),NP,85654,100.00,2,2,0,0
+146,State Senate District 56,John Albers (I) (Rep),NP,51476,51.09,2,2,0,0
+147,State Senate District 56,Sarah Beeson (Dem),NP,49284,48.91,2,2,0,0
+148,State House District 1,Mike Cameron (Rep),NP,19371,100.00,2,2,0,0
+149,State House District 2,Steve Tarvin (I) (Rep),NP,21983,100.00,3,3,0,0
+150,State House District 3,Dewayne Hill (I) (Rep),NP,23054,100.00,1,1,0,0
+151,State House District 4,Kasey Carpenter (I) (Rep),NP,13377,100.00,1,1,0,0
+152,State House District 5,Matt Barton (I) (Rep),NP,19421,100.00,2,2,0,0
+153,State House District 6,Jason T. Ridley (I) (Rep),NP,18227,100.00,2,2,0,0
+154,State House District 7,David Ralston (I) (Rep),NP,27074,83.75,3,3,0,0
+155,State House District 7,Rick D. Day (Dem),NP,5255,16.25,3,3,0,0
+156,State House District 8,Stan Gunter (Rep),NP,29195,82.00,4,4,0,0
+157,State House District 8,Dave Cooper (Dem),NP,6407,18.00,4,4,0,0
+158,State House District 9,Will Wade (Rep),NP,26310,83.91,3,3,0,0
+159,State House District 9,Sharon L. Ravert (Dem),NP,5046,16.09,3,3,0,0
+160,State House District 10,Victor E. Anderson (Rep),NP,21396,83.87,2,2,0,0
+161,State House District 10,Nick Mitchell (Dem),NP,4116,16.13,2,2,0,0
+162,State House District 11,Rick Jasperse (I) (Rep),NP,22633,84.12,3,3,0,0
+163,State House District 11,Kayla Hollifield (Dem),NP,4272,15.88,3,3,0,0
+164,State House District 12,Eddie Lumsden (I) (Rep),NP,17666,81.11,2,2,0,0
+165,State House District 12,Jonathan Gilreath-Harvey (Dem),NP,4114,18.89,2,2,0,0
+166,State House District 13,Katie Dempsey (I) (Rep),NP,17421,100.00,1,1,0,0
+167,State House District 14,Mitchell Scoggins (I) (Rep),NP,24279,100.00,2,2,0,0
+168,State House District 15,Matthew Gambill (I) (Rep),NP,22536,100.00,1,1,0,0
+169,State House District 16,Trey Kelley (I) (Rep),NP,18106,78.11,3,3,0,0
+170,State House District 16,Lyndsay Arrendale (Dem),NP,5074,21.89,3,3,0,0
+171,State House District 17,Martin Momtahan (I) (Rep),NP,23833,71.69,1,1,0,0
+172,State House District 17,Q. Dailey (Dem),NP,9410,28.31,1,1,0,0
+173,State House District 18,Tyler Paul Smith (Rep),NP,18168,75.17,2,2,0,0
+174,State House District 18,Pat Rhudy (Dem),NP,6002,24.83,2,2,0,0
+175,State House District 19,Joseph Gullett (I) (Rep),NP,19414,61.54,1,1,0,0
+176,State House District 19,Alison Feliciano (Dem),NP,12132,38.46,1,1,0,0
+177,State House District 20,Charlice Byrd (Rep),NP,22262,66.10,1,1,0,0
+178,State House District 20,Ginny Lennox (Dem),NP,11416,33.90,1,1,0,0
+179,State House District 21,Brad Thomas (Rep),NP,25787,72.70,1,1,0,0
+180,State House District 21,William D. Hughes (Dem),NP,9681,27.30,1,1,0,0
+181,State House District 22,Wes Cantrell (I) (Rep),NP,31898,74.42,3,3,0,0
+182,State House District 22,Charles Ravenscraft (Dem),NP,10962,25.58,3,3,0,0
+183,State House District 23,Mandi L. Ballinger (I) (Rep),NP,28118,100.00,1,1,0,0
+184,State House District 24,Sheri Smallwood Gilligan (I) (Rep),NP,27912,73.36,1,1,0,0
+185,State House District 24,Natalie Bucsko (Dem),NP,10136,26.64,1,1,0,0
+186,State House District 25,Todd Jones (I) (Rep),NP,23733,61.77,2,2,0,0
+187,State House District 25,Christa Olenczak (Dem),NP,14689,38.23,2,2,0,0
+188,State House District 26,"Lauren W. McDonald, III (Rep)",NP,29178,77.24,1,1,0,0
+189,State House District 26,Jason Boskey (Dem),NP,8600,22.76,1,1,0,0
+190,State House District 27,Lee Hawkins (I) (Rep),NP,24715,100.00,2,2,0,0
+191,State House District 28,Chris Erwin (I) (Rep),NP,22655,100.00,3,3,0,0
+192,State House District 29,Matt Dubnik (I) (Rep),NP,12877,64.93,1,1,0,0
+193,State House District 29,Pat Calmes (Dem),NP,6954,35.07,1,1,0,0
+194,State House District 30,"Emory Dunahoo, Jr. (I) (Rep)",NP,18717,70.05,1,1,0,0
+195,State House District 30,Leigh Miller (Dem),NP,8003,29.95,1,1,0,0
+196,State House District 31,Tommy Benton (I) (Rep),NP,26632,80.32,1,1,0,0
+197,State House District 31,Pete Fuller (Dem),NP,6524,19.68,1,1,0,0
+198,State House District 32,Alan Powell (I) (Rep),NP,22259,84.19,3,3,0,0
+199,State House District 32,Alisha Allen (Dem),NP,4180,15.81,3,3,0,0
+200,State House District 33,Rob Leverett (Rep),NP,19768,73.91,5,5,0,0
+201,State House District 33,Kerry Dornell Hamm (Dem),NP,6979,26.09,5,5,0,0
+202,State House District 34,Bert Reeves (I) (Rep),NP,16888,56.13,1,1,0,0
+203,State House District 34,Priscilla G. Smith (Dem),NP,13199,43.87,1,1,0,0
+204,State House District 35,Ed Setzler (I) (Rep),NP,15189,50.47,1,1,0,0
+205,State House District 35,Kyle Rinaudo (Dem),NP,14909,49.53,1,1,0,0
+206,State House District 36,Ginny Ehrhart (I) (Rep),NP,24536,64.83,1,1,0,0
+207,State House District 36,James Francis Ryner (Dem),NP,13313,35.17,1,1,0,0
+208,State House District 37,Rose Wing (Rep),NP,13603,46.04,1,1,0,0
+209,State House District 37,Mary Frances Williams (I) (Dem),NP,15946,53.96,1,1,0,0
+210,State House District 38,David Wilkerson (I) (Dem),NP,25015,100.00,1,1,0,0
+211,State House District 39,Jim Hickey (Rep),NP,4411,17.63,1,1,0,0
+212,State House District 39,Erica Thomas (I) (Dem),NP,20613,82.37,1,1,0,0
+213,State House District 40,Taryn Chilivis Bowman (Rep),NP,14773,41.63,2,2,0,0
+214,State House District 40,Erick Eugene Allen (I) (Dem),NP,20716,58.37,2,2,0,0
+215,State House District 41,"Stephen M. George, Jr. (Rep)",NP,5878,28.21,1,1,0,0
+216,State House District 41,Michael Smith (I) (Dem),NP,14960,71.79,1,1,0,0
+217,State House District 42,Teri Anulewicz (I) (Dem),NP,17237,100.00,1,1,0,0
+218,State House District 43,Sharon Cooper (I) (Rep),NP,15928,50.76,1,1,0,0
+219,State House District 43,Luisa Wakeman (Dem),NP,15452,49.24,1,1,0,0
+220,State House District 44,Don L. Parsons (I) (Rep),NP,16809,51.83,1,1,0,0
+221,State House District 44,Connie DiCicco (Dem),NP,15623,48.17,1,1,0,0
+222,State House District 45,Matt Dollar (I) (Rep),NP,19549,54.98,2,2,0,0
+223,State House District 45,Sara Tindall Ghazal (Dem),NP,16006,45.02,2,2,0,0
+224,State House District 46,John Carson (I) (Rep),NP,21712,61.46,2,2,0,0
+225,State House District 46,Caroline L. Holko (Dem),NP,13615,38.54,2,2,0,0
+226,State House District 47,Jan Jones (I) (Rep),NP,21039,60.79,1,1,0,0
+227,State House District 47,Anthia Owens Carter (Dem),NP,13570,39.21,1,1,0,0
+228,State House District 48,Betty Price (Rep),NP,13349,47.70,1,1,0,0
+229,State House District 48,Mary Robichaux (I) (Dem),NP,14635,52.30,1,1,0,0
+230,State House District 49,"Charles E. """"Chuck"""" Martin (I) (Rep)",NP,16974,52.81,1,1,0,0
+231,State House District 49,Jason T. Hayes (Dem),NP,15166,47.19,1,1,0,0
+232,State House District 50,Jay Lin (Rep),NP,13504,47.19,1,1,0,0
+233,State House District 50,Angelika Kausche (I) (Dem),NP,15111,52.81,1,1,0,0
+234,State House District 51,Alex B. Kaufman (Rep),NP,13274,44.74,1,1,0,0
+235,State House District 51,Josh McLaurin (I) (Dem),NP,16398,55.26,1,1,0,0
+236,State House District 52,Deborah Silcox (I) (Rep),NP,16692,49.44,1,1,0,0
+237,State House District 52,Shea Roberts (Dem),NP,17069,50.56,1,1,0,0
+238,State House District 53,Sheila Jones (I) (Dem),NP,24615,100.00,2,2,0,0
+239,State House District 54,Lyndsey Rudder (Rep),NP,15521,42.02,1,1,0,0
+240,State House District 54,Betsy Holland (I) (Dem),NP,21420,57.98,1,1,0,0
+241,State House District 55,Marie Metze (I) (Dem),NP,27041,100.00,1,1,0,0
+242,State House District 56,Mesha Mainor (Dem),NP,19664,100.00,1,1,0,0
+243,State House District 57,Stacey Evans (Dem),NP,29595,100.00,1,1,0,0
+244,State House District 58,Park Cannon (I) (Dem),NP,28021,100.00,1,1,0,0
+245,State House District 59,David Dreyer (I) (Dem),NP,24657,100.00,1,1,0,0
+246,State House District 60,Kim Schofield (I) (Dem),NP,19272,100.00,2,2,0,0
+247,State House District 61,Roger Bruce (I) (Dem),NP,24095,100.00,3,3,0,0
+248,State House District 62,"William K. Boddie, Jr. (I) (Dem)",NP,29482,100.00,2,2,0,0
+249,State House District 63,David Callahan (Rep),NP,6247,21.22,3,3,0,0
+250,State House District 63,Debra Bazemore (I) (Dem),NP,23191,78.78,3,3,0,0
+251,State House District 64,Derrick L. Jackson (I) (Dem),NP,26962,100.00,2,2,0,0
+252,State House District 65,Mandisha A. Thomas (Dem),NP,26797,100.00,2,2,0,0
+253,State House District 66,Jason C. Jones (Rep),NP,9726,33.38,2,2,0,0
+254,State House District 66,Kimberly Alexander (I) (Dem),NP,19407,66.62,2,2,0,0
+255,State House District 67,Micah Gravley (I) (Rep),NP,17648,62.07,2,2,0,0
+256,State House District 67,Angela Mayfield (Dem),NP,10785,37.93,2,2,0,0
+257,State House District 68,J. Collins (I) (Rep),NP,24730,100.00,2,2,0,0
+258,State House District 69,Randy Nix (I) (Rep),NP,20856,79.78,3,3,0,0
+259,State House District 69,Herbert Giles (Dem),NP,5286,20.22,3,3,0,0
+260,State House District 70,Lynn Smith (I) (Rep),NP,24742,100.00,2,2,0,0
+261,State House District 71,Philip Singleton (I) (Rep),NP,25530,72.75,2,2,0,0
+262,State House District 71,Jill  Prouty (Dem),NP,9564,27.25,2,2,0,0
+263,State House District 72,Josh Bonner (I) (Rep),NP,26977,73.21,2,2,0,0
+264,State House District 72,Fred Rovner (Dem),NP,9874,26.79,2,2,0,0
+265,State House District 73,Karen Mathiak (I) (Rep),NP,16263,55.97,3,3,0,0
+266,State House District 73,William Harris (Dem),NP,12796,44.03,3,3,0,0
+267,State House District 74,Yasmin Neal (Dem),NP,17865,100.00,1,1,0,0
+268,State House District 75,Mike Glanton (I) (Dem),NP,21735,100.00,1,1,0,0
+269,State House District 76,Sandra Givens Scott (I) (Dem),NP,24533,100.00,2,2,0,0
+270,State House District 77,Rhonda Burnough (I) (Dem),NP,18616,100.00,1,1,0,0
+271,State House District 78,Demetrius Douglas (I) (Dem),NP,24482,100.00,2,2,0,0
+272,State House District 79,Andrea Johnson (Rep),NP,11185,40.25,1,1,0,0
+273,State House District 79,Michael S. Wilensky (I) (Dem),NP,16602,59.75,1,1,0,0
+274,State House District 80,Alan Cole (Rep),NP,12173,41.24,2,2,0,0
+275,State House District 80,Matthew Wilson (I) (Dem),NP,17347,58.76,2,2,0,0
+276,State House District 81,Scott Holcomb (I) (Dem),NP,17404,100.00,2,2,0,0
+277,State House District 82,Mary Margaret Oliver (I) (Dem),NP,21436,100.00,1,1,0,0
+278,State House District 83,Becky Evans (I) (Dem),NP,29045,100.00,1,1,0,0
+279,State House District 84,Renitta Shannon (I) (Dem),NP,29992,100.00,1,1,0,0
+280,State House District 85,Karla Drenner (I) (Dem),NP,22624,100.00,1,1,0,0
+281,State House District 86,Zulma Lopez (Dem),NP,23209,100.00,1,1,0,0
+282,State House District 87,Viola Davis (I) (Dem),NP,25870,100.00,1,1,0,0
+283,State House District 88,Billy Mitchell (I) (Dem),NP,22598,100.00,1,1,0,0
+284,State House District 89,Bee Nguyen (I) (Dem),NP,32600,100.00,1,1,0,0
+285,State House District 90,Pam Stephenson (I) (Dem),NP,27001,100.00,3,3,0,0
+286,State House District 91,Rhonda S. Taylor (Dem),NP,27293,100.00,2,2,0,0
+287,State House District 92,Doreen Carter (I) (Dem),NP,20996,100.00,2,2,0,0
+288,State House District 93,"Hubert Owens, Jr. (Rep)",NP,5164,16.24,2,2,0,0
+289,State House District 93,Dar'Shun Kendrick (I) (Dem),NP,26638,83.76,2,2,0,0
+290,State House District 94,Karen Bennett (I) (Dem),NP,25712,100.00,2,2,0,0
+291,State House District 95,Erica McCurdy (Rep),NP,13023,44.07,2,2,0,0
+292,State House District 95,Beth Moore (I) (Dem),NP,16530,55.93,2,2,0,0
+293,State House Dist 96/Estatal ante la Asamblea General Dist 96,"Pedro """"Pete"""" Marin (I) (Dem)",NP,15015,100.00,1,1,0,0
+294,State House Dist 97/Estatal ante la Asamblea General Dist 97,Bonnie Rich (I) (Rep),NP,16929,52.17,1,1,0,0
+295,State House Dist 97/Estatal ante la Asamblea General Dist 97,Mary Blackmon Campbell (Dem),NP,15520,47.83,1,1,0,0
+296,State House Dist 98/Estatal ante la Asamblea General Dist 98,David Clark (I) (Rep),NP,18595,59.06,1,1,0,0
+297,State House Dist 98/Estatal ante la Asamblea General Dist 98,Taeho Cho (Dem),NP,12888,40.94,1,1,0,0
+298,State House Dist 99/Estatal ante la Asamblea General Dist 99,Marvin Lim (Dem),NP,9943,100.00,1,1,0,0
+299,State House Dist 100/Estatal ante la Asamblea General Dist 100,Dewey L. McClain (I) (Dem),NP,14498,100.00,1,1,0,0
+300,State House Dist 101/Estatal ante la Asamblea General Dist 101,Carol Field (Rep),NP,9713,37.86,1,1,0,0
+301,State House Dist 101/Estatal ante la Asamblea General Dist 101,Sam Park (I) (Dem),NP,15941,62.14,1,1,0,0
+302,State House Dist 102/Estatal ante la Asamblea General Dist 102,Soo Hong (Rep),NP,13313,48.50,1,1,0,0
+303,State House Dist 102/Estatal ante la Asamblea General Dist 102,Gregg Kennard (I) (Dem),NP,14134,51.50,1,1,0,0
+304,State House Dist 103/Estatal ante la Asamblea General Dist 103,Timothy Barr (I) (Rep),NP,24204,67.50,2,2,0,0
+305,State House Dist 103/Estatal ante la Asamblea General Dist 103,Clifton  Marshall (Dem),NP,11652,32.50,2,2,0,0
+306,State House Dist 104/Estatal ante la Asamblea General Dist 104,Chuck Efstration (I) (Rep),NP,17326,51.15,1,1,0,0
+307,State House Dist 104/Estatal ante la Asamblea General Dist 104,Nakita Hemingway (Dem),NP,16547,48.85,1,1,0,0
+308,State House Dist 105/Estatal ante la Asamblea General Dist 105,Eric Dierks (Rep),NP,12043,37.74,1,1,0,0
+309,State House Dist 105/Estatal ante la Asamblea General Dist 105,Donna McLeod (I) (Dem),NP,19869,62.26,1,1,0,0
+310,State House Dist 106/Estatal ante la Asamblea General Dist 106,Brett Harrell (I) (Rep),NP,12384,41.29,1,1,0,0
+311,State House Dist 106/Estatal ante la Asamblea General Dist 106,Rebecca Mitchell (Dem),NP,17611,58.71,1,1,0,0
+312,State House Dist 107/Estatal ante la Asamblea General Dist 107,Michael McConnell (Rep),NP,10514,38.59,1,1,0,0
+313,State House Dist 107/Estatal ante la Asamblea General Dist 107,Shelly Hutchinson (I) (Dem),NP,16730,61.41,1,1,0,0
+314,State House Dist 108/Estatal ante la Asamblea General Dist 108,Johnny Crist (Rep),NP,12034,45.18,1,1,0,0
+315,State House Dist 108/Estatal ante la Asamblea General Dist 108,Jasmine Clark (I) (Dem),NP,14602,54.82,1,1,0,0
+316,State House District 109,Dale Rutledge (I) (Rep),NP,15825,48.20,3,3,0,0
+317,State House District 109,Regina Lewis-Ward (Dem),NP,17009,51.80,3,3,0,0
+318,State House District 110,Clint Crowe (Rep),NP,15729,55.80,3,3,0,0
+319,State House District 110,Ebony Carter (Dem),NP,12459,44.20,3,3,0,0
+320,State House District 111,El-Mahdi Holly (I) (Dem),NP,27997,100.00,1,1,0,0
+321,State House District 112,Dave Belton (I) (Rep),NP,26093,100.00,2,2,0,0
+322,State House District 113,Sharon Henderson (Dem),NP,23743,100.00,2,2,0,0
+323,State House District 114,Tom Kirby (I) (Rep),NP,27331,100.00,4,4,0,0
+324,State House District 115,Bruce Williamson (I) (Rep),NP,23812,77.55,1,1,0,0
+325,State House District 115,Debbie Reed (Dem),NP,6895,22.45,1,1,0,0
+326,State House District 116,Terry England (I) (Rep),NP,24376,100.00,1,1,0,0
+327,State House District 117,Houston Gaines (I) (Rep),NP,16863,56.58,4,4,0,0
+328,State House District 117,"""""Mokah"""" Jasmine Johnson (Dem)",NP,12940,43.42,4,4,0,0
+329,State House District 118,Spencer Frye (I) (Dem),NP,18807,100.00,1,1,0,0
+330,State House District 119,Marcus A. Wiedower (I) (Rep),NP,16828,54.85,2,2,0,0
+331,State House District 119,Jonathan Wallace (Dem),NP,13852,45.15,2,2,0,0
+332,State House District 120,Trey Rhodes (I) (Rep),NP,25247,100.00,5,5,0,0
+333,State House District 121,Barry Fleming (I) (Rep),NP,26291,100.00,2,2,0,0
+334,State House District 122,Jodi Lott (I) (Rep),NP,26081,69.91,1,1,0,0
+335,State House District 122,Doris O. Crutchfield (Dem),NP,11224,30.09,1,1,0,0
+336,State House District 123,Mark Newton (I) (Rep),NP,23452,100.00,2,2,0,0
+337,State House District 124,"Henry """"Wayne"""" Howard (I) (Dem)",NP,16454,100.00,1,1,0,0
+338,State House District 125,Sheila Clark Nelson (I) (Dem),NP,17666,100.00,1,1,0,0
+339,State House District 126,Gloria Frazier (I) (Dem),NP,22232,100.00,2,2,0,0
+340,State House District 127,Brian L. Prince (I) (Dem),NP,18665,100.00,2,2,0,0
+341,State House District 128,Mack Jackson (I) (Dem),NP,18053,100.00,7,7,0,0
+342,State House District 129,Susan Holmes (I) (Rep),NP,18966,69.61,4,4,0,0
+343,State House District 129,Sharonda Bell (Dem),NP,7152,26.25,4,4,0,0
+344,State House District 129,Joe Reed (Ind),NP,1130,4.15,4,4,0,0
+345,State House District 130,David Knight (I) (Rep),NP,16023,58.43,3,3,0,0
+346,State House District 130,Sheila Henley (Dem),NP,11398,41.57,3,3,0,0
+347,State House District 131,Beth Camp (Rep),NP,20246,74.81,3,3,0,0
+348,State House District 131,Chris Benton (Dem),NP,6816,25.19,3,3,0,0
+349,State House District 132,David Jenkins (Rep),NP,11458,51.50,3,3,0,0
+350,State House District 132,"Bob Trammell, Jr. (I) (Dem)",NP,10792,48.50,3,3,0,0
+351,State House District 133,"Vance Smith, Jr. (I) (Rep)",NP,25094,100.00,3,3,0,0
+352,State House District 134,Richard H. Smith (I) (Rep),NP,17591,64.15,2,2,0,0
+353,State House District 134,Carl Sprayberry (Dem),NP,9831,35.85,2,2,0,0
+354,State House District 135,Calvin Smyre (I) (Dem),NP,12407,100.00,1,1,0,0
+355,State House District 136,Carolyn Hugley (I) (Dem),NP,19509,100.00,1,1,0,0
+356,State House District 137,Debbie G. Buckner (I) (Dem),NP,22039,100.00,4,4,0,0
+357,State House District 138,Mike Cheokas (I) (Rep),NP,9542,53.85,4,4,0,0
+358,State House District 138,Marc Arnett (Dem),NP,8177,46.15,4,4,0,0
+359,State House District 139,Patty Bentley (I) (Dem),NP,13658,100.00,4,4,0,0
+360,State House District 140,Robert Dickey (I) (Rep),NP,19693,100.00,5,5,0,0
+361,State House District 141,Dale Washburn (I) (Rep),NP,25840,100.00,2,2,0,0
+362,State House District 142,Miriam Paris (I) (Dem),NP,18212,100.00,1,1,0,0
+363,State House District 143,James Beverly (I) (Dem),NP,17679,100.00,1,1,0,0
+364,State House District 144,Danny Mathis (I) (Rep),NP,18560,69.08,7,7,0,0
+365,State House District 144,Mary Whipple-Lue (Dem),NP,8306,30.92,7,7,0,0
+366,State House District 145,"Ricky """"Rick"""" Williams (I) (Rep)",NP,12371,56.16,2,2,0,0
+367,State House District 145,Quentin T. Howell (Dem),NP,9659,43.84,2,2,0,0
+368,State House District 146,Shaw Blackmon (I) (Rep),NP,25746,100.00,1,1,0,0
+369,State House District 147,Heath Clark (I) (Rep),NP,11794,52.26,1,1,0,0
+370,State House District 147,Stephen Baughier (Dem),NP,10773,47.74,1,1,0,0
+371,State House District 148,"Noel Williams, Jr. (I) (Rep)",NP,15443,70.95,4,4,0,0
+372,State House District 148,Regina Awung (Dem),NP,6322,29.05,4,4,0,0
+373,State House District 149,Robert Pruitt (Rep),NP,13972,100.00,5,5,0,0
+374,State House District 150,Matt Hatchett (I) (Rep),NP,20139,100.00,3,3,0,0
+375,State House District 151,Gerald E. Greene (I) (Rep),NP,12011,51.78,9,9,0,0
+376,State House District 151,Joyce Barlow (Dem),NP,11185,48.22,9,9,0,0
+377,State House District 152,Bill Yearta (I) (Rep),NP,23841,100.00,3,3,0,0
+378,State House District 153,Camia Whitaker Hopson (I) (Dem),NP,15462,100.00,1,1,0,0
+379,State House District 154,Winfred Dukes (I) (Dem),NP,17798,100.00,4,4,0,0
+380,State House District 155,Clay Pirkle (I) (Rep),NP,16132,72.19,5,5,0,0
+381,State House District 155,Lethia Jones Kittrell (Dem),NP,6214,27.81,5,5,0,0
+382,State House District 156,Greg Morris (I) (Rep),NP,19096,100.00,4,4,0,0
+383,State House District 157,"William """"Bill"""" Werkheiser (I) (Rep)",NP,16199,100.00,3,3,0,0
+384,State House District 158,Butch Parrish (I) (Rep),NP,15379,69.42,4,4,0,0
+385,State House District 158,Ann P.D. Gleason (Dem),NP,6773,30.58,4,4,0,0
+386,State House District 159,Jon G. Burns (I) (Rep),NP,21976,100.00,3,3,0,0
+387,State House District 160,Jan Tankersley (I) (Rep),NP,19105,100.00,2,2,0,0
+388,State House District 161,Bill Hitchens (I) (Rep),NP,27840,100.00,2,2,0,0
+389,State House District 162,Carl Wayne Gilliard (I) (Dem),NP,17344,100.00,1,1,0,0
+390,State House District 163,Derek J. Mallow (Dem),NP,18099,100.00,1,1,0,0
+391,State House District 164,Ron Stephens (I) (Rep),NP,13829,52.56,3,3,0,0
+392,State House District 164,Marcus Thompson (Dem),NP,12484,47.44,3,3,0,0
+393,State House District 165,Mickey Stephens (I) (Dem),NP,19955,100.00,1,1,0,0
+394,State House District 166,Jesse Petrea (I) (Rep),NP,26058,70.10,2,2,0,0
+395,State House District 166,Michael Mack (Dem),NP,11115,29.90,2,2,0,0
+396,State House District 167,Buddy Deloach (Rep),NP,21135,100.00,3,3,0,0
+397,State House District 168,Al Williams (I) (Dem),NP,17006,100.00,1,1,0,0
+398,State House District 169,Dominic LaRiccia (I) (Rep),NP,13759,73.06,3,3,0,0
+399,State House District 169,"Michael """"Buckle"""" Moore (Dem)",NP,5074,26.94,3,3,0,0
+400,State House District 170,Penny Houston (I) (Rep),NP,15626,75.84,3,3,0,0
+401,State House District 170,Andre Oliver (Dem),NP,4979,24.16,3,3,0,0
+402,State House District 171,Joe Campbell (I) (Rep),NP,17096,100.00,3,3,0,0
+403,State House District 172,Sam Watson (I) (Rep),NP,15556,100.00,3,3,0,0
+404,State House District 173,Darlene Taylor (I) (Rep),NP,14267,59.36,3,3,0,0
+405,State House District 173,Booker T. Gainor (Dem),NP,9766,40.64,3,3,0,0
+406,State House District 174,John L. Corbett (I) (Rep),NP,18484,100.00,6,6,0,0
+407,State House District 175,John LaHood (I) (Rep),NP,22745,100.00,3,3,0,0
+408,State House District 176,James Burchett (I) (Rep),NP,15241,71.13,4,4,0,0
+409,State House District 176,"Evans Primus, Jr. (Dem)",NP,6185,28.87,4,4,0,0
+410,State House District 177,Dexter L. Sharper (I) (Dem),NP,14598,100.00,1,1,0,0
+411,State House District 178,Steven Meeks (I) (Rep),NP,21993,100.00,4,4,0,0
+412,State House District 179,Don Hogan (I) (Rep),NP,15441,56.95,1,1,0,0
+413,State House District 179,Julie Jordan (Dem),NP,11672,43.05,1,1,0,0
+414,State House District 180,Steven Sainz (I) (Rep),NP,20286,100.00,3,3,0,0
+415,District Attorney - Alapaha,Dick Perryman (I) (Rep),NP,20947,100.00,5,5,0,0
+416,District Attorney - Alcovy,Randy McGinley (Rep),NP,61582,59.65,2,2,0,0
+417,District Attorney - Alcovy,Destiny Bryant (Dem),NP,41663,40.35,2,2,0,0
+418,District Attorney - Appalachian,B. Alison Sosebee (I) (Rep),NP,42396,100.00,3,3,0,0
+419,District Attorney - Atlanta,Fani Willis (Dem),NP,431050,100.00,1,1,0,0
+420,District Attorney - Augusta,Natalie Paine (I) (Rep),NP,86625,49.43,3,3,0,0
+421,District Attorney - Augusta,Jared T. Williams (Dem),NP,88625,50.57,3,3,0,0
+422,District Attorney - Blue Ridge,Shannon Wallace (I) (Rep),NP,119237,100.00,1,1,0,0
+423,District Attorney - Brunswick,Jackie Johnson (I) (Rep),NP,41176,47.32,5,5,0,0
+424,District Attorney - Brunswick,Keith Higgins (Ind),NP,45848,52.68,5,5,0,0
+425,District Attorney - Chattahoochee,Mark P. Jones (Dem),NP,83348,100.00,6,6,0,0
+426,District Attorney - Cherokee,Rosemary M. Greene (I) (Rep),NP,64064,100.00,2,2,0,0
+427,District Attorney - Clayton - Special Election,Tasha M. Mosley (I) (Dem),NP,102097,100.00,1,1,0,0
+428,District Attorney - Cobb - Special,"Flynn D. Broady, Jr. (Dem)",NP,197553,51.34,1,1,0,0
+429,District Attorney - Cobb - Special,Joyette Holmes (I) (Rep),NP,187241,48.66,1,1,0,0
+430,District Attorney - Conasauga,Bert Poston (I) (Rep),NP,43564,100.00,2,2,0,0
+431,District Attorney - Coweta,Herb Cranford (I) (Rep),NP,144656,100.00,5,5,0,0
+432,District Attorney - Dougherty,Gregory W. Edwards (I) (Dem),NP,30899,100.00,1,1,0,0
+433,District Attorney - Douglas - Special,Dalia Racine (Dem),NP,52339,100.00,1,1,0,0
+434,District Attorney - Dublin,Craig Fraser (I) (Rep),NP,19985,59.41,4,4,0,0
+435,District Attorney - Dublin,Adriane Latrell Love (Dem),NP,13654,40.59,4,4,0,0
+436,District Attorney - Eastern,Meg Daly Heap (I) (Rep),NP,61618,47.15,1,1,0,0
+437,District Attorney - Eastern,Shalena Cook Jones (Dem),NP,69065,52.85,1,1,0,0
+438,District Attorney - Flint,Darius Pattillo (I) (Dem),NP,94399,100.00,1,1,0,0
+439,District Attorney - Gwinnett/Fiscal del Distrito - Gwinnett,"Daniel J. """"Danny"""" Porter (I) (Rep)",NP,177800,44.01,1,1,0,0
+440,District Attorney - Gwinnett/Fiscal del Distrito - Gwinnett,Patsy Austin-Gatson (Dem),NP,226177,55.99,1,1,0,0
+441,District Attorney - Houston,George Hartwig (I) (Rep),NP,38067,51.92,1,1,0,0
+442,District Attorney - Houston,Erikka B. Williams (Dem),NP,35249,48.08,1,1,0,0
+443,District Attorney - Lookout Mountain,Chris A. Arnt (Rep),NP,68133,100.00,4,4,0,0
+444,District Attorney - Macon,Anita Reynolds Howard (Dem),NP,69417,100.00,3,3,0,0
+445,District Attorney - Middle,Tripp Fitzner (Rep),NP,31114,100.00,5,5,0,0
+446,District Attorney - Mountain,George R. Christian (I) (Rep),NP,36306,100.00,3,3,0,0
+447,District Attorney - Northern,Parks White (I) (Rep),NP,46930,100.00,5,5,0,0
+448,District Attorney - Ocmulgee,T. Wright Barksdale (Rep),NP,66868,100.00,8,8,0,0
+449,District Attorney - Oconee,Timothy G. Vaughn (I) (Rep),NP,22597,100.00,6,6,0,0
+450,District Attorney - Ogeechee,Daphne Jarriel Totten (Rep),NP,58227,100.00,4,4,0,0
+451,District Attorney - Piedmont,Brad Smith (I) (Rep),NP,73279,100.00,3,3,0,0
+452,District Attorney - Rome,Leigh E. Patterson (I) (Rep),NP,34789,100.00,1,1,0,0
+453,District Attorney - South Georgia,Joe Mulholland (I) (Rep),NP,27194,100.00,5,5,0,0
+454,District Attorney - Southern,Brad Shealy (I) (Rep),NP,86422,100.00,6,6,0,0
+455,District Attorney - Southwestern - Special,Lewis R. Lamb (I) (Ind),NP,30783,100.00,6,6,0,0
+456,District Attorney - Stone Mountain,Sherry Boston (I) (Dem),NP,323863,100.00,1,1,0,0
+457,District Attorney - Tallapoosa,Jack Browning (I) (Rep),NP,28115,100.00,2,2,0,0
+458,District Attorney - Tifton,Bryce A. Johnson (Rep),NP,14495,100.00,3,3,0,0
+459,District Attorney - Toombs,Bill Doupe (I) (Dem),NP,19360,100.00,6,6,0,0
+460,District Attorney - Western - Special,James Chafin,NP,25022,34.94,2,2,0,0
+461,District Attorney - Western - Special,Deborah Gonzalez (Dem),NP,34646,48.38,2,2,0,0
+462,District Attorney - Western - Special,Brian Patterson (Dem),NP,11949,16.68,2,2,0,0
+463,District Attorney - Bell-Forsyth,Penny A. Penn (I) (Rep),NP,108132,100.00,1,1,0,0
+464,District Attorney - Towaliga,Jonathan L. Adams (I) (Rep),NP,30565,100.00,3,3,0,0
+465,Constitutional Amendment #1,YES,NP,3862568,81.62,159,159,0,0
+466,Constitutional Amendment #1,NO,NP,869540,18.38,159,159,0,0
+467,Constitutional Amendment #2,YES,NP,3491296,74.46,159,159,0,0
+468,Constitutional Amendment #2,NO,NP,1197792,25.54,159,159,0,0
+469,Statewide Referendum A,YES,NP,3451116,73.09,159,159,0,0
+470,Statewide Referendum A,NO,NP,1270737,26.91,159,159,0,0
