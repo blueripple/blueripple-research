@@ -408,24 +408,40 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         -> K.ActionWithCacheTime r SLDModelData
         -> K.Sem r ()
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
-  K.logLE K.Info $ "Re-building VA Lower post"
-  model_C <- stateLegModel False sldDat_C
-  model <- K.ignoreCacheTime model_C
-  BR.logFrame model
   vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
   vaResults <- K.ignoreCacheTime vaResults_C
-  BR.logFrame vaResults
-  -- join model results with election results
-  let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] model vaResults
-  when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
-  BR.logFrame modelAndResult
+  let comparison m t = do
+        let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
+        when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
+        BR.logFrame modelAndResult
+        _ <- K.addHvega Nothing Nothing
+          $ modelResultScatterChart
+          ("Modeled Vs. Actual (" <> t <> ")")
+          (FV.ViewConfig 600 600 10)
+          (fmap F.rcast modelAndResult)
+        return ()
+  K.logLE K.Info $ "Re-building VA Lower post"
   BR.brAddPostMarkDownFromFile postPaths "_intro"
-  _ <- K.addHvega Nothing Nothing
-       $ modelResultScatterChart
-       "Modeled Vs. Actual"
-       (FV.ViewConfig 600 600 10)
-       (fmap F.rcast modelAndResult)
-  BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) model
+
+  modelBase_C <- stateLegModel False SLM_Base sldDat_C
+  modelBase <- K.ignoreCacheTime modelBase_C
+  comparison modelBase "Base"
+
+  modelPlusState_C <- stateLegModel False SLM_PlusState sldDat_C
+  modelPlusState <- K.ignoreCacheTime modelPlusState_C
+  comparison modelPlusState "Plus State Term"
+
+  modelPlusSexEdu_C <- stateLegModel False SLM_PlusSexEdu sldDat_C
+  modelPlusSexEdu <- K.ignoreCacheTime modelPlusSexEdu_C
+  comparison modelPlusSexEdu "Plus Sex/Education Interactions"
+
+--  BR.logFrame model
+
+--  BR.logFrame vaResults
+  -- join model results with election results
+
+
+  --        BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) m
 
 
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
@@ -459,14 +475,18 @@ sldPSGroupRowMap :: SB.GroupRowMap (F.Record SLDDemographicsR)
 sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
                    $ SB.addRowMap raceGroup race5
+                   $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
                    $ SB.emptyGroupRowMap
 
 
+data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu deriving (Show)
+
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
+              -> SLModel
               -> K.ActionWithCacheTime r SLDModelData
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModelResultsR))
-stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
+stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
       jsonDataName = "stateLeg_ASR"
@@ -485,10 +505,10 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
             sigmaPrior = normal 2
             fePrior = normal 2
 
-        let simpleGroupModel = SB.NonHierarchical SB.STZNone (normal 1)
+        let simpleGroupModel x = SB.NonHierarchical SB.STZNone (normal x)
             muH gn s = "mu" <> s <> "_" <> gn
             sigmaH gn s = "sigma" <> s <> "_" <> gn
-            hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>",SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
+            hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>", SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
             hierGroupModel gtt s =
               let gn = SB.taggedGroupName gtt
               in SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
@@ -505,13 +525,11 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                           voteData
                           (Just "T")
 
-        gSexT <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "T")
-        gEduT <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "T")
+        gSexT <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
+        gEduT <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
         gRaceT <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
 --        gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
         let distT = SB.binomialLogitDist cpsVotes cpsCVAP
-            logitT_sample = SB.multiOp "+" $ feCDT :| [gRaceT, gSexT, gEduT]
-        SB.sampleDistV voteData distT logitT_sample
 
         -- Preference
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
@@ -523,29 +541,47 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
                           voteData
                           (Just "P")
 
-        gSexP <- MRP.addGroup voteData binaryPrior simpleGroupModel sexGroup (Just "P")
-        gEduP <- MRP.addGroup voteData binaryPrior simpleGroupModel educationGroup (Just "P")
+        gSexP <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
+        gEduP <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
         gRaceP <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
-
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
-            logitP_sample = SB.multiOp "+" $ feCDP :| [gRaceP, gSexP, gEduP]
-        SB.sampleDistV voteData distP logitP_sample
+
+
+        (logitT, logitP, psGroupSet) <- case model of
+              SLM_Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+                                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
+                                 , Set.fromList ["Sex", "Race", "Education"]
+                                 )
+              SLM_PlusState -> do
+                gStateT <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
+                gStateP <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
+                let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
+                    logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
+                return (logitT, logitP, Set.fromList ["Sex", "Race", "Education", "State"])
+              SLM_PlusSexEdu -> do
+                gSexEduT <- MRP.addInteractions2 voteData (simpleGroupModel 1) sexGroup educationGroup (Just "T")
+                gSexEduP <- MRP.addInteractions2 voteData (simpleGroupModel 1) sexGroup educationGroup (Just "P")
+                let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gSexEduT]
+                    logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gSexEduP]
+                return (logitT, logitP, Set.fromList ["Sex", "Race", "Education"])
+
+
+        SB.sampleDistV voteData distT (logitT feCDT)
+        SB.sampleDistV voteData distP (logitP feCDP)
 
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
         sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
-        SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex")]
+        SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex"),("SLD_State", "State")]
         let getDensity = F.rgetField @DT.PopPerSqMile
         mv <- SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
         (SB.StanVar cmn _) <- centerF mv
         let cmE = (SB.indexBy (SB.name cmn) "SLD_Demographics")
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
-            logitT_ps = SB.multiOp "+" $ densityTE :| [gRaceT, gSexT, gEduT]
-            logitP_ps = SB.multiOp "+" $ densityPE :| [gRaceP, gSexP, gEduP]
             psExprF ik = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik logitT_ps
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik logitP_ps
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT densityTE
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP densityPE
               --return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
               return $ SB.useVar pT `SB.times` SB.useVar pD
         let postStratBySLD =
@@ -555,7 +591,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
               voteData
               sldData
               (SB.addRowMap sldGroup sldKey $ sldPSGroupRowMap)
-              (Set.fromList ["Sex", "Race", "Education"])
+              psGroupSet
               (realToFrac . F.rgetField @BRC.Count)
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just sldGroup)
@@ -609,7 +645,7 @@ stateLegModel clearCaches dat_C = K.wrapPrefix "stateLegModel" $ do
     $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
-    ("sld_H")
+    ("sld_" <> show model)
     jsonDataName
     dw
     stanCode

@@ -135,6 +135,18 @@ groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCen
     SB.addExprLine "groupModel (Hierarchical, NonCentered)" $ SB.name brn `SB.vectorSample` rawPrior
   return bv
 
+groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
+groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
+  loopFromDim :: SB.StanDim -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
+  loopFromDim (SB.NamedDim ik) = SB.stanForLoopB ("n_" <> ik) Nothing ik
+  case bt of
+    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.equals` priorE
+    SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
+    SB.StanArray dims SB.StanReal -> do
+
+      undefined
+    _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
+
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()
 addHyperParameters hps = do
    let f (n, (t, e)) = do

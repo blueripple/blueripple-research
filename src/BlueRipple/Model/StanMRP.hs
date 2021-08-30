@@ -184,6 +184,25 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
         return modelTerm
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
+addInteractions2 :: Typeable d
+                 => SB.RowTypeTag r
+                 -> SB.GroupModel
+                 -> SB.GroupTypeTag k1
+                 -> SB.GroupTypeTag k2
+                 -> Maybe Text
+                 -> SB.StanBuilderM env d SB.StanExpr
+addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
+  SB.setDataSetForBindings rtt
+  (SB.IntIndex indexSize1 _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt1
+  (SB.IntIndex indexSize2 _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt2
+  when (indexSize1 < 2 || indexSize2 < 2) $ SB.stanBuildError "addInteractions2: Index with size < 2"
+  let ivn = "beta_" <> SB.taggedGroupName gtt1 <> "_" <> SB.taggedGroupName gtt2 <> maybe "" (("_" <>))  mSuffix
+      ivt = SB.StanArray [SB.NamedDim $ SB.taggedGroupName gtt1, SB.NamedDim $ SB.taggedGroupName gtt2] SB.StanReal
+      iv' = SB.StanVar ivn ivt
+  iv <- SB.groupModel iv' gm
+  return $ SB.useVar iv
+
+
 {-
 --- return expression for sampling and one for everything else
 addNestedMRGroup ::  Typeable d
