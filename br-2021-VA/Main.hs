@@ -717,32 +717,64 @@ indexStanResults im v = do
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
 
 
+
+
 modelResultScatterChart :: Text
                         -> FV.ViewConfig
                         -> F.FrameRec ([ET.DistrictNumber, ModeledShare, DShare])
                         -> GV.VegaLite
 modelResultScatterChart title vc rows =
   let toVLDataRec = FV.asVLData (GV.Number . realToFrac) "District Number"
-                    V.:& FV.asVLData (GV.Number . (*100) . MT.ciMid) "Model Mid"
-                    V.:& FV.asVLData (GV.Number . (*100)) "Election Result"
+                    V.:& FV.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
+                                      ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
+                                      ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
+                                      ]
+                    V.:& FV.asVLData (GV.Number . (*100)) "Election_Result"
                     V.:& V.RNil
       vlData = FV.recordsToData toVLDataRec rows
-      encModel = GV.position GV.Y [GV.PName "Model Mid"
-                                  , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model Mid"]
+      encModelMid = GV.position GV.Y [GV.PName "Model_Mid"
+                                     , GV.PmType GV.Quantitative
+                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
+                                     --                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
+                                  , GV.PScale [GV.SZero False]
                                   ]
-      encElection = GV.position GV.X [GV.PName "Election Result"
+      encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model_Low"]
+--                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
+--                                  , GV.PScale [GV.SZero False]
+                                  ]
+      encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model_High"]
+--                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
+--                                  , GV.PScale [GV.SZero False]
+                                  ]
+      encElection = GV.position GV.X [GV.PName "Election_Result"
                                      , GV.PmType GV.Quantitative
                                      --                               , GV.PScale [GV.SZero False]
-                                     , GV.PAxis [GV.AxTitle "Election Result"]]
-      enc45 =  GV.position GV.X [GV.PName "Model Mid"
+                                     , GV.PAxis [GV.AxTitle "Election_Result"]]
+      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model Mid"]
+                                  , GV.PAxis [GV.AxTitle ""]
                                   ]
-      dotEnc = GV.encoding . encModel . encElection
-      lineEnc = GV.encoding . encModel . enc45
-      dotMark = GV.mark GV.Circle [GV.MTooltip GV.TTData]
-      lineMark = GV.mark GV.Line [GV.MTooltip GV.TTNone]
-      dotSpec = GV.asSpec [dotEnc [], dotMark]
-      lineSpec = GV.asSpec [lineEnc [], lineMark]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec], vlData]
+
+      regression p = GV.transform
+                     . GV.filter (GV.FExpr "datum.Election_Result > 1 && datum.Election_Result < 99")
+                     . GV.regression "Model_Mid" "Election_Result" [GV.RgParams p]
+      errorT = GV.transform
+               . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
+               . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
+      dotEnc = GV.encoding . encModelMid . encElection
+      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
+      lineEnc = GV.encoding . encModelMid . enc45
+      dotSpec = GV.asSpec [dotEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
+      lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
+      regressionSpec = GV.asSpec [regression False [], dotEnc [], GV.mark GV.Line [GV.MStroke "red"]]
+      r2Enc = GV.encoding
+              . GV.position GV.X [GV.PNumber 200]
+              . GV.position GV.Y [GV.PNumber 20]
+              . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
+      r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [r2Spec, dotSpec, lineSpec, regressionSpec], vlData]
