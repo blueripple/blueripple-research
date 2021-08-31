@@ -427,6 +427,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelBase <- K.ignoreCacheTime modelBase_C
   comparison modelBase "Base"
 
+  modelPlusInteractions_C <- stateLegModel False SLM_PlusInteractions sldDat_C
+  modelPlusInteractions <- K.ignoreCacheTime modelPlusInteractions_C
+  comparison modelPlusInteractions "Plus Interactions"
+{-
   modelPlusState_C <- stateLegModel False SLM_PlusState sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
   comparison modelPlusState "Plus State Term"
@@ -434,6 +438,7 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelPlusSexEdu_C <- stateLegModel False SLM_PlusSexEdu sldDat_C
   modelPlusSexEdu <- K.ignoreCacheTime modelPlusSexEdu_C
   comparison modelPlusSexEdu "Plus Sex/Education Interactions"
+-}
 
 --  BR.logFrame model
 
@@ -479,7 +484,7 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.emptyGroupRowMap
 
 
-data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu deriving (Show)
+data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu | SLM_PlusRaceEdu | SLM_PlusInteractions deriving (Show)
 
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
@@ -570,6 +575,33 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitT_ps d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.useVar sexEduT]
                     logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar vSexEduP]
                     logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar sexEduP]
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
+              SLM_PlusRaceEdu -> do
+                let groups = MRP.addGroupForInteractions raceGroup
+                             $ MRP.addGroupForInteractions educationGroup mempty
+                let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceEdu" <> s) sigmaPrior SB.STZNone
+                raceEduT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
+                vRaceEduT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) raceEduT
+                raceEduP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
+                vRaceEduP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) raceEduP
+                let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.useVar vRaceEduT)
+                    logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.useVar raceEduT)
+                    logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar vRaceEduP)
+                    logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar raceEduP)
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
+              SLM_PlusInteractions -> do
+                let groups = MRP.addGroupForInteractions raceGroup
+                             $ MRP.addGroupForInteractions sexGroup
+                             $ MRP.addGroupForInteractions educationGroup mempty
+                let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceSexEdu" <> s) sigmaPrior SB.STZNone
+                interT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
+                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interT
+                interP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
+                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interP
+                let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.useVar vInterT)
+                    logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.useVar interT)
+                    logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar vInterP)
+                    logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
 
 

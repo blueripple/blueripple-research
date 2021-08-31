@@ -110,22 +110,53 @@ data GroupModel = NonHierarchical SumToZero SB.StanExpr
                 | Hierarchical SumToZero HyperParameters HierarchicalParameterization
 
 
+
+groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
+groupModel bv gm = do
+  gmRes <- groupModel' [bv] gm
+  case gmRes of
+    (x:[]) -> return x
+    _ -> undefined -- this should really never happen
+
+groupModel' :: [SB.StanVar] -> GroupModel -> SB.StanBuilderM env d [SB.StanVar]
+groupModel' bvs (NonHierarchical stz priorE) = do
+  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  when (stz /= STZQR) $ traverse_ declareOne bvs --do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
+  traverse_ (\bv -> sumToZero bv stz) bvs
+  traverse_ (\bv -> groupBetaPrior bv priorE) bvs
+  return bvs
+
+groupModel' bvs (Hierarchical stz hps (Centered betaPrior)) = do
+  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  addHyperParameters hps
+  traverse_ declareOne bvs
+  traverse_ (\bv -> sumToZero bv stz) bvs
+  traverse_ (\bv -> groupBetaPrior bv betaPrior) bvs
+  return bvs
+
+groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
+  let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+  brvs <- traverse declareRaw bvs
+  traverse (\brv -> sumToZero brv stz) brvs -- ?
+  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+  traverse_ declareBeta bvs
+  addHyperParameters hps
+  traverse (\brv -> groupBetaPrior brv rawPrior) brvs
+  return bvs
+
+{-
 groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
 groupModel bv@(SB.StanVar bn bt) (NonHierarchical stz priorE) = do
   when (stz /= STZQR) $ do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
   sumToZero bv stz
   groupBetaPrior bv priorE
---  SB.inBlock SB.SBModel
---    $ SB.addExprLine "groupModel (NonHierarchical)" $ SB.name bn `SB.vectorSample` priorE
   return bv
 
-groupModel bv@(SB.StanVar bn bt) (Hierarchical stz hps (Centered betaPrior)) = do
+groupModel  bv@(SB.StanVar bn bt) (Hierarchical stz hps (Centered betaPrior)) = do
   bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   sumToZero bv stz
   addHyperParameters hps
   groupBetaPrior bv betaPrior
---  SB.inBlock SB.SBModel
---    $ SB.addExprLine "groupModel (Hierarchical, Centered)" $ SB.name bn `SB.vectorSample` betaPrior
   return bv
 
 groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
@@ -134,15 +165,15 @@ groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCen
   bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name brn)
   addHyperParameters hps
   groupBetaPrior brv rawPrior
---  SB.inBlock SB.SBModel $ do
---    SB.addExprLine "groupModel (Hierarchical, NonCentered)" $ SB.name brn `SB.vectorSample` rawPrior
   return bv
+-}
+
 
 groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
 groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
   let loopFromDim :: SB.StanDim -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
       loopFromDim (SB.NamedDim ik) = SB.stanForLoopB ("n_" <> ik) Nothing ik
-      loopFromDim _ = const $ SB.stanBuildError $ "groupBetaPrior:  given beta must have all named dimesnsions"
+      loopFromDim _ = const $ SB.stanBuildError $ "groupBetaPrior:  given beta must have all named dimensions"
       loopsFromDims :: [SB.StanDim] -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
       loopsFromDims dims = foldr (\f g -> g . f) id $ fmap loopFromDim dims
   SB.inBlock SB.SBModel $ case bt of

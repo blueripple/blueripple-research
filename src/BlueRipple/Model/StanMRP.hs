@@ -202,6 +202,56 @@ addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
   SB.groupModel iv' gm
 
 
+data Phantom k = Phantom
+addGroupForInteractions :: SB.GroupTypeTag k
+                        -> DHash.DHashMap SB.GroupTypeTag Phantom
+                        -> DHash.DHashMap SB.GroupTypeTag Phantom
+addGroupForInteractions gtt dhm = DHash.insert gtt Phantom dhm
+
+withSome :: (forall k.SB.GroupTypeTag k -> a) -> DHash.Some SB.GroupTypeTag -> a
+withSome f (DHash.Some gtt) = f gtt
+
+addInteractions :: Typeable d
+                 => SB.RowTypeTag r
+                 -> SB.GroupModel
+                 -> DHash.DHashMap SB.GroupTypeTag Phantom
+                 -> Int
+                 -> Maybe Text
+                 -> SB.StanBuilderM env d [SB.StanVar]
+addInteractions rtt gm groups nInteracting mSuffix = do
+  SB.setDataSetForBindings rtt
+  let groupList = DHash.keys groups -- [Some GroupTypeTag]
+  when (nInteracting < 2) $ SB.stanBuildError $ "addInteractions: nInteracting must be at least 2"
+  when (nInteracting > length groupList)
+    $ SB.stanBuildError
+    $ "addInteractions: nInteracting ("
+    <> show nInteracting
+    <> ") must be at most the number of groups ("
+    <> show (length groupList)
+    <> ")"
+  let indexSize (DHash.Some gtt) = do
+        (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
+        return indexSize
+  iSizes <- traverse indexSize groupList
+  minSize <- SB.stanBuildMaybe "addInteractions: empty groupList" $ FL.fold FL.minimum iSizes
+  when (minSize < 2) $ SB.stanBuildError "addInteractions: Index with size < 2"
+  let groupCombos = choices groupList nInteracting
+      groupNameList = fmap (withSome SB.taggedGroupName)
+      betaName l = "beta_" <> (T.intercalate "_" $ groupNameList l) <> maybe "" (("_" <>))  mSuffix
+      betaType l = SB.StanArray (fmap SB.NamedDim $ groupNameList l) SB.StanReal
+      betaVar l = SB.StanVar (betaName l) (betaType l)
+      betaVars = betaVar <$> groupCombos
+  SB.groupModel' betaVars gm
+
+-- generate all possible collections of distinct elements of a given length from a list
+choices :: [a] -> Int -> [[a]]
+choices _ 0 = [[]]
+choices [] _ = []
+choices (x:xs) n = if (n > length (x:xs))
+                   then []
+                   else fmap (x:) (choices xs (n-1)) ++ choices xs n
+
+
 {-
 --- return expression for sampling and one for everything else
 addNestedMRGroup ::  Typeable d
