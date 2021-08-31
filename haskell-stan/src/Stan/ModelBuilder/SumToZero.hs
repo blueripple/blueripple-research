@@ -114,16 +114,18 @@ groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
 groupModel bv@(SB.StanVar bn bt) (NonHierarchical stz priorE) = do
   when (stz /= STZQR) $ do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
   sumToZero bv stz
-  SB.inBlock SB.SBModel
-    $ SB.addExprLine "groupModel (NonHierarchical)" $ SB.name bn `SB.vectorSample` priorE
+  groupBetaPrior bv priorE
+--  SB.inBlock SB.SBModel
+--    $ SB.addExprLine "groupModel (NonHierarchical)" $ SB.name bn `SB.vectorSample` priorE
   return bv
 
 groupModel bv@(SB.StanVar bn bt) (Hierarchical stz hps (Centered betaPrior)) = do
   bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   sumToZero bv stz
   addHyperParameters hps
-  SB.inBlock SB.SBModel
-    $ SB.addExprLine "groupModel (Hierarchical, Centered)" $ SB.name bn `SB.vectorSample` betaPrior
+  groupBetaPrior bv betaPrior
+--  SB.inBlock SB.SBModel
+--    $ SB.addExprLine "groupModel (Hierarchical, Centered)" $ SB.name bn `SB.vectorSample` betaPrior
   return bv
 
 groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
@@ -131,20 +133,22 @@ groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCen
   sumToZero brv stz -- ?
   bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name brn)
   addHyperParameters hps
-  SB.inBlock SB.SBModel $ do
-    SB.addExprLine "groupModel (Hierarchical, NonCentered)" $ SB.name brn `SB.vectorSample` rawPrior
+  groupBetaPrior brv rawPrior
+--  SB.inBlock SB.SBModel $ do
+--    SB.addExprLine "groupModel (Hierarchical, NonCentered)" $ SB.name brn `SB.vectorSample` rawPrior
   return bv
 
 groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
 groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
-  loopFromDim :: SB.StanDim -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
-  loopFromDim (SB.NamedDim ik) = SB.stanForLoopB ("n_" <> ik) Nothing ik
-  case bt of
-    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.equals` priorE
+  let loopFromDim :: SB.StanDim -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
+      loopFromDim (SB.NamedDim ik) = SB.stanForLoopB ("n_" <> ik) Nothing ik
+      loopFromDim _ = const $ SB.stanBuildError $ "groupBetaPrior:  given beta must have all named dimesnsions"
+      loopsFromDims :: [SB.StanDim] -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
+      loopsFromDims dims = foldr (\f g -> g . f) id $ fmap loopFromDim dims
+  SB.inBlock SB.SBModel $ case bt of
+    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
     SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
-    SB.StanArray dims SB.StanReal -> do
-
-      undefined
+    SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.useVar bv `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
 
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()

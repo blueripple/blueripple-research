@@ -190,7 +190,7 @@ addInteractions2 :: Typeable d
                  -> SB.GroupTypeTag k1
                  -> SB.GroupTypeTag k2
                  -> Maybe Text
-                 -> SB.StanBuilderM env d SB.StanExpr
+                 -> SB.StanBuilderM env d SB.StanVar
 addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize1 _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt1
@@ -199,8 +199,7 @@ addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
   let ivn = "beta_" <> SB.taggedGroupName gtt1 <> "_" <> SB.taggedGroupName gtt2 <> maybe "" (("_" <>))  mSuffix
       ivt = SB.StanArray [SB.NamedDim $ SB.taggedGroupName gtt1, SB.NamedDim $ SB.taggedGroupName gtt2] SB.StanReal
       iv' = SB.StanVar ivn ivt
-  iv <- SB.groupModel iv' gm
-  return $ SB.useVar iv
+  SB.groupModel iv' gm
 
 
 {-

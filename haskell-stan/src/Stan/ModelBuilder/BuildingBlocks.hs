@@ -196,3 +196,25 @@ diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N
   SB.stanForLoop "i" Nothing "N" $ const $ SB.addStanLine $ "out_vec[i] = vs[i, i]"
   SB.addStanLine "return out_vec"
   return "indexBoth"
+
+{-
+addMultiIndex :: SB.RowTypeTag r -> [DHash.Some GroupTypeTag] -> Maybe Text -> SB.StanBuilderM env d SB.StanVar
+addMultiIndex rtt gtts mVarName = do
+  -- check that all indices are present
+  rowInfo <- SB.rowInfo rtt
+  let checkGroup :: Some GroupTypeTag -> SB.StanBuilderM env d ()
+      checkGroup sg = case sg of
+        DHash.Some gtt -> case DHash.lookup gtt (SB.groupIndexes rowInfo) of
+          Nothing -> SB.stanBuildError $ "addMultiIndex: group " <> Sb.taggedGroupName gtt <> " is missing from group indexes for data-set " <> SB.dataSetName rtt <> "."
+          Just _ -> return ()
+  mapM_ checkGroup gtts
+-}
+
+vectorizeVar :: SB.StanVar -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
+vectorizeVar v@(SB.StanVar vn vt) rtt = do
+  let ik = SB.dataSetName rtt
+      vecVname = vn <> "_v" <> ik
+  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
+  SB.useDataSetForBindings rtt $ do
+    SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.useVar fv `SB.eq` SB.useVar v
+  return fv

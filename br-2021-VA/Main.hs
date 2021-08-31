@@ -547,8 +547,10 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
         let distP = SB.binomialLogitDist ccesDVotes ccesVotes
 
 
-        (logitT, logitP, psGroupSet) <- case model of
+        (logitT_sample, logitT_ps, logitP_sample, logitP_ps, psGroupSet) <- case model of
               SLM_Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+                                 ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+                                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                                  ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                                  , Set.fromList ["Sex", "Race", "Education"]
                                  )
@@ -557,17 +559,22 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                 gStateP <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
                     logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
-                return (logitT, logitP, Set.fromList ["Sex", "Race", "Education", "State"])
+                return (logitT, logitT, logitP, logitP, Set.fromList ["Sex", "Race", "Education", "State"])
               SLM_PlusSexEdu -> do
-                gSexEduT <- MRP.addInteractions2 voteData (simpleGroupModel 1) sexGroup educationGroup (Just "T")
-                gSexEduP <- MRP.addInteractions2 voteData (simpleGroupModel 1) sexGroup educationGroup (Just "P")
-                let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gSexEduT]
-                    logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gSexEduP]
-                return (logitT, logitP, Set.fromList ["Sex", "Race", "Education"])
+                let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
+                sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
+                vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT voteData
+                sexEduP <- MRP.addInteractions2 voteData (hierGM "P") sexGroup educationGroup (Just "P")
+                vSexEduP <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduP voteData
+                let logitT_sample d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.useVar vSexEduT]
+                    logitT_ps d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.useVar sexEduT]
+                    logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar vSexEduP]
+                    logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar sexEduP]
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
 
 
-        SB.sampleDistV voteData distT (logitT feCDT)
-        SB.sampleDistV voteData distP (logitP feCDP)
+        SB.sampleDistV voteData distT (logitT_sample feCDT)
+        SB.sampleDistV voteData distP (logitP_sample feCDP)
 
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
@@ -580,8 +587,8 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
             psExprF ik = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT densityTE
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP densityPE
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
               --return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
               return $ SB.useVar pT `SB.times` SB.useVar pD
         let postStratBySLD =

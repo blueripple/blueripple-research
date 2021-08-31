@@ -758,6 +758,13 @@ addDataSetIndexes rttData rttIndexTo grm = do
 
 
 
+rowInfo :: RowTypeTag r -> StanBuilderM env d (RowInfo d r)
+rowInfo rtt = do
+  rowInfos <- rowBuilders <$> get
+  case DHash.lookup rtt rowInfos of
+    Nothing -> stanBuildError $ "rowInfo: data-set " <> dataSetName rtt <> " not found in row-builders."
+    Just ri -> return ri
+
 indexMap :: RowTypeTag r -> GroupTypeTag k -> StanBuilderM env d (IndexMap r k)
 indexMap rtt gtt = do
   rowInfos <- rowBuilders <$> get
