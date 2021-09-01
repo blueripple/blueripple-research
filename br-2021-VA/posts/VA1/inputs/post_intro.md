@@ -1,45 +1,57 @@
 # Eyes on the State Houses: VA edition
 
 It’s abundantly clear that Dems and progressives have suffered major setbacks when Republicans control
-statehouses. On the voting rights front, it’s opened the door to partisan and race-based gerrymandering[REF]
-and voter suppression[REF].  On hundreds of substantive issues, including abortion access[REF],
-Covid-safety[REF], medicaid expansion[REF], and education policy[REF],
+statehouses. On the voting rights front, it’s opened the door to partisan and race-based
+[gerrymandering](https://www.washingtonpost.com/news/wonk/wp/2015/03/01/this-is-the-best-explanation-of-gerrymandering-you-will-ever-see/)
+and
+[voter suppression](https://www.aclu.org/issues/voting-rights/fighting-voter-suppression).
+On hundreds of substantive issues, including
+[abortion access](https://www.washingtonpost.com/politics/2021/09/01/texas-abortion-law-faq/),
+[Covid-safety](https://apnews.com/article/health-government-and-politics-coronavirus-pandemic-michigan-laws-eeb73e92d5af8b46f6a1e70d8a5cbe81),
+[medicaid expansion](https://apnews.com/article/wisconsin-medicaid-business-health-government-and-politics-1ab60e341674584c3059511d35ec7c21),
+and [education policy](https://thehill.com/changing-america/respect/equality/558927-texas-passes-law-banning-critical-race-theory-in-schools),
 Republican control is an ongoing disaster for Democratic policy positions and, more
-importantly, for the people of these states. We’ve written before about the importance of state-legislative
-elections [REF] and, if anything, it has only become more urgent since.
+importantly, for the people of these states. We’ve
+[written before](https://blueripplepolitics.org/blog/state-races-2019)
+about the importance of state-legislative
+elections and, if anything, it has only become more urgent since.
 
-VA, which holds elections for their lower house this November, is the rare good-news story in this regard:
+VA, which holds elections for their lower house this November,
+is the rare
+[good-news story](https://slate.com/news-and-politics/2019/11/democrats-win-virginia-legislature.html)
+in this regard:
 the lower house went blue in 2019, after 20 years of Republican control,
-and the state senate followed in 2020.
+and the state senate followed in 2020. We’d like to keep it that way.
 
-We’d like to keep it that way. State-legislative elections are challenging from a data
+State-legislative elections are challenging from a data
 perspective: polling is almost non-existent
 and demographic information gets more difficult to find for smaller regions, making any kind of
 forecasting difficult. From our perspective, this makes it hard for us to filter
-the huge number of races by our number one criterion: winnability.
+the 100 lower-house races by our number one criterion: winnability.
 
 But, because we think this is so important, we decided to dive in anyway.
 Below we’ll look at our
 first attempt to model expected election results in the VA lower house.
-In this post we’ll model what we would have forecast in 2019
-and compare it to the outcome.
+In this post we’ll feed our model 2018 data and compare the predictions to
+the 2019 election outcome.
 To be very clear: we’re not interested in predicting outcomes. We are interested in
-which races might be winnable, or which seats more in need of defending and we
-imagine those are the same as seats which look close when predicted.
+determining which races might be winnable, or which seats more in need of defending and we
+imagine those are the same as seats which we predict to be close.
 
 ### Key Points In This Post
 
-- Using voter turnout data and validated voter preference we can model expected
+- Using voter-turnout and voter-preference data we can model expected
 turnout and preference for a specific region if we have enough demographic information.
 - Demographic information for state-legislative districts (SLDs) is available from the
-ACS (American Community Survey) and the decennial census.
+ACS (American Community Survey) and the decennial census. But is “some assembly required.”
 - Combining this information allows us to estimate the outcome of an election in
 a SLD.
-- A quick attempt to to do this using 2018 data and compare to 2019 results is encouraging.
+- An exammple of this using 2018 data and comparing to 2019 results is encouraging.
 
 ## Modeling Election Results from Demographic Information
-Election models typically use demographic *and* additional
-information about past elections, economic growth, etc.
+Election models typically use
+[demographic *and* additional information about past elections, economic growth, etc.]
+(https://projects.economist.com/us-2020-forecast/president)
 But past election data can be very heavily
 influenced by candidate quality (or someone running unopposed), a real issue
 in state-legislative elections. It’s also not clear how much right-way/wrong-way
