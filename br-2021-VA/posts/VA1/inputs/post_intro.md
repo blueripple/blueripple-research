@@ -82,13 +82,14 @@ D preference from the CES. We then post-stratify[REF] the estimates across
 the demographic data we built for each VA lower house district. The result is
 a prediction for the expected D vote share in each district.
 
-We’ll cut to the chase: in the chart below we plot the model estimate
-(using 2018 data) vs. the 2019 result.  We also plot the model=result line,
+Cutting to the chase: in the chart below we plot the model estimate
+(using 2018 data) vs. the results of the 2019 election. In blue,
+we also plot the model=result line,
 where every dot would fall if the model were perfect, and a regression
-line (with $R^2$) to show how much explanatory power the model has.
-For contested races the model is far from perfect but nonetheless
+line in red (contested races only; $R^2 = 0.75$)
+to show how much explanatory power the model has.
+The model is far from perfect but nonetheless
 extremely informative. The uncontested races fall on the sides of the chart
-and we can see that these are predictable one-sided in the model,
-with the exception of district 30 (an uncontested
-victory for the Dems but looks like a very republican district) and district
+and we can see that these are predictably one-sided in the model,
+with the exception of district
 78 (a swingy district that was uncontested by the Democrats).
