@@ -423,6 +423,11 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
+  modelPlusState_C <- stateLegModel False SLM_PlusState sldDat_C
+  modelPlusState <- K.ignoreCacheTime modelPlusState_C
+  comparison modelPlusState "Plus State Term"
+
+{-
   modelBase_C <- stateLegModel False SLM_Base sldDat_C
   modelBase <- K.ignoreCacheTime modelBase_C
   comparison modelBase "Base"
@@ -430,16 +435,16 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelPlusInteractions_C <- stateLegModel False SLM_PlusInteractions sldDat_C
   modelPlusInteractions <- K.ignoreCacheTime modelPlusInteractions_C
   comparison modelPlusInteractions "Plus Interactions"
-{-
-  modelPlusState_C <- stateLegModel False SLM_PlusState sldDat_C
-  modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  comparison modelPlusState "Plus State Term"
+
 
   modelPlusSexEdu_C <- stateLegModel False SLM_PlusSexEdu sldDat_C
   modelPlusSexEdu <- K.ignoreCacheTime modelPlusSexEdu_C
   comparison modelPlusSexEdu "Plus Sex/Education Interactions"
--}
 
+  modelPlusStateAndStateRace_C <- stateLegModel False SLM_PlusStateAndStateRace sldDat_C
+  modelPlusStateAndStateRace <- K.ignoreCacheTime modelPlusStateAndStateRace_C
+  comparison modelPlusStateAndStateRace "Plus State and State/Race Interactions"
+-}
 --  BR.logFrame model
 
 --  BR.logFrame vaResults
@@ -484,7 +489,7 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.emptyGroupRowMap
 
 
-data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu | SLM_PlusRaceEdu | SLM_PlusInteractions deriving (Show)
+data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu | SLM_PlusRaceEdu | SLM_PlusInteractions | SLM_PlusStateAndStateRace deriving (Show)
 
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
@@ -603,6 +608,22 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
+              SLM_PlusStateAndStateRace -> do
+                gStateT <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
+                gStateP <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
+                let groups = MRP.addGroupForInteractions stateGroup
+                             $ MRP.addGroupForInteractions raceGroup mempty
+                let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaStateRaceEdu" <> s) sigmaPrior SB.STZNone
+                interT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
+                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interT
+                interP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
+                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interP
+                let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT] ++ fmap SB.useVar vInterT)
+                    logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT] ++ fmap SB.useVar interT)
+                    logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar vInterP)
+                    logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar interP)
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education", "State"])
+
 
 
         SB.sampleDistV voteData distT (logitT_sample feCDT)
@@ -636,7 +657,7 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
               (Just sldGroup)
         postStratBySLD
 
---        SB.generateLogLikelihood' voteData (one $ (distT, logitT_sample))
+        SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT) :| [(distP, logitP_ps feCDP)])
 
 
         return ()
