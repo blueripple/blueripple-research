@@ -29,62 +29,53 @@ and demographic information gets more difficult to find for smaller regions, mak
 forecasting difficult. From our perspective, this makes it hard for us to filter
 the 100 lower-house races by our number one criterion: winnability.
 
-But, because we think this is so important, we decided to dive in anyway.
+Nonetheless, because we think donating efficiently to state-legislative
+races is so important, we attempted to estimate winnability using the available data.
 Below we’ll look at our
 first attempt to model expected election results in the VA lower house.
 In this post we’ll feed our model 2018 data and compare the predictions to
 the 2019 election outcome.
 To be very clear: we’re not interested in predicting outcomes. We are interested in
-determining which races might be winnable, or which seats more in need of defending and we
-imagine those are the same as seats which we predict to be close.
+determining which races are likely to be close and are thus flippable or in need of defending.
 
 ### Key Points In This Post
 
 - Using voter-turnout and voter-preference data we can model expected
-turnout and preference for a specific region if we have enough demographic information.
+turnout and preference for a specific region, if we have enough demographic information.
 - Demographic information for state-legislative districts (SLDs) is available from the
 ACS (American Community Survey) and the decennial census. But is “some assembly required.”
-- Combining this information allows us to estimate the outcome of an election in
+- Combining this information allows us to estimate the likely outcome of an election in
 a SLD.
 - An exammple of this using 2018 data and comparing to 2019 results is encouraging.
 
 ## Modeling Election Results from Demographic Information
 Election models typically use
-[demographic *and* additional information about past elections, economic growth, etc.]
-(https://projects.economist.com/us-2020-forecast/president)
+demographic *and* additional information about past elections, economic growth,
+etc. as well as polling data.[^electionModel]
 But past election data can be very heavily
 influenced by candidate quality (or someone running unopposed), a real issue
-in state-legislative elections. It’s also not clear how much right-way/wrong-way
+in state-legislative elections. It’s not clear how much right-way/wrong-way
 feelings about the economy can explain local election results. For those reasons,
 and to keep things simple, we’re going to stick to demographic varriables. The model
-in this post uses population density, Sex (restricted to binary Male or Female because that’s what
+in this post uses population density, Sex (restricted to female or male because that’s what
 is in the data we have), education level (non-college-grad or college-grad)
-and race (Black, Latinx, Asian, white-non-Latinx, other). We also include a
-factor for the state. We would very much like to have an age factor as well but the tables
+and race (Black, Latinx, Asian, white-non-Latinx, other).
+We would very much like to have an age factor as well but the tables
 made available by the census at the SLD level preclude this[^whyNoAge].
 
-[^whyNoAge]: For larger geographic areas, it’s possible to get ACS “micro-data,”
-which allows combined information for many factors.  But once we get down to the
-block-group level, we can only get the data as tabulated by the census and they
-do not provide 4-factor tables. So we had to limit ourselves to sex, education and
-race. Once more decennial data from 2020 is available,
-we may be able to improve on this.
-
 We assemble SLD-level demographic information using census provided
-shapefiles for each
-district. The shapefile is used to find all the block-groups inside the
-district and those are aggregated[^demographicCode].
-
-[^demographicCode]: We built a small python script to automate most
-of this process. We download shapefiles and block-group-data for the
-state and the script merges those into SLD-level demogrpahics.  The
-code is available on our github site[LINK].
+shapefiles for each district. The shapefile is used to find
+all the block-groups inside the district and those are
+aggregated[^demographicCode].
 
 Further complicating things, our best source for turnout data, the census
-bureau’s Current Population Survey Voting and Registration Supplement (CPSVRS),
+bureau’s Current Population Survey Voting and Registration Supplement
+([CPSVRS](https://www.census.gov/data/datasets/time-series/demo/cps/cps-supp_cps-repwgt/cps-voting.html)),
 has no data about who voters chose in the election, just whether or not they
 voted.  Our chosen source for preference information,
-the Cooperative Election Survey (CES) also has turnout information but it’s
+the Cooperative Election Survey
+([CES](https://cces.gov.harvard.edu))
+also has turnout information but it’s
 not considered as reliable as the CPSVRS.
 
 Our model combines those data sets at the congressional district level,
@@ -105,3 +96,29 @@ extremely informative. The uncontested races fall on the sides of the chart
 and we can see that these are predictably one-sided in the model,
 with the exception of district
 78 (a swingy district that was uncontested by the Democrats).
+
+[^electionModel]: See, for example,
+[this description](https://hdsr.mitpress.mit.edu/pub/nw1dzd02/release/1)
+of the Economist magazine’s U.S. presidenital election forecast.
+
+[^whyNoAge]: For larger geographic areas
+it’s possible to get ACS “micro-data,”
+which provides specific information for many factors.
+the smallest of these, Public-Use-Microdata-Areas
+or “PUMA”s, contain about 100,000 people which is too big
+to use to get the demographics of a SLD.
+Census block-groups only contain a few thousand people, but for those
+micro-data is not available.
+We’re limited to census tables and they
+do not provide 4-factor breakdowns.
+So we we’re limited to sex, education and
+race. Once more 2020 decennial data is available,
+we may be able to improve on this.
+
+[^demographicCode]: We built a
+[python script](https://github.com/blueripple/GeoData/blob/main/code/aggregateRaw.py)
+to automate most
+of this process. We download shapefiles and block-group-data for the
+state and the script merges those into SLD-level demogrpahics.  The
+code is available on our
+[github site](https://github.com/blueripple)

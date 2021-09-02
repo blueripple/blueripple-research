@@ -423,27 +423,32 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.logLE K.Info $ "Re-building VA Lower post"
   BR.brAddPostMarkDownFromFile postPaths "_intro"
 
-  modelPlusState_C <- stateLegModel False SLM_PlusState sldDat_C
+  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  comparison modelPlusState "Plus State Term"
+  comparison modelPlusState "CPS Turnout"
+
+  modelPlusState_C <- stateLegModel False PlusState CES_Turnout sldDat_C
+  modelPlusState <- K.ignoreCacheTime modelPlusState_C
+  comparison modelPlusState "CES Turnout"
+
 
 {-
-  modelBase_C <- stateLegModel False SLM_Base sldDat_C
+  modelBase_C <- stateLegModel False Base CPS_Turnout sldDat_C
   modelBase <- K.ignoreCacheTime modelBase_C
-  comparison modelBase "Base"
+  comparison modelBase "Base  (CPS Turnout)"
 
-  modelPlusInteractions_C <- stateLegModel False SLM_PlusInteractions sldDat_C
+  modelPlusInteractions_C <- stateLegModel False PlusInteractions CPS_Turnout sldDat_C
   modelPlusInteractions <- K.ignoreCacheTime modelPlusInteractions_C
-  comparison modelPlusInteractions "Plus Interactions"
+  comparison modelPlusInteractions "Plus Interactions (CPS Turnout)"
 
 
-  modelPlusSexEdu_C <- stateLegModel False SLM_PlusSexEdu sldDat_C
+  modelPlusSexEdu_C <- stateLegModel False PlusSexEdu CPS_Turnout sldDat_C
   modelPlusSexEdu <- K.ignoreCacheTime modelPlusSexEdu_C
-  comparison modelPlusSexEdu "Plus Sex/Education Interactions"
+  comparison modelPlusSexEdu "Plus Sex/Education Interactions (CPS Turnout)"
 
-  modelPlusStateAndStateRace_C <- stateLegModel False SLM_PlusStateAndStateRace sldDat_C
+  modelPlusStateAndStateRace_C <- stateLegModel False PlusStateAndStateRace CPS_Turnout sldDat_C
   modelPlusStateAndStateRace <- K.ignoreCacheTime modelPlusStateAndStateRace_C
-  comparison modelPlusStateAndStateRace "Plus State and State/Race Interactions"
+  comparison modelPlusStateAndStateRace "Plus State and State/Race Interactions (CPS Turnout)"
 -}
 --  BR.logFrame model
 
@@ -489,17 +494,19 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.emptyGroupRowMap
 
 
-data SLModel = SLM_Base | SLM_PlusState | SLM_PlusSexEdu | SLM_PlusRaceEdu | SLM_PlusInteractions | SLM_PlusStateAndStateRace deriving (Show)
+data Model = Base | PlusState | PlusSexEdu | PlusRaceEdu | PlusInteractions | PlusStateAndStateRace deriving (Show, Eq, Ord)
+data TurnoutSource = CPS_Turnout | CES_Turnout deriving (Show, Eq, Ord)
 
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
-              -> SLModel
+              -> Model
+              -> TurnoutSource
               -> K.ActionWithCacheTime r SLDModelData
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModelResultsR))
-stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
+stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-VA/stan/"
-      jsonDataName = "stateLeg_ASR"
+      jsonDataName = "stateLeg_ASR_" <> show tSource
       dataAndCodeBuilder :: MRP.BuilderM SLDModelData ()
       dataAndCodeBuilder = do
         -- data
@@ -525,8 +532,15 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         -- Turnout
-        cpsCVAP <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
-        cpsVotes <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
+        (cvap, votes) <- case tSource of
+          CPS_Turnout -> do
+            cvapCPS <- SB.addCountData voteData "CVAP" (F.rgetField @CPSCVAP)
+            votesCPS <- SB.addCountData voteData "VOTED" (F.rgetField @CPSVoters)
+            return (cvapCPS, votesCPS)
+          CES_Turnout -> do
+            cvapCES <- SB.addCountData voteData "CVAP" (F.rgetField @CCESSurveyed)
+            votesCES <- SB.addCountData voteData "VOTED" (F.rgetField @CCESVoters)
+            return (cvapCES, votesCES)
 
         (feCDT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                           True
@@ -539,7 +553,7 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
         gEduT <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
         gRaceT <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
 --        gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
-        let distT = SB.binomialLogitDist cpsVotes cpsCVAP
+        let distT = SB.binomialLogitDist votes cvap
 
         -- Preference
         ccesVotes <- SB.addCountData voteData "VOTED_C" (F.rgetField @CCESVoters)
@@ -558,19 +572,19 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
 
 
         (logitT_sample, logitT_ps, logitP_sample, logitP_ps, psGroupSet) <- case model of
-              SLM_Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
-                                 ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
-                                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
-                                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
-                                 , Set.fromList ["Sex", "Race", "Education"]
-                                 )
-              SLM_PlusState -> do
+              Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+                             ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+                             ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
+                             ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
+                             , Set.fromList ["Sex", "Race", "Education"]
+                             )
+              PlusState -> do
                 gStateT <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 gStateP <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
                     logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
                 return (logitT, logitT, logitP, logitP, Set.fromList ["Sex", "Race", "Education", "State"])
-              SLM_PlusSexEdu -> do
+              PlusSexEdu -> do
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
                 sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
                 vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT voteData
@@ -581,7 +595,7 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar vSexEduP]
                     logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.useVar sexEduP]
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
-              SLM_PlusRaceEdu -> do
+              PlusRaceEdu -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions educationGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceEdu" <> s) sigmaPrior SB.STZNone
@@ -594,7 +608,7 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar vRaceEduP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar raceEduP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
-              SLM_PlusInteractions -> do
+              PlusInteractions -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions sexGroup
                              $ MRP.addGroupForInteractions educationGroup mempty
@@ -608,7 +622,7 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.useVar interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education"])
-              SLM_PlusStateAndStateRace -> do
+              PlusStateAndStateRace -> do
                 gStateT <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 gStateP <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let groups = MRP.addGroupForInteractions stateGroup
@@ -623,8 +637,6 @@ stateLegModel clearCaches model dat_C = K.wrapPrefix "stateLegModel" $ do
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education", "State"])
-
-
 
         SB.sampleDistV voteData distT (logitT_sample feCDT)
         SB.sampleDistV voteData distP (logitP_sample feCDP)
