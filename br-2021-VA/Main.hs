@@ -402,6 +402,8 @@ vaLowerColonnade cas =
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
+
+
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
         -> BR.PostPaths BR.Abs
@@ -432,13 +434,17 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
           (fmap F.rcast modelAndResult)
         return ()
   K.logLE K.Info $ "Re-building VA Lower post"
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
+  let modelNoteName = BR.Used "Model_Details"
+  mModelNoteUrl <- BR.brNewNote postPaths postInfo modelNoteName "State Legislative Election Model" $ do
+    BR.brAddNoteMarkDownFromFile postPaths modelNoteName "_intro"
+  modelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mModelNoteUrl
+  let modelRef = "[model_description]: " <> modelNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
 
   modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
   comparison modelPlusState "CPS Turnout"
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
-
 
 {-
   modelPlusState_C <- stateLegModel False PlusState CES_Turnout sldDat_C

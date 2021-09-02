@@ -87,11 +87,12 @@ We generally run our estimations with both CPSVRS and CES as
 a turnout source to make sure the results are similar.
 
 Our model combines those data sets at the congressional district level,
-jointly estimates, via multi-level regression[REF],
+jointly estimates, via multi-level regression,
 turnout probabilities using counts from the CPSVRS and
-D preference from the CES. We then post-stratify[REF] the estimates across
+D preference from the CES. We then post-stratify the estimates across
 the demographic data we built for each VA lower house district. The result is
-a prediction for the expected D vote share in each district.
+a prediction for the expected D vote share in each district. More detail
+about the model and data-sources can be found [here][model_description].
 
 Cutting to the chase: in the chart below we plot the model estimate
 (using 2018 data) vs. the results of the 2019 election. In blue,
@@ -130,3 +131,7 @@ of this process. We download shapefiles and block-group-data for the
 state and the script merges those into SLD-level demogrpahics.  The
 code is available on our
 [github site](https://github.com/blueripple)
+
+[^modelDetails]: We’ve written a much more detailed
+description of the model
+[here]()
