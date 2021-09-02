@@ -56,9 +56,9 @@ But past election data can be very heavily
 influenced by candidate quality (or someone running unopposed), a real issue
 in state-legislative elections. It’s not clear how much right-way/wrong-way
 feelings about the economy can explain local election results. For those reasons,
-and to keep things simple, we’re going to stick to demographic varriables. The model
-in this post uses population density, Sex (restricted to female or male because that’s what
-is in the data we have), education level (non-college-grad or college-grad)
+and to keep things simple, we’re going to stick to demographic variables. Our model
+population density, sex (female or male are the only classifications in the data we have),
+education level (non-college-grad or college-grad)
 and race (Black, Latinx, Asian, white-non-Latinx, other).
 We would very much like to have an age factor as well but the tables
 made available by the census at the SLD level preclude this[^whyNoAge].
@@ -66,17 +66,25 @@ made available by the census at the SLD level preclude this[^whyNoAge].
 We assemble SLD-level demographic information using census provided
 shapefiles for each district. The shapefile is used to find
 all the block-groups inside the district and those are
-aggregated[^demographicCode].
+aggregated[^demographicCode] to construct SLD-level demographic
+breakdowns of population density, sex, education and race.
 
-Further complicating things, our best source for turnout data, the census
+Further complicating things, our favored source[^whyCPS] for turnout data, the census
 bureau’s Current Population Survey Voting and Registration Supplement
 ([CPSVRS](https://www.census.gov/data/datasets/time-series/demo/cps/cps-supp_cps-repwgt/cps-voting.html)),
 has no data about who voters chose in the election, just whether or not they
-voted.  Our chosen source for preference information,
+voted.  Our chosen source for voter preference information is the
 the Cooperative Election Survey
-([CES](https://cces.gov.harvard.edu))
-also has turnout information but it’s
-not considered as reliable as the CPSVRS.
+([CES](https://cces.gov.harvard.edu)) which does the work of validating
+survey respondents self-reported turnout with voter files.  We use
+each voter’s party choice for their congressional district as a proxy for
+their likely vote for state legislature.
+
+[^whyCPS]: The CES also has turnout information and it
+has the advantage of being validated.  But that comes with
+[it’s own issues](https://agadjanianpolitics.wordpress.com/2018/02/19/vote-validation-and-possible-underestimates-of-turnout-among-younger-americans/).
+We generally run our estimations with both CPSVRS and CES as
+a turnout source to make sure the results are similar.
 
 Our model combines those data sets at the congressional district level,
 jointly estimates, via multi-level regression[REF],

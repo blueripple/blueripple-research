@@ -38,6 +38,7 @@ import qualified Colonnade as C
 import qualified Text.Blaze.Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Control.Foldl as FL
+import qualified Control.Foldl.Statistics as FLS
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Lens as A
 import qualified Data.List as List
@@ -413,8 +414,18 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let comparison m t = do
         let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
         when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
+        let  dShare = F.rgetField @DShare
+             delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)
+             contested r = dShare r > 0.01 && dShare r < 0.99
+             (meanResult, meanDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare FLS.mean)
+                                                 <*> FL.prefilter contested (FL.premap delta FLS.mean)) modelAndResult
+             (varResult, varDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare (FLS.varianceUnbiased meanResult))
+                                             <*> FL.prefilter contested (FL.premap delta (FLS.varianceUnbiased meanDelta))) modelAndResult
+             caption = "Using " <> t <> ". "
+                       <> "Model explains " <> show (100 * (varResult - varDelta)/varResult)
+                       <> "% of the variance among the results."
         BR.logFrame modelAndResult
-        _ <- K.addHvega Nothing Nothing
+        _ <- K.addHvega Nothing (Just caption)
           $ modelResultScatterChart
           ("Modeled Vs. Actual (" <> t <> ")")
           (FV.ViewConfig 600 600 10)
@@ -426,13 +437,14 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
   comparison modelPlusState "CPS Turnout"
+  BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
+
+{-
   modelPlusState_C <- stateLegModel False PlusState CES_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
   comparison modelPlusState "CES Turnout"
 
-
-{-
   modelBase_C <- stateLegModel False Base CPS_Turnout sldDat_C
   modelBase <- K.ignoreCacheTime modelBase_C
   comparison modelBase "Base  (CPS Turnout)"
