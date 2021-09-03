@@ -153,7 +153,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 
-postDir = [Path.reldir|br-2021-VA/posts|]
+postDir = [Path.reldir|br-2021-StateLegModel/posts|]
 postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
 postLocalDraft p = postDir BR.</> p BR.</> [Path.reldir|draft|]
 postOnline p =  [Path.reldir|research/StateLeg|] BR.</> p
@@ -441,7 +441,7 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
 
-  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
+  modelPlusState_C <- stateLegModel True PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
   comparison modelPlusState "CPS Turnout"
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
@@ -523,7 +523,7 @@ stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModelResultsR))
 stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
-  let modelDir = "br-2021-VA/stan/"
+  let modelDir = "br-2021-StateLegModel/stan/"
       jsonDataName = "stateLeg_ASR_" <> show tSource
       dataAndCodeBuilder :: MRP.BuilderM SLDModelData ()
       dataAndCodeBuilder = do

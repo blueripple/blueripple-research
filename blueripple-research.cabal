@@ -396,12 +396,12 @@ executable br-2021-A
          , relude (Relude as Prelude
          , Relude.Extra)
 
-executable br-2021-VA
+executable br-2021-StateLegModel
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
-  hs-source-dirs: br-2021-VA
+  hs-source-dirs: br-2021-StateLegModel
   main-is: Main.hs
-  other-modules: VA_DataPaths, VA_DataFrames
+  other-modules: DataPaths, DataFrames
   build-depends: base
                , aeson
                , lens-aeson

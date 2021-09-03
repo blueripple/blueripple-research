@@ -11,14 +11,14 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module VA_DataFrames
-  ( module VA_DataPaths
-  , module VA_DataFrames
+module DataFrames
+  ( module DataPaths
+  , module DataFrames
   )
 where
 
 import Prelude hiding (State)
-import           VA_DataPaths
+import           DataPaths
 import qualified Data.Vinyl                    as V
 import qualified Frames                        as F
 import qualified Frames.CSV                    as F

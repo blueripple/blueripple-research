@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module VA_DataPaths where
+module DataPaths where
 
 vaDataDir :: FilePath
-vaDataDir = "./br-2021-VA/data/"
+vaDataDir = "./br-2021-StateLegModel/data/"
 
 vaUpper2019CSV :: FilePath
 vaUpper2019CSV =
