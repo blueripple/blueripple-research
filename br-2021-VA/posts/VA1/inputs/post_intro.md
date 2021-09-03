@@ -1,4 +1,4 @@
-# Eyes on the State Houses: VA edition
+# Modeling State House Races: VA edition
 
 It’s abundantly clear that Dems and progressives have suffered major setbacks when Republicans control
 statehouses. On the voting rights front, it’s opened the door to partisan and race-based
@@ -25,14 +25,17 @@ and the state senate followed in 2020. We’d like to keep it that way.
 
 State-legislative elections are challenging from a data
 perspective: polling is almost non-existent
-and demographic information gets more difficult to find for smaller regions, making any kind of
-forecasting difficult. From our perspective, this makes it hard for us to filter
-the 100 lower-house races by our number one criterion: winnability.
+and detailed demographic information gets more difficult to find for smaller regions,
+making any kind of forecasting difficult.
+From our perspective, this makes it hard to filter
+state legislative races by our number one criterion: is this a race
+the Dem *can* win but also one the Dem is *not certain* to win.
 
-Nonetheless, because we think donating efficiently to state-legislative
-races is so important, we attempted to estimate winnability using the available data.
+We think donating efficiently to state-legislative
+is extremely important, so, despite the challenges,
+we attempted to estimate winnability using the available data.
 Below we’ll look at our
-first attempt to model expected election results in the VA lower house.
+first attempt to model expected closeness of elections in the VA lower house.
 In this post we’ll feed our model 2018 data and compare the predictions to
 the 2019 election outcome.
 To be very clear: we’re not interested in predicting outcomes. We are interested in
@@ -46,37 +49,37 @@ turnout and preference for a specific region, if we have enough demographic info
 ACS (American Community Survey) and the decennial census. But is “some assembly required.”
 - Combining this information allows us to estimate the likely outcome of an election in
 a SLD.
-- An exammple of this using 2018 data and comparing to 2019 results is encouraging.
+- An exammple model, using 2018 data and comparing to 2019 results, is encouraging.
 
 ## Modeling Election Results from Demographic Information
 Election models typically use
-demographic *and* additional information about past elections, economic growth,
+demographics *and* information about past elections, economic growth,
 etc. as well as polling data.[^electionModel]
 But past election data can be very heavily
 influenced by candidate quality (or someone running unopposed), a real issue
-in state-legislative elections. It’s not clear how much right-way/wrong-way
+in state-legislative elections. It’s also not clear how much right-way/wrong-way
 feelings about the economy can explain local election results. For those reasons,
 and to keep things simple, we’re going to stick to demographic variables. Our model
-population density, sex (female or male are the only classifications in the data we have),
-education level (non-college-grad or college-grad)
+uses population density, sex (female or male are the only classifications in the data we have),
+education level (non-college-grad or college-grad),
 and race (Black, Latinx, Asian, white-non-Latinx, other).
 We would very much like to have an age factor as well but the tables
 made available by the census at the SLD level preclude this[^whyNoAge].
 
 We assemble SLD-level demographic information using census provided
 shapefiles for each district. The shapefile is used to find
-all the block-groups inside the district and those are
+all the census block-groups inside the district and those are
 aggregated[^demographicCode] to construct SLD-level demographic
 breakdowns of population density, sex, education and race.
 
-Further complicating things, our favored source[^whyCPS] for turnout data, the census
+Further complicating things, our favored source for turnout data, the census
 bureau’s Current Population Survey Voting and Registration Supplement
 ([CPSVRS](https://www.census.gov/data/datasets/time-series/demo/cps/cps-supp_cps-repwgt/cps-voting.html)),
 has no data about who voters chose in the election, just whether or not they
 voted.  Our chosen source for voter preference information is the
 the Cooperative Election Survey
 ([CES](https://cces.gov.harvard.edu)) which does the work of validating
-survey respondents self-reported turnout with voter files.  We use
+survey respondents self-reported turnout with voter files[^whyCPS].  We use
 each voter’s party choice for their congressional district as a proxy for
 their likely vote for state legislature.
 
@@ -84,24 +87,25 @@ their likely vote for state legislature.
 has the advantage of being validated.  But that comes with
 [it’s own issues](https://agadjanianpolitics.wordpress.com/2018/02/19/vote-validation-and-possible-underestimates-of-turnout-among-younger-americans/).
 We generally run our estimations with both CPSVRS and CES as
-a turnout source to make sure the results are similar.
+a turnout source to make sure the results are similar but rely
+on a
+[slightly-corrected](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf)
+version of the CPSVRS as that seems to be the most common approach.
 
-Our model combines those data sets at the congressional district level,
-jointly estimates, via multi-level regression,
-turnout probabilities using counts from the CPSVRS and
-D preference from the CES. We then post-stratify the estimates across
+Our model combines those data sets at the congressional district level
+and jointly estimates turnout probabilities using counts from the CPSVRS and
+Dem preference from the CES. We then post-stratify the estimates across
 the demographic data we built for each VA lower house district. The result is
-a prediction for the expected D vote share in each district. More detail
+a prediction for the expected Dem vote share in each district. More detail
 about the model and data-sources can be found [here][model_description].
 
 Cutting to the chase: in the chart below we plot the model estimate
 (using 2018 data) vs. the results of the 2019 election. In blue,
 we also plot the model=result line,
-where every dot would fall if the model were perfect, and a regression
-line in red (contested races only; $R^2 = 0.75$)
-to show how much explanatory power the model has.
+where every dot would fall if the model was somehow exact for each race.
 The model is far from perfect but nonetheless
-extremely informative. The uncontested races fall on the sides of the chart
+extremely informative, explaining 75% of the variance among contested races.
+The uncontested races fall on the sides of the chart
 and we can see that these are predictably one-sided in the model,
 with the exception of district
 78 (a swingy district that was uncontested by the Democrats).

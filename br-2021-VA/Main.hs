@@ -383,7 +383,7 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
@@ -903,4 +903,4 @@ modelResultScatterChart title vc rows =
               . GV.position GV.Y [GV.PNumber 20]
               . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [r2Spec, dotSpec, lineSpec, regressionSpec], vlData]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec], vlData]
