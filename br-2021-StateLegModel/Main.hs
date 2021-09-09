@@ -383,12 +383,12 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
 
---vaLowerColonnade :: BR.CellStyle (SLDLocation, [Double]) col -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
+--vaLowerColonnade :: BR.CellStyle (F.Record rs) [Char] -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
 vaLowerColonnade cas =
   let state = F.rgetField @BR.StateAbbreviation
       dType = F.rgetField @ET.DistrictTypeC
@@ -398,6 +398,7 @@ vaLowerColonnade cas =
       share95 = MT.ciUpper . F.rgetField @ModeledShare
   in C.headed "State " (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @DShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
@@ -413,6 +414,7 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
   vaResults <- K.ignoreCacheTime vaResults_C
+  let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
   let comparison m t = do
         let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
         when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
@@ -432,7 +434,7 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
           ("Modeled Vs. Actual (" <> t <> ")")
           (FV.ViewConfig 700 700 10)
           (fmap F.rcast modelAndResult)
-        return ()
+        return modelAndResult
   K.logLE K.Info $ "Re-building VA Lower post"
   let modelNoteName = BR.Used "Model_Details"
   mModelNoteUrl <- BR.brNewNote postPaths postInfo modelNoteName "State Legislative Election Model" $ do
@@ -441,10 +443,18 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
 
-  modelPlusState_C <- stateLegModel True PlusState CPS_Turnout sldDat_C
+  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  comparison modelPlusState "CPS Turnout"
+  m <- comparison modelPlusState "CPS Turnout"
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
+
+  let tableNoteName = BR.Used "District_Table"
+  _ <- BR.brNewNote postPaths postInfo tableNoteName "VA Lower House Districts" $ do
+    let sortedByModelMid = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
+        dlccChosenF r header = if (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts) then BR.highlightCellPurple else ""
+        tableCellStyle = BR.CellStyle dlccChosenF
+    BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
+  return ()
 
 {-
   modelPlusState_C <- stateLegModel False PlusState CES_Turnout sldDat_C

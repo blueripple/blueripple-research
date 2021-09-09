@@ -44,23 +44,47 @@ determining which races are likely to be close and are thus flippable or in need
 ### Key Points In This Post
 
 - Using voter-turnout and voter-preference data we can model expected
-turnout and preference for a specific region, if we have enough demographic information.
+turnout and preference for a specific region.
 - Demographic information for state-legislative districts (SLDs) is available from the
 ACS (American Community Survey) and the decennial census. But is “some assembly required.”
 - Combining this information allows us to estimate the likely outcome of an election in
 a SLD.
+- Our method intentionally avoids using the history of local election results.
 - An exammple model, using 2018 data and comparing to 2019 results, is encouraging.
 
 ## Modeling Election Results from Demographic Information
-Election models typically use
-demographics *and* information about past elections, economic growth,
-etc. as well as polling data.[^electionModel]
-But past election data can be very heavily
-influenced by candidate quality (or someone running unopposed), a real issue
-in state-legislative elections. It’s also not clear how much right-way/wrong-way
-feelings about the economy can explain local election results. For those reasons,
-and to keep things simple, we’re going to stick to demographic variables. Our model
-uses population density, sex (female or male are the only classifications in the data we have),
+When people use election-data and demographics to
+craft new districts[^redistricting]
+for congressional
+or state legisltive elections, they focus almost entirely on past election results:
+breaking past results down to their smallest available geographies, usually
+“precincts”, further splitting those into census blocks, then reassembling
+them in different ways to build new districts with predictable political leanings.
+
+[^redistricting]: See, for example
+[this](https://districtr.org) free redistricting tool. Or
+[this](https://www.districtbuilder.org).  Information about all
+things redistricting is available
+[here](https://redistricting.lls.edu).
+
+We don’t doubt the accuracy of these methods, especially given the financial and
+computational resources given over to them during redistricting.
+
+But what if past results are inconsistent with what we expect from a
+purely demographic model?  While we expect the past-results model to
+be more accurate, we also believe that mismatches between these sorts
+of models are informative, perhaps highlighting the places
+where the right candidate, campaign or organizing
+effort can produce a surprising result, or alerting us to a district
+where an incumbent Democrat might need more help defending a seat than
+we might have expected.  Such districts may also point the way out
+of the idea that demography is destiny, that, for example, districts
+that are heavily populated by white non-college-educated voters are
+impossible for Democrats to win.
+
+For all these reasons,  we’re going to model state-legislative elections using only
+demographic variables: population density,
+sex (female or male are the only classifications in the data we have),
 education level (non-college-grad or college-grad),
 and race (Black, Latinx, Asian, white-non-Latinx, other).
 We would very much like to have an age factor as well but the tables
@@ -90,7 +114,7 @@ We generally run our estimations with both CPSVRS and CES as
 a turnout source to make sure the results are similar but rely
 on a
 [slightly-corrected](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf)
-version of the CPSVRS as that seems to be the most common approach.
+version of the CPSVRS, as that seems to be the most common approach.
 
 Our model combines those data sets at the congressional district level
 and jointly estimates turnout probabilities using counts from the CPSVRS and
@@ -101,7 +125,7 @@ about the model and data-sources can be found [here][model_description].
 
 Cutting to the chase: in the chart below we plot the model estimate
 (using 2018 data) vs. the results of the 2019 election. In blue,
-we also plot the model=result line,
+we also plot the “model=result” line,
 where every dot would fall if the model was somehow exact for each race.
 The model is far from perfect but nonetheless
 extremely informative, explaining 75% of the variance among contested races.
@@ -122,7 +146,7 @@ or “PUMA”s, contain about 100,000 people which is too big
 to use to get the demographics of a SLD.
 Census block-groups only contain a few thousand people, but for those
 micro-data is not available.
-We’re limited to census tables and they
+We’re using census tables and they
 do not provide 4-factor breakdowns.
 So we we’re limited to sex, education and
 race. Once more 2020 decennial data is available,

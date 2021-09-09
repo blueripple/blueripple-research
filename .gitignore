@@ -33,9 +33,12 @@ bigData
 testbed/*.csv
 GA.html
 stan.html
+stan
 /stan/house/*
 /stan/voterPref/*
 stan/voterPref/*
+stan/output
+stan/data
 stan/*/output
 stan/*/data
 stan/*/*_model

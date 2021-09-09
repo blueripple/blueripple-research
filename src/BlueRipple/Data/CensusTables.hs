@@ -44,7 +44,7 @@ F.declareColumn "TotalIncome" ''Double
 type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
 type SLDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber]
-type SLDPrefixR = [BR.StateFips, ET.DistrictNumber, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type SLDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome]
 
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }
@@ -65,14 +65,36 @@ instance CSV.FromNamedRecord CDPrefix where
                        <*> r .: "SqKm"
 
 
+{-
+parseDistrictType :: Text -> Either Text ET.DistrictType
+parseDistrictType "StateLower" = Right ET.StateLower
+parseDistrictType "StateUpper" = Right ET.StateUpper
+parseDistrictType "Congressional" = Right ET.Congressional
+parseDistrictType x = Left $ x <> " could not be parsed as a district type."
+
+csvParseDistrictType :: CSV.Parser Text -> CSV.Parser ET.DistrictType
+csvParsePistrictType =
+-}
+
+-- Orphan
+instance CSV.FromField ET.DistrictType where
+  parseField s
+    | s == "Congressional" = pure ET.Congressional
+    | s == "StateLower" = pure ET.StateLower
+    | s == "StateUpper" = pure ET.StateUpper
+    | otherwise = mzero
+
+
+
 newtype SLDPrefix = SLDPrefix { unSLDPrefix :: F.Record SLDPrefixR } deriving (Show)
-toSLDPrefix :: Int -> Int -> Int -> Double -> Double -> Double -> Double -> Double -> SLDPrefix
-toSLDPrefix sf dn pop d pwd inc sm sk
-  = SLDPrefix $ sf F.&: dn F.&: pop F.&: d F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
+toSLDPrefix :: Int -> ET.DistrictType -> Int -> Int -> Double -> Double -> Double -> Double -> Double -> SLDPrefix
+toSLDPrefix sf dt dn pop d pwd inc sm sk
+  = SLDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: d F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
 
 instance CSV.FromNamedRecord SLDPrefix where
   parseNamedRecord r = toSLDPrefix
                        <$> r .: "StateFIPS"
+                       <*> r .: "DistrictType"
                        <*> r .: "DistrictNumber"
                        <*> r .: "TotalPopulation"
                        <*> r .: "PopPerSqMile"

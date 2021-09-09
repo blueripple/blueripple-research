@@ -25,5 +25,5 @@ import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 
-F.tableTypes "LowerHouse" vaLower2019CSV
-F.tableTypes "UpperHouse" vaUpper2019CSV
+--F.tableTypes "StateHouse" vaLower2019CSV
+--F.tableTypes "UpperHouse" vaUpper2019CSV
