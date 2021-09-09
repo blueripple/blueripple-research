@@ -416,7 +416,9 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   vaResults <- K.ignoreCacheTime vaResults_C
   let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
   let comparison m t = do
-        let (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
+        let isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
+            vaLowerModel = F.filterFrame isVALower m
+            (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
         when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
         let  dShare = F.rgetField @DShare
              delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)

@@ -165,7 +165,10 @@ censusTablesBySLD  :: (K.KnitEffects r
                       , BR.CacheEffects r)
                    => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
 censusTablesBySLD = do
-  let fileByYear = [ (BRC.TY2018, ET.StateLower, censusDataDir <> "/va_2018_sldl_Raw.csv")
+  let fileByYear = [ (BRC.TY2018, censusDataDir <> "/va_2018_sldl.csv")
+                   , (BRC.TY2018, censusDataDir <> "/va_2020_sldu.csv")
+                   , (BRC.TY2018, censusDataDir <> "/tx_2020_sldl.csv")
+                   , (BRC.TY2018, censusDataDir <> "/tx_2020_sldu.csv")
                    ]
       tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
@@ -174,20 +177,20 @@ censusTablesBySLD = do
       makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
         return $ frameFromTableRows BRC.unSLDPrefix keyRec (BRC.tableYear ty) vTRs
-      addDT :: forall rs. (rs F.⊆ ((BR.Year ': BR.StateFips ': rs)))
-        => ET.DistrictType -> F.Record (BR.Year ': BR.StateFips ': rs) -> F.Record ([BR.Year, BR.StateFips, ET.DistrictTypeC] V.++ rs)
-      addDT dt r = F.rgetField @BR.Year r F.&: F.rgetField @BR.StateFips r F.&: dt F.&: F.rcast @rs r
-      doOneYear (ty, dt, f) = do
+--      addDT :: forall rs. (rs F.⊆ ((BR.Year ': BR.StateFips ': rs)))
+--        => ET.DistrictType -> F.Record (BR.Year ': BR.StateFips ': rs) -> F.Record ([BR.Year, BR.StateFips, ET.DistrictTypeC] V.++ rs)
+--      addDT dt r = F.rgetField @BR.Year r F.&: F.rgetField @BR.StateFips r F.&: dt F.&: F.rcast @rs r
+      doOneYear (ty, f) = do
         (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.SLDPrefix (tableDescriptions ty) $ toString f)
         K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
-        fRaceBySexByAge <- fmap (addDT dt) <$> makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
+        fRaceBySexByAge <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Citizenship Tables..."
-        fRaceBySexByCitizenship <- fmap (addDT dt) <$> makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
+        fRaceBySexByCitizenship <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
-        fRaceBySexByEducation <- fmap (addDT dt) <$> makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
+        fRaceBySexByEducation <- {- fmap (addDT dt) <$> -}makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Employment Tables..."
-        fRaceBySexByAgeByEmployment <- fmap (addDT dt) <$> makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
+        fRaceBySexByAgeByEmployment <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
         let fldSumAges = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
@@ -199,7 +202,7 @@ censusTablesBySLD = do
           (fmap F.rcast $ fRaceBySexByCitizenship)
           (fmap F.rcast $ fRaceBySexByEducation)
           (fmap F.rcast $ fRaceBySexByEmployment)
-  dataDeps <- traverse (K.fileDependency . toString . (\(_, _, x) -> x)) fileByYear
+  dataDeps <- traverse (K.fileDependency . toString . (\(_, x) -> x)) fileByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/sld_tables.bin" dataDep $ const $ do
     tables <- traverse doOneYear fileByYear
