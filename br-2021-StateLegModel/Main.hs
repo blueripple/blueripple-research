@@ -37,10 +37,16 @@ import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified Colonnade as C
 import qualified Text.Blaze.Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
+import qualified Text.Megaparsec as MP
+import qualified Text.Megaparsec.Char as MP
+import qualified Text.Megaparsec.Char.Lexer as MPL
 import qualified Control.Foldl as FL
 import qualified Control.Foldl.Statistics as FLS
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Lens as A
+import qualified Data.Csv as CSV hiding (decode)
+import qualified Data.Csv.Streaming as CSV
+import Data.Csv ((.!))
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
@@ -66,8 +72,9 @@ import qualified Frames.Serialize as FS
 import qualified Frames.Transform  as FT
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
+import qualified Frames.Visualization.VegaLite.Data as FV
+
+import qualified Relude.Extra as Extra
 
 import Control.Lens.Operators
 
@@ -316,11 +323,63 @@ prepSLDModelData clearCaches = do
 type VotePct = "VotePct" F.:-> Text
 type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, ET.Party, ET.Votes, VotePct]
 
-parseParty :: Text -> Maybe ET.PartyT
-parseParty "Democrat" = Just ET.Democratic
-parseParty "Democratic" = Just ET.Democratic
-parseParty "Republican" = Just ET.Republican
-parseParty _ = Just ET.Other
+type Parser = MP.Parsec Void Text
+
+parseParty :: Text -> ET.PartyT
+parseParty "Democrat" = ET.Democratic
+parseParty "Democratic" = ET.Democratic
+parseParty "Republican" = ET.Republican
+parseParty "DEM" = ET.Democratic
+parseParty "REP" = ET.Republican
+parseParty _ = ET.Other
+
+newtype TXResult = TXResult (F.Record SLDResultR)
+
+parseTXRace :: Text -> CSV.Parser (ET.DistrictType, Int)
+parseTXRace t = toCSVParser $ first (MP.errorBundlePretty @_ @Void) $ MP.runParser parseRace "" t
+  where
+    parseHouse = fmap (\d -> (ET.StateLower, d)) $ MP.string "STATE REPRESENTATIVE DISTRICT" >> MP.space >> MPL.decimal
+    parseSenate = fmap (\d -> (ET.StateUpper, d)) $ MP.string "STATE SENATOR, DISTRICT" >> MP.space >> MPL.decimal
+    parseRace = parseHouse <|> parseSenate
+    toCSVParser e = case e of
+      Left msg -> fail msg
+      Right x -> return x
+
+parseTXResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
+parseTXResult v =
+  let bld yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
+      yr = v .! 0
+      sa = v .! 1
+      dist = (v .! 2) >>= parseTXRace
+      dt = fst <$> dist
+      dn = snd <$> dist
+      cand = v .! 3
+      p = parseParty <$> (v .! 4)
+      vts = v .! 5
+      vpct = v .! 6
+  in bld <$> yr <*> sa <*> dt <*> dn <*> cand <*> p <*> vts <*> vpct
+
+instance CSV.FromRecord TXResult where
+  parseRecord v = if length v == 9 then TXResult <$> parseTXResult v else fail ("Wrong number of cols in " <> show v)
+
+parseErrors :: CSV.Records a -> [Text]
+parseErrors rs = reverse $ go rs [] where
+  go (CSV.Nil ms _) es = maybe es (\s -> toText s : es) ms
+  go (CSV.Cons e rs') es = go rs' es' where
+    es' = case e of
+      Left e -> toText e : es
+      Right _ -> es
+
+getTXResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
+getTXResults fp = do
+  fileDep <- K.fileDependency fp
+  BR.retrieveOrMakeFrame "data/SLD/TX_2020_General.bin" fileDep $ \_ -> do
+    K.logLE K.Info "Rebuilding Texas 2020 state-house general election results."
+    fileBS <- K.liftKnit $ readFileLBS @IO fp
+    let records = CSV.decode CSV.HasHeader fileBS
+    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
+    return $ FL.fold candidatesToRaces $ fmap (\(TXResult x) -> x) $ records
+
 
 parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
 parseVARace raceDesc = do
@@ -345,7 +404,7 @@ getVAResults fp = do
             g :: A.Value -> Maybe (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct])
             g cO = do
               name <- cO ^?  A.key "BallotName" . A._String
-              party <- cO ^? A.key "PoliticalParty" . A._String >>= parseParty
+              party <- fmap parseParty (cO ^? A.key "PoliticalParty" . A._String)
               votes <- cO ^? A.key "Votes" . A._Integer
               pct <- cO ^? A.key "Percentage" . A._String
               return $ name F.&: party F.&: fromInteger votes F.&: pct F.&: V.RNil
@@ -414,11 +473,14 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
   vaResults <- K.ignoreCacheTime vaResults_C
+  txResults_C <- getTXResults "data/forPosts/TX_2020_general.csv"
+  K.ignoreCacheTime txResults_C >>= BR.logFrame
   let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
   let comparison m t = do
         let isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
             vaLowerModel = F.filterFrame isVALower m
-            (modelAndResult, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] m vaResults
+            (modelAndResult, missing)
+              = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] vaLowerModel vaResults
         when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
         let  dShare = F.rgetField @DShare
              delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)

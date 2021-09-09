@@ -407,10 +407,12 @@ executable br-2021-StateLegModel
                , lens-aeson
                , blueripple-research
                , blueripple-data-sets
+               , cassava
                , colonnade
                , blaze-colonnade
                , haskell-stan
                , hs-cmdstan
+               , megaparsec
                , pandoc
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
