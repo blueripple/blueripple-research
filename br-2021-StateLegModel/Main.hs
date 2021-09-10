@@ -342,7 +342,7 @@ parseTXRace t = toCSVParser $ first (MP.errorBundlePretty @_ @Void) $ MP.runPars
     parseSenate = fmap (\d -> (ET.StateUpper, d)) $ MP.string "STATE SENATOR, DISTRICT" >> MP.space >> MPL.decimal
     parseRace = parseHouse <|> parseSenate
     toCSVParser e = case e of
-      Left msg -> fail msg
+      Left msg -> fail $ toString ("MegaParsec (parseTXRace): " <> toText msg)
       Right x -> return x
 
 parseTXResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
@@ -373,11 +373,12 @@ parseErrors rs = reverse $ go rs [] where
 getTXResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getTXResults fp = do
   fileDep <- K.fileDependency fp
+  BR.clearIfPresentD "data/SLD/TX_2020_General.bin"
   BR.retrieveOrMakeFrame "data/SLD/TX_2020_General.bin" fileDep $ \_ -> do
     K.logLE K.Info "Rebuilding Texas 2020 state-house general election results."
     fileBS <- K.liftKnit $ readFileLBS @IO fp
     let records = CSV.decode CSV.HasHeader fileBS
-    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
+--    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
     return $ FL.fold candidatesToRaces $ fmap (\(TXResult x) -> x) $ records
 
 
@@ -393,7 +394,7 @@ parseVARace raceDesc = do
 getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getVAResults fp = do
   fileDep <-  K.fileDependency fp
---  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
+  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
   BR.retrieveOrMakeFrame "data/SLD/VA_2019_General.bin" fileDep $ \_ -> do
     mJSON :: Maybe A.Value <- K.liftKnit $ A.decodeFileStrict' fp
     races <- case mJSON of
@@ -420,8 +421,9 @@ getVAResults fp = do
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
 type DShare = "DShare" F.:-> Double
+type Contested = "Contested" F.:-> Bool
 
-type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, DVotes, RVotes, DShare]
+type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, Contested, DVotes, RVotes, DShare]
 
 candidatesToRaces :: FL.Fold (F.Record SLDResultR) (F.FrameRec SLDRaceResultR)
 candidatesToRaces = FMR.concatFold
@@ -429,20 +431,22 @@ candidatesToRaces = FMR.concatFold
                     FMR.noUnpack
                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
                     (FMR.foldAndAddKey f) where
-  f :: FL.Fold (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct]) (F.Record [DVotes, RVotes, DShare])
+  f :: FL.Fold (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct]) (F.Record [Contested, DVotes, RVotes, DShare])
   f =
     let party = F.rgetField @ET.Party
         votes = F.rgetField @ET.Votes
         dVotes = FL.prefilter ((== ET.Democratic) . party) $ FL.premap votes FL.sum
         rVotes = FL.prefilter ((== ET.Republican) . party) $ FL.premap votes FL.sum
-    in (\d r -> d F.&: r F.&: realToFrac d/ realToFrac (d + r) F.&: V.RNil) <$> dVotes <*> rVotes
+        ndVotes = FL.prefilter ((/= ET.Democratic) . party) $ FL.premap votes FL.sum
+        contested x y = x /= 0 && y /= 0
+    in (\d r nd -> contested d r F.&: d F.&: r F.&: realToFrac d/ realToFrac (d + nd) F.&: V.RNil) <$> dVotes <*> rVotes <*> ndVotes
 
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
@@ -463,6 +467,45 @@ vaLowerColonnade cas =
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
 
+comparison :: K.KnitOne r
+           => F.FrameRec ModelResultsR
+           -> F.FrameRec SLDRaceResultR
+           -> Text
+           -> K.Sem r (F.FrameRec (ModelResultsR V.++ [BR.Year, Contested, DVotes, RVotes, DShare]))
+comparison mr er t = do
+  let (modelAndResult, missing)
+        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] mr er
+  when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
+  let  dShare = F.rgetField @DShare
+       dVotes = F.rgetField @DVotes
+       rVotes = F.rgetField @RVotes
+       delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)
+       contested r = dVotes r /= 0 && rVotes r /= 0 -- r > 0.01 && dShare r < 0.99
+       (meanResult, meanDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare FLS.mean)
+                                           <*> FL.prefilter contested (FL.premap delta FLS.mean)) modelAndResult
+       (varResult, varDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare (FLS.varianceUnbiased meanResult))
+                                         <*> FL.prefilter contested (FL.premap delta (FLS.varianceUnbiased meanDelta))) modelAndResult
+       caption = "Using " <> t <> ". "
+                 <> "Model explains " <> show (100 * (varResult - varDelta)/varResult)
+                 <> "% of the variance among the results."
+  --        BR.logFrame modelAndResult
+  _ <- K.addHvega Nothing (Just caption)
+       $ modelResultScatterChart
+       ("Modeled Vs. Actual (" <> t <> ")")
+       (FV.ViewConfig 700 700 10)
+       (fmap F.rcast modelAndResult)
+  return modelAndResult
+
+{-
+Debugging model via TX-51 (Lower)
+Model WNH Turnout ~ 57%
+Model NW Turnout ~ 45%
+Model WNH Dem Pref ~ 47%
+Moel NM Dem Pref ~ 73%
+TX-51 is 57% NW vs 43% WNH in my input data
+so, roughly, we expect, D-share = [(43% x 57% x 47%) + (57% x 45% x 73%)]/[(43% x 57%) + (57% x 45%)] = (0.12 + 0.19)/(.25 + .26) = 0.31/0.51 = 61%
+And I think this is
+-}
 
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
@@ -471,34 +514,16 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         -> K.ActionWithCacheTime r SLDModelData
         -> K.Sem r ()
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
-  vaResults_C <- getVAResults "data/forPosts/VA_2019_General.json"
-  vaResults <- K.ignoreCacheTime vaResults_C
-  txResults_C <- getTXResults "data/forPosts/TX_2020_general.csv"
-  K.ignoreCacheTime txResults_C >>= BR.logFrame
+  vaResults <- K.ignoreCacheTimeM $ getVAResults "data/forPosts/VA_2019_General.json"
+  txResults <- K.ignoreCacheTimeM $ getTXResults "data/forPosts/TX_2020_general.csv"
+--  BR.logFrame txResults
   let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
-  let comparison m t = do
-        let isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
-            vaLowerModel = F.filterFrame isVALower m
-            (modelAndResult, missing)
-              = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] vaLowerModel vaResults
-        when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
-        let  dShare = F.rgetField @DShare
-             delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)
-             contested r = dShare r > 0.01 && dShare r < 0.99
-             (meanResult, meanDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare FLS.mean)
-                                                 <*> FL.prefilter contested (FL.premap delta FLS.mean)) modelAndResult
-             (varResult, varDelta) = FL.fold ((,) <$> FL.prefilter contested (FL.premap dShare (FLS.varianceUnbiased meanResult))
-                                             <*> FL.prefilter contested (FL.premap delta (FLS.varianceUnbiased meanDelta))) modelAndResult
-             caption = "Using " <> t <> ". "
-                       <> "Model explains " <> show (100 * (varResult - varDelta)/varResult)
-                       <> "% of the variance among the results."
-        BR.logFrame modelAndResult
-        _ <- K.addHvega Nothing (Just caption)
-          $ modelResultScatterChart
-          ("Modeled Vs. Actual (" <> t <> ")")
-          (FV.ViewConfig 700 700 10)
-          (fmap F.rcast modelAndResult)
-        return modelAndResult
+      isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
+      onlyVALower = F.filterFrame isVALower
+      isTXLower r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
+      onlyTXLower = F.filterFrame isTXLower
+      isGALower r = F.rgetField @BR.StateAbbreviation r == "GA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
+      onlyGALower = F.filterFrame isGALower
   K.logLE K.Info $ "Re-building VA Lower post"
   let modelNoteName = BR.Used "Model_Details"
   mModelNoteUrl <- BR.brNewNote postPaths postInfo modelNoteName "State Legislative Election Model" $ do
@@ -507,9 +532,14 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
 
+  sldDat <- K.ignoreCacheTime sldDat_C
+  BR.logFrame $ F.filterFrame (\r -> isTXLower r && F.rgetField @ET.DistrictNumber r == 51) $ sldTables sldDat
   modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  m <- comparison modelPlusState "CPS Turnout"
+  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
+--  BR.logFrame $ onlyTXLower modelPlusState
+  _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "TX (Lower House)"
+--  _ <- comparison (onlyGALower modelPlusState) (onlyGALower txResults) "GA (Lower House)"
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
   let tableNoteName = BR.Used "District_Table"
@@ -921,10 +951,11 @@ indexStanResults im v = do
 
 modelResultScatterChart :: Text
                         -> FV.ViewConfig
-                        -> F.FrameRec ([ET.DistrictNumber, ModeledShare, DShare])
+                        -> F.FrameRec ([ET.DistrictNumber, Contested, ModeledShare, DShare])
                         -> GV.VegaLite
 modelResultScatterChart title vc rows =
   let toVLDataRec = FV.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FV.asVLData GV.Boolean "Contested"
                     V.:& FV.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
@@ -932,6 +963,7 @@ modelResultScatterChart title vc rows =
                     V.:& FV.asVLData (GV.Number . (*100)) "Election_Result"
                     V.:& V.RNil
       vlData = FV.recordsToData toVLDataRec rows
+      encContested = GV.color [GV.MName "Contested", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]
       encModelMid = GV.position GV.Y [GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Model_Mid"]
@@ -965,7 +997,7 @@ modelResultScatterChart title vc rows =
       errorT = GV.transform
                . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
                . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
-      dotEnc = GV.encoding . encModelMid . encElection
+      dotEnc = GV.encoding . encModelMid . encElection . encContested
       rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
       lineEnc = GV.encoding . encModelMid . enc45
       dotSpec = GV.asSpec [dotEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
@@ -977,4 +1009,4 @@ modelResultScatterChart title vc rows =
               . GV.position GV.Y [GV.PNumber 20]
               . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec, rangeSpec], vlData]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec], vlData]
