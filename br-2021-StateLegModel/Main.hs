@@ -507,6 +507,9 @@ so, roughly, we expect, D-share = [(43% x 57% x 47%) + (57% x 45% x 73%)]/[(43% 
 And I think this is
 -}
 
+sldDataFilterCensus :: (F.Record SLDDemographicsR -> Bool) -> SLDModelData -> SLDModelData
+sldDataFilterCensus g (SLDModelData a b c) = SLDModelData a (F.filterFrame g b) c
+
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
         -> BR.PostPaths BR.Abs
@@ -531,15 +534,16 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mModelNoteUrl
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
-
-  sldDat <- K.ignoreCacheTime sldDat_C
-  BR.logFrame $ F.filterFrame (\r -> isTXLower r && F.rgetField @ET.DistrictNumber r == 51) $ sldTables sldDat
-  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDat_C
+  let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
+  let sldDatFiltered_C = fmap (sldDataFilterCensus isTX51) sldDat_C
+  sldDat <- K.ignoreCacheTime sldDatFiltered_C
+  BR.logFrame $ sldTables sldDat
+  modelPlusState_C <- stateLegModel True PlusState CPS_Turnout sldDatFiltered_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
+--  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
 --  BR.logFrame $ onlyTXLower modelPlusState
   _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "TX (Lower House)"
---  _ <- comparison (onlyGALower modelPlusState) (onlyGALower txResults) "GA (Lower House)"
+{-
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
   let tableNoteName = BR.Used "District_Table"
@@ -548,7 +552,9 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
         dlccChosenF r header = if (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts) then BR.highlightCellPurple else ""
         tableCellStyle = BR.CellStyle dlccChosenF
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
+-}
   return ()
+
 
 {-
   modelPlusState_C <- stateLegModel False PlusState CES_Turnout sldDat_C
@@ -763,6 +769,7 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
         SB.sampleDistV voteData distT (logitT_sample feCDT)
         SB.sampleDistV voteData distP (logitP_sample feCDP)
 
+
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
         sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
@@ -773,11 +780,14 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
         let cmE = (SB.indexBy (SB.name cmn) "SLD_Demographics")
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
-            psExprF ik = do
+            psExprF _ = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
               --return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
               return $ SB.useVar pT `SB.times` SB.useVar pD
+            pTExprF _ = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
+            pDExprF _ = SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
+
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
               psExprF
@@ -790,6 +800,17 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just sldGroup)
         postStratBySLD
+
+  -- raw probabilities
+        let pArrayDims = [SB.NamedDim $ SB.taggedGroupName sexGroup
+                         , SB.NamedDim $ SB.taggedGroupName educationGroup
+                         , SB.NamedDim $ SB.taggedGroupName raceGroup]
+        pTVar <- SB.stanDeclare "probT" (SB.StanArray pArrayDims SB.StanReal)
+        pDVar <- SB.stanDeclare "probD" (SB.StanArray pArrayDims SB.StanReal)
+        let pTRHS d = SB. SB.familyExp distT "" $ SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
+            pDRHS d = SB. SB.familyExp distT "" $ SB.multiOp "+" $ d :| [gRaceD, gSexD, gEduD, gStateD]
+
+
 
         SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT) :| [(distP, logitP_ps feCDP)])
 

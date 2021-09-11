@@ -347,7 +347,7 @@ buildGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM env d (Maybe k)
       buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
-        addFixedIntJson ("J_" <> gName) (Just 2) gSize
+        addFixedIntJson ("J_" <> gName) (Just 1) gSize
         _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.name $ "J_" <> gName
 --        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
