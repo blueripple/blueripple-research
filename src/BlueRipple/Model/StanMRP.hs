@@ -251,80 +251,6 @@ choices (x:xs) n = if (n > length (x:xs))
                    then []
                    else fmap (x:) (choices xs (n-1)) ++ choices xs n
 
-
-{-
---- return expression for sampling and one for everything else
-addNestedMRGroup ::  Typeable d
-                 => SB.RowTypeTag r
-                 -> SB.GroupModel
-                 -> SB.GroupModel
-                 -> SB.GroupTypeTag k1 -- e.g., sex
-                 -> SB.GroupTypeTag k2 -- partially pooled, e.g., state
-                 -> Maybe Text
-                 -> SB.StanBuilderM env d (SB.StanExpr, SB.StanExpr)
-addNestedMRGroup rtt gm nonPooledGtt pooledGtt mVarSuffix = do
-  let nonPooledGN = SB.taggedGroupName nonPooledGtt
-      pooledGN = SB.taggedGroupName pooledGtt
-      dsName = SB.dataSetName rtt
-      suffix = nonPooledGN <> "_" <> pooledGN
-      suffixed x = x <> fromMaybe "" mVarSuffix <> "_" <> suffix
-  (SB.IntIndex pooledIndexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt pooledGtt
-  (SB.IntIndex nonPooledIndexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt nonPooledGtt
-  when (pooledIndexSize < 2) $ SB.stanBuildError $ "pooled index (" <> pooledGN <> ") with size <2 in nestedMRGroup!"
-  when (nonPooledIndexSize < 2) $ SB.stanBuildError $ "non-pooled index (" <> nonPooledGN <> ") with size <2 in nestedMRGroup!"
-  let nonPooledBinary = do
---        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (suffixed "sigma") SB.StanReal "<lower=0>"
-        let epsVar = SB.StanVar (suffixed "eps") (SB.StanVector $ SB.NamedDim pooledGN)
---        SB.inBlock SB.SBModel $ do
---          let e1 = SB.name (suffixed "sigma") `SB.vectorSample` sigmaPrior
---          SB.addExprLine "addNestedMRGroup (binary non-pooled)" e1
-        SB.groupModel epsVar gm
---        SB.rescaledSumToZero stz pmp epsVar (suffixed "sigma") sigmaPrior
-        (yE, epsE) <- SB.inBlock SB.SBTransformedParameters $ do
-          yv <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
-          let yE = SB.useVar yv
-              be = SB.bracket
-                   $ SB.csExprs (SB.indexBy (SB.name $ suffixed "eps") pooledGN :|
-                                  [SB.indexBy (SB.name $ suffixed "-eps") pooledGN]
-                                )
-              epsE =  SB.indexBy be nonPooledGN
-          SB.stanForLoopB "n" Nothing dsName
-            $ SB.addExprLine "addNestedMRGroup: y-loop" $ yE `SB.eq` epsE
-
-          return (yE, epsE)
-        return (yE, epsE)
-      nonPooledNonBinary = do
-        let betaType = SB.StanMatrix (SB.NamedDim nonPooledGN, SB.NamedDim pooledGN)
-        (sigmaV, betaRawV) <- SB.inBlock SB.SBParameters $ do
-          sv <- SB.stanDeclare (suffixed "sigma") (SB.StanVector (SB.NamedDim nonPooledGN)) "<lower=0>"
-          brv <- SB.stanDeclare (suffixed "beta" <> "_raw") betaType ""
-          return (sv, brv)
-        (yV, betaV) <- SB.inBlock SB.SBTransformedParameters $ do
-          let eDPM = SB.vectorized (Set.fromList [nonPooledGN, pooledGN])
-                     $ SB.function "diag_pre_multiply" (SB.useVar sigmaV :| [SB.useVar betaRawV])
-          b <- SB.stanDeclareRHS (suffixed "beta") betaType ""
-               $ eDPM
-          y <- SB.stanDeclare (suffixed "y") (SB.StanVector $ SB.NamedDim dsName) ""
-          SB.stanForLoopB "n" Nothing dsName
-            $ SB.addExprLine "nestedMRGroup (NB.TransformedParameters)"
-            $ SB.useVar y `SB.eq` SB.useVar b
-          return (y, b)
-        SB.inBlock SB.SBModel $ do
-          let eSigma = SB.vectorizedOne nonPooledGN
-                       $ SB.useVar sigmaV `SB.vectorSample` sigmaPrior
-          SB.addExprLines "addNestedMRGroup (NB.Model)" [eSigma]
-          SB.stanForLoopB ("j" <> nonPooledGN) Nothing nonPooledGN
-            $ SB.addExprLine "nestedMRGroup (NB.BetaLoop)"
-            $ SB.vectorizedOne pooledGN
-            $ SB.useVar betaRawV `SB.vectorSample` SB.stdNormal
---        SB.rescaledSumToZero SB.STZNone betaVar sigmaV  -- FIX, we can't sum to zero along cols or rows.
-        let yE = SB.useVar yV --SB.indexed SB.modeledDataIndexName $ SB.name $ suffixed "y"
-            betaE =  SB.useVar betaV --SB.indexed nonPooledGN $ SB.indexed pooledGN $ SB.name $ suffixed "beta"
-        return (yE, betaE)
-
-  if nonPooledIndexSize == 2 then nonPooledBinary else nonPooledNonBinary
--}
-
 type GroupName = Text
 
 data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
@@ -418,8 +344,7 @@ data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, 
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
-                      => (SB.IndexKey -> BuilderM d SB.StanExpr) --NonEmpty (SB.StanDist args, args) -- e.g., sampling distribution connecting outcomes to model
---                      -> args -- required args, e.g., total counts for binomial
+                      => (SB.IndexKey -> BuilderM d SB.StanExpr)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -431,8 +356,7 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
                       -> BuilderM d SB.StanVar
 addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
-  let showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
-      psDataSetName = SB.dataSetName rttPS
+  let psDataSetName = SB.dataSetName rttPS
       modelDataSetName = SB.dataSetName rttModel
       psGroupName = maybe "" SB.taggedGroupName mPSGroup
       uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
@@ -448,14 +372,7 @@ addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups wei
       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
   -- allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
   let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ modelGroupsDHM
-      checkGroupSubset n1 n2 gs1 gs2 = do
-        let gDiff = DHash.difference gs1 gs2
-        when (DHash.size gDiff /= 0)
-          $ SB.stanBuildError
-          $ n1 <> "(" <> showNames gs1 <> ") is not a subset of "
-          <> n2 <> "(" <> showNames gs2 <> ")."
-          <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
-          <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
+
   checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
   -- we don't need the PS group to be present on the RHS, but it could be
   let groupMapsToCheck = maybe groupMaps (\x -> DHash.delete x groupMaps) mPSGroup
@@ -548,3 +465,20 @@ addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups wei
                 SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
               _ -> return ()
           return psV
+
+showNames :: DHash.DHashMap SB.GroupTypeTag a -> Text
+showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
+
+checkGroupSubset :: Text
+                 -> Text
+                 -> DHash.DHashMap SB.GroupTypeTag a
+                 -> DHash.DHashMap SB.GroupTypeTag b
+                 -> SB.StanBuilderM env d ()
+checkGroupSubset n1 n2 gs1 gs2 = do
+  let gDiff = DHash.difference gs1 gs2
+  when (DHash.size gDiff /= 0)
+    $ SB.stanBuildError
+    $ n1 <> "(" <> showNames gs1 <> ") is not a subset of "
+    <> n2 <> "(" <> showNames gs2 <> ")."
+    <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
+    <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."

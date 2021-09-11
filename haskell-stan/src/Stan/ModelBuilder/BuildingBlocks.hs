@@ -222,5 +222,3 @@ vectorizeVar v@(SB.StanVar vn vt) rtt = do
   SB.useDataSetForBindings rtt $ do
     SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.useVar fv `SB.eq` SB.useVar v
   return fv
-
-loopOver

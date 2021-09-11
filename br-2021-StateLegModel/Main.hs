@@ -780,13 +780,13 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
         let cmE = (SB.indexBy (SB.name cmn) "SLD_Demographics")
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
-            psExprF _ = do
+            psExprF ik = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
               --return $ SB.useVar pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.useVar pD) `SB.minus` SB.scalar "1")
               return $ SB.useVar pT `SB.times` SB.useVar pD
-            pTExprF _ = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
-            pDExprF _ = SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
+--            pTExprF ik = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
+--            pDExprF ik = SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
 
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
@@ -805,12 +805,16 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
         let pArrayDims = [SB.NamedDim $ SB.taggedGroupName sexGroup
                          , SB.NamedDim $ SB.taggedGroupName educationGroup
                          , SB.NamedDim $ SB.taggedGroupName raceGroup]
-        pTVar <- SB.stanDeclare "probT" (SB.StanArray pArrayDims SB.StanReal)
-        pDVar <- SB.stanDeclare "probD" (SB.StanArray pArrayDims SB.StanReal)
-        let pTRHS d = SB. SB.familyExp distT "" $ SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
-            pDRHS d = SB. SB.familyExp distT "" $ SB.multiOp "+" $ d :| [gRaceD, gSexD, gEduD, gStateD]
 
-
+        let pTRHS = SB.familyExp distT "" $ logitT_ps densityTE
+            pDRHS = SB.familyExp distT "" $ logitP_ps densityPE
+        SB.inBlock SB.SBGeneratedQuantities $ do
+          pTVar <- SB.stanDeclare "probT" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
+          pDVar <- SB.stanDeclare "probD" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
+          SB.useDataSetForBindings sldData $ do
+            SB.stanForLoopB "n" Nothing "SLD_Demographics" $ do
+              SB.addExprLine "ProbsT" $ SB.useVar pTVar `SB.eq` pTRHS
+              SB.addExprLine "ProbsD" $ SB.useVar pDVar `SB.eq` pDRHS
 
         SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT) :| [(distP, logitP_ps feCDP)])
 
