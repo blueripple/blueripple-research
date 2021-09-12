@@ -535,12 +535,13 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
   let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
-  let sldDatFiltered_C = fmap (sldDataFilterCensus isTX51) sldDat_C
-  sldDat <- K.ignoreCacheTime sldDatFiltered_C
-  BR.logFrame $ sldTables sldDat
-  modelPlusState_C <- stateLegModel True PlusState CPS_Turnout sldDatFiltered_C
+--  let sldDatFiltered_C = fmap (sldDataFilterCensus isTX51) sldDat_C
+--  sldDat <- K.ignoreCacheTime sldDatFiltered_C
+--  BR.logFrame $ sldTables sldDat
+  modelPlusState_C <- stateLegModel False Base CPS_Turnout sldDat_C
+--  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDatFiltered_C
   modelPlusState <- K.ignoreCacheTime modelPlusState_C
---  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
+  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
 --  BR.logFrame $ onlyTXLower modelPlusState
   _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "TX (Lower House)"
 {-
@@ -801,21 +802,23 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
               (Just sldGroup)
         postStratBySLD
 
+{-
   -- raw probabilities
-        let pArrayDims = [SB.NamedDim $ SB.taggedGroupName sexGroup
-                         , SB.NamedDim $ SB.taggedGroupName educationGroup
-                         , SB.NamedDim $ SB.taggedGroupName raceGroup]
-
-        let pTRHS = SB.familyExp distT "" $ logitT_ps densityTE
-            pDRHS = SB.familyExp distT "" $ logitP_ps densityPE
         SB.inBlock SB.SBGeneratedQuantities $ do
+          let pArrayDims =
+                [ SB.NamedDim $ SB.taggedGroupName sexGroup,
+                  SB.NamedDim $ SB.taggedGroupName educationGroup,
+                  SB.NamedDim $ SB.taggedGroupName raceGroup
+                ]
+              pTRHS = SB.familyExp distT "" $ logitT_ps densityTE
+              pDRHS = SB.familyExp distT "" $ logitP_ps densityPE
           pTVar <- SB.stanDeclare "probT" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
           pDVar <- SB.stanDeclare "probD" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
           SB.useDataSetForBindings sldData $ do
             SB.stanForLoopB "n" Nothing "SLD_Demographics" $ do
               SB.addExprLine "ProbsT" $ SB.useVar pTVar `SB.eq` pTRHS
               SB.addExprLine "ProbsD" $ SB.useVar pDVar `SB.eq` pDRHS
-
+-}
         SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT) :| [(distP, logitP_ps feCDP)])
 
 
@@ -858,6 +861,7 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
             groups = groupBuilder districts states slds
 --            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
+        K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
   (dw, stanCode) <- dataWranglerAndCode dat_C
   fmap (fmap FS.unSFrame)
