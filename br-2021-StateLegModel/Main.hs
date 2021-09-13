@@ -599,13 +599,12 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
   let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
   modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
---  m <- comparison (onlyVALower modelBase) vaResults "Base Model: VA Lower House"
---  _ <- comparison (onlyTXLower modelBase) (onlyTXLower txResults) "Base Model: TX Lower House"
---  _ <- comparison (onlyGALower modelBase) (onlyGALower gaResults) "Base Model: GA Lower House"
   modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
-  _ <- comparison (onlyVALower $ modelBase <> modelPlusState) vaResults "VA Lower House"
-  _ <- comparison (onlyTXLower $ modelBase <> modelPlusState) (onlyTXLower txResults) "TX Lower House"
-  _ <- comparison (onlyGALower $ modelBase <> modelPlusState) (onlyGALower gaResults) "GA Lower House"
+  modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu CPS_Turnout sldDat_C
+  let allModels = modelBase <> modelPlusState <> modelPlusRaceEdu
+  _ <- comparison (onlyVALower allModels) vaResults "VA Lower House"
+  _ <- comparison (onlyTXLower allModels) (onlyTXLower txResults) "TX Lower House"
+  _ <- comparison (onlyGALower allModels) (onlyGALower gaResults) "GA Lower House"
 
 {-
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
@@ -686,7 +685,13 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.emptyGroupRowMap
 
 
-data Model = Base | PlusState | PlusSexEdu | PlusRaceEdu | PlusInteractions | PlusStateAndStateRace deriving (Show, Eq, Ord, Generic)
+data Model = Base
+           | PlusState
+           | PlusSexEdu
+           | PlusRaceEdu
+           | PlusInteractions
+           | PlusStateAndStateRace deriving (Show, Eq, Ord, Generic)
+
 instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
 
@@ -832,6 +837,7 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.useVar interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps, Set.fromList ["Sex", "Race", "Education", "State"])
+
 
         SB.sampleDistV voteData distT (logitT_sample feCDT)
         SB.sampleDistV voteData distP (logitP_sample feCDP)
