@@ -331,23 +331,33 @@ parseParty "Democratic" = ET.Democratic
 parseParty "Republican" = ET.Republican
 parseParty "DEM" = ET.Democratic
 parseParty "REP" = ET.Republican
+parseParty "Dem" = ET.Democratic
+parseParty "Rep" = ET.Republican
 parseParty _ = ET.Other
 
 newtype TXResult = TXResult (F.Record SLDResultR)
 
-parseTXRace :: Text -> CSV.Parser (ET.DistrictType, Int)
-parseTXRace t = toCSVParser $ first (MP.errorBundlePretty @_ @Void) $ MP.runParser parseRace "" t
+mpToCsv :: Parser a -> Text -> CSV.Parser a
+mpToCsv p t = toCSVParser $ first (MP.errorBundlePretty @_ @Void) $ MP.runParser p "mpToCsv" t
   where
-    parseHouse = fmap (\d -> (ET.StateLower, d)) $ MP.string "STATE REPRESENTATIVE DISTRICT" >> MP.space >> MPL.decimal
-    parseSenate = fmap (\d -> (ET.StateUpper, d)) $ MP.string "STATE SENATOR, DISTRICT" >> MP.space >> MPL.decimal
-    parseRace = parseHouse <|> parseSenate
     toCSVParser e = case e of
       Left msg -> fail $ toString ("MegaParsec (parseTXRace): " <> toText msg)
       Right x -> return x
 
+parseTXRace :: Text -> CSV.Parser (ET.DistrictType, Int)
+parseTXRace t = mpToCsv parseRace t
+  where
+    parseOffice = MP.choice [ET.StateLower <$ MP.string "STATE REPRESENTATIVE DISTRICT"
+                            , ET.StateUpper <$  MP.string "STATE SENATOR, DISTRICT"]
+    parseRace = do
+      o <- parseOffice
+      MP.space
+      d <- MPL.decimal
+      return (o, d)
+
 parseTXResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
 parseTXResult v =
-  let bld yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
+  let mkRec yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
       yr = v .! 0
       sa = v .! 1
       dist = (v .! 2) >>= parseTXRace
@@ -357,10 +367,10 @@ parseTXResult v =
       p = parseParty <$> (v .! 4)
       vts = v .! 5
       vpct = v .! 6
-  in bld <$> yr <*> sa <*> dt <*> dn <*> cand <*> p <*> vts <*> vpct
+  in mkRec <$> yr <*> sa <*> dt <*> dn <*> cand <*> p <*> vts <*> vpct
 
 instance CSV.FromRecord TXResult where
-  parseRecord v = if length v == 9 then TXResult <$> parseTXResult v else fail ("Wrong number of cols in " <> show v)
+  parseRecord v = if length v == 9 then TXResult <$> parseTXResult v else fail ("(TXResult.parseRecord) != 9 cols in " <> show v)
 
 parseErrors :: CSV.Records a -> [Text]
 parseErrors rs = reverse $ go rs [] where
@@ -373,13 +383,63 @@ parseErrors rs = reverse $ go rs [] where
 getTXResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getTXResults fp = do
   fileDep <- K.fileDependency fp
-  BR.clearIfPresentD "data/SLD/TX_2020_General.bin"
+--  BR.clearIfPresentD "data/SLD/TX_2020_General.bin"
   BR.retrieveOrMakeFrame "data/SLD/TX_2020_General.bin" fileDep $ \_ -> do
     K.logLE K.Info "Rebuilding Texas 2020 state-house general election results."
     fileBS <- K.liftKnit $ readFileLBS @IO fp
     let records = CSV.decode CSV.HasHeader fileBS
 --    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
     return $ FL.fold candidatesToRaces $ fmap (\(TXResult x) -> x) $ records
+
+newtype GAResult = GAResult (F.Record SLDResultR)
+instance CSV.FromRecord GAResult where
+  parseRecord v = if length v == 10 then GAResult <$> parseGAResult 2020 v else fail ("(GAResult.parseRecord) != 10 cols in " <> show v)
+
+parseGARace :: Text -> CSV.Parser (ET.DistrictType, Int)
+parseGARace t = mpToCsv parseRace t
+  where
+    parseOffice = MP.choice [ET.StateLower <$ MP.string "State House District"
+                            ,ET.StateLower <$ MP.string "State House Dist"
+                            ,ET.StateUpper <$ MP.string "State Senate District"
+                            ,ET.StateUpper <$ MP.string "State Senate Dist"
+                            ]
+    parseRace = do
+      o <- parseOffice
+      MP.space
+      d <- MPL.decimal
+      return (o, d)
+
+parseGACandAndParty :: Text -> CSV.Parser (Text, ET.PartyT)
+parseGACandAndParty t = mpToCsv parseCP t
+  where
+    atEnd p = p >>= \res -> do { MP.eof; return res}
+    parseP :: Parser ET.PartyT = parseParty . toText <$> (MP.between (MP.char '(') (MP.char ')') (MP.some MP.letterChar))
+    parseCP :: Parser (Text, ET.PartyT) = first toText <$> MP.someTill_ (MP.asciiChar <|> MP.spaceChar) (MP.try $ atEnd parseP)
+
+
+parseGAResult :: Int -> CSV.Record -> CSV.Parser (F.Record SLDResultR)
+parseGAResult yr v =
+  let mkRec dt dn c p vts vpct = yr F.&: "GA" F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
+      dist = (v .! 1) >>= parseGARace
+      dt = fst <$> dist
+      dn = snd <$> dist
+      cAndP = (v .! 2) >>= parseGACandAndParty
+      cand = fst <$> cAndP
+      p = snd <$> cAndP
+      vts = v .! 4
+      vpct = v .! 5
+  in mkRec <$> dt <*> dn <*> cand <*> p <*> vts <*> vpct
+
+getGAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
+getGAResults fp = do
+  fileDep <- K.fileDependency fp
+  BR.clearIfPresentD "data/SLD/GA_2020_General.bin"
+  BR.retrieveOrMakeFrame "data/SLD/GA_2020_General.bin" fileDep $ \_ -> do
+    K.logLE K.Info "Rebuilding Georgia 2020 state-house general election results."
+    fileBS <- K.liftKnit $ readFileLBS @IO fp
+    let records = CSV.decode CSV.HasHeader fileBS
+    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
+    return $ FL.fold candidatesToRaces $ fmap (\(GAResult x) -> x) $ records
 
 
 parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
@@ -519,7 +579,10 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   vaResults <- K.ignoreCacheTimeM $ getVAResults "data/forPosts/VA_2019_General.json"
   txResults <- K.ignoreCacheTimeM $ getTXResults "data/forPosts/TX_2020_general.csv"
---  BR.logFrame txResults
+  gaResults <- K.ignoreCacheTimeM $ getGAResults "data/forPosts/GA_2020_general.csv"
+  K.logLE K.Info $ "GA Election Results"
+  BR.logFrame gaResults
+  return ()
   let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
       isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
       onlyVALower = F.filterFrame isVALower
@@ -535,15 +598,15 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
   let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
---  let sldDatFiltered_C = fmap (sldDataFilterCensus isTX51) sldDat_C
---  sldDat <- K.ignoreCacheTime sldDatFiltered_C
---  BR.logFrame $ sldTables sldDat
-  modelPlusState_C <- stateLegModel False Base CPS_Turnout sldDat_C
---  modelPlusState_C <- stateLegModel False PlusState CPS_Turnout sldDatFiltered_C
-  modelPlusState <- K.ignoreCacheTime modelPlusState_C
-  m <- comparison (onlyVALower modelPlusState) vaResults "VA"
---  BR.logFrame $ onlyTXLower modelPlusState
-  _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "TX (Lower House)"
+  modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
+  m <- comparison (onlyVALower modelBase) vaResults "Base Model: VA Lower House"
+  _ <- comparison (onlyTXLower modelBase) (onlyTXLower txResults) "Base Model: TX Lower House"
+  _ <- comparison (onlyGALower modelBase) (onlyGALower gaResults) "Base Model: GA Lower House"
+  modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
+  _ <- comparison (onlyVALower modelPlusState) vaResults "Base+State Model: VA Lower House"
+  _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "Base+State Model: TX Lower House"
+  _ <- comparison (onlyGALower modelPlusState) (onlyGALower gaResults) "Base+State Model: GA Lower House"
+
 {-
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
