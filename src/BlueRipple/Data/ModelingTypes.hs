@@ -28,6 +28,7 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.Transform              as FT
 import qualified Data.Vinyl.Derived                    as V
 import qualified Data.Vinyl.TypeLevel                    as V
+import qualified Data.Vector           as Vec
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 import           Data.Word                      (Word8)
@@ -71,3 +72,6 @@ keyedCIsToFrame :: forall t f k ks.
 keyedCIsToFrame keyToRec kvs =
   let g (k, ds) = (\ci -> keyToRec k F.<+> FT.recordSingleton @t ci) <$> listToCI ds
   in F.toFrame <$> traverse g kvs
+
+
+type ModelId t = "ModelId" F.:-> t

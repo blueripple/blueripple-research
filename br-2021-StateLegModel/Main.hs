@@ -433,7 +433,7 @@ parseGAResult yr v =
 getGAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getGAResults fp = do
   fileDep <- K.fileDependency fp
-  BR.clearIfPresentD "data/SLD/GA_2020_General.bin"
+--  BR.clearIfPresentD "data/SLD/GA_2020_General.bin"
   BR.retrieveOrMakeFrame "data/SLD/GA_2020_General.bin" fileDep $ \_ -> do
     K.logLE K.Info "Rebuilding Georgia 2020 state-house general election results."
     fileBS <- K.liftKnit $ readFileLBS @IO fp
@@ -580,8 +580,8 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   vaResults <- K.ignoreCacheTimeM $ getVAResults "data/forPosts/VA_2019_General.json"
   txResults <- K.ignoreCacheTimeM $ getTXResults "data/forPosts/TX_2020_general.csv"
   gaResults <- K.ignoreCacheTimeM $ getGAResults "data/forPosts/GA_2020_general.csv"
-  K.logLE K.Info $ "GA Election Results"
-  BR.logFrame gaResults
+--  K.logLE K.Info $ "GA Election Results"
+--  BR.logFrame gaResults
   return ()
   let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
       isVALower r = F.rgetField @BR.StateAbbreviation r == "VA" && F.rgetField @ET.DistrictTypeC r == ET.StateLower
@@ -599,13 +599,13 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
   let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
   modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
-  m <- comparison (onlyVALower modelBase) vaResults "Base Model: VA Lower House"
-  _ <- comparison (onlyTXLower modelBase) (onlyTXLower txResults) "Base Model: TX Lower House"
-  _ <- comparison (onlyGALower modelBase) (onlyGALower gaResults) "Base Model: GA Lower House"
+--  m <- comparison (onlyVALower modelBase) vaResults "Base Model: VA Lower House"
+--  _ <- comparison (onlyTXLower modelBase) (onlyTXLower txResults) "Base Model: TX Lower House"
+--  _ <- comparison (onlyGALower modelBase) (onlyGALower gaResults) "Base Model: GA Lower House"
   modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
-  _ <- comparison (onlyVALower modelPlusState) vaResults "Base+State Model: VA Lower House"
-  _ <- comparison (onlyTXLower modelPlusState) (onlyTXLower txResults) "Base+State Model: TX Lower House"
-  _ <- comparison (onlyGALower modelPlusState) (onlyGALower gaResults) "Base+State Model: GA Lower House"
+  _ <- comparison (onlyVALower $ modelBase <> modelPlusState) vaResults "VA Lower House"
+  _ <- comparison (onlyTXLower $ modelBase <> modelPlusState) (onlyTXLower txResults) "TX Lower House"
+  _ <- comparison (onlyGALower $ modelBase <> modelPlusState) (onlyGALower gaResults) "GA Lower House"
 
 {-
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
@@ -686,7 +686,10 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.emptyGroupRowMap
 
 
-data Model = Base | PlusState | PlusSexEdu | PlusRaceEdu | PlusInteractions | PlusStateAndStateRace deriving (Show, Eq, Ord)
+data Model = Base | PlusState | PlusSexEdu | PlusRaceEdu | PlusInteractions | PlusStateAndStateRace deriving (Show, Eq, Ord, Generic)
+instance Flat.Flat Model
+type instance FI.VectorFor Model = Vector.Vector
+
 data TurnoutSource = CPS_Turnout | CES_Turnout deriving (Show, Eq, Ord)
 
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
@@ -887,6 +890,9 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
 
         return ()
 
+      addModelId :: F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ModeledShare]
+                 -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, MT.ModelId Model, ModeledShare]
+      addModelId r = F.rcast $ FT.recordSingleton @(MT.ModelId Model) model F.<+> r
       extractResults :: K.KnitEffects r
                      => SC.ResultAction r d SB.DataSetGroupIntMaps () (FS.SFrameRec ModelResultsR)
       extractResults = SC.UseSummary f where
@@ -903,7 +909,10 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map g v
             parseAndIndexPctsWith psIndexIM id "PS_SLD_Demographics_SLD"
-          fmap FS.SFrame $ K.knitEither $ MT.keyedCIsToFrame sldLocationToRec $ M.toList resultsMap
+          res :: F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ModeledShare] <- K.knitEither
+                                                                                                      $ MT.keyedCIsToFrame sldLocationToRec
+                                                                                                      $ M.toList resultsMap
+          return $ FS.SFrame . fmap addModelId $ res
 --      dataWranglerAndCode :: K.ActionWithCacheTime r SLDModelData
 --                          -> K.Sem r (SC.DataWrangler SLDModelData SB.DataSetGroupIntMaps (), SB.StanCode)
       dataWranglerAndCode data_C = do
@@ -949,7 +958,8 @@ sldLocationToRec (sa, dt, dn) = sa F.&: dt F.&: dn F.&: V.RNil
 
 type ModeledShare = "ModeledShare" F.:-> MT.ConfidenceInterval
 
-type ModelResultsR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ModeledShare]
+type ModelResultsR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, MT.ModelId Model, ModeledShare]
+
 
 sldGroup :: SB.GroupTypeTag SLDLocation
 sldGroup = SB.GroupTypeTag "SLD"
@@ -1043,11 +1053,12 @@ indexStanResults im v = do
 
 modelResultScatterChart :: Text
                         -> FV.ViewConfig
-                        -> F.FrameRec ([ET.DistrictNumber, Contested, ModeledShare, DShare])
+                        -> F.FrameRec ([ET.DistrictNumber, Contested, MT.ModelId Model, ModeledShare, DShare])
                         -> GV.VegaLite
 modelResultScatterChart title vc rows =
   let toVLDataRec = FV.asVLData (GV.Number . realToFrac) "District Number"
                     V.:& FV.asVLData GV.Boolean "Contested"
+                    V.:& FV.asVLData (GV.Str . show) "Model"
                     V.:& FV.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
@@ -1055,7 +1066,9 @@ modelResultScatterChart title vc rows =
                     V.:& FV.asVLData (GV.Number . (*100)) "Election_Result"
                     V.:& V.RNil
       vlData = FV.recordsToData toVLDataRec rows
-      encContested = GV.color [GV.MName "Contested", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]
+      encContested = GV.shape [GV.MName "Contested", GV.MmType GV.Nominal
+                              , GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]
+      encModelName = GV.color [GV.MName "Model", GV.MmType GV.Nominal]
       encModelMid = GV.position GV.Y [GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Model_Mid"]
@@ -1089,16 +1102,16 @@ modelResultScatterChart title vc rows =
       errorT = GV.transform
                . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
                . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
-      dotEnc = GV.encoding . encModelMid . encElection . encContested
-      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
+      ptEnc = GV.encoding . encModelMid . encElection . encContested . encModelName
+--      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
       lineEnc = GV.encoding . encModelMid . enc45
-      dotSpec = GV.asSpec [dotEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
-      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Point [GV.MTooltip GV.TTData]]
+--      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
-      regressionSpec = GV.asSpec [regression False [], dotEnc [], GV.mark GV.Line [GV.MStroke "red"]]
+--      regressionSpec = GV.asSpec [regression False [], ptEnc [], GV.mark GV.Line [GV.MStroke "red"]]
       r2Enc = GV.encoding
               . GV.position GV.X [GV.PNumber 200]
               . GV.position GV.Y [GV.PNumber 20]
               . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [dotSpec, lineSpec], vlData]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
