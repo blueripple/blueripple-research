@@ -14,6 +14,7 @@ module BlueRipple.Utilities.TableUtils
   , highlightCellPurple
   , numberToStyledHtml
   , maybeNumberToStyledHtml
+  , textToCell
   , textToStyledHtml
   , brAddRawHtmlTable
   )
@@ -76,6 +77,9 @@ maybeNumberToStyledHtml printFmt xM =
 
 textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)
+
+textToCell :: T.Text -> BC.Cell
+textToCell  = BC.Cell mempty . BH.toHtml
 
 brAddRawHtmlTable
   :: forall {-c k ct -} r f a.

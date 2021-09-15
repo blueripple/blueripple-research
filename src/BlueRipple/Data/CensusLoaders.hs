@@ -171,6 +171,8 @@ censusTablesBySLD = do
                    , (BRC.TY2018, censusDataDir <> "/tx_2020_sldu.csv")
                    , (BRC.TY2018, censusDataDir <> "/ga_2020_sldl.csv")
                    , (BRC.TY2018, censusDataDir <> "/ga_2020_sldu.csv")
+                   , (BRC.TY2018, censusDataDir <> "/nv_2020_sldl.csv")
+                   , (BRC.TY2018, censusDataDir <> "/oh_2020_sldl.csv")
                    ]
       tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
