@@ -14,9 +14,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -O0 #-}
 
-
 module Main where
-
 
 import qualified ElectionResultsLoaders as BR
 import qualified BlueRipple.Configuration as BR
@@ -25,6 +23,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -32,6 +31,7 @@ import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Data.CountFolds as BRCF
+import qualified BlueRipple.Data.Keyed as BRK
 
 import qualified Colonnade as C
 import qualified Text.Blaze.Colonnade as C
@@ -55,7 +55,6 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Text.Read  as T
 import qualified Data.Time.Calendar            as Time
---import qualified Data.Time.Clock               as Time
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
@@ -76,10 +75,6 @@ import qualified Frames.Visualization.VegaLite.Data as FV
 
 import qualified Relude.Extra as Extra
 
-import Control.Lens.Operators
-
-import qualified Heidi
-
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Heidi as HV
 
@@ -91,7 +86,6 @@ import qualified Path
 import Path (Rel, Abs, Dir, File)
 
 import qualified Stan.ModelConfig as SC
-import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
@@ -99,19 +93,11 @@ import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
 import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import Frames.CSV (prefixInference)
-import qualified BlueRipple.Data.CountFolds as BRCF
-import qualified BlueRipple.Data.CCES as BRE
 import qualified Data.Vinyl.Core as V
 import BlueRipple.Model.House.ElectionResult (ccesDataToModelRows)
-import qualified Frames.SimpleJoins as FJ
-import qualified BlueRipple.Model.House.ElectionResult as BRE
-import qualified BlueRipple.Data.Keyed as BRK
 import qualified Stan.ModelBuilder as SB
-import qualified BlueRipple.Data.CensusTables as BRC
-import qualified Frames.MapReduce as FMR
 import qualified Text.Pandoc as Pandoc
 import qualified Debug.Trace as DT
-
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -453,7 +439,6 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let f = F.filterFrame (\r -> onlyLower r && onlyStates ["VA"] r)
   m <- comparison (f allModels) (f allResults) "All"
 
-{-
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
   let tableNoteName = BR.Used "District_Table"
@@ -462,7 +447,6 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
         dlccChosenF r header = if (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts) then BR.highlightCellPurple else ""
         tableCellStyle = BR.CellStyle dlccChosenF
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
--}
   return ()
 
 
