@@ -17,10 +17,9 @@
 
 module Main where
 
-import qualified Data.Massiv.Array
 
+import qualified ElectionResultsLoaders as BR
 import qualified BlueRipple.Configuration as BR
-
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -50,6 +49,7 @@ import Data.Csv ((.!))
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
+import qualified Data.Massiv.Array
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -79,7 +79,6 @@ import qualified Relude.Extra as Extra
 import Control.Lens.Operators
 
 import qualified Heidi
---import Lens.Micro.Platform ((^?))
 
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.Heidi as HV
@@ -90,8 +89,6 @@ import qualified Text.Pandoc.Error as Pandoc
 import qualified Numeric
 import qualified Path
 import Path (Rel, Abs, Dir, File)
---import qualified Polysemy
-
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
@@ -100,7 +97,6 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
---import Stan.ModelBuilder (addUnIndexedDataSet)
 import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import Frames.CSV (prefixInference)
 import qualified BlueRipple.Data.CountFolds as BRCF
@@ -115,7 +111,6 @@ import qualified BlueRipple.Data.CensusTables as BRC
 import qualified Frames.MapReduce as FMR
 import qualified Text.Pandoc as Pandoc
 import qualified Debug.Trace as DT
---import qualified Frames.MapReduce.General as FMR
 
 
 yamlAuthor :: T.Text
@@ -319,279 +314,6 @@ prepSLDModelData clearCaches = do
     -- BR.logFrame sldSER
     return $ SLDModelData cpsAndCces (F.rcast <$> sldSER) distRows
 
-
-type VotePct = "VotePct" F.:-> Text
-type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, ET.Party, ET.Votes, VotePct]
-
-type Parser = MP.Parsec Void Text
-
-parseParty :: Text -> ET.PartyT
-parseParty "Democrat" = ET.Democratic
-parseParty "Democratic" = ET.Democratic
-parseParty "Republican" = ET.Republican
-parseParty "DEM" = ET.Democratic
-parseParty "REP" = ET.Republican
-parseParty "Dem" = ET.Democratic
-parseParty "Rep" = ET.Republican
-parseParty "D" = ET.Democratic
-parseParty "R" = ET.Republican
-parseParty _ = ET.Other
-
-
-newtype NVResult = NVResult (F.Record SLDResultR)
-instance CSV.FromRecord NVResult where
-  parseRecord v = if length v == 9 then NVResult <$> parseNVResult v else fail ("(NVResult.parseRecord) != 9 cols in " <> show v)
-
-parseNVDistrictType :: Text -> CSV.Parser ET.DistrictType
-parseNVDistrictType = mpToCsv parse
-  where
-    parse = MP.choice [ET.StateLower <$ MP.string "StateLower"
-                      , ET.StateUpper <$  MP.string "StateUpper"]
-
-parseNVResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
-parseNVResult v =
-  let mkRec yr sa dt dn cn cp vts vp = yr F.&: sa F.&: dt F.&: dn F.&: cn F.&: cp F.&: vts F.&: vp F.&: V.RNil
-      yr = v .! 0
-      sa = v .! 1
-      dt = (v .! 2) >>= parseNVDistrictType
-      dn = v .! 3
-      cn = v .! 4
-      cp = parseParty <$> (v .! 5)
-      vts = v .! 6
-      vp = v .! 7
-  in mkRec <$> yr <*> sa <*> dt <*> dn <*> cn <*> cp <*> vts <*> vp
-
-getNVResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
-getNVResults fp = do
-  fileDep <- K.fileDependency fp
---  BR.clearIfPresentD "data/SLD/NV_Lower_2020_General.bin"
-  BR.retrieveOrMakeFrame "data/SLD/NV_Lower_2020_General.bin" fileDep $ \_ -> do
-    K.logLE K.Info "Rebuilding Nevada 2020 lower-state-house general election results."
-    fileBS <- K.liftKnit $ readFileLBS @IO fp
-    let records = CSV.decode CSV.HasHeader fileBS
---    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
-    return $ FL.fold candidatesToRaces $ fmap (\(NVResult x) -> x) $ records
-
-
-newtype OHResult = OHResult (F.Record SLDResultR)
-instance CSV.FromRecord OHResult where
-  parseRecord v = if length v == 6 then OHResult <$> parseOHResult v else fail ("(OHResult.parseRecord) != 6 cols in " <> show v)
-
-parseOHRace :: Text -> CSV.Parser (ET.DistrictType, Int)
-parseOHRace t = mpToCsv parseRace t where
-  parseOffice = MP.choice [ET.StateUpper <$ MP.string "Senator", ET.StateLower <$ MP.string "Representative"]
-  parseRace = do
-    MP.string "State"
-    MP.space
-    o <- parseOffice
-    MP.space
-    void $ MP.char '-'
-    MP.space
-    MP.string "District"
-    MP.space
-    d <- MPL.decimal
-    return (o, d)
-
-parseOHCandAndParty :: Text -> CSV.Parser (Text, ET.PartyT)
-parseOHCandAndParty t = mpToCsv parseCP t
-  where
-    parseP :: Parser ET.PartyT = parseParty . toText <$> (MP.between (MP.char '(') (MP.char ')') (MP.some MP.letterChar))
-    parseCP :: Parser (Text, ET.PartyT) = first toText <$> MP.someTill_ (MP.asciiChar <|> MP.spaceChar) parseP
-
-parseOHResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
-parseOHResult v =
-  let mkRec yr sa dt dn c cp vts vpct =  yr F.&: sa F.&: dt F.&: dn F.&: c F.&: cp F.&: vts F.&: vpct F.&: V.RNil
-      yr = v .! 0
-      sa = v .! 1
-      dist = (v .! 2) >>= parseOHRace
-      dt = fst <$> dist
-      dn = snd <$> dist
-      candp = (v .! 3) >>= parseOHCandAndParty
-      cn = fst <$> candp
-      cp = snd <$> candp
-      vts = v .! 4
-      vpct = v .! 5
-  in mkRec <$> yr <*> sa <*> dt <*> dn <*> cn <*> cp <*> vts <*> vpct
-
-getOHResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
-getOHResults fp = do
-  fileDep <- K.fileDependency fp
---  BR.clearIfPresentD "data/SLD/OH_2020_General.bin"
-  BR.retrieveOrMakeFrame "data/SLD/OH_2020_General.bin" fileDep $ \_ -> do
-    K.logLE K.Info "Rebuilding Ohio 2020 state-house general election results."
-    fileBS <- K.liftKnit $ readFileLBS @IO fp
-    let records = CSV.decode CSV.HasHeader fileBS
---    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
-    return $ FL.fold candidatesToRaces $ fmap (\(OHResult x) -> x) $ records
-
-
-newtype TXResult = TXResult (F.Record SLDResultR)
-
-mpToCsv :: Parser a -> Text -> CSV.Parser a
-mpToCsv p t = toCSVParser $ first (MP.errorBundlePretty @_ @Void) $ MP.runParser p "mpToCsv" t
-  where
-    toCSVParser e = case e of
-      Left msg -> fail $ toString ("MegaParsec: " <> toText msg)
-      Right x -> return x
-
-parseTXRace :: Text -> CSV.Parser (ET.DistrictType, Int)
-parseTXRace t = mpToCsv parseRace t
-  where
-    parseOffice = MP.choice [ET.StateLower <$ MP.string "STATE REPRESENTATIVE DISTRICT"
-                            , ET.StateUpper <$  MP.string "STATE SENATOR, DISTRICT"]
-    parseRace = do
-      o <- parseOffice
-      MP.space
-      d <- MPL.decimal
-      return (o, d)
-
-parseTXResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
-parseTXResult v =
-  let mkRec yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
-      yr = v .! 0
-      sa = v .! 1
-      dist = (v .! 2) >>= parseTXRace
-      dt = fst <$> dist
-      dn = snd <$> dist
-      cand = v .! 3
-      p = parseParty <$> (v .! 4)
-      vts = v .! 5
-      vpct = v .! 6
-  in mkRec <$> yr <*> sa <*> dt <*> dn <*> cand <*> p <*> vts <*> vpct
-
-instance CSV.FromRecord TXResult where
-  parseRecord v = if length v == 9 then TXResult <$> parseTXResult v else fail ("(TXResult.parseRecord) != 9 cols in " <> show v)
-
-parseErrors :: CSV.Records a -> [Text]
-parseErrors rs = reverse $ go rs [] where
-  go (CSV.Nil ms _) es = maybe es (\s -> toText s : es) ms
-  go (CSV.Cons e rs') es = go rs' es' where
-    es' = case e of
-      Left e -> toText e : es
-      Right _ -> es
-
-getTXResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
-getTXResults fp = do
-  fileDep <- K.fileDependency fp
---  BR.clearIfPresentD "data/SLD/TX_2020_General.bin"
-  BR.retrieveOrMakeFrame "data/SLD/TX_2020_General.bin" fileDep $ \_ -> do
-    K.logLE K.Info "Rebuilding Texas 2020 state-house general election results."
-    fileBS <- K.liftKnit $ readFileLBS @IO fp
-    let records = CSV.decode CSV.HasHeader fileBS
---    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
-    return $ FL.fold candidatesToRaces $ fmap (\(TXResult x) -> x) $ records
-
-newtype GAResult = GAResult (F.Record SLDResultR)
-instance CSV.FromRecord GAResult where
-  parseRecord v = if length v == 10 then GAResult <$> parseGAResult 2020 v else fail ("(GAResult.parseRecord) != 10 cols in " <> show v)
-
-parseGARace :: Text -> CSV.Parser (ET.DistrictType, Int)
-parseGARace t = mpToCsv parseRace t
-  where
-    parseOffice = MP.choice [ET.StateLower <$ MP.string "State House District"
-                            ,ET.StateLower <$ MP.string "State House Dist"
-                            ,ET.StateUpper <$ MP.string "State Senate District"
-                            ,ET.StateUpper <$ MP.string "State Senate Dist"
-                            ]
-    parseRace = do
-      o <- parseOffice
-      MP.space
-      d <- MPL.decimal
-      return (o, d)
-
-parseGACandAndParty :: Text -> CSV.Parser (Text, ET.PartyT)
-parseGACandAndParty t = mpToCsv parseCP t
-  where
-    atEnd p = p >>= \res -> do { MP.eof; return res}
-    parseP :: Parser ET.PartyT = parseParty . toText <$> (MP.between (MP.char '(') (MP.char ')') (MP.some MP.letterChar))
-    parseCP :: Parser (Text, ET.PartyT) = first toText <$> MP.someTill_ (MP.asciiChar <|> MP.spaceChar) (MP.try $ atEnd parseP)
-
-
-parseGAResult :: Int -> CSV.Record -> CSV.Parser (F.Record SLDResultR)
-parseGAResult yr v =
-  let mkRec dt dn c p vts vpct = yr F.&: "GA" F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
-      dist = (v .! 1) >>= parseGARace
-      dt = fst <$> dist
-      dn = snd <$> dist
-      cAndP = (v .! 2) >>= parseGACandAndParty
-      cand = fst <$> cAndP
-      p = snd <$> cAndP
-      vts = v .! 4
-      vpct = v .! 5
-  in mkRec <$> dt <*> dn <*> cand <*> p <*> vts <*> vpct
-
-getGAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
-getGAResults fp = do
-  fileDep <- K.fileDependency fp
---  BR.clearIfPresentD "data/SLD/GA_2020_General.bin"
-  BR.retrieveOrMakeFrame "data/SLD/GA_2020_General.bin" fileDep $ \_ -> do
-    K.logLE K.Info "Rebuilding Georgia 2020 state-house general election results."
-    fileBS <- K.liftKnit $ readFileLBS @IO fp
-    let records = CSV.decode CSV.HasHeader fileBS
-    K.logLE K.Diagnostic $ "Parse Errors: " <> T.intercalate "\n" (parseErrors records)
-    return $ FL.fold candidatesToRaces $ fmap (\(GAResult x) -> x) $ records
-
-
-parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
-parseVARace raceDesc = do
-  let isLower = T.isInfixOf "Delegates" raceDesc
-      dType = if isLower then ET.StateLower else ET.StateUpper
-  let numText = T.dropWhileEnd (\x -> x /= ')') $  T.dropWhile (\x -> x /= '(') raceDesc
-  dNum :: Int <- T.readMaybe $ toString numText
-  return $ 2019 F.&: "VA" F.&: dType F.&: dNum F.&: V.RNil
-
-
-getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => FilePath -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
-getVAResults fp = do
-  fileDep <-  K.fileDependency fp
-  BR.clearIfPresentD "data/SLD/VA_2019_General.bin"
-  BR.retrieveOrMakeFrame "data/SLD/VA_2019_General.bin" fileDep $ \_ -> do
-    mJSON :: Maybe A.Value <- K.liftKnit $ A.decodeFileStrict' fp
-    races <- case mJSON of
-      Nothing -> K.knitError "Error loading VA general json"
-      Just json -> K.knitMaybe "Error Decoding VA General json" $ do
-        racesA <- json ^? A.key "Races"
-        let listOfRaces = racesA ^.. A.values
-            g :: A.Value -> Maybe (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct])
-            g cO = do
-              name <- cO ^?  A.key "BallotName" . A._String
-              party <- fmap parseParty (cO ^? A.key "PoliticalParty" . A._String)
-              votes <- cO ^? A.key "Votes" . A._Integer
-              pct <- cO ^? A.key "Percentage" . A._String
-              return $ name F.&: party F.&: fromInteger votes F.&: pct F.&: V.RNil
-            f raceO = do
-              raceRec <- raceO ^? A.key "RaceName" . A._String >>= parseVARace
-              candidatesA <- raceO ^? A.key "Candidates"
-              let candidates = catMaybes $ g <$> (candidatesA ^.. A.values)
-              return $ fmap (raceRec F.<+>) candidates
-        races <- traverse f listOfRaces
-        return $ FL.fold candidatesToRaces $ concat races
-    return races
-
-type DVotes = "DVotes" F.:-> Int
-type RVotes = "RVotes" F.:-> Int
-type DShare = "DShare" F.:-> Double
-type Contested = "Contested" F.:-> Bool
-
-type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, Contested, DVotes, RVotes, DShare]
-
-candidatesToRaces :: FL.Fold (F.Record SLDResultR) (F.FrameRec SLDRaceResultR)
-candidatesToRaces = FMR.concatFold
-                    $ FMR.mapReduceFold
-                    FMR.noUnpack
-                    (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
-                    (FMR.foldAndAddKey f) where
-  f :: FL.Fold (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct]) (F.Record [Contested, DVotes, RVotes, DShare])
-  f =
-    let party = F.rgetField @ET.Party
-        votes = F.rgetField @ET.Votes
-        dVotes = FL.prefilter ((== ET.Democratic) . party) $ FL.premap votes FL.sum
-        rVotes = FL.prefilter ((== ET.Republican) . party) $ FL.premap votes FL.sum
-        ndVotes = FL.prefilter ((/= ET.Democratic) . party) $ FL.premap votes FL.sum
-        contested x y = x /= 0 && y /= 0
-    in (\d r nd -> contested d r F.&: d F.&: r F.&: realToFrac d/ realToFrac (d + nd) F.&: V.RNil) <$> dVotes <*> rVotes <*> ndVotes
-
-
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
@@ -611,7 +333,7 @@ vaLowerColonnade cas =
       share95 = MT.ciUpper . F.rgetField @ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @DShare))
+     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
@@ -624,16 +346,16 @@ modelCompColonnade states cas =
 
 comparison :: K.KnitOne r
            => F.FrameRec ModelResultsR
-           -> F.FrameRec SLDRaceResultR
+           -> F.FrameRec BR.SLDRaceResultR
            -> Text
-           -> K.Sem r (F.FrameRec (ModelResultsR V.++ [BR.Year, Contested, DVotes, RVotes, DShare]))
+           -> K.Sem r (F.FrameRec (ModelResultsR V.++ [BR.Year, BR.Contested, BR.DVotes, BR.RVotes, BR.DShare]))
 comparison mr er t = do
   let (modelAndResult, missing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] mr er
   when (not $ null missing) $ K.knitError $ "Missing join keys between model and election results: " <> show missing
-  let  dShare = F.rgetField @DShare
-       dVotes = F.rgetField @DVotes
-       rVotes = F.rgetField @RVotes
+  let  dShare = F.rgetField @BR.DShare
+       dVotes = F.rgetField @BR.DVotes
+       rVotes = F.rgetField @BR.RVotes
        delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)
        contested r = dVotes r /= 0 && rVotes r /= 0 -- r > 0.01 && dShare r < 0.99
        means f = FL.fold ((,) <$> FL.prefilter f (FL.premap dShare FLS.mean)
@@ -643,14 +365,7 @@ comparison mr er t = do
   let statesFld = Set.toList <$> FL.premap (F.rgetField @BR.StateAbbreviation) FL.set
       modelsFld = sortOn show . Set.toList <$> FL.premap (F.rgetField @(MT.ModelId Model)) FL.set
       (states, models) = FL.fold ((,) <$> statesFld <*> modelsFld) modelAndResult
-      size = 600 / realToFrac (max (length models) (length states))
-  _ <- K.addHvega Nothing Nothing
-       $ modelResultScatterChart
-       ("Modeled Vs. Actual (" <> t <> ")")
-       (FV.ViewConfig size size 5)
-       (fmap F.rcast modelAndResult)
-
-  let contestedStateModel s m r = F.rgetField @BR.StateAbbreviation r == s && F.rgetField @(MT.ModelId Model) r == m && contested r
+      contestedStateModel s m r = F.rgetField @BR.StateAbbreviation r == s && F.rgetField @(MT.ModelId Model) r == m && contested r
       h model state = (state, 100 * (varResult - varDelta) / varResult)
         where
           f = contestedStateModel state model
@@ -658,20 +373,25 @@ comparison mr er t = do
           (varResult, varDelta) = vars f ms
       g model = (show model, M.fromList $ fmap (h model) states)
       explainedVariances = fmap g models
-  BR.brAddRawHtmlTable "Model Comparison: % of variance explained" (BHA.class_ "brTable") (modelCompColonnade states mempty) explainedVariances
+
+      size = 600 / realToFrac (max (length models) (length states))
+      single = length models == 1 && length states == 1
+      singleCaption pctVar = " model explains " <> show pctVar <> "% of the SLD to SLD variance in contested election results."
+      caption = if single
+                then head <$> nonEmpty explainedVariances >>= fmap (singleCaption . snd . head) . nonEmpty . M.toList . snd
+                else Nothing
+  K.logLE K.Info $ show explainedVariances
+  _ <- K.addHvega Nothing caption
+       $ modelResultScatterChart
+       single
+       ("Modeled Vs. Actual (" <> t <> ")")
+       (FV.ViewConfig size size 5)
+       (fmap F.rcast modelAndResult)
+
+
+  unless single $ BR.brAddRawHtmlTable "Model Comparison: % of variance explained" (BHA.class_ "brTable") (modelCompColonnade states mempty) explainedVariances
   K.logLE K.Info $ show models
   return modelAndResult
-
-{-
-Debugging model via TX-51 (Lower)
-Model WNH Turnout ~ 57%
-Model NW Turnout ~ 45%
-Model WNH Dem Pref ~ 47%
-Moel NM Dem Pref ~ 73%
-TX-51 is 57% NW vs 43% WNH in my input data
-so, roughly, we expect, D-share = [(43% x 57% x 47%) + (57% x 45% x 73%)]/[(43% x 57%) + (57% x 45%)] = (0.12 + 0.19)/(.25 + .26) = 0.31/0.51 = 61%
-And I think this is
--}
 
 sldDataFilterCensus :: (F.Record SLDDemographicsR -> Bool) -> SLDModelData -> SLDModelData
 sldDataFilterCensus g (SLDModelData a b c) = SLDModelData a (F.filterFrame g b) c
@@ -683,11 +403,11 @@ vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         -> K.ActionWithCacheTime r SLDModelData
         -> K.Sem r ()
 vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
-  vaResults <- K.ignoreCacheTimeM $ getVAResults "data/forPosts/VA_2019_General.json"
-  txResults <- K.ignoreCacheTimeM $ getTXResults "data/forPosts/TX_2020_general.csv"
-  gaResults <- K.ignoreCacheTimeM $ getGAResults "data/forPosts/GA_2020_general.csv"
-  ohResults <- K.ignoreCacheTimeM $ getOHResults "data/forPosts/OH_2020_general.csv"
-  nvResults <- K.ignoreCacheTimeM $ getNVResults "data/forPosts/NV_Lower_2020_general.csv"
+  vaResults <- K.ignoreCacheTimeM BR.getVAResults
+  txResults <- K.ignoreCacheTimeM BR.getTXResults
+  gaResults <- K.ignoreCacheTimeM BR.getGAResults
+  ohResults <- K.ignoreCacheTimeM BR.getOHResults
+  nvResults <- K.ignoreCacheTimeM BR.getNVResults
 --  K.logLE K.Info $ "OH Election Results"
 --  BR.logFrame ohResults
   return ()
@@ -1230,11 +950,12 @@ indexStanResults im v = do
 
 
 
-modelResultScatterChart :: Text
+modelResultScatterChart :: Bool
+                        -> Text
                         -> FV.ViewConfig
-                        -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, Contested, MT.ModelId Model, ModeledShare, DShare])
+                        -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, BR.Contested, MT.ModelId Model, ModeledShare, BR.DShare])
                         -> GV.VegaLite
-modelResultScatterChart title vc rows =
+modelResultScatterChart single title vc rows =
   let toVLDataRec = FV.asVLData GV.Str "State"
                     V.:& FV.asVLData (GV.Number . realToFrac) "District Number"
                     V.:& FV.asVLData GV.Boolean "Contested"
@@ -1250,11 +971,11 @@ modelResultScatterChart title vc rows =
       encContested = GV.color [GV.MName "Contested", GV.MmType GV.Nominal
                               , GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y [GV.PName "Model_Mid"
+      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
-                                     , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
-                                  ]
+                                     , GV.PAxis [GV.AxTitle "Model_Mid"]]
+                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]])
+
       encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle "Model_Low"]
@@ -1297,4 +1018,7 @@ modelResultScatterChart title vc rows =
               . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
 -}
-  in FV.configuredVegaLite vc [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
+      finalSpec = if single
+                  then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
+  in FV.configuredVegaLite vc finalSpec --

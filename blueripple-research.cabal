@@ -401,7 +401,7 @@ executable br-2021-StateLegModel
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2021-StateLegModel
   main-is: Main.hs
-  other-modules: DataPaths, DataFrames
+  other-modules: DataPaths, DataFrames, ElectionResultsLoaders
   build-depends: base
                , aeson
                , lens-aeson
