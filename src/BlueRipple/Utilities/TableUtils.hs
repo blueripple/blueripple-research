@@ -7,6 +7,7 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module BlueRipple.Utilities.TableUtils
   ( CellStyle(..)
+  , cellStyleIf
   , toCell
   , normalCell
   , totalCell
@@ -38,6 +39,9 @@ instance Semigroup (CellStyle r c) where
 instance Semigroup (CellStyle r c) => Monoid (CellStyle r c) where
   mempty = CellStyle (\r c -> "")
   mappend = (<>)
+
+cellStyleIf :: Text -> (row -> col -> Bool) -> CellStyle row col
+cellStyleIf s condF = CellStyle $ \r c -> if condF r c then s else ""
 
 toCell
   :: CellStyle row col

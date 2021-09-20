@@ -1,4 +1,67 @@
 ### Modeling State Legislative Elections
+We want to build a reasonable but simple model of voter turnout and preference which we
+can apply to estimating outcomes in state legislative districts.  We want to build something
+we can apply fairly easily to any state.  And, since this is a redistricting year,
+we want something that can apply to new districts as well as exisiting ones.
+
+One possibility works bottom-up, using voting precincts as building blocks:
+
+1. For each precinct get the geographic boundary and election results from
+[openprecincts](https://openprecincts.org).
+2. Build a demographic profile of the precinct using overlaps of census “blocks” or “block
+groups”[^censusGeographies].
+3. Use the total number of votes and votes cast for the Democratic candidate
+to *infer* a demographic model of turnout and voter preference.
+4. Apply (post-stratify) that model to the demographics of a SLD to generate a rough
+estimate of the likely election result.
+
+For a given SLD, what precincts do we include in the model?  In order to keep
+things simple we want a model that we can use on multiple districts, so we
+would want one model using every precinct in the country or at least the state.
+Using every precinct in the country is hard, some of that data is unavailable
+and there are a lot of them!  Using just data from each state risks being a little
+too influenced by the local election history.
+
+Another possibility works top-down from national-level data:
+
+1. Use a national survey of voter turnout, e.g., the
+Current Population Survey Voter Registration Supplement (CPSVRS) and/or the
+Cooperative Election Survey (CES, formerly the CCES) and a national survey
+of voter preference, like the CES, to build demographically stratified turnout
+and preference data at the state or congressional-district (CD) level.
+2. Use that data to infer a demographic model of turnout and voter preference,
+possibly with state or CD-level effects.
+3. Apply (post-stratify) that model to the demographics of a SLD to generate
+a rough estimate of the likely election result.
+
+This approach might be too general: voters in different regions might not
+be well described by a national model.  The data we use is organized by CD,
+so we can choose a model with some geographic specificity. Even better, we can
+compare the quality of models with different levels of geographic detail.
+
+For now, we are working with the top-down approach.  That data is considerably simpler
+to work with and more comprehensive–precinct level data is not available for all states
+and all election years.  But we remain interested in the bottom-up approach as well
+and we might implement some version of it for comparison.
+
+[^censusGeographies]: For the decennial census there is detailed data avaialable at the block
+level, where a block has ~100 people.  For the American Community Survey, which collects
+data every year and thus is more up to date than the decennial census, data is available
+only at the “block-group” level, consisting of a few thousand people.
+
+
+What data is available?
+
+
+For turnout, we have the
+Current Population Survey Voter Registration Supplement (CPSVRS) and/or the
+Cooperative Election Survey (CES, formerly the CCES).  The CPSVRS is self-reported whereas the
+CES validates the turnout data via voter files.  All other things equal, we’d prefer the validated
+data.  But the CPSVRS is a considerably larger survey.  And there’s some evidence that the
+validation process introduces bias because it tends to miss people who move between elections
+and they are disproportionately likely to be young and poor.  For both reasons of size
+and bias, we use the CPSVRS as a source of turnout data.
+
 We model turnout and voter preference using demographic variables by congressional district (CD).
 We use congressional districts as our modeling units for two reasons:
 CDs are a core interest at BlueRipple politics

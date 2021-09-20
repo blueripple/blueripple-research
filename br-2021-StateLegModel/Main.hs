@@ -304,7 +304,7 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
@@ -418,7 +418,13 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mModelNoteUrl
   let modelRef = "[model_description]: " <> modelNoteUrl
   BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
---  let isTX51 r = isTXLower r && F.rgetField @ET.DistrictNumber r == 51
+  let isDistrict s dt dn r = F.rgetField @BR.StateAbbreviation r == s
+                              && F.rgetField @ET.DistrictTypeC r == dt
+                              && F.rgetField @ET.DistrictNumber r == dn
+  K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
+  K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 100) . sldTables
+  K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 84) . sldTables
+  K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 90) . sldTables
   modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
   modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu CPS_Turnout sldDat_C
@@ -444,8 +450,26 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let tableNoteName = BR.Used "District_Table"
   _ <- BR.brNewNote postPaths postInfo tableNoteName "VA Lower House Districts" $ do
     let sortedByModelMid = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
-        dlccChosenF r header = if (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts) then BR.highlightCellPurple else ""
-        tableCellStyle = BR.CellStyle dlccChosenF
+        bordered c = "border: 3px solid " <> c
+        dlccChosenCS  = bordered "purple" `BR.cellStyleIf` \r h -> (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts && h == "District")
+        longShot ci = MT.ciUpper ci < 0.48
+        leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
+        leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
+        safeD ci = MT.ciLower ci > 0.52
+        mi = F.rgetField @ModeledShare
+        eRes = F.rgetField @BR.DShare
+        longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
+        leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
+        leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
+        safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
+        resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
+        resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
+        resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
+        resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
+
+        tableCellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS
+                                 , resLongShotCS, resLeanRCS, resLeanDCS, resSafeDCS
+                                 ]
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
   return ()
 
