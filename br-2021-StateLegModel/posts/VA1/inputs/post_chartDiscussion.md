@@ -2,10 +2,10 @@ We should pause for a moment to note how remarkable it is that a model using onl
 and votes for a different office has any predictive power at all, much less what we see here.  It’s a reminder
 of how strongly demography determines voting patterns and how consistently people vote for one party on the entire
 ballot.  That being said, this is nothing like an accurate prediction. And that is unsurprising.  Not only is our data
-limited, but state-legislative elections are often strongly influenced by race-specific concerns, like candidate-quality
+limited, but state-legislative elections are often strongly influenced by specific concerns, like candidate-quality
 and incumbency, for which we have not accounted for at all.
 
-But this will serve our purpose, namely to sort races into “safe”, “needs defending”, “flippable” and “unwinnable” and
+But this will serve our purpose, namely to sort races into “safe”, “needs defending”, “flippable” and “long-shot” and
 to limit our donation recommendations to the middle two categories.
 
 ## What’s Next?

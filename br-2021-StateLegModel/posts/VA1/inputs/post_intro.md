@@ -1,6 +1,7 @@
 # Modeling State House Races: VA edition
 
-It’s abundantly clear that Dems and progressives have suffered major setbacks when Republicans control
+It’s abundantly clear that Dems and progressives have suffered major setbacks as
+a result of Republican controlled
 statehouses. On the voting rights front, it’s opened the door to partisan and race-based
 [gerrymandering](https://www.washingtonpost.com/news/wonk/wp/2015/03/01/this-is-the-best-explanation-of-gerrymandering-you-will-ever-see/)
 and
@@ -31,7 +32,7 @@ From our perspective, this makes it hard to filter
 state legislative races by our number one criterion: is this a race
 the Dem *can* win but also one the Dem is *not certain* to win.
 
-We think donating efficiently to state-legislative
+We think donating efficiently to state-legislative elections
 is extremely important, so, despite the challenges,
 we attempted to estimate winnability using the available data.
 Below we’ll look at our
@@ -47,10 +48,10 @@ determining which races are likely to be close and are thus flippable or in need
 turnout and preference for a specific region.
 - Demographic information for state-legislative districts (SLDs) is available from the
 ACS (American Community Survey) and the decennial census. But is “some assembly required.”
-- Combining this information allows us to estimate the likely outcome of an election in
-a SLD.
+- Combining this information allows us to estimate a rangel of likely outcomes for an SLD election.
 - Our method intentionally avoids using the history of local election results.
-- An exammple model, using 2018 data and comparing to 2019 results, is encouraging.
+- An exammple model, using 2018 data and comparing to 2019 results, provides rough support for
+the idea that the model might be a useful way to estimate winnability.
 
 ## Modeling Election Results from Demographic Information
 When people use election-data and demographics to
@@ -129,7 +130,11 @@ we also plot the “model=result” line,
 where every dot would fall if the model was somehow exact for each race.
 The model is far from perfect but nonetheless
 extremely informative, explaining 75% of the variance among contested races.
-The uncontested races fall on the sides of the chart
+Races uncontested by one of the major parties fall on the sides of the chart
+(except HD-63, where a
+[well-known](https://ballotpedia.org/Larry_Haake)
+local independent
+mounted a strong challenge to the incumbent Dem)
 and we can see that these are predictably one-sided in the model,
 with the exception of district
 78 (a swingy district that was uncontested by the Democrats).
