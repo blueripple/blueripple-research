@@ -71,7 +71,7 @@ import qualified Frames.Serialize as FS
 import qualified Frames.Transform  as FT
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data as FV
+import qualified Frames.Visualization.VegaLite.Data as FVD
 
 import qualified Relude.Extra as Extra
 
@@ -427,10 +427,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 90) . sldTables
   modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
   modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
-  modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu CPS_Turnout sldDat_C
-  modelPlusStateAndStateRace <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateRace CPS_Turnout sldDat_C
-  modelPlusInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions CPS_Turnout sldDat_C
-  modelPlusStateAndStateInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions CPS_Turnout sldDat_C
+--  modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu CPS_Turnout sldDat_C
+--  modelPlusStateAndStateRace <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateRace CPS_Turnout sldDat_C
+--  modelPlusInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions CPS_Turnout sldDat_C
+--  modelPlusStateAndStateInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions CPS_Turnout sldDat_C
   let allModels = modelPlusState
 --                  <> modelBase
 --                  <> modelPlusRaceEdu
@@ -964,17 +964,17 @@ modelResultScatterChart :: Bool
                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, BR.Contested, MT.ModelId Model, ModeledShare, BR.DShare])
                         -> GV.VegaLite
 modelResultScatterChart single title vc rows =
-  let toVLDataRec = FV.asVLData GV.Str "State"
-                    V.:& FV.asVLData (GV.Number . realToFrac) "District Number"
-                    V.:& FV.asVLData GV.Boolean "Contested"
-                    V.:& FV.asVLData (GV.Str . show) "Model"
-                    V.:& FV.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FVD.asVLData GV.Boolean "Contested"
+                    V.:& FVD.asVLData (GV.Str . show) "Model"
+                    V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
                                       ]
-                    V.:& FV.asVLData (GV.Number . (*100)) "Election_Result"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Election_Result"
                     V.:& V.RNil
-      vlData = FV.recordsToData toVLDataRec rows
+      vlData = FVD.recordsToData toVLDataRec rows
       facetState = [GV.FName "State", GV.FmType GV.Nominal]
       encContested = GV.color [GV.MName "Contested", GV.MmType GV.Nominal
                               , GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]

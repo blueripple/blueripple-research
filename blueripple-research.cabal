@@ -53,7 +53,7 @@ common deps
                , optics >= 0.3 && < 0.5
                , path >= 0.8 && < 0.9
                , pipes
-               , polysemy >= 0.2.1.0 && < 1.6
+               , polysemy >= 1.6 && < 1.7
                , polysemy-plugin
                , primitive >= 0.7.0.0
                , profunctors
@@ -63,7 +63,7 @@ common deps
                , semirings >= 0.5 && < 0.6
                , say >= 0.1.0.1 && < 0.2
                , statistics
-               , streamly >= 0.7.2 && < 0.8
+               , streamly >= 0.8 && < 0.9
                , streamly-bytestring
                , text
                , time
@@ -99,10 +99,10 @@ library  haskell-stan
                , pretty >= 1.1 && < 1.2
                , process >= 1.6 && < 1.7
                , recursion-schemes >= 5.1.2 && < 5.3
-               , relude >=0.7.0 && < 0.8
+               , relude  >=1.0.0 && < 1.2
                , say >= 0.1.0.1 && < 0.2
                , some >= 1.0.1 && < 1.1
-               , streamly >= 0.7.2 && < 0.8
+               , streamly >= 0.7.2 && < 0.9
                , text
                , time
                , transformers-compat >= 0.6 && < 0.7

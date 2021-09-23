@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE PolyKinds            #-}
@@ -83,9 +84,13 @@ import qualified Knit.Utilities.Streamly as K
 import qualified Polysemy.Error                as P (mapError, Error)
 import qualified Polysemy                as P (raise, embed)
 
+#if MIN_VERSION_streamly(0,8,0)
+
+#else
 import qualified Streamly as Streamly
-import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
+#endif
+import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
 import qualified System.Clock
@@ -845,17 +850,6 @@ transformPUMSRow' r =
   F.&: (intToCitizen $ F.rgetField @BR.PUMSCITIZEN r)
   F.&: V.RNil
 
-
--- tracing fold
-runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
-runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
-  start = ST.liftIO (putText startMsg) >> return 0
-  step !n _ = ST.liftIO $ do
-    t <- System.Clock.getTime System.Clock.ProcessCPUTime
-    putText $ show t <> ": "
-    putTextLn $ countMsg n
-    return (n+1)
-  done _ = ST.liftIO $ putTextLn endMsg
 
 
 {-

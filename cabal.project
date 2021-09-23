@@ -2,8 +2,22 @@ packages: ./ ~/DataScience/heidi ~/DataScience/knit-haskell ../data-sets
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra
---ghc 9.0
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra
+--ghc 9.2
+--allow-newer: base
+--           , template-haskell
+--           , ghc-prim
+--           , ghc-bignum
+--           , bytestring
+--           , time
+--           , hashable
+--           , semirings
+--           , glm-haskell:polysemy
+--           , polysemy-RandomFu:polysemy
+--           , polysemy-RandomFu:polysemy-plugin
+--           , profunctors
+--           , aeson
+--           , lens
 --allow-newer: polysemy
 --          , relude
 --           , base
@@ -30,21 +44,6 @@ allow-newer: base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-has
 --  location: https://github.com/andrewthad/hs-memory
 --  tag: 683b402965e68800337af8f9b237d28be273c0d8
 --
-
-
---source-repository-package
---  type: git
---  location: https://github.com/kcsongor/generic-lens
---  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
---  subdir: generic-lens-core
-
--- need this for labels to work
-source-repository-package
-  type: git
-  location: https://github.com/kcsongor/generic-lens
-  tag: 64d62378ef2418c3533b03916f0033f83bc7fa65
-  subdir: generic-optics
-
 
 source-repository-package
   type: git
@@ -81,7 +80,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: c81a8a683229181f66222fe9e50d567f6be27153
+  tag: 76bfc556fde69542edbf9e0ae9fd4abf3da4cc86
 
 --source-repository-package
 --  type: git
@@ -96,7 +95,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: b5cf79e4398ff23ff8340f966ee40cd1751b5b1e
+  tag: 4c8a22126e7d0787c40b35e8b57231a0ab37f63c
 
 source-repository-package
   type: git
@@ -141,23 +140,23 @@ source-repository-package
 --  tag: 172e4337a1f730c038ba10f48ea6bb3aa8acbf1f
 
 -- Beam
-source-repository-package
-    type: git
-    location: https://github.com/haskell-beam/beam
-    subdir: beam-core
-    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-core
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
 
-source-repository-package
-    type: git
-    location: https://github.com/haskell-beam/beam
-    subdir: beam-sqlite
-    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-sqlite
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
 
-source-repository-package
-    type: git
-    location: https://github.com/haskell-beam/beam
-    subdir: beam-migrate
-    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-migrate
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
 
 -- ghc 9.0
 --source-repository-package

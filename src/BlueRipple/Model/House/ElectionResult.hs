@@ -36,7 +36,6 @@ import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
-import qualified Data.Generics.Labels as GLabels
 import qualified Data.List as List
 import qualified Data.Map as M
 import qualified Data.Set as Set
@@ -151,8 +150,6 @@ data HouseModelData = HouseModelData { houseElectionData :: HouseElectionData
                                      , presidentialElectionData :: PresidentialElectionData
                                      , ccesData :: CCESData
                                      } deriving (Generic)
-
-
 
 houseRaceKey :: F.Record HouseElectionDataR -> F.Record CDKeyR
 houseRaceKey = F.rcast

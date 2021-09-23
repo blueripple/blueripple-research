@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -54,9 +55,13 @@ import qualified Path.IO as Path
 import qualified Polysemy as P
 import Polysemy.Error (Error)
 import Relude.Extra as Relude
+#if MIN_VERSION_streamly(0,8,0)
+import qualified Streamly.Data.Array.Foreign         as Streamly.Array
+#else
 import qualified Streamly
-import qualified Streamly.External.ByteString  as Streamly.ByteString
 import qualified Streamly.Memory.Array         as Streamly.Array
+#endif
+import qualified Streamly.External.ByteString  as Streamly.ByteString
 import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
 import qualified System.Directory as System

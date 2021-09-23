@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -60,11 +61,16 @@ import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 
+#if MIN_VERSION_streamly(0,8,0)
+import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Streamly
+#else
 import qualified Streamly
+import qualified Streamly.Internal.Prelude as Streamly
+#endif
+import qualified Streamly.Prelude as Streamly
+
 import qualified Streamly.Data.Fold as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
-import qualified Streamly.Prelude as Streamly
-import qualified Streamly.Internal.Prelude as Streamly
 
 
 import qualified Frames.ParseableTypes         as FP
@@ -118,7 +124,11 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
+#if MIN_VERSION_streamly(0,8,0)
+  path <- Streamly.fromEffect $ liftIO $ getPath dataPath
+#else
   path <- Streamly.yieldM $ liftIO $ getPath dataPath
+#endif
   Streamly.map strictFix
     $! Streamly.tapOffsetEvery
     250000
@@ -317,6 +327,15 @@ cachedMaybeFrameLoader dataPath mParserOptions mFilterMaybes fixMaybes transform
 -- tracing fold
 runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
 runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
+#if MIN_VERSION_streamly(0,8,0)
+  start = ST.liftIO (putText startMsg) >> return (Streamly.Fold.Partial 0)
+  step !n _ = ST.liftIO $ do
+    t <- System.Clock.getTime System.Clock.ProcessCPUTime
+    putStr $ show t ++ ": "
+    putTextLn $ countMsg n
+    return $ Streamly.Fold.Partial (n+1)
+  done _ = ST.liftIO $ putTextLn endMsg
+#else
   start = ST.liftIO (putText startMsg) >> return 0
   step !n _ = ST.liftIO $ do
     t <- System.Clock.getTime System.Clock.ProcessCPUTime
@@ -324,7 +343,7 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     putTextLn $ countMsg n
     return (n+1)
   done _ = ST.liftIO $ putTextLn endMsg
-
+#endif
 
 
 {-

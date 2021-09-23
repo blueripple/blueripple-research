@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -24,11 +25,16 @@ import qualified Frames.Streamly.InCore as Frames.Streamly
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl as V
 
+#if MIN_VERSION_streamly(0,8,0)
+import qualified Streamly.Internal.Data.Fold.Type as Streamly.Fold
+import qualified Streamly.Internal.Data.Stream.IsStream.Expand as Streamly
+#else
 import qualified Streamly
-import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
-import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold.Types as Streamly.Fold
+#endif
+import qualified Streamly.Prelude as Streamly
+import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
 import qualified Data.Map.Strict as Map
 import qualified Data.HashTable.Class          as HashTable
@@ -57,7 +63,12 @@ frameCompactMRM unpack (MapReduce.Assign a) fld =
 {-# INLINEABLE frameCompactMRM #-}
 
 toStreamlyFold :: Monad m => Foldl.Fold a b -> Streamly.Fold.Fold m a b
+#if MIN_VERSION_streamly(0,8,0)
+toStreamlyFold (Foldl.Fold step init done) = Streamly.Fold.mkFold step' (Streamly.Fold.Partial init) done where
+  step' x y = Streamly.Fold.Partial $ step x y
+#else
 toStreamlyFold (Foldl.Fold step init done) = Streamly.Fold.mkPure step init done
+#endif
 {-# INLINE toStreamlyFold #-}
 
 streamGrouper ::
@@ -143,13 +154,20 @@ classifyHT :: forall m ks cs . (Prim.PrimMonad m
                                , Frames.InCore.RecVec cs)
            => Streamly.Fold.Fold m (Frames.Record ks, Frames.Record cs) (Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs))
 classifyHT = Streamly.Fold.Fold step init done where
+#if MIN_VERSION_streamly(0,8,0)
+  init = Streamly.Fold.Partial <$> Prim.stToPrim HashTable.new
+
+  step ht (!k, !c) = Prim.stToPrim $ do
+    HashTable.mutateST ht k (addOneST c)
+    return $ Streamly.Fold.Partial ht
+#else
   init :: m (HT m ks cs) = Prim.stToPrim HashTable.new
 
   step :: HT m ks cs -> (Frames.Record ks, Frames.Record cs) -> m (HT m ks cs)
   step ht (!k, !c) = Prim.stToPrim $ do
     HashTable.mutateST ht k (addOneST c)
     return ht
-
+#endif
   feed (!i, !sz, !mvs') row
     | i == sz = Frames.InCore.growRec (Proxy::Proxy cs) mvs'
                 >>= flip feed row . (i, sz*2,)

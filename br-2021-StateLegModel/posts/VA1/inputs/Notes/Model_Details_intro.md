@@ -18,7 +18,7 @@ groups”[^censusGeographies].
 3. Use the total number of votes and votes cast for the Democratic candidate
 in each precinct to *infer* a demographic model of turnout and voter preference in the
 entire set of precincts.
-4. Apply[^postStratify] that model to the demographics of a SLD to generate a rough
+4. Apply that model to the demographics of a SLD to generate a rough
 estimate of the likely election result.
 
 For a given SLD (or set of SLD’s), what precincts do we include in the model?
@@ -26,7 +26,7 @@ In order to keep
 things simple we want a model that covers multiple districts. We
 could model using every precinct in the country or at least the state.
 Using every precinct in the country is hard: some of that data is unavailable
-and there are a lot of precints (about
+and there are a lot of precincts (about
 [175,000](https://arxiv.org/ftp/arxiv/papers/1410/1410.8868.pdf)
 of them)!
 Using data only from the state risks being
@@ -62,12 +62,15 @@ Some details:
 
 1. For turnout, we have the CPSVRS and/or the CES.  The CPSVRS is self-reported whereas the
 CES validates the turnout data via voter files.  All other things equal, we’d prefer the validated
-data.  But the CPSVRS is a considerably larger survey.  And there’s some evidence that the
+data.  But there’s some evidence that the
 [validation process used by the CES introduces bias](https://agadjanianpolitics.wordpress.com/2018/02/19/vote-validation-and-possible-underestimates-of-turnout-among-younger-americans/)
 because it tends to miss people who move between elections,
 and they are disproportionately likely to be young and poor.
-For reasons of both size and bias, we use the CPSVRS as a source of turnout data.
-People tend to over-report turnout.  So we use some standard adjustments
+Because it the more used source, we use the CPSVRS as a source of turnout data,
+though we also run the models using the CES as a turnout source to see
+if it makes a large difference.
+People tend to over-report their own turnout, which presents a problem for non-validated sources.
+So we use some standard adjustments
 to the turnout
 data, first suggested by
 [Hur & Achen](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf),
@@ -104,7 +107,7 @@ demographic categories.
 For each State Legislative District (SLD) we have data from the ACS, which we aggregate from
 the block-group level using
 [areal interpolation](https://medium.com/spatial-data-science/spatial-interpolation-with-python-a60b52f16cbb).
-Our shapefiles for the SLDs and the census block-groups come from the Census Bureau.  \
+Our shapefiles for the SLDs and the census block-groups come from the Census Bureau.
 The result of this aggregation is a breakdown
 of the citizens in each district by the same demographic variables as the CPSVRS and CES data, as well as
 an estimate of population density in the SLD.
@@ -207,7 +210,7 @@ intervals–even of derived quantities like the post-stratifications–rather
 than just crude estimates of standard deviation as you might get from various methods which
 estimate parameters via optimization of the maximum-likelihood function.
 
-[^censusGeographies]: For the decennial census there is detailed data avaialable at the block
+[^censusGeographies]: For the decennial census there is detailed data available at the block
 level, where a block has ~100 people.  For the American Community Survey, which collects
 data every year and thus is more up to date than the decennial census, data is available
 only at the “block-group” level, consisting of a few thousand people.
@@ -241,4 +244,4 @@ This is challenging in a number of ways.  E.g., The geography of precincts can b
 to get accurately and thus building demographic profiles can be tricky as well. It can also
 be difficult to get the precinct-level returns in a standard format.
 If you are interested in precinct data with geography,
-[Openprecincts.org](https://openprecincts.org) does great work assmebling this state-by-state.
+[Openprecincts.org](https://openprecincts.org) does great work assembling this state-by-state.

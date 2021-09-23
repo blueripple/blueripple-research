@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -17,13 +18,20 @@ import qualified Control.Foldl as FL
 import Control.Monad (when)
 import qualified Pipes
 import qualified Pipes.Prelude as Pipes
-import qualified Streamly
-import qualified Streamly.Prelude as Streamly
-import qualified Streamly.Internal.Prelude as Streamly
+
 import qualified Data.Map as M
 import qualified Data.Text as T
+#if MIN_VERSION_streamly(0,8,0)
+import qualified Streamly.Internal.Data.Fold.Type as SFold
+import qualified Streamly.Internal.Data.Stream.IsStream.Lift as Streamly
+#else
+import qualified Streamly
+import qualified Streamly.Internal.Prelude as Streamly
 import qualified Streamly.Internal.Data.Fold.Types as SFold
 import qualified Streamly.Internal.Data.Strict as Streamly
+#endif
+import qualified Streamly.Prelude as Streamly
+--
 
 import qualified Data.Algorithm.TSNE as TSNE
 import qualified Data.Algorithm.TSNE.Types as TSNE
