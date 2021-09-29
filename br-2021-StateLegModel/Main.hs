@@ -53,6 +53,7 @@ import qualified Data.Massiv.Array
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Text.Printf as T
 import qualified Text.Read  as T
 import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl as V
@@ -304,7 +305,7 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
     $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
@@ -362,7 +363,7 @@ comparison mr er t = do
 
       size = 600 / realToFrac (max (length models) (length states))
       single = length models == 1 && length states == 1
-      singleCaption pctVar = " model explains " <> show pctVar <> "% of the SLD to SLD variance in contested election results."
+      singleCaption (pctVar :: Double) = " model explains " <> (toText @String $ T.printf "%.1f" pctVar) <> "% of the SLD to SLD variance in contested election results."
       caption = if single
                 then head <$> nonEmpty explainedVariances >>= fmap (singleCaption . snd . head) . nonEmpty . M.toList . snd
                 else Nothing
@@ -396,9 +397,8 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   nvResults <- K.ignoreCacheTimeM BR.getNVResults
 --  K.logLE K.Info $ "OH Election Results"
 --  BR.logFrame ohResults
-  return ()
-  let dlccDistricts = [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100]
-      onlyLower r =  F.rgetField @ET.DistrictTypeC r == ET.StateLower
+  dlccDistricts :: [Int] <- snd <<$>> (K.knitMaybe "Couldn't find VA in dlccDistricts" $ M.lookup "VA" BR.dlccDistricts)
+  let onlyLower r =  F.rgetField @ET.DistrictTypeC r == ET.StateLower
       onlyStates s r = F.rgetField @BR.StateAbbreviation r `elem` s
       onlyState s = onlyStates [s] --F.rgetField @BR.StateAbbreviation r == s
       isVALower r = onlyLower r && onlyState "VA" r

@@ -62,9 +62,6 @@ import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
---import qualified Numeric.GLM.ProblemTypes      as GLM
---import qualified Numeric.GLM.Predict            as GLM
-
 import qualified Data.Vector                   as V
 import           GHC.Generics                   ( Generic, Rep )
 

@@ -18,12 +18,12 @@ import qualified Say
 brReadMore :: T.Text
 brReadMore = [i|
 *Want to read more from Blue Ripple?
-Visit our [website](${brHome}),
-sign up for [email updates](${brEmailSignup}),
-and follow us on [Twitter](${brTwitter})
-and [FaceBook](${brFaceBook}).
+Visit our [**website**](${brHome}),
+sign up for [**email updates**](${brEmailSignup}),
+and follow us on [**Twitter**](${brTwitter})
+and [**FaceBook**](${brFaceBook}).
 Folks interested in our data and modeling efforts should also check out our
-[Github](${brGithub}) page.*
+[**Github**](${brGithub}) page.*
 |]
 
 brHome :: T.Text

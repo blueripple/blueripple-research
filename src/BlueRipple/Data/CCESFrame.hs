@@ -35,15 +35,15 @@ import           Data.Text                      ( Text )
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
+--import qualified Frames.Streamly.CSV                    as F
+import qualified Frames.Streamly.TH                     as FS
 
 import qualified Pipes                         as P
 import qualified Pipes.Prelude                 as P
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
+import GHC.IO.FD (FD(fdIsNonBlocking))
 
 -- pre-declare cols with non-standard types
 F.declareColumn "Date" ''FP.FrameDay
@@ -52,4 +52,5 @@ F.declareColumn "Date" ''FP.FrameDay
 --these columns are parsed wrong so we fix them before parsing
 F.declareColumn "CCESHispanic"    ''Int
 
-F.tableTypes' ccesRowGen
+--FS.tableTypes' ccesRowGen2018
+FS.tableTypes' ccesRowGen2020

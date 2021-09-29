@@ -57,9 +57,9 @@ import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vinyl.Curry              as V
 import qualified Data.Vinyl.Recursive          as V
 import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
+--import qualified Frames.Streamly.CSV           as FS
+--import qualified Frames.Streamly.InCore        as FSI
+import qualified Frames.Streamly.TH            as FS
 
 #if MIN_VERSION_streamly(0,8,0)
 import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Streamly
@@ -114,13 +114,13 @@ recStreamLoader
      , Streamly.IsStream t
      )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
   -> t m (F.Record rs)
 recStreamLoader dataPath parserOptionsM mFilter fixRow = do
   let csvParserOptions =
-        F.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
+        FStreamly.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
@@ -145,7 +145,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
     )
     $! BR.loadToRecStream @qs csvParserOptions path filter
 
--- file has qs
+-- file/rowGen has qs
 -- Filter qs
 -- transform to rs
 cachedFrameLoader
@@ -153,14 +153,14 @@ cachedFrameLoader
    . ( V.RMap rs
      , V.RMap qs
      , FStreamly.StrictReadRec qs
-     , FI.RecVec qs
-     , FI.RecVec rs
+     , FStreamly.RecVec qs
+     , FStreamly.RecVec rs
      , BR.RecSerializerC rs
      , K.KnitEffects r
      , BR.CacheEffects r
      )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
@@ -184,18 +184,18 @@ frameLoader
   . (K.KnitEffects r
     , BR.CacheEffects r
     , FStreamly.StrictReadRec qs
-    , FI.RecVec qs
+    , FStreamly.RecVec qs
     , V.RMap qs
     )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 frameLoader filePath mParserOptions mFilter fixRow = do
   let csvParserOptions =
-        F.defaultParser --
-        { F.quotingMode = F.RFC4180Quoting ' ' }
+        FStreamly.defaultParser --
+--        { FStreamly.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = fromMaybe csvParserOptions mParserOptions
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
@@ -213,14 +213,14 @@ maybeFrameLoader
   :: forall (fs :: [(Symbol, Type)]) qs rs r
    . ( V.RMap rs
      , V.RMap fs
-     , F.ReadRec fs
-     , FI.RecVec qs
+     , FStreamly.ReadRec fs
+     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
      , qs F.⊆ fs
-     , FI.RecVec rs
+     , FStreamly.RecVec rs
      , V.RFoldMap rs
      , BR.RecSerializerC rs
      , K.KnitEffects r
@@ -231,7 +231,7 @@ maybeFrameLoader
      , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
@@ -248,8 +248,8 @@ maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 maybeRecStreamLoader
   :: forall fs qs rs
    . ( V.RMap fs
-     , F.ReadRec fs
-     , FI.RecVec qs
+     , FStreamly.ReadRec fs
+     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RMap qs
      , V.RPureConstrained V.KnownField qs
@@ -262,14 +262,13 @@ maybeRecStreamLoader
      , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)
   -> Streamly.SerialT K.StreamlyM (F.Record rs)
 maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow = do
-  let csvParserOptions =
-        F.defaultParser --{ F.quotingMode = F.RFC4180Quoting ' ' }
+  let csvParserOptions = FStreamly.defaultParser
       parserOptions = fromMaybe csvParserOptions mParserOptions
       filterMaybes !r = fromMaybe (const True) mFilterMaybes r
       strictTransform r = transformRow r
@@ -291,14 +290,14 @@ cachedMaybeFrameLoader
      , V.RMap rs
      , V.RFoldMap rs
      , V.RMap fs
-     , F.ReadRec fs
-     , FI.RecVec qs
+     , FStreamly.ReadRec fs
+     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
      , qs F.⊆ fs
-     , FI.RecVec rs
+     , FStreamly.RecVec rs
      , BR.RecSerializerC rs
      , Show (F.Record qs)
      , V.RMap qs
@@ -306,7 +305,7 @@ cachedMaybeFrameLoader
      , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
      )
   => DataPath
-  -> Maybe F.ParserOptions
+  -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
   -> (F.Record qs -> F.Record rs)

@@ -38,6 +38,13 @@ import Control.Lens.Operators
 import qualified Knit.Report as K
 
 
+dlccDistricts :: Map Text [(ET.DistrictType, Int)]
+dlccDistricts =
+  fromList
+  [
+    ("VA", (ET.StateLower,) <$> [2,10,12,13,21,27,28,31,40,42,50,51,63,66,68,72,73,75,81,83,84,85,91,93,94,100])
+  ]
+
 type VotePct = "VotePct" F.:-> Text
 type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, ET.Party, ET.Votes, VotePct]
 

@@ -1,7 +1,7 @@
 # Modeling State House Races: VA edition
 
 We’ve
-[written before](https://blueripplepolitics.org/blog/state-races-2019)
+[**written before**](https://blueripplepolitics.org/blog/state-races-2019)
 about the importance of state legislative elections and,
 if anything, the situation for Dems and progressives has only become more
 urgent since then. Republican control of state-houses has opened the door to partisan and race-based
@@ -90,11 +90,11 @@ We would very much like to have an age factor as well but the tables
 made available by the census at the SLD level preclude this[^whyNoAge].
 
 We’ve built very similar models before, most-recently to look at the
-[turnout gap between voters-of-color and white voters](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html)
+[**turnout gap between voters-of-color and white voters**](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html)
 . So, for more details on our
-[demographic and turnout data](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html#intro-1-our-datathe-american-community-survey-and-the-cps-voting-and-registration-supplement),
+[**demographic and turnout data**](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html#intro-1-our-datathe-american-community-survey-and-the-cps-voting-and-registration-supplement),
 or
-[multi-level-regression and post-stratification (MRP)](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html#intro2-mrpa-quick-primer),
+[**multi-level-regression and post-stratification (MRP)**](https://blueripple.github.io/research/Turnout/StateSpecific1/post.html#intro2-mrpa-quick-primer),
 please click the links above.
 
 This model has a few key differences from what we did before:
@@ -150,7 +150,7 @@ counts of Dem votes for U.S. House from the CES.
 We then post-stratify the estimates across
 the demographic data we built for each VA lower house district. The result is
 a prediction for the expected Dem vote share in each district. More detail
-about the model and data-sources can be found [here][model_description].
+about the model and data-sources can be found [**here**][model_description].
 
 Cutting to the chase: in the chart below we plot the model estimate
 (using 2018 data) vs. the results of the 2019 election. In blue,
@@ -189,13 +189,13 @@ race. Once additional 2020 decennial data is available,
 we may be able to improve on this.
 
 [^demographicCode]: We built a
-[python script](https://github.com/blueripple/GeoData/blob/main/code/aggregateRaw.py)
+[**python script**](https://github.com/blueripple/GeoData/blob/main/code/aggregateRaw.py)
 to automate most
 of this process. We download shapefiles and block-group-data for the
 state and the script merges those into SLD-level demographics.  The
 code is available on our
-[github site](https://github.com/blueripple)
+[**github site**](https://github.com/blueripple)
 
 [^modelDetails]: We’ve written a much more detailed
 description of the model
-[here]()
+[**here**]()
