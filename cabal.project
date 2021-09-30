@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/heidi ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-streamly
+packages: ./ ~/DataScience/heidi ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-streamly ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -77,10 +77,10 @@ source-repository-package
 --  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
 
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 76bfc556fde69542edbf9e0ae9fd4abf3da4cc86
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 76bfc556fde69542edbf9e0ae9fd4abf3da4cc86
 
 --source-repository-package
 --  type: git

@@ -6,16 +6,14 @@ import qualified Frames.Streamly.TH                     as FS
 import qualified Frames.Streamly.TH as FS
 
 import qualified Data.Set as S
-import BlueRipple.Data.Loaders (presidentialElectionsWithIncumbency, presidentialByStateFrame)
+--import BlueRipple.Data.Loaders (presidentialElectionsWithIncumbency, presidentialByStateFrame)
 
--- to convert tab to csv, handling quoted spaced fields.
---  perl -pe 's/(?:([^"\s\t]+)|"([^"]+)")[\s\t]+/\1\2,/g'
 
 dataDir :: FilePath
 dataDir = "../bigData/CCES/"
 
 cces2018CSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.csv"
-cces2020CSV :: FilePath = dataDir ++ "CES_cumulative_2006-2020.csv"
+cces2020CSV :: FilePath = dataDir ++ "CES_cumulative_2020.csv"
 
 ccesCols2018 :: S.Set FS.HeaderText
 ccesCols2018 = S.fromList (FS.HeaderText <$> ["year"
@@ -38,7 +36,6 @@ ccesCols2018 = S.fromList (FS.HeaderText <$> ["year"
                                              , "voted_pres_08"
                                              , "voted_pres_12"
                                              , "voted_pres_16"
-                                             , "voted_pres_20"
                                              ])
 ccesCols2020 :: S.Set FS.HeaderText
 ccesCols2020 = S.insert (FS.HeaderText "voted_pres_20") ccesCols2018

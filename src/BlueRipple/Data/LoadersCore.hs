@@ -143,7 +143,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       )
       ("loading \"" <> toText path <> "\" from disk finished.")
     )
-    $! BR.loadToRecStream @qs csvParserOptions path filter
+    $! BR.loadToRecStream @qs parserOptions path filter
 
 -- file/rowGen has qs
 -- Filter qs
@@ -213,7 +213,7 @@ maybeFrameLoader
   :: forall (fs :: [(Symbol, Type)]) qs rs r
    . ( V.RMap rs
      , V.RMap fs
-     , FStreamly.ReadRec fs
+     , FStreamly.StrictReadRec fs
      , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
@@ -248,7 +248,7 @@ maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 maybeRecStreamLoader
   :: forall fs qs rs
    . ( V.RMap fs
-     , FStreamly.ReadRec fs
+     , FStreamly.StrictReadRec fs
      , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RMap qs
@@ -275,7 +275,7 @@ maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRo
   path <- liftIO $ getPath dataPath
   Streamly.map strictTransform
     $ BR.processMaybeRecStream fixMaybes (const True)
-    $ BR.loadToMaybeRecStream @fs csvParserOptions path filterMaybes
+    $ BR.loadToMaybeRecStream @fs parserOptions path filterMaybes
 
 -- file has fs
 -- load fs
@@ -290,7 +290,7 @@ cachedMaybeFrameLoader
      , V.RMap rs
      , V.RFoldMap rs
      , V.RMap fs
-     , FStreamly.ReadRec fs
+     , FStreamly.StrictReadRec fs
      , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs

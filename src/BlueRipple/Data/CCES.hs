@@ -76,7 +76,7 @@ ccesDataLoader = K.wrapPrefix "ccesDataLoader" $ do
   K.logLE K.Info "Loading/Building CCES data"
   BR.cachedMaybeFrameLoader @(F.RecordColumns CCES) @CCES_MRP_Raw @CCES_MRP
     (BR.LocalData $ toText cces2020CSV)
-    Nothing
+    (Just cCESParser)
     Nothing
     fixCCESRow
     transformCCESRow
@@ -100,9 +100,10 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESVvRegstatus
                      , CCESVvTurnoutGvm
                      , CCESVotedRepParty
-                     , CCESVotedPres16
-                     , CCESVotedPres12
                      , CCESVotedPres08
+                     , CCESVotedPres12
+                     , CCESVotedPres16
+                     , CCESVotedPres20
                      ]
 
 type CCES_MRP = '[ Year
@@ -125,9 +126,10 @@ type CCES_MRP = '[ Year
                  , Registration
                  , Turnout
                  , HouseVoteParty
-                 , Pres2016VoteParty
-                 , Pres2012VoteParty
                  , Pres2008VoteParty
+                 , Pres2012VoteParty
+                 , Pres2016VoteParty
+                 , Pres2020VoteParty
                  ]
 
 
@@ -321,6 +323,11 @@ parseHouseVoteParty _ = ET.Other
 
 type HouseVoteParty = "HouseVoteParty" F.:-> ET.PartyT
 
+parsePres2020VoteParty :: T.Text -> ET.PartyT
+parsePres2020VoteParty "Joe Biden" = ET.Democratic
+parsePres2020VoteParty "Donald Trump" = ET.Republican
+parsePres2020VoteParty _ = ET.Other
+
 parsePres2016VoteParty :: T.Text -> ET.PartyT
 parsePres2016VoteParty "Hilary Clinton" = ET.Democratic
 parsePres2016VoteParty "Donald Trump" = ET.Republican
@@ -341,6 +348,8 @@ parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT
 type Pres2008VoteParty = "Pres2008VoteParty" F.:-> ET.PartyT
+type Pres2020VoteParty = "Pres2020VoteParty" F.:-> ET.PartyT
+
 
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
@@ -385,6 +394,7 @@ transformCCESRow = F.rcast . addCols where
             . (FT.addOneFromOne @CCESVotedPres08 @Pres2008VoteParty parsePres2008VoteParty)
             . (FT.addOneFromOne @CCESVotedPres12 @Pres2012VoteParty parsePres2012VoteParty)
             . (FT.addOneFromOne @CCESVotedPres16 @Pres2016VoteParty parsePres2016VoteParty)
+            . (FT.addOneFromOne @CCESVotedPres20 @Pres2020VoteParty parsePres2016VoteParty)
             . (FT.addOneFromOne @CCESPid3 @PartisanId3 parsePartisanIdentity3)
             . (FT.addOneFromOne @CCESPid7 @PartisanId7 parsePartisanIdentity7)
             . (FT.addOneFromOne @CCESPid3Leaner @PartisanIdLeaner parsePartisanIdentityLeaner)

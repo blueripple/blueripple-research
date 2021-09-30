@@ -43,14 +43,14 @@ import qualified Pipes.Prelude                 as P
 
 import qualified Frames.ParseableTypes         as FP
 import qualified Frames.MaybeUtils             as FM
-import GHC.IO.FD (FD(fdIsNonBlocking))
+--import GHC.IO.FD (FD(fdIsNonBlocking))
 
 -- pre-declare cols with non-standard types
 F.declareColumn "Date" ''FP.FrameDay
 
 
 --these columns are parsed wrong so we fix them before parsing
-F.declareColumn "CCESHispanic"    ''Int
+FS.declarePrefixedColumn "CCES" "hispanic" ''Int
 
 --FS.tableTypes' ccesRowGen2018
 FS.tableTypes' ccesRowGen2020
