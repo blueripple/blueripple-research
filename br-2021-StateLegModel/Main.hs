@@ -161,7 +161,7 @@ postPaths t = do
 -- data
 type CPSCVAP = "CPSCVAP" F.:-> Int
 type CPSVoters = "CPSVoters" F.:-> Int
-type CCESSurveyed = "CPSSurveyed" F.:-> Int
+type CCESSurveyed = "CCESSurveyed" F.:-> Int
 type CCESVoters = "CCESVoters" F.:-> Int
 type CCESDVotes = "CCESDVotes" F.:-> Int
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
@@ -242,23 +242,10 @@ filterVotingDataByYear :: (Int -> Bool) -> SLDModelData -> SLDModelData
 filterVotingDataByYear f (SLDModelData a b c) = SLDModelData (q a) b c where
   q = F.filterFrame (f . F.rgetField @BR.Year)
 
-
 instance Flat.Flat SLDModelData where
   size (SLDModelData v sld dd) n = Flat.size (FS.SFrame v, FS.SFrame sld, FS.SFrame dd) n
   encode (SLDModelData v sld dd) = Flat.encode (FS.SFrame v, FS.SFrame sld, FS.SFrame dd)
   decode = (\(v, sld, dd) -> SLDModelData (FS.unSFrame v) (FS.unSFrame sld) (FS.unSFrame dd)) <$> Flat.decode
-
-{-
-addRaceAlone4 r =
-  let r5 = F.rgetField @Race5C r
-      rA4 = DT.raceAlone
-  in r F.<+> FT.recordSingleton @DT.RaceAloneC
-
-  :: F.Record BRE.CCESPredictorR -> F.Record BRE.CPSPredictorR
-ccesPredictorToCpsPredictor r =
-  let f :: F.Record '[DT.Race5C] -> F.Record '[DT.RaceAlone4C]
-      f = F.rgetField @DT
--}
 
 prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
                  => Bool
@@ -423,6 +410,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
                               && F.rgetField @ET.DistrictNumber r == dn
   let sldDat2018_C = fmap (filterVotingDataByYear (==2018)) sldDat_C
       sldDat2020_C = fmap (filterVotingDataByYear (==2020)) sldDat_C
+      agg = FL.fold aggregatePredictors . FL.fold aggregateDistricts
+  K.ignoreCacheTime sldDat2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX","VA"]) . cpsVAndccesRows
+  K.ignoreCacheTime sldDat2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX","VA"]) . cpsVAndccesRows
+
 {-
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 100) . sldTables
@@ -1039,3 +1030,18 @@ modelResultScatterChart single title vc rows =
                   then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
+
+-- fold cpsAndCES data over districts
+aggregateDistricts :: FL.Fold (F.Record CPSAndCCESR) (F.FrameRec (BRE.StateKeyR V.++ PredictorR V.++ VotingDataR))
+aggregateDistricts = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @(BRE.StateKeyR V.++ PredictorR) @VotingDataR)
+                     (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+
+aggregatePredictors :: FL.Fold (F.Record (BRE.StateKeyR V.++ PredictorR V.++ VotingDataR)) (F.FrameRec (BRE.StateKeyR V.++ VotingDataR))
+aggregatePredictors = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @BRE.StateKeyR @VotingDataR)
+                     (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
