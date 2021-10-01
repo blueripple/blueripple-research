@@ -48,9 +48,8 @@ import qualified Frames.MaybeUtils             as FM
 -- pre-declare cols with non-standard types
 F.declareColumn "Date" ''FP.FrameDay
 
-
 --these columns are parsed wrong so we fix them before parsing
 FS.declarePrefixedColumn "hispanic" "CCES" ''Int
 
 --FS.tableTypes' ccesRowGen2018
-FS.tableTypes' ccesRowGen2020
+FS.tableTypes' ccesRowGen2020C
