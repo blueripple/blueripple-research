@@ -13,7 +13,7 @@ dataDir :: FilePath
 dataDir = "../bigData/CCES/"
 
 cces2018CSV :: FilePath = dataDir ++ "CCES_cumulative_2006_2018.csv"
-cces2020CSV :: FilePath = dataDir ++ "CES_cumulative_2020.csv"
+cces2020CSV :: FilePath = dataDir ++ "CES_cumulative_2006-2020.csv"
 
 ccesCols2018 :: S.Set FS.HeaderText
 ccesCols2018 = S.fromList (FS.HeaderText <$> ["year"

@@ -298,17 +298,17 @@ prepSLDModelData clearCaches = do
     -- add state abbreviations
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-    -- BR.logFrame sldSER
     return $ SLDModelData cpsAndCces (F.rcast <$> sldSER) distRows
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
+  allData_C <- prepSLDModelData False
+--  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
   let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) Nothing)
   va1Paths <- postPaths "VA1"
-  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House"
-    $ vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime data_C
+  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House" $ do
+    vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime allData_C
 
 --vaLowerColonnade :: BR.CellStyle (F.Record rs) [Char] -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
 vaLowerColonnade cas =
@@ -421,12 +421,17 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let isDistrict s dt dn r = F.rgetField @BR.StateAbbreviation r == s
                               && F.rgetField @ET.DistrictTypeC r == dt
                               && F.rgetField @ET.DistrictNumber r == dn
+  let sldDat2018_C = fmap (filterVotingDataByYear (==2018)) sldDat_C
+      sldDat2020_C = fmap (filterVotingDataByYear (==2020)) sldDat_C
+{-
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 100) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 84) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 90) . sldTables
-  modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base CPS_Turnout sldDat_C
-  modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState CPS_Turnout sldDat_C
+-}
+  modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base "2018" CPS_Turnout sldDat2018_C
+  modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState "2018" CPS_Turnout sldDat2018_C
+  modelPlusState2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusState "2020" CPS_Turnout sldDat2020_C
 --  modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu CPS_Turnout sldDat_C
 --  modelPlusStateAndStateRace <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateRace CPS_Turnout sldDat_C
 --  modelPlusInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions CPS_Turnout sldDat_C
@@ -438,18 +443,20 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
 --                  <> modelPlusInteractions
 --                  <> modelPlusStateAndStateInteractions
       allResults = vaResults
-                   <> (onlyTXLower txResults)
-                   <> (onlyGALower gaResults)
-                   <> (onlyNVLower nvResults)
-                   <> (onlyOHLower ohResults)
+--                   <> (onlyTXLower txResults)
+--                   <> (onlyGALower gaResults)
+--                   <> (onlyNVLower nvResults)
+--                   <> (onlyOHLower ohResults)
   let f = F.filterFrame (\r -> onlyLower r && onlyStates ["VA"] r)
   m <- comparison (f allModels) (f allResults) "All"
+  m2020 <- comparison (f modelPlusState2020) (f allResults) "All"
 
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
   let tableNoteName = BR.Used "District_Table"
   _ <- BR.brNewNote postPaths postInfo tableNoteName "VA Lower House Districts" $ do
     let sortedByModelMid = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
+        sortedByModelMid2020 = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m2020
         bordered c = "border: 3px solid " <> c
         dlccChosenCS  = bordered "purple" `BR.cellStyleIf` \r h -> (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts && h == "District")
         longShot ci = MT.ciUpper ci < 0.48
@@ -471,6 +478,7 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
                                  , resLongShotCS, resLeanRCS, resLeanDCS, resSafeDCS
                                  ]
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
+    BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid2020
   return ()
 
 
@@ -557,13 +565,14 @@ data TurnoutSource = CPS_Turnout | CES_Turnout deriving (Show, Eq, Ord)
 stateLegModel :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
               -> Model
+              -> Text
               -> TurnoutSource
               -> K.ActionWithCacheTime r SLDModelData
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModelResultsR))
-stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ do
+stateLegModel clearCaches model modelNameExtra tSource dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running state-leg model if necessary."
   let modelDir = "br-2021-StateLegModel/stan/"
-      jsonDataName = "stateLeg_ASR_" <> show model <> "_" <> show tSource
+      jsonDataName = "stateLeg_ASR_" <> show model <> "_" <> modelNameExtra <> "_" <> show tSource
       dataAndCodeBuilder :: MRP.BuilderM SLDModelData ()
       dataAndCodeBuilder = do
         -- data
@@ -847,7 +856,7 @@ stateLegModel clearCaches model tSource dat_C = K.wrapPrefix "stateLegModel" $ d
     $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
-    ("sld_" <> show model)
+    ("sld_" <> show model <> "_" <> modelNameExtra)
     jsonDataName
     dw
     stanCode
