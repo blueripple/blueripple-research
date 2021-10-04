@@ -73,78 +73,11 @@ import qualified Polysemy                as P (raise)
 import qualified Relude.Extra as Relude
 
 
-ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
-ces20Loader = K.wrapPrefix "ces20Loader" $ do
-  let cacheKey = "data/ces_2020.bin"
-  K.logLE K.Info "Loading/Building CES 2020 data"
-  let fixCES20 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20)
-      fixCES20 r = (F.rsubset %~ missingWeight)
-                   $ (F.rsubset %~ missingRegWeight)
-                   $ (F.rsubset %~ missingHispanicToNo)
-                   $ (F.rsubset %~ missingPID3)
-                   $ (F.rsubset %~ missingPID7)
-                   $ (F.rsubset %~ missingEducation)
-                   $ (F.rsubset %~ missingCatalistReg)
-                   $ (F.rsubset %~ missingCatalistTurnout)
-                   $ (F.rsubset %~ missingHouseVote)
-                   $ (F.rsubset %~ missingPresVote) r
-
-      birthYrToAge x = 2020 - x
-      pres2020intToParty :: Int -> ET.PartyT
-      pres2020intToParty 1 = ET.Democratic
-      pres2020intToParty 2 = ET.Republican
-      pres2020intToParty _ = ET.Other
-      houseVoteParty :: Int -> Text -> Text -> Text -> Text -> ET.PartyT
-      houseVoteParty hCand c1P c2P c3P c4P =
-        parseHouseVoteParty
-        $ case hCand of
-            1 -> c1P
-            2 -> c2P
-            3 -> c3P
-            4 -> c4P
-            _ -> "Other"
---      transformCES20 :: CES20 -> CES
-      transformCES20 = addCols where
-        addCols = (FT.addOneFromValue @BR.Year 2020)
-                  . (FT.addName @CESCD @BR.CongressionalDistrict)
-                  . (FT.addName @CESStateFips @BR.StateFIPS)
-                  . (FT.addOneFromOne @CESBirthyr @DT.Age5C (intToAgeT . birthYrToAge))
-                  . (FT.addOneFromOne @CESBirthyr @DT.SimpleAgeC (intToSimpleAge . birthYrToAge))
-                  . (FT.addOneFromOne @CESGender @DT.SexC intToSex)
-                  . (FT.addOneFromOne @CESEduc @DT.EducationC intToEducation)
-                  . (FT.addOneFromOne @CESEduc @DT.CollegeGradC intToCollegeGrad)
-                  . (FT.addOneFromOne @CESRace @DT.Race5C (raceToRace5 . intToRaceT))
-                  . (FT.addOneFromOne @CESRace @DT.SimpleRaceC (raceToSimpleRace . intToRaceT))
-                  . (FT.addOneFromOne @CESHispanic @DT.HispC intToHisp)
-                  . (FT.addOneFromOne @CESPid3 @PartisanId3 parsePartisanIdentity3)
-                  . (FT.addOneFromOne @CESPid7 @PartisanId7 parsePartisanIdentity7)
-                  . (FT.addOneFromOne @CESCLVoterStatus @CatalistRegistrationC cesIntToRegistration)
-                  . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC cesIntToTurnout)
-                  . (FT.addOneFrom @[CESHouseVote,CESHouseCand1Party,CESHouseCand2Party,CESHouseCand3Party,CESHouseCand4Party] @HouseVoteParty houseVoteParty)
-                  . (FT.addOneFromOne @CESPresVote2020 @PresVoteParty pres2020intToParty)
-
-  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
-  ces20FileDep <- K.fileDependency (toString ces2020CSV)
-  let deps = (,) <$> stateXWalk_C <*> ces20FileDep
-  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
-    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES20)
-                          (BR.LocalData $ toText ces2020CSV)
-                          (Just cES20Parser)
-                          Nothing
-                          fixCES20
-                          transformCES20
-    let (withStateAbbreviations, missingStateFIPS) = FJ.leftJoinWithMissing @'[BR.StateFIPS] allButStateAbbrevs
-                                                     $ fmap (F.rcast @[BR.StateFIPS, BR.StateAbbreviation]) stateXWalk
-    unless (null missingStateFIPS)
-      $ K.knitError $ "Missing state FIPS when joining CES2020 data with state crosswalk: " <> show missingStateFIPS
-    return $ fmap F.rcast withStateAbbreviations
-
-
 type CES = F.Record CESR
 type CESR = [BR.Year
             , CESCaseId
             , CESWeight
-            , CESRegisteredWeight
+--            , CESRegisteredWeight
             , BR.StateAbbreviation
             , BR.CongressionalDistrict
             , DT.Age5C
@@ -160,8 +93,144 @@ type CESR = [BR.Year
             , CatalistRegistrationC
             , CatalistTurnoutC
             , HouseVoteParty
-            , PresVoteParty
             ]
+
+-- presidential election year
+type CESPR = CESR V.++ '[PresVoteParty]
+type CESP = F.Record CESPR
+
+ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
+ces20Loader = K.wrapPrefix "ces20Loader" $ do
+  let cacheKey = "data/ces_2020.bin"
+  K.logLE K.Info "Loading/Building CES 2020 data"
+  let fixCES20 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20)
+      fixCES20 r = (F.rsubset %~ missingPresVote) $ fixCES r
+      transformCES20 = transformCES 2020 . (FT.addOneFromOne @CESPresVote @PresVoteParty $ intToPresParty ET.Democratic ET.Republican)
+  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
+  ces20FileDep <- K.fileDependency (toString ces2020CSV)
+  let deps = (,) <$> stateXWalk_C <*> ces20FileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES20)
+                          (BR.LocalData $ toText ces2020CSV)
+                          (Just cES20Parser)
+                          Nothing
+                          fixCES20
+                          transformCES20
+    addStateAbbreviations stateXWalk allButStateAbbrevs
+
+ces18Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
+ces18Loader = K.wrapPrefix "ces18Loader" $ do
+  let cacheKey = "data/ces_2018.bin"
+  K.logLE K.Info "Loading/Building CES 2018 data"
+  let fixCES18 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES18) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES18)
+      fixCES18 = fixCES
+  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
+  ces18FileDep <- K.fileDependency (toString ces2018CSV)
+  let deps = (,) <$> stateXWalk_C <*> ces18FileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES18)
+                          (BR.LocalData $ toText ces2018CSV)
+                          (Just cES18Parser)
+                          Nothing
+                          fixCES18
+                          (transformCES 2018)
+    addStateAbbreviations stateXWalk allButStateAbbrevs
+
+intToPresParty :: ET.PartyT -> ET.PartyT -> Int -> ET.PartyT
+intToPresParty p1 p2 n = case n of
+  1 -> p1
+  2 -> p2
+  _ -> ET.Other
+
+addStateAbbreviations :: forall qs rs r. (F.ElemOf rs BR.StateFIPS
+                                         , F.ElemOf (rs V.++ '[BR.StateAbbreviation]) BR.StateFIPS
+                                         , V.RMap rs
+                                         , V.RMap (rs V.++ '[BR.StateAbbreviation])
+                                         , FI.RecVec (rs V.++ '[BR.StateAbbreviation])
+                                         , FI.RecVec rs
+                                         , rs F.⊆ (rs V.++ '[BR.StateAbbreviation])
+                                         , qs F.⊆ (rs V.++ '[BR.StateAbbreviation])
+                                         , K.KnitEffects r)
+                      => F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC]
+                      -> F.FrameRec rs
+                      -> K.Sem r (F.FrameRec qs)
+addStateAbbreviations stateXWalk allButStateAbbrevs = do
+  let (withStateAbbreviations, missingStateFIPS) = FJ.leftJoinWithMissing @'[BR.StateFIPS] allButStateAbbrevs
+                                                   $ fmap (F.rcast @[BR.StateFIPS, BR.StateAbbreviation]) stateXWalk
+  unless (null missingStateFIPS)
+    $ K.knitError $ "Missing state FIPS when joining CES2020 data with state crosswalk: " <> show missingStateFIPS
+  return $ fmap F.rcast withStateAbbreviations
+
+fixCES :: (F.ElemOf rs CESWeight
+--          , F.ElemOf rs CESRegisteredWeight
+          , F.ElemOf rs CESHispanic
+          , F.ElemOf rs CESPid3
+          , F.ElemOf rs CESPid7
+          , F.ElemOf rs CESEduc
+          , F.ElemOf rs CESCLVoterStatus
+          , F.ElemOf rs CESCTurnout
+          , F.ElemOf rs CESHouseVote
+          )
+       => F.Rec (Maybe F.:. F.ElField) rs  -> F.Rec (Maybe F.:. F.ElField) rs
+fixCES r = (F.rsubset %~ missingWeight)
+--           $ (F.rsubset %~ missingRegWeight)
+           $ (F.rsubset %~ missingHispanicToNo)
+           $ (F.rsubset %~ missingPID3)
+           $ (F.rsubset %~ missingPID7)
+           $ (F.rsubset %~ missingEducation)
+           $ (F.rsubset %~ missingCatalistReg)
+           $ (F.rsubset %~ missingCatalistTurnout)
+           $ (F.rsubset %~ missingHouseVote) r
+
+type TransformAddsR = [BR.Year, BR.CongressionalDistrict, BR.StateFIPS, DT.Age5C, DT.SimpleAgeC, DT.SexC, DT.EducationC, DT.CollegeGradC
+                      , DT.Race5C, DT.SimpleRaceC, DT.HispC, PartisanId3, PartisanId7, CatalistRegistrationC, CatalistTurnoutC, HouseVoteParty]
+
+transformCES :: (F.ElemOf rs CESCD
+                , F.ElemOf rs CESStateFips
+                , F.ElemOf rs CESBirthyr
+                , F.ElemOf rs CESGender
+                , F.ElemOf rs CESEduc
+                , F.ElemOf rs CESRace
+                , F.ElemOf rs CESHispanic
+                , F.ElemOf rs CESPid3
+                , F.ElemOf rs CESPid7
+                , F.ElemOf rs CESCLVoterStatus
+                , F.ElemOf rs CESCTurnout
+                , F.ElemOf rs CESHouseVote
+                , F.ElemOf rs CESHouseCand1Party
+                , F.ElemOf rs CESHouseCand2Party
+                , F.ElemOf rs CESHouseCand3Party
+                , F.ElemOf rs CESHouseCand4Party
+                )
+             => Int -> F.Record rs -> F.Record (TransformAddsR V.++ rs)
+transformCES yr = addCols where
+  birthYrToAge x = yr - x
+  houseVoteParty :: Int -> Text -> Text -> Text -> Text -> ET.PartyT
+  houseVoteParty hCand c1P c2P c3P c4P =
+    parseHouseVoteParty
+    $ case hCand of
+        1 -> c1P
+        2 -> c2P
+        3 -> c3P
+        4 -> c4P
+        _ -> "Other"
+  addCols = (FT.addOneFromValue @BR.Year yr)
+            . (FT.addName @CESCD @BR.CongressionalDistrict)
+            . (FT.addName @CESStateFips @BR.StateFIPS)
+            . (FT.addOneFromOne @CESBirthyr @DT.Age5C (intToAgeT . birthYrToAge))
+            . (FT.addOneFromOne @CESBirthyr @DT.SimpleAgeC (intToSimpleAge . birthYrToAge))
+            . (FT.addOneFromOne @CESGender @DT.SexC intToSex)
+            . (FT.addOneFromOne @CESEduc @DT.EducationC intToEducation)
+            . (FT.addOneFromOne @CESEduc @DT.CollegeGradC intToCollegeGrad)
+            . (FT.addOneFromOne @CESRace @DT.Race5C (raceToRace5 . intToRaceT))
+            . (FT.addOneFromOne @CESRace @DT.SimpleRaceC (raceToSimpleRace . intToRaceT))
+            . (FT.addOneFromOne @CESHispanic @DT.HispC intToHisp)
+            . (FT.addOneFromOne @CESPid3 @PartisanId3 parsePartisanIdentity3)
+            . (FT.addOneFromOne @CESPid7 @PartisanId7 parsePartisanIdentity7)
+            . (FT.addOneFromOne @CESCLVoterStatus @CatalistRegistrationC cesIntToRegistration)
+            . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC cesIntToTurnout)
+            . (FT.addOneFrom @[CESHouseVote,CESHouseCand1Party,CESHouseCand2Party,CESHouseCand3Party,CESHouseCand4Party] @HouseVoteParty houseVoteParty)
+--            . (FT.addOneFromOne @CESPresVote @PresVoteParty pres2020intToParty)
 
 
 missingWeight :: F.Rec (Maybe :. F.ElField) '[CESWeight] -> F.Rec (Maybe :. F.ElField) '[CESWeight]
@@ -182,7 +251,7 @@ missingCatalistTurnout :: F.Rec (Maybe :. F.ElField) '[CESCTurnout] -> F.Rec (Ma
 missingCatalistTurnout = FM.fromMaybeMono 10
 missingHouseVote :: F.Rec (Maybe :. F.ElField) '[CESHouseVote] -> F.Rec (Maybe :. F.ElField) '[CESHouseVote]
 missingHouseVote = FM.fromMaybeMono 10
-missingPresVote :: F.Rec (Maybe :. F.ElField) '[CESPresVote2020] -> F.Rec (Maybe :. F.ElField) '[CESPresVote2020]
+missingPresVote :: F.Rec (Maybe :. F.ElField) '[CESPresVote] -> F.Rec (Maybe :. F.ElField) '[CESPresVote]
 missingPresVote = FM.fromMaybeMono 10
 
 

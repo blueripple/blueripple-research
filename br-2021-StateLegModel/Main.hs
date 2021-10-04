@@ -292,6 +292,8 @@ vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   ces20 <- K.ignoreCacheTimeM CCES.ces20Loader
   BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces20
+  ces18 <- K.ignoreCacheTimeM CCES.ces18Loader
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces18
   K.logLE K.Info "Data prep..."
   allData_C <- prepSLDModelData False
 --  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
