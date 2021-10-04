@@ -63,30 +63,35 @@ ces2020CSV :: FilePath = dataDir ++ "CES20_Common_OUTPUT_vv.csv"
 
 ces2020Cols :: S.Set FS.HeaderText
 ces2020Cols = S.fromList (FS.HeaderText <$> ["caseid"
-                                           , "commonpostweight"
-                                           , "vvweight_post"
+                                           , "commonweight"
+                                           , "vvweight"
                                            , "inputstate"
                                            , "cdid116"
                                            , "gender"
                                            , "birthyr"
                                            , "educ"
-                                           , "race"
-                                           , "hispanic"
+                                           , "race"                                           , "hispanic"
                                            , "pid3"
                                            , "pid7"
                                            , "CL_voter_status" -- registration, Catalist
                                            , "CL_2020gvm" -- how voted and thus turnout, Catalist
-                                           , "presvote16post" -- 2016 pres vote
                                            , "CC20_410" -- 2020 pres vote
-                                           , "CC20_412" -- 2020 house vote
+                                           , "CC20_412_t" -- 2020 house vote party (?)
+                                           , "HouseCand1Party"
+                                           , "HouseCand2Party"
+                                           , "HouseCand3Party"
+                                           , "HouseCand4Party"
                                            ])
 
 ces2020Renames :: Map FS.HeaderText FS.ColTypeName
-ces2020Renames = M.fromList [ (FS.HeaderText "vvweight_post", FS.ColTypeName "Weight")
-                            , (FS.HeaderText "inputstate", FS.ColTypeName "State")
+ces2020Renames = M.fromList [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
+                            , (FS.HeaderText "commonweight", FS.ColTypeName "Weight")
+                            , (FS.HeaderText "vvweight", FS.ColTypeName "RegisteredWeight")
+                            , (FS.HeaderText "inputstate", FS.ColTypeName "StateFips")
                             , (FS.HeaderText "cdid116", FS.ColTypeName "CD")
+                            , (FS.HeaderText "CL_2020gvm", FS.ColTypeName "CTurnout")
                             , (FS.HeaderText "CC20_412", FS.ColTypeName "HouseVote")
-                            , (FS.HeaderText "CC20_410", FS.ColTypeName "PresVote")
+                            , (FS.HeaderText "CC20_410", FS.ColTypeName "PresVote2020")
                             ]
 
 ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"

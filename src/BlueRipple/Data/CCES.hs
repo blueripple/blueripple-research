@@ -2,12 +2,12 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -22,7 +22,7 @@ module BlueRipple.Data.CCES
   )
   where
 
-import           BlueRipple.Data.DataFrames
+--import           BlueRipple.Data.DataFrames
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -56,6 +56,7 @@ import qualified Frames.Melt                   as F
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
+import qualified Frames.SimpleJoins             as FJ
 
 import qualified Frames.Serialize              as FS
 import qualified Frames.Visualization.VegaLite.Data
@@ -63,12 +64,126 @@ import qualified Frames.Visualization.VegaLite.Data
 import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.Vector                   as V
+
 import           GHC.Generics                   ( Generic, Rep )
 
 import qualified Knit.Report as K
 import qualified Polysemy.Error                as P (mapError)
 import qualified Polysemy                as P (raise)
 import qualified Relude.Extra as Relude
+
+
+ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
+ces20Loader = K.wrapPrefix "ces20Loader" $ do
+  let cacheKey = "data/ces_2020.bin"
+  K.logLE K.Info "Loading/Building CES 2020 data"
+  let fixCES20 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20)
+      fixCES20 r = (F.rsubset %~ missingWeight)
+                   $ (F.rsubset %~ missingRegWeight)
+                   $ (F.rsubset %~ missingHispanicToNo)
+                   $ (F.rsubset %~ missingPID3)
+                   $ (F.rsubset %~ missingPID7)
+                   $ (F.rsubset %~ missingEducation)
+                   $ (F.rsubset %~ missingCatalistReg)
+                   $ (F.rsubset %~ missingCatalistTurnout)
+                   $ (F.rsubset %~ missingHouseVote)
+                   $ (F.rsubset %~ missingPresVote) r
+
+      birthYrToAge x = 2020 - x
+      pres2020intToParty :: Int -> ET.PartyT
+      pres2020intToParty 1 = ET.Democratic
+      pres2020intToParty 2 = ET.Republican
+      pres2020intToParty _ = ET.Other
+      houseVoteParty :: Int -> Text -> Text -> Text -> Text -> ET.PartyT
+      houseVoteParty hCand c1P c2P c3P c4P =
+        parseHouseVoteParty
+        $ case hCand of
+            1 -> c1P
+            2 -> c2P
+            3 -> c3P
+            4 -> c4P
+            _ -> "Other"
+--      transformCES20 :: CES20 -> CES
+      transformCES20 = addCols where
+        addCols = (FT.addOneFromValue @BR.Year 2020)
+                  . (FT.addName @CESCD @BR.CongressionalDistrict)
+                  . (FT.addName @CESStateFips @BR.StateFIPS)
+                  . (FT.addOneFromOne @CESBirthyr @DT.Age5C (intToAgeT . birthYrToAge))
+                  . (FT.addOneFromOne @CESBirthyr @DT.SimpleAgeC (intToSimpleAge . birthYrToAge))
+                  . (FT.addOneFromOne @CESGender @DT.SexC intToSex)
+                  . (FT.addOneFromOne @CESEduc @DT.EducationC intToEducation)
+                  . (FT.addOneFromOne @CESEduc @DT.CollegeGradC intToCollegeGrad)
+                  . (FT.addOneFromOne @CESRace @DT.Race5C (raceToRace5 . intToRaceT))
+                  . (FT.addOneFromOne @CESRace @DT.SimpleRaceC (raceToSimpleRace . intToRaceT))
+                  . (FT.addOneFromOne @CESHispanic @DT.HispC intToHisp)
+                  . (FT.addOneFromOne @CESPid3 @PartisanId3 parsePartisanIdentity3)
+                  . (FT.addOneFromOne @CESPid7 @PartisanId7 parsePartisanIdentity7)
+                  . (FT.addOneFromOne @CESCLVoterStatus @CatalistRegistrationC cesIntToRegistration)
+                  . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC cesIntToTurnout)
+                  . (FT.addOneFrom @[CESHouseVote,CESHouseCand1Party,CESHouseCand2Party,CESHouseCand3Party,CESHouseCand4Party] @HouseVoteParty houseVoteParty)
+                  . (FT.addOneFromOne @CESPresVote2020 @PresVoteParty pres2020intToParty)
+
+  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
+  ces20FileDep <- K.fileDependency (toString ces2020CSV)
+  let deps = (,) <$> stateXWalk_C <*> ces20FileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES20)
+                          (BR.LocalData $ toText ces2020CSV)
+                          (Just cES20Parser)
+                          Nothing
+                          fixCES20
+                          transformCES20
+    let (withStateAbbreviations, missingStateFIPS) = FJ.leftJoinWithMissing @'[BR.StateFIPS] allButStateAbbrevs
+                                                     $ fmap (F.rcast @[BR.StateFIPS, BR.StateAbbreviation]) stateXWalk
+    unless (null missingStateFIPS)
+      $ K.knitError $ "Missing state FIPS when joining CES2020 data with state crosswalk: " <> show missingStateFIPS
+    return $ fmap F.rcast withStateAbbreviations
+
+
+type CES = F.Record CESR
+type CESR = [BR.Year
+            , CESCaseId
+            , CESWeight
+            , CESRegisteredWeight
+            , BR.StateAbbreviation
+            , BR.CongressionalDistrict
+            , DT.Age5C
+            , DT.SimpleAgeC
+            , DT.SexC
+            , DT.EducationC
+            , DT.CollegeGradC
+            , DT.Race5C
+            , DT.SimpleRaceC
+            , DT.HispC
+            , PartisanId3
+            , PartisanId7
+            , CatalistRegistrationC
+            , CatalistTurnoutC
+            , HouseVoteParty
+            , PresVoteParty
+            ]
+
+
+missingWeight :: F.Rec (Maybe :. F.ElField) '[CESWeight] -> F.Rec (Maybe :. F.ElField) '[CESWeight]
+missingWeight = FM.fromMaybeMono 0
+missingRegWeight :: F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight] -> F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight]
+missingRegWeight = FM.fromMaybeMono 0
+missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CESHispanic] -> F.Rec (Maybe :. F.ElField) '[CESHispanic]
+missingHispanicToNo = FM.fromMaybeMono 2
+missingPID3 :: F.Rec (Maybe :. F.ElField) '[CESPid3] -> F.Rec (Maybe :. F.ElField) '[CESPid3]
+missingPID3 = FM.fromMaybeMono 6
+missingPID7 :: F.Rec (Maybe :. F.ElField) '[CESPid7] -> F.Rec (Maybe :. F.ElField) '[CESPid7]
+missingPID7 = FM.fromMaybeMono 9
+missingEducation :: F.Rec (Maybe :. F.ElField) '[CESEduc] -> F.Rec (Maybe :. F.ElField) '[CESEduc]
+missingEducation = FM.fromMaybeMono 5
+missingCatalistReg :: F.Rec (Maybe :. F.ElField) '[CESCLVoterStatus] -> F.Rec (Maybe :. F.ElField) '[CESCLVoterStatus]
+missingCatalistReg = FM.fromMaybeMono 10
+missingCatalistTurnout :: F.Rec (Maybe :. F.ElField) '[CESCTurnout] -> F.Rec (Maybe :. F.ElField) '[CESCTurnout]
+missingCatalistTurnout = FM.fromMaybeMono 10
+missingHouseVote :: F.Rec (Maybe :. F.ElField) '[CESHouseVote] -> F.Rec (Maybe :. F.ElField) '[CESHouseVote]
+missingHouseVote = FM.fromMaybeMono 10
+missingPresVote :: F.Rec (Maybe :. F.ElField) '[CESPresVote2020] -> F.Rec (Maybe :. F.ElField) '[CESPresVote2020]
+missingPresVote = FM.fromMaybeMono 10
 
 
 ccesDataLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
@@ -106,12 +221,12 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESVotedPres20
                      ]
 
-type CCES_MRP = '[ Year
+type CCES_MRP = '[ BR.Year
                  , CCESCaseId
                  , CCESWeight
                  , CCESWeightCumulative
-                 , StateAbbreviation
-                 , CongressionalDistrict
+                 , BR.StateAbbreviation
+                 , BR.CongressionalDistrict
                  , DT.SexC
                  , DT.Age5C
                  , DT.SimpleAgeC
@@ -132,9 +247,6 @@ type CCES_MRP = '[ Year
                  , Pres2020VoteParty
                  ]
 
-
--- first try, order these consistently with the data and use (toEnum . (-1)) when possible
-minus1 x = x - 1
 
 -- can't do toEnum here because we have Female first
 intToSex :: Int -> DT.Sex
@@ -194,6 +306,10 @@ intToAgeT x
 
 intToSimpleAge :: Int -> DT.SimpleAge
 intToSimpleAge n = if n < 45 then DT.Under else DT.EqualOrOver
+
+
+
+
 
 data RegistrationT = R_Active
                    | R_NoRecord
@@ -345,6 +461,7 @@ parsePres2008VoteParty t = if T.isInfixOf "Barack Obama" t
                                 then ET.Republican
                                      else ET.Other
 
+type PresVoteParty = "PresVoteParty" F.:-> ET.PartyT
 type Pres2016VoteParty = "Pres2016VoteParty" F.:-> ET.PartyT
 type Pres2012VoteParty = "Pres2012VoteParty" F.:-> ET.PartyT
 type Pres2008VoteParty = "Pres2008VoteParty" F.:-> ET.PartyT
@@ -377,9 +494,9 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
 
 transformCCESRow :: F.Record CCES_MRP_Raw -> F.Record CCES_MRP
 transformCCESRow = F.rcast . addCols where
-  addCols = (FT.addName  @CCESYear @Year)
-            . (FT.addName @CCESSt @StateAbbreviation)
-            . (FT.addName @CCESDistUp @CongressionalDistrict)
+  addCols = (FT.addName  @CCESYear @BR.Year)
+            . (FT.addName @CCESSt @BR.StateAbbreviation)
+            . (FT.addName @CCESDistUp @BR.CongressionalDistrict)
             . (FT.addOneFromOne @CCESGender @DT.SexC intToSex)
             . (FT.addOneFromOne @CCESEduc @DT.EducationC intToEducation)
             . (FT.addOneFromOne @CCESEduc @DT.CollegeGradC intToCollegeGrad)
@@ -404,7 +521,7 @@ transformCCESRow = F.rcast . addCols where
 -- map reduce folds for counting
 
 -- some keys for aggregation
-type ByCCESPredictors = '[StateAbbreviation, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC]
+type ByCCESPredictors = '[BR.StateAbbreviation, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.SimpleRaceC]
 
 
 --

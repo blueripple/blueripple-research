@@ -22,6 +22,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
+import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -289,6 +290,8 @@ prepSLDModelData clearCaches = do
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
+  ces20 <- K.ignoreCacheTimeM CCES.ces20Loader
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces20
   K.logLE K.Info "Data prep..."
   allData_C <- prepSLDModelData False
 --  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
