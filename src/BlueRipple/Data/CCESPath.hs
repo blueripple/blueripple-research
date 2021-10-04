@@ -6,6 +6,7 @@ import qualified Frames.Streamly.TH                     as FS
 import qualified Frames.Streamly.TH as FS
 
 import qualified Data.Set as S
+import qualified Data.Map as M
 --import BlueRipple.Data.Loaders (presidentialElectionsWithIncumbency, presidentialByStateFrame)
 
 
@@ -57,16 +58,16 @@ ccesRowGen2018C = FS.modifyColumnSelector colSubset ccesRowGen2018CAllCols where
 ccesRowGen2020C = FS.modifyColumnSelector colSubset ccesRowGen2020CAllCols where
   colSubset = FS.columnSubset ccesCols2020C
 
-{-
+
 ces2020CSV :: FilePath = dataDir ++ "CES20_Common_OUTPUT_vv.csv"
 
 ces2020Cols :: S.Set FS.HeaderText
-ces2020Cols = S.fomList (FS.HeaderText <$> ["caseid"
+ces2020Cols = S.fromList (FS.HeaderText <$> ["caseid"
                                            , "commonpostweight"
                                            , "vvweight_post"
                                            , "inputstate"
-                                           , "cd116idpost"
-                                           ,  "gender"
+                                           , "cdid116"
+                                           , "gender"
                                            , "birthyr"
                                            , "educ"
                                            , "race"
@@ -79,4 +80,19 @@ ces2020Cols = S.fomList (FS.HeaderText <$> ["caseid"
                                            , "CC20_410" -- 2020 pres vote
                                            , "CC20_412" -- 2020 house vote
                                            ])
--}
+
+ces2020Renames :: Map FS.HeaderText FS.ColTypeName
+ces2020Renames = M.fromList [ (FS.HeaderText "vvweight_post", FS.ColTypeName "Weight")
+                            , (FS.HeaderText "inputstate", FS.ColTypeName "State")
+                            , (FS.HeaderText "cdid116", FS.ColTypeName "CD")
+                            , (FS.HeaderText "CC20_412", FS.ColTypeName "HouseVote")
+                            , (FS.HeaderText "CC20_410", FS.ColTypeName "PresVote")
+                            ]
+
+ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"
+                                               , FS.separator   = ","
+                                               , FS.rowTypeName = "CES20"
+                                               }
+
+cesRowGen2020 = FS.modifyColumnSelector modF ccesRowGen2020AllCols where
+  modF = FS.renameSomeUsingNames ces2020Renames . FS.columnSubset ces2020Cols
