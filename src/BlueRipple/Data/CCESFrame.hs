@@ -61,6 +61,7 @@ FS.declarePrefixedColumn "hispanic" "CCES" ''Int
 FS.tableTypes' ccesRowGen2020C
 FS.tableTypes' cesRowGen2020
 FS.tableTypes' cesRowGen2018
+FS.tableTypes' cesRowGen2016
 
 -- extra types for CES
 minus1 :: Num a => a -> a

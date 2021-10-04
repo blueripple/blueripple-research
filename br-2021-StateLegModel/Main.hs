@@ -294,6 +294,8 @@ vaAnalysis = do
   BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces20
   ces18 <- K.ignoreCacheTimeM CCES.ces18Loader
   BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces18
+  ces16 <- K.ignoreCacheTimeM CCES.ces16Loader
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces16
   K.logLE K.Info "Data prep..."
   allData_C <- prepSLDModelData False
 --  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False

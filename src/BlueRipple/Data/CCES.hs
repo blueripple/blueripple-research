@@ -136,6 +136,26 @@ ces18Loader = K.wrapPrefix "ces18Loader" $ do
                           (transformCES 2018)
     addStateAbbreviations stateXWalk allButStateAbbrevs
 
+
+ces16Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
+ces16Loader = K.wrapPrefix "ces18Loader" $ do
+  let cacheKey = "data/ces_2018.bin"
+  K.logLE K.Info "Loading/Building CES 2018 data"
+  let fixCES16 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16)
+      fixCES16 = (F.rsubset %~ missingPresVote) . fixCES
+      transformCES16 = transformCES 2016 . (FT.addOneFromOne @CESPresVote @PresVoteParty $ intToPresParty ET.Republican ET.Democratic)
+  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
+  ces18FileDep <- K.fileDependency (toString ces2016Tab)
+  let deps = (,) <$> stateXWalk_C <*> ces18FileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES16)
+                          (BR.LocalData $ toText ces2018CSV)
+                          (Just cES16Parser)
+                          Nothing
+                          fixCES16
+                          (transformCES 2016)
+    addStateAbbreviations stateXWalk allButStateAbbrevs
+
 intToPresParty :: ET.PartyT -> ET.PartyT -> Int -> ET.PartyT
 intToPresParty p1 p2 n = case n of
   1 -> p1
@@ -235,8 +255,8 @@ transformCES yr = addCols where
 
 missingWeight :: F.Rec (Maybe :. F.ElField) '[CESWeight] -> F.Rec (Maybe :. F.ElField) '[CESWeight]
 missingWeight = FM.fromMaybeMono 0
-missingRegWeight :: F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight] -> F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight]
-missingRegWeight = FM.fromMaybeMono 0
+--missingRegWeight :: F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight] -> F.Rec (Maybe :. F.ElField) '[CESRegisteredWeight]
+--missingRegWeight = FM.fromMaybeMono 0
 missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CESHispanic] -> F.Rec (Maybe :. F.ElField) '[CESHispanic]
 missingHispanicToNo = FM.fromMaybeMono 2
 missingPID3 :: F.Rec (Maybe :. F.ElField) '[CESPid3] -> F.Rec (Maybe :. F.ElField) '[CESPid3]
