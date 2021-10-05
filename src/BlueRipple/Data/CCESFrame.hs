@@ -86,6 +86,17 @@ derivingUnbox
 
 type CatalistRegistrationC = "CatalistRegistration" F.:-> CatalistRegistration
 
+catalistRegistrationFromNText :: Int -> Text -> CatalistRegistration
+catalistRegistrationFromNText n t
+  | f t == f "active" = CR_Active
+  | f t == f "dropped" = CR_Dropped
+  | f t == f "inactive" = CR_Inactive
+  | f t == f "multiple" = CR_Multiple
+  | f t == f "unregistered" = CR_UnRegistered
+  | otherwise = CR_Missing
+  where
+    f = T.take n
+
 cesIntToRegistration :: Int -> CatalistRegistration
 cesIntToRegistration = fromMaybe CR_Missing . Relude.safeToEnum . minus1
 
@@ -106,6 +117,17 @@ derivingUnbox
   [|toEnum . fromEnum|]
 
 type CatalistTurnoutC = "CatalistTurnout" F.:-> CatalistTurnout
+
+catalistTurnoutFromNText :: Int -> Text -> CatalistTurnout
+catalistTurnoutFromNText n t
+  | f t == f "absentee" = CT_Absentee
+  | f t == f "earlyVote" = CT_Early
+  | f t == f "mail" = CT_Mail
+  | f t == f "polling" = CT_Polling
+  | f t == f "unknown" = CT_Unknown
+  | otherwise = CT_Missing
+  where
+    f = T.take n
 
 cesIntToTurnout :: Int -> CatalistTurnout
 cesIntToTurnout = fromMaybe CT_Missing . Relude.safeToEnum . minus1

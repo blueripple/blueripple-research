@@ -63,32 +63,39 @@ ces2020CSV :: FilePath = dataDir ++ "CES20_Common_OUTPUT_vv.csv"
 
 cesCols :: Int -> Int -> S.Set FS.HeaderText
 cesCols yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
-                                                          , "commonpostweight"
-                                                          , "inputstate"
-                                                          , "cdid" <> show congress
-                                                          , "gender"
-                                                          , "birthyr"
-                                                          , "educ"
-                                                          , "race"
-                                                          , "hispanic"
-                                                          , "pid3"
-                                                          , "pid7"
-                                                          , "CL_voter_status" -- registration, Catalist
-                                                          , "CL_20" <> show yrSuffix <> "gvm" -- how voted and thus turnout, Catalist
-                                                          , "CC" <> show yrSuffix <> "_412" -- house vote party (?)
-                                                          , "HouseCand1Party"
-                                                          , "HouseCand2Party"
-                                                          , "HouseCand3Party"
-                                                          , "HouseCand4Party"
+                                                                  , "commonpostweight"
+                                                                  , "inputstate"
+                                                                  , "cdid" <> show congress
+                                                                  , "gender"
+                                                                  , "birthyr"
+                                                                  , "educ"
+                                                                  , "race"
+                                                                  , "hispanic"
+                                                                  , "pid3"
+                                                                  , "pid7"
+                                                                  , "CL_voter_status" -- registration, Catalist
+                                                                  , "CL_20" <> show yrSuffix <> "gvm" -- how voted and thus turnout, Catalist
+                                                                  , "CC" <> show yrSuffix <> "_412" -- house vote party (?)
+                                                                  , "HouseCand1Party"
+                                                                  , "HouseCand2Party"
+                                                                  , "HouseCand3Party"
+                                                                  , "HouseCand4Party"
                                            ])
-cesRenames :: Int -> Int -> Map FS.HeaderText FS.ColTypeName
-cesRenames yrSuffix congress = M.fromList [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
-                                    , (FS.HeaderText "commonpostweight", FS.ColTypeName "Weight")
-                                    , (FS.HeaderText "inputstate", FS.ColTypeName "StateFips")
-                                    , (FS.HeaderText ("cdid" <> show congress), FS.ColTypeName "CD")
-                                    , (FS.HeaderText ("CL_20" <> show yrSuffix <> "gvm"), FS.ColTypeName "CTurnout")
-                                    , (FS.HeaderText ("CC" <> show yrSuffix <> "_412"), FS.ColTypeName "HouseVote")
-                                    ]
+cesRenames :: Bool -> Int -> Int -> Map FS.HeaderText FS.ColTypeName
+cesRenames clAsInt yrSuffix congress =
+  let nonCL = [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
+              , (FS.HeaderText "commonpostweight", FS.ColTypeName "Weight")
+              , (FS.HeaderText "inputstate", FS.ColTypeName "StateFips")
+              , (FS.HeaderText ("cdid" <> show congress), FS.ColTypeName "CD")
+              , (FS.HeaderText ("CC" <> show yrSuffix <> "_412"), FS.ColTypeName "HouseVote")
+              ]
+      cl = if clAsInt
+        then [(FS.HeaderText ("CL_20" <> show yrSuffix <> "gvm"), FS.ColTypeName "CTurnout")
+             ,(FS.HeaderText ("CL_voter_status"), FS.ColTypeName "CVoterStatus")]
+        else [(FS.HeaderText ("CL_20" <> show yrSuffix <> "gvm"), FS.ColTypeName "CTurnoutT")
+             ,(FS.HeaderText ("CL_voter_status"), FS.ColTypeName "CVoterStatusT")]
+
+  in M.fromList (nonCL <> cl)
 
 --
 unRenameHeader :: FS.HeaderText
@@ -113,7 +120,7 @@ ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"
 -- "CC20_410" -- 2020 pres vote
 
 cesRowGen2020 = FS.modifyColumnSelector modF ccesRowGen2020AllCols where
-  (cols, renames) = addPresVote (FS.HeaderText "CC20_410") (cesCols 20 116) (cesRenames 20 116)
+  (cols, renames) = addPresVote (FS.HeaderText "CC20_410") (cesCols 20 116) (cesRenames True 20 116)
   modF = FS.renameSomeUsingNames renames . FS.columnSubset cols
 
 ces2018CSV :: FilePath = dataDir ++ "cces18_common_vv.csv"
@@ -124,18 +131,18 @@ ccesRowGen2018AllCols = (FS.rowGen ces2018CSV) { FS.tablePrefix = "CES"
                                                }
 
 cesRowGen2018 = FS.modifyColumnSelector modF ccesRowGen2018AllCols where
-  modF = FS.renameSomeUsingNames (cesRenames 18 115) . FS.columnSubset (cesCols 18 115)
+  modF = FS.renameSomeUsingNames (cesRenames True 18 115) . FS.columnSubset (cesCols 18 115)
 
-ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.csv"
+ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.tab"
 
-(cols2016, renames2016) = f (cesCols 16 115, cesRenames 16 115) where
+(cols2016, renames2016) = f (cesCols 16 115, cesRenames False 16 115) where
   f = unRenameHeader (FS.HeaderText "caseid") (FS.HeaderText "V101") .
       unRenameHeader (FS.HeaderText "CL_voter_status") (FS.HeaderText "CL_voterstatus") .
       unRenameHeader (FS.HeaderText "commonpostweight") (FS.HeaderText "commonweight_post") .
       unRenameHeader (FS.HeaderText "CL_2016gvm") (FS.HeaderText "CL_E2016GVM")
 
 ccesRowGen2016AllCols = (FS.rowGen ces2016CSV) { FS.tablePrefix = "CES"
-                                               , FS.separator   = ","
+                                               , FS.separator   = "\t"
                                                , FS.rowTypeName = "CES16"
                                                }
 
