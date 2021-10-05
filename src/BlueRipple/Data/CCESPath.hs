@@ -96,9 +96,10 @@ unRenameHeader :: FS.HeaderText
                -> (S.Set FS.HeaderText, M.Map FS.HeaderText FS.ColTypeName)
                -> (S.Set FS.HeaderText, M.Map FS.HeaderText FS.ColTypeName)
 unRenameHeader shouldBe is (cols, renames) = (newCols, newRenames) where
-  newCols = S.delete shouldBe cols
+  asColTypeName (FS.HeaderText ht) = FS.ColTypeName ht
+  newCols = S.insert is $ S.delete shouldBe cols
   newRenames = case M.lookup shouldBe renames of
-    Nothing -> M.insert is shouldBe renames
+    Nothing -> M.insert is (asColTypeName shouldBe) renames
     Just v -> M.insert is v $ M.delete shouldBe renames
 
 addPresVote :: FS.HeaderText -> S.Set FS.HeaderText ->  Map FS.HeaderText FS.ColTypeName -> (S.Set FS.HeaderText, Map FS.HeaderText FS.ColTypeName)
@@ -125,7 +126,7 @@ ccesRowGen2018AllCols = (FS.rowGen ces2018CSV) { FS.tablePrefix = "CES"
 cesRowGen2018 = FS.modifyColumnSelector modF ccesRowGen2018AllCols where
   modF = FS.renameSomeUsingNames (cesRenames 18 115) . FS.columnSubset (cesCols 18 115)
 
-ces2016Tab :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.tab"
+ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.csv"
 
 (cols2016, renames2016) = f (cesCols 16 115, cesRenames 16 115) where
   f = unRenameHeader (FS.HeaderText "caseid") (FS.HeaderText "V101") .
@@ -133,12 +134,11 @@ ces2016Tab :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.tab"
       unRenameHeader (FS.HeaderText "commonpostweight") (FS.HeaderText "commonweight_post") .
       unRenameHeader (FS.HeaderText "CL_2016gvm") (FS.HeaderText "CL_E2016GVM")
 
-ccesRowGen2016AllCols = (FS.rowGen ces2016Tab) { FS.tablePrefix = "CES"
-                                               , FS.separator   = "\t"
+ccesRowGen2016AllCols = (FS.rowGen ces2016CSV) { FS.tablePrefix = "CES"
+                                               , FS.separator   = ","
                                                , FS.rowTypeName = "CES16"
                                                }
 
 cesRowGen2016 = FS.modifyColumnSelector modF ccesRowGen2016AllCols where
-  (cols, renames') = addPresVote (FS.HeaderText "CC16_410a") cols2016 renames2016
-  renames = M.insert (FS.HeaderText "")
+  (cols, renames) = addPresVote (FS.HeaderText "CC16_410a") cols2016 renames2016
   modF = FS.renameSomeUsingNames renames . FS.columnSubset cols

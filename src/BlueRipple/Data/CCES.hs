@@ -138,22 +138,22 @@ ces18Loader = K.wrapPrefix "ces18Loader" $ do
 
 
 ces16Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
-ces16Loader = K.wrapPrefix "ces18Loader" $ do
-  let cacheKey = "data/ces_2018.bin"
-  K.logLE K.Info "Loading/Building CES 2018 data"
+ces16Loader = K.wrapPrefix "ces16Loader" $ do
+  let cacheKey = "data/ces_2016.bin"
+  K.logLE K.Info "Loading/Building CES 2016 data"
   let fixCES16 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16) -> F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16)
       fixCES16 = (F.rsubset %~ missingPresVote) . fixCES
       transformCES16 = transformCES 2016 . (FT.addOneFromOne @CESPresVote @PresVoteParty $ intToPresParty ET.Republican ET.Democratic)
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
-  ces18FileDep <- K.fileDependency (toString ces2016Tab)
-  let deps = (,) <$> stateXWalk_C <*> ces18FileDep
-  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+  ces16FileDep <- K.fileDependency (toString ces2016CSV)
+  let deps = (,) <$> stateXWalk_C <*> ces16FileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, fp) -> do
     allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES16)
-                          (BR.LocalData $ toText ces2018CSV)
+                          (BR.LocalData $ toText ces2016CSV)
                           (Just cES16Parser)
                           Nothing
                           fixCES16
-                          (transformCES 2016)
+                          transformCES16
     addStateAbbreviations stateXWalk allButStateAbbrevs
 
 intToPresParty :: ET.PartyT -> ET.PartyT -> Int -> ET.PartyT
