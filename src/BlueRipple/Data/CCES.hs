@@ -99,6 +99,15 @@ type CESR = [BR.Year
 type CESPR = CESR V.++ '[PresVoteParty]
 type CESP = F.Record CESPR
 
+-- rcast to remove any year-specific fields
+cesLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
+cesLoader = do
+  ces2020_C <- fmap F.rcast <<$>> ces20Loader
+  ces2018_C <- fmap F.rcast <<$>> ces18Loader
+  ces2016_C <- fmap F.rcast <<$>> ces16Loader
+  let ces_C = mconcat <$> sequenceA [ces2020_C, ces2018_C, ces2016_C]
+  return $ ces_C
+
 ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
 ces20Loader = K.wrapPrefix "ces20Loader" $ do
   let cacheKey = "data/ces_2020.bin"

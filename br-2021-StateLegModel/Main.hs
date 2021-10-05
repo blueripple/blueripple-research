@@ -290,13 +290,13 @@ prepSLDModelData clearCaches = do
 
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
-  ces20 <- K.ignoreCacheTimeM CCES.ces20Loader
-  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces20
-  ces18 <- K.ignoreCacheTimeM CCES.ces18Loader
-  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces18
-  ces16 <- K.ignoreCacheTimeM CCES.ces16Loader
-  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list ces16
+{-
+  ces <- K.ignoreCacheTimeM CCES.cesLoader
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ces
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list $ F.filterFrame ((==2018) . F.rgetField @BR.Year) ces
+  BR.logFrame $ F.toFrame $ take 10 $ FL.fold FL.list $ F.filterFrame ((==2016) . F.rgetField @BR.Year) ces
   K.logLE K.Info "Data prep..."
+-}
   allData_C <- prepSLDModelData False
 --  data_C <- fmap (filterVotingDataByYear (==2018)) <$> prepSLDModelData False
   let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) Nothing)
@@ -453,8 +453,10 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
 
   let tableNoteName = BR.Used "District_Table"
   _ <- BR.brNewNote postPaths postInfo tableNoteName "VA Lower House Districts" $ do
-    let sortedByModelMid = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
-        sortedByModelMid2020 = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m2020
+    let -- sorted = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
+        -- sorted2020 = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m2020
+        sorted2018 = sortOn (F.rgetField @ET.DistrictNumber) $ FL.fold FL.list m
+        sorted2020 = sortOn (F.rgetField @ET.DistrictNumber) $ FL.fold FL.list m2020
         bordered c = "border: 3px solid " <> c
         dlccChosenCS  = bordered "purple" `BR.cellStyleIf` \r h -> (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts && h == "District")
         longShot ci = MT.ciUpper ci < 0.48
@@ -475,8 +477,8 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
         tableCellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS
                                  , resLongShotCS, resLeanRCS, resLeanDCS, resSafeDCS
                                  ]
-    BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid
-    BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sortedByModelMid2020
+    BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2018
+    BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2020
   return ()
 
 

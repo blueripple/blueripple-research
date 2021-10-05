@@ -345,11 +345,13 @@ countCCESVotesF =
       dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) votedF
   in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
 
+-- using cumulative
 ccesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CCES_MRP) -> m (F.FrameRec CCESByCDR)
 ccesMR earliestYear = BRF.frameCompactMRM
                      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCCESVotesF
+
 
 ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
 ccesCountedDemHouseVotesByCD clearCaches = do
@@ -360,6 +362,29 @@ ccesCountedDemHouseVotesByCD clearCaches = do
 --    BR.logFrame cces
     ccesMR 2012 cces
 
+
+countCESVotesF :: FL.Fold (F.Record [CCES.CatalistTurnoutC, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
+countCESVotesF =
+  let surveyedF = FL.length
+      votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
+      dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) votedF
+  in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
+
+-- using each year's common content
+cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESR) -> m (F.FrameRec CCESByCDR)
+cesMR earliestYear = BRF.frameCompactMRM
+                     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
+                     countCESVotesF
+
+
+cesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
+cesCountedDemHouseVotesByCD clearCaches = do
+  ces_C <- CCES.cesLoader
+  let cacheKey = "model/house/cesByCD.bin"
+  when clearCaches $  BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ces_C $ \ces -> do
+    cesMR 2012 ces
 
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
@@ -424,16 +449,17 @@ type HouseModelCensusTablesByState =
 
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
+  let earliestYear = 2016 -- set ces for now
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   let earliest year = (>= year) . F.rgetField @BR.Year
       pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
       pumsByCD :: F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec PUMSByCDR)
-      pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest 2012) (pumsReKey . F.rcast) cdFromPUMA pums
+      pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest earliestYear) (pumsReKey . F.rcast) cdFromPUMA pums
   pumsByCD_C <- fmap (fmap acsCopy2018to2020)
                 $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
                 $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
-  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> ccesCountedDemHouseVotesByCD clearCache
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemHouseVotesByCD clearCache
   cpsVByCD_C <- cpsCountedTurnoutByCD
   K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
   -- first, do the turnout corrections
@@ -461,7 +487,7 @@ prepCCESAndPums clearCache = do
                      then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
                      else r
         pumsCDFixed = fmap fixDC_CD pums
-        cpsVFixed = fmap fixDC_CD cpsVByCD
+        cpsVFixed = fmap fixDC_CD $ F.filterFrame (earliest earliestYear) cpsVByCD
         diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens

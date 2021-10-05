@@ -100,6 +100,10 @@ catalistRegistrationFromNText n t
 cesIntToRegistration :: Int -> CatalistRegistration
 cesIntToRegistration = fromMaybe CR_Missing . Relude.safeToEnum . minus1
 
+catalistRegistered :: CatalistRegistration -> Bool
+catalistRegistered CR_Active = True
+catalistRegistered _ = False
+
 data CatalistTurnout = CT_Absentee
                      | CT_Early
                      | CT_Mail
@@ -131,3 +135,7 @@ catalistTurnoutFromNText n t
 
 cesIntToTurnout :: Int -> CatalistTurnout
 cesIntToTurnout = fromMaybe CT_Missing . Relude.safeToEnum . minus1
+
+catalistVoted :: CatalistTurnout -> Bool
+catalistVoted CT_Missing = False
+catalistVoted _ = True
