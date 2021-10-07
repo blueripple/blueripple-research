@@ -97,7 +97,7 @@ import qualified CmdStan as CS
 import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import Frames.CSV (prefixInference)
 import qualified Data.Vinyl.Core as V
-import BlueRipple.Model.House.ElectionResult (ccesDataToModelRows)
+--import BlueRipple.Model.House.ElectionResult (ccesDataToModelRows)
 import qualified Stan.ModelBuilder as SB
 import qualified Text.Pandoc as Pandoc
 import qualified Debug.Trace as DT
@@ -164,10 +164,12 @@ postPaths t = do
 type CPSCVAP = "CPSCVAP" F.:-> Int
 type CPSVoters = "CPSVoters" F.:-> Int
 type CCESSurveyed = "CCESSurveyed" F.:-> Int
-type CCESVoters = "CCESVoters" F.:-> Int
-type CCESDVotes = "CCESDVotes" F.:-> Int
+type CCESVoted = "CCESVoters" F.:-> Int
+type CCESHouseVotes = "CCESHouseVotes" F.:-> Int
+type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
+
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
-type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoters, CCESDVotes]
+type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]
 
 type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
 type SLDRecodedR = BRC.SLDLocationR
@@ -266,7 +268,7 @@ aggregatePredictorsCountyFld fldData = FMR.concatFold
 
 debugCES :: K.KnitEffects r => F.FrameRec BRE.CCESByCDR -> K.Sem r ()
 debugCES ces = do
-  let aggFld :: FL.Fold (F.Record [BRE.Surveyed, BRE.TVotes, BR.DVotes]) (F.Record [BRE.Surveyed, BRE.TVotes, BRE.DVotes])
+  let aggFld :: FL.Fold (F.Record BRE.CCESVotingDataR) (F.Record BRE.CCESVotingDataR)
       aggFld = FF.foldAllConstrained @Num FL.sum
       genderFld = FMR.concatFold
                   $ FMR.mapReduceFold
@@ -323,16 +325,16 @@ prepSLDModelData clearCaches = do
         cpsPredictor r = F.rcast $  r F.<+> FT.recordSingleton @DT.Race5C (race5FromCPS r)
         cpsRow r = F.rcast @BRE.CDKeyR r F.<+> cpsPredictor r F.<+> cpsVCols r
         cpsForJoin = cpsRow <$> cpsVRows
-        ccesVCols :: F.Record BRE.CCESByCDR -> F.Record [CCESSurveyed, CCESVoters, CCESDVotes]
-        ccesVCols r = F.rgetField @BRE.Surveyed r F.&: F.rgetField @BRE.TVotes r F.&: F.rgetField @BRE.DVotes r F.&: V.RNil
+        ccesVCols :: F.Record BRE.CCESByCDR -> F.Record [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]
+        ccesVCols r = F.rgetField @BRE.Surveyed r F.&: F.rgetField @BRE.Voted r F.&: F.rgetField @BRE.HouseVotes r F.&: F.rgetField @BRE.HouseDVotes r F.&: V.RNil
         ccesRow r = F.rcast @(BRE.CDKeyR V.++ PredictorR) r F.<+> ccesVCols r
         -- cces data will be missing some rows.  We add zeros.
         ccesForJoin' = ccesRow <$> ccesRows
-        defaultCCESV :: F.Record [CCESSurveyed, CCESVoters, CCESDVotes] = 0 F.&: 0 F.&: 0 F.&: V.RNil
+        defaultCCESV :: F.Record [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes] = 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
         ccesForJoinFld = FMR.concatFold
                          $ FMR.mapReduceFold
                          FMR.noUnpack
-                         (FMR.assignKeysAndData @BRE.CDKeyR @(PredictorR V.++ [CCESSurveyed, CCESVoters, CCESDVotes]))
+                         (FMR.assignKeysAndData @BRE.CDKeyR @(PredictorR V.++ [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]))
                          (FMR.makeRecsWithKey id $ FMR.ReduceFold (const $ BRK.addDefaultRec @PredictorR defaultCCESV))
         ccesForJoin = FL.fold ccesForJoinFld ccesForJoin'
         (cpsAndCces, missing) = FJ.leftJoinWithMissing @(BRE.CDKeyR V.++ PredictorR) cpsForJoin ccesForJoin
@@ -348,9 +350,16 @@ prepSLDModelData clearCaches = do
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
   allData_C <- prepSLDModelData False
+{-
+  ces <- K.ignoreCacheTimeM CCES.cesLoader
+  let tx2018 r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @BR.Year r == 2018
+      ces2018TX = F.filterFrame tx2018 ces
+  BR.logFrame ces2018TX
+
   ces <- K.ignoreCacheTime $ fmap ccesRows allData_C
---  debugCES ces
---  K.knitError "STOP"
+  debugCES $ F.filterFrame tx2018 ces
+  K.knitError "STOP"
+-}
   let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) Nothing)
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House" $ do
@@ -475,11 +484,11 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
                               && F.rgetField @ET.DistrictNumber r == dn
   let sldDat2018_C = fmap (filterVotingDataByYear (==2018)) sldDat_C
       sldDat2020_C = fmap (filterVotingDataByYear (==2020)) sldDat_C
-{-
+
       agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-  K.ignoreCacheTime sldDat2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX","VA"]) . cpsVAndccesRows
-  K.ignoreCacheTime sldDat2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX","VA"]) . cpsVAndccesRows
--}
+  K.ignoreCacheTime sldDat2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
+  K.ignoreCacheTime sldDat2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
+
 {-
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 100) . sldTables
@@ -666,7 +675,7 @@ stateLegModel clearCaches model datYear dat_C = K.wrapPrefix "stateLegModel" $ d
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         -- Turnout
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @BRE.Surveyed)
-        votes <- SB.addCountData voteData "VOTED" (F.rgetField @BRE.TVotes)
+        votes <- SB.addCountData voteData "VOTED" (F.rgetField @BRE.Voted)
 
         (feCDT, betaT) <- MRP.addFixedEffectsParametersAndPriors
                           True
@@ -682,7 +691,8 @@ stateLegModel clearCaches model datYear dat_C = K.wrapPrefix "stateLegModel" $ d
         let distT = SB.binomialLogitDist votes cvap
 
         -- Preference
-        dVotes <- SB.addCountData voteData "DVOTES_C" (F.rgetField @BRE.DVotes)
+        hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @BRE.HouseVotes)
+        dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @BRE.HouseDVotes)
         (feCDP, betaP) <- MRP.addFixedEffectsParametersAndPriors
                           True
                           fePrior
@@ -693,7 +703,7 @@ stateLegModel clearCaches model datYear dat_C = K.wrapPrefix "stateLegModel" $ d
         gSexP <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         gEduP <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
         gRaceP <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
-        let distP = SB.binomialLogitDist dVotes votes
+        let distP = SB.binomialLogitDist dVotes hVotes
 
 
         (logitT_sample, logitT_ps, logitP_sample, logitP_ps, psGroupSet) <- case model of
@@ -1101,26 +1111,26 @@ modelResultScatterChart single title vc rows =
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), makeModelYear [], vlData]
   in FV.configuredVegaLite vc finalSpec --
 
--- fold cpsAndCES data over districts
-aggregateDistricts :: FL.Fold (F.Record CPSAndCCESR) (F.FrameRec (BRE.StateKeyR V.++ PredictorR V.++ VotingDataR))
+-- fold CES data over districts
+aggregateDistricts :: FL.Fold (F.Record BRE.CCESByCDR) (F.FrameRec (BRE.StateKeyR V.++ PredictorR V.++ BRE.CCESVotingDataR))
 aggregateDistricts = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
-                     (FMR.assignKeysAndData @(BRE.StateKeyR V.++ PredictorR) @VotingDataR)
+                     (FMR.assignKeysAndData @(BRE.StateKeyR V.++ PredictorR) @BRE.CCESVotingDataR)
                      (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
 
-aggregatePredictors :: FL.Fold (F.Record (BRE.StateKeyR V.++ PredictorR V.++ VotingDataR)) (F.FrameRec (BRE.StateKeyR V.++ VotingDataR))
+aggregatePredictors :: FL.Fold (F.Record (BRE.StateKeyR V.++ PredictorR V.++ BRE.CCESVotingDataR)) (F.FrameRec (BRE.StateKeyR V.++ BRE.CCESVotingDataR))
 aggregatePredictors = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
-                     (FMR.assignKeysAndData @BRE.StateKeyR @VotingDataR)
+                     (FMR.assignKeysAndData @BRE.StateKeyR @BRE.CCESVotingDataR)
                      (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
 
-aggregatePredictorsInDistricts ::  FL.Fold (F.Record CPSAndCCESR) (F.FrameRec (BRE.CDKeyR V.++ VotingDataR))
+aggregatePredictorsInDistricts ::  FL.Fold (F.Record BRE.CCESByCDR) (F.FrameRec (BRE.CDKeyR V.++ BRE.CCESVotingDataR))
 aggregatePredictorsInDistricts = FMR.concatFold
                                  $ FMR.mapReduceFold
                                  FMR.noUnpack
-                                 (FMR.assignKeysAndData @BRE.CDKeyR @VotingDataR)
+                                 (FMR.assignKeysAndData @BRE.CDKeyR @BRE.CCESVotingDataR)
                                  (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
 
 

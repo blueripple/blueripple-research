@@ -13,6 +13,7 @@ module BlueRipple.Data.ElectionTypes where
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified Data.Array as A
 import qualified Data.Binary as B
+import qualified Data.Default as Def
 import Data.Discrimination (Grouping)
 import qualified Data.Serialize as S
 import qualified Data.Text as T
@@ -69,6 +70,8 @@ instance S.Serialize PartyT
 instance B.Binary PartyT
 instance Flat.Flat PartyT
 instance Grouping PartyT
+instance Def.Default PartyT where
+  def = Other
 
 instance FCSV.ShowCSV PartyT
 

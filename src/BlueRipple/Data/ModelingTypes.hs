@@ -1,15 +1,18 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveAnyClass    #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE DerivingStrategies     #-}
+{-# LANGUAGE DerivingVia     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE GADTs             #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TupleSections   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
@@ -31,6 +34,7 @@ import qualified Data.Vinyl.TypeLevel                    as V
 import qualified Data.Vector           as Vec
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
+import qualified Data.Default as Def
 import           Data.Word                      (Word8)
 import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
@@ -75,3 +79,17 @@ keyedCIsToFrame keyToRec kvs =
 
 
 type ModelId t = "ModelId" F.:-> t
+
+
+newtype MaybeData a = MaybeData { unMaybeData :: Maybe a }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Functor, Applicative, Monad)
+
+instance S.Serialize a => S.Serialize (MaybeData a)
+instance B.Binary a => B.Binary (MaybeData a)
+instance Flat.Flat a => Flat.Flat (MaybeData a)
+derivingUnbox "MaybeData"
+  [t|forall a. (Def.Default a, UVec.Unbox a) => MaybeData a -> (Bool, a)|]
+  [|\(MaybeData ma) -> maybe (False, Def.def) (True,) ma|]
+  [|\(b, a) -> MaybeData $ if b then Just a else Nothing |]
+type instance FI.VectorFor (MaybeData a) = UVec.Vector

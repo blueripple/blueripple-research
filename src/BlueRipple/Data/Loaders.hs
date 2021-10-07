@@ -75,7 +75,7 @@ fixPresidentialElectionRow = F.rcast . addCols
 presidentialByStateFrame ::
   (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PresidentialElectionCols))
 presidentialByStateFrame =
-  cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PresidentialElectionCols
+  cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PEFromCols @PresidentialElectionCols
     (DataSets $ toText BR.presidentialByStateCSV)
     Nothing
     Nothing

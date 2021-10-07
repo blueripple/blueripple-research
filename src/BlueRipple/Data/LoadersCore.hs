@@ -210,7 +210,7 @@ frameLoader filePath mParserOptions mFilter fixRow = do
 -- "fix" the maybes in qs
 -- transform to rs
 maybeFrameLoader
-  :: forall (fs :: [(Symbol, Type)]) qs rs r
+  :: forall (fs :: [(Symbol, Type)]) qs qs' rs r
    . ( V.RMap rs
      , V.RMap fs
      , FStreamly.StrictReadRec fs
@@ -219,6 +219,11 @@ maybeFrameLoader
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
+     , V.RFoldMap qs'
+     , V.RPureConstrained V.KnownField qs'
+     , V.RecApplicative qs'
+     , V.RApply qs'
+     , V.RMap qs'
      , qs F.⊆ fs
      , FStreamly.RecVec rs
      , V.RFoldMap rs
@@ -233,11 +238,11 @@ maybeFrameLoader
   => DataPath
   -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
-  -> (F.Record qs -> F.Record rs)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs')
+  -> (F.Record qs' -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
-  = K.streamlyToKnit $ FStreamly.inCoreAoS $ maybeRecStreamLoader @fs @qs @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
+  = K.streamlyToKnit $ FStreamly.inCoreAoS $ maybeRecStreamLoader @fs @qs @qs' @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 
 -- file has fs
 -- load fs
@@ -246,7 +251,7 @@ maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 -- "fix" the maybes in qs
 -- transform to rs
 maybeRecStreamLoader
-  :: forall fs qs rs
+  :: forall fs qs qs' rs
    . ( V.RMap fs
      , FStreamly.StrictReadRec fs
      , FStreamly.RecVec qs
@@ -255,6 +260,11 @@ maybeRecStreamLoader
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
+     , V.RFoldMap qs'
+     , V.RMap qs'
+     , V.RPureConstrained V.KnownField qs'
+     , V.RecApplicative qs'
+     , V.RApply qs'
      , qs F.⊆ fs
 --     , K.KnitEffects r, BR.CacheEffects r
      , Show (F.Record qs)
@@ -264,8 +274,8 @@ maybeRecStreamLoader
   => DataPath
   -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
-  -> (F.Record qs -> F.Record rs)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs')
+  -> (F.Record qs' -> F.Record rs)
   -> Streamly.SerialT K.StreamlyM (F.Record rs)
 maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow = do
   let csvParserOptions = FStreamly.defaultParser
@@ -284,7 +294,7 @@ maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRo
 -- "fix" the maybes in qs
 -- transform to rs
 cachedMaybeFrameLoader
-  :: forall fs qs rs r
+  :: forall fs qs qs' rs r
    . ( K.KnitEffects r
      , BR.CacheEffects r
      , V.RMap rs
@@ -296,6 +306,11 @@ cachedMaybeFrameLoader
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
+     , V.RFoldMap qs'
+     , V.RPureConstrained V.KnownField qs'
+     , V.RecApplicative qs'
+     , V.RApply qs'
+     , V.RMap qs'
      , qs F.⊆ fs
      , FStreamly.RecVec rs
      , BR.RecSerializerC rs
@@ -307,8 +322,8 @@ cachedMaybeFrameLoader
   => DataPath
   -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
-  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs)
-  -> (F.Record qs -> F.Record rs)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs')
+  -> (F.Record qs' -> F.Record rs)
   -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
   -> T.Text -- ^ cache key
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))

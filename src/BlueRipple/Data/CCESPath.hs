@@ -75,7 +75,7 @@ cesCols yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
                                                                   , "pid7"
                                                                   , "CL_voter_status" -- registration, Catalist
                                                                   , "CL_20" <> show yrSuffix <> "gvm" -- how voted and thus turnout, Catalist
-                                                                  , "CC" <> show yrSuffix <> "_412" -- house vote party (?)
+                                                                  , "CC" <> show yrSuffix <> "_412" -- house candidate
                                                                   , "HouseCand1Party"
                                                                   , "HouseCand2Party"
                                                                   , "HouseCand3Party"

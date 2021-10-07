@@ -28,6 +28,7 @@ import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BRTA
@@ -107,6 +108,9 @@ type DemographicsR =
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
 type TVotes = "TVotes" F.:-> Int
+type Voted = "Voted" F.:-> Int
+type HouseVotes = "HouseVotes" F.:-> Int
+type HouseDVotes = "HouseDVotes" F.:-> Int
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
@@ -135,7 +139,8 @@ type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
-type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, Surveyed, TVotes, DVotes]
+type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes]
+type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataR
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
@@ -338,6 +343,7 @@ aggregatePartiesF =
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
 -- TODO:  Use weights?  Design effect?
+{-
 countCCESVotesF :: FL.Fold (F.Record [CCES.Turnout, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
 countCCESVotesF =
   let surveyedF = FL.length
@@ -361,21 +367,24 @@ ccesCountedDemHouseVotesByCD clearCaches = do
   BR.retrieveOrMakeFrame cacheKey cces_C $ \cces -> do
 --    BR.logFrame cces
     ccesMR 2012 cces
+-}
 
-
-countCESVotesF :: FL.Fold (F.Record [CCES.CatalistTurnoutC, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
-countCESVotesF =
-  let surveyedF = FL.length
+countCESHouseVotesF :: FL.Fold (F.Record [CCES.CatalistTurnoutC, CCES.MHouseVoteParty]) (F.Record [Surveyed, Voted, HouseVotes, HouseDVotes])
+countCESHouseVotesF =
+  let houseVote (MT.MaybeData x) = maybe False (const True) x
+      houseDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      surveyedF = FL.length
       votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
-      dVoteF = FL.prefilter ((== ET.Democratic) . F.rgetField @CCES.HouseVoteParty) votedF
-  in (\s v d -> s F.&: v F.&: d F.&: V.RNil) <$> surveyedF <*> votedF <*> dVoteF
+      houseVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MHouseVoteParty) votedF
+      houseDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MHouseVoteParty) votedF
+  in (\s v hv hdv -> s F.&: v F.&: hv F.&: hdv F.&: V.RNil) <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF
 
 -- using each year's common content
 cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESR) -> m (F.FrameRec CCESByCDR)
 cesMR earliestYear = BRF.frameCompactMRM
                      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
-                     countCESVotesF
+                     countCESHouseVotesF
 
 
 
@@ -540,6 +549,7 @@ cpsDiagnostics t cpsByCD = K.wrapPrefix "cpsDiagnostics" $ do
   K.logLE K.Diagnostic $ "NV (county-weighted) by race: "
   BR.logFrame nvCounts
 
+{-
 prepCachedDataTracts ::forall r.
   (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r HouseModelData)
 prepCachedDataTracts clearCache = do
@@ -691,7 +701,8 @@ prepCachedDataPUMS clearCache = do
                          $ \x -> K.logLE K.Info "(re)building predictors from state-level, PUMS-derived, demographics" >> (return $ pumsMR @StateKeyR x)
 
   combineDemoAndElex clearCache "model/house/pumsHouseData.bin" cdDemographics_C stateDemographics_C
-
+-}
+{-
 combineDemoAndElex :: forall r. (K.KnitEffects r, BR.CacheEffects r)
                    => Bool
                    -> Text
@@ -784,7 +795,8 @@ combineDemoAndElex clearCache cacheKey cdDemographics_C stateDemographics_C = do
       competitiveSenateElectionResults
       competitivePresidentialElectionResults
       (fmap F.rcast ccesWithoutNullVotes)
-
+-}
+{-
 type HouseDataWrangler = SC.DataWrangler HouseModelData  () ()
 
 district r = F.rgetField @BR.StateAbbreviation r <> show (F.rgetField @BR.CongressionalDistrict r)
@@ -1621,4 +1633,5 @@ houseDataWrangler' mw predictors = SC.Wrangle SC.NoIndex f
       modelRowJson <- SJ.frameToStanJSONSeries dataF modelRows
       dataSetIndexJson <- SJ.frameToStanJSONSeries (SJ.valueToPairF "dataSet" (SJ.jsonArrayF id)) dataSetIndex
       return $ modelRowJson <> dataSetIndexJson
+-}
 -}
