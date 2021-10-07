@@ -378,6 +378,8 @@ cesMR earliestYear = BRF.frameCompactMRM
                      countCESVotesF
 
 
+
+
 cesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
 cesCountedDemHouseVotesByCD clearCaches = do
   ces_C <- CCES.cesLoader
