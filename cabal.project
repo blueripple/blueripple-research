@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/heidi ~/DataScience/knit-haskell ../data-sets ~/DataScience/Frames-streamly ~/DataScience/Frames-utils
+packages: ./ ~/DataScience/heidi
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -50,10 +50,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hs-cmdstan
   tag: cc2fb6704d196f8e467fc02a74f0117bfd043f42
 
---source-repository-package
---  type: git
---  location: https://github.com/blueripple/data-sets
---  tag: 573595af046badf555ac8f47f8a19b2bc6f26d55
+source-repository-package
+  type: git
+  location: https://github.com/blueripple/data-sets
+  tag: 679e48a0fbd8ffa6ba134653d49f75609ead80f7
 
 source-repository-package
   type: git
@@ -61,15 +61,15 @@ source-repository-package
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/knit-haskell
---  tag: e8180b9b82134b594c75d64e916bc28f28181b44
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: e1752acfa2ce6577aea20c0a10c67e97310c3897
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-map-reduce
---  tag: 1fbb72b90364449b24dfde70b9fce2576da27191
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-map-reduce
+  tag: 4e762c9ff87d1e064912847c3591f75d0126a323
 
 --source-repository-package
 --  type: git
@@ -77,15 +77,15 @@ source-repository-package
 --  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
 
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 76bfc556fde69542edbf9e0ae9fd4abf3da4cc86
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: a8b6f9acf35948b98b01e850c847ab4f7cba7dd0
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-streamly
---  tag: 18e355108de9dd1a92bdd124bb162894f8d51e82
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: e5c9cab98d9d9305e42ea1147a57eb1dbdb3c921
 
 source-repository-package
   type: git

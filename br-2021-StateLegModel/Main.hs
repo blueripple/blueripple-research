@@ -360,7 +360,7 @@ vaAnalysis = do
   debugCES $ F.filterFrame tx2018 ces
   K.knitError "STOP"
 -}
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) Nothing)
+  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) (Just BR.Unpublished))
   va1Paths <- postPaths "VA1"
   BR.brNewPost va1Paths va1PostInfo "Virginia Lower House" $ do
     vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime allData_C
@@ -507,25 +507,28 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   modelPlusInteractions2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions 2020 sldDat2020_C
   modelPlusStateAndStateInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions 2018 sldDat2018_C
   modelPlusStateAndStateInteractions2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions 2020 sldDat2020_C
-  let allModels = modelPlusState
-                  <> modelBase
-                  <> modelPlusRaceEdu
-                  <> modelPlusStateAndStateRace
-                  <> modelPlusInteractions
-                  <> modelPlusStateAndStateInteractions
-                  <> modelBase2020
-                  <> modelPlusRaceEdu2020
-                  <> modelPlusStateAndStateRace2020
-                  <> modelPlusInteractions2020
-                  <> modelPlusStateAndStateInteractions2020
+  let allModels2018 = modelPlusState
+                      <> modelBase
+                      <> modelPlusRaceEdu
+                      <> modelPlusStateAndStateRace
+                      <> modelPlusInteractions
+                      <> modelPlusStateAndStateInteractions
+      allModels2020 =  modelBase2020
+                       <> modelPlusRaceEdu2020
+                       <> modelPlusStateAndStateRace2020
+                       <> modelPlusInteractions2020
+                       <> modelPlusStateAndStateInteractions2020
       allResults = vaResults
                    <> (onlyTXLower txResults)
                    <> (onlyGALower gaResults)
                    <> (onlyNVLower nvResults)
                    <> (onlyOHLower ohResults)
-  let f = F.filterFrame (\r -> onlyLower r && onlyStates ["VA","TX","GA","OH"] r)
-  m <- comparison (f allModels) (f allResults) "All"
-  m2020 <- comparison (f modelPlusState2020) (f allResults) "All"
+  let f s = F.filterFrame (\r -> onlyLower r && onlyStates s r)
+      allStates = ["VA","GA","TX","OH"]
+      allModels = [Base, PlusState, PlusRaceEdu, PlusStateAndStateRace, PlusInteractions, PlusStateAndStateInteractions]
+      fPost = f ["VA"]
+  m <- comparison (fPost modelPlusStateAndStateRace) (fPost allResults) "All"
+  m2020 <- comparison (fPost modelPlusStateAndStateRace2020) (fPost allResults) "All"
 
   BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
 
