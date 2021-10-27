@@ -22,6 +22,7 @@ import qualified Data.Map.Strict as Map
 import qualified Frames
 import qualified Frames.InCore
 import qualified Frames.Streamly.InCore as Frames.Streamly
+import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl as V
 
@@ -39,7 +40,6 @@ import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Data.Map.Strict as Map
 import qualified Data.HashTable.Class          as HashTable
 import qualified Data.HashTable.ST.Cuckoo      as HashTable.Cuckoo
-
 
 frameCompactMRM :: ( Ord (Frames.Record ks)
                     , Frames.InCore.RecVec (ks V.++ ds)
@@ -79,7 +79,7 @@ streamGrouper ::
   => Streamly.SerialT m (Frames.Record ks, Frames.Record cs)
   -> Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs)
 streamGrouper = Streamly.concatM . Streamly.fold groupFold
-  where groupFold = mapToStream <$> Streamly.Fold.classify Frames.Streamly.inCoreAoS_F
+  where groupFold = mapToStream <$> Streamly.Fold.classify (Frames.Streamly.inCoreAoS_F @_ @(StreamlyStream SerialT))
         mapToStream = Streamly.fromFoldable . Map.toList
 {-# INLINEABLE streamGrouper #-}
 
@@ -94,7 +94,7 @@ streamGrouper2 ::
 streamGrouper2 = Streamly.map (\(!k, (!n, !soa)) ->  (k, Frames.InCore.toAoS n soa))
                  . Streamly.concatM
                  . Streamly.fold groupFold
-  where groupFold = mapToStream <$> Streamly.Fold.classify Frames.Streamly.inCoreSoA_F
+  where groupFold = mapToStream <$> Streamly.Fold.classify (Frames.Streamly.inCoreSoA_F @_ @(StreamlyStream SerialT))
         mapToStream = Streamly.fromFoldable . Map.toList
 {-# INLINEABLE streamGrouper2 #-}
 
@@ -120,7 +120,7 @@ framesStreamlyMRM unpack (MapReduce.AssignM af) reduce =
       assignS = Streamly.mapM af
       groupS = streamGrouper
       reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
-      processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS
+      processS = (Frames.Streamly.inCoreAoS @_ @_ @(StreamlyStream SerialT)) . StreamlyStream . reduceS . groupS . assignS . unpackS
   in Foldl.FoldM (\s !a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
 {-# INLINEABLE framesStreamlyMRM #-}
 
@@ -233,7 +233,7 @@ framesStreamlyMRM_HT unpack (MapReduce.AssignM af) reduce =
       assignS = Streamly.mapM af
       groupS = streamGrouperHT
       reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
-      processS = Frames.Streamly.inCoreAoS . reduceS . groupS . assignS . unpackS
+      processS = (Frames.Streamly.inCoreAoS @_ @_ @(StreamlyStream SerialT)). StreamlyStream . reduceS . groupS . assignS . unpackS
   in Foldl.FoldM (\s a -> return $ a `Streamly.cons` s) (return Streamly.nil) processS
 {-# INLINEABLE framesStreamlyMRM_HT #-}
 
@@ -284,7 +284,7 @@ framesStreamlyMRM_SF unpack (MapReduce.AssignM af) reduce =
       groupS = streamGrouper2
       reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
       processS = reduceS . groupS . assignS . unpackS
-  in Frames.Streamly.inCoreAoS . processS . Streamly.fromFoldable
+  in (Frames.Streamly.inCoreAoS @_ @_ @(StreamlyStream SerialT)). StreamlyStream . processS . Streamly.fromFoldable
 {-# INLINEABLE framesStreamlyMRM_SF #-}
 
 
@@ -328,7 +328,7 @@ fStreamlyMRM_HT unpack (MapReduce.AssignM af) reduce =
       groupS = streamGrouperHT
       reduceS = Streamly.mapM (\(!k, !cF) -> reduceFunctionM reduce k cF)
       processS = reduceS . groupS . assignS . unpackS
-  in Frames.Streamly.inCoreAoS . processS . Streamly.fromFoldable
+  in (Frames.Streamly.inCoreAoS  @_ @_ @(StreamlyStream SerialT)) . StreamlyStream . processS . Streamly.fromFoldable
 {-# INLINEABLE fStreamlyMRM_HT #-}
 
 fStreamlyMR_HT ::

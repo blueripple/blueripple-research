@@ -80,6 +80,7 @@ import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.CSV        as FStreamly
+import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
 
 import qualified System.Directory as System
 import qualified System.Clock
@@ -108,8 +109,8 @@ recStreamLoader
      , V.RMap qs
      , FStreamly.StrictReadRec qs
      , Streamly.MonadAsync m
+     , FL.PrimMonad m
      , Monad (t m)
---     , MonadIO m
      , Exceptions.MonadCatch m
      , Streamly.IsStream t
      )
@@ -145,6 +146,8 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
     )
     $! BR.loadToRecStream @qs parserOptions path filter
 
+type StreamlyS = StreamlyStream SerialT
+
 -- file/rowGen has qs
 -- Filter qs
 -- transform to rs
@@ -171,8 +174,8 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
-    let recStream = recStreamLoader dataPath parserOptionsM mFilter fixRow
-    K.streamlyToKnit $ FStreamly.inCoreAoS recStream
+    let recStream = recStreamLoader @qs @rs @SerialT dataPath parserOptionsM mFilter fixRow
+    K.streamlyToKnit $ FStreamly.inCoreAoS @_ @rs @StreamlyS $ StreamlyStream recStream
 
 -- file has qs
 -- Filter qs
@@ -242,7 +245,7 @@ maybeFrameLoader
   -> (F.Record qs' -> F.Record rs)
   -> K.Sem r (F.FrameRec rs)
 maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
-  = K.streamlyToKnit $ FStreamly.inCoreAoS $ maybeRecStreamLoader @fs @qs @qs' @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
+  = K.streamlyToKnit $ FStreamly.inCoreAoS $ StreamlyStream $ maybeRecStreamLoader @fs @qs @qs' @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 
 -- file has fs
 -- load fs

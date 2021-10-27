@@ -20,11 +20,15 @@ import qualified Data.Text.IO as T
 import qualified Frames as F
 import qualified Frames.Streamly.CSV as FStreamly
 import qualified Frames.Streamly.InCore as FStreamly
+import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
 import qualified System.Directory as Dir
 import qualified System.Process as Process
 import qualified Streamly.Prelude as Streamly
 import qualified Text.Printf as Printf
 import qualified Data.Vinyl as V
+
+
+type StreamlyS = StreamlyStream SerialT
 
 libsForShinyStan = ["rstan", "shinystan", "rjson"]
 libsForLoo = ["rstan", "shinystan", "loo", "bayesplot"]
@@ -172,7 +176,10 @@ compareModels configs nCores = do
   rOut <- toText <$> Process.readCreateProcess cp (toString script)
   putTextLn "R finished."
   let sRText = Streamly.filter (not . T.isPrefixOf ">") $ Streamly.fromList $ lines rOut
-  fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS $ FStreamly.streamTable $ Streamly.drop 1 $ sRText
+  fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS @_ @_ @StreamlyS
+                                 $ FStreamly.streamTable
+                                 $ StreamlyStream
+                                 $ Streamly.drop 1 sRText
   -- map results to models
   let resultModelMap :: Map Text Text = M.fromList $ zip ((\n -> "model"<> show n) <$> [1..]) (Foldl.fold (Foldl.premap fst Foldl.list) configs)
       fixName :: F.Record LOO_R -> F.Record LOO_R
