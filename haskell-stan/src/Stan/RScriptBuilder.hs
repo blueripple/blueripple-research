@@ -179,6 +179,7 @@ compareModels configs nCores = do
   fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS @_ @_ @StreamlyS
                                  $ FStreamly.streamTable
                                  $ StreamlyStream
+                                 $ Streamly.map (T.split (== ','))
                                  $ Streamly.drop 1 sRText
   -- map results to models
   let resultModelMap :: Map Text Text = M.fromList $ zip ((\n -> "model"<> show n) <$> [1..]) (Foldl.fold (Foldl.premap fst Foldl.list) configs)

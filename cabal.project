@@ -1,8 +1,8 @@
-packages: ./ ~/DataScience/heidi ~/DataScience/map-reduce-folds ~/DataScience/Frames-streamly
+packages: ./ ~/DataScience/heidi ~/DataScience/map-reduce-folds ~/DataScience/Frames-streamly ~/DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, hashable, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable
 --ghc 9.2
 --allow-newer: base
 --           , template-haskell
@@ -80,7 +80,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 411a9edfb390eebfe8d005d9e83e02a5ad306005
+  tag: d1724eae4b1838b0cad8eab8817124f4a723f3ef
 
 --source-repository-package
 --  type: git
@@ -95,12 +95,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: 651900731ff6b14c0ff68a6da15d2eaf6c072a71
+  tag: 5b34afdc5ade9d09131db1e7a497b9fc37295ed8
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-hvega
-  tag: af107cac1545875d5837f2ea466d29235b66a39b
+  tag: c512a6dcefba27943dd0f7ee7cfb942e4231f6e7
 
 source-repository-package
   type: git

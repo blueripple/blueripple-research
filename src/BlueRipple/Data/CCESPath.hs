@@ -3,7 +3,6 @@
 module BlueRipple.Data.CCESPath where
 
 import qualified Frames.Streamly.TH                     as FS
-import qualified Frames.Streamly.TH as FS
 
 import qualified Data.Set as S
 import qualified Data.Map as M
@@ -43,12 +42,12 @@ ccesCols2020C = S.insert (FS.HeaderText "voted_pres_20") ccesCols2018C
 
 -- the things I would make Categorical are already ints. :(
 ccesRowGen2020CAllCols = (FS.rowGen cces2020C_CSV) { FS.tablePrefix = "CCES"
-                                                   , FS.separator   = ","
+                                                   , FS.separator   = FS.CharSeparator ','
                                                    , FS.rowTypeName = "CCES"
                                                    }
 
 ccesRowGen2018CAllCols = (FS.rowGen cces2018C_CSV) { FS.tablePrefix = "CCES"
-                                                   , FS.separator   = ","
+                                                   , FS.separator   = FS.CharSeparator ','
                                                    , FS.rowTypeName = "CCES"
                                                    }
 
@@ -113,7 +112,7 @@ addPresVote :: FS.HeaderText -> S.Set FS.HeaderText ->  Map FS.HeaderText FS.Col
 addPresVote header cols renames = (S.insert header cols, M.insert header (FS.ColTypeName "PresVote") renames)
 
 ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"
-                                               , FS.separator   = ","
+                                               , FS.separator   = FS.CharSeparator ','
                                                , FS.rowTypeName = "CES20"
                                                }
 
@@ -126,14 +125,14 @@ cesRowGen2020 = FS.modifyColumnSelector modF ccesRowGen2020AllCols where
 ces2018CSV :: FilePath = dataDir ++ "cces18_common_vv.csv"
 
 ccesRowGen2018AllCols = (FS.rowGen ces2018CSV) { FS.tablePrefix = "CES"
-                                               , FS.separator   = ","
+                                               , FS.separator   = FS.CharSeparator ','
                                                , FS.rowTypeName = "CES18"
                                                }
 
 cesRowGen2018 = FS.modifyColumnSelector modF ccesRowGen2018AllCols where
   modF = FS.renameSomeUsingNames (cesRenames True 18 115) . FS.columnSubset (cesCols 18 115)
 
-ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.csv"
+ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.tab"
 
 (cols2016, renames2016) = f (cesCols 16 115, cesRenames False 16 115) where
   f = unRenameHeader (FS.HeaderText "caseid") (FS.HeaderText "V101") .
@@ -142,7 +141,7 @@ ces2016CSV :: FilePath = dataDir ++ "CCES16_Common_OUTPUT_Feb2018_VV.csv"
       unRenameHeader (FS.HeaderText "CL_2016gvm") (FS.HeaderText "CL_E2016GVM")
 
 ccesRowGen2016AllCols = (FS.rowGen ces2016CSV) { FS.tablePrefix = "CES"
-                                               , FS.separator   = ","
+                                               , FS.separator   = FS.CharSeparator '\t'
                                                , FS.rowTypeName = "CES16"
                                                }
 

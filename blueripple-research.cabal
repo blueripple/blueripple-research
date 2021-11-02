@@ -33,7 +33,7 @@ common deps
                , Frames-map-reduce >= 0.4.1.0
                , Frames-hvega >= 0.3
                , Frames-utils >= 0.3.1
-               , Frames-streamly >= 0.2 && < 0.3
+               , Frames-streamly >= 0.3 && < 0.4
                , Frames-serialize >= 0.1.0
                , foldl >= 1.4 && < 1.5
                , foldl-statistics >= 0.1.5 && < 0.2
@@ -346,7 +346,7 @@ executable mrp-model
                , discrimination
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10
-               , hashable >= 1.2 && < 1.3.0
+               , hashable >= 1.2 && < 1.4
                , lens >= 4.16 && < 5
                , log-domain < 0.13
                , mtl >= 2.1 && < 2.3.0
