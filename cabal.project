@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/heidi ~/DataScience/map-reduce-folds ~/DataScience/Frames-streamly ~/DataScience/Frames-utils
+packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -70,6 +70,11 @@ source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-map-reduce
   tag: 4e762c9ff87d1e064912847c3591f75d0126a323
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/map-reduce-folds
+  tag: e8928f5db385fdf18bbe7c613ff572e284c7adf3
 
 --source-repository-package
 --  type: git
