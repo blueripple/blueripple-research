@@ -348,13 +348,13 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
-                      -> SB.GroupRowMap rPS -- group mappings for PS data
-                      -> Set.Set Text -- subset of groups to loop over
+                      -> SB.GroupSet -- groups to sum over
+--                      -> Set.Set Text -- subset of groups to loop over
                       -> (rPS -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM d SB.StanVar
-addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups weightF psType mPSGroup = do
+addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
       modelDataSetName = SB.dataSetName rttModel
@@ -370,13 +370,12 @@ addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups wei
     case DHash.lookup rttModel rowInfos of
       Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
-  -- allGroups <- SB.groupIndexByType <$> SB.askGroupEnv
-  let usedGroups = DHash.filterWithKey (\(SB.GroupTypeTag n) _ -> n `Set.member` modelGroups) $ modelGroupsDHM
-
-  checkGroupSubset "Modeling" "PS Spec" usedGroups groupMaps
-  -- we don't need the PS group to be present on the RHS, but it could be
-  let groupMapsToCheck = maybe groupMaps (\x -> DHash.delete x groupMaps) mPSGroup
-  checkGroupSubset "PS Spec" "All Groups" groupMapsToCheck modelGroupsDHM
+  psGroupsDHM <- do
+     case DHash.lookup rttPS rowInfos of
+       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in rowBuilders."
+       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
+  checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
+  checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
   toFoldable <- case DHash.lookup rttPS rowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
@@ -394,26 +393,24 @@ addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups wei
                                   <> " is missing from post-stratification data-set ("
                                   <> psDataSetName
                                   <> ")."
-          groupRowMapMissingErr = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                                  <> ") is not present in groupMaps: " <> showNames groupMaps
+          psGroupMissingErr = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                              <> ") is not present in post-stratification data-set: " <> showNames psGroupsDHM --Maps
 
-      (SB.GroupIndexes gis) <- SB.groupIndexes <$> (SB.stanBuildMaybe psDataMissingErr $ DHash.lookup rttPS rims)
-      kToIntE <- SB.groupKeyToGroupIndex <$> (SB.stanBuildMaybe groupIndexMissingErr $ DHash.lookup gtt gis)
-      SB.RowMap h <- SB.stanBuildMaybe groupRowMapMissingErr $ DHash.lookup gtt groupMaps
-      SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE h -- for extracting results
-      SB.addColumnMJson rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . h)
+      (SB.GroupIndexes gis) <- SB.groupIndexes <$> SB.stanBuildMaybe psDataMissingErr (DHash.lookup rttPS rims)
+      kToIntE <- SB.groupKeyToGroupIndex <$> SB.stanBuildMaybe groupIndexMissingErr (DHash.lookup gtt gis)
+      rowToK <- SB.rowToGroup <$> SB.stanBuildMaybe psGroupMissingErr (DHash.lookup gtt psGroupsDHM)
+      SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
+      SB.addColumnMJson rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . rowToK)
       SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
         $ SJ.valueToPairF sizeName
         $ fmap (A.toJSON . Set.size)
-        $ FL.premapM (kToIntE . h)
+        $ FL.premapM (kToIntE . rowToK)
         $ FL.generalize FL.set
       SB.addDeclBinding indexName (SME.name sizeName)
       SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
       return ()
 
-  let usedGroupMaps = groupMaps `DHash.intersection` usedGroups
-      ugNames = fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) $ DHash.toList usedGroups
-      weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+  let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
   wgtsV <-  SB.addJson rttPS (namedPS <> "_wgts") weightArrayType ""
             $ SJ.valueToPairF (namedPS <> "_wgts")
             $ SJ.jsonArrayF weightF
@@ -431,7 +428,7 @@ addPostStratification psExprF mNameHead rttModel rttPS groupMaps modelGroups wei
                                       $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
                          _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              psExpr <-  psExprF psDataSetName
+              psExpr <- psExprF psDataSetName
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
               case psType of

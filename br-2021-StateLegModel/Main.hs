@@ -101,6 +101,7 @@ import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
 import qualified Text.Pandoc as Pandoc
 import qualified Debug.Trace as DT
+import qualified Stan.ModelBuilder as SB
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -611,12 +612,13 @@ groupBuilder districts states slds = do
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
-  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet cdGroup cdData $ SB.makeIndexFromFoldable show districtKey districts
+--  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   sldData <- SB.addDataSetToGroupBuilder "SLD_Demographics" (SB.ToFoldable sldTables)
-  SB.addGroupIndexForDataSet sldStateGroup sldData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet sldEducationGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet sldSexGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet sldRaceGroup sldData $ SB.makeIndexFromEnum race5
+  SB.addGroupIndexForDataSet stateGroup sldData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet educationGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet sexGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet raceGroup sldData $ SB.makeIndexFromEnum race5
   SB.addGroupIndexForDataSet sldGroup sldData $ SB.makeIndexFromFoldable show sldKey slds
   return ()
 
@@ -627,6 +629,13 @@ sldPSGroupRowMap = SB.addRowMap sexGroup (F.rgetField @DT.SexC)
                    $ SB.addRowMap raceGroup race5
                    $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
                    $ SB.emptyGroupRowMap
+
+sldPSGroupSet :: SB.GroupSet
+sldPSGroupSet = SB.addGroupToSet sexGroup
+                $ SB.addGroupToSet educationGroup
+                $ SB.addGroupToSet raceGroup
+                $ SB.addGroupToSet stateGroup
+                $ SB.emptyGroupSet
 
 
 data Model = Base
@@ -827,7 +836,7 @@ stateLegModel clearCaches model datYear dat_C = K.wrapPrefix "stateLegModel" $ d
 --        sldData <- SB.addDataSet "SLD_Demographics" (SB.ToFoldable sldTables)
 --        SB.addDataSetIndexes sldData voteData sldPSGroupRowMap
         sldData <- SB.dataSetTag @(F.Record SLDDemographicsR) "SLD_Demographics"
-        SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex"),("SLD_State", "State")]
+--        SB.duplicateDataSetBindings sldData [("SLD_Race","Race"), ("SLD_Education", "Education"), ("SLD_Sex", "Sex"),("SLD_State", "State")]
         let getDensity = F.rgetField @DT.PopPerSqMile
         mv <- SB.add2dMatrixData sldData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
         (SB.StanVar cmn _) <- centerF mv
@@ -845,11 +854,10 @@ stateLegModel clearCaches model datYear dat_C = K.wrapPrefix "stateLegModel" $ d
         let postStratBySLD =
               MRP.addPostStratification @SLDModelData
               psExprF
-              (Nothing)
+              Nothing
               voteData
               sldData
-              (SB.addRowMap sldGroup sldKey $ sldPSGroupRowMap)
-              psGroupSet
+              sldPSGroupSet
               (realToFrac . F.rgetField @BRC.Count)
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just sldGroup)

@@ -228,6 +228,15 @@ emptyGroupRowMap = DHash.empty
 addRowMap :: Typeable k => GroupTypeTag k -> (r -> k) -> GroupRowMap r -> GroupRowMap r
 addRowMap gtt f grm = DHash.insert gtt (RowMap f) grm
 
+data Phantom k = Phantom
+type GroupSet = DHash.DHashMap GroupTypeTag Phantom
+
+emptyGroupSet :: GroupSet
+emptyGroupSet = DHash.empty
+
+addGroupToSet :: Typeable k => GroupTypeTag k -> GroupSet -> GroupSet
+addGroupToSet gtt gs = DHash.insert gtt Phantom gs
+
 newtype DataToIntMap r k = DataToIntMap { unDataToIntMap :: Foldl.FoldM (Either Text) r (IntMap k) }
 newtype GroupIntMapBuilders r = GroupIntMapBuilders (DHash.DHashMap GroupTypeTag (DataToIntMap r))
 
@@ -264,7 +273,11 @@ indexBuildersForDataSetFold (GroupIndexMakers gims) = GroupIndexes <$> DHash.tra
 useBindingsFromGroupIndexMakers :: RowTypeTag r -> GroupIndexMakers r -> Map SME.IndexKey SME.StanExpr
 useBindingsFromGroupIndexMakers rtt (GroupIndexMakers gims) = Map.fromList l where
   l = fmap g $ DHash.toList gims
-  g (gtt DSum.:=> _) = let gn = taggedGroupName gtt in (gn, SME.indexBy (SME.name gn) $ dataSetName rtt)
+  g (gtt DSum.:=> _) =
+    let gn = taggedGroupName gtt
+        dsn = dataSetName rtt
+        indexName = dsn <> "_" <> gn
+    in (gn, SME.indexBy (SME.name indexName) $ dataSetName rtt)
 
 
 -- build a new RowInfo from the row index and IntMap builders
@@ -347,9 +360,10 @@ buildGroupIndexes = do
   let buildIndexJSONFold :: (Typeable d) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM env d (Maybe k)
       buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
-        addFixedIntJson ("J_" <> gName) (Just 1) gSize
-        _ <- addColumnMJson rtt gName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
-        addDeclBinding gName $ SME.name $ "J_" <> gName
+            indexName = dsName <> "_" <> gName
+        addFixedIntJson' ("J_" <> gName) (Just 1) gSize
+        _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
+        addDeclBinding gName $ SME.name $ "J_" <> gName -- ??
 --        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
         return Nothing
       buildRowFolds :: (Typeable d) => RowTypeTag r -> RowInfo d r -> StanBuilderM env d (Maybe r)
@@ -568,7 +582,6 @@ addGroupIndexForDataSet gtt rtt mkIndex = do
       Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
       Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
 
-
 {-
 addGroupIndexForDataSet' :: forall r k d.Typeable k
                          => GroupTypeTag k
@@ -725,7 +738,7 @@ duplicateDataSetBindings rtt dups = do
 
 
 
-
+{-
 addDataSetIndexes ::  Typeable d
                     => RowTypeTag rData
                     -> RowTypeTag rIndexTo
@@ -755,7 +768,7 @@ addDataSetIndexes rttData rttIndexTo grm = do
               "<lower=1>"
               (Stan.valueToPairF name $ Stan.jsonArrayEF $ gE . h)
   traverse_ f $ DHash.toList grm
-
+-}
 
 
 rowInfo :: RowTypeTag r -> StanBuilderM env d (RowInfo d r)
@@ -769,10 +782,10 @@ indexMap :: RowTypeTag r -> GroupTypeTag k -> StanBuilderM env d (IndexMap r k)
 indexMap rtt gtt = do
   rowInfos <- rowBuilders <$> get
   case DHash.lookup rtt rowInfos of
-    Nothing -> stanBuildError $ "StanMRP.getIntIndex: \"" <> dataSetName rtt <> "\" not present in row builders."
+    Nothing -> stanBuildError $ "ModelBuilder.indexMap: \"" <> dataSetName rtt <> "\" not present in row builders."
     Just ri -> case DHash.lookup gtt ((\(GroupIndexes x) -> x) $ groupIndexes ri) of
                  Nothing -> stanBuildError
-                            $ "StanMRP.getIntIndex: \""
+                            $ "ModelBuilder.indexMap: \""
                             <> taggedGroupName gtt
                             <> "\" not present in indexes for \""
                             <> dataSetName rtt <> "\""

@@ -94,6 +94,7 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder as SB
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.DataFrames as DT
+import BlueRipple.Data.DataFrames (raceId')
 
 
 yamlAuthor :: T.Text
@@ -1060,6 +1061,11 @@ wngGroup = SB.GroupTypeTag "WNG"
 hispanicGroup :: SB.GroupTypeTag DT.Hisp
 hispanicGroup = SB.GroupTypeTag "Hispanic"
 
+race4Pums r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+wnhPums r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
+wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
+
+
 cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
 cpsVGroupBuilder districts states = do
   cpsVTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
@@ -1073,6 +1079,24 @@ cpsVGroupBuilder districts states = do
   SB.addGroupIndexForDataSet ageGroup cpsVTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   cdData <- SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+  acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_CD") acsData_W $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_State") acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Race") acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNH") acsData_W $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Sex") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Education") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNG") acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Age") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_CD") acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_State") acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Race") acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNH") acsData_NW $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Sex") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Education") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNG") acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Age") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
 
 
@@ -1092,13 +1116,21 @@ ccesGroupBuilder districts states = do
   acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
   SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_CD") acsData_W $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_State") acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Race") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.Race4C)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNH") acsData_W $ SB.makeIndexFromEnum wnhCCES
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Race") acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNH") acsData_W $ SB.makeIndexFromEnum wnhPums
   SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Sex") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Education") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNG") acsData_W $ SB.makeIndexFromEnum wnhNonGradCCES
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNG") acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
   SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Age") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_CD") acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Race") acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNH") acsData_NW $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Sex") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Education") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNG") acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Age") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
 
 pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
@@ -1202,11 +1234,17 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood modelDataRT dist logitPE
 
-        acsData_W <- SB.addDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
+        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
+        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_WNH"
+        SB.duplicateDataSetBindings acsData_W  [("ACS_WNH_State","State")]
+        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
+--        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
 
-        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
+--        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
+        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_NWNH"
+        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
+
+--        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
 
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification @BRE.CCESAndPUMS
@@ -1390,26 +1428,23 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood modelDataRT dist logitPE
         let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
-        acsData_W <- SB.addDataSet "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
+        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_WNH"
         SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
---        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
+        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_NWNH"
+        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
 
-        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
 
---        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
-
-        let postStratByState nameHead modelExp dataSet =
+        let postStratByState nameHead modelExp psDataSet =
               MRP.addPostStratification
               (\ik -> return $ SB.familyExp dist ik modelExp)
               (Just nameHead)
               modelDataRT
-              dataSet
+              psDataSet
               pumsPSGroupRowMap
               (S.fromList psGroupList)
               (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
-              (Just $ SB.GroupTypeTag @Text "State")
+              (Just stateGroup)
 
         (SB.StanVar whiteWI psType) <- postStratByState "WI" logitPE acsData_W
         (SB.StanVar nonWhiteWI _) <- postStratByState "WI" logitPE acsData_NW
