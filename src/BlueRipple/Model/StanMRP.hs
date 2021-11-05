@@ -274,7 +274,7 @@ addFixedEffects :: forall r1 r2 d.(Typeable d)
 addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
-      rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
+      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
 --      rowIndexExpr =
   SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   f <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
@@ -318,7 +318,7 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       modeledDataSetName = fromMaybe "" mVarSuffix
       pSuffix = SB.underscoredIf feDataSetName
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-      rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
+      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
   SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) ("X" <> pSuffix <> "_Cols")
   let eTheta = SB.name $ "thetaX" <> uSuffix
       eBeta  = SB.name $ "betaX" <> uSuffix
@@ -401,7 +401,8 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
       kToIntE <- SB.groupKeyToGroupIndex <$> SB.stanBuildMaybe groupIndexMissingErr (DHash.lookup gtt gis)
       rowToK <- SB.rowToGroup <$> SB.stanBuildMaybe psGroupMissingErr (DHash.lookup gtt psGroupsDHM)
       SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
-      SB.addColumnMJson rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . rowToK)
+      -- This is hacky.  We need a more principled way to know if re-adding same data is an issue.
+      SB.addColumnMJsonOnce rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . rowToK)
       SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
         $ SJ.valueToPairF sizeName
         $ fmap (A.toJSON . Set.size)

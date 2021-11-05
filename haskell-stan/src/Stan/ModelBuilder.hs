@@ -696,10 +696,13 @@ addDataSet name toFoldable = do
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)
   return rtt
 
+dataSetCrosswalkName :: RowTypeTag rFrom -> RowTypeTag rTo -> SME.StanName
+dataSetCrosswalkName rttFrom rttTo = "XWalk_" <> dataSetName rttFrom <> "_" <> dataSetName rttTo
+{-# INLINEABLE dataSetCrosswalkName #-}
 
-dataSetsCrosswalkName :: RowTypeTag rFrom -> RowTypeTag rTo -> SME.StanName
-dataSetsCrosswalkName rttFrom rttTo = dataSetName rttFrom <> "_" <> dataSetName rttTo
-
+crosswalkIndexKey :: RowTypeTag rTo -> SME.StanName
+crosswalkIndexKey rttTo = "XWalkTo_" <> dataSetName rttTo
+{-# INLINEABLE crosswalkIndexKey #-}
 
 -- build an index from each data-sets relationship to the common group.
 -- add Json and use-binding
@@ -713,11 +716,12 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
   let gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rttTo)
   fromToGroup <- rowToGroup <$> indexMap rttFrom gtt -- rFrom -> k
   toGroupToIndexE <- groupKeyToGroupIndex <$> indexMap rttTo gttX -- k -> Either Text Int
-  let xWalkName = dataSetsCrosswalkName rttFrom rttTo
+  let xWalkName = dataSetCrosswalkName rttFrom rttTo
+      xWalkIndexKey = crosswalkIndexKey rttTo
       xWalkType = SME.StanArray [SME.NamedDim $ dataSetName rttFrom] SME.StanInt
       xWalkF = toGroupToIndexE . fromToGroup
   addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
-  addUseBindingToDataSet rttFrom xWalkName $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
+  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   return ()
 
 
@@ -830,15 +834,24 @@ addUseBinding k e = modify $ modifyIndexBindings f where
 
 addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
 addUseBindingToDataSet rtt key e = do
-  let dataNotFoundErr = "Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
-      keyAlreadyBoundErr ebs = "IndexKey \""
+  let dataNotFoundErr = "addUseBindingToDataSet: Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
+      bindingChanged newExpr oldExpr = when (newExpr /= oldExpr)
+                                       $ Left
+                                       $ "addUseBindingToDataSet: key="
+                                       <> show key
+                                       <> "\nAttempt to add different use binding to already-bound key. Old expression="
+                                       <> show oldExpr
+                                       <> "; new expression="
+                                       <> show newExpr
+{-      keyAlreadyBoundErr ebs = "addUseBindingToDataSet: IndexKey \""
                                <> show key
-                               <> "\" alredy present in use bindings for data-set \""
+                               <> "\" already present in use bindings for data-set \""
                                <> dataSetName rtt
                                <> "\".\nExisting bindings: " <> show ebs
+-}
       f rowInfos = do
         (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
-        maybe (Right ()) (const $ Left $ keyAlreadyBoundErr ebs) $ Map.lookup key ebs
+        maybe (Right ()) (bindingChanged e) $ Map.lookup key ebs
         let ebs' = Map.insert key e ebs
         return $ DHash.insert rtt (RowInfo tf ebs' gis gimbs js) rowInfos
   bs <- get
@@ -920,14 +933,14 @@ addJson rtt name st sc fld = do
 
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
-addJsonUnchecked :: (Typeable d)
+addJsonOnce :: (Typeable d)
                  => RowTypeTag r
                  -> SME.StanName
                  -> SME.StanType
                  -> Text
                  -> Stan.StanJSONF r Aeson.Series
                  -> StanBuilderM env d SME.StanVar
-addJsonUnchecked rtt name st sc fld = do
+addJsonOnce rtt name st sc fld = do
   alreadyDeclared <- isDeclared name
   if not alreadyDeclared
     then addJson rtt name st sc fld
@@ -952,7 +965,7 @@ addFixedIntJson' name mLower n = do
 addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> SME.IndexKey -> StanBuilderM env d SME.StanVar
 addLengthJson rtt name iKey = do
   addDeclBinding iKey (SME.name name)
-  addJsonUnchecked rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
+  addJsonOnce rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: SME.StanName -> Text -> Text
 nameSuffixMsg n dsName = "name=\"" <> show n <> "\" data-set=\"" <> show dsName <> "\""
@@ -975,6 +988,19 @@ addColumnJson rtt name st sc toX = do
 --  let fullName = name <> "_" <> dsName
   addJson rtt name st sc (Stan.valueToPairF name $ Stan.jsonArrayF toX)
 
+addColumnJsonOnce :: (Typeable d, Aeson.ToJSON x)
+                  => RowTypeTag r
+                  -> Text
+                  -> SME.StanType
+                  -> Text
+                  -> (r -> x)
+                  -> StanBuilderM env d SME.StanVar
+addColumnJsonOnce rtt name st sc toX = do
+  alreadyDeclared <- isDeclared name
+  if not alreadyDeclared
+    then addColumnJson rtt name st sc toX
+    else return $ SME.StanVar name st
+
 addColumnMJson :: (Typeable d, Aeson.ToJSON x)
                => RowTypeTag r
                -> Text
@@ -992,6 +1018,19 @@ addColumnMJson rtt name st sc toMX = do
   addLengthJson rtt sizeName dsName -- ??
 --  let fullName = name <> "_" <> dsName
   addJson rtt name st sc (Stan.valueToPairF name $ Stan.jsonArrayEF toMX)
+
+addColumnMJsonOnce :: (Typeable d, Aeson.ToJSON x)
+               => RowTypeTag r
+               -> Text
+               -> SME.StanType
+               -> Text
+               -> (r -> Either Text x)
+               -> StanBuilderM env d SME.StanVar
+addColumnMJsonOnce rtt name st sc toMX = do
+  alreadyDeclared <- isDeclared name
+  if not alreadyDeclared
+    then addColumnMJson rtt name st sc toMX
+    else return $ SME.StanVar name st
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
 add2dMatrixJson :: (Typeable d)
