@@ -95,6 +95,7 @@ import qualified Stan.ModelBuilder as SB
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.DataFrames as DT
 import BlueRipple.Data.DataFrames (raceId')
+import BlueRipple.Data.UsefulDataJoins (acsDemographicsWithAdjCensusTurnoutByCD)
 
 
 yamlAuthor :: T.Text
@@ -1080,25 +1081,24 @@ cpsVGroupBuilder districts states = do
   cdData <- SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_CD") acsData_W $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_State") acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Race") acsData_W $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNH") acsData_W $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Sex") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Education") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNG") acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Age") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addGroupIndexForDataSet cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet ageGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_CD") acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_State") acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Race") acsData_NW $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNH") acsData_NW $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Sex") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Education") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNG") acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Age") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addGroupIndexForDataSet cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet ageGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
-
 
 ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
 ccesGroupBuilder districts states = do
@@ -1114,36 +1114,35 @@ ccesGroupBuilder districts states = do
   cdData <- SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_CD") acsData_W $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_State") acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Race") acsData_W $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNH") acsData_W $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Sex") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Education") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_WNG") acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_WNH_Age") acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addGroupIndexForDataSet cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet ageGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_CD") acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "State") acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Race") acsData_NW $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNH") acsData_NW $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Sex") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Education") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_WNG") acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet (SB.GroupTypeTag "ACS_NWNH_Age") acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  SB.addGroupIndexForDataSet cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForDataSet stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForDataSet raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForDataSet sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForDataSet educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForDataSet wngGroup acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForDataSet ageGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
 
-pumsPSGroupRowMap :: SB.GroupRowMap (F.Record BRE.PUMSByCDR)
-pumsPSGroupRowMap = SB.addRowMap (SB.GroupTypeTag "CD") districtKey
-  $ SB.addRowMap stateGroup (F.rgetField @BR.StateAbbreviation)
-  $ SB.addRowMap sexGroup (F.rgetField @DT.SexC)
-  $ SB.addRowMap wnhGroup  wnh
-  $ SB.addRowMap raceGroup (DT.race4FromRace5 . race5FromPUMS) --(F.rgetField @DT.RaceAlone4C)
-  $ SB.addRowMap ageGroup (F.rgetField @DT.SimpleAgeC)
-  $ SB.addRowMap educationGroup (F.rgetField @DT.CollegeGradC)
-  $ SB.addRowMap wngGroup wnhNonGrad
-  $ SB.emptyGroupRowMap
-
+pumsPSGroups  :: SB.GroupSet
+pumsPSGroups = SB.addGroupToSet cdGroup
+               $ SB.addGroupToSet stateGroup
+               $ SB.addGroupToSet sexGroup
+               $ SB.addGroupToSet wnhGroup
+               $ SB.addGroupToSet raceGroup
+               $ SB.addGroupToSet ageGroup
+               $ SB.addGroupToSet educationGroup
+               $ SB.addGroupToSet wngGroup
+               $ SB.emptyGroupSet
 
 --
 districtSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
@@ -1234,15 +1233,15 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood modelDataRT dist logitPE
 
-        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
+--        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
         acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_WNH"
-        SB.duplicateDataSetBindings acsData_W  [("ACS_WNH_State","State")]
-        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
+--        SB.duplicateDataSetBindings acsData_W  [("ACS_WNH_State","State")]
+--        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
 --        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
 
 --        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
         acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_NWNH"
-        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
+--        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
 
 --        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
 
@@ -1252,8 +1251,7 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                 (Just nameHead)
                 modelDataRT
                 dataSet
-                pumsPSGroupRowMap
-                (S.fromList ["CD", "Sex", "Race", "WNH", "Age", "Education", "WhiteNonGrad", "State"])
+                pumsPSGroups
                 (realToFrac . F.rgetField @PUMS.Citizens)
                 (MRP.PSShare Nothing)
                 (Just $ SB.GroupTypeTag @Text "CD")
@@ -1427,11 +1425,15 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         -- generated quantities
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood modelDataRT dist logitPE
-        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
+--        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
         acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_WNH"
-        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
+        SB.addDataSetsCrosswalk acsData_W cdDataRT cdGroup
+
+--        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
         acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_NWNH"
-        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
+        SB.addDataSetsCrosswalk acsData_NW cdDataRT cdGroup
+
+  --        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
 
 
         let postStratByState nameHead modelExp psDataSet =
@@ -1440,8 +1442,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
               (Just nameHead)
               modelDataRT
               psDataSet
-              pumsPSGroupRowMap
-              (S.fromList psGroupList)
+              pumsPSGroups
               (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
               (Just stateGroup)

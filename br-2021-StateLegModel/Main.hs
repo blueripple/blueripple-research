@@ -612,8 +612,8 @@ groupBuilder districts states slds = do
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable districtRows)
-  SB.addGroupIndexForDataSet cdGroup cdData $ SB.makeIndexFromFoldable show districtKey districts
---  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+--  SB.addGroupIndexForDataSet cdGroup cdData $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
   sldData <- SB.addDataSetToGroupBuilder "SLD_Demographics" (SB.ToFoldable sldTables)
   SB.addGroupIndexForDataSet stateGroup sldData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet educationGroup sldData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
