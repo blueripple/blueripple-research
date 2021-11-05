@@ -275,6 +275,7 @@ addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.dataSetsCrosswalkName rttModeled rttFE
+--      rowIndexExpr =
   SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   f <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
   -- model
