@@ -172,12 +172,13 @@ type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]
 
-type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
-type SLDRecodedR = BRC.SLDLocationR
-                   V.++ BRC.ExtensiveDataR
-                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
-type SLDDemographicsR = '[BR.StateAbbreviation] V.++ SLDRecodedR
+--type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
+--type SLDRecodedR = BRC.SLDLocationR
+--                   V.++ BRC.ExtensiveDataR
+--                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
+type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.SLDRecodedR BRC.SLDLocationR
 
+{-
 sldDemographicsRecode ::  F.FrameRec CensusSERR -> F.FrameRec SLDRecodedR
 sldDemographicsRecode rows =
   let fld1 = FMR.concatFold
@@ -234,6 +235,7 @@ sldDemographicsRecode rows =
       addDensity r = FT.recordSingleton @DT.PopPerSqMile
                      $ realToFrac (F.rgetField @BR.Population r)/ F.rgetField @BRC.SqMiles r
   in fmap (FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
+-}
 
 type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
 data SLDModelData = SLDModelData
@@ -342,7 +344,7 @@ prepSLDModelData clearCaches = do
     unless (null missing) $ K.knitError $ "Missing keys in cpsV/cces join: " <> show missing
     --BR.logFrame cpsAndCces
     K.logLE K.Info $ "Re-folding census table..."
-    let sldSER' = sldDemographicsRecode $ BRC.sexEducationRace sld
+    let sldSER' = BRC.sldDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
     -- add state abbreviations
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
@@ -966,30 +968,17 @@ cdGroup = SB.GroupTypeTag "CD"
 stateGroup :: SB.GroupTypeTag Text
 stateGroup = SB.GroupTypeTag "State"
 
-sldStateGroup :: SB.GroupTypeTag Text
-sldStateGroup = SB.GroupTypeTag "SLD_State"
-
 ageGroup :: SB.GroupTypeTag DT.SimpleAge
 ageGroup = SB.GroupTypeTag "Age"
 
 sexGroup :: SB.GroupTypeTag DT.Sex
 sexGroup = SB.GroupTypeTag "Sex"
 
-sldSexGroup :: SB.GroupTypeTag DT.Sex
-sldSexGroup = SB.GroupTypeTag "SLD_Sex"
-
 educationGroup :: SB.GroupTypeTag DT.CollegeGrad
 educationGroup = SB.GroupTypeTag "Education"
 
-sldEducationGroup :: SB.GroupTypeTag DT.CollegeGrad
-sldEducationGroup = SB.GroupTypeTag "SLD_Education"
-
 raceGroup :: SB.GroupTypeTag DT.Race5
 raceGroup = SB.GroupTypeTag "Race"
-
-sldRaceGroup :: SB.GroupTypeTag DT.Race5
-sldRaceGroup = SB.GroupTypeTag "SLD_Race"
-
 
 hispanicGroup :: SB.GroupTypeTag DT.Hisp
 hispanicGroup = SB.GroupTypeTag "Hispanic"

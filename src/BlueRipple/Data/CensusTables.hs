@@ -233,9 +233,10 @@ type family CensusTableKey (c :: CensusTable) :: Type where
 -}
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
-data TableYear = TY2018 | TY2016 | TY2014 | TY2012
+data TableYear = TY2020 | TY2018 | TY2016 | TY2014 | TY2012
 
 tableYear :: TableYear -> Int
+tableYear TY2020 = 2020
 tableYear TY2018 = 2018
 tableYear TY2016 = 2016
 tableYear TY2014 = 2014
