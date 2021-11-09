@@ -251,6 +251,12 @@ filterVotingDataByYear f (SLDModelData a b c d) = SLDModelData (q a) (q b) c d w
   q :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
   q = F.filterFrame (f . F.rgetField @BR.Year)
 
+
+filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
+filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (q cces) (q cps) (q pums) (q dd) where
+  q :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
+  q = F.filterFrame (f . F.rgetField @BR.Year)
+
 instance Flat.Flat SLDModelData where
   size (SLDModelData v c sld dd) n = Flat.size (FS.SFrame v, FS.SFrame c, FS.SFrame sld, FS.SFrame dd) n
   encode (SLDModelData v c sld dd) = Flat.encode (FS.SFrame v, FS.SFrame c, FS.SFrame sld, FS.SFrame dd)
@@ -350,9 +356,27 @@ prepSLDModelData clearCaches = do
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     return $ SLDModelData cpsAndCces ccesRows (F.rcast <$> sldSER) distRows
 
+prepCCESPUMSandSLD :: (K.KnitEffects r, BR.CacheEffects r)
+                  => Bool
+                  ->  K.Sem r (K.ActionWithCacheTime r (BRE.CCESAndPUMS, F.FrameRec SLDDemographicsR))
+prepCCESPUMSandSLD clearCaches = do
+  ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
+  sld_C <- BRC.censusTablesBySLD
+  stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
+  let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
+      cacheKey = "model/stateLeg/CCESPUMSandSLD.bin"
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  res_C <- BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
+    let sldSER' =  BRC.sldDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
+        (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
+                              $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
+    return $ (ccesAndCPS, FS.SFrame $ F.rcast <$> sldSER)
+  return $ fmap (second FS.unSFrame) $ res_C
+
+
 vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 vaAnalysis = do
-  allData_C <- prepSLDModelData False
+  allData_C <- prepCCESPUMSandSLD False --prepSLDModelData False
 {-
   ces <- K.ignoreCacheTimeM CCES.cesLoader
   let tx2018 r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @BR.Year r == 2018
@@ -446,13 +470,17 @@ comparison mr er t = do
 sldDataFilterCensus :: (F.Record SLDDemographicsR -> Bool) -> SLDModelData -> SLDModelData
 sldDataFilterCensus g (SLDModelData a b c d) = SLDModelData a b (F.filterFrame g c) d
 
+filterCensus :: (F.Record SLDDemographicsR -> Bool) -> F.FrameRec SLDDemographicsR -> F.FrameRec SLDDemographicsR
+filterCensus g = F.filterFrame g
+
+
 vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
         => Bool
         -> BR.PostPaths BR.Abs
         -> BR.PostInfo
-        -> K.ActionWithCacheTime r SLDModelData
+        -> K.ActionWithCacheTime r (BRE.CCESAndPUMS, F.FrameRec SLDDemographicsR)
         -> K.Sem r ()
-vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
+vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
   vaResults <- K.ignoreCacheTimeM BR.getVAResults
   txResults <- K.ignoreCacheTimeM BR.getTXResults
   gaResults <- K.ignoreCacheTimeM BR.getGAResults
@@ -485,12 +513,11 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   let isDistrict s dt dn r = F.rgetField @BR.StateAbbreviation r == s
                               && F.rgetField @ET.DistrictTypeC r == dt
                               && F.rgetField @ET.DistrictNumber r == dn
-  let sldDat2018_C = fmap (filterVotingDataByYear (==2018)) sldDat_C
-      sldDat2020_C = fmap (filterVotingDataByYear (==2020)) sldDat_C
-
+  let data2018_C = fmap (first $ filterCcesAndPumsByYear (==2018)) data_C
+      data2020_C = fmap (first $ filterCcesAndPumsByYear (==2020)) data_C
       agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-  K.ignoreCacheTime sldDat2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
-  K.ignoreCacheTime sldDat2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
+  K.ignoreCacheTime data2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
+  K.ignoreCacheTime data2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
 
 {-
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
@@ -498,7 +525,16 @@ vaLower clearCaches postPaths postInfo sldDat_C = K.wrapPrefix "vaLower" $ do
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 84) . sldTables
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 90) . sldTables
 -}
-  modelBase <- K.ignoreCacheTimeM $ stateLegModel False Base 2018 sldDat2018_C
+  let psGroupSet = SB.addGroupToSet BRE.sexGroup
+                   $ SB.addGroupToSet BRE.educationGroup
+                   $ SB.addGroupToSet BRE.raceGroup
+                   $ SB.addGroupToSet BRE.stateGroup
+                   $ SB.emptyGroupSet
+      modelDir =  "br-2021-StateLegModel/stan"
+      psDataSetName = "SLD_Demographics"
+      psGroup :: SB.GroupTypeTag (F.Record BRC.SLDLocationR) = SB.GroupTypeTag "SLD"
+      psInfo = (psGroup, psDataSetName, psGroupSet)
+  modelBase <- K.ignoreCacheTimeM $ BRE.electionModel False modelDir BRE.Base 2018 psInfo (fst <$> data2018_C) (snd <$> data2018_C)
   modelBase2020 <- K.ignoreCacheTimeM $ stateLegModel False Base 2020 sldDat2020_C
   modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState 2018 sldDat2018_C
   modelPlusState2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusState 2020 sldDat2020_C

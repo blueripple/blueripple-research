@@ -569,11 +569,12 @@ groupBuilder :: forall rs ks.
                 , Typeable ks
                 , Ord (F.Record ks))
              => SB.GroupTypeTag (F.Record ks)
+             -> Text
              -> [Text]
              -> [Text]
              -> [F.Record ks]
              -> SB.StanGroupBuilderM (CCESAndPUMS, F.FrameRec rs) ()
-groupBuilder psGroup districts states psKeys = do
+groupBuilder psGroup psDataSetName districts states psKeys = do
   voterData <- SB.addDataSetToGroupBuilder "VData" (SB.ToFoldable $ ccesRows . fst)
   SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
@@ -583,7 +584,7 @@ groupBuilder psGroup districts states psKeys = do
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable $ districtRows . fst)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
-  psData <- SB.addDataSetToGroupBuilder "PS_Demographics" (SB.ToFoldable snd)
+  psData <- SB.addDataSetToGroupBuilder psDataSetName (SB.ToFoldable snd)
   SB.addGroupIndexForDataSet stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet educationGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet sexGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
@@ -613,7 +614,7 @@ data Model = Base
 instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
 
-stateLegModel :: forall rs ks r.
+electionModel :: forall rs ks r.
                  (K.KnitEffects r
                  , BR.CacheEffects r
                  , F.ElemOf rs BR.StateAbbreviation
@@ -647,11 +648,11 @@ stateLegModel :: forall rs ks r.
               -> Text
               -> Model
               -> Int
-              -> (SB.GroupTypeTag (F.Record ks), SB.GroupSet)
+              -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
               -> K.ActionWithCacheTime r (F.FrameRec rs)
               -> K.ActionWithCacheTime r CCESAndPUMS
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
-stateLegModel clearCaches modelDir model datYear (psGroup, psGroupSet) psDat_C dat_C = K.wrapPrefix "stateLegModel" $ do
+electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGroupSet) psDat_C dat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
   let jsonDataName = "stateLeg_ASR_" <> show model <> "_" <> show datYear
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
@@ -825,10 +826,10 @@ stateLegModel clearCaches modelDir model datYear (psGroup, psGroupSet) psDat_C d
         SB.sampleDistV voteData distT (logitT_sample feCDT)
         SB.sampleDistV voteData distP (logitP_sample feCDP)
 
-        psData <- SB.dataSetTag @(F.Record rs) "PS_Demographics"
+        psData <- SB.dataSetTag @(F.Record rs) psDataSetName
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
         (SB.StanVar cmn _) <- centerF mv
-        let cmE = (SB.indexBy (SB.name cmn) "PS_Demographics")
+        let cmE = (SB.indexBy (SB.name cmn) psDataSetName)
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
             psExprF ik = do
@@ -842,7 +843,7 @@ stateLegModel clearCaches modelDir model datYear (psGroup, psGroupSet) psDat_C d
         let postStrat =
               MRP.addPostStratification @(CCESAndPUMS, F.FrameRec rs)
               psExprF
-              (Just "")
+              Nothing
               voteData
               psData
               psGroupSet
@@ -911,7 +912,7 @@ stateLegModel clearCaches modelDir model datYear (psGroup, psGroupSet) psDat_C d
                                   )
                                   $ districtRows $ fst dat
             psKeys = FL.fold (FL.premap F.rcast FL.list) $ snd dat
-            groups = groupBuilder psGroup districts states psKeys
+            groups = groupBuilder psGroup psDataSetName districts states psKeys
 --            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
