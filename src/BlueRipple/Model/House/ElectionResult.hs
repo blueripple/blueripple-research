@@ -649,10 +649,10 @@ electionModel :: forall rs ks r.
               -> Model
               -> Int
               -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
-              -> K.ActionWithCacheTime r (F.FrameRec rs)
               -> K.ActionWithCacheTime r CCESAndPUMS
+              -> K.ActionWithCacheTime r (F.FrameRec rs)
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
-electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGroupSet) psDat_C dat_C = K.wrapPrefix "stateLegModel" $ do
+electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
   let jsonDataName = "stateLeg_ASR_" <> show model <> "_" <> show datYear
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
@@ -886,13 +886,13 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
           resultsMap <- K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
-              (SB.RowTypeTag @(F.Record rs) "PS_Demographics")
+              (SB.RowTypeTag @(F.Record rs) psDataSetName)
               psGroup
               groupIndexes
             let parseAndIndexPctsWith idx g vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map g v
-            parseAndIndexPctsWith psIndexIM id $ "PS_Demographics_" <> SB.taggedGroupName psGroup
+            parseAndIndexPctsWith psIndexIM id $ "PS_" <> psDataSetName <> "_" <> SB.taggedGroupName psGroup
           res :: F.FrameRec (ks V.++ '[ModeledShare]) <- K.knitEither
                                                          $ MT.keyedCIsToFrame @ModeledShare id
                                                          $ M.toList resultsMap

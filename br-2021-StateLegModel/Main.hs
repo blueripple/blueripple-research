@@ -176,7 +176,8 @@ type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoted, CCESHouseVotes,
 --type SLDRecodedR = BRC.SLDLocationR
 --                   V.++ BRC.ExtensiveDataR
 --                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
-type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.SLDRecodedR BRC.SLDLocationR
+type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.SLDRecodedR BRC.SLDLocationR V.++ '[DT.Race5C]
+type SLDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.SLDLocationR
 
 {-
 sldDemographicsRecode ::  F.FrameRec CensusSERR -> F.FrameRec SLDRecodedR
@@ -314,8 +315,6 @@ showVACPS cps = do
       aggregatedRaw = FL.fold (aggregatePredictorsCountyFld aFld) cpsRaw
   BR.logFrame aggregatedRaw
 
-
-
 prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
                  => Bool
                  -> K.Sem r (K.ActionWithCacheTime r SLDModelData)
@@ -354,7 +353,9 @@ prepSLDModelData clearCaches = do
     -- add state abbreviations
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-    return $ SLDModelData cpsAndCces ccesRows (F.rcast <$> sldSER) distRows
+        addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
+                                    $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+    return $ SLDModelData cpsAndCces ccesRows (F.rcast . addRace5 <$> sldSER) distRows
 
 prepCCESPUMSandSLD :: (K.KnitEffects r, BR.CacheEffects r)
                   => Bool
@@ -370,7 +371,9 @@ prepCCESPUMSandSLD clearCaches = do
     let sldSER' =  BRC.sldDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-    return $ (ccesAndCPS, FS.SFrame $ F.rcast <$> sldSER)
+        addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
+                                    $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+    return $ (ccesAndCPS, FS.SFrame $ F.rcast . addRace5 <$> sldSER)
   return $ fmap (second FS.unSFrame) $ res_C
 
 
@@ -397,9 +400,9 @@ vaLowerColonnade cas =
   let state = F.rgetField @BR.StateAbbreviation
       dType = F.rgetField @ET.DistrictTypeC
       dNum = F.rgetField @ET.DistrictNumber
-      share5 = MT.ciLower . F.rgetField @ModeledShare
-      share50 = MT.ciMid . F.rgetField @ModeledShare
-      share95 = MT.ciUpper . F.rgetField @ModeledShare
+      share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
+      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
+      share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
      <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
@@ -407,17 +410,16 @@ vaLowerColonnade cas =
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
-
 modelCompColonnade states cas =
   C.headed "Model" (BR.toCell cas "Model" "Model" (BR.textToStyledHtml . fst))
   <> mconcat (fmap (\s -> C.headed (BR.textToCell s) (BR.toCell cas s s (BR.maybeNumberToStyledHtml "%2.2f" . M.lookup s . snd))) states)
 
 
 comparison :: K.KnitOne r
-           => F.FrameRec ModelResultsR
+           => F.FrameRec (BRE.ModelResultsR SLDLocWStAbbrR)
            -> F.FrameRec BR.SLDRaceResultR
            -> Text
-           -> K.Sem r (F.FrameRec (ModelResultsR V.++ [BR.Year, BR.Contested, BR.DVotes, BR.RVotes, BR.DShare]))
+           -> K.Sem r (F.FrameRec ((BRE.ModelResultsR SLDLocWStAbbrR) V.++ [BR.Year, BR.Contested, BR.DVotes, BR.RVotes, BR.DShare]))
 comparison mr er t = do
   let (modelAndResult, missing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] mr er
@@ -425,18 +427,18 @@ comparison mr er t = do
   let  dShare = F.rgetField @BR.DShare
        dVotes = F.rgetField @BR.DVotes
        rVotes = F.rgetField @BR.RVotes
-       delta r =  dShare r - (MT.ciMid $ F.rgetField @ModeledShare r)
+       delta r =  dShare r - (MT.ciMid $ F.rgetField @BRE.ModeledShare r)
        contested r = dVotes r /= 0 && rVotes r /= 0 -- r > 0.01 && dShare r < 0.99
        means f = FL.fold ((,) <$> FL.prefilter f (FL.premap dShare FLS.mean)
                            <*> FL.prefilter f (FL.premap delta FLS.mean)) modelAndResult
        vars f (meanResult, meanDelta) =  FL.fold ((,) <$> FL.prefilter f (FL.premap dShare (FLS.varianceUnbiased meanResult))
                                                   <*> FL.prefilter f (FL.premap delta (FLS.varianceUnbiased meanDelta))) modelAndResult
-       modelY r = (F.rgetField @(MT.ModelId Model) r, F.rgetField @BR.Year r)
+       modelY r = (F.rgetField @(MT.ModelId BRE.Model) r, F.rgetField @BR.Year r)
   let statesFld = Set.toList <$> FL.premap (F.rgetField @BR.StateAbbreviation) FL.set
       modelsYrsFld = sortOn show . Set.toList <$> FL.premap modelY FL.set
       (states, modelYrs) = FL.fold ((,) <$> statesFld <*> modelsYrsFld) modelAndResult
       contestedStateModel s (m, y) r = F.rgetField @BR.StateAbbreviation r == s
-                                       && F.rgetField @(MT.ModelId Model) r == m
+                                       && F.rgetField @(MT.ModelId BRE.Model) r == m
                                        && F.rgetField @BR.Year r == y
                                        && contested r
       h (model, year) state = (state, 100 * (varResult - varDelta) / varResult)
@@ -516,8 +518,8 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
   let data2018_C = fmap (first $ filterCcesAndPumsByYear (==2018)) data_C
       data2020_C = fmap (first $ filterCcesAndPumsByYear (==2020)) data_C
       agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-  K.ignoreCacheTime data2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
-  K.ignoreCacheTime data2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows
+--  K.ignoreCacheTime data2018_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows . fst
+--  K.ignoreCacheTime data2020_C >>= BR.logFrame . agg . F.filterFrame (onlyStates ["TX"]) . ccesRows . fst
 
 {-
   K.ignoreCacheTime sldDat_C >>= BR.logFrame . F.filterFrame (isDistrict "VA" ET.StateLower 12) . sldTables
@@ -532,20 +534,22 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
                    $ SB.emptyGroupSet
       modelDir =  "br-2021-StateLegModel/stan"
       psDataSetName = "SLD_Demographics"
-      psGroup :: SB.GroupTypeTag (F.Record BRC.SLDLocationR) = SB.GroupTypeTag "SLD"
+      psGroup :: SB.GroupTypeTag (F.Record SLDLocWStAbbrR) = SB.GroupTypeTag "SLD"
       psInfo = (psGroup, psDataSetName, psGroupSet)
-  modelBase <- K.ignoreCacheTimeM $ BRE.electionModel False modelDir BRE.Base 2018 psInfo (fst <$> data2018_C) (snd <$> data2018_C)
-  modelBase2020 <- K.ignoreCacheTimeM $ stateLegModel False Base 2020 sldDat2020_C
-  modelPlusState <- K.ignoreCacheTimeM $ stateLegModel False PlusState 2018 sldDat2018_C
-  modelPlusState2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusState 2020 sldDat2020_C
-  modelPlusRaceEdu <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu 2018 sldDat2018_C
-  modelPlusRaceEdu2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusRaceEdu 2020 sldDat2020_C
-  modelPlusStateAndStateRace <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateRace 2018 sldDat2018_C
-  modelPlusStateAndStateRace2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateRace 2020 sldDat2020_C
-  modelPlusInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions 2018 sldDat2018_C
-  modelPlusInteractions2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusInteractions 2020 sldDat2020_C
-  modelPlusStateAndStateInteractions <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions 2018 sldDat2018_C
-  modelPlusStateAndStateInteractions2020 <- K.ignoreCacheTimeM $ stateLegModel False PlusStateAndStateInteractions 2020 sldDat2020_C
+      model2018 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2018 psInfo (fst <$> data2018_C) (snd <$> data2018_C)
+      model2020 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2020 psInfo (fst <$> data2020_C) (snd <$> data2020_C)
+  modelBase <- model2018 BRE.Base
+  modelBase2020 <- model2020 BRE.Base
+  modelPlusState <- model2018 BRE.PlusState
+  modelPlusState2020 <- model2020 BRE.PlusState
+  modelPlusRaceEdu <- model2018 BRE.PlusRaceEdu
+  modelPlusRaceEdu2020 <- model2020 BRE.PlusRaceEdu
+  modelPlusStateAndStateRace <- model2018 BRE.PlusStateAndStateRace
+  modelPlusStateAndStateRace2020 <- model2020 BRE.PlusStateAndStateRace
+  modelPlusInteractions <- model2018 BRE.PlusInteractions
+  modelPlusInteractions2020 <- model2020 BRE.PlusInteractions
+  modelPlusStateAndStateInteractions <- model2018 BRE.PlusStateAndStateInteractions
+  modelPlusStateAndStateInteractions2020 <- model2020 BRE.PlusStateAndStateInteractions
   let allModels2018 = modelPlusState
                       <> modelBase
                       <> modelPlusRaceEdu
@@ -564,7 +568,7 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
                    <> (onlyOHLower ohResults)
   let f s = F.filterFrame (\r -> onlyLower r && onlyStates s r)
       allStates = ["VA","GA","TX","OH"]
-      allModels = [Base, PlusState, PlusRaceEdu, PlusStateAndStateRace, PlusInteractions, PlusStateAndStateInteractions]
+      allModels = [BRE.Base, BRE.PlusState, BRE.PlusRaceEdu, BRE.PlusStateAndStateRace, BRE.PlusInteractions, BRE.PlusStateAndStateInteractions]
       fPost = f ["VA"]
   m <- comparison (fPost modelPlusStateAndStateRace) (fPost allResults) "All"
   m2020 <- comparison (fPost modelPlusStateAndStateRace2020) (fPost allResults) "All"
@@ -583,7 +587,7 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
         leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
         leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
         safeD ci = MT.ciLower ci > 0.52
-        mi = F.rgetField @ModeledShare
+        mi = F.rgetField @BRE.ModeledShare
         eRes = F.rgetField @BR.DShare
         longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
         leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
@@ -600,6 +604,14 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2018
     BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2020
   return ()
+
+
+
+race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
+race5FromCPS r =
+  let race4A = F.rgetField @DT.RaceAlone4C r
+      hisp = F.rgetField @DT.HispC r
+  in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
 
 {-
@@ -632,7 +644,7 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
 
   --        BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade mempty) m
 
-
+{-
 race5 r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
 
@@ -1025,11 +1037,6 @@ wnhGroup = SB.GroupTypeTag "WNH"
 wngGroup :: SB.GroupTypeTag Bool
 wngGroup = SB.GroupTypeTag "WNG"
 
-race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
-race5FromCPS r =
-  let race4A = F.rgetField @DT.RaceAlone4C r
-      hisp = F.rgetField @DT.HispC r
-  in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
 race5FromCensus :: F.Record BRE.CPSVByCDR -> DT.Race5
 race5FromCensus r =
@@ -1068,14 +1075,14 @@ indexStanResults im v = do
     $ Left $
     "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " result and IntMap = " <> show im
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)
-
+-}
 
 
 
 modelResultScatterChart :: Bool
                         -> Text
                         -> FV.ViewConfig
-                        -> F.FrameRec ([BR.Year, BR.StateAbbreviation, ET.DistrictNumber, BR.Contested, MT.ModelId Model, ModeledShare, BR.DShare])
+                        -> F.FrameRec ([BR.Year, BR.StateAbbreviation, ET.DistrictNumber, BR.Contested, MT.ModelId BRE.Model, BRE.ModeledShare, BR.DShare])
                         -> GV.VegaLite
 modelResultScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData (GV.Str . show) "DataYear"
