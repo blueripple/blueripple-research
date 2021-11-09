@@ -418,6 +418,24 @@ executable br-2021-StateLegModel
          , relude (Relude as Prelude
          , Relude.Extra)
 
+executable br-2021-NewMaps
+  import: deps
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: br-2021-NewMaps
+  main-is: Main.hs
+  build-depends: base
+               , blueripple-research
+               , blueripple-data-sets
+               , colonnade
+               , blaze-colonnade
+               , haskell-stan
+               , hs-cmdstan
+               , pandoc
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+
+
 executable ga-work
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16

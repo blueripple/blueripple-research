@@ -116,12 +116,7 @@ censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
                            => [(BRC.TableYear, Text)] -> Text -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByCD)
 censusTablesByDistrict filesByYear cacheName = do
-  let fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
-                   , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
-                   , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
-                   , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
-                   ]
-      tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
+  let tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
                              <> KT.allTableDescriptions BRC.sexByEducation (BRC.sexByEducationPrefix ty)
                              <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
@@ -153,7 +148,7 @@ censusTablesByDistrict filesByYear cacheName = do
   dataDeps <- traverse (K.fileDependency . toString . snd) filesByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text ("data/Census/" <> cacheName <> ".bin") dataDep $ const $ do
-    tables <- traverse doOneYear fileByYear
+    tables <- traverse doOneYear filesByYear
     neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
     return $ sconcat neTables
 
@@ -233,49 +228,49 @@ censusTablesBySLD = do
 
 
 type CensusSERR locR = CensusRow locR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
-type SLDRecodedR locR = locR
+type CensusRecodedR locR = locR
                    V.++ BRC.ExtensiveDataR
                    V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
 
-sldDemographicsRecode ::  forall locR.
-                          (Ord (F.Record ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])),
-                           ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC]) F.⊆ (BR.Year : (((locR V.++ BRC.ExtensiveDataR)
-                                                                                             V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                                                                            V.++ '[Count]))
-                          , FI.RecVec (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                       V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-                          , Ord (F.Record
-                                 ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]))
-                          , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                        V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                       V.++ '[Count]) Count
-                          , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                        V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                       V.++ '[Count]) BRC.Education4C
-                          , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                        V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                       V.++ '[Count]) BRC.RaceEthnicityC
-                          ,   ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]) F.⊆  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                                                                                      V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-                          , F.ElemOf   (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                        V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) Count
-                          , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                       V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) BRC.RaceEthnicityC
-                          , FI.RecVec  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                        V.++ '[DT.RaceAlone4C, DT.HispC, Count])
-                          ,  ((locR V.++ BRC.ExtensiveDataR)
-                              V.++ '[DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count,
-                                     DT.PopPerSqMile])  F.⊆   ((((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                                                V.++ '[DT.RaceAlone4C, DT.HispC, Count])
-                                                               V.++ '[DT.PopPerSqMile])
-                          , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                       V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BR.Population
-                          , F.ElemOf (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                      V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BRC.SqMiles
-                          )
+censusDemographicsRecode ::  forall locR.
+                             (Ord (F.Record ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])),
+                              ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC]) F.⊆ (BR.Year : (((locR V.++ BRC.ExtensiveDataR)
+                                                                                                V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
+                                                                                               V.++ '[Count]))
+                             , FI.RecVec (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
+                                          V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
+                             , Ord (F.Record
+                                    ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]))
+                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
+                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
+                                          V.++ '[Count]) Count
+                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
+                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
+                                          V.++ '[Count]) BRC.Education4C
+                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
+                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
+                                          V.++ '[Count]) BRC.RaceEthnicityC
+                             ,   ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]) F.⊆  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
+                                                                                                         V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
+                             , F.ElemOf   (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
+                                           V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) Count
+                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
+                                          V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) BRC.RaceEthnicityC
+                             , FI.RecVec  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
+                                           V.++ '[DT.RaceAlone4C, DT.HispC, Count])
+                             ,  ((locR V.++ BRC.ExtensiveDataR)
+                                 V.++ '[DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count,
+                                        DT.PopPerSqMile])  F.⊆   ((((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
+                                                                   V.++ '[DT.RaceAlone4C, DT.HispC, Count])
+                                                                  V.++ '[DT.PopPerSqMile])
+                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
+                                          V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BR.Population
+                             , F.ElemOf (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
+                                         V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BRC.SqMiles
+                             )
 
-                      => F.FrameRec (CensusSERR locR) -> F.FrameRec (SLDRecodedR locR)
-sldDemographicsRecode rows =
+                         => F.FrameRec (CensusSERR locR) -> F.FrameRec (CensusRecodedR locR)
+censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack

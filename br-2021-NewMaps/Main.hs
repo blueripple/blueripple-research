@@ -16,7 +16,6 @@
 
 module Main where
 
-import qualified ElectionResultsLoaders as BR
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -27,31 +26,22 @@ import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Utilities.Heidi as BR
+--import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Model.StanMRP as MRP
-import qualified BlueRipple.Data.CountFolds as BRCF
-import qualified BlueRipple.Data.Keyed as BRK
+--import qualified BlueRipple.Data.CountFolds as BRCF
+--import qualified BlueRipple.Data.Keyed as BRK
 
 import qualified Colonnade as C
 import qualified Text.Blaze.Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
-import qualified Text.Megaparsec as MP
-import qualified Text.Megaparsec.Char as MP
-import qualified Text.Megaparsec.Char.Lexer as MPL
 import qualified Control.Foldl as FL
 import qualified Control.Foldl.Statistics as FLS
-import qualified Data.Aeson as A
-import qualified Data.Aeson.Lens as A
-import qualified Data.Csv as CSV hiding (decode)
-import qualified Data.Csv.Streaming as CSV
-import Data.Csv ((.!))
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
-import qualified Data.Massiv.Array
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -64,11 +54,11 @@ import qualified Data.Vector as Vector
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.Melt as F
-import qualified Frames.InCore as FI
+import qualified Frames.Streamly.InCore as FI
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Aggregation as FA
 import qualified Frames.Folds as FF
-import qualified Frames.Heidi as FH
+--import qualified Frames.Heidi as FH
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform  as FT
@@ -126,13 +116,13 @@ main = do
   let cacheDir = ".flat-kh-cache"
       knitConfig :: K.KnitConfig BR.SerializerC BR.CacheData Text =
         (K.defaultKnitConfig $ Just cacheDir)
-          { K.outerLogPrefix = Just "2021-StateLegModel"
+          { K.outerLogPrefix = Just "2021-NewMaps"
           , K.logIf = K.logDiagnostic
           , K.pandocWriterConfig = pandocWriterConfig
           , K.serializeDict = BR.flatSerializeDict
           , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
-  resE <- K.knitHtmls knitConfig vaAnalysis
+  resE <- K.knitHtmls knitConfig newMapAnalysis
 
   case resE of
     Right namedDocs ->
@@ -140,10 +130,10 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 
-postDir = [Path.reldir|br-2021-StateLegModel/posts|]
+postDir = [Path.reldir|br-2021-NewMaps/posts|]
 postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
 postLocalDraft p = postDir BR.</> p BR.</> [Path.reldir|draft|]
-postOnline p =  [Path.reldir|research/StateLeg|] BR.</> p
+postOnline p =  [Path.reldir|research/NewMaps|] BR.</> p
 
 postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
           => Text
@@ -157,47 +147,19 @@ postPaths t = do
     (postOnline postSpecificP)
 
 -- data
-type CPSCVAP = "CPSCVAP" F.:-> Int
-type CPSVoters = "CPSVoters" F.:-> Int
-type CCESSurveyed = "CCESSurveyed" F.:-> Int
 type CCESVoted = "CCESVoters" F.:-> Int
 type CCESHouseVotes = "CCESHouseVotes" F.:-> Int
 type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
-type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]
 
---type CensusSERR = BRC.CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
---type SLDRecodedR = BRC.SLDLocationR
---                   V.++ BRC.ExtensiveDataR
---                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
-type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.SLDLocationR V.++ '[DT.Race5C]
-type SLDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.SLDLocationR
-
-type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
-data SLDModelData = SLDModelData
-  {
-    cpsVAndccesRows :: F.FrameRec CPSAndCCESR
-  , ccesRows :: F.FrameRec BRE.CCESByCDR
-  , sldTables :: F.FrameRec SLDDemographicsR
-  , districtRows :: F.FrameRec BRE.DistrictDemDataR
-  } deriving (Generic)
-
-filterVotingDataByYear :: (Int -> Bool) -> SLDModelData -> SLDModelData
-filterVotingDataByYear f (SLDModelData a b c d) = SLDModelData (q a) (q b) c d where
-  q :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
-  q = F.filterFrame (f . F.rgetField @BR.Year)
-
+type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.CDLocationR V.++ '[DT.Race5C]
+type CDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.CDLocationR
 
 filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
 filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (q cces) (q cps) (q pums) (q dd) where
   q :: (F.ElemOf rs BR.Year, FI.RecVec rs) => F.FrameRec rs -> F.FrameRec rs
   q = F.filterFrame (f . F.rgetField @BR.Year)
-
-instance Flat.Flat SLDModelData where
-  size (SLDModelData v c sld dd) n = Flat.size (FS.SFrame v, FS.SFrame c, FS.SFrame sld, FS.SFrame dd) n
-  encode (SLDModelData v c sld dd) = Flat.encode (FS.SFrame v, FS.SFrame c, FS.SFrame sld, FS.SFrame dd)
-  decode = (\(v, c, sld, dd) -> SLDModelData (FS.unSFrame v) (FS.unSFrame c) (FS.unSFrame sld) (FS.unSFrame dd)) <$> Flat.decode
 
 aggregatePredictorsCDFld fldData = FMR.concatFold
                                    $ FMR.mapReduceFold
@@ -211,7 +173,6 @@ aggregatePredictorsCountyFld fldData = FMR.concatFold
                                        (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CountyFIPS])
                                        (FMR.foldAndAddKey fldData)
 
-
 debugCES :: K.KnitEffects r => F.FrameRec BRE.CCESByCDR -> K.Sem r ()
 debugCES ces = do
   let aggFld :: FL.Fold (F.Record BRE.CCESVotingDataR) (F.Record BRE.CCESVotingDataR)
@@ -223,17 +184,8 @@ debugCES ces = do
                   (FMR.foldAndAddKey aggFld)
       cesByYearAndGender = FL.fold genderFld ces
   BR.logFrame cesByYearAndGender
-{-
-  let ces2020VA = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "VA") ces
-      nVA = FL.fold (FL.premap (F.rgetField @BRE.Surveyed) FL.sum) ces2020VA
-      nVoted = FL.fold (FL.premap (F.rgetField @BRE.TVotes) FL.sum) ces2020VA
-  K.logLE K.Info $ "CES VA: " <> show nVA <> " rows and " <> show nVoted <> " voters."
-  let aggFld :: FL.Fold (F.Record [BRE.Surveyed, BRE.TVotes]) (F.Record [BRE.Surveyed, BRE.TVotes])
-      aggFld = FF.foldAllConstrained @Num FL.sum
-      aggregated = FL.fold (aggregatePredictorsCDFld aggFld) ces2020VA
-  BR.logFrame aggregated
--}
 
+{-
 showVACPS :: (K.KnitEffects r, BR.CacheEffects r) => F.FrameRec BRE.CPSVByCDR -> K.Sem r ()
 showVACPS cps = do
   let cps2020VA = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "VA") cps
@@ -250,56 +202,42 @@ showVACPS cps = do
       aFld = FF.foldAllConstrained @Num FL.sum
       aggregatedRaw = FL.fold (aggregatePredictorsCountyFld aFld) cpsRaw
   BR.logFrame aggregatedRaw
-
-prepCCESPUMSandSLD :: (K.KnitEffects r, BR.CacheEffects r)
-                  => Bool
-                  ->  K.Sem r (K.ActionWithCacheTime r (BRE.CCESAndPUMS, F.FrameRec SLDDemographicsR))
-prepCCESPUMSandSLD clearCaches = do
-  ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
-  sld_C <- BRC.censusTablesBySLD
-  stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
-  let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
-      cacheKey = "model/stateLeg/CCESPUMSandSLD.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  res_C <- BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
-    let sldSER' =  BRC.censusDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
-        (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
-                              $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-        addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
-                                    $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-    return $ (ccesAndCPS, FS.SFrame $ F.rcast . addRace5 <$> sldSER)
-  return $ fmap (second FS.unSFrame) $ res_C
-
-
-vaAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
-vaAnalysis = do
-  allData_C <- prepCCESPUMSandSLD False --prepSLDModelData False
-{-
-  ces <- K.ignoreCacheTimeM CCES.cesLoader
-  let tx2018 r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @BR.Year r == 2018
-      ces2018TX = F.filterFrame tx2018 ces
-  BR.logFrame ces2018TX
-
-  ces <- K.ignoreCacheTime $ fmap ccesRows allData_C
-  debugCES $ F.filterFrame tx2018 ces
-  K.knitError "STOP"
 -}
-  let va1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 24) (Just BR.Unpublished))
-  va1Paths <- postPaths "VA1"
-  BR.brNewPost va1Paths va1PostInfo "Virginia Lower House" $ do
-    vaLower False va1Paths va1PostInfo $ K.liftActionWithCacheTime allData_C
+prepProposedCDData :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CDDemographicsR))
+prepProposedCDData clearCaches = do
+  cdData_C <- BRC.censusTablesForProposedDistricts
+  stateAbbreviations <-  BR.stateAbbrCrosswalkLoader
+  let cacheKey = "model/newMaps/newCDDemographics.bin"
+      deps = (,) <$> cdData_C <*> stateAbbreviations
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey deps $ \(cdData, stateAbbrs) -> do
+    let addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
+                                    $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+        cdDataSER' = BRC.censusDemographicsRecode @BRC.CDLocationR $ BRC.sexEducationRace cdData
+        (cdDataSER, cdMissing) =  FJ.leftJoinWithMissing @'[BR.StateFips] cdDataSER'
+                                  $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
+    when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
+    return $ (F.rcast . addRace5 <$> cdDataSER)
 
---vaLowerColonnade :: BR.CellStyle (F.Record rs) [Char] -> K.Colonnade K.Headed (SLDLocation, [Double]) K.Cell
-vaLowerColonnade cas =
+
+newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
+newMapAnalysis = do
+  ccesAndPums_C <-  BRE.prepCCESAndPums False
+  newCDs_C <- prepProposedCDData False
+  let newCDPostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  newMapsPaths <- postPaths "NewMaps"
+  BR.brNewPost newMapsPaths newCDPostInfo "New Maps" $ do
+    newMapsTest False newMapsPaths newCDPostInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
+
+districtColonnade cas =
   let state = F.rgetField @BR.StateAbbreviation
-      dType = F.rgetField @ET.DistrictTypeC
-      dNum = F.rgetField @ET.DistrictNumber
+      dNum = F.rgetField @BR.CongressionalDistrict
       share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
       share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
+--     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
@@ -309,8 +247,9 @@ modelCompColonnade states cas =
   <> mconcat (fmap (\s -> C.headed (BR.textToCell s) (BR.toCell cas s s (BR.maybeNumberToStyledHtml "%2.2f" . M.lookup s . snd))) states)
 
 
+{-
 comparison :: K.KnitOne r
-           => F.FrameRec (BRE.ModelResultsR SLDLocWStAbbrR)
+           => F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR)
            -> F.FrameRec BR.SLDRaceResultR
            -> Text
            -> K.Sem r (F.FrameRec ((BRE.ModelResultsR SLDLocWStAbbrR) V.++ [BR.Year, BR.Contested, BR.DVotes, BR.RVotes, BR.DShare]))
@@ -362,69 +301,36 @@ comparison mr er t = do
   unless single $ BR.brAddRawHtmlTable "Model Comparison: % of variance explained" (BHA.class_ "brTable") (modelCompColonnade states mempty) explainedVariances
   K.logLE K.Info $ show modelYrs
   return modelAndResult
-
-sldDataFilterCensus :: (F.Record SLDDemographicsR -> Bool) -> SLDModelData -> SLDModelData
-sldDataFilterCensus g (SLDModelData a b c d) = SLDModelData a b (F.filterFrame g c) d
-
-filterCensus :: (F.Record SLDDemographicsR -> Bool) -> F.FrameRec SLDDemographicsR -> F.FrameRec SLDDemographicsR
-filterCensus g = F.filterFrame g
+-}
 
 
-vaLower :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
-        => Bool
-        -> BR.PostPaths BR.Abs
-        -> BR.PostInfo
-        -> K.ActionWithCacheTime r (BRE.CCESAndPUMS, F.FrameRec SLDDemographicsR)
-        -> K.Sem r ()
-vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
-  vaResults <- K.ignoreCacheTimeM BR.getVAResults
-  txResults <- K.ignoreCacheTimeM BR.getTXResults
-  gaResults <- K.ignoreCacheTimeM BR.getGAResults
-  ohResults <- K.ignoreCacheTimeM BR.getOHResults
-  nvResults <- K.ignoreCacheTimeM BR.getNVResults
---  K.logLE K.Info $ "OH Election Results"
---  BR.logFrame ohResults
-  dlccDistricts :: [Int] <- snd <<$>> (K.knitMaybe "Couldn't find VA in dlccDistricts" $ M.lookup "VA" BR.dlccDistricts)
-  let onlyLower r =  F.rgetField @ET.DistrictTypeC r == ET.StateLower
-      onlyStates s r = F.rgetField @BR.StateAbbreviation r `elem` s
-      onlyState s = onlyStates [s] --F.rgetField @BR.StateAbbreviation r == s
-      isVALower r = onlyLower r && onlyState "VA" r
-      onlyVALower = F.filterFrame isVALower
-      isTXLower r = onlyLower r && onlyState "TX" r
-      onlyTXLower = F.filterFrame isTXLower
-      isGALower r = onlyLower r && onlyState "GA" r
-      onlyGALower = F.filterFrame isGALower
-      isNVLower r = onlyLower r && onlyState "NV" r
-      onlyNVLower = F.filterFrame isNVLower
-      isOHLower r = onlyLower r && onlyState "OH" r
-      onlyOHLower = F.filterFrame isOHLower
-  K.logLE K.Info $ "Re-building VA Lower post"
-  let modelNoteName = BR.Used "Model_Details"
-  mModelNoteUrl <- BR.brNewNote postPaths postInfo modelNoteName "State Legislative Election Model" $ do
-    BR.brAddNoteMarkDownFromFile postPaths modelNoteName "_intro"
-  modelNoteUrl <- K.knitMaybe "naive Model Note Url is Nothing" $ mModelNoteUrl
-  let modelRef = "[model_description]: " <> modelNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just modelRef)
 
-  let isDistrict s dt dn r = F.rgetField @BR.StateAbbreviation r == s
-                              && F.rgetField @ET.DistrictTypeC r == dt
-                              && F.rgetField @ET.DistrictNumber r == dn
-  let data2018_C = fmap (first $ filterCcesAndPumsByYear (==2018)) data_C
-      data2020_C = fmap (first $ filterCcesAndPumsByYear (==2020)) data_C
-      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
+newMapsTest :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+            => Bool
+            -> BR.PostPaths BR.Abs
+            -> BR.PostInfo
+            -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+            -> K.ActionWithCacheTime r (F.FrameRec CDDemographicsR)
+            -> K.Sem r ()
+newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
+  let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
+      ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
+--      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
 
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
                    $ SB.addGroupToSet BRE.raceGroup
                    $ SB.addGroupToSet BRE.stateGroup
                    $ SB.emptyGroupSet
-      modelDir =  "br-2021-StateLegModel/stan"
-      psDataSetName = "SLD_Demographics"
-      psGroup :: SB.GroupTypeTag (F.Record SLDLocWStAbbrR) = SB.GroupTypeTag "SLD"
+      modelDir =  "br-2021-NewMaps/stan"
+      psDataSetName = "NewCD_Demographics"
+      psGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "NewCD"
       psInfo = (psGroup, psDataSetName, psGroupSet)
-      model2018 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2018 psInfo (fst <$> data2018_C) (snd <$> data2018_C)
-      model2020 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2020 psInfo (fst <$> data2020_C) (snd <$> data2020_C)
-  modelBase <- model2018 BRE.Base
+      model2018 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2018 psInfo ccesAndPums2018_C cdData_C
+      model2020 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2020 psInfo ccesAndPums2020_C cdData_C
+  modelBase <- model2020 BRE.Base
+  BR.logFrame modelBase
+{-
   modelBase2020 <- model2020 BRE.Base
   modelPlusState <- model2018 BRE.PlusState
   modelPlusState2020 <- model2020 BRE.PlusState
@@ -489,6 +395,7 @@ vaLower clearCaches postPaths postInfo data_C = K.wrapPrefix "vaLower" $ do
                                  ]
     BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2018
     BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2020
+-}
   return ()
 
 
@@ -499,7 +406,7 @@ race5FromCPS r =
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
 
-
+{-
 modelResultScatterChart :: Bool
                         -> Text
                         -> FV.ViewConfig
@@ -574,7 +481,7 @@ modelResultScatterChart single title vc rows =
                   then [FV.title title, GV.layer [ptSpec, lineSpec], makeModelYear [], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), makeModelYear [], vlData]
   in FV.configuredVegaLite vc finalSpec --
-
+-}
 -- fold CES data over districts
 aggregateDistricts :: FL.Fold (F.Record BRE.CCESByCDR) (F.FrameRec (BRE.StateKeyR V.++ PredictorR V.++ BRE.CCESVotingDataR))
 aggregateDistricts = FMR.concatFold
@@ -596,51 +503,3 @@ aggregatePredictorsInDistricts = FMR.concatFold
                                  FMR.noUnpack
                                  (FMR.assignKeysAndData @BRE.CDKeyR @BRE.CCESVotingDataR)
                                  (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-
-
-
-
----
-
-
-prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
-                 => Bool
-                 -> K.Sem r (K.ActionWithCacheTime r SLDModelData)
-prepSLDModelData clearCaches = do
-  ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
-  sld_C <- BRC.censusTablesBySLD
-  stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
-  let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
-      cacheKey = "model/stateLeg/SLD_VA.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
-    let (BRE.CCESAndPUMS ccesRows cpsVRows _ distRows) = ccesAndCPS
-        cpsVCols :: F.Record BRE.CPSVByCDR -> F.Record [CPSCVAP, CPSVoters]
-        cpsVCols r = round (F.rgetField @BRCF.WeightedCount r) F.&: round (F.rgetField @BRCF.WeightedSuccesses r) F.&: V.RNil
-        cpsPredictor :: F.Record BRE.CPSVByCDR -> F.Record PredictorR
-        cpsPredictor r = F.rcast $  r F.<+> FT.recordSingleton @DT.Race5C (race5FromCPS r)
-        cpsRow r = F.rcast @BRE.CDKeyR r F.<+> cpsPredictor r F.<+> cpsVCols r
-        cpsForJoin = cpsRow <$> cpsVRows
-        ccesVCols :: F.Record BRE.CCESByCDR -> F.Record [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]
-        ccesVCols r = F.rgetField @BRE.Surveyed r F.&: F.rgetField @BRE.Voted r F.&: F.rgetField @BRE.HouseVotes r F.&: F.rgetField @BRE.HouseDVotes r F.&: V.RNil
-        ccesRow r = F.rcast @(BRE.CDKeyR V.++ PredictorR) r F.<+> ccesVCols r
-        -- cces data will be missing some rows.  We add zeros.
-        ccesForJoin' = ccesRow <$> ccesRows
-        defaultCCESV :: F.Record [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes] = 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
-        ccesForJoinFld = FMR.concatFold
-                         $ FMR.mapReduceFold
-                         FMR.noUnpack
-                         (FMR.assignKeysAndData @BRE.CDKeyR @(PredictorR V.++ [CCESSurveyed, CCESVoted, CCESHouseVotes, CCESHouseDVotes]))
-                         (FMR.makeRecsWithKey id $ FMR.ReduceFold (const $ BRK.addDefaultRec @PredictorR defaultCCESV))
-        ccesForJoin = FL.fold ccesForJoinFld ccesForJoin'
-        (cpsAndCces, missing) = FJ.leftJoinWithMissing @(BRE.CDKeyR V.++ PredictorR) cpsForJoin ccesForJoin
-    unless (null missing) $ K.knitError $ "Missing keys in cpsV/cces join: " <> show missing
-    --BR.logFrame cpsAndCces
-    K.logLE K.Info $ "Re-folding census table..."
-    let sldSER' = BRC.censusDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
-    -- add state abbreviations
-        (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
-                              $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
-        addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
-                                    $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-    return $ SLDModelData cpsAndCces ccesRows (F.rcast . addRace5 <$> sldSER) distRows
