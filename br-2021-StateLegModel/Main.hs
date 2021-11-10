@@ -171,8 +171,8 @@ type VotingDataR = [CPSCVAP, CPSVoters, CCESSurveyed, CCESVoted, CCESHouseVotes,
 --type SLDRecodedR = BRC.SLDLocationR
 --                   V.++ BRC.ExtensiveDataR
 --                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile]
-type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.SLDLocationR V.++ '[DT.Race5C]
-type SLDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.SLDLocationR
+type SLDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.LDLocationR V.++ '[DT.Race5C]
+type SLDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.LDLocationR
 
 type CPSAndCCESR = BRE.CDKeyR V.++ PredictorR V.++ VotingDataR --BRCF.CountCols V.++ [BRE.Surveyed, BRE.TVotes, BRE.DVotes]
 data SLDModelData = SLDModelData
@@ -256,13 +256,13 @@ prepCCESPUMSandSLD :: (K.KnitEffects r, BR.CacheEffects r)
                   ->  K.Sem r (K.ActionWithCacheTime r (BRE.CCESAndPUMS, F.FrameRec SLDDemographicsR))
 prepCCESPUMSandSLD clearCaches = do
   ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
-  sld_C <- BRC.censusTablesBySLD
+  sld_C <- BRC.censusTablesForSLDs
   stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
   let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
       cacheKey = "model/stateLeg/CCESPUMSandSLD.bin"
   when clearCaches $ BR.clearIfPresentD cacheKey
   res_C <- BR.retrieveOrMakeD cacheKey deps $ \(ccesAndCPS, sld, stateAbbrs) -> do
-    let sldSER' =  BRC.censusDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
+    let sldSER' =  BRC.censusDemographicsRecode @BRC.LDLocationR $ BRC.sexEducationRace sld
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
         addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
@@ -608,7 +608,7 @@ prepSLDModelData :: (K.KnitEffects r, BR.CacheEffects r)
                  -> K.Sem r (K.ActionWithCacheTime r SLDModelData)
 prepSLDModelData clearCaches = do
   ccesAndCPS_C <- BRE.prepCCESAndPums clearCaches
-  sld_C <- BRC.censusTablesBySLD
+  sld_C <- BRC.censusTablesForSLDs
   stateAbbreviations_C <- BR.stateAbbrCrosswalkLoader
   let deps = (,,) <$> ccesAndCPS_C <*> sld_C <*> stateAbbreviations_C
       cacheKey = "model/stateLeg/SLD_VA.bin"
@@ -637,7 +637,7 @@ prepSLDModelData clearCaches = do
     unless (null missing) $ K.knitError $ "Missing keys in cpsV/cces join: " <> show missing
     --BR.logFrame cpsAndCces
     K.logLE K.Info $ "Re-folding census table..."
-    let sldSER' = BRC.censusDemographicsRecode @BRC.SLDLocationR $ BRC.sexEducationRace sld
+    let sldSER' = BRC.censusDemographicsRecode @BRC.LDLocationR $ BRC.sexEducationRace sld
     -- add state abbreviations
         (sldSER, saMissing) = FJ.leftJoinWithMissing @'[BR.StateFips] sldSER'
                               $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs

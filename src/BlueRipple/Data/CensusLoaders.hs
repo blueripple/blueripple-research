@@ -109,12 +109,12 @@ instance (FieldC Flat.Flat a
 
 --type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
-type LoadedCensusTablesByCD
-  = CensusTables BRC.CDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
+type LoadedCensusTablesByLD
+  = CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
-                           => [(BRC.TableYear, Text)] -> Text -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByCD)
+                           => [(BRC.TableYear, Text)] -> Text -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesByDistrict filesByYear cacheName = do
   let tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
@@ -122,9 +122,9 @@ censusTablesByDistrict filesByYear cacheName = do
                              <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
       makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
-        return $ frameFromTableRows BRC.unCDPrefix keyRec (BRC.tableYear ty) vTRs
+        return $ frameFromTableRows BRC.unLDPrefix keyRec (BRC.tableYear ty) vTRs
       doOneYear (ty, f) = do
-        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.CDPrefix (tableDescriptions ty) $ toString f)
+        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.LDPrefix (tableDescriptions ty) $ toString f)
         K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
         K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
         fRaceBySexByAge <- makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
@@ -137,7 +137,7 @@ censusTablesByDistrict filesByYear cacheName = do
         let fldSumAges = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @(CensusRow BRC.CDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
+                       (FMR.assignKeysAndData @(CensusRow BRC.LDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
         return $ CensusTables
@@ -152,23 +152,57 @@ censusTablesByDistrict filesByYear cacheName = do
     neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
     return $ sconcat neTables
 
-censusTablesByExisitingDistrict  :: (K.KnitEffects r
-                                    , BR.CacheEffects r)
-                                 => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByCD)
-censusTablesByExisitingDistrict = censusTablesByDistrict fileByYear "existingDistricts" where
+censusTablesForExistingCDs  :: (K.KnitEffects r
+                               , BR.CacheEffects r)
+                            => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesForExistingCDs = censusTablesByDistrict fileByYear "existingCDs" where
   fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
                , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
                , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
                , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
                ]
 
-censusTablesForProposedDistricts :: (K.KnitEffects r
-                                    , BR.CacheEffects r)
-                                 => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByCD)
-censusTablesForProposedDistricts = censusTablesByDistrict fileByYear "proposedDistricts" where
+censusTablesForProposedCDs :: (K.KnitEffects r
+                              , BR.CacheEffects r)
+                           => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesForProposedCDs = censusTablesByDistrict fileByYear "proposedCDs" where
   fileByYear = [(BRC.TY2018, censusDataDir <> "/cD117_NC.csv")]
 
+
+censusTablesForSLDs ::  (K.KnitEffects r
+                        , BR.CacheEffects r)
+                    => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesForSLDs = censusTablesByDistrict fileByYear "existingSLDs" where
+  fileByYear = [ (BRC.TY2018, censusDataDir <> "/va_2018_sldl.csv")
+               , (BRC.TY2018, censusDataDir <> "/va_2020_sldu.csv")
+               , (BRC.TY2018, censusDataDir <> "/tx_2020_sldl.csv")
+               , (BRC.TY2018, censusDataDir <> "/tx_2020_sldu.csv")
+               , (BRC.TY2018, censusDataDir <> "/ga_2020_sldl.csv")
+               , (BRC.TY2018, censusDataDir <> "/ga_2020_sldu.csv")
+               , (BRC.TY2018, censusDataDir <> "/nv_2020_sldl.csv")
+               , (BRC.TY2018, censusDataDir <> "/oh_2020_sldl.csv")
+               ]
+
+checkAllCongressionalAndConvert :: forall r a b.
+                                   (K.KnitEffects r
+                                   , F.ElemOf ((a V.++ b V.++ '[Count]) V.++ '[BR.CongressionalDistrict]) BR.CongressionalDistrict
+                                   , (a V.++ b V.++ '[Count]) F.⊆ ((CensusRow BRC.LDLocationR a b) V.++ '[BR.CongressionalDistrict])
+                                   , FI.RecVec (a V.++ b V.++ '[Count])
+                                   )
+                                => F.FrameRec (CensusRow BRC.LDLocationR a b)
+                                -> K.Sem r (F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b))
+checkAllCongressionalAndConvert rs = do
+  let isCongressional r = F.rgetField @ET.DistrictTypeC r == ET.Congressional
+      cd r = FT.recordSingleton @BR.CongressionalDistrict $ F.rgetField @ET.DistrictNumber r
+      converted ::  F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b)
+      converted = fmap (F.rcast . FT.mutate cd) $ F.filterFrame isCongressional rs
+      frameLength x = FL.fold FL.length x
+  when (frameLength rs /= frameLength converted) $ K.knitError "CensusLoaders.checkAllCongressionalAndConvert: Non-congressional districts"
+  return converted
+
+
 ---
+{-
 type LoadedCensusTablesBySLD
   = CensusTables BRC.SLDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
@@ -225,7 +259,7 @@ censusTablesBySLD = do
     neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
     return $ sconcat neTables
 ---
-
+-}
 
 type CensusSERR locR = CensusRow locR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
 type CensusRecodedR locR = locR
