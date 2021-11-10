@@ -12,9 +12,15 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
-module BlueRipple.Data.DemographicTypes where
+module BlueRipple.Data.DemographicTypes
+  (
+    module BlueRipple.Data.DemographicTypes
+  , module BlueRipple.Data.DataFrames
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames    as BR
+import BlueRipple.Data.DataFrames (StateAbbreviation, StateFIPS, CountyFIPS)
 import qualified BlueRipple.Data.Keyed         as K
 
 import           Control.Arrow                  ( (>>>) )

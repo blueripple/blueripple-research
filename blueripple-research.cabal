@@ -199,6 +199,8 @@ library
                  , BlueRipple.Data.HouseElectionTotals
                  , BlueRipple.Data.LoadersCore
                  , BlueRipple.Data.Loaders
+                 , BlueRipple.Data.Loaders.Redistricting
+                 , BlueRipple.Data.Loaders.RedistrictingTables
                  , BlueRipple.Data.ACS_PUMS
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
                  , BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame

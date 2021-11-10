@@ -21,10 +21,11 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
-import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Data.CPSVoterPUMS as CPS
+--import qualified BlueRipple.Data.CCES as CCES
+--import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.CensusTables as BRC
+import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
 import qualified BlueRipple.Utilities.KnitUtils as BR
 --import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -87,6 +88,8 @@ import qualified CmdStan as CS
 import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
+import qualified BlueRipple.Data.CensusTables as BRC
+import qualified BlueRipple.Data.CensusTables as BRC
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -153,8 +156,8 @@ type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
-type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.CDLocationR V.++ '[DT.Race5C]
-type CDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.CDLocationR
+type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.LDLocationR V.++ '[DT.Race5C]
+type CDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.LDLocationR
 
 filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
 filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (q cces) (q cps) (q pums) (q dd) where
@@ -164,13 +167,13 @@ filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (
 aggregatePredictorsCDFld fldData = FMR.concatFold
                                    $ FMR.mapReduceFold
                                    FMR.noUnpack
-                                   (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                   (FMR.assignKeysAndData @[BR.Year, DT.StateAbbreviation, ET.CongressionalDistrict])
                                    (FMR.foldAndAddKey fldData)
 
 aggregatePredictorsCountyFld fldData = FMR.concatFold
                                        $ FMR.mapReduceFold
                                        FMR.noUnpack
-                                       (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CountyFIPS])
+                                       (FMR.assignKeysAndData @[BR.Year, DT.StateAbbreviation, BR.CountyFIPS])
                                        (FMR.foldAndAddKey fldData)
 
 debugCES :: K.KnitEffects r => F.FrameRec BRE.CCESByCDR -> K.Sem r ()
@@ -205,7 +208,7 @@ showVACPS cps = do
 -}
 prepProposedCDData :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CDDemographicsR))
 prepProposedCDData clearCaches = do
-  cdData_C <- BRC.censusTablesForProposedDistricts
+  cdData_C <- BRC.censusTablesForProposedCDs
   stateAbbreviations <-  BR.stateAbbrCrosswalkLoader
   let cacheKey = "model/newMaps/newCDDemographics.bin"
       deps = (,) <$> cdData_C <*> stateAbbreviations
@@ -213,7 +216,7 @@ prepProposedCDData clearCaches = do
   BR.retrieveOrMakeFrame cacheKey deps $ \(cdData, stateAbbrs) -> do
     let addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
                                     $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-        cdDataSER' = BRC.censusDemographicsRecode @BRC.CDLocationR $ BRC.sexEducationRace cdData
+        cdDataSER' = BRC.censusDemographicsRecode @BRC.LDLocationR $ BRC.sexEducationRace cdData
         (cdDataSER, cdMissing) =  FJ.leftJoinWithMissing @'[BR.StateFips] cdDataSER'
                                   $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
@@ -230,8 +233,8 @@ newMapAnalysis = do
     newMapsTest False newMapsPaths newCDPostInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
 
 districtColonnade cas =
-  let state = F.rgetField @BR.StateAbbreviation
-      dNum = F.rgetField @BR.CongressionalDistrict
+  let state = F.rgetField @DT.StateAbbreviation
+      dNum = F.rgetField @ET.DistrictNumber
       share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
       share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
@@ -329,7 +332,10 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
       model2018 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2018 psInfo ccesAndPums2018_C cdData_C
       model2020 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2020 psInfo ccesAndPums2020_C cdData_C
   modelBase <- model2020 BRE.Base
-  BR.logFrame modelBase
+  modelPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace
+  BR.logFrame modelPlusStateAndStateRace
+  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
+  K.ignoreCacheTime davesRedistrictInfo_C >>= BR.logFrame
 {-
   modelBase2020 <- model2020 BRE.Base
   modelPlusState <- model2018 BRE.PlusState

@@ -8,9 +8,15 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
-module BlueRipple.Data.ElectionTypes where
+module BlueRipple.Data.ElectionTypes
+  (
+    module BlueRipple.Data.ElectionTypes
+  , module BlueRipple.Data.DataFrames
+  )
+  where
 
 import qualified BlueRipple.Data.DataFrames as BR
+import BlueRipple.Data.DataFrames (CongressionalDistrict)
 import qualified Data.Array as A
 import qualified Data.Binary as B
 import qualified Data.Default as Def
@@ -230,6 +236,7 @@ ewRec :: ElectoralWeightSourceT -> ElectoralWeightOfT -> Double -> F.Record EWCo
 ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 
 type CVAP = "CVAP" F.:-> Int
+type VAP = "VAP" F.:-> Int
 
 instance FV.ToVLDataValue (F.ElField CVAP) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
@@ -393,6 +400,7 @@ type instance FI.VectorFor RegisteredYN = UVec.Vector
 type DemPref = "DemPref" F.:-> Double
 
 type DemShare = "DemShare" F.:-> Double
+type RepShare = "RepShare" F.:-> Double
 
 type DemVPV = "DemVPV" F.:-> Double
 
