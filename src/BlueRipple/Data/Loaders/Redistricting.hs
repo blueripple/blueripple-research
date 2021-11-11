@@ -40,10 +40,10 @@ import BlueRipple.Data.ElectionTypes (DistrictNumber,VAP,DemShare,RepShare)
 
 FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 
-type DRAnalysis = F.Record ([DT.StateAbbreviation, ET.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
+type DRAnalysis = F.Record ([DT.StateAbbreviation, PlanName, ET.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
 
 fixRow :: RedistrictingPlanID -> DRAnalysisRaw -> Maybe DRAnalysis
-fixRow pi r = Just $ F.rcast @[DT.StateAbbreviation, ET.DistrictTypeC] pi F.<+> r
+fixRow pi r = Just $ pi F.<+> r
 
 -- this will drop lines where district number doesn't parse as an Int
 loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)

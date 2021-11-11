@@ -335,7 +335,17 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
   modelPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace
   BR.logFrame modelPlusStateAndStateRace
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
-  K.ignoreCacheTime davesRedistrictInfo_C >>= BR.logFrame
+  davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
+  BR.logFrame davesRedistricting
+  let (modelAndDaves, missing) = FJ.leftJoinWithMissing @[DT.StateAbbreviation,ET.DistrictTypeC,ET.DistrictNumber] modelPlusStateAndStateRace davesRedistricting
+  when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."
+  _ <- K.addHvega Nothing Nothing
+       $ modelAndDaveScatterChart
+       True
+       ("NC CST-13: Modeled Vs. Dave")
+       (FV.ViewConfig 600 600 5)
+       (fmap F.rcast modelAndDaves)
+
 {-
   modelBase2020 <- model2020 BRE.Base
   modelPlusState <- model2018 BRE.PlusState
@@ -412,35 +422,28 @@ race5FromCPS r =
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
 
-{-
-modelResultScatterChart :: Bool
-                        -> Text
-                        -> FV.ViewConfig
-                        -> F.FrameRec ([BR.Year, BR.StateAbbreviation, ET.DistrictNumber, BR.Contested, MT.ModelId BRE.Model, BRE.ModeledShare, BR.DShare])
-                        -> GV.VegaLite
-modelResultScatterChart single title vc rows =
-  let toVLDataRec = FVD.asVLData (GV.Str . show) "DataYear"
-                    V.:& FVD.asVLData GV.Str "State"
+modelAndDaveScatterChart :: Bool
+                         -> Text
+                         -> FV.ViewConfig
+                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, MT.ModelId BRE.Model, BRE.ModeledShare, ET.DemShare])
+                         -> GV.VegaLite
+modelAndDaveScatterChart single title vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District Number"
-                    V.:& FVD.asVLData GV.Boolean "Contested"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
                     V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
-                                      ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
-                                      ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
-                                      ]
-                    V.:& FVD.asVLData (GV.Number . (*100)) "Election_Result"
+                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
+                                       ]
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Dave"
                     V.:& V.RNil
-      makeModelYear = GV.transform . GV.calculateAs "datum.Model + datum.DataYear" "ModelYear"
       vlData = FVD.recordsToData toVLDataRec rows
-      facetState = [GV.FName "State", GV.FmType GV.Nominal]
-      encContested = GV.color [GV.MName "Contested", GV.MmType GV.Nominal
-                              , GV.MSort [GV.CustomSort $ GV.Booleans [True, False]]]
-      facetModel = [GV.FName "ModelYear", GV.FmType GV.Nominal]
+      facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
       encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Model_Mid"]]
-                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]])
-
+--                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
+                                     )
       encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle "Model_Low"]
@@ -453,16 +456,17 @@ modelResultScatterChart single title vc rows =
 --                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
 --                                  , GV.PScale [GV.SZero False]
                                   ]
-      encElection = GV.position GV.X [GV.PName "Election_Result"
-                                     , GV.PmType GV.Quantitative
-                                     --                               , GV.PScale [GV.SZero False]
-                                     , GV.PAxis [GV.AxTitle "Election_Result"]]
+      encDaves = GV.position GV.X [GV.PName "Dave"
+                                  , GV.PmType GV.Quantitative
+                                    --                               , GV.PScale [GV.SZero False]
+                                  --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
+                                  ]
       enc45 =  GV.position GV.X [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
                                   ]
-      facets = GV.facet [GV.RowBy facetModel, GV.ColumnBy facetState]
-      ptEnc = GV.encoding . encModelMid . encElection . encContested
+      facets = GV.facet [GV.RowBy facetModel]
+      ptEnc = GV.encoding . encModelMid . encDaves
       lineEnc = GV.encoding . encModelMid . enc45
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
@@ -484,10 +488,10 @@ modelResultScatterChart single title vc rows =
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
 -}
       finalSpec = if single
-                  then [FV.title title, GV.layer [ptSpec, lineSpec], makeModelYear [], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), makeModelYear [], vlData]
+                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
--}
+
 -- fold CES data over districts
 aggregateDistricts :: FL.Fold (F.Record BRE.CCESByCDR) (F.FrameRec (BRE.StateKeyR V.++ PredictorR V.++ BRE.CCESVotingDataR))
 aggregateDistricts = FMR.concatFold
