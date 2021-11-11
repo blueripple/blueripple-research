@@ -689,7 +689,7 @@ electionModel :: forall rs ks r.
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
 electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
-  let jsonDataName = "stateLeg_ASR_" <> show model <> "_" <> show datYear
+  let jsonDataName = psDataSetName <> "_" <> show model <> "_" <> show datYear
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
@@ -958,7 +958,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
     $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
-    ("sld_" <> show model)
+    ("LegDistricts_" <> show model)
     jsonDataName
     dw
     stanCode

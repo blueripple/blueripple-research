@@ -326,21 +326,27 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
                    $ SB.addGroupToSet BRE.stateGroup
                    $ SB.emptyGroupSet
       modelDir =  "br-2021-NewMaps/stan"
-      psDataSetName = "NewCD_Demographics"
-      psGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "NewCD"
-      psInfo = (psGroup, psDataSetName, psGroupSet)
-      model2018 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2018 psInfo ccesAndPums2018_C cdData_C
-      model2020 m =  K.ignoreCacheTimeM $ BRE.electionModel False modelDir m 2020 psInfo ccesAndPums2020_C cdData_C
-  modelBase <- model2020 BRE.Base
-  modelPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace
-  BR.logFrame modelPlusStateAndStateRace
+--      mapDataSetName = "CD_Demographics"
+      mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      psInfo name = (mapGroup, name, psGroupSet)
+      model2018 m name
+        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2018 (psInfo name) ccesAndPums2018_C
+      model2020 m name
+        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2020 (psInfo name) ccesAndPums2020_C
+  newMapsBase <- model2020 BRE.Base "NC-proposed" cdData_C
+  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC-proposed" cdData_C
+--  oldMapsBase <- model2020 "NC-extant" BRE.Base $ fmap pumsRows $ ccesAndPums2020_C
+  BR.logFrame newMapsPlusStateAndStateRace
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
   BR.logFrame davesRedistricting
   (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
   BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
-  let (modelAndDaves, missing) = FJ.leftJoinWithMissing @[DT.StateAbbreviation,ET.DistrictTypeC,ET.DistrictNumber] modelPlusStateAndStateRace davesRedistricting
+  let (modelAndDaves, missing)
+        = FJ.leftJoinWithMissing @[DT.StateAbbreviation,ET.DistrictTypeC,ET.DistrictNumber]
+          newMapsPlusStateAndStateRace
+          davesRedistricting
   when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
