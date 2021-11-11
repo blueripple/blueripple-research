@@ -33,6 +33,7 @@ import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Model.TurnoutAdjustment as BRTA
+import qualified BlueRipple.Model.PostStratify as BRPS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Model.StanMRP as MRP
@@ -557,8 +558,50 @@ cpsDiagnostics t cpsByCD = K.wrapPrefix "cpsDiagnostics" $ do
   BR.logFrame nvCounts
 
 
---
+-- CCES diagnostics
+type Voters = "Voters" F.:-> Double
+type DemVoters = "DemVoters" F.:-> Double
+type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
+ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
+                => K.ActionWithCacheTime r CCESAndPUMS
+                -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, Voters, DemVoters]
+                                                      , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, Voters, DemVoters])))
+ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
+  K.logLE K.Info $ "computing CES diagnostics..."
+  let pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ F.rgetField @Surveyed r)
+      pD r = let hv = F.rgetField @HouseVotes r in if hv == 0 then 0 else (realToFrac $ F.rgetField @HouseDVotes r)/(realToFrac hv)
+      cvap = realToFrac . F.rgetField @PUMS.Citizens
+      addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+      compute rw rc = let voters = (pT rw * cvap rc) in (voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [Voters, DemVoters]
+      psFld :: FL.Fold (F.Record [Voters, DemVoters]) (F.Record [Voters, DemVoters])
+      psFld = FF.foldAllConstrained @Num FL.sum
+  states_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsStates.bin" ccesAndPums_C $ \ccesAndPums -> do
+    let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
+        (psByState, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
+                               compute
+                               psFld
+                               (F.rcast <$> ccesRows ccesAndPums)
+                               (F.rcast <$> pumsFixed)
+--    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
+    return psByState
+  districts_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsCDs.bin" ccesAndPums_C $ \ccesAndPums -> do
+    let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
+        (psByCD, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation,ET.CongressionalDistrict] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
+                               compute
+                               psFld
+                               (F.rcast <$> ccesRows ccesAndPums)
+                               (F.rcast <$> pumsFixed)
+--    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
+    return psByCD
+--  K.ignoreCacheTime states_C >>= BR.logFrame
+  return $ (,) <$> states_C <*> districts_C
+
+
+
+
+
+--
 groupBuilder :: forall rs ks.
                 ( F.ElemOf rs BR.StateAbbreviation
                 , F.ElemOf rs DT.CollegeGradC
@@ -593,15 +636,6 @@ groupBuilder psGroup psDataSetName districts states psKeys = do
   SB.addGroupIndexForDataSet psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
   return ()
 
-
-{-
-sldPSGroupSet :: SB.GroupSet
-sldPSGroupSet = SB.addGroupToSet sexGroup
-                $ SB.addGroupToSet educationGroup
-                $ SB.addGroupToSet raceGroup
-                $ SB.addGroupToSet stateGroup
-                $ SB.emptyGroupSet
--}
 
 data Model = Base
            | PlusState

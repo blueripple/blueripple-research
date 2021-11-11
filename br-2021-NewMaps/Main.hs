@@ -337,6 +337,9 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
   BR.logFrame davesRedistricting
+  (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
+  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
+  BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
   let (modelAndDaves, missing) = FJ.leftJoinWithMissing @[DT.StateAbbreviation,ET.DistrictTypeC,ET.DistrictNumber] modelPlusStateAndStateRace davesRedistricting
   when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."
   _ <- K.addHvega Nothing Nothing
@@ -438,10 +441,14 @@ modelAndDaveScatterChart single title vc rows =
                     V.:& FVD.asVLData (GV.Number . (*100)) "Dave"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
+      xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
       encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model_Mid"]]
+                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
+                                     , xyScale
+                                     ]
+
 --                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
                                      )
       encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
@@ -458,12 +465,14 @@ modelAndDaveScatterChart single title vc rows =
                                   ]
       encDaves = GV.position GV.X [GV.PName "Dave"
                                   , GV.PmType GV.Quantitative
+                                  , xyScale
                                     --                               , GV.PScale [GV.SZero False]
                                   --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
                                   ]
       enc45 =  GV.position GV.X [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
+                                  , xyScale
                                   ]
       facets = GV.facet [GV.RowBy facetModel]
       ptEnc = GV.encoding . encModelMid . encDaves
@@ -488,7 +497,8 @@ modelAndDaveScatterChart single title vc rows =
       r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
 -}
       finalSpec = if single
-                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
+--                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
+                  then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 

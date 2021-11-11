@@ -29,21 +29,22 @@ import qualified Data.Serialize                as SE
 import qualified Data.Vector                   as V
 
 import qualified Frames                        as F
+import qualified Frames.Streamly.InCore        as FI
 import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
+import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Enumerations           as FE
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
-import qualified Graphics.Vega.VegaLite        as GV
-import           GHC.Generics                   ( Generic )
-import           Data.Discrimination            ( Grouping )
+--import qualified Frames.Visualization.VegaLite.Data
+--                                               as FV
+--import qualified Graphics.Vega.VegaLite        as GV
+--import           GHC.Generics                   ( Generic )
+--import           Data.Discrimination            ( Grouping )
 
 postStratifyCell
   :: forall t q
@@ -79,3 +80,33 @@ labeledPostStratifyF
   -> FL.Fold (F.Record rs) (F.FrameRec (k V.++ ('[p] V.++ ts)))
 labeledPostStratifyF lv cf =
   postStratifyF @k $ fmap (V.rappend (FT.recordSingleton @p lv)) <$> cf
+
+
+joinAndPostStratify
+  :: forall ks pks ws cs ds es aks.
+     (
+       FJ.CanLeftJoinM (ks V.++ pks) ((ks V.++ pks) V.++ ws) ((ks V.++ pks) V.++ cs)
+     , Ord (F.Record ks)
+     , aks ~ (ks V.++ pks)
+     , aks F.⊆ ((aks V.++ ws) V.++ F.RDeleteAll aks (aks V.++ cs))
+     , ws F.⊆ ((aks V.++ ws) V.++ F.RDeleteAll aks (aks V.++ cs))
+     , cs F.⊆ ((aks V.++ ws) V.++ F.RDeleteAll aks (aks V.++ cs))
+     , ks F.⊆ (aks V.++ ds)
+     , ds F.⊆ (aks V.++ ds)
+     , FI.RecVec (ks V.++ es)
+     )
+  => (F.Record ws -> F.Record cs -> F.Record ds)
+  -> FL.Fold (F.Record ds) (F.Record es)
+  -> F.FrameRec ((ks V.++ pks) V.++ ws)
+  -> F.FrameRec ((ks V.++ pks) V.++ cs)
+  -> (F.FrameRec (ks V.++ es), [F.Record (ks V.++ pks)])
+joinAndPostStratify compute psFld wgts cnts = (FL.fold fld computed, missing) where
+  (joined, missing) = FJ.leftJoinWithMissing @(ks V.++ pks) wgts cnts
+  computeRow r = F.rcast @(ks V.++ pks) r F.<+> compute (F.rcast @ws r) (F.rcast @cs r)
+  computed = fmap computeRow joined
+  fld :: FL.Fold (F.Record ((ks V.++ pks) V.++ ds)) (F.FrameRec (ks V.++es))
+  fld = FMR.concatFold
+        $ FMR.mapReduceFold
+        FMR.noUnpack
+        (FMR.assignKeysAndData @ks @ds)
+        (FMR.foldAndAddKey psFld)
