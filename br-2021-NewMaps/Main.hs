@@ -21,6 +21,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 --import qualified BlueRipple.Data.CCES as CCES
 --import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.Loaders as BR
@@ -157,7 +158,7 @@ type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
 type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.LDLocationR V.++ '[DT.Race5C]
-type CDLocWStAbbrR = '[BR.StateAbbreviation] V.++ BRC.LDLocationR
+type CDLocWStAbbrR = '[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] -- V.++ BRC.LDLocationR
 
 filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
 filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (q cces) (q cps) (q pums) (q dd) where
@@ -307,8 +308,9 @@ comparison mr er t = do
 -}
 
 
-
-newMapsTest :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.PopPerSqMile]
+type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] V.++ ModelPredictorR V.++ '[BRC.Count]
+newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             => Bool
             -> BR.PostPaths BR.Abs
             -> BR.PostInfo
@@ -318,6 +320,14 @@ newMapsTest :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
 newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
+      addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
+      addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+      fixPums :: F.Record BRE.PUMSByCDR -> F.Record PostStratR
+      fixPums = F.rcast . addRace5 . addDistrict . addCount
+      fixCensus :: F.Record CDDemographicsR -> F.Record PostStratR
+      fixCensus = F.rcast
+      onlyNC = F.filterFrame ((== "NC") . F.rgetField @BR.StateAbbreviation)
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
 
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
@@ -329,22 +339,27 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
 --      mapDataSetName = "CD_Demographics"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfo name = (mapGroup, name, psGroupSet)
-      model2018 m name
-        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2018 (psInfo name) ccesAndPums2018_C
+--      model2018 m name
+--        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2018 (psInfo name) ccesAndPums2018_C
+      model2020 :: BRE.Model
+                -> Text
+                -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+                -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2020 (psInfo name) ccesAndPums2020_C
-  newMapsBase <- model2020 BRE.Base "NC-proposed" cdData_C
-  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC-proposed" cdData_C
---  oldMapsBase <- model2020 "NC-extant" BRE.Base $ fmap pumsRows $ ccesAndPums2020_C
-  BR.logFrame newMapsPlusStateAndStateRace
+  newMapsBase <- model2020 BRE.Base "NC_Proposed" $ fmap fixCensus <$> cdData_C
+  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
+  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+  oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+  BR.logFrame oldMapsPlusStateAndStateRace
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
   BR.logFrame davesRedistricting
   (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
-  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
+--  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
   BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
   let (modelAndDaves, missing)
-        = FJ.leftJoinWithMissing @[DT.StateAbbreviation,ET.DistrictTypeC,ET.DistrictNumber]
+        = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           newMapsPlusStateAndStateRace
           davesRedistricting
   when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."

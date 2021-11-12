@@ -613,13 +613,12 @@ groupBuilder :: forall rs ks.
                 , Typeable ks
                 , Ord (F.Record ks))
              => SB.GroupTypeTag (F.Record ks)
-             -> Text
              -> [Text]
              -> [Text]
              -> [F.Record ks]
              -> SB.StanGroupBuilderM (CCESAndPUMS, F.FrameRec rs) ()
-groupBuilder psGroup psDataSetName districts states psKeys = do
-  voterData <- SB.addDataSetToGroupBuilder "VData" (SB.ToFoldable $ ccesRows . fst)
+groupBuilder psGroup districts states psKeys = do
+  voterData <- SB.addDataSetToGroupBuilder "VoteData" (SB.ToFoldable $ ccesRows . fst)
   SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
@@ -628,7 +627,7 @@ groupBuilder psGroup psDataSetName districts states psKeys = do
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable $ districtRows . fst)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
-  psData <- SB.addDataSetToGroupBuilder psDataSetName (SB.ToFoldable snd)
+  psData <- SB.addDataSetToGroupBuilder "DistrictPS" (SB.ToFoldable snd)
   SB.addGroupIndexForDataSet stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet educationGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet sexGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
@@ -693,7 +692,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
-        voteData <- SB.dataSetTag @(F.Record CCESByCDR) "VData"
+        voteData <- SB.dataSetTag @(F.Record CCESByCDR) "VoteData"
         cdData <- SB.dataSetTag @(F.Record DistrictDemDataR) "CDData"
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
@@ -861,10 +860,10 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
         SB.sampleDistV voteData distT (logitT_sample feCDT)
         SB.sampleDistV voteData distP (logitP_sample feCDP)
 
-        psData <- SB.dataSetTag @(F.Record rs) psDataSetName
+        psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
         (SB.StanVar cmn _) <- centerF mv
-        let cmE = (SB.indexBy (SB.name cmn) psDataSetName)
+        let cmE = (SB.indexBy (SB.name cmn) "DistrictPS")
             densityTE = cmE `SB.times` betaT
             densityPE = cmE `SB.times` betaP
             psExprF ik = do
@@ -921,13 +920,13 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
           resultsMap <- K.knitEither $ do
             groupIndexes <- eb
             psIndexIM <- SB.getGroupIndex
-              (SB.RowTypeTag @(F.Record rs) psDataSetName)
+              (SB.RowTypeTag @(F.Record rs) "DistrictPS")
               psGroup
               groupIndexes
             let parseAndIndexPctsWith idx g vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map g v
-            parseAndIndexPctsWith psIndexIM id $ "PS_" <> psDataSetName <> "_" <> SB.taggedGroupName psGroup
+            parseAndIndexPctsWith psIndexIM id $ "PS_DistrictPS_" <> SB.taggedGroupName psGroup
           res :: F.FrameRec (ks V.++ '[ModeledShare]) <- K.knitEither
                                                          $ MT.keyedCIsToFrame @ModeledShare id
                                                          $ M.toList resultsMap
@@ -947,7 +946,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                                   )
                                   $ districtRows $ fst dat
             psKeys = FL.fold (FL.premap F.rcast FL.list) $ snd dat
-            groups = groupBuilder psGroup psDataSetName districts states psKeys
+            groups = groupBuilder psGroup districts states psKeys
 --            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
 --        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
@@ -1034,7 +1033,7 @@ wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.Hisp
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-densityPredictor r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)]
+densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
 raceAlone4FromRace5 DT.R5_Other = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Black = DT.RA4_Black
