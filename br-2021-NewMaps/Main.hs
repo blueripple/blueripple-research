@@ -328,6 +328,7 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
       fixCensus :: F.Record CDDemographicsR -> F.Record PostStratR
       fixCensus = F.rcast
       onlyNC = F.filterFrame ((== "NC") . F.rgetField @BR.StateAbbreviation)
+
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
 
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
@@ -352,12 +353,17 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
   oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   BR.logFrame oldMapsPlusStateAndStateRace
+  (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
+  BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
+  elections_C <- BR.houseElectionsWithIncumbency
+  electionsNC <- fmap onlyNC $ K.ignoreCacheTime elections_C
+  flattenedElectionsNC <- fmap addDistrict <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
+  BR.logFrame $ {-F.filterFrame ((==2020) . F.rgetField @BR.Year) -} flattenedElectionsNC
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
   BR.logFrame davesRedistricting
-  (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
 --  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
-  BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
+
   let (modelAndDaves, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           newMapsPlusStateAndStateRace

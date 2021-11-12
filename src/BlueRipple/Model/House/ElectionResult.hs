@@ -122,7 +122,7 @@ type HouseDVotes = "HouseDVotes" F.:-> Int
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
-type ElectionR = [Incumbency, DVotes, RVotes]
+type ElectionR = [Incumbency, DVotes, RVotes, TVotes]
 type ElectionPredictorR = [FracUnder45
                           , FracFemale
                           , FracGrad
@@ -281,6 +281,7 @@ pumsDataF =
      V.:& FF.toFoldRecord citF
      V.:& V.RNil
 
+-- This is the thing to apply to loaded result data (with incumbents)
 electionF :: forall ks.(Ord (F.Record ks)
                        , ks F.⊆ (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
                        , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Incumbent
@@ -321,9 +322,10 @@ flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
         FL.generalize $
           FL.prefilter (F.rgetField @ET.Incumbent) $
             FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
-    demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ FL.premap votes FL.sum
-    repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ FL.premap votes FL.sum
-    flattenF = (\ii dv rv -> ii F.&: dv F.&: rv F.&: V.RNil) <$> incumbentPartyF <*> demVotesF <*> repVotesF
+    totalVotes =  FL.premap votes FL.sum
+    demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ totalVotes
+    repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ totalVotes
+    flattenF = (\ii dv rv tv -> ii F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
 
 aggregatePartiesF ::
   FL.FoldM
@@ -495,12 +497,11 @@ prepCCESAndPums clearCache = do
     adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
     let adjVoters r = F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
     return $ fmap (F.rcast @CPSVByCDR . adjVoters) adjCPSProb
-  houseElections_C <- BR.houseElectionsWithIncumbency
   K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "Post Achen/Hur"
-  let deps = (,,,) <$> countedCCES_C <*> cpsV_AchenHur_C <*> pumsByCD_C <*> houseElections_C
+  let deps = (,,) <$> countedCCES_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeD cacheKey deps $ \(cces, cpsVByCD, pums, houseElections) -> do
+  BR.retrieveOrMakeD cacheKey deps $ \(cces, cpsVByCD, pums) -> do
     -- get Density and avg income from PUMS and combine with election data for the district level data
     let fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
                      then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
@@ -565,8 +566,8 @@ type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC
 
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 => K.ActionWithCacheTime r CCESAndPUMS
-                -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, Voters, DemVoters]
-                                                      , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, Voters, DemVoters])))
+                -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, Voters, DemVoters, ET.DemShare]
+                                                      , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, Voters, DemVoters, ET.DemShare])))
 ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ F.rgetField @Surveyed r)
@@ -576,6 +577,7 @@ ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
       compute rw rc = let voters = (pT rw * cvap rc) in (voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [Voters, DemVoters]
       psFld :: FL.Fold (F.Record [Voters, DemVoters]) (F.Record [Voters, DemVoters])
       psFld = FF.foldAllConstrained @Num FL.sum
+      addShare r = let v = F.rgetField @Voters r in r F.<+> (FT.recordSingleton @ET.DemShare $ if v < 1 then 0 else F.rgetField @DemVoters r / v)
   states_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsStates.bin" ccesAndPums_C $ \ccesAndPums -> do
     let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
         (psByState, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
@@ -584,7 +586,7 @@ ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
                                (F.rcast <$> ccesRows ccesAndPums)
                                (F.rcast <$> pumsFixed)
 --    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
-    return psByState
+    return $ addShare <$> psByState
   districts_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsCDs.bin" ccesAndPums_C $ \ccesAndPums -> do
     let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
         (psByCD, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation,ET.CongressionalDistrict] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
@@ -593,7 +595,7 @@ ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
                                (F.rcast <$> ccesRows ccesAndPums)
                                (F.rcast <$> pumsFixed)
 --    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
-    return psByCD
+    return $ addShare <$> psByCD
 --  K.ignoreCacheTime states_C >>= BR.logFrame
   return $ (,) <$> states_C <*> districts_C
 

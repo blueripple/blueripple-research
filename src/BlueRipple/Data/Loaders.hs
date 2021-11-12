@@ -33,12 +33,17 @@ import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
-import qualified Frames.InCore as FI
+import qualified Frames.Streamly.InCore as FI
+import qualified Frames.Streamly.OrMissing as FS
 import qualified Frames.Melt as F
 import qualified Frames.MaybeUtils as FM
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
 import qualified Knit.Report as K
+
+localDataDir :: Text = "../data-sets/data/"
+
+useLocal x = LocalData $ localDataDir <> x
 
 electoralCollegeFrame ::
   (K.KnitEffects r, BR.CacheEffects r) =>
@@ -363,7 +368,7 @@ stateTurnoutLoader =
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
 
 
-type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
+type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ([BR.Special, BR.Runoff, BR.Stage] V.++ ElectionDataCols)
 
 type HouseElectionColsI = HouseElectionCols V.++ '[ET.Incumbent]
 
@@ -380,18 +385,28 @@ processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
         . FT.retypeColumn @BR.Candidatevotes @ET.Votes
         . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
         . FT.mutate
-          (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
+        (FT.recordSingleton @ET.Party . parsePEParty . F.rgetField @BR.Party)
+        . FT.mutate
+        (FT.recordSingleton @BR.Special . FS.orMissing False id . F.rgetField @BR.SpecialOM)
+        . FT.mutate
+        (FT.recordSingleton @BR.Runoff . FS.orMissing False id . F.rgetField @BR.RunoffOM)
 
 houseElectionsRawLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
-houseElectionsRawLoader = cachedFrameLoader (DataSets $ toText BR.houseElectionsCSV) Nothing Nothing processHouseElectionRow Nothing "houseElectionsRaw.bin"
+houseElectionsRawLoader = cachedFrameLoader
+                          (useLocal $ toText BR.houseElectionsCSV)
+                          (Just BR.houseElectionsParser) -- this is key
+                          Nothing
+                          processHouseElectionRow
+                          Nothing
+                          "houseElectionsRaw.bin"
 
 houseElectionsLoader ::   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec HouseElectionCols))
 houseElectionsLoader = do
   elexRaw_C <- houseElectionsRawLoader
-  BR.retrieveOrMakeFrame "data/houseElections.bin" elexRaw_C $ return . fixRunoffYear houseRaceKey isRunoff
+  BR.retrieveOrMakeFrame "data/houseElections.bin" elexRaw_C $ return . fixRunoffYear houseRaceKey (F.rgetField @BR.Runoff)
 
 
 houseElectionsWithIncumbency ::

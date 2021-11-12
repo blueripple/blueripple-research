@@ -99,8 +99,8 @@ runMRPModel :: (K.KnitEffects r
             -> Maybe Int
             -> K.Sem r (K.ActionWithCacheTime r c)
 runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta mMaxTreeDepth =
-  K.wrapPrefix "BlueRipple.Model.StanMRP" $ do
-  K.logLE K.Info "Running..."
+  K.wrapPrefix "StanMRP" $ do
+  K.logLE K.Info $ "Running: model=" <> modelName <> " using data=" <> dataName
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
       outputLabel = modelName <> "_" <> dataName
       nSamples = fromMaybe 1000 mNSamples
@@ -127,13 +127,13 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
     K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
   modelDep <- SM.modelCacheTime stanConfig
-  K.logLE K.Diagnostic $ "modelDep: " <> show (K.cacheTime modelDep)
-  K.logLE K.Diagnostic $ "houseDataDep: " <> show (K.cacheTime data_C)
+  K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
+  K.logLE (K.Debug 1) $ "houseDataDep: " <> show (K.cacheTime data_C)
   let dataModelDep = const <$> modelDep <*> data_C
       getResults s () inputAndIndex_C = return ()
       unwraps = [SR.UnwrapNamed ppName ppName]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
-    K.logLE K.Info "Data or model newer then last cached result. (Re)-running..."
+    K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
     SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
       (SM.Both unwraps)
@@ -147,8 +147,6 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
 addGroup :: Typeable d
            => SB.RowTypeTag r
            -> SB.StanExpr
---           -> SB.StanExpr
---           -> SB.SumToZero
            -> SB.GroupModel
            -> SB.GroupTypeTag k
            -> Maybe Text
