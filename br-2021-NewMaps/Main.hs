@@ -310,6 +310,8 @@ comparison mr er t = do
 
 type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.PopPerSqMile]
 type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] V.++ ModelPredictorR V.++ '[BRC.Count]
+type ElexDShare = "ELexDShare" F.:-> Double
+
 newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             => Bool
             -> BR.PostPaths BR.Abs
@@ -328,7 +330,8 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
       fixCensus :: F.Record CDDemographicsR -> F.Record PostStratR
       fixCensus = F.rcast
       onlyNC = F.filterFrame ((== "NC") . F.rgetField @BR.StateAbbreviation)
-
+      addElexDShare r = let v = F.rgetField @BRE.TVotes r
+                        in r F.<+> (FT.recordSingleton @ElexDShare $ if v == 0 then 0 else (realToFrac (F.rgetField @BRE.DVotes r)/realToFrac v))
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
 
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
@@ -353,15 +356,31 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
   oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   BR.logFrame oldMapsPlusStateAndStateRace
-  (ccesRawByState, ccesRawByDistrict) <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
-  BR.logFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC") ccesRawByDistrict
+  (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
+  let ccesRawByDistrict = fmap addDistrict
+                          $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC")
+                          $ ccesRawByDistrict'
+  BR.logFrame $ ccesRawByDistrict
   elections_C <- BR.houseElectionsWithIncumbency
   electionsNC <- fmap onlyNC $ K.ignoreCacheTime elections_C
-  flattenedElectionsNC <- fmap addDistrict <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
-  BR.logFrame $ {-F.filterFrame ((==2020) . F.rgetField @BR.Year) -} flattenedElectionsNC
+  flattenedElectionsNC <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
+                          <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
+  BR.logFrame flattenedElectionsNC
+  let (oldMapsCompare', missing1, missing2)
+        = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          flattenedElectionsNC
+          ccesRawByDistrict
+          newMapsBase
+  when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
+  when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
+
+  let oldMapsCompare
+        = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
+  BR.logFrame oldMapsCompare
+
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
-  BR.logFrame davesRedistricting
+--  BR.logFrame davesRedistricting
 --  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
 
   let (modelAndDaves, missing)
