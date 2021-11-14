@@ -377,6 +377,12 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
   let oldMapsCompare
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.logFrame oldMapsCompare
+  _ <- K.addHvega Nothing Nothing
+       $ modelAndElectionScatter
+       True
+       ("Election vs Model")
+       (FV.ViewConfig 600 600 5)
+       (fmap F.rcast oldMapsCompare)
 
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
@@ -469,6 +475,91 @@ race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+
+modelAndElectionScatter :: Bool
+                         -> Text
+                         -> FV.ViewConfig
+                         -> F.FrameRec [DT.StateAbbreviation, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare]
+                         -> GV.VegaLite
+modelAndElectionScatter single title vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "CCES DShare"
+                    V.:& FVD.asVLData (GV.Str . show) "Model"
+                    V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
+                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
+                                       ]
+                    V.:& V.RNil
+      vlData = FVD.recordsToData toVLDataRec rows
+      xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
+      facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
+      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
+                                     , GV.PmType GV.Quantitative
+                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
+--                                     , xyScale
+                                     ]
+
+--                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
+                                     )
+      encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model_Low"]
+--                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
+--                                  , GV.PScale [GV.SZero False]
+                                  ]
+      encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Model_High"]
+--                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
+--                                  , GV.PScale [GV.SZero False]
+                                  ]
+      encElection = GV.position GV.X [GV.PName "Election Result"
+                                     , GV.PmType GV.Quantitative
+                                     , GV.PAxis [GV.AxTitle "Election Results"]
+                                       --                               , GV.PScale [GV.SZero False]
+                                       --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
+                                  ]
+      encSurvey = GV.color [GV.MName "CCES DShare"
+                           , GV.MmType GV.Quantitative
+                             --                               , GV.PScale [GV.SZero False]
+                             --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
+                           ]
+      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle ""]
+--                                  , xyScale
+                                  ]
+      facets = GV.facet [GV.RowBy facetModel]
+      ptEnc = GV.encoding . encModelMid . encElection . encSurvey
+      lineEnc = GV.encoding . encModelMid . enc45
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+      lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
+
+{-
+      regression p = GV.transform
+                     . GV.filter (GV.FExpr "datum.Election_Result > 1 && datum.Election_Result < 99")
+                     . GV.regression "Model_Mid" "Election_Result" [GV.RgParams p]
+      errorT = GV.transform
+               . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
+               . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
+--      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
+--      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
+      regressionSpec = GV.asSpec [regression False [], ptEnc [], GV.mark GV.Line [GV.MStroke "red"]]
+      r2Enc = GV.encoding
+              . GV.position GV.X [GV.PNumber 200]
+              . GV.position GV.Y [GV.PNumber 20]
+              . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
+      r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
+-}
+      finalSpec = if single
+--                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
+                  then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
+  in FV.configuredVegaLite vc finalSpec --
+
 
 
 modelAndDaveScatterChart :: Bool
