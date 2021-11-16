@@ -162,6 +162,13 @@ censusTablesForExistingCDs = censusTablesByDistrict fileByYear "existingCDs" whe
                , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
                ]
 
+censusTablesForDRACDs  :: (K.KnitEffects r
+                          , BR.CacheEffects r)
+                       => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesForDRACDs = censusTablesByDistrict fileByYear "DRA_CDs" where
+  fileByYear = [ (BRC.TY2018, censusDataDir <> "/NC_DRA.csv")]
+
+
 censusTablesForProposedCDs :: (K.KnitEffects r
                               , BR.CacheEffects r)
                            => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)

@@ -363,7 +363,8 @@ buildGroupIndexes = do
             indexName = dsName <> "_" <> gName
         addFixedIntJson' ("J_" <> gName) (Just 1) gSize
         _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
-        addDeclBinding gName $ SME.name $ "J_" <> gName -- ??
+--        addDeclBinding gName $ SME.name $ "J_" <> gName -- ??
+        addDeclBinding gName $ SME.StanVar ("J_" <> gName) SME.StanInt
 --        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
         return Nothing
       buildRowFolds :: (Typeable d) => RowTypeTag r -> RowInfo d r -> StanBuilderM env d (Maybe r)
@@ -719,9 +720,11 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
   let xWalkName = dataSetCrosswalkName rttFrom rttTo
       xWalkIndexKey = crosswalkIndexKey rttTo
       xWalkType = SME.StanArray [SME.NamedDim $ dataSetName rttFrom] SME.StanInt
+      xWalkVar = SME.StanVar xWalkName xWalkType
       xWalkF = toGroupToIndexE . fromToGroup
   addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
-  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
+--  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
+  addUseBindingToDataSet rttFrom xWalkIndexKey xWalkVar
   return ()
 
 
@@ -824,16 +827,22 @@ getDeclBinding k = do
     Nothing -> stanBuildError $ "declaration key (\"" <> k <> "\") not in binding store."
     Just e -> return e
 
-addDeclBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addDeclBinding k e = modify $ modifyIndexBindings f where
+addDeclBinding' :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addDeclBinding' k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore ubm (Map.insert k e dbm)
 
-addUseBinding :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addUseBinding k e = modify $ modifyIndexBindings f where
+addDeclBinding :: IndexKey -> SME.StanVar -> StanBuilderM env d ()
+addDeclBinding k sv = addDeclBinding' k (SME.var sv)
+
+addUseBinding' :: IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addUseBinding' k e = modify $ modifyIndexBindings f where
   f (SME.VarBindingStore ubm dbm) = SME.VarBindingStore (Map.insert k e ubm) dbm
 
-addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
-addUseBindingToDataSet rtt key e = do
+addUseBinding :: IndexKey -> SME.StanVar -> StanBuilderM env d ()
+addUseBinding k sv = addUseBinding' k (SME.var sv)
+
+addUseBindingToDataSet' :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM env d ()
+addUseBindingToDataSet' rtt key e = do
   let dataNotFoundErr = "addUseBindingToDataSet: Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
       bindingChanged newExpr oldExpr = when (newExpr /= oldExpr)
                                        $ Left
@@ -843,12 +852,6 @@ addUseBindingToDataSet rtt key e = do
                                        <> show oldExpr
                                        <> "; new expression="
                                        <> show newExpr
-{-      keyAlreadyBoundErr ebs = "addUseBindingToDataSet: IndexKey \""
-                               <> show key
-                               <> "\" already present in use bindings for data-set \""
-                               <> dataSetName rtt
-                               <> "\".\nExisting bindings: " <> show ebs
--}
       f rowInfos = do
         (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
         maybe (Right ()) (bindingChanged e) $ Map.lookup key ebs
@@ -857,6 +860,9 @@ addUseBindingToDataSet rtt key e = do
   bs <- get
   bs' <- stanBuildEither $ modifyRowInfosA f bs
   put bs'
+
+addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanVar -> StanBuilderM env d ()
+addUseBindingToDataSet rtt key sv = addUseBindingToDataSet' rtt key (SME.var sv)
 
 indexBindingScope :: StanBuilderM env d a -> StanBuilderM env d a
 indexBindingScope x = do
@@ -964,7 +970,8 @@ addFixedIntJson' name mLower n = do
 -- But we only need it once per data set.
 addLengthJson :: (Typeable d) => RowTypeTag r -> Text -> SME.IndexKey -> StanBuilderM env d SME.StanVar
 addLengthJson rtt name iKey = do
-  addDeclBinding iKey (SME.name name)
+--  addDeclBinding' iKey (SME.name name)
+  addDeclBinding iKey $ SME.StanVar name SME.StanInt
   addJsonOnce rtt name SME.StanInt "<lower=1>" (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: SME.StanName -> Text -> Text
@@ -1045,9 +1052,12 @@ add2dMatrixJson rtt name sc rowDim cols vecF = do
       wdName = name <> underscoredIf dsName
       colName = "K" <> "_" <> wdName
       colDimName = wdName <> "_Cols"
+      colDimVar = SME.StanVar colDimName SME.StanInt
   addFixedIntJson colName Nothing cols
-  addDeclBinding colDimName (SME.name colName)
-  addUseBindingToDataSet rtt colDimName (SME.name colName)
+--  addDeclBinding' colDimName (SME.name colName)
+  addDeclBinding colDimName $ SME.StanVar colName SME.StanInt
+--  addUseBindingToDataSet rtt colDimName (SME.name colName)
+  addUseBindingToDataSet rtt colDimName colDimVar
   addColumnJson rtt wdName (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
 
 modifyCode' :: (StanCode -> StanCode) -> BuilderState d -> BuilderState d
@@ -1139,7 +1149,8 @@ stanForLoopB counter mStartE k x = do
              (start `SME.nextTo` (SME.bare ":") `SME.nextTo` endE)
   printExprM "forLoopB" forE >>= addLine
   indexBindingScope $ do
-    addUseBinding k (SME.name counter)
+--    addUseBinding' k (SME.name counter)
+    addUseBinding k $ SME.StanVar counter SME.StanInt
     bracketed 2 x
 
 data StanPrintable = StanLiteral Text | StanExpression Text

@@ -390,6 +390,41 @@ toCodeCoAlg _ (_, Fix.Fix (BareF t)) = return $ BareCF t
 toCodeCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ AsIsCF (as, x)
 toCodeCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ NextToCF (as, l) (as, r)
 
+data VarF a where
+  VarVF :: StanVar -> a -> VarF a
+  ExprVF :: a -> VarF a
+  NullVF :: VarF a
+  PairVF :: a -> a -> VarF a
+  deriving  stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
+  deriving   (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault VarF
+
+varsCoAlg :: VarBindingStore -> (AnaS, StanExpr) -> Either Text (VarF (AnaS, StanExpr))
+varsCoAlg vbs (as, Fix.Fix (IndexF k)) =
+  case lContext as of
+    Use -> case lookupUseBinding k vbs of
+      Nothing -> Left $ if Map.null (useBindings vbs)
+                        then "varsCoAlg: var-index map is empty.  Maybe you forgot to choose which data set is used for binding via setDataSetForBindings ?"
+                        else "varsCoAlg: re-indexing key \"" <> k <> "\" not found in useBindings: " <> show vbs
+      Just ie -> return $  ExprVF (as, ie)
+    Declare ->   case lookupDeclarationBinding k vbs of
+      Nothing -> Left $ "varsCoAlg: re-indexing key \"" <> k <> "\" not found in declaration-index-map: " <> show vbs
+      Just ie -> return $ ExprVF (as, ie)
+varsCoAlg _ (AnaS _ vks, Fix.Fix (LookupCtxtF lc e)) = return $ ExprVF (AnaS lc vks, e)
+varsCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ ExprVF (as, tExprToExpr te)
+varsCoAlg _ (as, Fix.Fix (NamedVarF sv)) = return $ VarVF sv $ (as, tExprToExpr $ tExprFromStanVar sv)
+varsCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = return $ ExprVF (AnaS lc (vks <> vks'), e)
+varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = return $ ExprVF $ (as, if Set.null vks then e else function f (e :| es))
+varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
+  let ies = filter (keepIndex vks) $ indexesToExprs xs
+  case nonEmpty ies of
+    Nothing -> return NullVF
+    Just x -> return $ ExprVF (as, group "[" "]" $ csExprs x)
+varsCoAlg _ (_, Fix.Fix NullF) = return $ NullVF
+varsCoAlg _ (_, Fix.Fix (BareF t)) = return $ NullVF
+varsCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ ExprVF (as, x)
+varsCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ PairVF (as, l) (as, r)
+
+
 csArgs :: [Text] -> Text
 csArgs = T.intercalate ", "
 

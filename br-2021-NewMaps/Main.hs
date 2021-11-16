@@ -27,6 +27,7 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
+import qualified BlueRipple.Data.Visualizations.DemoComparison as BRV
 import qualified BlueRipple.Utilities.KnitUtils as BR
 --import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -211,9 +212,15 @@ showVACPS cps = do
       aggregatedRaw = FL.fold (aggregatePredictorsCountyFld aFld) cpsRaw
   BR.logFrame aggregatedRaw
 -}
-prepProposedCDData :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CDDemographicsR))
-prepProposedCDData clearCaches = do
-  cdData_C <- BRC.censusTablesForProposedCDs
+
+
+prepProposedCDData :: (K.KnitEffects r, BR.CacheEffects r)
+                   => Bool
+                   -> Text
+                   -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
+                   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CDDemographicsR))
+prepProposedCDData clearCaches cacheKey cdData_C = do
+--
   stateAbbreviations <-  BR.stateAbbrCrosswalkLoader
   let cacheKey = "model/newMaps/newCDDemographics.bin"
       deps = (,) <$> cdData_C <*> stateAbbreviations
@@ -231,7 +238,9 @@ prepProposedCDData clearCaches = do
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 newMapAnalysis = do
   ccesAndPums_C <-  BRE.prepCCESAndPums False
-  newCDs_C <- prepProposedCDData False
+--  cdData_C <- BRC.censusTablesForProposedCDs
+  newCDs_C <- prepProposedCDData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
+
   let newCDPostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   newMapsPaths <- postPaths "NewMaps"
   BR.brNewPost newMapsPaths newCDPostInfo "New Maps" $ do
@@ -337,7 +346,8 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
       addElexDShare r = let v = F.rgetField @BRE.TVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if v == 0 then 0 else (realToFrac (F.rgetField @BRE.DVotes r)/realToFrac v))
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-
+  draNC_C <- prepProposedCDData False "model/DRAMaps.bin" =<< BRC.censusTablesForDRACDs
+--  draNC <- censusDemographicsRecode . BRC.sexEducationRace <$> K.ignoreCacheTime draNC_C
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
                    $ SB.addGroupToSet BRE.raceGroup
@@ -357,8 +367,9 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
         =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2020 (psInfo name) ccesAndPums2020_C
   newMapsBase <- model2020 BRE.Base "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
-  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
---  oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+--  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+  oldMapsDRABase <- model2020 BRE.Base "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  BR.logFrame oldMapsPlusStateAndStateRace
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
@@ -374,7 +385,7 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          newMapsBase
+          oldMapsDRABase
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
   let oldMapsCompare
@@ -387,11 +398,20 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast oldMapsCompare)
 
+
+  let nc r = F.rgetField @DT.StateAbbreviation r == "NC"
+      nc6or9 r = nc r && F.rgetField @ET.DistrictNumber r `elem` [9,6]
+      textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
+  ncRows <- K.ignoreCacheTime $ fmap (F.filterFrame nc) draNC_C
+  K.addHvega Nothing Nothing =<<  BRV.demoCompare2
+    ("Race", show . F.rgetField @DT.Race5C)
+    ("Education", show . F.rgetField @DT.CollegeGradC)
+    (F.rgetField @BRC.Count)
+    ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
+    "By Race and Education"
+    (FV.ViewConfig 600 600 5)
+    ncRows
 {-
-  let nc6 r = F.rgetField @DT.StateAbbreviation r == "NC" && F.rgetField @ET.DistrictNumber
-  BR.logFrame $ K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
-
-
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
 --  BR.logFrame davesRedistricting

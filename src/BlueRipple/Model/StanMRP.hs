@@ -356,7 +356,7 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
       namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
       sizeName = "N_" <> namedPS
       indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
-  SB.addDeclBinding namedPS (SB.name sizeName)
+  SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
   rowInfos <- SB.rowBuilders <$> get
   modelGroupsDHM <- do
     case DHash.lookup rttModel rowInfos of
@@ -393,14 +393,16 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
       rowToK <- SB.rowToGroup <$> SB.stanBuildMaybe psGroupMissingErr (DHash.lookup gtt psGroupsDHM)
       SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
       -- This is hacky.  We need a more principled way to know if re-adding same data is an issue.
-      SB.addColumnMJsonOnce rttPS indexName (SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt) "<lower=0>" (kToIntE . rowToK)
+      let indexType = SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt
+      SB.addColumnMJsonOnce rttPS indexName indexType "<lower=0>" (kToIntE . rowToK)
       SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
         $ SJ.valueToPairF sizeName
         $ fmap (A.toJSON . Set.size)
         $ FL.premapM (kToIntE . rowToK)
         $ FL.generalize FL.set
-      SB.addDeclBinding indexName (SME.name sizeName)
-      SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
+      SB.addDeclBinding indexName $ SME.StanVar sizeName SME.StanInt
+--      SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
+      SB.addUseBindingToDataSet rttPS indexName $ SB.StanVar indexName indexType
       return ()
 
   let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
@@ -433,7 +435,8 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
               _ -> return ()
           return psV
         Just (SB.GroupTypeTag gn) -> do
-          SB.addUseBinding namedPS $ SB.indexBy (SB.name namedPS) psDataSetName
+--          SB.addUseBinding namedPS $ SB.indexBy (SB.name namedPS) psDataSetName
+--          SB.addUseBinding namedPS $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim psDataSetName) --SB.indexBy (SB.name namedPS) psDataSetName
 
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec

@@ -67,26 +67,29 @@ sumToZeroQR (SB.StanVar varName st@(SB.StanVector sd)) = do
 sumToZeroQR (SB.StanVar varName _) = SB.stanBuildError $ "Non vector type given to sumToZeroQR (varName=" <> varName <> ")"
 
 softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
-softSumToZero sv@(SB.StanVar varName st@(SB.StanVector sd)) sumToZeroPrior = do
+softSumToZero sv@(SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) sumToZeroPrior = do
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
   SB.inBlock SB.SBModel $ do
-    let expr = SB.function "sum" (one $ SB.name varName) `SB.vectorSample` sumToZeroPrior
+    let expr = SB.vectorized (one k) (SB.function "sum" (one $ SB.var sv)) `SB.vectorSample` sumToZeroPrior
     SB.addExprLines "softSumToZero" [expr]
 softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
 
 weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()
-weightedSoftSumToZero (SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn sumToZeroPrior = do
+weightedSoftSumToZero sv@(SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn sumToZeroPrior = do
 --  let dSize = SB.dimToText sd
   SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
-  SB.inBlock SB.SBTransformedData $ do
-    SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector (SB.NamedDim k)) "<lower=0>"
+  weightsV <- SB.inBlock SB.SBTransformedData $ do
+    weightsV' <- SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector (SB.NamedDim k)) "<lower=0>"
       $ SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr $ SB.NamedDim k])
     SB.stanForLoopB "n" Nothing k
       $ SB.addExprLine "weightedSoftSumToZero"
-      $ SB.binOp "+=" (SB.indexBy (SB.name $ varName <> "_weights") gn) (SB.scalar "1") --[" <> gn <> "[n]] += 1"
+      $ SB.var sv `SB.plusEq` (SB.scalar "1") --[" <> gn <> "[n]] += 1"
+--      $ SB.binOp "+=" (SB.indexBy (SB.name $ varName <> "_weights") gn) (SB.scalar "1") --[" <> gn <> "[n]] += 1"
     SB.addStanLine $ varName <> "_weights /= N"
+    return weightsV'
   SB.inBlock SB.SBModel $ do
-    let expr = SB.function "dot_product" (SB.name varName :| [SB.name $ varName <> "_weights"]) `SB.vectorSample` sumToZeroPrior
+--    let expr = SB.function "dot_product" (SB.name varName :| [SB.name $ varName <> "_weights"]) `SB.vectorSample` sumToZeroPrior
+    let expr = SB.vectorized (one k) (SB.function "dot_product" (SB.var sv :| [SB.var weightsV])) `SB.vectorSample` sumToZeroPrior
     SB.addExprLines "softSumToZero" [expr]
 --    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
 weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
@@ -177,7 +180,7 @@ groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
       loopsFromDims :: [SB.StanDim] -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
       loopsFromDims dims = foldr (\f g -> g . f) id $ fmap loopFromDim dims
   SB.inBlock SB.SBModel $ case bt of
-    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
+    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
     SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
     SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
@@ -185,8 +188,8 @@ groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()
 addHyperParameters hps = do
    let f (n, (t, e)) = do
-         SB.inBlock SB.SBParameters $ SB.stanDeclare n SB.StanReal t
-         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ SB.name n `SB.vectorSample` e
+         v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n SB.StanReal t
+         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ SB.var v `SB.vectorSample` e
    traverse_ f $ Map.toList hps
 
 hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel

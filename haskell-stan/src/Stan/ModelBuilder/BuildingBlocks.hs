@@ -114,7 +114,7 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
     fnArgsExprT <- SB.stanBuildEither $  SB.printExpr SB.noBindings fnArgsExpr
     SB.declareStanFunction ("real partial_sum_" <> fName <> "(" <> fnArgsExprT <> ")") $ do
       SB.indexBindingScope $ do -- only add slice for index in this cope
-        SB.addUseBinding dsName $ SB.bare "start:end" -- index data-set with slice
+        SB.addUseBinding' dsName $ SB.bare "start:end" -- index data-set with slice
         SB.addExprLine "parallelSampleDistV" samplingE
   SB.inBlock SB.SBModel $ do
     let varName (SB.StanVar n _) = SB.name n
@@ -141,9 +141,9 @@ generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, args) 
 generateLogLikelihood' rtt distsAndArgs =  SB.inBlock SB.SBGeneratedQuantities $ do
   let dsName = SB.dataSetName rtt
       dim = SME.NamedDim dsName
-  SB.stanDeclare "log_lik" (SME.StanVector dim) ""
+  logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
   SB.stanForLoopB "n" Nothing dsName $ do
-    let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
+    let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
         oneRhsE (sDist, args) = SMD.familyLDF sDist dsName args
         rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
     SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
@@ -152,9 +152,10 @@ generateLogLikelihood' rtt distsAndArgs =  SB.inBlock SB.SBGeneratedQuantities $
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist k args
-      ppE = SME.indexBy (SME.name ppName) k `SME.eq` rngE
-  SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" ppE
+--      ppVar = SME.StanVar ppName t
+--      ppE = SME.var ppVar --SME.indexBy (SME.name ppName) k `SME.eq` rngE
+  ppVar <- SB.stanDeclare ppName t ""
+  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar
   return sv
 generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
