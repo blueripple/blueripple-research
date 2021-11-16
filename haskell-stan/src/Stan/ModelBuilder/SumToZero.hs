@@ -179,7 +179,7 @@ groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
   SB.inBlock SB.SBModel $ case bt of
     SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
     SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
-    SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.useVar bv `SB.vectorSample` priorE
+    SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
 
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()

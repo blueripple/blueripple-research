@@ -82,19 +82,46 @@ add2dMatrixData rtt varName cols mLower mUpper f = do
   SB.add2dMatrixJson rtt varName bounds (SB.NamedDim $ SB.dataSetName rtt) cols f --stanType bounds f
 
 
-intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanExpr
+intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanVar
 intercept iName alphaPriorE = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
-  let alphaE = SB.name iName
-      interceptE = alphaE `SME.vectorSample` alphaPriorE
+  iVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
+  let --alphaE = SB.name iName
+      interceptE = SB.var iVar `SME.vectorSample` alphaPriorE
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
-  return alphaE
+  return iVar
 
 sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
 sampleDistV rtt sDist args =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
       samplingE = SMD.familySampleF sDist dsName args
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
+
+
+parallelSampleDistV :: Typeable d => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> [SB.StanVar] -> SB.StanBuilderM env d ()
+parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) fnArgs = do
+--  let rsExpr = SB.target `SB.plusEq` SB.function "reduce_sum"
+  let dsName = SB.dataSetName rtt
+      samplingE = SMD.familyLUDF sDist dsName args
+      fSuffix = if SB.distType sDist == SB.Discrete then "lpmf" else "lpdf"
+      fName = fPrefix <> "_" <> fSuffix
+  SB.addFixedIntJson' "grainsize" Nothing 1
+  SB.addFunctionsOnce fName $ do
+    let argList = SB.StanVar "x_slice" slicedType :|
+                  [ SB.StanVar "start" SB.StanInt
+                  , SB.StanVar "end" SB.StanInt] ++
+                  fnArgs
+        fnArgsExpr = SB.csExprs $ SB.varAsArgument <$> argList
+    fnArgsExprT <- SB.stanBuildEither $  SB.printExpr SB.noBindings fnArgsExpr
+    SB.declareStanFunction ("real partial_sum_" <> fName <> "(" <> fnArgsExprT <> ")") $ do
+      SB.indexBindingScope $ do -- only add slice for index in this cope
+        SB.addUseBinding dsName $ SB.bare "start:end" -- index data-set with slice
+        SB.addExprLine "parallelSampleDistV" samplingE
+  SB.inBlock SB.SBModel $ do
+    let varName (SB.StanVar n _) = SB.name n
+        argList = SB.bare fName :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
+    SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
+
+
 {-
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
 generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
@@ -182,9 +209,9 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
 fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d ()
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
-  SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+  thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
   SB.inBlock SB.SBTransformedParameters $ do
-    SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+    betaVar <- SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
   return ()
 
@@ -220,5 +247,5 @@ vectorizeVar v@(SB.StanVar vn vt) rtt = do
       vecVname = vn <> "_v" <> ik
   fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
   SB.useDataSetForBindings rtt $ do
-    SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.useVar fv `SB.eq` SB.useVar v
+    SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` SB.var v
   return fv

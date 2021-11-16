@@ -150,7 +150,7 @@ addGroup :: Typeable d
            -> SB.GroupModel
            -> SB.GroupTypeTag k
            -> Maybe Text
-           -> SB.StanBuilderM env d SB.StanExpr
+           -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
 addGroup rtt binaryPrior gm gtt mVarSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
@@ -163,23 +163,16 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
                  $ SB.csExprs (SB.name en :| [SB.name $ "-" <> en])
         let e' = SB.indexBy be gn
             modelTerm = SB.vectorFunction "to_vector" e' []
-        SB.inBlock SB.SBParameters $ SB.stanDeclare en SB.StanReal ""
+        epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare en SB.StanReal ""
         SB.inBlock SB.SBModel $ do
           let priorE = SB.name en `SB.vectorSample` binaryPrior
           SB.addExprLine "intercept" priorE
---          SB.printExprM "intercept" (SB.fullyIndexedBindings mempty) (return priorE) >>= SB.addStanLine
-        return modelTerm
+        return (modelTerm, epsVar)
   let nonBinaryGroup = do
         let modelTerm = SB.indexBy (SB.name $ gs "beta") gn
---        sigmaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (gs "sigma") SB.StanReal "<lower=0>"
---        SB.inBlock SB.SBModel $ do
---          let sigmaPriorE = SB.name (gs "sigma") `SB.vectorSample` sigmaPrior
---          SB.addExprLine "addMRGroup" sigmaPriorE
---          SB.printExprM "addMRGroup" (SB.fullyIndexedBindings mempty) (return sigmaPriorLine) >>= SB.addStanLine
         let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim gn)
         SB.groupModel betaVar gm
---        SB.rescaledSumToZero stz pmp betaVar (gs "sigma") sigmaPrior
-        return modelTerm
+        return (modelTerm, betaVar)
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
 addInteractions2 :: Typeable d
@@ -424,19 +417,19 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
           psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
           SB.bracketed 2 $ do
             wgtSumE <- case psType of
-                         PSShare _ -> fmap SB.useVar
+                         PSShare _ -> fmap SB.var
                                       $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
                          _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
               psExpr <- psExprF psDataSetName
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
-              SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+              SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
-                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.useVar wgtsV)
+                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
+                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.var wgtsV)
                 _ -> return ()
             case psType of
-              PSShare _ -> SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+              PSShare _ -> SB.addExprLine errCtxt $ SB.var psV `divEq` wgtSumE
               _ -> return ()
           return psV
         Just (SB.GroupTypeTag gn) -> do
@@ -446,20 +439,20 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec
           SB.bracketed 2 $ do
             wgtSumE <- case psType of
-                         PSShare _ -> fmap SB.useVar
+                         PSShare _ -> fmap SB.var
                                       $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
                          _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
               psExpr <-  psExprF psDataSetName
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
-              SB.addExprLine errCtxt $ SB.useVar psV `SB.plusEq` (SB.useVar e `SB.times` SB.useVar wgtsV)
+              SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
-                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.useVar wgtsV
-                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.useVar wgtsV)
+                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
+                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.var wgtsV)
                 _ -> return ()
             case psType of
               PSShare _ -> SB.stanForLoopB "n" Nothing indexName $ do
-                SB.addExprLine errCtxt $ SB.useVar psV `divEq` wgtSumE
+                SB.addExprLine errCtxt $ SB.var psV `divEq` wgtSumE
               _ -> return ()
           return psV
 

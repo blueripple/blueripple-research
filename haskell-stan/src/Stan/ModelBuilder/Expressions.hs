@@ -125,6 +125,22 @@ declarationPart  st c = case st of
   StanMatrix (d1, d2) -> withIndexes (name $ "matrix" <> c) [d1, d2]
   StanArray dims st -> declarationPart st c
 
+varAsArgument :: StanVar -> StanExpr
+varAsArgument (StanVar sn st) = bare $ (typePart st) <> " " <> sn where
+  typePart :: StanType -> Text
+  typePart x = case x of
+    StanInt -> "int"
+    StanReal -> "real"
+    StanVector _ -> "vector"
+    StanMatrix _ -> "matrix"
+    StanArray _ y -> case y of
+      StanArray _ z -> typePart z
+      _ -> typePart y <> "[]"
+    _ -> error $ "varAsArgument: type=" <> show st <> " not supported as function argument"
+  --  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
+--  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
+--  StanCovMatrix dim -> withIndexes (name "cov_matrix") [dim]
+
 declarationExpr :: StanVar -> Text -> StanExpr
 declarationExpr (StanVar sn st) c = case st of
   sa@(StanArray _ _) -> let (StanArray dims st) = collapseArray sa
@@ -142,6 +158,7 @@ data StanExprF a where
   AsIsF :: a -> StanExprF a -- required to rewrap Declarations
   NextToF :: a -> a -> StanExprF a
   LookupCtxtF :: LookupContext -> a -> StanExprF a
+  NamedVarF :: StanVar -> StanExprF a
   UseTExprF :: TExpr a -> StanExprF a
   IndexF :: IndexKey -> StanExprF a -- pre-lookup
   VectorizedF :: Set IndexKey -> a -> StanExprF a
@@ -179,8 +196,11 @@ declareVar sv c = declaration $ declarationExpr sv c
 useTExpr :: TExpr StanExpr -> StanExpr
 useTExpr = Fix.Fix . UseTExprF
 
-useVar :: StanVar -> StanExpr
-useVar = useTExpr . tExprFromStanVar
+var :: StanVar -> StanExpr
+var = Fix.Fix . NamedVarF
+
+--useVar :: StanVar -> StanExpr
+--useVar = useTExpr . tExprFromStanVar
 
 index :: IndexKey -> StanExpr
 index k = Fix.Fix $ IndexF k
@@ -254,6 +274,10 @@ divide = binOp "/"
 
 multiOp :: Text -> NonEmpty StanExpr -> StanExpr
 multiOp o es = foldl' (binOp o) (head es) (tail es)
+
+-- special case for stan targets
+target :: StanExpr
+target = name "target"
 
 --data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
 data VarBindingStore = VarBindingStore { useBindings :: Map IndexKey StanExpr
@@ -351,6 +375,7 @@ toCodeCoAlg vbs (as, Fix.Fix (IndexF k)) = do
 toCodeCoAlg _ (AnaS _ vks, Fix.Fix (LookupCtxtF lc e)) = do
   return $ AsIsCF (AnaS lc vks, e)
 toCodeCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ AsIsCF $ (as, tExprToExpr te)
+toCodeCoAlg _ (as, Fix.Fix (NamedVarF sv)) = return $ AsIsCF $ (as, tExprToExpr $ tExprFromStanVar sv)
 toCodeCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = do
   return $ AsIsCF (AnaS lc (vks <> vks'), e)
 toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = do

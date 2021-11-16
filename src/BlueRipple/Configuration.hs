@@ -1,7 +1,9 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# OPTIONS_GHC -fno-cse #-}
 module BlueRipple.Configuration
   (module BlueRipple.Configuration
   , module Path
@@ -13,6 +15,7 @@ import qualified Path
 import qualified Path.IO as Path
 import           Path (Path, Abs, Rel, Dir, File, PathException, (</>))
 import qualified Data.Time.Calendar as Time
+import qualified System.Console.CmdArgs as CmdArgs
 import qualified Say
 
 brReadMore :: T.Text
@@ -68,6 +71,34 @@ brGithubUrl x = "https://blueripple.github.io" <> x <> ".html"
 brLocalRoot :: T.Text
 brLocalRoot = "posts/"
 
+-- command line
+data CommandLine = CommandLine
+  {
+    postStage :: PostStage
+  , stanChains :: Int
+  , stanMaxCores :: Bool
+  , stanCoresPerChain :: Int
+  } deriving (Show, CmdArgs.Data, Typeable, Eq)
+
+commandLine = CommandLine
+  { postStage = CmdArgs.enum [LocalDraft CmdArgs.&= CmdArgs.help "Write result HTML locally."
+                             ,OnlineDraft CmdArgs.&= CmdArgs.help "Write result HTML to github draft directory."
+                             ,OnlinePublished CmdArgs.&= CmdArgs.help "Write result HTML to blueripple publish directory."
+                             ]
+  , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+  , stanMaxCores = False CmdArgs.&= CmdArgs.help "If present, use maximum available cores per chain."
+  , stanCoresPerChain = 1 CmdArgs.&= CmdArgs.help "Number of cores to use per Stan chain for within chain parallelization (if not using the maximum)."
+  }
+
+clStanParallel :: CommandLine -> StanParallel
+clStanParallel (CommandLine _ chains max nCpc)  = StanParallel chains cpc where
+  cpc = if max then MaxCoresPerChain else FixedCoresPerChain nCpc
+
+data StanParallel = StanParallel { parallelChains :: Int, coresPerChain :: CoresPerChain } deriving (Show, Eq)
+
+data CoresPerChain = MaxCoresPerChain | FixedCoresPerChain Int deriving (Show, Eq)
+
+
 -- I want functions to support
 -- 1. Putting post documents in the right place in a tree for both draft and post
 -- 2. Support Unused bits, existing only in dev.
@@ -78,7 +109,7 @@ data NoteName = Used Text | Unused Text deriving (Show)
 
 data PubTime = Unpublished | Published Time.Day deriving (Show)
 
-data PostStage = LocalDraft | OnlineDraft | OnlinePublished deriving (Show)
+data PostStage = LocalDraft | OnlineDraft | OnlinePublished deriving (Show, Read, CmdArgs.Data, Typeable, Eq)
 
 data PubTimes =  PubTimes { initialPT :: PubTime
                           , updatePT  :: Maybe PubTime

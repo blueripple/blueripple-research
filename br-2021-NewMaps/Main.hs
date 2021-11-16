@@ -53,6 +53,7 @@ import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
+import qualified System.Console.CmdArgs as CmdArgs
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.Melt as F
@@ -126,7 +127,10 @@ main = do
           , K.serializeDict = BR.flatSerializeDict
           , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
-  resE <- K.knitHtmls knitConfig newMapAnalysis
+  cmdLine <- CmdArgs.cmdArgs BR.commandLine
+  resE <- K.knitHtmls knitConfig $ do
+    K.logLE K.Info $ "Command Line: " <> show cmdLine
+    newMapAnalysis
 
   case resE of
     Right namedDocs ->
@@ -352,10 +356,10 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2020 (psInfo name) ccesAndPums2020_C
   newMapsBase <- model2020 BRE.Base "NC_Proposed" $ fmap fixCensus <$> cdData_C
-  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
+--  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
   oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
-  oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
-  BR.logFrame oldMapsPlusStateAndStateRace
+--  oldMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+--  BR.logFrame oldMapsPlusStateAndStateRace
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
                           $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC")
@@ -373,16 +377,20 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
           newMapsBase
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
-
   let oldMapsCompare
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
        True
-       ("Election vs Model")
+       ("NC Current Districts: Election vs Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast oldMapsCompare)
+
+{-
+  let nc6 r = F.rgetField @DT.StateAbbreviation r == "NC" && F.rgetField @ET.DistrictNumber
+  BR.logFrame $ K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
+
 
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
@@ -400,6 +408,7 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
        ("NC CST-13: Modeled Vs. Dave")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast modelAndDaves)
+-}
 
 {-
   modelBase2020 <- model2020 BRE.Base
