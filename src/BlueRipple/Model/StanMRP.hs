@@ -159,18 +159,18 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
   when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = gs "eps"
-            be = SB.bracket
-                 $ SB.csExprs (SB.name en :| [SB.name $ "-" <> en])
-        let e' = SB.indexBy be gn
-            modelTerm = SB.vectorFunction "to_vector" e' []
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare en SB.StanReal ""
+        let be = SB.bracket
+                 $ SB.csExprs (SB.var epsVar :| [SB.negate $ SB.var epsVar])
+        let e' = SB.indexBy be gn -- this is weird. But {a,-a} is an array and can be indexed
+            modelTerm = SB.vectorFunction "to_vector" e' []
         SB.inBlock SB.SBModel $ do
           let priorE = SB.name en `SB.vectorSample` binaryPrior
           SB.addExprLine "intercept" priorE
         return (modelTerm, epsVar)
   let nonBinaryGroup = do
-        let modelTerm = SB.indexBy (SB.name $ gs "beta") gn
         let betaVar = SB.StanVar (gs "beta") (SB.StanVector $ SB.NamedDim gn)
+            modelTerm = SB.var betaVar --SB.indexBy (SB.name $ gs "beta") gn
         SB.groupModel betaVar gm
         return (modelTerm, betaVar)
   if indexSize == 2 then binaryGroup else nonBinaryGroup
@@ -266,31 +266,35 @@ addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
+      colKey = "X_" <> feDataSetName <> "_Cols"
 --      rowIndexExpr =
   SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  f <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
+  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName colKey -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
-    let e = SB.name ("thetaX" <> uSuffix) `SB.vectorSample` fePrior
+    let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = if T.null feDataSetName
+  let eQ = SB.var qVar
+{-
+        if T.null feDataSetName
            then SB.indexBy (SB.name "Q_ast") rowIndexKey
            else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") rowIndexKey
-      eTheta = SB.name $ "thetaX" <> uSuffix
-      eQTheta = eQ `SB.times` eTheta
-      eX = if T.null feDataSetName
-           then SB.indexBy (SB.name "centered_X") rowIndexKey
-           else SB.indexBy (SB.name ("centered_X" <> uSuffix)) rowIndexKey
-      eBeta = SB.name $ "betaX" <> uSuffix
-      eXBeta = eX `SB.times` eBeta
+-}
+  --    eTheta = SB.var thetaVar --SB.name $ "thetaX" <> uSuffix
+      eQTheta = SB.matMult qVar thetaVar
+      xName = if T.null feDataSetName then "centered_X" else "centered_X" <> uSuffix
+      xVar = SB.StanVar xName (SB.varType qVar)
+      eX = SB.var xVar
+      eBeta = SB.var betaVar --SB.name $ "betaX" <> uSuffix
+      eXBeta = SB.matMult xVar betaVar
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, f, eBeta)
 
 addFixedEffectsData :: forall r d. (Typeable d)
                     => SB.RowTypeTag r
                     -> FixedEffects r
-                    -> BuilderM d (SB.StanVar -> BuilderM d SB.StanVar)
+                    -> BuilderM d (SB.StanVar, SB.StanVar -> BuilderM d SB.StanVar)
 addFixedEffectsData feRTT (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
@@ -303,26 +307,32 @@ addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    -> SB.RowTypeTag r1
                                    -> SB.RowTypeTag r2
                                    -> Maybe Text
-                                   -> BuilderM d (SB.StanExpr, SB.StanExpr)
+                                   -> BuilderM d (SB.StanExpr, SB.StanVar)
 addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
   let feDataSetName = SB.dataSetName rttFE
       modeledDataSetName = fromMaybe "" mVarSuffix
       pSuffix = SB.underscoredIf feDataSetName
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
-  SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) ("X" <> pSuffix <> "_Cols")
-  let eTheta = SB.name $ "thetaX" <> uSuffix
-      eBeta  = SB.name $ "betaX" <> uSuffix
+      colIndexKey =  "X" <> pSuffix <> "_Cols"
+  (betaVar, thetaVar) <- SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) colIndexKey
+  let eTheta = SB.var thetaVar --SB.name $ "thetaX" <> uSuffix
+      eBeta  = SB.var betaVar --SB.name $ "betaX" <> uSuffix
   SB.inBlock SB.SBModel $ do
-    let e = eTheta `SB.vectorSample` fePrior
+    let e = SB.vectorized (one colIndexKey) eTheta `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e
 --    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
-  let eQ = SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") rowIndexKey
-      eQTheta = eQ `SB.times` eTheta
-      eX = SB.indexBy (SB.name ("centered_X" <> pSuffix)) rowIndexKey
-      eXBeta = eX `SB.times` eBeta
-      feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, eBeta)
+  let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
+      qName = "Q" <> pSuffix <> "_ast"
+      qVar = SB.StanVar qName xType
+--      eQ = SB.var qVar --SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") rowIndexKey
+      eQTheta = SB.matMult qVar thetaVar
+      xName = "centered_X" <> pSuffix
+      xVar = SB.StanVar xName xType
+--      eX = SB.var xVar --SB.indexBy (SB.name ("centered_X" <> pSuffix)) rowIndexKey
+      eXBeta = SB.matMult xVar betaVar
+  let feExpr = if thinQR then eQTheta else eXBeta
+  return (feExpr, betaVar)
 
 
 

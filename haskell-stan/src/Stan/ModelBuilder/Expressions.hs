@@ -18,6 +18,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Stan.ModelBuilder.Expressions where
 
@@ -37,6 +38,8 @@ import qualified Data.Text as T
 import qualified Text.PrettyPrint as Pretty
 
 import GHC.Generics (Generic1)
+import Data.ByteString.Lazy (foldlChunks)
+import Knit.Report (perspectiveX1)
 
 type StanName = Text
 type IndexKey = Text
@@ -67,23 +70,42 @@ data TExpr a = TExpr a StanType
 
 data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord, Generic)
 
+varName :: StanVar -> StanName
+varName (StanVar n _) = n
+
+varType :: StanVar -> StanType
+varType (StanVar _ t) = t
+
+
+-- for matrix multiplication
+dropLastIndex :: StanType -> Either Text StanType
+dropLastIndex StanInt = Left "Can't drop outer index from an Int"
+dropLastIndex StanReal = Left "Can't drop outer index from a Real"
+dropLastIndex (StanArray ds t) = case dropLastIndex t of
+  Right t' -> Right $ StanArray ds t'
+  Left _ -> case ds of
+    [] -> Left $ "Can't drop last index of a zero-dimensional array of scalars"
+    _ -> Right $ StanArray (reverse $ drop 1 $ reverse ds) t
+dropLastIndex (StanVector _) = Right StanReal
+dropLastIndex (StanMatrix (rd, _)) = Right $ StanVector rd
+dropLastIndex (StanCorrMatrix d) = Right $ StanVector d
+dropLastIndex (StanCholeskyFactorCorr d) = Right $ StanVector d
+dropLastIndex (StanCovMatrix d) = Right $ StanVector d
+
+dropFirstIndex :: StanType -> Either Text StanType
+dropFirstIndex StanInt = Left "Can't drop inner index from an Int"
+dropFirstIndex StanReal = Left "Can't drop inner index from a Real"
+dropFirstIndex (StanArray [] t) = dropFirstIndex t
+dropFirstIndex (StanArray (x:xs) t) = Right $ if null xs then t else StanArray xs t
+dropFirstIndex (StanVector _) = Right StanReal
+dropFirstIndex (StanMatrix (_, rc)) = Right $ StanVector rc
+dropFirstIndex (StanCorrMatrix d) = Right $ StanVector d
+dropFirstIndex (StanCholeskyFactorCorr d) = Right $ StanVector d
+dropFirstIndex (StanCovMatrix d) = Right $ StanVector d
+
+
 tExprFromStanVar :: StanVar -> TExpr StanExpr
 tExprFromStanVar (StanVar sn st) = TExpr (name sn) st
-
---exprFromStanVar :: StanVar -> ()
---exprFromStanVar (StanVar sn st) = TExpr (name sn) st
-
-{-
-indexTExpr :: TExpr -> StanExpr -> Either Text TExpr
-indexTExpr (TExpr e (StanArray (x : xs) st)) ie =
-  let st' = case xs of
-        [] -> st
-        ds -> StanArray ds st
-  in Right $ TExpr (withIndexes e [ie]) st'
-indexTExpr (TExpr e (StanVector d)) ie = Right $ TExpr (withIndexes e [ie]) StanReal
-indexTExpr (TExpr e (StanMatrix (dr, dc))) ie = Right $ TExpr (withIndexes e [ie]) (StanVector dc)
-indexTExpr te _ = Left $ "Attempt to index non-indexable TExpr: " <> show te
--}
 
 getDims :: StanType -> [StanDim]
 getDims StanInt = []
@@ -94,6 +116,9 @@ getDims (StanMatrix (d1, d2)) = [d1, d2]
 getDims (StanCorrMatrix d) = [d]
 getDims (StanCholeskyFactorCorr d) = [d]
 getDims (StanCovMatrix d) = [d]
+
+getVarDims :: StanVar -> [StanDim]
+getVarDims = getDims . varType
 
 indexKeys :: StanType -> [IndexKey]
 indexKeys = catMaybes . fmap dimToIndexKey . getDims where
@@ -159,6 +184,7 @@ data StanExprF a where
   NextToF :: a -> a -> StanExprF a
   LookupCtxtF :: LookupContext -> a -> StanExprF a
   NamedVarF :: StanVar -> StanExprF a
+  MatMultF :: StanVar -> StanVar -> StanExprF a -- yeesh.  This is too specific?
   UseTExprF :: TExpr a -> StanExprF a
   IndexF :: IndexKey -> StanExprF a -- pre-lookup
   VectorizedF :: Set IndexKey -> a -> StanExprF a
@@ -262,13 +288,26 @@ plus = binOp "+"
 plusEq ::  StanExpr -> StanExpr -> StanExpr
 plusEq = binOp "+="
 
-
 minus ::  StanExpr -> StanExpr -> StanExpr
 minus = binOp "-"
+
+negate :: StanExpr -> StanExpr
+negate e = bare "-" `nextTo` e
 
 times :: StanExpr -> StanExpr -> StanExpr
 times = binOp "*"
 
+matMult :: StanVar -> StanVar -> StanExpr
+matMult v1 v2 = Fix.Fix $ MatMultF v1 v2
+
+{-
+sv1 sv2 = do
+  t1 <- dropLastIndex $ varType sv1
+  t2 <- dropFirstIndex $ varType sv2
+  let e1 = var $ StanVar (varName sv1) t1
+      e2 = var $ StanVar (varName sv2) t2
+  return $ times e1 e2
+-}
 divide :: StanExpr -> StanExpr -> StanExpr
 divide = binOp "/"
 
@@ -278,6 +317,10 @@ multiOp o es = foldl' (binOp o) (head es) (tail es)
 -- special case for stan targets
 target :: StanExpr
 target = name "target"
+
+-- special case for function return
+fReturn :: StanExpr -> StanExpr
+fReturn e = bare "return" `spaced` e
 
 --data BindIndex = NoIndex | IndexE StanExpr --deriving (Show)
 data VarBindingStore = VarBindingStore { useBindings :: Map IndexKey StanExpr
@@ -376,6 +419,13 @@ toCodeCoAlg _ (AnaS _ vks, Fix.Fix (LookupCtxtF lc e)) = do
   return $ AsIsCF (AnaS lc vks, e)
 toCodeCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ AsIsCF $ (as, tExprToExpr te)
 toCodeCoAlg _ (as, Fix.Fix (NamedVarF sv)) = return $ AsIsCF $ (as, tExprToExpr $ tExprFromStanVar sv)
+toCodeCoAlg _ (as, Fix.Fix (MatMultF sv1 sv2)) = do
+  t1 <- dropLastIndex $ varType sv1
+  t2 <- dropFirstIndex $ varType sv2
+  let e1 = var $ StanVar (varName sv1) t1
+      e2 = var $ StanVar (varName sv2) t2
+  return $ AsIsCF $ (as, times e1 e2)
+--  return $ AsIsCF $ (as, tExprToExpr $ tExprFromStanVar sv)
 toCodeCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = do
   return $ AsIsCF (AnaS lc (vks <> vks'), e)
 toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = do
@@ -391,7 +441,7 @@ toCodeCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ AsIsCF (as, x)
 toCodeCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ NextToCF (as, l) (as, r)
 
 data VarF a where
-  VarVF :: StanVar -> a -> VarF a
+  VarsVF :: [StanVar] -> a -> VarF a
   ExprVF :: a -> VarF a
   NullVF :: VarF a
   PairVF :: a -> a -> VarF a
@@ -411,7 +461,11 @@ varsCoAlg vbs (as, Fix.Fix (IndexF k)) =
       Just ie -> return $ ExprVF (as, ie)
 varsCoAlg _ (AnaS _ vks, Fix.Fix (LookupCtxtF lc e)) = return $ ExprVF (AnaS lc vks, e)
 varsCoAlg _ (as, Fix.Fix (UseTExprF te)) = return $ ExprVF (as, tExprToExpr te)
-varsCoAlg _ (as, Fix.Fix (NamedVarF sv)) = return $ VarVF sv $ (as, tExprToExpr $ tExprFromStanVar sv)
+varsCoAlg _ (as, Fix.Fix (NamedVarF sv)) = return $ VarsVF [sv] $ (as, tExprToExpr $ tExprFromStanVar sv)
+varsCoAlg _ (as, Fix.Fix (MatMultF sv1 sv2)) = do
+  t1 <- dropLastIndex $ varType sv1
+  t2 <- dropFirstIndex $ varType sv2
+  return $ VarsVF [sv1, sv2] $ (as, indexes $ getDims t1 ++ getDims t2) -- we still need any vars in the indexes
 varsCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = return $ ExprVF (AnaS lc (vks <> vks'), e)
 varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = return $ ExprVF $ (as, if Set.null vks then e else function f (e :| es))
 varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
@@ -419,13 +473,13 @@ varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
   case nonEmpty ies of
     Nothing -> return NullVF
     Just x -> return $ ExprVF (as, group "[" "]" $ csExprs x)
-varsCoAlg _ (_, Fix.Fix NullF) = return $ NullVF
-varsCoAlg _ (_, Fix.Fix (BareF t)) = return $ NullVF
+varsCoAlg _ (_, Fix.Fix NullF) = return NullVF
+varsCoAlg _ (_, Fix.Fix (BareF t)) = return NullVF
 varsCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ ExprVF (as, x)
 varsCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ PairVF (as, l) (as, r)
 
 varsAlg :: VarF [StanVar] -> [StanVar]
-varsAlg (VarVF sv vars) = sv : vars
+varsAlg (VarsVF svs vars) = svs ++ vars
 varsAlg (ExprVF vars) = vars
 varsAlg NullVF = []
 varsAlg (PairVF vars1 vars2) = vars1 ++ vars2
@@ -448,6 +502,8 @@ prettyPrintSExpr (BareF t) = Pretty.text (toString t)
 prettyPrintSExpr (AsIsF t) = t
 prettyPrintSExpr (NextToF l r) = l <> r
 prettyPrintSExpr (LookupCtxtF lc e) = Pretty.text ("LookupCtxt->" <> show lc <> ": ") <>  Pretty.parens e
+prettyPrintSExpr (NamedVarF sv) = Pretty.text ("var(" <> show sv <> ")")
+prettyPrintSExpr (MatMultF sv1 sv2) = Pretty.text ("var(" <> show sv1 <> ") <*> var(" <> show sv2 <> ")")
 prettyPrintSExpr (UseTExprF (TExpr e st)) = Pretty.text ("use [of " <> show st <> "]")  <> Pretty.parens e
 prettyPrintSExpr (IndexF k) = Pretty.braces (Pretty.text $ toString k)
 prettyPrintSExpr (VectorizedF ks e) = Pretty.text "vec" <> Pretty.brackets (Pretty.text $ show  $ Set.toList ks) <> Pretty.parens e
@@ -467,6 +523,8 @@ printIndexedAlg (BareF t) = Right t
 printIndexedAlg (AsIsF t) = Right t
 printIndexedAlg (NextToF l r) = Right $ l <> r
 printIndexedAlg (LookupCtxtF _ _) = Left "Should not call printExpr before performing lookups (LookupCtxtF)"
+printIndexedAlg (NamedVarF _) = Left "Should not call printExpr before expanding variables. (NamedVarF)"
+printIndexedAlg (MatMultF _ _) = Left "Should not call printExpr before expanding variables. (MatMultF)"
 printIndexedAlg (UseTExprF _) = Left "Should not call printExpr before expanding texpr/var uses (UseTExprF)"
 printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding declaration indexes (IndexF)"
 printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use (VectorizedF)"

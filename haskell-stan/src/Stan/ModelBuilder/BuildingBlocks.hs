@@ -22,6 +22,7 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 
 import Prelude hiding (All)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Vector as V
 
 addIntData :: (Typeable d)
@@ -90,32 +91,41 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return iVar
 
-sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
-sampleDistV rtt sDist args =  SB.inBlock SB.SBModel $ do
+sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM env d ()
+sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
-      samplingE = SMD.familySampleF sDist dsName args
+      samplingE = SMD.familySampleF sDist args yV
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
 
 
-parallelSampleDistV :: Typeable d => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> [SB.StanVar] -> SB.StanBuilderM env d ()
-parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) fnArgs = do
+parallelSampleDistV :: Typeable d => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM env d ()
+parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) = do
 --  let rsExpr = SB.target `SB.plusEq` SB.function "reduce_sum"
-  let dsName = SB.dataSetName rtt
-      samplingE = SMD.familyLUDF sDist dsName args
+  slicedType' <- SB.stanBuildEither $ SB.dropLastIndex slicedType
+  let sliceIndex = "sliceIndex"
+      dsName = SB.dataSetName rtt
+      sliceName = slicedName <> "_slice"
+      sVarDist = SB.StanVar sliceName slicedType'
+      sVarArg = SB.StanVar sliceName slicedType
+      samplingE = SMD.familyLUDF sDist args sVarDist
       fSuffix = if SB.distType sDist == SB.Discrete then "lpmf" else "lpdf"
-      fName = fPrefix <> "_" <> fSuffix
+      fName = "partial_sum" <> "_" <> fPrefix <> "_" <> fSuffix
+  fnArgs' <- SB.exprVarsM $ SME.vectorizedOne dsName $ samplingE
+  let fnArgs = Set.toList $ Set.delete sVarDist fnArgs' -- slicedVar is handled separately
+--  SB.stanBuildError $ "HERE: \n" <> show fnArgs <> "\n" <> SB.prettyPrintSTree samplingE
   SB.addFixedIntJson' "grainsize" Nothing 1
+--  slicedType' <- SB.stanBuildEither $ SB.dropOuterIndex slicedType
   SB.addFunctionsOnce fName $ do
-    let argList = SB.StanVar "x_slice" slicedType :|
+    let argList = sVarArg :|
                   [ SB.StanVar "start" SB.StanInt
                   , SB.StanVar "end" SB.StanInt] ++
                   fnArgs
         fnArgsExpr = SB.csExprs $ SB.varAsArgument <$> argList
     fnArgsExprT <- SB.stanBuildEither $  SB.printExpr SB.noBindings fnArgsExpr
-    SB.declareStanFunction ("real partial_sum_" <> fName <> "(" <> fnArgsExprT <> ")") $ do
-      SB.indexBindingScope $ do -- only add slice for index in this cope
-        SB.addUseBinding' dsName $ SB.bare "start:end" -- index data-set with slice
-        SB.addExprLine "parallelSampleDistV" samplingE
+    SB.declareStanFunction ("real " <> fName <> "(" <> fnArgsExprT <> ")") $ do
+      SB.indexBindingScope $ do -- only add slice for index in this scope
+        SB.addUseBinding' dsName $ SB.indexBy (SB.bare "start:end") sliceIndex -- index data-set with slice
+        SB.addExprLine "parallelSampleDistV" $ SB.fReturn $ SB.vectorized (one sliceIndex) $ samplingE
   SB.inBlock SB.SBModel $ do
     let varName (SB.StanVar n _) = SB.name n
         argList = SB.bare fName :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
@@ -134,55 +144,55 @@ generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
     SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
 -}
 
-generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
-generateLogLikelihood rtt sDist args =  generateLogLikelihood' rtt (one (sDist, args))
+generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SME.StanVar -> SB.StanBuilderM env d ()
+generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
 
-generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, args) -> SB.StanBuilderM env d ()
+generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, args, SME.StanVar) -> SB.StanBuilderM env d ()
 generateLogLikelihood' rtt distsAndArgs =  SB.inBlock SB.SBGeneratedQuantities $ do
   let dsName = SB.dataSetName rtt
       dim = SME.NamedDim dsName
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
   SB.stanForLoopB "n" Nothing dsName $ do
     let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
-        oneRhsE (sDist, args) = SMD.familyLDF sDist dsName args
+        oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
         rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
     SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
 
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
-generatePosteriorPrediction rtt sv@(SME.StanVar ppName t@(SME.StanArray [SME.NamedDim k] _)) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
-  let rngE = SMD.familyRNG sDist k args
+generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
+  let rngE = SMD.familyRNG sDist args
 --      ppVar = SME.StanVar ppName t
 --      ppE = SME.var ppVar --SME.indexBy (SME.name ppName) k `SME.eq` rngE
   ppVar <- SB.stanDeclare ppName t ""
   SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar
   return sv
-generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
+--generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
 fixedEffectsQR :: Text
                -> SME.StanName
                -> SME.IndexKey
                -> SME.IndexKey
-               -> SB.StanBuilderM env d (SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
+               -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
 fixedEffectsQR thinSuffix matrix rowKey colKey = do
-  f <- fixedEffectsQR_Data thinSuffix matrix rowKey colKey
-  fixedEffectsQR_Parameters thinSuffix matrix colKey
+  (qVar, f) <- fixedEffectsQR_Data thinSuffix matrix rowKey colKey
+  (thetaVar, betaVar) <- fixedEffectsQR_Parameters thinSuffix matrix colKey
   let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
       q = "Q" <> thinSuffix <> "_ast"
       qMatrix = SME.StanVar q qMatrixType
-  return f
+  return (qVar, thetaVar, betaVar, f)
 
 fixedEffectsQR_Data :: Text
                     -> SME.StanName
                     -> SME.IndexKey
                     -> SME.IndexKey
-                    -> SB.StanBuilderM env d (SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
+                    -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
 fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
       r = "R" <> thinSuffix <> "_ast"
       qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
-  SB.inBlock SB.SBTransformedData $ do
+  qVar <- SB.inBlock SB.SBTransformedData $ do
     SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
     SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
     SB.stanForLoopB "k" Nothing colKey $ do
@@ -192,9 +202,10 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
         qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
         rRHS = SB.function "qr_thin_R" (one $ SB.name $ "centered_" <> matrix) `SB.divide` srE
         riRHS = SB.function "inverse" (one $ SB.name r)
-    SB.stanDeclareRHS q qMatrixType "" qRHS
+    qVar' <- SB.stanDeclareRHS q qMatrixType "" qRHS
     SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
     SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
+    return qVar'
   let centeredX mv@(SME.StanVar sn st) =
         case st of
           (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
@@ -205,16 +216,17 @@ fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
           _ -> SB.stanBuildError
                $ "fixedEffectsQR_Data (returned StanVar -> StanExpr): "
                <> " Given matrix doesn't have same dimensions as modeled fixed effects."
-  return centeredX
+  return (qVar, centeredX)
 
-fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d ()
+fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar)
 fixedEffectsQR_Parameters thinSuffix matrix colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
   thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
-  SB.inBlock SB.SBTransformedParameters $ do
-    betaVar <- SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+  betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+    betaVar' <- SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
     SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
-  return ()
+    return betaVar'
+  return (thetaVar, betaVar)
 
 
 diagVectorFunction :: SB.StanBuilderM env d Text

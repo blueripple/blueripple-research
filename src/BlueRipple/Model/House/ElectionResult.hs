@@ -699,7 +699,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
 
-        centerF <- MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
+        (_, centerF) <- MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -720,7 +720,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
-        (feCDT, betaT) <- MRP.addFixedEffectsParametersAndPriors
+        (feCDT, betaTVar) <- MRP.addFixedEffectsParametersAndPriors
                           True
                           fePrior
                           cdData
@@ -731,12 +731,12 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
         (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
 --        gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
-        let distT = SB.binomialLogitDist votes cvap
+        let distT = SB.binomialLogitDist cvap
 
         -- Preference
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
-        (feCDP, betaP) <- MRP.addFixedEffectsParametersAndPriors
+        (feCDP, betaPVar) <- MRP.addFixedEffectsParametersAndPriors
                           True
                           fePrior
                           cdData
@@ -746,26 +746,21 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
         (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
-        let distP = SB.binomialLogitDist dVotes hVotes
+        let distP = SB.binomialLogitDist hVotes
 
 
-        (logitT_sample, logitT_ps, logitP_sample, logitP_ps, varListP, varListT) <- case model of
+        (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- case model of
               Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
-                             , [cvap, sexTV, eduTV, raceTV]
-                             , [hVotes, sexPV, eduPV, racePV]
                              )
               PlusState -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
                     logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
-                return (logitT, logitT, logitP, logitP
-                       ,[cvap, sexTV, eduTV, raceTV, stateTV]
-                       ,[hVotes, sexPV, eduPV, racePV, statePV]
-                       )
+                return (logitT, logitT, logitP, logitP)
               PlusSexEdu -> do
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
                 sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
@@ -776,10 +771,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                     logitT_ps d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.var sexEduT]
                     logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var vSexEduP]
                     logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var sexEduP]
-                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps
-                       ,[cvap, sexTV, eduTV, raceTV, vSexEduT]
-                       ,[hVotes, sexPV, eduPV, racePV, vSexEduP]
-                       )
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
               PlusRaceEdu -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions educationGroup mempty
@@ -792,10 +784,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var raceEduT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vRaceEduP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var raceEduP)
-                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps
-                       ,[cvap, sexTV, eduTV, raceTV] ++ vRaceEduT
-                       ,[hVotes, sexPV, eduPV, racePV] ++ vRaceEduP
-                       )
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
               PlusInteractions -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions sexGroup
@@ -809,10 +798,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var interT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var interP)
-                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps
-                       ,[cvap, sexTV, eduTV, raceTV] ++ vInterT
-                       ,[hVotes, sexPV, eduPV, racePV] ++ vInterP
-                       )
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
               PlusStateAndStateRace -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
@@ -827,10 +813,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT] ++ fmap SB.var interT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var interP)
-                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps
-                       ,[cvap, sexTV, eduTV, raceTV, stateTV] ++ vInterT
-                       ,[hVotes, sexPV, eduPV, racePV, statePV] ++ vInterP
-                       )
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
               PlusStateAndStateInteractions -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
@@ -873,29 +856,22 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                                                           ++ fmap SB.var stateSexP
                                                           ++ fmap SB.var stateEduP
                                                         )
-                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps
-                       ,[cvap, sexTV, eduTV, raceTV, stateTV] ++ vStateRaceT ++ vStateSexT ++ vStateEduT
-                       ,[hVotes, sexPV, eduPV, racePV, statePV] ++ vStateRaceP ++ vStateSexP ++ vStateEduP
-                       )
+                return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
 
 
---        SB.sampleDistV voteData distT (logitT_sample feCDT)
---        SB.sampleDistV voteData distP (logitP_sample feCDP)
-        varsT <- SB.exprVarsM $ logitT_sample feCDT
-        SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes varsT
-        varsP <- SB.exprVarsM $ logitP_sample feCDP
-        SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes varsP
-
+--        SB.sampleDistV voteData distT (logitT_sample feCDT) votes
+--        SB.sampleDistV voteData distP (logitP_sample feCDP) dVotes
+        SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes
+        SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes
 
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
-        (SB.StanVar cmn _) <- centerF mv
-        let cmE = (SB.indexBy (SB.name cmn) "DistrictPS")
-            densityTE = cmE `SB.times` betaT
-            densityPE = cmE `SB.times` betaP
-            psExprF ik = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
+        cmVar <- centerF mv
+        let densityTE = SB.matMult cmVar betaTVar
+            densityPE = SB.matMult cmVar betaPVar
+            psExprF _ = do
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps densityTE
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps densityPE
               --return $ SB.var pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.var pD) `SB.minus` SB.scalar "1")
               return $ SB.var pT `SB.times` SB.var pD
 --            pTExprF ik = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE
@@ -930,7 +906,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
               SB.addExprLine "ProbsT" $ SB.var pTVar `SB.eq` pTRHS
               SB.addExprLine "ProbsD" $ SB.var pDVar `SB.eq` pDRHS
 -}
-        SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT) :| [(distP, logitP_ps feCDP)])
+        SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT, votes) :| [(distP, logitP_ps feCDP, dVotes)])
 
 
         return ()

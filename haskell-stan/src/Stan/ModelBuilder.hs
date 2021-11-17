@@ -270,6 +270,9 @@ intMapsForDataSetFoldM (GroupIntMapBuilders imbs) = GroupIntMaps <$> DHash.trave
 indexBuildersForDataSetFold :: GroupIndexMakers r -> Foldl.Fold r (GroupIndexes r)
 indexBuildersForDataSetFold (GroupIndexMakers gims) = GroupIndexes <$> DHash.traverse makeIndexMapF gims
 
+indexType :: StanName -> SME.StanType
+indexType indexOf = SME.StanArray [SME.NamedDim indexOf] SME.StanInt
+
 useBindingsFromGroupIndexMakers :: RowTypeTag r -> GroupIndexMakers r -> Map SME.IndexKey SME.StanExpr
 useBindingsFromGroupIndexMakers rtt (GroupIndexMakers gims) = Map.fromList l where
   l = fmap g $ DHash.toList gims
@@ -277,7 +280,8 @@ useBindingsFromGroupIndexMakers rtt (GroupIndexMakers gims) = Map.fromList l whe
     let gn = taggedGroupName gtt
         dsn = dataSetName rtt
         indexName = dsn <> "_" <> gn
-    in (gn, SME.indexBy (SME.name indexName) $ dataSetName rtt)
+        indexVar = SME.StanVar indexName $ indexType $ dsn
+    in (gn, SME.var indexVar) --SME.indexBy (SME.name indexName) $ dataSetName rtt)
 
 
 -- build a new RowInfo from the row index and IntMap builders
@@ -1114,7 +1118,7 @@ indented :: Int -> StanBuilderM env d a -> StanBuilderM env d a
 indented n m = do
   modifyCode (indent n)
   x <- m
-  modifyCode (indent $ negate n)
+  modifyCode (indent $ Prelude.negate n)
   return x
 
 bracketed :: Int -> StanBuilderM env d a -> StanBuilderM env d a
@@ -1189,12 +1193,12 @@ addExprLine context  = printExprM context  >=> addStanLine
 addExprLines :: Traversable t => Text -> t SME.StanExpr -> StanBuilderM env d ()
 addExprLines context = traverse_ (addExprLine context)
 
-exprVarsM :: SME.StanExpr -> StanBuilderM env d [SME.StanVar]
+exprVarsM :: SME.StanExpr -> StanBuilderM env d (Set StanVar)
 exprVarsM e = do
   vbs <- indexBindings <$> get
   case SME.exprVars vbs e of
     Left err -> stanBuildError $ "exprVarM: " <> err
-    Right t -> return t
+    Right t -> return $ Set.fromList t -- get unique only
 
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
