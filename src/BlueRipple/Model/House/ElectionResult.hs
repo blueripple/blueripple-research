@@ -879,10 +879,12 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                        )
 
 
-        SB.sampleDistV voteData distT (logitT_sample feCDT)
-        SB.sampleDistV voteData distP (logitP_sample feCDP)
---        SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes varListT
---        SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes varListP
+--        SB.sampleDistV voteData distT (logitT_sample feCDT)
+--        SB.sampleDistV voteData distP (logitP_sample feCDP)
+        varsT <- SB.exprVarsM $ logitT_sample feCDT
+        SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes varsT
+        varsP <- SB.exprVarsM $ logitP_sample feCDP
+        SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes varsP
 
 
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"

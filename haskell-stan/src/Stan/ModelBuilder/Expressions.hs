@@ -424,6 +424,14 @@ varsCoAlg _ (_, Fix.Fix (BareF t)) = return $ NullVF
 varsCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ ExprVF (as, x)
 varsCoAlg _ (as, Fix.Fix (NextToF l r)) = return $ PairVF (as, l) (as, r)
 
+varsAlg :: VarF [StanVar] -> [StanVar]
+varsAlg (VarVF sv vars) = sv : vars
+varsAlg (ExprVF vars) = vars
+varsAlg NullVF = []
+varsAlg (PairVF vars1 vars2) = vars1 ++ vars2
+
+exprVars :: VarBindingStore -> StanExpr -> Either Text [StanVar]
+exprVars vbs e = Rec.hyloM (return . varsAlg) (varsCoAlg vbs) (AnaS Use mempty, e)
 
 csArgs :: [Text] -> Text
 csArgs = T.intercalate ", "

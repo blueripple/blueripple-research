@@ -1189,6 +1189,13 @@ addExprLine context  = printExprM context  >=> addStanLine
 addExprLines :: Traversable t => Text -> t SME.StanExpr -> StanBuilderM env d ()
 addExprLines context = traverse_ (addExprLine context)
 
+exprVarsM :: SME.StanExpr -> StanBuilderM env d [SME.StanVar]
+exprVarsM e = do
+  vbs <- indexBindings <$> get
+  case SME.exprVars vbs e of
+    Left err -> stanBuildError $ "exprVarM: " <> err
+    Right t -> return t
+
 stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
   let section h b = h <> " {\n" <> b <> "}\n"
