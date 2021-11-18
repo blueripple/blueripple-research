@@ -19,13 +19,14 @@ import qualified Data.Text as T
 
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeConfigF :: Int -> CS.StanExeConfig
+  , mrcStanExeConfig :: CS.StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcModelDir :: T.Text
   , mrcModel :: T.Text
   , mrcDatFile :: T.Text
   , mrcOutputPrefix :: T.Text
   , mrcNumChains :: Int
+  , mrcNumThreads :: Int
   , mrcAdaptDelta :: Maybe Double
   , mrcMaxTreeDepth :: Maybe Int
   , mrcLogSummary :: Bool
@@ -96,11 +97,11 @@ addDirFP dir fp = dir ++ "/" ++ fp
 defaultDatFile :: T.Text -> FilePath
 defaultDatFile modelNameT = toString modelNameT ++ ".json"
 
-outputFile :: T.Text -> Int -> FilePath
-outputFile outputFilePrefix chainIndex = toString outputFilePrefix <> "_" <> show chainIndex <> ".csv"
+outputFile :: T.Text -> Maybe Int -> FilePath
+outputFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"
 
 stanOutputFiles :: ModelRunnerConfig -> [T.Text]
-stanOutputFiles config = fmap (toText . outputFile (mrcOutputPrefix config)) [1..(mrcNumChains config)]
+stanOutputFiles config = fmap (toText . outputFile (mrcOutputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
 
 summaryFileName :: ModelRunnerConfig -> T.Text
 summaryFileName config = mrcOutputPrefix config <> ".json"

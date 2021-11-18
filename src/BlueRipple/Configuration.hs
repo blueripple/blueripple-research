@@ -76,8 +76,7 @@ data CommandLine = CommandLine
   {
     postStage :: PostStage
   , stanChains :: Int
-  , stanMaxCores :: Bool
-  , stanCoresPerChain :: Int
+  , stanCores :: Int
   } deriving (Show, CmdArgs.Data, Typeable, Eq)
 
 commandLine = CommandLine
@@ -86,17 +85,16 @@ commandLine = CommandLine
                              ,OnlinePublished CmdArgs.&= CmdArgs.help "Write result HTML to blueripple publish directory."
                              ]
   , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-  , stanMaxCores = False CmdArgs.&= CmdArgs.help "If present, use maximum available cores per chain."
-  , stanCoresPerChain = 1 CmdArgs.&= CmdArgs.help "Number of cores to use per Stan chain for within chain parallelization (if not using the maximum)."
+  , stanCores = 4 CmdArgs.&= CmdArgs.help "Number of cores to use per Stan chain for within chain parallelization (if not using the maximum)."
   }
 
 clStanParallel :: CommandLine -> StanParallel
-clStanParallel (CommandLine _ chains max nCpc)  = StanParallel chains cpc where
-  cpc = if max then MaxCoresPerChain else FixedCoresPerChain nCpc
+clStanParallel (CommandLine _ nChains nCores)  = StanParallel nChains cpc where
+  cpc = if nCores < 1 then MaxCores else FixedCores nCores
 
-data StanParallel = StanParallel { parallelChains :: Int, coresPerChain :: CoresPerChain } deriving (Show, Eq)
+data StanParallel = StanParallel { parallelChains :: Int, cores :: StanCores } deriving (Show, Eq)
 
-data CoresPerChain = MaxCoresPerChain | FixedCoresPerChain Int deriving (Show, Eq)
+data StanCores = MaxCores | FixedCores Int deriving (Show, Eq)
 
 
 -- I want functions to support

@@ -50,13 +50,15 @@ makeDefaultModelRunnerConfig ::
   Int ->
   Maybe Int ->
   Maybe Int ->
+  Maybe Int ->
   Maybe Double ->
   Maybe Int ->
   Maybe CS.StancConfig ->
   K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numThreadsM numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
+      numThreads = fromMaybe numChains numThreadsM -- default to one thread per chain
   case modelM of
     Nothing -> return ()
     Just (gq, m) -> do
@@ -69,29 +71,32 @@ makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePref
   let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDirT modelNameT)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
-      stanExeConfigF chainIndex =
-        (CS.makeDefaultSample (T.unpack modelNameT) chainIndex)
+      stanExeConfig =
+        (CS.makeDefaultSample (T.unpack modelNameT) Nothing)
           { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS),
-            CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix chainIndex),
+            CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing),
+            CS.numChains = Just numChains,
+            CS.numThreads = Just numThreads,
             CS.numSamples = numSamplesM,
             CS.numWarmup = numWarmupM,
             CS.adaptDelta = adaptDeltaM,
             CS.maxTreeDepth = maxTreeDepthM
           }
-  let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) [1 .. numChains]
+  let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) $ Just <$> [1 .. numChains]
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (SC.addDirFP (modelDirS ++ "/output")) stanOutputFiles)
   return $
     SC.ModelRunnerConfig
       stanMakeConfig
-      stanExeConfigF
+      stanExeConfig
       stanSummaryConfig
       modelDirT
       modelNameT
       (T.pack datFileS)
       outputFilePrefix
       numChains
+      numThreads
       adaptDeltaM
       maxTreeDepthM
       True
@@ -229,18 +234,19 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict cachedA = K
   stanOutput_C <- do
     curStanOutputs_C <- K.oldestUnit <$> traverse (K.fileDependency . SC.addDirFP (modelDirS ++ "/output")) outputFiles
     let runStanDeps = (,) <$> indices_C <*> curModel_C -- indices_C carries input data update time
-        runOneChain chainIndex = do
-          let exeConfig = SC.mrcStanExeConfigF config chainIndex
-          K.logLE K.Diagnostic $ "Running " <> toText modelNameS <> " for chain " <> show chainIndex
+        runChains = do
+          let exeConfig = SC.mrcStanExeConfig config
+          K.logLE K.Diagnostic $ "Running " <> toText modelNameS
           K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine exeConfig)
           K.liftKnit $ CS.stan (SC.addDirFP modelDirS modelNameS) exeConfig
-          K.logLE K.Info $ "Finished chain " <> show chainIndex
-    res_C <- K.updateIf (fmap Just curStanOutputs_C) runStanDeps $ \_ -> do
+          K.logLE K.Diagnostic $ "Finished " <> toText modelNameS
+    res_C <- K.updateIf curStanOutputs_C runStanDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan outputs older than input data or model.  Rebuilding Stan exe and running."
       K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
-      maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneChain [1 .. (SC.mrcNumChains config)])
-    K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."
+      runChains
+--      maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneChain [1 .. (SC.mrcNumChains config)])
+--    K.ignoreCacheTime res_C >>= K.knitMaybe "There was an error running an MCMC chain."
     K.logLE K.Diagnostic "writing R scripts"
     K.liftKnit $ writeRScripts rScriptsToWrite config
     when (SC.mrcRunDiagnose config) $ do

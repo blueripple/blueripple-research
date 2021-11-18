@@ -187,6 +187,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
                 (Just $ "cces_" <> officeYearT <> "_" <> dataLabel <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_" <> modelName <> "_model")
                 4
+                (Just 4)
                 (Just 1000)
                 (Just 1000)
                 Nothing
@@ -228,6 +229,7 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                 (Just $ "cces_" <> officeYearT <> "_" <> dataLabel <> ".json")
                 (Just $ "cces_" <> officeYearT <> "_" <> modelName <> "_loo")
                 4
+                (Just 4)
                 (Just 1000)
                 (Just 1000)
                 Nothing

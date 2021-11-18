@@ -20,6 +20,7 @@
 module BlueRipple.Model.House.ElectionResult where
 
 import Prelude hiding (pred)
+import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
@@ -682,6 +683,7 @@ electionModel :: forall rs ks r.
                  )
               => Bool
               -> Bool
+              -> BR.StanParallel
               -> Text
               -> Model
               -> Int
@@ -689,7 +691,7 @@ electionModel :: forall rs ks r.
               -> K.ActionWithCacheTime r CCESAndPUMS
               -> K.ActionWithCacheTime r (F.FrameRec rs)
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
-electionModel clearCaches parallel modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
   let jsonDataName = psDataSetName <> "_" <> show model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
@@ -971,6 +973,7 @@ electionModel clearCaches parallel modelDir model datYear (psGroup, psDataSetNam
     "DVOTES_C"
     extractResults
     comboDat_C
+    stanParallelCfg
     (Just 1000)
     (Just 0.8)
     (Just 15)

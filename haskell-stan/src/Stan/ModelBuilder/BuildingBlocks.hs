@@ -109,26 +109,28 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
       sVarArg = SB.StanVar sliceName slicedType
       samplingE = SMD.familyLUDF sDist args sVarDist
       fSuffix = if SB.distType sDist == SB.Discrete then "lpmf" else "lpdf"
-      fName = "partial_sum" <> "_" <> fPrefix <> "_" <> fSuffix
+      fuSuffix = if SB.distType sDist == SB.Discrete then "lupmf" else "lupdf"
+      fNameDecl = "partial_sum" <> "_" <> fPrefix <> "_" <> fSuffix
+      fNameUse = "partial_sum" <> "_" <> fPrefix <> "_" <> fuSuffix
   fnArgs' <- SB.exprVarsM $ SME.vectorizedOne dsName $ samplingE
   let fnArgs = Set.toList $ Set.delete sVarDist fnArgs' -- slicedVar is handled separately
 --  SB.stanBuildError $ "HERE: \n" <> show fnArgs <> "\n" <> SB.prettyPrintSTree samplingE
   SB.addFixedIntJson' "grainsize" Nothing 1
 --  slicedType' <- SB.stanBuildEither $ SB.dropOuterIndex slicedType
-  SB.addFunctionsOnce fName $ do
+  SB.addFunctionsOnce fNameDecl $ do
     let argList = sVarArg :|
                   [ SB.StanVar "start" SB.StanInt
                   , SB.StanVar "end" SB.StanInt] ++
                   fnArgs
         fnArgsExpr = SB.csExprs $ SB.varAsArgument <$> argList
     fnArgsExprT <- SB.stanBuildEither $  SB.printExpr SB.noBindings fnArgsExpr
-    SB.declareStanFunction ("real " <> fName <> "(" <> fnArgsExprT <> ")") $ do
+    SB.declareStanFunction ("real " <> fNameDecl <> "(" <> fnArgsExprT <> ")") $ do
       SB.indexBindingScope $ do -- only add slice for index in this scope
         SB.addUseBinding' dsName $ SB.indexBy (SB.bare "start:end") sliceIndex -- index data-set with slice
         SB.addExprLine "parallelSampleDistV" $ SB.fReturn $ SB.vectorized (one sliceIndex) $ samplingE
   SB.inBlock SB.SBModel $ do
     let varName (SB.StanVar n _) = SB.name n
-        argList = SB.bare fName :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
+        argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 
 

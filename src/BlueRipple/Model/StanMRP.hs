@@ -40,7 +40,7 @@ import qualified Control.MapReduce as MR
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Keyed as BK
-import qualified BlueRipple.Utilities.KnitUtils as BR
+import qualified BlueRipple.Configuration as BR
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
@@ -94,11 +94,12 @@ runMRPModel :: (K.KnitEffects r
             -> Text
             -> SC.ResultAction r a b () c
             -> K.ActionWithCacheTime r a
+            -> BR.StanParallel
             -> Maybe Int
             -> Maybe Double
             -> Maybe Int
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C mNSamples mAdaptDelta mMaxTreeDepth =
+runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C stanParallel mNSamples mAdaptDelta mMaxTreeDepth =
   K.wrapPrefix "StanMRP" $ do
   K.logLE K.Info $ "Running: model=" <> modelName <> " using data=" <> dataName
   let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
@@ -106,6 +107,9 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       nSamples = fromMaybe 1000 mNSamples
       stancConfig =
         (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
+      threadsM = Just $ case BR.cores stanParallel of
+        BR.MaxCores -> -1
+        BR.FixedCores n -> n
   stanConfig <-
     SC.setSigFigs 4
     . SC.noLogOfSummary
@@ -116,7 +120,8 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
     (Just $ dataName <> ".json")
     (Just $ outputLabel)
-    4
+    (BR.parallelChains stanParallel)
+    threadsM
     (Just nSamples)
     (Just nSamples)
     mAdaptDelta
