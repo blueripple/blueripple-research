@@ -91,8 +91,6 @@ import qualified CmdStan as CS
 import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
-import qualified BlueRipple.Data.CensusTables as BRC
-import qualified BlueRipple.Data.CensusTables as BRC
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -129,9 +127,10 @@ main = do
           , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
   cmdLine <- CmdArgs.cmdArgs BR.commandLine
+  let parallel = (BR.coresPerChain $ BR.clStanParallel cmdLine ) > 1
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    newMapAnalysis
+    newMapAnalysis parallel
 
   case resE of
     Right namedDocs ->
@@ -235,8 +234,8 @@ prepProposedCDData clearCaches cacheKey cdData_C = do
     return $ (F.rcast . addRace5 <$> cdDataSER)
 
 
-newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
-newMapAnalysis = do
+newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => Bool -> K.Sem r ()
+newMapAnalysis parallel = do
   ccesAndPums_C <-  BRE.prepCCESAndPums False
 --  cdData_C <- BRC.censusTablesForProposedCDs
   newCDs_C <- prepProposedCDData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
@@ -244,7 +243,7 @@ newMapAnalysis = do
   let newCDPostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   newMapsPaths <- postPaths "NewMaps"
   BR.brNewPost newMapsPaths newCDPostInfo "New Maps" $ do
-    newMapsTest False newMapsPaths newCDPostInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
+    newMapsTest False parallel newMapsPaths newCDPostInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -327,12 +326,13 @@ type ElexDShare = "ELexDShare" F.:-> Double
 
 newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             => Bool
+            -> Bool
             -> BR.PostPaths BR.Abs
             -> BR.PostInfo
             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
             -> K.ActionWithCacheTime r (F.FrameRec CDDemographicsR)
             -> K.Sem r ()
-newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
+newMapsTest clearCaches parallel postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -364,7 +364,7 @@ newMapsTest clearCaches postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix
                 -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
-        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2020 (psInfo name) ccesAndPums2020_C
+        =  K.ignoreCacheTimeM . BRE.electionModel False parallel modelDir m 2020 (psInfo name) ccesAndPums2020_C
   newMapsBase <- model2020 BRE.Base "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C

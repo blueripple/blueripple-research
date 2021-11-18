@@ -681,6 +681,7 @@ electionModel :: forall rs ks r.
                    (F.Rec FS.SElField (ks V.++ '[MT.ModelId Model, ModeledShare]))
                  )
               => Bool
+              -> Bool
               -> Text
               -> Model
               -> Int
@@ -688,9 +689,9 @@ electionModel :: forall rs ks r.
               -> K.ActionWithCacheTime r CCESAndPUMS
               -> K.ActionWithCacheTime r (F.FrameRec rs)
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
-electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModel clearCaches parallel modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
-  let jsonDataName = psDataSetName <> "_" <> show model <> "_" <> show datYear
+  let jsonDataName = psDataSetName <> "_" <> show model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
@@ -858,11 +859,14 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
                                                         )
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
 
+        let serialSample = do
+              SB.sampleDistV voteData distT (logitT_sample feCDT) votes
+              SB.sampleDistV voteData distP (logitP_sample feCDP) dVotes
+            parallelSample = do
+              SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes
+              SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes
 
---        SB.sampleDistV voteData distT (logitT_sample feCDT) votes
---        SB.sampleDistV voteData distP (logitP_sample feCDP) dVotes
-        SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes
-        SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes
+        if parallel then parallelSample else serialSample
 
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
@@ -960,7 +964,7 @@ electionModel clearCaches modelDir model datYear (psGroup, psDataSetName, psGrou
     $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
-    ("LegDistricts_" <> show model)
+    ("LegDistricts_" <> show model <> if parallel then "_P" else "")
     jsonDataName
     dw
     stanCode
