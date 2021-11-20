@@ -47,8 +47,8 @@ F.declareColumn "TotalIncome" ''Double
 --type CDPrefix2R = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 --type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
 type LDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber]
-type LDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, DT.PopPerSqMile, PWLogPopPerSqMile, TotalIncome, SqMiles, SqKm]
-type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome, PWLogPopPerSqMile]
+type LDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome, PWPopPerSqMile]
 
 {-
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }
@@ -91,9 +91,9 @@ instance CSV.FromField ET.DistrictType where
 
 
 newtype LDPrefix = LDPrefix { unLDPrefix :: F.Record LDPrefixR } deriving (Show)
-toLDPrefix :: Int -> ET.DistrictType -> Int -> Int -> Double -> Double -> Double -> Double -> Double -> LDPrefix
-toLDPrefix sf dt dn pop d pwd inc sm sk
-  = LDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: d F.&: f pop d F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
+toLDPrefix :: Int -> ET.DistrictType -> Int -> Int -> Double -> Double -> Double -> Double -> LDPrefix
+toLDPrefix sf dt dn pop pwd inc sm sk
+  = LDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
   where
     f x y = if x == 0 then 0 else realToFrac x * Numeric.log y
 
@@ -103,7 +103,6 @@ instance CSV.FromNamedRecord LDPrefix where
                        <*> r .: "DistrictType"
                        <*> r .: "DistrictNumber"
                        <*> r .: "TotalPopulation"
-                       <*> r .: "PopPerSqMile"
                        <*> r .: "pwPopPerSqMile"
                        <*> r .: "PerCapitaIncome"
                        <*> r .: "SqMiles"

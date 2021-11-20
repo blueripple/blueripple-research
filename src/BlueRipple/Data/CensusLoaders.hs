@@ -363,9 +363,7 @@ censusDemographicsRecode rows =
                  , makeRec DT.RA4_Other DT.NonHispanic onh
                  ]
         in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
-      addDensity r = FT.recordSingleton @DT.PopPerSqMile
-                     $ Numeric.exp
-                     $ F.rgetField @BRC.PWLogPopPerSqMile r/ realToFrac (F.rgetField @BR.Population r)
+      addDensity r = FT.recordSingleton @DT.PopPerSqMile $ F.rgetField @BRC.PWPopPerSqMile r
   in fmap (F.rcast . FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 ---
 

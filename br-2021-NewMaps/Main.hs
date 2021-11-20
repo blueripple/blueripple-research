@@ -364,11 +364,12 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
       addElexDShare r = let v = F.rgetField @BRE.TVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if v == 0 then 0 else (realToFrac (F.rgetField @BRE.DVotes r)/realToFrac v))
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-  draNC_C <- prepProposedCDData False "model/NewMaps/DRAMaps.bin" =<< BRC.censusTablesForDRACDs
+  censusTables_C <-  BRC.censusTablesForDRACDs
+--  K.ignoreCacheTime censusTables_C >>= BR.logFrame . BRC.sexEducationRace
+  draNC_C <- prepProposedCDData False "model/NewMaps/DRAMaps.bin" censusTables_C
   ncRows_dra <- K.ignoreCacheTime $ fmap onlyNC draNC_C
   K.logLE K.Info "DRA"
   BR.logFrame ncRows_dra
-  K.knitError "STOP"
 --  draNC <- censusDemographicsRecode . BRC.sexEducationRace <$> K.ignoreCacheTime draNC_C
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
@@ -391,7 +392,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   oldMapsDRABase <- model2020 BRE.Base "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  BR.logFrame oldMapsPlusStateAndStateRace
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
@@ -407,7 +408,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          oldMapsDRABase
+          oldMapsDRAPlusStateAndStateRace
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
   let oldMapsCompare
