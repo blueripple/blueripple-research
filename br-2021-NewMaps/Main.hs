@@ -164,7 +164,7 @@ type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
-type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR BRC.LDLocationR V.++ '[DT.Race5C]
+type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR V.++ '[DT.Race5C]
 type CDLocWStAbbrR = '[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] -- V.++ BRC.LDLocationR
 
 filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
@@ -224,13 +224,13 @@ prepProposedCDData :: (K.KnitEffects r, BR.CacheEffects r)
 prepProposedCDData clearCaches cacheKey cdData_C = do
 --
   stateAbbreviations <-  BR.stateAbbrCrosswalkLoader
-  let cacheKey = "model/newMaps/newCDDemographics.bin"
+  let --cacheKey = "model/newMaps/newCDDemographics.bin"
       deps = (,) <$> cdData_C <*> stateAbbreviations
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey deps $ \(cdData, stateAbbrs) -> do
     let addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
                                     $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-        cdDataSER' = BRC.censusDemographicsRecode @BRC.LDLocationR $ BRC.sexEducationRace cdData
+        cdDataSER' = BRC.censusDemographicsRecode $ BRC.sexEducationRace cdData
         (cdDataSER, cdMissing) =  FJ.leftJoinWithMissing @'[BR.StateFips] cdDataSER'
                                   $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
@@ -239,6 +239,20 @@ prepProposedCDData clearCaches cacheKey cdData_C = do
 
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do
+{-
+  K.logLE K.Info "PUMS density !!"
+--  let pRowsFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateFIPS r == 37
+--  pumsRows_C <- PUMS.pumsRowsLoader $ Just pRowsFilter -- by row from NHGIS ACS
+--  K.ignoreCacheTime pumsRows_C >>= BR.logFrame
+  pums_C <- PUMS.pumsLoader Nothing  -- by PUMA
+--  let pumsFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateFIPS r == 37
+--  K.ignoreCacheTime (fmap (F.filterFrame pumsFilter) pums_C) >>= BR.logFrame
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  pumsByCD_C <- BRE.cachedPumsByCD pums_C cdFromPUMA_C
+  let pByCDFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateAbbreviation r == "GA"
+  K.ignoreCacheTime (fmap (F.filterFrame pByCDFilter) pumsByCD_C) >>= BR.logFrame
+  K.knitError "STOP"
+-}
   ccesAndPums_C <-  BRE.prepCCESAndPums False
 --  cdData_C <- BRC.censusTablesForProposedCDs
   newCDs_C <- prepProposedCDData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
@@ -350,7 +364,11 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
       addElexDShare r = let v = F.rgetField @BRE.TVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if v == 0 then 0 else (realToFrac (F.rgetField @BRE.DVotes r)/realToFrac v))
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
-  draNC_C <- prepProposedCDData False "model/DRAMaps.bin" =<< BRC.censusTablesForDRACDs
+  draNC_C <- prepProposedCDData False "model/NewMaps/DRAMaps.bin" =<< BRC.censusTablesForDRACDs
+  ncRows_dra <- K.ignoreCacheTime $ fmap onlyNC draNC_C
+  K.logLE K.Info "DRA"
+  BR.logFrame ncRows_dra
+  K.knitError "STOP"
 --  draNC <- censusDemographicsRecode . BRC.sexEducationRace <$> K.ignoreCacheTime draNC_C
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
@@ -373,7 +391,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   oldMapsDRABase <- model2020 BRE.Base "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  BR.logFrame oldMapsPlusStateAndStateRace
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
@@ -389,7 +407,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          oldMapsDRAPlusStateAndStateRace
+          oldMapsDRABase
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
   let oldMapsCompare
@@ -406,7 +424,9 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   let nc r = F.rgetField @DT.StateAbbreviation r == "NC"
       nc6or9 r = nc r && F.rgetField @ET.DistrictNumber r `elem` [9,6]
       textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
-  ncRows <- K.ignoreCacheTime $ fmap (F.filterFrame nc) draNC_C
+  K.logLE K.Info "PUMS"
+  ncRows_pums <- K.ignoreCacheTime $ fmap (F.filterFrame nc . BRE.pumsRows) $ ccesAndPums2020_C
+  BR.logFrame ncRows_pums
   K.addHvega Nothing Nothing =<<  BRV.demoCompare2
     ("Race", show . F.rgetField @DT.Race5C)
     ("Education", show . F.rgetField @DT.CollegeGradC)
@@ -414,7 +434,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
     "By Race and Education"
     (FV.ViewConfig 600 600 5)
-    ncRows
+    ncRows_dra
 {-
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C

@@ -58,6 +58,7 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
 import qualified Text.Read                     as TR
+import qualified Numeric
 
 import qualified Control.MapReduce as MapReduce
 import qualified Control.MapReduce.Engines.Streamly as MapReduce.Streamly
@@ -246,9 +247,18 @@ sumPUMSCountedF :: Maybe (F.Record rs -> Double) -- otherwise weight by people
                 -> (F.Record rs -> F.Record PUMSCountToFields)
                 -> FL.Fold (F.Record rs) (F.Record PUMSCountToFields)
 sumPUMSCountedF wgtM flds =
-  let wgt = fromMaybe (\r -> realToFrac (F.rgetField @Citizens (flds r) + F.rgetField @NonCitizens (flds r))) wgtM
+  let ppl r = F.rgetField @Citizens (flds r) + F.rgetField @NonCitizens (flds r)
+      wgt = fromMaybe (realToFrac . ppl) wgtM
+      pplWgt = case wgtM of
+        Nothing -> realToFrac . ppl
+        Just f -> \r -> f r * realToFrac (ppl r)
       wgtdSumF f = FL.premap (\r -> wgt r * f (flds r)) FL.sum
-      wgtdF f = (/) <$> wgtdSumF f <*> FL.premap wgt FL.sum
+      pplWgtdSumF f = FL.premap (\r -> pplWgt r * f (flds r)) FL.sum
+      divUnlessZero x y = if y < 1e-12 then 0 else x/y
+      wgtdF f = divUnlessZero <$> wgtdSumF f <*> FL.premap wgt FL.sum
+      pplWgtdF f = divUnlessZero <$> pplWgtdSumF f <*> FL.premap pplWgt FL.sum
+      logUnlessZero x = if x == 0 then 0 else Numeric.log x  -- if density is 0, people weight is 0
+      pplWgtdLogF f = (\x y -> Numeric.exp $ divUnlessZero x y) <$> pplWgtdSumF (logUnlessZero . f) <*> FL.premap pplWgt FL.sum
       (citF, nonCitF) = case wgtM of
         Nothing -> (FL.premap (F.rgetField @Citizens . flds) FL.sum
                    ,  FL.premap (F.rgetField @NonCitizens . flds) FL.sum
@@ -256,16 +266,16 @@ sumPUMSCountedF wgtM flds =
         Just wgt -> (round <$> wgtdSumF (realToFrac . F.rgetField @Citizens)
                     , round <$> wgtdSumF (realToFrac . F.rgetField @NonCitizens))
   in  FF.sequenceRecFold
-      $ FF.toFoldRecord (wgtdF (F.rgetField @BR.PctInMetro))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PopPerSqMile))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNativeEnglish))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctNoEnglish))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnemployed))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgIncome))
+      $ FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctInMetro))
+      V.:& FF.toFoldRecord (pplWgtdLogF (F.rgetField @BR.PopPerSqMile))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctNativeEnglish))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctNoEnglish))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctUnemployed))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.AvgIncome))
 --      V.:& FF.toFoldRecord (NFL.weightedMedianF wgt (F.rgetField @BR.MedianIncome . flds)) --FL.premap (\r -> (wgt r, F.rgetField @BR.MedianIncome (flds r))) medianIncomeF)
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.AvgSocSecIncome))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnderPovertyLine))
-      V.:& FF.toFoldRecord (wgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.AvgSocSecIncome))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctUnderPovertyLine))
+      V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctUnder2xPovertyLine))
       V.:& FF.toFoldRecord citF
       V.:& FF.toFoldRecord nonCitF
       V.:& V.RNil
@@ -341,8 +351,9 @@ pumsCDRollup
  -> K.Sem r (F.FrameRec (CDCounts ks))
 pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   -- roll up to PUMA
-  let totalPeople :: (Foldable f, F.ElemOf rs Citizens, F.ElemOf rs NonCitizens) => f (F.Record rs) -> Int
-      totalPeople = FL.fold (FL.premap  (\r -> F.rgetField @Citizens r + F.rgetField @NonCitizens r) FL.sum)
+  let ppl r = F.rgetField @Citizens r + F.rgetField @NonCitizens r
+      totalPeople :: (Foldable f, F.ElemOf rs Citizens, F.ElemOf rs NonCitizens) => f (F.Record rs) -> Int
+      totalPeople = FL.fold (FL.premap ppl FL.sum)
   K.logLE K.Diagnostic $ "Total cit+non-cit pre rollup=" <> show (totalPeople pums)
   let rolledUpToPUMA' :: F.FrameRec (PUMACounts ks) = FL.fold (pumsRollupF keepIf $ mapKeys . F.rcast) pums
   K.logLE K.Diagnostic $ "Total cit+non-cit post rollup=" <> show (totalPeople rolledUpToPUMA')
@@ -363,13 +374,14 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateFIPS, BR.PUMA] rolledUpToPUMA cdFromPUMA
   unless (null missing) $ K.knitError $ "missing items in join: " <> show missing
   -- roll it up to the CD level
-  let demoByCD  = BRF.frameCompactMRM
+  let pumaWeighting r = F.rgetField @BR.FracPUMAInCD r
+      demoByCD  = BRF.frameCompactMRM
                   FMR.noUnpack
                   (FMR.assignKeysAndData
                     @('[BR.Year] ++ CDDescWA ++ ks)
                     @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
                   (sumPUMSCountedF
-                    (Just $ F.rgetField @BR.FracPUMAInCD)
+                    (Just pumaWeighting)
                     F.rcast
                   )
   demoByCD <- K.streamlyToKnit $ demoByCD byPUMAWithCDAndWeight

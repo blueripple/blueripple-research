@@ -44,7 +44,7 @@ import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
 import qualified BlueRipple.Data.ElectionTypes as ET
-import BlueRipple.Data.DataFrames (cD116FromStateLower2016Parser)
+import qualified Numeric
 
 F.declareColumn "Count" ''Int
 
@@ -268,11 +268,11 @@ censusTablesBySLD = do
 ---
 -}
 
-type CensusSERR locR = CensusRow locR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
-type CensusRecodedR locR = locR
-                   V.++ BRC.ExtensiveDataR
-                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
-
+type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
+type CensusRecodedR  = BRC.LDLocationR
+                       V.++ BRC.ExtensiveDataR
+                       V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
+{-
 censusDemographicsRecode ::  forall locR.
                              (Ord (F.Record ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])),
                               ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC]) F.⊆ (BR.Year : (((locR V.++ BRC.ExtensiveDataR)
@@ -309,18 +309,18 @@ censusDemographicsRecode ::  forall locR.
                              , F.ElemOf (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
                                          V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BRC.SqMiles
                              )
-
-                         => F.FrameRec (CensusSERR locR) -> F.FrameRec (CensusRecodedR locR)
+-}
+censusDemographicsRecode :: F.FrameRec CensusSERR -> F.FrameRec CensusRecodedR
 censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(locR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
+             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const edFld)
       fld2 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(locR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
+             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
 
       edFld :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, Count])
@@ -364,7 +364,8 @@ censusDemographicsRecode rows =
                  ]
         in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
       addDensity r = FT.recordSingleton @DT.PopPerSqMile
-                     $ realToFrac (F.rgetField @BR.Population r)/ F.rgetField @BRC.SqMiles r
+                     $ Numeric.exp
+                     $ F.rgetField @BRC.PWLogPopPerSqMile r/ realToFrac (F.rgetField @BR.Population r)
   in fmap (F.rcast . FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 ---
 

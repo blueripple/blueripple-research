@@ -469,20 +469,31 @@ type HouseModelCensusTablesByCD =
 type HouseModelCensusTablesByState =
   Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
 
+pumsByCD :: (K.KnitEffects r, BR.CacheEffects r) => F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec PUMSByCDR)
+pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest earliestYear) (pumsReKey . F.rcast) cdFromPUMA pums
+  where
+    earliestYear = 2016
+    earliest year = (>= year) . F.rgetField @BR.Year
+
+cachedPumsByCD :: forall r.(K.KnitEffects r, BR.CacheEffects r)
+               => K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
+               -> K.ActionWithCacheTime r (F.FrameRec BR.DatedCDFromPUMA2012)
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByCDR))
+cachedPumsByCD pums_C cdFromPUMA_C = do
+  let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
+  fmap (fmap acsCopy2018to2020)
+    $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
+    $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
+
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
   let earliestYear = 2016 -- set by ces for now
+      earliest year = (>= year) . F.rgetField @BR.Year
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  let earliest year = (>= year) . F.rgetField @BR.Year
-      pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
-      pumsByCD :: F.FrameRec PUMS.PUMS -> F.FrameRec BR.DatedCDFromPUMA2012 -> K.Sem r (F.FrameRec PUMSByCDR)
-      pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest earliestYear) (pumsReKey . F.rcast) cdFromPUMA pums
-  pumsByCD_C <- fmap (fmap acsCopy2018to2020)
-                $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
-                $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
+  pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemHouseVotesByCD clearCache
-  cpsVByCD_C <- cpsCountedTurnoutByCD
+  cpsVByCD_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByCD
   K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
   -- first, do the turnout corrections
   stateTurnout_C <- BR.stateTurnoutLoader
@@ -512,8 +523,11 @@ prepCCESAndPums clearCache = do
         diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens
+              ppl r = cit r + F.rgetField @PUMS.NonCitizens r
               citF = FL.premap cit FL.sum
               citWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
+              pplF = FL.premap ppl FL.sum
+              pplWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (ppl r) * f r) FL.sum <*> fmap realToFrac pplF
           in (\d i -> d F.&: i F.&: V.RNil) <$> citWeightedSumF (F.rgetField @DT.PopPerSqMile) <*> citWeightedSumF (F.rgetField @DT.AvgIncome)
         diFold :: FL.Fold (F.Record PUMSByCDR) (F.FrameRec (CDKeyR V.++  [DT.PopPerSqMile, DT.AvgIncome]))
         diFold = FMR.concatFold
@@ -1043,6 +1057,7 @@ wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.Hisp
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+
 densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
 raceAlone4FromRace5 DT.R5_Other = DT.RA4_Other
