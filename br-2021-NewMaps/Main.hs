@@ -436,6 +436,11 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
     "By Race and Education"
     (FV.ViewConfig 600 600 5)
     ncRows_dra
+
+  pums2020 <- K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
+  _ <- K.addHvega Nothing Nothing
+       $ densityHistogram "density" (FV.ViewConfig 600 600 5) id $ fmap F.rcast pums2020
+
 {-
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
@@ -530,6 +535,16 @@ race5FromCPS r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
+densityHistogram :: Text -> FV.ViewConfig -> (Double -> Double) -> F.FrameRec '[DT.PopPerSqMile] -> GV.VegaLite
+densityHistogram title vc f rows =
+  let toVLDataRec = FVD.asVLData (GV.Number . f) "f(Density)" V.:& V.RNil
+      vlData = FVD.recordsToData toVLDataRec rows
+      encDensity = GV.position GV.X [GV.PName "f(Density)", GV.PmType GV.Quantitative, GV.PBin []]
+      encCount = GV.position GV.Y [GV.PAggregate GV.Count, GV.PmType GV.Quantitative]
+      enc = GV.encoding . encDensity . encCount
+  in FV.configuredVegaLite vc [FV.title title, enc [], GV.mark GV.Bar []]
+
+
 
 modelAndElectionScatter :: Bool
                          -> Text
@@ -538,7 +553,7 @@ modelAndElectionScatter :: Bool
                          -> GV.VegaLite
 modelAndElectionScatter single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
-                    V.:& FVD.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
                     V.:& FVD.asVLData (GV.Number . (*100)) "CCES DShare"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
@@ -548,11 +563,14 @@ modelAndElectionScatter single title vc rows =
                                        ]
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
       xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
       encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Model_Mid"]
+                                     , GV.PScale [GV.SZero False]
+
 --                                     , xyScale
                                      ]
 
@@ -586,11 +604,14 @@ modelAndElectionScatter single title vc rows =
                                   , GV.PAxis [GV.AxTitle ""]
 --                                  , xyScale
                                   ]
+      encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       facets = GV.facet [GV.RowBy facetModel]
       ptEnc = GV.encoding . encModelMid . encElection . encSurvey
       lineEnc = GV.encoding . encModelMid . enc45
+      labelEnc = ptEnc . encDistrictName
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MTooltip GV.TTData], makeDistrictName []]
 
 {-
       regression p = GV.transform
@@ -610,8 +631,8 @@ modelAndElectionScatter single title vc rows =
 -}
       finalSpec = if single
 --                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
-                  then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
+                  then [FV.title title, GV.layer [lineSpec, labelSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
 
@@ -623,7 +644,7 @@ modelAndDaveScatterChart :: Bool
                          -> GV.VegaLite
 modelAndDaveScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
-                    V.:& FVD.asVLData (GV.Number . realToFrac) "District Number"
+                    V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
                     V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
                                        ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
@@ -632,6 +653,7 @@ modelAndDaveScatterChart single title vc rows =
                     V.:& FVD.asVLData (GV.Number . (*100)) "Dave"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
       xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
       encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
@@ -665,9 +687,12 @@ modelAndDaveScatterChart single title vc rows =
                                   , GV.PAxis [GV.AxTitle ""]
                                   , xyScale
                                   ]
+      encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       facets = GV.facet [GV.RowBy facetModel]
       ptEnc = GV.encoding . encModelMid . encDaves
       lineEnc = GV.encoding . encModelMid . enc45
+      labelEnc = ptEnc . encDistrictName
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName []]
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
 
@@ -689,8 +714,8 @@ modelAndDaveScatterChart single title vc rows =
 -}
       finalSpec = if single
 --                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
-                  then [FV.title title, GV.layer [ptSpec, lineSpec], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec]]), vlData]
+                  then [FV.title title, GV.layer [ptSpec, lineSpec, labelSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
 -- fold CES data over districts
