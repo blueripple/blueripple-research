@@ -273,21 +273,13 @@ addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (FixedEffects n vecF) = d
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
       colKey = "X_" <> feDataSetName <> "_Cols"
---      rowIndexExpr =
   xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) mWgtsV feDataSetName colKey -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffects" e
---    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let eQ = SB.var qVar
-{-
-        if T.null feDataSetName
-           then SB.indexBy (SB.name "Q_ast") rowIndexKey
-           else SB.indexBy  (SB.name  $ "Q" <> uSuffix <> "_ast") rowIndexKey
--}
-  --    eTheta = SB.var thetaVar --SB.name $ "thetaX" <> uSuffix
       eQTheta = SB.matMult qVar thetaVar
       xName = if T.null feDataSetName then "centered_X" else "centered_X" <> uSuffix
       xVar = SB.StanVar xName (SB.varType qVar)
@@ -322,21 +314,18 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
       colIndexKey =  "X" <> pSuffix <> "_Cols"
-  (betaVar, thetaVar) <- SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) colIndexKey
+  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) colIndexKey
   let eTheta = SB.var thetaVar --SB.name $ "thetaX" <> uSuffix
       eBeta  = SB.var betaVar --SB.name $ "betaX" <> uSuffix
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colIndexKey) eTheta `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e
---    SB.addStanLine $ "thetaX" <> uSuffix <> " ~ normal(0," <> show fePriorSD <> ")"
   let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
       qName = "Q" <> pSuffix <> "_ast"
       qVar = SB.StanVar qName xType
---      eQ = SB.var qVar --SB.indexBy  (SB.name  $ "Q" <> pSuffix <> "_ast") rowIndexKey
       eQTheta = SB.matMult qVar thetaVar
       xName = "centered_X" <> pSuffix
       xVar = SB.StanVar xName xType
---      eX = SB.var xVar --SB.indexBy (SB.name ("centered_X" <> pSuffix)) rowIndexKey
       eXBeta = SB.matMult xVar betaVar
   let feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, betaVar)
