@@ -263,18 +263,19 @@ addFixedEffects :: forall r1 r2 d.(Typeable d)
                 -> SB.StanExpr
                 -> SB.RowTypeTag r1
                 -> SB.RowTypeTag r2
+                -> Maybe SB.StanVar
                 -> FixedEffects r1
                 -> BuilderM d ( SB.StanExpr
                               , SB.StanVar -> BuilderM d SB.StanVar
                               , SB.StanExpr)
-addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
+addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
       colKey = "X_" <> feDataSetName <> "_Cols"
 --      rowIndexExpr =
-  SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) feDataSetName colKey -- code for parameters and transformed parameters
+  xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) mWgtsV feDataSetName colKey -- code for parameters and transformed parameters
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
@@ -298,13 +299,14 @@ addFixedEffects thinQR fePrior rttFE rttModeled (FixedEffects n vecF) = do
 
 addFixedEffectsData :: forall r d. (Typeable d)
                     => SB.RowTypeTag r
+                    -> Maybe SME.StanVar
                     -> FixedEffects r
                     -> BuilderM d (SB.StanVar, SB.StanVar -> BuilderM d SB.StanVar)
-addFixedEffectsData feRTT (FixedEffects n vecF) = do
+addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
   SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
+  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) mWgtsV feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
 
 addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool

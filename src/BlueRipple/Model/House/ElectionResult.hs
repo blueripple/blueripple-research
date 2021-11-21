@@ -194,8 +194,8 @@ type CPSPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, D
 type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
 type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
-type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome] V.++ ElectionR
-type DistrictDemDataR = CDKeyR V.++ [DT.PopPerSqMile,DT.AvgIncome]
+type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
+type DistrictDemDataR = CDKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
 type AllCatR = '[BR.Year] V.++ CPSPredictorR
 data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCDR
                                , cpsVRows :: F.FrameRec CPSVByCDR
@@ -520,7 +520,7 @@ prepCCESAndPums clearCache = do
                      else r
         pumsCDFixed = fmap fixDC_CD pums
         cpsVFixed = fmap fixDC_CD $ F.filterFrame (earliest earliestYear) cpsVByCD
-        diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [DT.PopPerSqMile, DT.AvgIncome])
+        diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens
               ppl r = cit r + F.rgetField @PUMS.NonCitizens r
@@ -528,8 +528,8 @@ prepCCESAndPums clearCache = do
               citWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
               pplF = FL.premap ppl FL.sum
               pplWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (ppl r) * f r) FL.sum <*> fmap realToFrac pplF
-          in (\d i -> d F.&: i F.&: V.RNil) <$> citWeightedSumF (F.rgetField @DT.PopPerSqMile) <*> citWeightedSumF (F.rgetField @DT.AvgIncome)
-        diFold :: FL.Fold (F.Record PUMSByCDR) (F.FrameRec (CDKeyR V.++  [DT.PopPerSqMile, DT.AvgIncome]))
+          in (\c d i -> c F.&: d F.&: i F.&: V.RNil) <$> citF <*> citWeightedSumF (F.rgetField @DT.PopPerSqMile) <*> citWeightedSumF (F.rgetField @DT.AvgIncome)
+        diFold :: FL.Fold (F.Record PUMSByCDR) (F.FrameRec (CDKeyR V.++  [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]))
         diFold = FMR.concatFold
                  $ FMR.mapReduceFold
                  FMR.noUnpack
@@ -715,8 +715,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         cdData <- SB.dataSetTag @(F.Record DistrictDemDataR) "CDData"
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
-
-        (_, centerF) <- MRP.addFixedEffectsData cdData (MRP.FixedEffects 1 densityPredictor)
+        pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
+        (_, centerF) <- MRP.addFixedEffectsData cdData (Just pplWgtsCD) (MRP.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2

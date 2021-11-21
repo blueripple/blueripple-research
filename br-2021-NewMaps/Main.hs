@@ -398,12 +398,12 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   let ccesRawByDistrict = fmap addDistrict
                           $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC")
                           $ ccesRawByDistrict'
-  BR.logFrame $ ccesRawByDistrict
+--  BR.logFrame $ ccesRawByDistrict
   elections_C <- BR.houseElectionsWithIncumbency
   electionsNC <- fmap onlyNC $ K.ignoreCacheTime elections_C
   flattenedElectionsNC <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                           <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
-  BR.logFrame flattenedElectionsNC
+--  BR.logFrame flattenedElectionsNC
   let (oldMapsCompare', missing1, missing2)
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
@@ -439,7 +439,10 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 
   pums2020 <- K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
   _ <- K.addHvega Nothing Nothing
-       $ densityHistogram "density" (FV.ViewConfig 600 600 5) id $ fmap F.rcast pums2020
+       $ densityHistogram "density" (FV.ViewConfig 600 600 5) id 5000 $ fmap F.rcast pums2020
+  _ <- K.addHvega Nothing Nothing
+       $ densityHistogram "log(density)" (FV.ViewConfig 600 600 5) Numeric.log 0.1 $ fmap F.rcast pums2020
+
 
 {-
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
@@ -535,14 +538,14 @@ race5FromCPS r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
-densityHistogram :: Text -> FV.ViewConfig -> (Double -> Double) -> F.FrameRec '[DT.PopPerSqMile] -> GV.VegaLite
-densityHistogram title vc f rows =
-  let toVLDataRec = FVD.asVLData (GV.Number . f) "f(Density)" V.:& V.RNil
+densityHistogram :: Foldable f => Text -> FV.ViewConfig -> (Double -> Double) -> Double -> f (F.Record '[DT.PopPerSqMile]) -> GV.VegaLite
+densityHistogram title vc g stepSize rows =
+  let toVLDataRec = FVD.asVLData (GV.Number . g) "f(Density)" V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
-      encDensity = GV.position GV.X [GV.PName "f(Density)", GV.PmType GV.Quantitative, GV.PBin []]
+      encDensity = GV.position GV.X [GV.PName "f(Density)", GV.PmType GV.Quantitative, GV.PBin [GV.Step stepSize]]
       encCount = GV.position GV.Y [GV.PAggregate GV.Count, GV.PmType GV.Quantitative]
       enc = GV.encoding . encDensity . encCount
-  in FV.configuredVegaLite vc [FV.title title, enc [], GV.mark GV.Bar []]
+  in FV.configuredVegaLite vc [FV.title title, enc [], GV.mark GV.Bar [], vlData]
 
 
 

@@ -1050,7 +1050,8 @@ add2dMatrixJson :: (Typeable d)
                 -> Text
                 -> SME.StanDim
                 -> Int
-                -> (r -> Vector.Vector Double) -> StanBuilderM env d SME.StanVar
+                -> (r -> Vector.Vector Double)
+                -> StanBuilderM env d SME.StanVar
 add2dMatrixJson rtt name sc rowDim cols vecF = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName

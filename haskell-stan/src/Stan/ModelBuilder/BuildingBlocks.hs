@@ -173,11 +173,12 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
 
 fixedEffectsQR :: Text
                -> SME.StanName
+               -> Maybe SME.StanVar
                -> SME.IndexKey
                -> SME.IndexKey
                -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
-fixedEffectsQR thinSuffix matrix rowKey colKey = do
-  (qVar, f) <- fixedEffectsQR_Data thinSuffix matrix rowKey colKey
+fixedEffectsQR thinSuffix matrix wgtsM rowKey colKey = do
+  (qVar, f) <- fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey
   (thetaVar, betaVar) <- fixedEffectsQR_Parameters thinSuffix matrix colKey
   let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
       q = "Q" <> thinSuffix <> "_ast"
@@ -186,19 +187,25 @@ fixedEffectsQR thinSuffix matrix rowKey colKey = do
 
 fixedEffectsQR_Data :: Text
                     -> SME.StanName
+                    -> Maybe SME.StanVar
                     -> SME.IndexKey
                     -> SME.IndexKey
                     -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
-fixedEffectsQR_Data thinSuffix matrix rowKey colKey = do
+fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
       r = "R" <> thinSuffix <> "_ast"
       qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
   qVar <- SB.inBlock SB.SBTransformedData $ do
+    meanFunction <- case wgtsM of
+      Nothing -> return $ "mean(" <> matrix <> "[,k])"
+      Just (SB.StanVar wgtsName _) -> do
+        weightedMeanFunction
+        return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> matrix <> "[,k])"
     SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
     SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
     SB.stanForLoopB "k" Nothing colKey $ do
-      SB.addStanLine $ "mean_" <> matrix <> "[k] = mean(" <> matrix <> "[,k])"
+      SB.addStanLine $ "mean_" <> matrix <> "[k] = " <> meanFunction --"mean(" <> matrix <> "[,k])"
       SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
     let srE =  SB.function "sqrt" (one $ SB.indexSize rowKey `SB.minus` SB.scalar "1")
         qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
@@ -264,3 +271,10 @@ vectorizeVar v@(SB.StanVar vn vt) rtt = do
   SB.useDataSetForBindings rtt $ do
     SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` SB.var v
   return fv
+
+
+weightedMeanFunction :: SB.StanBuilderM env d ()
+weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
+                        $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
+  SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
+  SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
