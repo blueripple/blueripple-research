@@ -726,7 +726,11 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         let simpleGroupModel x = SB.NonHierarchical SB.STZNone (normal x)
             muH gn s = "mu" <> s <> "_" <> gn
             sigmaH gn s = "sigma" <> s <> "_" <> gn
-            hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>", SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
+            hierHPs gn s = M.fromList
+              [
+                (SB.StanVar (muH gn s) SB.StanReal, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+              , (SB.StanVar (sigmaH gn s) SB.StanReal, ("<lower=0>", \v -> SB.var v `SB.vectorSample` (SB.normal (Just $ SB.scalar "0") (SB.scalar "2"))))
+              ]
             hierGroupModel' gn s = SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
             hierGroupModel gtt s = hierGroupModel' (SB.taggedGroupName gtt) s
 --              let gn = SB.taggedGroupName gtt

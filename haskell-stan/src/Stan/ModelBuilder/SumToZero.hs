@@ -104,7 +104,7 @@ sumToZero v (STZSoftWeighted gn p) = weightedSoftSumToZero v gn p
 sumToZero v STZQR = sumToZeroQR v
 
 
-type HyperParameters = Map SB.StanName (Text, SB.StanExpr) -- name, constraint for declaration, prior
+type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
 
 data HierarchicalParameterization = Centered SB.StanExpr
                                   | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr)
@@ -187,19 +187,19 @@ groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
 
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()
 addHyperParameters hps = do
-   let f (n, (t, e)) = do
-         v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n SB.StanReal t
-         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ SB.var v `SB.vectorSample` e
+   let f ((SB.StanVar sn st), (t, eF)) = do
+         v <- SB.inBlock SB.SBParameters $ SB.stanDeclare sn st t
+         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ eF v --SB.var v `SB.vectorSample` e
    traverse_ f $ Map.toList hps
 
 hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
 hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
-  hpps = one (sigmaName, ("<lower=0>",sigmaPrior))
+  hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   bp = SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
 
 hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
 hierarchicalNonCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
-  hpps = one (sigmaName, ("<lower=0>",sigmaPrior))
+  hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   rp = SB.stdNormal
   ncF brE = brE `SB.times` SB.name sigmaName
 
