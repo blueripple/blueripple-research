@@ -50,7 +50,7 @@ import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
-import qualified Stan.ModelBuilder.SumToZero as SB
+import qualified Stan.ModelBuilder.GroupModel as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.Distributions as SB
 import qualified Stan.ModelConfig as SC

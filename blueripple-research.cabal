@@ -121,6 +121,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.BuildingBlocks
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
+                 , Stan.ModelBuilder.GroupModel
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames
