@@ -392,7 +392,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
   oldMapsDRABase <- model2020 BRE.Base "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  BR.logFrame oldMapsPlusStateAndStateRace
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
@@ -408,7 +408,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          oldMapsDRAPlusStateAndStateRace
+          oldMapsDRABase
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
   let oldMapsCompare
@@ -569,7 +569,7 @@ modelAndElectionScatter single title vc rows =
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
       xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
+      encModelMid = GV.position GV.X ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Model_Mid"]
                                      , GV.PScale [GV.SZero False]
@@ -591,7 +591,7 @@ modelAndElectionScatter single title vc rows =
 --                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
 --                                  , GV.PScale [GV.SZero False]
                                   ]
-      encElection = GV.position GV.X [GV.PName "Election Result"
+      encElection = GV.position GV.Y [GV.PName "Election Result"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Election Results"]
                                        --                               , GV.PScale [GV.SZero False]
@@ -602,7 +602,7 @@ modelAndElectionScatter single title vc rows =
                              --                               , GV.PScale [GV.SZero False]
                              --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
                            ]
-      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
+      enc45 =  GV.position GV.Y [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
 --                                  , xyScale
