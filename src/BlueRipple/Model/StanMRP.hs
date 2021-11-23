@@ -274,7 +274,7 @@ addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (FixedEffects n vecF) = d
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
       colKey = "X_" <> feDataSetName <> "_Cols"
   xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix ("X" <> uSuffix) mWgtsV feDataSetName colKey -- code for parameters and transformed parameters
+  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix xV mWgtsV
   -- model
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
@@ -297,8 +297,8 @@ addFixedEffectsData :: forall r d. (Typeable d)
 addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName feRTT
       uSuffix = SB.underscoredIf feDataSetName
-  SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR_Data uSuffix ("X" <> uSuffix) mWgtsV feDataSetName ("X_" <> feDataSetName <> "_Cols") -- code for parameters and transformed parameters
+  xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
+  SB.fixedEffectsQR_Data uSuffix xV mWgtsV
 
 addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool
@@ -315,7 +315,7 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
       colIndexKey =  "X" <> pSuffix <> "_Cols"
       xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
-  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters xVar --pSuffix ("X" <> uSuffix) colIndexKey
+  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters xVar Nothing
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e

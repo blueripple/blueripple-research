@@ -19,6 +19,7 @@ module Stan.ModelBuilder.BuildingBlocks where
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
+import qualified Stan.ModelBuilder.GroupModel as SGM
 
 import Prelude hiding (All)
 import qualified Data.Map as Map
@@ -173,76 +174,86 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
 --generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
 fixedEffectsQR :: Text
-               -> SME.StanName
+               -> SME.StanVar
                -> Maybe SME.StanVar
-               -> SME.IndexKey
-               -> SME.IndexKey
                -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
-fixedEffectsQR thinSuffix matrix wgtsM rowKey colKey = do
-  (qVar, f) <- fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar --thinSuffix matrix colKey
-  let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
-      q = "Q" <> thinSuffix <> "_ast"
-      qMatrix = SME.StanVar q qMatrixType
+fixedEffectsQR thinSuffix xVar wgtsM = do
+  (qVar, f) <- fixedEffectsQR_Data thinSuffix xVar wgtsM --rowKey colKey
+  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar Nothing --thinSuffix matrix colKey
   return (qVar, thetaVar, betaVar, f)
 
 fixedEffectsQR_Data :: Text
-                    -> SME.StanName
+                    -> SME.StanVar
                     -> Maybe SME.StanVar
-                    -> SME.IndexKey
-                    -> SME.IndexKey
                     -> SB.StanBuilderM env d (SME.StanVar -- Q matrix variable
                                              , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- function to center different data around these means, returning centered
                                              )
-fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey = do
-  let ri = "R" <> thinSuffix <> "_ast_inverse"
+fixedEffectsQR_Data thinSuffix (SB.StanVar matrixName (SB.StanMatrix (rowDim, colDim))) wgtsM = do
+  let mt = SB.StanMatrix (rowDim, colDim)
+      ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
       r = "R" <> thinSuffix <> "_ast"
-      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
+--      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
+  colKey <- case colDim of
+    SB.NamedDim k -> return k
+    _ -> SB.stanBuildError $ "fixedEffectsQR_Data: Column dimension of matrix must be a named dimension."
   qVar <- SB.inBlock SB.SBTransformedData $ do
     meanFunction <- case wgtsM of
-      Nothing -> return $ "mean(" <> matrix <> "[,k])"
+      Nothing -> return $ "mean(" <> matrixName <> "[,k])"
       Just (SB.StanVar wgtsName _) -> do
         weightedMeanFunction
-        return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> matrix <> "[,k])"
-    SB.stanDeclare ("mean_" <> matrix) (SME.StanVector (SME.NamedDim colKey)) ""
-    SB.stanDeclare ("centered_" <> matrix) (SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
+        return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> matrixName <> "[,k])"
+    meanXV <- SB.stanDeclare ("mean_" <> matrixName) (SME.StanVector colDim) ""
+    centeredXV <- SB.stanDeclare ("centered_" <> matrixName) mt "" --(SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
     SB.stanForLoopB "k" Nothing colKey $ do
-      SB.addStanLine $ "mean_" <> matrix <> "[k] = " <> meanFunction --"mean(" <> matrix <> "[,k])"
-      SB.addStanLine $ "centered_" <>  matrix <> "[,k] = " <> matrix <> "[,k] - mean_" <> matrix <> "[k]"
-    let srE =  SB.function "sqrt" (one $ SB.indexSize rowKey `SB.minus` SB.scalar "1")
-        qRHS = SB.function "qr_thin_Q" (one $ SB.name $ "centered_" <> matrix) `SB.times` srE
-        rRHS = SB.function "qr_thin_R" (one $ SB.name $ "centered_" <> matrix) `SB.divide` srE
-        riRHS = SB.function "inverse" (one $ SB.name r)
-    qVar' <- SB.stanDeclareRHS q qMatrixType "" qRHS
-    SB.stanDeclareRHS r (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" rRHS
-    SB.stanDeclareRHS ri (SME.StanMatrix (SME.NamedDim colKey, SME.NamedDim colKey)) "" riRHS
+      SB.addStanLine $ "mean_" <> matrixName <> "[k] = " <> meanFunction --"mean(" <> matrix <> "[,k])"
+      SB.addStanLine $ "centered_" <>  matrixName <> "[,k] = " <> matrixName <> "[,k] - mean_" <> matrixName <> "[k]"
+    let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
+        qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE centeredXV) `SB.times` srE
+    qVar' <- SB.stanDeclareRHS q mt "" qRHS
+    let rType = SME.StanMatrix (colDim, colDim)
+        rRHS = SB.function "qr_thin_R" (one $ SB.varNameE centeredXV) `SB.divide` srE
+    rVar <- SB.stanDeclareRHS r rType "" rRHS
+    let riRHS = SB.function "inverse" (one $ SB.varNameE rVar)
+    riVar <- SB.stanDeclareRHS ri rType "" riRHS
     return qVar'
   let centeredX mv@(SME.StanVar sn st) =
         case st of
           (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
             cv <- SB.stanDeclare ("centered_" <> sn) (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) ""
             SB.stanForLoopB "k" Nothing colKey $ do
-              SB.addStanLine $ "centered_" <>  sn <> "[,k] = " <> sn <> "[,k] - mean_" <> matrix <> "[k]"
+              SB.addStanLine $ "centered_" <>  sn <> "[,k] = " <> sn <> "[,k] - mean_" <> matrixName <> "[k]"
             return cv
           _ -> SB.stanBuildError
                $ "fixedEffectsQR_Data (returned StanVar -> StanExpr): "
                <> " Given matrix doesn't have same dimensions as modeled fixed effects."
   return (qVar, centeredX)
 
+fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with non-matrix argument."
+
 fixedEffectsQR_Parameters :: SME.StanVar
-                          -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar)
-fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) = do
+                          -> Maybe (SB.GroupTypeTag k, SGM.GroupModel, SB.RowTypeTag r)
+                          -> SB.StanBuilderM env d (SME.StanVar -- theta
+                                                   , SME.StanVar -- beta
+                                                   )
+fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) mGroupInteraction = do
   let thinSuffix = snd $ T.breakOn "_" matrixName
       ri = "R" <> thinSuffix <> "_ast_inverse"
-  thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrixName) (SME.StanVector colDim) ""
-  betaVar <- SB.inBlock SB.SBTransformedParameters $ do
-    betaVar' <- SB.stanDeclare ("beta" <> matrixName) (SME.StanVector colDim) ""
-    SB.addStanLine $ "beta" <> matrixName <> " = " <> ri <> " * theta" <> matrixName
-    return betaVar'
-  return (thetaVar, betaVar)
+      noInteraction = do
+        thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrixName) (SME.StanVector colDim) ""
+        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+          betaVar' <- SB.stanDeclare ("beta" <> matrixName) (SME.StanVector colDim) ""
+          SB.addStanLine $ "beta" <> matrixName <> " = " <> ri <> " * theta" <> matrixName
+          return betaVar'
+        return (thetaVar, betaVar)
+  noInteraction
+{-
+      withInteraction gtt gm rtt = do
+        (SB.IntIndex groupSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
+        let binary gtt rtt = do
+-}
 
-fixedEffectsQR_Parameters _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
+fixedEffectsQR_Parameters _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
 
 diagVectorFunction :: SB.StanBuilderM env d Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do

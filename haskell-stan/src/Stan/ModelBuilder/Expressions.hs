@@ -150,6 +150,7 @@ declarationPart  st c = case st of
   StanMatrix (d1, d2) -> withIndexes (name $ "matrix" <> c) [d1, d2]
   StanArray dims st -> declarationPart st c
 
+-- for use in function declarations
 varAsArgument :: StanVar -> StanExpr
 varAsArgument (StanVar sn st) = bare $ (typePart st) <> " " <> sn where
   typePart :: StanType -> Text
@@ -165,6 +166,10 @@ varAsArgument (StanVar sn st) = bare $ (typePart st) <> " " <> sn where
   --  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
 --  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
 --  StanCovMatrix dim -> withIndexes (name "cov_matrix") [dim]
+
+-- for use in function calls
+varNameE :: StanVar -> StanExpr
+varNameE (StanVar sn _) = name sn
 
 declarationExpr :: StanVar -> Text -> StanExpr
 declarationExpr (StanVar sn st) c = case st of
@@ -233,6 +238,9 @@ index k = Fix.Fix $ IndexF k
 
 indexSize :: IndexKey -> StanExpr
 indexSize = declaration . index
+
+indexSize' :: StanDim -> StanExpr
+indexSize' = declaration . stanDimToExpr
 
 vectorized :: Set IndexKey -> StanExpr -> StanExpr
 vectorized ks = Fix.Fix . VectorizedF ks
