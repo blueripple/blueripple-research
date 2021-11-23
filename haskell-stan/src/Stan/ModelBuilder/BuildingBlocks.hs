@@ -173,6 +173,9 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
   return sv
 --generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
 
+
+{-
+
 fixedEffectsQR :: Text
                -> SME.StanVar
                -> Maybe SME.StanVar
@@ -181,6 +184,7 @@ fixedEffectsQR thinSuffix xVar wgtsM = do
   (qVar, f) <- fixedEffectsQR_Data thinSuffix xVar wgtsM --rowKey colKey
   (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar Nothing --thinSuffix matrix colKey
   return (qVar, thetaVar, betaVar, f)
+
 
 fixedEffectsQR_Data :: Text
                     -> SME.StanVar
@@ -254,6 +258,8 @@ fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) 
 -}
 
 fixedEffectsQR_Parameters _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
+
+-}
 
 diagVectorFunction :: SB.StanBuilderM env d Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do

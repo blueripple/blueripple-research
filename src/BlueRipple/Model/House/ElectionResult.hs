@@ -74,6 +74,7 @@ import qualified Stan.JSON as SJ
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.GroupModel as SB
+import qualified Stan.ModelBuilder.FixedEffects as SFE
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP
@@ -716,7 +717,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
-        (_, centerF) <- MRP.addFixedEffectsData cdData (Just pplWgtsCD) (MRP.FixedEffects 1 densityPredictor)
+        (_, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -741,12 +742,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
-        (feCDT, betaTVar) <- MRP.addFixedEffectsParametersAndPriors
-                          True
-                          fePrior
-                          cdData
-                          voteData
-                          (Just "T")
+        (feCDT, betaTVar) <- SFE.addFixedEffectsParametersAndPriors
+                             True
+                             fePrior
+                             cdData
+                             voteData
+                             (Just "T")
 
         (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
         (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
@@ -757,12 +758,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         -- Preference
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
-        (feCDP, betaPVar) <- MRP.addFixedEffectsParametersAndPriors
-                          True
-                          fePrior
-                          cdData
-                          voteData
-                          (Just "P")
+        (feCDP, betaPVar) <- SFE.addFixedEffectsParametersAndPriors
+                             True
+                             fePrior
+                             cdData
+                             voteData
+                             (Just "P")
 
         (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")

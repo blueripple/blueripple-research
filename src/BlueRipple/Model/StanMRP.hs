@@ -52,6 +52,7 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.GroupModel as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Stan.ModelBuilder.FixedEffects as SB
 import qualified Stan.ModelBuilder.Distributions as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
@@ -249,11 +250,12 @@ choices (x:xs) n = if (n > length (x:xs))
 
 type GroupName = Text
 
-data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
+--data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
 
-emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag FixedEffects
+emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag SB.FixedEffects
 emptyFixedEffects = DHash.empty
 
+{-
 -- returns
 -- 'X * beta' (or 'Q * theta') model term expression
 -- VarX -> 'VarX * beta' and just 'beta' for post-stratification
@@ -264,11 +266,11 @@ addFixedEffects :: forall r1 r2 d.(Typeable d)
                 -> SB.RowTypeTag r1
                 -> SB.RowTypeTag r2
                 -> Maybe SB.StanVar
-                -> FixedEffects r1
+                -> SB.FixedEffects r1
                 -> BuilderM d ( SB.StanExpr
                               , SB.StanVar -> BuilderM d SB.StanVar
                               , SB.StanExpr)
-addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (FixedEffects n vecF) = do
+addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (SB.FixedEffects n vecF) = do
   let feDataSetName = SB.dataSetName rttFE
       uSuffix = SB.underscoredIf feDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
@@ -289,6 +291,7 @@ addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (FixedEffects n vecF) = d
       feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, f, eBeta)
 
+
 addFixedEffectsData :: forall r d. (Typeable d)
                     => SB.RowTypeTag r
                     -> Maybe SME.StanVar
@@ -299,6 +302,7 @@ addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
       uSuffix = SB.underscoredIf feDataSetName
   xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   SB.fixedEffectsQR_Data uSuffix xV mWgtsV
+
 
 addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
                                    => Bool
@@ -328,7 +332,7 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       eXBeta = SB.matMult xVar betaVar
   let feExpr = if thinQR then eQTheta else eXBeta
   return (feExpr, betaVar)
-
+-}
 
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
