@@ -314,11 +314,10 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
       colIndexKey =  "X" <> pSuffix <> "_Cols"
-  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters pSuffix ("X" <> uSuffix) colIndexKey
-  let eTheta = SB.var thetaVar --SB.name $ "thetaX" <> uSuffix
-      eBeta  = SB.var betaVar --SB.name $ "betaX" <> uSuffix
+      xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
+  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters xVar --pSuffix ("X" <> uSuffix) colIndexKey
   SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colIndexKey) eTheta `SB.vectorSample` fePrior
+    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e
   let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
       qName = "Q" <> pSuffix <> "_ast"

@@ -23,6 +23,7 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 import Prelude hiding (All)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as T
 import qualified Data.Vector as V
 
 addIntData :: (Typeable d)
@@ -179,7 +180,7 @@ fixedEffectsQR :: Text
                -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
 fixedEffectsQR thinSuffix matrix wgtsM rowKey colKey = do
   (qVar, f) <- fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters thinSuffix matrix colKey
+  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar --thinSuffix matrix colKey
   let qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
       q = "Q" <> thinSuffix <> "_ast"
       qMatrix = SME.StanVar q qMatrixType
@@ -190,7 +191,9 @@ fixedEffectsQR_Data :: Text
                     -> Maybe SME.StanVar
                     -> SME.IndexKey
                     -> SME.IndexKey
-                    -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
+                    -> SB.StanBuilderM env d (SME.StanVar -- Q matrix variable
+                                             , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- function to center different data around these means, returning centered
+                                             )
 fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey = do
   let ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
@@ -227,16 +230,19 @@ fixedEffectsQR_Data thinSuffix matrix wgtsM rowKey colKey = do
                <> " Given matrix doesn't have same dimensions as modeled fixed effects."
   return (qVar, centeredX)
 
-fixedEffectsQR_Parameters :: Text -> SME.StanName -> SME.IndexKey -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar)
-fixedEffectsQR_Parameters thinSuffix matrix colKey = do
-  let ri = "R" <> thinSuffix <> "_ast_inverse"
-  thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
+fixedEffectsQR_Parameters :: SME.StanVar
+                          -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar)
+fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) = do
+  let thinSuffix = snd $ T.breakOn "_" matrixName
+      ri = "R" <> thinSuffix <> "_ast_inverse"
+  thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrixName) (SME.StanVector colDim) ""
   betaVar <- SB.inBlock SB.SBTransformedParameters $ do
-    betaVar' <- SB.stanDeclare ("beta" <> matrix) (SME.StanVector $ SME.NamedDim colKey) ""
-    SB.addStanLine $ "beta" <> matrix <> " = " <> ri <> " * theta" <> matrix
+    betaVar' <- SB.stanDeclare ("beta" <> matrixName) (SME.StanVector colDim) ""
+    SB.addStanLine $ "beta" <> matrixName <> " = " <> ri <> " * theta" <> matrixName
     return betaVar'
   return (thetaVar, betaVar)
 
+fixedEffectsQR_Parameters _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
 
 diagVectorFunction :: SB.StanBuilderM env d Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
