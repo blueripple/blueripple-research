@@ -41,36 +41,15 @@ addFixedEffects :: forall r1 r2 d env.(Typeable d)
                 -> SB.RowTypeTag r2
                 -> Maybe SB.StanVar
                 -> FixedEffects r1
-                -> SB.StanBuilderM env d ( SB.StanExpr
-                              , SB.StanVar -> SB.StanBuilderM env d SB.StanVar
-                              , SB.StanExpr)
-addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV fe@(FixedEffects n vecF) = do
-  (qVar, f) <- addFixedEffectsData rttFE mWgtsV fe
-  (feExpr, betaVar) <- addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled ??
-{-
-  let feDataSetName = SB.dataSetName rttFE
-      uSuffix = SB.underscoredIf feDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
-      colKey = "X_" <> feDataSetName <> "_Cols"
-  xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  (qVar, f) <- fixedEffectsQR_Data uSuffix xV mWgtsV
--}
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar Nothing
-
---  (qVar, thetaVar, betaVar, f) <- fixedEffectsQR uSuffix xV mWgtsV
-  -- model
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffects" e
-  let eQ = SB.var qVar
-      eQTheta = SB.matMult qVar thetaVar
-      xName = if T.null feDataSetName then "centered_X" else "centered_X" <> uSuffix
-      xVar = SB.StanVar xName (SB.varType qVar)
-      eX = SB.var xVar
-      eBeta = SB.var betaVar --SB.name $ "betaX" <> uSuffix
-      eXBeta = SB.matMult xVar betaVar
-      feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, f, eBeta)
+                -> Maybe Text
+                -> SB.StanBuilderM env d ( SB.StanExpr -- Q * theta
+                                         , SB.StanVar -> SB.StanBuilderM env d SB.StanVar -- centered X
+                                         , SB.StanVar -- beta
+                                         )
+addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV fe@(FixedEffects n vecF) mVarSuffix = do
+  (_, f) <- addFixedEffectsData rttFE mWgtsV fe
+  (feExpr, betaVar) <- addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix -- ??
+  return (feExpr, f, betaVar)
 
 addFixedEffectsData :: forall r d env. (Typeable d)
                     => SB.RowTypeTag r
