@@ -51,6 +51,11 @@ addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV fe@(FixedEffects n vecF) 
   (feExpr, betaVar) <- addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix -- ??
   return (feExpr, f, betaVar)
 
+
+
+
+
+
 addFixedEffectsData :: forall r d env. (Typeable d)
                     => SB.RowTypeTag r
                     -> Maybe SME.StanVar
@@ -61,46 +66,6 @@ addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
       uSuffix = SB.underscoredIf feDataSetName
   xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   fixedEffectsQR_Data uSuffix xV mWgtsV
-
-addFixedEffectsParametersAndPriors :: forall r1 r2 d env. (Typeable d)
-                                   => Bool
-                                   -> SB.StanExpr
-                                   -> SB.RowTypeTag r1
-                                   -> SB.RowTypeTag r2
-                                   -> Maybe Text
-                                   -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
-addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
-  let feDataSetName = SB.dataSetName rttFE
-      modeledDataSetName = fromMaybe "" mVarSuffix
-      pSuffix = SB.underscoredIf feDataSetName
-      uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
-      colIndexKey =  "X" <> pSuffix <> "_Cols"
-      xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters xVar Nothing
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffectsParametersAndPriors" e
-  let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
-      qName = "Q" <> pSuffix <> "_ast"
-      qVar = SB.StanVar qName xType
-      eQTheta = SB.matMult qVar thetaVar
-      xName = "centered_X" <> pSuffix
-      xVar = SB.StanVar xName xType
-      eXBeta = SB.matMult xVar betaVar
-  let feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, betaVar)
-
-{-
-fixedEffectsQR :: Text
-               -> SME.StanVar
-               -> Maybe SME.StanVar
-               -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
-fixedEffectsQR thinSuffix xVar wgtsM = do
-  (qVar, f) <- fixedEffectsQR_Data thinSuffix xVar wgtsM --rowKey colKey
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar Nothing --thinSuffix matrix colKey
-  return (qVar, thetaVar, betaVar, f)
--}
 fixedEffectsQR_Data :: Text
                     -> SME.StanVar
                     -> Maybe SME.StanVar
@@ -149,6 +114,35 @@ fixedEffectsQR_Data thinSuffix (SB.StanVar matrixName (SB.StanMatrix (rowDim, co
   return (qVar, centeredX)
 
 fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with non-matrix argument."
+
+addFixedEffectsParametersAndPriors :: forall r1 r2 d env. (Typeable d)
+                                   => Bool
+                                   -> SB.StanExpr
+                                   -> SB.RowTypeTag r1
+                                   -> SB.RowTypeTag r2
+                                   -> Maybe Text
+                                   -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
+addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
+  let feDataSetName = SB.dataSetName rttFE
+      modeledDataSetName = fromMaybe "" mVarSuffix
+      pSuffix = SB.underscoredIf feDataSetName
+      uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
+      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
+      colIndexKey =  "X" <> pSuffix <> "_Cols"
+      xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
+  (thetaVar, betaVar) <- fixedEffectsQR_Parameters xVar Nothing
+  SB.inBlock SB.SBModel $ do
+    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
+    SB.addExprLine "addFixedEffectsParametersAndPriors" e
+  let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
+      qName = "Q" <> pSuffix <> "_ast"
+      qVar = SB.StanVar qName xType
+      eQTheta = SB.matMult qVar thetaVar
+      xName = "centered_X" <> pSuffix
+      xVar = SB.StanVar xName xType
+      eXBeta = SB.matMult xVar betaVar
+  let feExpr = if thinQR then eQTheta else eXBeta
+  return (feExpr, betaVar)
 
 fixedEffectsQR_Parameters :: SME.StanVar
                           -> Maybe (SB.GroupTypeTag k, SGM.GroupModel, SB.RowTypeTag r)
