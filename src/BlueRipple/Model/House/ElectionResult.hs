@@ -742,12 +742,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
-        (feCDT, betaTVar) <- SFE.addFixedEffectsParametersAndPriors
-                             True
-                             fePrior
-                             cdData
-                             voteData
-                             (Just "T")
+        (feCDT, betaTMultF) <- SFE.addFixedEffectsParametersAndPriors
+                               True
+                               fePrior
+                               cdData
+                               voteData
+                               (Just "T")
 
         (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
         (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
@@ -758,12 +758,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         -- Preference
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
-        (feCDP, betaPVar) <- SFE.addFixedEffectsParametersAndPriors
-                             True
-                             fePrior
-                             cdData
-                             voteData
-                             (Just "P")
+        (feCDP, betaPMultF) <- SFE.addFixedEffectsParametersAndPriors
+                               True
+                               fePrior
+                               cdData
+                               voteData
+                               (Just "P")
 
         (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
@@ -892,11 +892,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
         cmVar <- centerF mv
-        let densityTE = SB.matMult cmVar betaTVar
-            densityPE = SB.matMult cmVar betaPVar
-            psExprF _ = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps densityTE
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps densityPE
+
+        let psExprF _ = do
+              densityTV <- betaTMultF cmVar --SB.matMult cmVar betaTVar
+              densityPV <- betaPMultF cmVar -- SB.matMult cmVar betaPVar
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps (SB.var densityTV)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps (SB.var densityPV)
               --return $ SB.var pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.var pD) `SB.minus` SB.scalar "1")
               return $ SB.var pT `SB.times` SB.var pD
 --            pTExprF ik = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE

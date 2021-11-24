@@ -516,6 +516,15 @@ withUseBindings ubs m = do
   modify $ modifyIndexBindings $ const oldBindings
   return a
 
+addScopedDeclBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
+addScopedDeclBindings dbs' m = do
+  oldBindings <- indexBindings <$> get
+  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs dbs) -> SME.VarBindingStore ubs (Map.union dbs dbs))
+  a <- m
+  modify $ modifyIndexBindings $ const oldBindings
+  return a
+
+
 modifyRowInfosA :: Applicative t
                    => (RowInfos d -> t (RowInfos d))
                    -> BuilderState d
