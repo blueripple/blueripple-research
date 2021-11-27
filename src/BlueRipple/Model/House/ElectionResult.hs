@@ -891,11 +891,14 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
 
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
+--        SB.stanBuildError $ "mv=" <> show mv
         cmVar <- centerF mv
+        (densityTV, densityPV) <- SB.inBlock SB.SBGeneratedQuantities $ do
+          densityTV' <- betaTMultF cmVar --SB.matMult cmVar betaTVar
+          densityPV' <- betaPMultF cmVar -- SB.matMult cmVar betaPVar
+          return (densityTV', densityPV')
 
         let psExprF _ = do
-              densityTV <- betaTMultF cmVar --SB.matMult cmVar betaTVar
-              densityPV <- betaPMultF cmVar -- SB.matMult cmVar betaPVar
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps (SB.var densityTV)
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps (SB.var densityPV)
               --return $ SB.var pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.var pD) `SB.minus` SB.scalar "1")

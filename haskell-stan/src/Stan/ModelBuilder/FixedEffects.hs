@@ -61,13 +61,15 @@ addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
       uSuffix = SB.underscoredIf feDataSetName
   xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
   fixedEffectsQR_Data uSuffix xV mWgtsV
+
+
 fixedEffectsQR_Data :: Text
                     -> SME.StanVar
                     -> Maybe SME.StanVar
                     -> SB.StanBuilderM env d (SME.StanVar -- Q matrix variable
                                              , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- function to center different data around the mean of the given matrix, returning centered
                                              )
-fixedEffectsQR_Data thinSuffix (SB.StanVar matrixName (SB.StanMatrix (rowDim, colDim))) wgtsM = do
+fixedEffectsQR_Data thinSuffix mt@(SB.StanVar matrixName (SB.StanMatrix (rowDim, colDim))) wgtsM = do
   let mt = SB.StanMatrix (rowDim, colDim)
       ri = "R" <> thinSuffix <> "_ast_inverse"
       q = "Q" <> thinSuffix <> "_ast"
@@ -98,14 +100,17 @@ fixedEffectsQR_Data thinSuffix (SB.StanVar matrixName (SB.StanMatrix (rowDim, co
     return qVar'
   let centeredX mv@(SME.StanVar sn st) =
         case st of
-          (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
-            cv <- SB.stanDeclare ("centered_" <> sn) (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) ""
+          cmt@(SME.StanMatrix (_, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
+            cv <- SB.stanDeclare ("centered_" <> sn) cmt ""
             SB.stanForLoopB "k" Nothing colKey $ do
               SB.addStanLine $ "centered_" <>  sn <> "[,k] = " <> sn <> "[,k] - mean_" <> matrixName <> "[k]"
             return cv
           _ -> SB.stanBuildError
-               $ "fixedEffectsQR_Data (returned StanVar -> StanExpr): "
-               <> " Given matrix doesn't have same dimensions as modeled fixed effects."
+               $ "centeredX (from fixedEffectsQR_Data called with x="
+               <> show mt
+               <> "): called with mv="
+               <> show mv
+               <> " which is not a matrix type with indexed column dimension."
   return (qVar, centeredX)
 
 fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with non-matrix argument."
@@ -127,7 +132,7 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
       colIndexKey =  "X" <> pSuffix <> "_Cols"
       xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
-  (thetaVar, xBetaF) <- fixedEffectsQR_Parameters xVar Nothing
+  (thetaVar, xBetaF) <- fixedEffectsQR_Parameters xVar mVarSuffix Nothing
   SB.inBlock SB.SBModel $ do
     let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
     SB.addExprLine "addFixedEffectsParametersAndPriors" e
@@ -137,33 +142,37 @@ addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = 
       eQTheta = SB.matMult qVar thetaVar
       xName = "centered_X" <> pSuffix
       xVar = SB.StanVar xName xType
-  eXBeta <- SB.var <$> xBetaF xVar --SB.matMult xVar betaVar
-  let feExpr = if thinQR then eQTheta else eXBeta
+  feExpr <- case thinQR of
+    True -> return eQTheta
+    False -> SB.inBlock SB.SBTransformedParameters $ SB.var <$> xBetaF xVar --SB.matMult xVar betaVar
   return (feExpr, xBetaF)
 
 fixedEffectsQR_Parameters :: SME.StanVar
+                          -> Maybe Text
                           -> Maybe (SB.GroupTypeTag k, SGM.GroupModel, SB.RowTypeTag r)
                           -> SB.StanBuilderM env d (SME.StanVar -- theta
                                                    , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- X -> X * beta
                                                    )
-fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) mGroupInteraction = do
+fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) mVarSuffix mGroupInteraction = do
   let thinSuffix = snd $ T.breakOn "_" matrixName
       ri = "R" <> thinSuffix <> "_ast_inverse"
+      varName x = x <> fromMaybe "" mVarSuffix <> "_" <> matrixName
       noInteraction = do
-        thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrixName) (SME.StanVector colDim) ""
-        vBetaMult <- SB.inBlock SB.SBTransformedParameters $ do
-          betaVar' <- SB.stanDeclare ("beta" <> matrixName) (SME.StanVector colDim) ""
-          SB.addStanLine $ "beta" <> matrixName <> " = " <> ri <> " * theta" <> matrixName
-          let vectorizeBetaMult x = case x of
-                SB.StanVar mName (SB.StanMatrix (rowDim, _)) ->
-                  SB.stanDeclareRHS ("beta_" <> mName) (SME.StanVector rowDim) "" $ x `SB.matMult` betaVar'
-                _ -> SB.stanBuildError
-                     $ "vectorizeMult x (from fixedEffectsQR_Parameters, noInteraction, q="
-                     <> show q
-                     <> ") called with non-matrix. x="
-                     <> show x
-          return vectorizeBetaMult
-        return (thetaVar, vBetaMult)
+        thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
+        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+          betaVar' <- SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
+          SB.addStanLine $ varName "beta" <> " = " <> ri <> " * " <> varName "theta"
+          return betaVar'
+        let vectorizeBetaMult x = case x of
+              SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) ->
+                SB.stanDeclareRHS ("beta" <> fromMaybe "" mVarSuffix <> "_" <> mName) (SME.StanVector $ SB.NamedDim rowKey) ""
+                $ SB.vectorizedOne rowKey $ x `SB.matMult` betaVar
+              _ -> SB.stanBuildError
+                   $ "vectorizeMult x (from fixedEffectsQR_Parameters, noInteraction, q="
+                   <> show q
+                   <> ") called with non-matrix or matrix with non-indexed row-dimension. x="
+                   <> show x
+        return (thetaVar, vectorizeBetaMult)
   noInteraction
 {-
       withInteraction gtt gm rtt = do
@@ -171,4 +180,4 @@ fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) 
         let binary gtt rtt = do
 -}
 
-fixedEffectsQR_Parameters _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
+fixedEffectsQR_Parameters _ _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."

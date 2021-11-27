@@ -738,6 +738,7 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
   addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
 --  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   addUseBindingToDataSet rttFrom xWalkIndexKey xWalkVar
+  addDeclBinding xWalkIndexKey $ SME.StanVar ("N_" <> dataSetName rttTo) SME.StanInt
   return ()
 
 
