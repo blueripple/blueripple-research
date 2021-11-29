@@ -213,14 +213,18 @@ feParametersNoInteraction thinQR m@(SB.StanVar matrixName mType) rttFE mVarSuffi
       SB.inBlock SB.SBTransformedParameters $ do
         betaVar' <- SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
         let ri = SME.StanVar (rName rttFE) (SME.StanMatrix (colDim, colDim))
-        SB.addExprLine "feParametersNoInteraction" $ SME.vectorized (one $ colIndexKey) $ SME.var betaVar' `SME.eq` (ri `SME.matMult` thetaVar)
+        SB.addExprLine "feParametersNoInteraction"
+          $ SME.vectorizedOne colIndexKey
+          $ SME.var betaVar' `SME.eq` (ri `SME.matMult` thetaVar)
         let rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
             m' = SME.StanVar matrixName (SME.StanMatrix (SME.NamedDim rowIndexKey, colDim))
         let qThetaE' = m' `SME.matMult` thetaVar
         return (qThetaE', betaVar')
 --        SB.addStanLine $ varName "beta" <> " = " <> ri <> " * " <> varName "theta"
   let vectorizedBetaMult x = case x of
-        SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return $ SB.vectorizedOne rowKey $ x `SB.matMult` betaVar
+        SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return
+--                                                                    $ SB.vectorizedOne rowKey
+                                                                    $ x `SB.matMult` betaVar
         _ -> SB.stanBuildError
              $ "vectorizeMult x (from fixedEffectsQR_Parameters, noInteraction, matrix name="
              <> show matrixName
