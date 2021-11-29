@@ -34,10 +34,6 @@ data FixedEffectsModel k = NonInteractingFE Bool SB.StanExpr
                          | InteractingFE Bool (SB.GroupTypeTag k) (SGM.GroupModel)
 
 
--- returns
--- 'X * beta' (or 'Q * theta') model term expression
--- VarX -> 'VarX * beta' and just 'beta' for post-stratification
--- The latter is for use in post-stratification at fixed values of the fixed effects.
 addFixedEffects :: forall k r1 r2 d env.(Typeable d)
                 => FixedEffectsModel k
                 -> SB.RowTypeTag r1
@@ -91,11 +87,6 @@ fixedEffectsQR_Data :: SME.StanVar
                                              , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- Y - mean(X)
                                              )
 fixedEffectsQR_Data m@(SB.StanVar mName mType@(SB.StanMatrix (rowDim, colDim))) rttFE wgtsM = do
-  let --mt = SB.StanMatrix (rowDim, colDim)
---      ri = "R" <> thinSuffix <> "_ast_inverse"
---      q = "Q" <> thinSuffix <> "_ast"
---      r = "R" <> thinSuffix <> "_ast"
---      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
   colKey <- case colDim of
     SB.NamedDim k -> return k
     _ -> SB.stanBuildError $ "fixedEffectsQR_Data: Column dimension of matrix must be a named dimension."
@@ -146,32 +137,8 @@ addFixedEffectsParametersAndPriors :: forall k r1 r2 d env. (Typeable d)
                                    -> SB.StanBuilderM env d (SB.StanExpr -- Q * theta (or X * beta)
                                                             , SB.StanVar -> SB.StanBuilderM env d SME.StanExpr -- Y ->  m (Y * beta)
                                                             )
-addFixedEffectsParametersAndPriors feModel mVar rttFE rttModeled mVarSuffix = do
-{-  let feDataSetName = SB.dataSetName rttFE
-      modeledDataSetName = fromMaybe "" mVarSuffix
-      pSuffix = SB.underscoredIf feDataSetName
-      uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
-      colIndexKey =  "X" <> pSuffix <> "_Cols"
-      xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
-      xVar = SB.StanVar ("X" <> pSuffix) xType
-      mName = if thinQR then  "Q" <> pSuffix <> "_ast" else "X" <> pSuffix
-      mVar = SB.StanVar mName xType
--}
-  (mThetaE, xBetaF) <- fixedEffectsQR_Parameters feModel rttFE mVar mVarSuffix
---  SB.inBlock SB.SBModel $ do
---    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
---    SB.addExprLine "addFixedEffectsParametersAndPriors" e
---  let
---      qName = "Q" <> pSuffix <> "_ast"
---      qVar = SB.StanVar qName xType
---      eQTheta = SB.matMult qVar thetaVar
---      xName = "centered_X" <> pSuffix
---      xVar = SB.StanVar xName xType
---  feExpr <- if thinQR
---            then return eQTheta
---            else SB.inBlock SB.SBTransformedParameters $ xBetaF xVar --SB.matMult xVar betaVar
-  return (mThetaE, xBetaF)
+addFixedEffectsParametersAndPriors feModel mVar rttFE rttModeled mVarSuffix
+  = fixedEffectsQR_Parameters feModel rttFE mVar mVarSuffix
 
 fixedEffectsQR_Parameters :: FixedEffectsModel k
                           -> SB.RowTypeTag r
@@ -181,14 +148,9 @@ fixedEffectsQR_Parameters :: FixedEffectsModel k
                                                    , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                                    )
 fixedEffectsQR_Parameters feModel rttFE q mVarSuffix = do
---  let thinSuffix = snd $ T.breakOn "_" matrixName
---      ri = "R" <> thinSuffix <> "_ast_inverse"
---      varName x = x <> fromMaybe "" mVarSuffix <> "_" <> matrixName
   case feModel of
     NonInteractingFE thinQR fePrior -> feParametersNoInteraction thinQR q rttFE mVarSuffix
     InteractingFE thinQR gtt gm  -> feParametersWithInteraction thinQR q gtt gm rttFE
-
---fixedEffectsQR_Parameters _ _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
 
 feParametersNoInteraction :: Bool
                           -> SME.StanVar
@@ -222,9 +184,7 @@ feParametersNoInteraction thinQR m@(SB.StanVar matrixName mType) rttFE mVarSuffi
         return (qThetaE', betaVar')
 --        SB.addStanLine $ varName "beta" <> " = " <> ri <> " * " <> varName "theta"
   let vectorizedBetaMult x = case x of
-        SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return
---                                                                    $ SB.vectorizedOne rowKey
-                                                                    $ x `SB.matMult` betaVar
+        SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return $ x `SB.matMult` betaVar
         _ -> SB.stanBuildError
              $ "vectorizeMult x (from fixedEffectsQR_Parameters, noInteraction, matrix name="
              <> show matrixName
