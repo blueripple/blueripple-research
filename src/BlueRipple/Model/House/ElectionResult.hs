@@ -717,7 +717,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
-        (_, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
+        (xVar, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -743,8 +743,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
         (feCDT, betaTMultF) <- SFE.addFixedEffectsParametersAndPriors
-                               True
-                               fePrior
+                               (SFE.NonInteractingFE True fePrior)
+                               xVar
                                cdData
                                voteData
                                (Just "T")
@@ -759,8 +759,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
         (feCDP, betaPMultF) <- SFE.addFixedEffectsParametersAndPriors
-                               True
-                               fePrior
+                               (SFE.NonInteractingFE True fePrior)
+                               xVar
                                cdData
                                voteData
                                (Just "P")
@@ -899,8 +899,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
           return (densityTV', densityPV')
 
         let psExprF _ = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps (SB.var densityTV)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps (SB.var densityPV)
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps densityTV
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps densityPV
               --return $ SB.var pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.var pD) `SB.minus` SB.scalar "1")
               return $ SB.var pT `SB.times` SB.var pD
 --            pTExprF ik = SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT ik $ logitT_ps densityTE

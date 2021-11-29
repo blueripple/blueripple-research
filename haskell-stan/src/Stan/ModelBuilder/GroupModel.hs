@@ -30,10 +30,12 @@ import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
 type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
 
-data HierarchicalParameterization = Centered SB.StanExpr
-                                  | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr)
+data HierarchicalParameterization = Centered SB.StanExpr -- beta prior
+                                  | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr) -- beta prior and nonCentered transform
 
-data GroupModel = NonHierarchical STZ.SumToZero SB.StanExpr
+data GroupModel = BinarySymmetric SB.StanExpr -- epsilon prior
+                | Binary SB.StanExpr SB.StanExpr -- priors for mu (mean) and epsilon (spread)
+                | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
                 | Hierarchical STZ.SumToZero HyperParameters HierarchicalParameterization
 
 
@@ -68,37 +70,11 @@ groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
   let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
   traverse_ declareBeta bvs
   addHyperParameters hps
-  traverse (\brv -> groupBetaPrior brv rawPrior) brvs
+  traverse_ (\brv -> groupBetaPrior brv rawPrior) brvs
   return bvs
 
 rawName :: Text -> Text
 rawName t = t <> "_raw"
-
-
-{-
-groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
-groupModel bv@(SB.StanVar bn bt) (NonHierarchical stz priorE) = do
-  when (stz /= STZQR) $ do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
-  sumToZero bv stz
-  groupBetaPrior bv priorE
-  return bv
-
-groupModel  bv@(SB.StanVar bn bt) (Hierarchical stz hps (Centered betaPrior)) = do
-  bv <- SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  sumToZero bv stz
-  addHyperParameters hps
-  groupBetaPrior bv betaPrior
-  return bv
-
-groupModel (SB.StanVar bn bt) (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
-  brv@(SB.StanVar brn _) <- SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
-  sumToZero brv stz -- ?
-  bv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name brn)
-  addHyperParameters hps
-  groupBetaPrior brv rawPrior
-  return bv
--}
-
 
 groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
 groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
