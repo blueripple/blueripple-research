@@ -281,18 +281,30 @@ addMultiIndex rtt gtts mVarName = do
           Just _ -> return ()
   mapM_ checkGroup gtts
 -}
--- given something indexed by things which can indexed from a data-set,
+-- given something indexed by things which can be indexed from a data-set,
 -- create a vector which is a 1d alias
 -- e.g., given beta_g1_g2[J_g1, J_g2]
 -- declare beta_g1_g2_vD1[J_D1]
 -- and set beta_g1_g2_vD1[n] = beta_g1_g2[g1_D1[n], g2_D1[n]]
 vectorizeVar :: SB.StanVar -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
+vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
+{-
 vectorizeVar v@(SB.StanVar vn vt) rtt = do
   let ik = SB.dataSetName rtt
       vecVname = vn <> "_v" <> ik
   fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
   SB.useDataSetForBindings rtt $ do
     SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` SB.var v
+  return fv
+-}
+
+vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
+vectorizeExpr sn se rtt = do
+  let ik = SB.dataSetName rtt
+      vecVname = sn <> "_" <> ik <> "_v"
+  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
+  SB.useDataSetForBindings rtt
+    $ SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` se
   return fv
 
 

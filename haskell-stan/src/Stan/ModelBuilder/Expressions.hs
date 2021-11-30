@@ -49,6 +49,11 @@ data StanDim = NamedDim IndexKey
              | ExprDim StanExpr
              deriving (Show, Eq, Ord, Generic)
 
+-- we return False if dim is unchanged
+changeDimKey :: IndexKey -> IndexKey -> StanDim -> (StanDim, Bool)
+changeDimKey old new (NamedDim t) = if old == t then (NamedDim new, True) else (NamedDim t, False)
+changeDimKey _ _ d = (d, False)
+
 dimToText :: StanDim -> Text
 dimToText (NamedDim t) = t
 dimToText (GivenDim n) = show n
@@ -75,6 +80,38 @@ varName (StanVar n _) = n
 
 varType :: StanVar -> StanType
 varType (StanVar _ t) = t
+
+-- we return True if anything has changed
+changeIndexKey :: IndexKey -> IndexKey -> StanType -> (StanType, Bool)
+
+changeIndexKey oldK newK (StanArray  ds t) =
+  let changedDs = changeDimKey oldK newK <$> ds
+      ds' = fst <$> changedDs
+      dsChanged = getAny $ fold $ (Any . snd <$> changedDs)
+      (t', tChanged) = changeIndexKey oldK newK t
+  in (StanArray ds' t', dsChanged || tChanged)
+changeIndexKey oldK newK (StanVector d) =
+  let (d', hasChanged) = changeDimKey oldK newK d
+  in (StanVector d', hasChanged)
+changeIndexKey oldK newK (StanMatrix (rd, cd)) =
+  let (rd', rHasChanged) = changeDimKey oldK newK rd
+      (cd', cHasChanged) = changeDimKey oldK newK cd
+  in (StanMatrix (rd', cd'), rHasChanged || cHasChanged)
+changeIndexKey oldK newK (StanCorrMatrix d) =
+  let (d', hasChanged) = changeDimKey oldK newK d
+  in (StanCorrMatrix d', hasChanged)
+changeIndexKey oldK newK (StanCholeskyFactorCorr d) =
+  let (d', hasChanged) = changeDimKey oldK newK d
+  in (StanCholeskyFactorCorr d', hasChanged)
+changeIndexKey oldK newK (StanCovMatrix d) =
+  let (d', hasChanged) = changeDimKey oldK newK d
+  in (StanCovMatrix d', hasChanged)
+changeIndexKey _ _ t = (t, False)
+
+varChangeIndexKey :: IndexKey -> IndexKey -> StanVar -> (StanVar, Bool)
+varChangeIndexKey oldK newK (StanVar n t) =
+  let (t', hasChanged) = changeIndexKey oldK newK t
+  in (StanVar n t', hasChanged)
 
 
 -- for matrix multiplication

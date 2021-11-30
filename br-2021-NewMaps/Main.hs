@@ -388,29 +388,30 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name) ccesAndPums2020_C
-  newMapsBase <- model2020 BRE.Base "NC_Proposed" $ fmap fixCensus <$> cdData_C
+--  newMapsBase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
-  oldMapsDRABase <- model2020 BRE.Base "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  BR.logFrame oldMapsPlusStateAndStateRace
+  BR.logFrame oldMapsDRABase
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
                           $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC")
                           $ ccesRawByDistrict'
---  BR.logFrame $ ccesRawByDistrict
+  BR.logFrame $ ccesRawByDistrict
   elections_C <- BR.houseElectionsWithIncumbency
   electionsNC <- fmap onlyNC $ K.ignoreCacheTime elections_C
   flattenedElectionsNC <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                           <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
---  BR.logFrame flattenedElectionsNC
+  BR.logFrame flattenedElectionsNC
   let (oldMapsCompare', missing1, missing2)
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
           oldMapsDRABase
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
-  when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and new maps base model:" <> show missing2
+  when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and model:" <> show missing2
   let oldMapsCompare
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.logFrame oldMapsCompare

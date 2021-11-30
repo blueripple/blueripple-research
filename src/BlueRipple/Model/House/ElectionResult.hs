@@ -654,17 +654,33 @@ groupBuilder psGroup districts states psKeys = do
   return ()
 
 
-data Model = Base
-           | PlusState
-           | PlusSexEdu
-           | PlusRaceEdu
-           | PlusInteractions
-           | PlusStateAndStateRace
-           | PlusStateAndStateInteractions
-           deriving (Show, Eq, Ord, Generic)
+data GroupModel = BaseG
+                 | PlusStateG
+                 | PlusSexEduG
+                 | PlusRaceEduG
+                 | PlusInteractionsG
+                 | PlusStateAndStateRaceG
+                 | PlusStateAndStateInteractionsG
+                 deriving (Show, Eq, Ord, Generic)
+
+instance Flat.Flat GroupModel
+type instance FI.VectorFor GroupModel = Vector.Vector
+
+data DensityModel = BaseD
+                  | PlusEduD
+                  deriving (Show, Eq, Ord, Generic)
+
+instance Flat.Flat DensityModel
+type instance FI.VectorFor DensityModel = Vector.Vector
+
+data Model = Model { groupModel :: GroupModel, densityModel :: DensityModel}  deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
+
+modelLabel :: Model -> Text
+modelLabel (Model gm dm) = show gm <> "_" <> show dm
+
 
 electionModel :: forall rs ks r.
                  (K.KnitEffects r
@@ -708,7 +724,7 @@ electionModel :: forall rs ks r.
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
 electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
-  let jsonDataName = psDataSetName <> "_" <> show model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+  let jsonDataName = psDataSetName <> "_" <> modelLabel model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
@@ -717,7 +733,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
-        (xVar, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
+        (feMatrices, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -742,12 +758,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
-        (feCDT, betaTMultF) <- SFE.addFixedEffectsParametersAndPriors
-                               (SFE.NonInteractingFE True fePrior)
-                               xVar
-                               cdData
-                               voteData
-                               (Just "T")
+        (feCDT', betaTMultF') <- SFE.addFixedEffectsParametersAndPriors
+                                 (SFE.NonInteractingFE True fePrior)
+                                 feMatrices
+                                 cdData
+                                 voteData
+                                 (Just "T")
 
         (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
         (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
@@ -758,12 +774,30 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         -- Preference
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
-        (feCDP, betaPMultF) <- SFE.addFixedEffectsParametersAndPriors
-                               (SFE.NonInteractingFE True fePrior)
-                               xVar
-                               cdData
-                               voteData
-                               (Just "P")
+        (feCDP', betaPMultF') <- SFE.addFixedEffectsParametersAndPriors
+                                 (SFE.NonInteractingFE True fePrior)
+                                 feMatrices
+                                 cdData
+                                 voteData
+                                 (Just "P")
+        (feCDT, betaTMultF, feCDP, betaPMultF) <- case densityModel model of
+          BaseD -> return (feCDT', betaTMultF', feCDP', betaPMultF')
+          PlusEduD -> do
+             let eduDensityGM = SB.BinarySymmetric fePrior
+                 eduDensityFEM = SFE.InteractingFE True educationGroup eduDensityGM
+             (feEduT, feEpsEduTMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "T")
+             (feEduP, feEpsEduPMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "P")
+             let cdT = feCDT' `SB.plus` feEduT
+                 cdP = feCDP' `SB.plus` feEduP
+                 multTF x = do
+                   b <- betaTMultF' x
+                   edu <- feEpsEduTMultF x
+                   return $ b `SB.plus` edu
+                 multPF x = do
+                   b <- betaPMultF' x
+                   edu <- feEpsEduPMultF x
+                   return $ b `SB.plus` edu
+             return (cdT, multTF, cdP, multPF)
 
         (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
@@ -771,19 +805,19 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         let distP = SB.binomialLogitDist hVotes
 
 
-        (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- case model of
-              Base -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
+        (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- case groupModel model of
+              BaseG -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                              ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                              )
-              PlusState -> do
+              PlusStateG -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
                     logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
                 return (logitT, logitT, logitP, logitP)
-              PlusSexEdu -> do
+              PlusSexEduG -> do
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
                 sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
                 vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT voteData
@@ -794,7 +828,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                     logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var vSexEduP]
                     logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var sexEduP]
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
-              PlusRaceEdu -> do
+              PlusRaceEduG -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions educationGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceEdu" <> s) sigmaPrior SB.STZNone
@@ -807,7 +841,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vRaceEduP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var raceEduP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
-              PlusInteractions -> do
+              PlusInteractionsG -> do
                 let groups = MRP.addGroupForInteractions raceGroup
                              $ MRP.addGroupForInteractions sexGroup
                              $ MRP.addGroupForInteractions educationGroup mempty
@@ -821,7 +855,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
-              PlusStateAndStateRace -> do
+              PlusStateAndStateRaceG -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let groups = MRP.addGroupForInteractions stateGroup
@@ -836,7 +870,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var vInterP)
                     logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var interP)
                 return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
-              PlusStateAndStateInteractions -> do
+              PlusStateAndStateInteractionsG -> do
                 (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
                 (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
                 let iGroupRace = MRP.addGroupForInteractions stateGroup
@@ -989,7 +1023,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
     $ MRP.runMRPModel
     clearCaches
     (Just modelDir)
-    ("LegDistricts_" <> show model <> if parallel then "_P" else "")
+    ("LegDistricts_" <> modelLabel model <> if parallel then "_P" else "")
     jsonDataName
     dw
     stanCode
