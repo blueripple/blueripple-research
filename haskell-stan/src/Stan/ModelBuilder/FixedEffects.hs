@@ -181,8 +181,6 @@ checkModelDataConsistency model (ThinQR _ _ _) = if thinQR model
                                                  then return ()
                                                  else SB.stanBuildError "thinQR is false in model but matrices are ThinQR"
 
-
-
 fixedEffectsQR_Parameters :: FixedEffectsModel k
                           -> SB.RowTypeTag rFE
                           -> SB.RowTypeTag rM
@@ -194,7 +192,7 @@ fixedEffectsQR_Parameters :: FixedEffectsModel k
 fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix = do
   checkModelDataConsistency feModel feMatrixes
   case feModel of
-    NonInteractingFE _ fePrior -> feParametersNoInteraction feMatrixes rttFE mVarSuffix
+    NonInteractingFE _ fePrior -> feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix
     InteractingFE _ gtt gm  -> feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix
 
 colDimAndDimKeys :: FEMatrixes -> SB.StanBuilderM env d (SME.StanDim, SME.IndexKey, SME.IndexKey)
@@ -211,11 +209,6 @@ reIndex oldK newK sv =
      else SB.stanBuildError $ "reIndex: Failed to re-index matrix with fixed-effects data crosswalk. "
           <> "oldKey=" <> show oldK <> "; newKey=" <> show newK <> "; M=" <> show sv
 
-matrixRowKey :: SME.StanVar -> SB.StanBuilderM env d SME.IndexKey
-matrixRowKey sv = case SME.varType sv of
-  SME.StanMatrix (SME.NamedDim rk, _) -> return rk
-  _ -> SB.stanBuildError $ "FixedEffects.matrixRowKey: given variable " <> show sv <> ") is either not a matrix or does not have an indexed row dimension."
-
 vectorizedBetaMult :: SME.StanVar -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
 vectorizedBetaMult betaVar x = case x of
   SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return $ x `SB.matMult` betaVar
@@ -224,45 +217,40 @@ vectorizedBetaMult betaVar x = case x of
        <> " called with non-matrix or matrix with non-indexed row-dimension. x="
        <> show x
 
+addPrior rttFE colIndexKey var priorE = do
+  SB.inBlock SB.SBModel
+    $ SB.useDataSetForBindings rttFE
+    $ SB.addExprLine "feParameters..."
+    $ SME.vectorizedOne colIndexKey
+    $ SB.var var `SME.vectorSample` priorE
+
 feParametersNoInteraction :: FEMatrixes
                           -> SB.RowTypeTag r
+                          -> SME.StanExpr
                           -> Maybe Text
                           -> SB.StanBuilderM env d ( MakeVecE env d  -- Y -> Y * theta (or Y -> Y * beta)
                                                    , MakeVecE env d -- Y -> Y * beta
                                                    )
-feParametersNoInteraction feMatrixes rttFE mVarSuffix = do
+feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix = do
   let xVar = xM feMatrixes
       xName = SME.varName xVar
---      xWalkIndexKey = SB.crosswalkIndexKey rttFE
   (colDim, rowIndexKey, colIndexKey) <- colDimAndDimKeys feMatrixes
   let varName x = x <> fromMaybe "" mVarSuffix <> "_" <> xName
   case feMatrixes of
     NoQR xVar _ -> do -- should we use centered here ??
       betaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
---      xVar' <- reIndex rowIndexKey xWalkIndexKey xVar
+      addPrior rttFE colIndexKey betaVar fePrior
       return (const $ vectorizedBetaMult betaVar, const $ vectorizedBetaMult betaVar)
     ThinQR _ _ (QRMatrixes qVar _ rInvVar) -> do
       thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
+      addPrior rttFE colIndexKey thetaVar fePrior
       SB.inBlock SB.SBTransformedParameters $ do
         betaVar <- SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
         SB.addExprLine "feParametersNoInteraction"
           $ SME.vectorizedOne colIndexKey
           $ SME.var betaVar `SME.eq` (rInvVar `SME.matMult` thetaVar)
---        qVar' <- reIndex rowIndexKey xWalkIndexKey qVar
         return (const $ vectorizedBetaMult thetaVar, const $ vectorizedBetaMult betaVar)
-{-
-vectorizedMultE :: SME.StanName -> SME.StanExpr -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
-vectorizedMultE vecName vecExpr x = case x of
-  SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> do
-    vecVar <- SB.stanDeclare vecName (SME.StanVector $ SME.NamedDim rowKey) ""
-    SB.stanForLoopB "n" Nothing rowKey
-      $ SB.addExprLine "vectorizedMultE" $ SB.var vecVar `SME.eq` vecExpr
-    return $ x `SB.matMult` vecVar
-  _ -> SB.stanBuildError
-       $ "vectorizedBetaMult x (from fixedEffectsQR_Parameters)"
-       <> " called with non-matrix or matrix with non-indexed row-dimension. x="
-       <> show x
--}
+
 feParametersWithInteraction :: FEMatrixes
                             -> SB.GroupTypeTag k
                             -> SGM.GroupModel
@@ -301,20 +289,18 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
       NoQR xVar _ -> do -- should we use centered here??
         xVar' <- reIndex rowIndexKey xWalkIndexKey xVar
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "eps") (SME.StanVector colDim) ""
---        xEpsVecVar <- SB.useDataSetForBindings rttModeled $ SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "epsVec") (vecE xVar' epsVar) modeledIndexKey
+        addPrior rttFE colIndexKey epsVar epsPriorE
         return (matVecE epsVar, matVecE epsVar) -- \ik x -> fmap SB.var (SBB.vectorizeExpr (varName "epsVec") (vecE x epsVar) ik))
       ThinQR _ _ (QRMatrixes qVar _ rInvVar) -> do
---        qVar' <- reIndex rowIndexKey xWalkIndexKey qVar
         thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
+        addPrior rttFE colIndexKey thetaVar epsPriorE
         betaVar <- SB.inBlock SB.SBTransformedParameters $ do
           betaVar' <-  SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
           SB.addExprLine "feParametersNoInteraction"
             $ SME.vectorizedOne colIndexKey
             $ SME.var betaVar' `SME.eq` (rInvVar `SME.matMult` thetaVar)
           return betaVar'
---        qThetaVecVar <-  SB.useDataSetForBindings rttModeled $ SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "thetaVec") (vecE qVar' thetaVar) modeledIndexKey
         return (matVecE thetaVar, matVecE betaVar)
---        return (SB.var qThetaVecVar, \ik x -> fmap SB.var (SBB.vectorizeExpr (varName "thetaVec") (vecE x thetaVar) ik))
     SGM.Binary muPriorE epsPriorE -> undefined
 
 
