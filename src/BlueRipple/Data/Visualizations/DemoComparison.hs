@@ -36,7 +36,8 @@ demoCompare :: forall rs f r.(K.KnitEffects r, Foldable f)
             -> f (F.Record rs)
             -> K.Sem r GV.VegaLite
 demoCompare (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) title vc rows = do
-  let labeledAndCategorized r = ((label r, cat1 r, cat2 r), count r)
+  let
+      labeledAndCategorized r = ((label r, cat1 r, cat2 r), count r)
       labeled ((l, _, _), c) = (l, c)
       totalsByCategory = FL.fold (FL.premap labeledAndCategorized $ FL.foldByKeyMap FL.sum) rows
       totalsByLabel = FL.fold (FL.premap labeled $ FL.foldByKeyMap FL.sum) $ M.toList totalsByCategory
@@ -61,28 +62,46 @@ demoCompare (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) title vc 
 
 
 demoCompare2 :: forall rs f r.(K.KnitEffects r, Foldable f)
-            => (Text, F.Record rs -> Text)
-            -> (Text, F.Record rs -> Text)
-            -> (F.Record rs -> Int)
-            -> (Text, F.Record rs -> Text)
-            -> Text
-            -> FV.ViewConfig
-            -> f (F.Record rs)
-            -> K.Sem r GV.VegaLite
-demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) title vc rows = do
-  let labeledAndCategorized r = ((label r, cat1 r, cat2 r), count r)
-      labeled ((l, _, _), c) = (l, c)
-      totalsByCategory = FL.fold (FL.premap labeledAndCategorized $ FL.foldByKeyMap FL.sum) rows
-      totalsByLabel = FL.fold (FL.premap labeled $ FL.foldByKeyMap FL.sum) $ M.toList totalsByCategory
---      toVLDataRowM :: F.Record rs -> Maybe [GV.DataRow]
+             => (Text, F.Record rs -> Text)
+             -> (Text, F.Record rs -> Text)
+             -> (F.Record rs -> Int)
+             -> (Text, F.Record rs -> Text)
+             -> Maybe (Text, F.Record rs -> Double, FL.Fold Double Double)
+             -> Text
+             -> FV.ViewConfig
+             -> f (F.Record rs)
+             -> K.Sem r GV.VegaLite
+demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay title vc rows = do
+  let
       catsName = cat1Name <> "-" <> cat2Name
-      toVLDataRowM ((l, c1, c2), cnt) = fmap (\x -> GV.dataRow x [])
-                                        $ sequence [Just $ (catsName, GV.Str $ c1 <> "-" <> c2)
-                                                   ,Just $ ("Count", GV.Number $ realToFrac cnt)
-                                                   ,(\x -> ("Pct", GV.Number $ 100 * realToFrac cnt/realToFrac x)) <$> M.lookup l totalsByLabel
-                                                   ,Just $ (labelName, GV.Str l)
-                                                   ]
-      vlDataRowsM = List.concat <$> (traverse toVLDataRowM $ M.toList totalsByCategory)
+      vlDataRowsM = case mOverlay of
+        Nothing ->
+          let  labeledAndCategorized r = ((label r, cat1 r, cat2 r), count r)
+               labeled ((l, _, _), c) = (l, c)
+               totalsByCategory = FL.fold (FL.premap labeledAndCategorized $ FL.foldByKeyMap FL.sum) rows
+               totalsByLabel = FL.fold (FL.premap labeled $ FL.foldByKeyMap FL.sum) $ M.toList totalsByCategory
+               toVLDataRowM ((l, c1, c2), cnt) = fmap (\x -> GV.dataRow x [])
+                                                 $ sequence [Just $ (catsName, GV.Str $ c1 <> "-" <> c2)
+                                                            ,Just $ ("Count", GV.Number $ realToFrac cnt)
+                                                            ,(\x -> ("Pct", GV.Number $ 100 * realToFrac cnt/realToFrac x)) <$> M.lookup l totalsByLabel
+                                                            ,Just $ (labelName, GV.Str l)
+                                                            ]
+          in List.concat <$> (traverse toVLDataRowM $ M.toList totalsByCategory)
+        Just (oLabel, f, oFld) ->
+          let labeledAndCategorized r = ((label r, cat1 r, cat2 r), (count r, f r))
+              labeled ((l, _, _), (c, _)) = (l, c)
+              fldCountAndOverlay :: FL.Fold (Int, Double) (Int, Double)
+              fldCountAndOverlay = (,) <$> FL.premap fst FL.sum <*> FL.premap snd oFld
+              totalsByCategory = FL.fold (FL.premap labeledAndCategorized $ FL.foldByKeyMap fldCountAndOverlay) rows
+              totalsByLabel = FL.fold (FL.premap labeled $ FL.foldByKeyMap FL.sum) $ M.toList totalsByCategory
+              toVLDataRowM ((l, c1, c2), (cnt, ox)) = fmap (\x -> GV.dataRow x [])
+                                                      $ sequence [Just $ (catsName, GV.Str $ c1 <> "-" <> c2)
+                                                                 ,Just $ ("Count", GV.Number $ realToFrac cnt)
+                                                                 ,(\x -> ("Pct", GV.Number $ 100 * realToFrac cnt/realToFrac x)) <$> M.lookup l totalsByLabel
+                                                                 ,Just $ (labelName, GV.Str l)
+                                                                 ,Just $ (oLabel, GV.Number ox)
+                                                                 ]
+          in List.concat <$> (traverse toVLDataRowM $ M.toList totalsByCategory)
   vlDataRows <-  K.knitMaybe "Missing label in total.  Which shouldn't happen." vlDataRowsM
   let vlData = GV.dataFromRows [] vlDataRows
       encCat = GV.color [GV.MName catsName, GV.MmType GV.Nominal]
