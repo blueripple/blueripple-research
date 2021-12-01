@@ -789,13 +789,13 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
              (feEduP, feEpsEduPMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "P")
              let cdT = feCDT' `SB.plus` feEduT
                  cdP = feCDP' `SB.plus` feEduP
-                 multTF x = do
-                   b <- betaTMultF' x
-                   edu <- feEpsEduTMultF x
+                 multTF ik x = do
+                   b <- betaTMultF' ik x
+                   edu <- feEpsEduTMultF ik x
                    return $ b `SB.plus` edu
-                 multPF x = do
-                   b <- betaPMultF' x
-                   edu <- feEpsEduPMultF x
+                 multPF ik x = do
+                   b <- betaPMultF' ik x
+                   edu <- feEpsEduPMultF ik x
                    return $ b `SB.plus` edu
              return (cdT, multTF, cdP, multPF)
 
@@ -820,9 +820,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
               PlusSexEduG -> do
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
                 sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
-                vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT voteData
+                vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT (SB.dataSetName voteData)
                 sexEduP <- MRP.addInteractions2 voteData (hierGM "P") sexGroup educationGroup (Just "P")
-                vSexEduP <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduP voteData
+                vSexEduP <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduP (SB.dataSetName voteData)
                 let logitT_sample d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.var vSexEduT]
                     logitT_ps d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, SB.var sexEduT]
                     logitP_sample d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var vSexEduP]
@@ -833,9 +833,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                              $ MRP.addGroupForInteractions educationGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceEdu" <> s) sigmaPrior SB.STZNone
                 raceEduT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
-                vRaceEduT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) raceEduT
+                vRaceEduT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) raceEduT
                 raceEduP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
-                vRaceEduP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) raceEduP
+                vRaceEduP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) raceEduP
                 let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var vRaceEduT)
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var raceEduT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vRaceEduP)
@@ -847,9 +847,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                              $ MRP.addGroupForInteractions educationGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceSexEdu" <> s) sigmaPrior SB.STZNone
                 interT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
-                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interT
+                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) interT
                 interP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
-                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interP
+                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) interP
                 let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var vInterT)
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT] ++ fmap SB.var interT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vInterP)
@@ -862,9 +862,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                              $ MRP.addGroupForInteractions raceGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaStateRaceEdu" <> s) sigmaPrior SB.STZNone
                 interT <- MRP.addInteractions voteData (hierGM "T") groups 2 (Just "T")
-                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interT
+                vInterT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) interT
                 interP <- MRP.addInteractions voteData (hierGM "P") groups 2 (Just "P")
-                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) interP
+                vInterP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) interP
                 let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT] ++ fmap SB.var vInterT)
                     logitT_ps d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT] ++ fmap SB.var interT)
                     logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var vInterP)
@@ -881,17 +881,17 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                                 $ MRP.addGroupForInteractions educationGroup mempty
                 let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaStateRaceEdu" <> s) sigmaPrior SB.STZNone
                 stateRaceT <- MRP.addInteractions voteData (hierGM "T") iGroupRace 2 (Just "T")
-                vStateRaceT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateRaceT
+                vStateRaceT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateRaceT
                 stateRaceP <- MRP.addInteractions voteData (hierGM "P") iGroupRace 2 (Just "P")
-                vStateRaceP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateRaceP
+                vStateRaceP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateRaceP
                 stateSexT <- MRP.addInteractions voteData (hierGM "T") iGroupSex 2 (Just "T")
-                vStateSexT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateSexT
+                vStateSexT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateSexT
                 stateSexP <- MRP.addInteractions voteData (hierGM "P") iGroupSex 2 (Just "P")
-                vStateSexP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateSexP
+                vStateSexP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateSexP
                 stateEduT <- MRP.addInteractions voteData (hierGM "T") iGroupEdu 2 (Just "T")
-                vStateEduT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateEduT
+                vStateEduT <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateEduT
                 stateEduP <- MRP.addInteractions voteData (hierGM "P") iGroupEdu 2 (Just "P")
-                vStateEduP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x voteData) stateEduP
+                vStateEduP <- traverse (\x -> SB.inBlock SB.SBModel $ SB.vectorizeVar x (SB.dataSetName voteData)) stateEduP
                 let logitT_sample d = SB.multiOp "+" $ d :| ([gRaceT, gSexT, gEduT, gStateT]
                                                               ++ fmap SB.var vStateRaceT
                                                               ++ fmap SB.var vStateSexT
@@ -927,9 +927,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
 --        SB.stanBuildError $ "mv=" <> show mv
         cmVar <- centerF mv
-        (densityTV, densityPV) <- SB.inBlock SB.SBGeneratedQuantities $ do
-          densityTV' <- betaTMultF cmVar --SB.matMult cmVar betaTVar
-          densityPV' <- betaPMultF cmVar -- SB.matMult cmVar betaPVar
+        (densityTV, densityPV) <- SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings psData $ do
+          densityTV' <- betaTMultF "DistrictPS" cmVar --SB.matMult cmVar betaTVar
+          densityPV' <- betaPMultF "DistrictPS" cmVar -- SB.matMult cmVar betaPVar
           return (densityTV', densityPV')
 
         let psExprF _ = do

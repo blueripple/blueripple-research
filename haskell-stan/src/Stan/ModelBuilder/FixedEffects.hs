@@ -68,7 +68,7 @@ addFixedEffects :: forall k r1 r2 d env.(Typeable d)
                 -> Maybe Text
                 -> SB.StanBuilderM env d ( SB.StanExpr -- Q * theta (or X * beta)
                                          , SB.StanVar -> SB.StanBuilderM env d SB.StanVar -- Y -> Y - mean(X)
-                                         , SB.StanVar ->  SB.StanBuilderM env d SB.StanExpr -- Y -> Y * beta
+                                         , SB.IndexKey -> SB.StanVar ->  SB.StanBuilderM env d SB.StanExpr -- rtt -> Y -> Y * beta
                                          )
 addFixedEffects feModel rttFE rttModeled mWgtsV fe@(FixedEffects n vecF) mVarSuffix = do
   (xV, f) <- addFixedEffectsData rttFE mWgtsV fe
@@ -164,7 +164,7 @@ addFixedEffectsParametersAndPriors :: forall k r1 r2 d env. (Typeable d)
                                    -> SB.RowTypeTag r2
                                    -> Maybe Text
                                    -> SB.StanBuilderM env d (SB.StanExpr -- Q * theta (or X * beta)
-                                                            , SB.StanVar -> SB.StanBuilderM env d SME.StanExpr -- Y ->  m (Y * beta)
+                                                            , SB.IndexKey -> SB.StanVar -> SB.StanBuilderM env d SME.StanExpr -- Y ->  m (Y * beta)
                                                             )
 addFixedEffectsParametersAndPriors feModel feMatrixes rttFE rttModeled mVarSuffix
   = fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix
@@ -187,7 +187,7 @@ fixedEffectsQR_Parameters :: FixedEffectsModel k
                           -> FEMatrixes
                           -> Maybe Text
                           -> SB.StanBuilderM env d (SME.StanExpr -- theta
-                                                   , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
+                                                   , SB.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                                    )
 fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix = do
   checkModelDataConsistency feModel feMatrixes
@@ -221,7 +221,7 @@ feParametersNoInteraction :: FEMatrixes
                           -> SB.RowTypeTag r
                           -> Maybe Text
                           -> SB.StanBuilderM env d (SME.StanExpr -- Q * theta (or X * beta)
-                                                   , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
+                                                   , SB.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                                    )
 feParametersNoInteraction feMatrixes rttFE mVarSuffix = do
   let xVar = xM feMatrixes
@@ -233,7 +233,7 @@ feParametersNoInteraction feMatrixes rttFE mVarSuffix = do
     NoQR xVar -> do
       betaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
       xVar' <- reIndex rowIndexKey xWalkIndexKey xVar
-      return (xVar' `SME.matMult` betaVar, vectorizedBetaMult betaVar)
+      return (xVar' `SME.matMult` betaVar, \_ -> vectorizedBetaMult betaVar)
     ThinQR _ (QRMatrixes qVar _ rInvVar) -> do
       thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
       SB.inBlock SB.SBTransformedParameters $ do
@@ -242,7 +242,7 @@ feParametersNoInteraction feMatrixes rttFE mVarSuffix = do
           $ SME.vectorizedOne colIndexKey
           $ SME.var betaVar `SME.eq` (rInvVar `SME.matMult` thetaVar)
         qVar' <- reIndex rowIndexKey xWalkIndexKey qVar
-        return (qVar' `SME.matMult` thetaVar, vectorizedBetaMult betaVar)
+        return (qVar' `SME.matMult` thetaVar, \_ -> vectorizedBetaMult betaVar)
 
 vectorizedMultE :: SME.StanName -> SME.IndexKey -> SME.StanExpr -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
 vectorizedMultE vecName vecIndex vecExpr x = case x of
@@ -263,7 +263,7 @@ feParametersWithInteraction :: FEMatrixes
                             -> SB.RowTypeTag rM
                             -> Maybe Text
                             -> SB.StanBuilderM env d (SME.StanExpr -- Q * theta (or X * beta)
-                                                     , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
+                                                     , SB.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                                      )
 feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   (SB.IntIndex groupSize _) <- SB.rowToGroupIndex <$> SB.indexMap rttModeled gtt -- has to be vs modeled group since that is where groups are defined
@@ -278,23 +278,25 @@ feBinaryInteraction :: FEMatrixes
                     -> SB.RowTypeTag rM
                     -> Maybe Text
                     -> SB.StanBuilderM env d (SME.StanExpr -- Q * {-eps, eps} (or X * {-eps, eps})
-                                             , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
+                                             , SB.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                              )
 feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   let xName = SME.varName $ xM feMatrixes
       varName x = x <> SB.taggedGroupName gtt <> fromMaybe "" mVarSuffix <> "_" <> xName
       modeledIndexKey = SB.dataSetName rttModeled
       xWalkIndexKey = SB.crosswalkIndexKey rttFE
-      pmVecE sv = SME.vectorFunction "to_vector" (SME.indexBy (SME.bracket (SME.csExprs (SB.var sv :| [SME.negate $ SB.var sv]))) (SB.taggedGroupName gtt)) []
+      pmMatE sv = SME.indexBy (SME.bracket (SME.csExprs (SB.var sv :| [SME.negate $ SB.var sv]))) (SB.taggedGroupName gtt)
   (colDim, rowIndexKey, colIndexKey) <- colDimAndDimKeys feMatrixes
+  let vecE x sv = SME.vectorizedOne colIndexKey $ SME.function "dot_product" $ SB.var x :| [pmMatE sv]
   case gm of
     SGM.BinarySymmetric epsPriorE -> case feMatrixes of
-      NoQR xVar -> SB.useDataSetForBindings rttModeled $ do
+      NoQR xVar -> do
         xVar' <- reIndex rowIndexKey xWalkIndexKey xVar
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "eps") (SME.StanVector colDim) ""
-        epsVecVar <- SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "epsVec") (pmVecE epsVar) rttModeled
-        return (xVar' `SME.matMult` epsVecVar, vectorizedMultE (varName "epsVec") modeledIndexKey (pmVecE epsVar))
-      ThinQR _ (QRMatrixes qVar _ rInvVar) -> SB.useDataSetForBindings rttModeled $ do
+        xEpsVecVar <- SB.useDataSetForBindings rttModeled $ SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "epsVec") (vecE xVar' epsVar) modeledIndexKey
+        return (SB.var xEpsVecVar, \ik x -> fmap SB.var (SBB.vectorizeExpr (varName "epsVec") (vecE x epsVar) ik))
+--                   vectorizedMultE (varName "epsVec") modeledIndexKey (pmVecE epsVar
+      ThinQR _ (QRMatrixes qVar _ rInvVar) -> do
         qVar' <- reIndex rowIndexKey xWalkIndexKey qVar
         thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
         betaVar <- SB.inBlock SB.SBTransformedParameters $ do
@@ -303,8 +305,9 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
             $ SME.vectorizedOne colIndexKey
             $ SME.var betaVar' `SME.eq` (rInvVar `SME.matMult` thetaVar)
           return betaVar'
-        thetaVecVar <- SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "thetaVec") (pmVecE thetaVar) rttModeled
-        return (qVar' `SB.matMult` thetaVecVar, vectorizedMultE (varName "betaVec") modeledIndexKey (pmVecE betaVar))
+        qThetaVecVar <-  SB.useDataSetForBindings rttModeled $ SB.inBlock SB.SBModel $ SBB.vectorizeExpr (varName "thetaVec") (vecE qVar' thetaVar) modeledIndexKey
+        return (SB.var qThetaVecVar, \ik x -> fmap SB.var (SBB.vectorizeExpr (varName "thetaVec") (vecE x thetaVar) ik))
+--                   vectorizedMultE (varName "betaVec") modeledIndexKey (pmVecE betaVar))
     SGM.Binary muPriorE epsPriorE -> undefined
 
 
@@ -315,7 +318,7 @@ feNonBinaryInteraction :: FEMatrixes
                        -> SB.RowTypeTag rM
                        -> Maybe Text
                        -> SB.StanBuilderM env d (SME.StanExpr -- Q * Theta (or X * Beta)
-                                                , SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
+                                                , SB.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr -- X -> X * beta
                                                 )
 feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = case gm of
   SGM.NonHierarchical stz betaPriorE -> undefined
