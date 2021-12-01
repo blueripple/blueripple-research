@@ -43,7 +43,8 @@ import Knit.Report (perspectiveX1)
 
 type StanName = Text
 type IndexKey = Text
-type DataSetKey = Text
+type DataConstraint = Text
+--type DataSetKey = Text
 data StanDim = NamedDim IndexKey
              | GivenDim Int
              | ExprDim StanExpr

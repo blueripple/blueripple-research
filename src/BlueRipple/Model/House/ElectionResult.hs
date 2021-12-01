@@ -733,7 +733,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
-        (feMatrices, centerF) <- SFE.addFixedEffectsData cdData (Just pplWgtsCD) (SFE.FixedEffects 1 densityPredictor)
+
+        (feMatrices, centerF) <- SFE.addFixedEffectsData cdData  densityRowFromData (Just pplWgtsCD)--(SFE.FixedEffects 1 densityPredictor)
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -758,12 +759,12 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
         votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
 
-        (feCDT', betaTMultF') <- SFE.addFixedEffectsParametersAndPriors
-                                 (SFE.NonInteractingFE True fePrior)
-                                 feMatrices
-                                 cdData
-                                 voteData
-                                 (Just "T")
+        (thetaTMultF', betaTMultF') <- SFE.addFixedEffectsParametersAndPriors
+                                     (SFE.NonInteractingFE True fePrior)
+                                     feMatrices
+                                     cdData
+                                     voteData
+                                     (Just "T")
 
         (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
         (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
@@ -774,36 +775,36 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         -- Preference
         hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
         dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
-        (feCDP', betaPMultF') <- SFE.addFixedEffectsParametersAndPriors
-                                 (SFE.NonInteractingFE True fePrior)
-                                 feMatrices
-                                 cdData
-                                 voteData
-                                 (Just "P")
-        (feCDT, betaTMultF, feCDP, betaPMultF) <- case densityModel model of
-          BaseD -> return (feCDT', betaTMultF', feCDP', betaPMultF')
+        (thetaPMultF', betaPMultF') <- SFE.addFixedEffectsParametersAndPriors
+                                     (SFE.NonInteractingFE True fePrior)
+                                     feMatrices
+                                     cdData
+                                     voteData
+                                     (Just "P")
+        (thetaTMultF, betaTMultF, thetaPMultF, betaPMultF) <- case densityModel model of
+          BaseD -> do
+            return (thetaTMultF', betaTMultF', thetaPMultF', betaPMultF')
           PlusEduD -> do
-             let eduDensityGM = SB.BinarySymmetric fePrior
-                 eduDensityFEM = SFE.InteractingFE True educationGroup eduDensityGM
-             (feEduT, feEpsEduTMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "T")
-             (feEduP, feEpsEduPMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "P")
-             let cdT = feCDT' `SB.plus` feEduT
-                 cdP = feCDP' `SB.plus` feEduP
-                 multTF ik x = do
-                   b <- betaTMultF' ik x
-                   edu <- feEpsEduTMultF ik x
-                   return $ b `SB.plus` edu
-                 multPF ik x = do
-                   b <- betaPMultF' ik x
-                   edu <- feEpsEduPMultF ik x
-                   return $ b `SB.plus` edu
-             return (cdT, multTF, cdP, multPF)
-
+            let eduDensityGM = SB.BinarySymmetric fePrior
+                eduDensityFEM = SFE.InteractingFE True educationGroup eduDensityGM
+            (thetaEduTMultF, betaEduTMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "T")
+            (thetaEduPMultF, betaEduPMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "P")
+            let tTMultF' ik x = SB.plus <$> thetaTMultF' ik x <*> thetaEduTMultF ik x
+                tPMultF' ik x = SB.plus <$> thetaPMultF' ik x <*> thetaEduPMultF ik x
+                bTMultF' ik x = SB.plus <$> betaTMultF' ik x <*> betaEduTMultF ik x
+                bPMultF' ik x = SB.plus <$> betaPMultF' ik x <*> betaEduPMultF ik x
+            return (tTMultF', bTMultF', tPMultF', bPMultF')
+        (q', feCDT, feCDP) <- SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
+          q <- SB.stanBuildEither $ SFE.qrM SFE.qM feMatrices
+          reIndexedQ <- SFE.reIndex (SB.dataSetName cdData) (SB.crosswalkIndexKey cdData) q
+          feCDT' <- thetaTMultF (SB.dataSetName voteData) reIndexedQ
+          feCDP' <- thetaPMultF (SB.dataSetName voteData) reIndexedQ
+          return (reIndexedQ, feCDT', feCDP')
+--        SB.stanBuildError $ "Q'="  <> show q'
         (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
         (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
         let distP = SB.binomialLogitDist hVotes
-
 
         (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- case groupModel model of
               BaseG -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
@@ -924,15 +925,19 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         if parallel then parallelSample else serialSample
 
         psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
-        mv <- SB.add2dMatrixData psData "Density" 1 (Just 0) Nothing densityPredictor --(Vector.singleton . getDensity)
---        SB.stanBuildError $ "mv=" <> show mv
-        cmVar <- centerF mv
-        (densityTV, densityPV) <- SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings psData $ do
-          densityTV' <- betaTMultF "DistrictPS" cmVar --SB.matMult cmVar betaTVar
-          densityPV' <- betaPMultF "DistrictPS" cmVar -- SB.matMult cmVar betaPVar
-          return (densityTV', densityPV')
 
-        let psExprF _ = do
+--        SB.addUseBindingToDataSet psData
+--        SB.stanBuildError $ "mv=" <> show mv
+--        (densityTV, densityPV) <- SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings psData $ do
+
+        let psPreCompute = do
+              mv <- SB.add2dMatrixData psData densityRowFromData (Just 0) Nothing --(Vector.singleton . getDensity)
+              cmVar <- centerF mv
+              densityTV' <- betaTMultF (SB.dataSetName psData) cmVar --SB.matMult cmVar betaTVar
+              densityPV' <- betaPMultF (SB.dataSetName psData) cmVar -- SB.matMult cmVar betaPVar
+              return (densityTV', densityPV')
+
+            psExprF (densityTV, densityPV) = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT $ logitT_ps densityTV
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP $ logitP_ps densityPV
               --return $ SB.var pT `SB.times` SB.paren ((SB.scalar "2" `SB.times` SB.var pD) `SB.minus` SB.scalar "1")
@@ -942,7 +947,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
 
         let postStrat =
               MRP.addPostStratification @(CCESAndPUMS, F.FrameRec rs)
-              psExprF
+              (psPreCompute, psExprF)
               Nothing
               voteData
               psData
@@ -969,9 +974,9 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
               SB.addExprLine "ProbsT" $ SB.var pTVar `SB.eq` pTRHS
               SB.addExprLine "ProbsD" $ SB.var pDVar `SB.eq` pDRHS
 -}
-        SB.generateLogLikelihood' voteData ((distT, logitT_ps feCDT, votes) :| [(distP, logitP_ps feCDP, dVotes)])
-
-
+--        let llArgsT =
+        SB.generateLogLikelihood' voteData ((distT, logitT_ps <$> thetaTMultF (SB.dataSetName voteData) q', votes)
+                                             :| [(distP, logitP_ps <$> thetaPMultF (SB.dataSetName voteData) q', dVotes)])
         return ()
 
       addModelIdAndYear :: F.Record (ks V.++ '[ModeledShare])
@@ -1101,7 +1106,12 @@ wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
+--densityRowFromData :: SB.MatrixRowFromData (F.Record q)
+densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
+
+--densityPredictor :: F.Record rs -> Vector.Vector Double
 densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
+
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
 raceAlone4FromRace5 DT.R5_Other = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Black = DT.RA4_Black

@@ -6,6 +6,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+--{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -53,6 +54,9 @@ import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
 import qualified Data.GADT.Show as GADT
 import Knit.Report.Input.Visualization.Diagrams (ReifiedIndexedLens')
+import Frames.Streamly.TH (declareColumnType)
+import Frames.Streamly.OrMissing (derivingOrMissingUnboxVectorFor')
+import Text.Printf (errorMissingArgument)
 
 type FunctionsBlock = T.Text
 
@@ -289,7 +293,7 @@ buildRowInfo :: d -> RowTypeTag r -> GroupIndexAndIntMapMakers d r -> RowInfo d 
 buildRowInfo d rtt (GroupIndexAndIntMapMakers tf@(ToFoldable f) ims imbs) = Foldl.fold fld $ f d  where
   gisFld = indexBuildersForDataSetFold ims
 --  imsFldM = intMapsForDataSetFoldM imbs
-  useBindings = useBindingsFromGroupIndexMakers rtt ims
+  useBindings = Map.insert (dataSetName rtt) (SME.name $ "N_" <> dataSetName rtt) $ useBindingsFromGroupIndexMakers rtt ims
   fld = RowInfo tf useBindings <$> gisFld <*> pure imbs <*> pure mempty
 
 groupIntMap :: IndexMap r k -> IntMap.IntMap k
@@ -397,24 +401,66 @@ buildJSONFromDataM = do
 
 
 
+data VariableScope = GlobalScope | ModelScope | GQScope deriving (Show, Eq, Ord)
+
 newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType) deriving (Show)
-newtype ScopedDeclarations = ScopedDeclarations (NonEmpty DeclarationMap) deriving (Show)
+data ScopedDeclarations = ScopedDeclarations { currentScope :: VariableScope
+                                             , globalScope :: NonEmpty DeclarationMap
+                                             , modelScope :: NonEmpty DeclarationMap
+                                             , gqScope :: NonEmpty DeclarationMap
+                                             } deriving (Show)
+
+changeVarScope :: VariableScope -> ScopedDeclarations -> ScopedDeclarations
+changeVarScope vs sd = sd { currentScope = vs}
+
+initialScopedDeclarations :: ScopedDeclarations
+initialScopedDeclarations = let x = one (DeclarationMap Map.empty) in ScopedDeclarations GlobalScope x x x
+
+declarationsNE :: VariableScope -> ScopedDeclarations -> NonEmpty DeclarationMap
+declarationsNE GlobalScope sd = globalScope sd
+declarationsNE ModelScope sd = modelScope sd
+declarationsNE GQScope sd = gqScope sd
+
+setDeclarationsNE :: NonEmpty DeclarationMap -> VariableScope -> ScopedDeclarations -> ScopedDeclarations
+setDeclarationsNE dmNE GlobalScope sd = sd { globalScope = dmNE}
+setDeclarationsNE dmNE ModelScope sd = sd { modelScope = dmNE}
+setDeclarationsNE dmNE GQScope sd = sd { gqScope = dmNE}
+
+declarationsInScope :: ScopedDeclarations -> NonEmpty DeclarationMap
+declarationsInScope sd = declarationsNE (currentScope sd) sd
+
+addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d SME.StanVar
+addVarInScope sn st = do
+  let newSD sd = do
+        _ <- alreadyDeclared sd (SME.StanVar sn st)
+        let curScope = currentScope sd
+            dmNE = declarationsNE curScope sd
+            DeclarationMap m = head dmNE
+            dm' = DeclarationMap $ Map.insert sn st m
+            dmNE' = dm' :| tail dmNE
+        return $ setDeclarationsNE dmNE' curScope sd
+  bs <- get
+  case modifyDeclaredVarsA newSD bs of
+    Left errMsg -> stanBuildError errMsg
+    Right newBS -> put newBS >> return (SME.StanVar sn st)
+
 
 varLookup :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
-varLookup (ScopedDeclarations dms) sn = go $ toList dms where
+varLookup sd sn = go $ toList dNE where
+  dNE = declarationsInScope sd
   go [] = Left $ "\"" <> sn <> "\" not declared/in scope."
   go ((DeclarationMap x) : xs) = case Map.lookup sn x of
     Nothing -> go xs
     Just st -> return $ StanVar sn st
 
 alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
-alreadyDeclared sd@(ScopedDeclarations dms) (SME.StanVar sn st) =
+alreadyDeclared sd (SME.StanVar sn st) =
   case varLookup sd sn of
     Right (StanVar _ st') ->  if st == st'
                               then Left $ sn <> " already declared (with same type)!"
                               else Left $ sn <> " already declared (with different type)!"
     Left _ -> return ()
-
+{-
 addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d SME.StanVar
 addVarInScope sn st = do
   let sv = SME.StanVar sn st
@@ -428,6 +474,7 @@ addVarInScope sn st = do
   case modifyDeclaredVarsA newDVs bs of
     Left errMsg -> stanBuildError errMsg
     Right newBS -> put newBS >> return sv
+-}
 
 getVar :: StanName -> StanBuilderM env d StanVar
 getVar sn = do
@@ -438,15 +485,19 @@ getVar sn = do
 
 addScope :: StanBuilderM env d ()
 addScope = modify (modifyDeclaredVars f) where
-  f (ScopedDeclarations dmNE) = ScopedDeclarations $ (DeclarationMap Map.empty) :| toList dmNE
+  f sd = setDeclarationsNE dmNE' curScope sd where
+    curScope = currentScope sd
+    dmNE' = DeclarationMap Map.empty :| toList (declarationsNE curScope sd)
 
 dropScope :: StanBuilderM env d ()
 dropScope = do
-  ScopedDeclarations dmNE <- declaredVars <$> get
-  let (_, mx) = NE.uncons dmNE
+  sd <- declaredVars <$> get
+  let curScope = currentScope sd
+      dmNE = declarationsNE curScope sd
+      (_, mx) = NE.uncons dmNE
   case mx of
     Nothing -> stanBuildError $ "Attempt to drop outermost scope!"
-    Just dmNE' -> modify (modifyDeclaredVars $ const $ ScopedDeclarations dmNE)
+    Just dmNE' -> modify (modifyDeclaredVars $ const $ setDeclarationsNE dmNE' curScope sd)
 
 scoped :: StanBuilderM env d a -> StanBuilderM env d a
 scoped x = do
@@ -544,7 +595,7 @@ modifyFunctionNames f (BuilderState dv vbs rb cj hf c) = BuilderState dv vbs rb 
 initialBuilderState :: Typeable d => RowInfos d -> BuilderState d
 initialBuilderState rowInfos =
   BuilderState
-  (ScopedDeclarations $ (DeclarationMap Map.empty) :| [])
+  initialScopedDeclarations
   SME.noBindings
   rowInfos
   mempty
@@ -738,7 +789,7 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
   addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
 --  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   addUseBindingToDataSet rttFrom xWalkIndexKey xWalkVar
-  addDeclBinding xWalkIndexKey $ SME.StanVar ("N_" <> dataSetName rttTo) SME.StanInt
+  addDeclBinding xWalkIndexKey $ SME.StanVar ("N_" <> dataSetName rttFrom) SME.StanInt
   return ()
 
 
@@ -1054,21 +1105,24 @@ addColumnMJsonOnce rtt name st sc toMX = do
     else return $ SME.StanVar name st
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
+data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, rowLength :: Int, rowVec :: r -> Vector.Vector Double }
+
 add2dMatrixJson :: (Typeable d)
                 => RowTypeTag r
-                -> Text
-                -> Text
+                -> MatrixRowFromData r
+--                -> Text
+                -> SME.DataConstraint
                 -> SME.StanDim
-                -> Int
-                -> (r -> Vector.Vector Double)
+--                -> Int
+--                -> (r -> Vector.Vector Double)
                 -> StanBuilderM env d SME.StanVar
-add2dMatrixJson rtt name sc rowDim cols vecF = do
+add2dMatrixJson rtt (MatrixRowFromData name cols vecF) sc rowDim = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName
-      colName = "K" <> "_" <> wdName
-      colDimName = wdName <> "_Cols"
+      colName = "K" <> "_" <> name
+      colDimName = name <> "_Cols"
       colDimVar = SME.StanVar colDimName SME.StanInt
-  addFixedIntJson colName Nothing cols
+  addFixedIntJson' colName Nothing cols
 --  addDeclBinding' colDimName (SME.name colName)
   addDeclBinding colDimName $ SME.StanVar colName SME.StanInt
 --  addUseBindingToDataSet rtt colDimName (SME.name colName)
@@ -1183,12 +1237,20 @@ underscoredIf t = if T.null t then "" else "_" <> t
 stanIndented :: StanBuilderM env d a -> StanBuilderM env d a
 stanIndented = indented 2
 
+varScopeBlock :: StanBlock -> StanBuilderM env d ()
+varScopeBlock sb = case sb of
+  SBModel -> modify (modifyDeclaredVars $ changeVarScope ModelScope)
+  SBGeneratedQuantities -> modify (modifyDeclaredVars $ changeVarScope GQScope)
+  _ -> modify (modifyDeclaredVars $ changeVarScope GlobalScope)
+
 inBlock :: StanBlock -> StanBuilderM env d a -> StanBuilderM env d a
 inBlock b m = do
   oldBlock <- getBlock
   setBlock b
+  varScopeBlock b
   x <- m
   setBlock oldBlock
+  varScopeBlock oldBlock
   return x
 
 printExprM :: Text -> SME.StanExpr -> StanBuilderM env d Text

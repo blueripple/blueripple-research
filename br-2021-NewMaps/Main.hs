@@ -409,7 +409,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          oldMapsDRABase
+          oldMapsDRAEduDensity
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and model:" <> show missing2
   let oldMapsCompare

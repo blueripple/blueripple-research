@@ -22,6 +22,7 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.GroupModel as SGM
 
 import Prelude hiding (All)
+import Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -68,21 +69,22 @@ addRealData rtt varName mLower mUpper f = do
 
 
 add2dMatrixData :: (Typeable d)
-            => SB.RowTypeTag r
-            -> SME.StanName
-            -> Int
-            -> Maybe Double
-            -> Maybe Double
-            -> (r -> V.Vector Double)
+                => SB.RowTypeTag r
+                -> SB.MatrixRowFromData r
+--                -> SME.StanName
+--            -> Int
+                -> Maybe Double
+                -> Maybe Double
+--            -> (r -> V.Vector Double)
             -> SB.StanBuilderM env d SME.StanVar
-add2dMatrixData rtt varName cols mLower mUpper f = do
+add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   let --stanType =  SB.StanMatrix (SB.NamedDim $ SB.dataSetName rtt) (SB.NamedDim colName)
       bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
                  (Just l, Nothing) -> "<lower=" <> show l <> ">"
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.add2dMatrixJson rtt varName bounds (SB.NamedDim $ SB.dataSetName rtt) cols f --stanType bounds f
+  SB.add2dMatrixJson rtt matrixRowFromData bounds (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
 
 
 intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanVar
@@ -135,32 +137,23 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
         argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 
-
-{-
-generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanBuilderM env d ()
-generateLogLikelihood rtt sDist args =  SB.inBlock SB.SBGeneratedQuantities $ do
-  let dsName = SB.dataSetName rtt
-      dim = SME.NamedDim dsName
-  SB.stanDeclare "log_lik" (SME.StanVector dim) ""
-  SB.stanForLoopB "n" Nothing dsName $ do
-    let lhsE = SME.withIndexes (SME.name "log_lik") [dim]
-        rhsE = SMD.familyLDF sDist dsName args
-    SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
--}
-
-generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SME.StanVar -> SB.StanBuilderM env d ()
+generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM env d args -> SME.StanVar -> SB.StanBuilderM env d ()
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
 
-generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, args, SME.StanVar) -> SB.StanBuilderM env d ()
-generateLogLikelihood' rtt distsAndArgs =  SB.inBlock SB.SBGeneratedQuantities $ do
+generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, SB.StanBuilderM env d args, SME.StanVar) -> SB.StanBuilderM env d ()
+generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBGeneratedQuantities $ do
   let dsName = SB.dataSetName rtt
       dim = SME.NamedDim dsName
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
-  SB.stanForLoopB "n" Nothing dsName $ do
-    let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
-        oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
-        rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
-    SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
+  SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+    let argsM (_, a, _) = a
+    args <- sequence $ argsM <$> distsArgsM
+    let distsAndArgs = NE.zipWith (\(d, _, y) a -> (d, a, y)) distsArgsM args
+    SB.stanForLoopB "n" Nothing dsName $ do
+      let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
+          oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
+          rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
+      SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
 
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
@@ -171,95 +164,6 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
   ppVar <- SB.stanDeclare ppName t ""
   SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar
   return sv
---generatePosteriorPrediction _ _ _ _ = SB.stanBuildError "Variable argument to generatePosteriorPrediction must be a 1-d array with a named dimension"
-
-
-{-
-
-fixedEffectsQR :: Text
-               -> SME.StanVar
-               -> Maybe SME.StanVar
-               -> SB.StanBuilderM env d (SME.StanVar, SME.StanVar, SME.StanVar, SME.StanVar -> SB.StanBuilderM env d SME.StanVar)
-fixedEffectsQR thinSuffix xVar wgtsM = do
-  (qVar, f) <- fixedEffectsQR_Data thinSuffix xVar wgtsM --rowKey colKey
-  (thetaVar, betaVar) <- fixedEffectsQR_Parameters qVar Nothing --thinSuffix matrix colKey
-  return (qVar, thetaVar, betaVar, f)
-
-
-fixedEffectsQR_Data :: Text
-                    -> SME.StanVar
-                    -> Maybe SME.StanVar
-                    -> SB.StanBuilderM env d (SME.StanVar -- Q matrix variable
-                                             , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- function to center different data around these means, returning centered
-                                             )
-fixedEffectsQR_Data thinSuffix (SB.StanVar matrixName (SB.StanMatrix (rowDim, colDim))) wgtsM = do
-  let mt = SB.StanMatrix (rowDim, colDim)
-      ri = "R" <> thinSuffix <> "_ast_inverse"
-      q = "Q" <> thinSuffix <> "_ast"
-      r = "R" <> thinSuffix <> "_ast"
---      qMatrixType = SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)
-  colKey <- case colDim of
-    SB.NamedDim k -> return k
-    _ -> SB.stanBuildError $ "fixedEffectsQR_Data: Column dimension of matrix must be a named dimension."
-  qVar <- SB.inBlock SB.SBTransformedData $ do
-    meanFunction <- case wgtsM of
-      Nothing -> return $ "mean(" <> matrixName <> "[,k])"
-      Just (SB.StanVar wgtsName _) -> do
-        weightedMeanFunction
-        return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> matrixName <> "[,k])"
-    meanXV <- SB.stanDeclare ("mean_" <> matrixName) (SME.StanVector colDim) ""
-    centeredXV <- SB.stanDeclare ("centered_" <> matrixName) mt "" --(SME.StanMatrix (SME.NamedDim rowKey, SME.NamedDim colKey)) ""
-    SB.stanForLoopB "k" Nothing colKey $ do
-      SB.addStanLine $ "mean_" <> matrixName <> "[k] = " <> meanFunction --"mean(" <> matrix <> "[,k])"
-      SB.addStanLine $ "centered_" <>  matrixName <> "[,k] = " <> matrixName <> "[,k] - mean_" <> matrixName <> "[k]"
-    let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
-        qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE centeredXV) `SB.times` srE
-    qVar' <- SB.stanDeclareRHS q mt "" qRHS
-    let rType = SME.StanMatrix (colDim, colDim)
-        rRHS = SB.function "qr_thin_R" (one $ SB.varNameE centeredXV) `SB.divide` srE
-    rVar <- SB.stanDeclareRHS r rType "" rRHS
-    let riRHS = SB.function "inverse" (one $ SB.varNameE rVar)
-    riVar <- SB.stanDeclareRHS ri rType "" riRHS
-    return qVar'
-  let centeredX mv@(SME.StanVar sn st) =
-        case st of
-          (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) -> SB.inBlock SB.SBTransformedData $ do
-            cv <- SB.stanDeclare ("centered_" <> sn) (SME.StanMatrix (SME.NamedDim rk, SME.NamedDim colKey)) ""
-            SB.stanForLoopB "k" Nothing colKey $ do
-              SB.addStanLine $ "centered_" <>  sn <> "[,k] = " <> sn <> "[,k] - mean_" <> matrixName <> "[k]"
-            return cv
-          _ -> SB.stanBuildError
-               $ "fixedEffectsQR_Data (returned StanVar -> StanExpr): "
-               <> " Given matrix doesn't have same dimensions as modeled fixed effects."
-  return (qVar, centeredX)
-
-fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with non-matrix argument."
-
-fixedEffectsQR_Parameters :: SME.StanVar
-                          -> Maybe (SB.GroupTypeTag k, SGM.GroupModel, SB.RowTypeTag r)
-                          -> SB.StanBuilderM env d (SME.StanVar -- theta
-                                                   , SME.StanVar -- beta
-                                                   )
-fixedEffectsQR_Parameters q@(SB.StanVar matrixName (SB.StanMatrix (_, colDim))) mGroupInteraction = do
-  let thinSuffix = snd $ T.breakOn "_" matrixName
-      ri = "R" <> thinSuffix <> "_ast_inverse"
-      noInteraction = do
-        thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare ("theta" <> matrixName) (SME.StanVector colDim) ""
-        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
-          betaVar' <- SB.stanDeclare ("beta" <> matrixName) (SME.StanVector colDim) ""
-          SB.addStanLine $ "beta" <> matrixName <> " = " <> ri <> " * theta" <> matrixName
-          return betaVar'
-        return (thetaVar, betaVar)
-  noInteraction
-{-
-      withInteraction gtt gm rtt = do
-        (SB.IntIndex groupSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
-        let binary gtt rtt = do
--}
-
-fixedEffectsQR_Parameters _ _ = SB.stanBuildError "fixedEffectsQR_Parameters: called with non-matrix variable."
-
--}
 
 diagVectorFunction :: SB.StanBuilderM env d Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
@@ -268,6 +172,28 @@ diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N
   SB.stanForLoop "i" Nothing "N" $ const $ SB.addStanLine $ "out_vec[i] = vs[i, i]"
   SB.addStanLine "return out_vec"
   return "indexBoth"
+
+-- given something indexed by things which can be indexed from a data-set,
+-- create a vector which is a 1d alias
+-- e.g., given beta_g1_g2[J_g1, J_g2]
+-- declare beta_g1_g2_vD1[J_D1]
+-- and set beta_g1_g2_vD1[n] = beta_g1_g2[g1_D1[n], g2_D1[n]]
+vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
+vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
+
+vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
+vectorizeExpr sn se ik = do
+  let vecVname = sn <> "_v"
+  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
+  SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeExpr" $ SB.var fv `SB.eq` se
+  return fv
+
+weightedMeanFunction :: SB.StanBuilderM env d ()
+weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
+                        $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
+  SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
+  SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
+
 
 {-
 addMultiIndex :: SB.RowTypeTag r -> [DHash.Some GroupTypeTag] -> Maybe Text -> SB.StanBuilderM env d SB.StanVar
@@ -281,33 +207,3 @@ addMultiIndex rtt gtts mVarName = do
           Just _ -> return ()
   mapM_ checkGroup gtts
 -}
--- given something indexed by things which can be indexed from a data-set,
--- create a vector which is a 1d alias
--- e.g., given beta_g1_g2[J_g1, J_g2]
--- declare beta_g1_g2_vD1[J_D1]
--- and set beta_g1_g2_vD1[n] = beta_g1_g2[g1_D1[n], g2_D1[n]]
-vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
-vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
-{-
-vectorizeVar v@(SB.StanVar vn vt) rtt = do
-  let ik = SB.dataSetName rtt
-      vecVname = vn <> "_v" <> ik
-  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
-  SB.useDataSetForBindings rtt $ do
-    SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` SB.var v
-  return fv
--}
-
-vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
-vectorizeExpr sn se ik = do
-  let vecVname = sn <> "_" <> ik <> "_v"
-  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
-  SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeVar" $ SB.var fv `SB.eq` se
-  return fv
-
-
-weightedMeanFunction :: SB.StanBuilderM env d ()
-weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
-                        $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
-  SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
-  SB.addStanLine "return (sum(wgtdXs)/sum(ws))"

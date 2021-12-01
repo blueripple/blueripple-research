@@ -252,8 +252,8 @@ type GroupName = Text
 
 --data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
 
-emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag SB.FixedEffects
-emptyFixedEffects = DHash.empty
+--emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag SB.FixedEffects
+--emptyFixedEffects = DHash.empty
 
 {-
 -- returns
@@ -345,7 +345,7 @@ data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, 
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
-                      => (SB.IndexKey -> BuilderM d SB.StanExpr)
+                      => (BuilderM d a, a -> BuilderM d SB.StanExpr) -- (outside of loop, inside of loop)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -355,7 +355,7 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
                       -> PostStratificationType -- raw or share
                       -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
                       -> BuilderM d SB.StanVar
-addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
+addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
       modelDataSetName = SB.dataSetName rttModel
@@ -427,12 +427,13 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
         Nothing -> do
           psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
           SB.bracketed 2 $ do
+            preComputed <- preComputeF
             wgtSumE <- case psType of
                          PSShare _ -> fmap SB.var
                                       $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
                          _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              psExpr <- psExprF psDataSetName
+              psExpr <- psExprF preComputed
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
@@ -450,12 +451,13 @@ addPostStratification psExprF mNameHead rttModel rttPS sumOverGroups {-sumOverGr
           let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
           psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec
           SB.bracketed 2 $ do
+            preComputed <- preComputeF
             wgtSumE <- case psType of
                          PSShare _ -> fmap SB.var
                                       $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
                          _ -> return SB.nullE
             SB.stanForLoopB "n" Nothing psDataSetName $ do
-              psExpr <-  psExprF psDataSetName
+              psExpr <-  psExprF preComputed
               e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
               SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
