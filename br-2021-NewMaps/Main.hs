@@ -413,7 +413,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and model:" <> show missing2
   let oldMapsCompare
-        = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare, BRC.PWPopPerSqMile] <$> oldMapsCompare'
+        = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
@@ -434,6 +434,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
     ("Education", show . F.rgetField @DT.CollegeGradC)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
+    (Just ("logDensity", Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
     "By Race and Education"
     (FV.ViewConfig 600 600 5)
     ncRows_dra

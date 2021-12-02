@@ -105,8 +105,17 @@ demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay
   vlDataRows <-  K.knitMaybe "Missing label in total.  Which shouldn't happen." vlDataRowsM
   let vlData = GV.dataFromRows [] vlDataRows
       encCat = GV.color [GV.MName catsName, GV.MmType GV.Nominal]
-      encPct = GV.position GV.Y [GV.PName "Pct", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain (GV.DNumbers [0, 100])]]
+      encPct = GV.position GV.Y [GV.PName "Pct", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain (GV.DNumbers [0, 100])], GV.PAxis [GV.AxOrient GV.SLeft]]
       encLabel = GV.position GV.X [GV.PName labelName, GV.PmType GV.Nominal]
-      encoding = GV.encoding . encCat . encPct . encLabel
-      mark = GV.mark GV.Bar []
-  return $ FV.configuredVegaLite vc [FV.title title, encoding [], mark, vlData]
+      barEncoding = GV.encoding . encCat . encPct . encLabel
+      barMark = GV.mark GV.Bar []
+  return $ case mOverlay of
+    Nothing -> FV.configuredVegaLite vc [FV.title title, barEncoding [], barMark, vlData]
+    Just (oLabel, _, _) ->
+      let encOverlay = GV.position GV.Y [GV.PName oLabel, GV.PmType GV.Quantitative, GV.PAxis [GV.AxOrient GV.SRight]]
+          overlayEncoding = GV.encoding . encLabel . encOverlay
+          overlayMark = GV.mark GV.Circle []
+          overlaySpec = GV.asSpec [overlayEncoding [], overlayMark]
+          barSpec = GV.asSpec [barEncoding [], barMark]
+          resolve = GV.resolve . GV.resolution (GV.RScale [(GV.ChY, GV.Independent)])
+      in FV.configuredVegaLite vc [FV.title title, GV.layer [barSpec, overlaySpec], resolve [], vlData]
