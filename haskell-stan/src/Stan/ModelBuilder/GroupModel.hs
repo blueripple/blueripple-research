@@ -34,7 +34,7 @@ data HierarchicalParameterization = Centered SB.StanExpr -- beta prior
                                   | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr) -- beta prior and nonCentered transform
 
 data GroupModel = BinarySymmetric SB.StanExpr -- epsilon prior
-                | Binary SB.StanExpr SB.StanExpr -- priors for mu (mean) and epsilon (spread)
+                | BinaryHierarchical HyperParameters HierarchicalParameterization
                 | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
                 | Hierarchical STZ.SumToZero HyperParameters HierarchicalParameterization
 
@@ -48,6 +48,28 @@ groupModel bv gm = do
     _ -> SB.stanBuildError "groupModel: Returned a number of variables /= 1.  This should never happen!"
 
 groupModel' :: [SB.StanVar] -> GroupModel -> SB.StanBuilderM env d [SB.StanVar]
+groupModel' bvs (BinarySymmetric priorE) = do
+  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  traverse_ declareOne bvs
+  traverse (\bv -> groupBetaPrior bv priorE) bvs
+  return bvs
+
+groupModel' bvs (BinaryHierarchical hps (Centered betaPriorE)) = do
+  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
+  addHyperParameters hps
+  traverse_ declareOne bvs
+  traverse (\bv -> groupBetaPrior bv betaPriorE) bvs
+  return bvs
+
+groupModel' bvs (BinaryHierarchical hps (NonCentered rawPriorE nonCenteredF)) = do
+  let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
+  brvs <- traverse declareRaw bvs
+  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+  traverse_ declareBeta bvs
+  addHyperParameters hps
+  traverse (\brv -> groupBetaPrior brv rawPriorE) brvs
+  return bvs
+
 groupModel' bvs (NonHierarchical stz priorE) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   when (stz /= STZQR) $ traverse_ declareOne bvs --do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
@@ -76,17 +98,19 @@ groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
 rawName :: Text -> Text
 rawName t = t <> "_raw"
 
+-- some notes:
+-- The array of vectors is vectorizing over those vectors, so you can think of it as an array of columns
+-- The matrix version is looping over columns and setting each to the prior.
 groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
 groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
-  let loopFromDim :: SB.StanDim -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
-      loopFromDim (SB.NamedDim ik) = SB.stanForLoopB ("n_" <> ik) Nothing ik
-      loopFromDim _ = const $ SB.stanBuildError $ "groupBetaPrior:  given beta must have all named dimensions"
-      loopsFromDims :: [SB.StanDim] -> SB.StanBuilderM env d a -> SB.StanBuilderM env d a
-      loopsFromDims dims = foldr (\f g -> g . f) id $ fmap loopFromDim dims
+  let loopsFromDims = SB.loopOverNamedDims
   SB.inBlock SB.SBModel $ case bt of
     SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
+    SB.StanVector (SB.NamedDim ik) -> SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne ik (SB.var bv) `SB.vectorSample` priorE
     SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
     SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
+    SB.StanArray dims (SB.StanVector (SB.NamedDim ik)) -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne ik (SB.var bv) `SB.vectorSample` priorE
+    SB.StanMatrix (SB.NamedDim rowKey, colDim) -> loopsFromDims [colDim] $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne rowKey (SB.var bv) `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
 
 addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()

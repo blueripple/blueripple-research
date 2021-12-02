@@ -298,17 +298,8 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
             $ SME.vectorizedOne colIndexKey
             $ (rInvVar `SME.matMult` thetaVar)
         return (matVecE thetaVar, matVecE betaVar)
-    SGM.Binary muPriorE epsPriorE -> SB.stanBuildError "non-symmetric binary fixed-effects interaction terms not supported!"
+    SGM.BinaryHierarchical muPriorE epsPriorE -> SB.stanBuildError "hierarchical binary fixed-effects interaction terms not supported!"
 
-
-add2dPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM env d ()
-add2dPrior rttFE colIndexKey groupIndexKey var priorE = do
-  SB.inBlock SB.SBModel
-    $ SB.useDataSetForBindings rttFE
-    $ SB.stanForLoopB "g" Nothing groupIndexKey
-    $ SB.addExprLine "add2dArrayPrior"
-    $ SME.vectorizedOne colIndexKey
-    $ SB.var var `SME.vectorSample` priorE
 
 feNonBinaryInteraction :: FEMatrixes
                        -> SB.GroupTypeTag k
@@ -329,13 +320,32 @@ feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   let betaType = (SME.StanArray [SME.NamedDim gName] $ SME.StanVector colDim)
   let vecE xv bv = SME.vectorizedOne colIndexKey $ SME.function "dot_product" $ SB.var xv :| [SB.var bv]
       matVecE sv ik x = fmap SB.var $ SBB.vectorizeExpr (varName "epsVec") (vecE x sv) ik
+  case feMatrixes of
+    NoQR _ _ -> do
+      betaVar <- SGM.groupModel (SME.StanVar (varName "beta") betaType) gm
+      return (matVecE betaVar, matVecE betaVar)
+    ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
+      thetaVar <- SGM.groupModel (SME.StanVar (varName "theta") betaType) gm
+      betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+        bv <- SB.stanDeclare (varName "beta") betaType ""
+        SB.stanForLoopB "g" Nothing gName $ do
+          thetaG <- SB.stanDeclareRHS  "thetaG" (SME.StanVector colDim) "" $ SME.vectorizedOne colIndexKey $ SB.var thetaVar
+          SB.addExprLine "feNonBinaryInteraction"
+            $ SME.vectorizedOne colIndexKey
+            $ SB.var bv `SB.eq` (rInvVar `SME.matMult` thetaG)
+        return bv
+      return (matVecE thetaVar, matVecE betaVar)
+
+{-
   case gm of
     SGM.NonHierarchical stz betaPriorE -> case feMatrixes of
       NoQR _ _ -> do
+        when (stz /= SGM.STZNone) $ SB.stanBuildError "Sum-to-zero constraints not yet supported in fixed-effect interactions."
         betaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "beta")  betaType ""
         add2dPrior rttFE colIndexKey gName betaVar betaPriorE
         return (matVecE betaVar, matVecE betaVar)
       ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
+        when (stz /= SGM.STZNone) $ SB.stanBuildError "Sum-to-zero constraints not yet supported in fixed-effect interactions."
         thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") betaType ""
         add2dPrior rttFE colIndexKey gName thetaVar betaPriorE
         betaVar <- SB.inBlock SB.SBTransformedParameters $ do
@@ -347,5 +357,18 @@ feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
               $ SB.var bv `SB.eq` (rInvVar `SME.matMult` thetaG)
           return bv
         return (matVecE thetaVar, matVecE betaVar)
-    SGM.Hierarchical stz hps hp -> undefined
+    SGM.Hierarchical stz hps hp -> case feMatrixes of
+      NoQR _ _ -> do
+        when (stz /= SGM.STZNone) $ SB.stanBuildError "Sum-to-zero constraints not yet supported in fixed-effect interactions."
     _ -> SB.stanBuildError $ "FixedEffects.feNonBinaryInteraction called with binary group model"
+-}
+{-
+add2dPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM env d ()
+add2dPrior rttFE colIndexKey groupIndexKey var priorE = do
+  SB.inBlock SB.SBModel
+    $ SB.useDataSetForBindings rttFE
+    $ SB.stanForLoopB "g" Nothing groupIndexKey
+    $ SB.addExprLine "add2dArrayPrior"
+    $ SME.vectorizedOne colIndexKey
+    $ SB.var var `SME.vectorSample` priorE
+-}

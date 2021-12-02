@@ -1249,6 +1249,12 @@ stanForLoopB counter mStartE k x = do
     addUseBinding k $ SME.StanVar counter SME.StanInt
     bracketed 2 x
 
+loopOverNamedDims :: [SME.StanDim] -> StanBuilderM env d a -> StanBuilderM env d a
+loopOverNamedDims dims = foldr (\f g -> g . f) id $ fmap loopFromDim dims where
+  loopFromDim :: SME.StanDim -> StanBuilderM env d a -> StanBuilderM env d a
+  loopFromDim (SME.NamedDim ik) = stanForLoopB ("n_" <> ik) Nothing ik
+  loopFromDim _ = const $ stanBuildError $ "groupBetaPrior:  given beta must have all named dimensions"
+
 data StanPrintable = StanLiteral Text | StanExpression Text
 
 stanPrint :: [StanPrintable] -> StanBuilderM env d ()
