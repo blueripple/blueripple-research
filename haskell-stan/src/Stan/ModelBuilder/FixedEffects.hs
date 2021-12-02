@@ -217,7 +217,8 @@ vectorizedBetaMult betaVar x = case x of
        <> " called with non-matrix or matrix with non-indexed row-dimension. x="
        <> show x
 
-addPrior rttFE colIndexKey var priorE = do
+addVecPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM env d ()
+addVecPrior rttFE colIndexKey var priorE = do
   SB.inBlock SB.SBModel
     $ SB.useDataSetForBindings rttFE
     $ SB.addExprLine "feParameters..."
@@ -237,18 +238,17 @@ feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix = do
   (colDim, rowIndexKey, colIndexKey) <- colDimAndDimKeys feMatrixes
   let varName x = x <> fromMaybe "" mVarSuffix <> "_" <> xName
   case feMatrixes of
-    NoQR xVar _ -> do -- should we use centered here ??
+    NoQR _ _ -> do
       betaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
-      addPrior rttFE colIndexKey betaVar fePrior
+      addVecPrior rttFE colIndexKey betaVar fePrior
       return (const $ vectorizedBetaMult betaVar, const $ vectorizedBetaMult betaVar)
-    ThinQR _ _ (QRMatrixes qVar _ rInvVar) -> do
+    ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
       thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
-      addPrior rttFE colIndexKey thetaVar fePrior
+      addVecPrior rttFE colIndexKey thetaVar fePrior
       SB.inBlock SB.SBTransformedParameters $ do
-        betaVar <- SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
-        SB.addExprLine "feParametersNoInteraction"
+        betaVar <- SB.stanDeclareRHS (varName "beta") (SME.StanVector colDim) ""
           $ SME.vectorizedOne colIndexKey
-          $ SME.var betaVar `SME.eq` (rInvVar `SME.matMult` thetaVar)
+          $ (rInvVar `SME.matMult` thetaVar)
         return (const $ vectorizedBetaMult thetaVar, const $ vectorizedBetaMult betaVar)
 
 feParametersWithInteraction :: FEMatrixes
@@ -286,23 +286,29 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
       matVecE sv ik x = fmap SB.var $ SBB.vectorizeExpr (varName "epsVec") (vecE x sv) ik
   case gm of
     SGM.BinarySymmetric epsPriorE -> case feMatrixes of
-      NoQR xVar _ -> do -- should we use centered here??
-        xVar' <- reIndex rowIndexKey xWalkIndexKey xVar
+      NoQR _ _ -> do
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "eps") (SME.StanVector colDim) ""
-        addPrior rttFE colIndexKey epsVar epsPriorE
-        return (matVecE epsVar, matVecE epsVar) -- \ik x -> fmap SB.var (SBB.vectorizeExpr (varName "epsVec") (vecE x epsVar) ik))
-      ThinQR _ _ (QRMatrixes qVar _ rInvVar) -> do
+        addVecPrior rttFE colIndexKey epsVar epsPriorE
+        return (matVecE epsVar, matVecE epsVar)
+      ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
         thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
-        addPrior rttFE colIndexKey thetaVar epsPriorE
+        addVecPrior rttFE colIndexKey thetaVar epsPriorE
         betaVar <- SB.inBlock SB.SBTransformedParameters $ do
-          betaVar' <-  SB.stanDeclare (varName "beta") (SME.StanVector colDim) ""
-          SB.addExprLine "feParametersNoInteraction"
+          SB.stanDeclareRHS (varName "beta") (SME.StanVector colDim) ""
             $ SME.vectorizedOne colIndexKey
-            $ SME.var betaVar' `SME.eq` (rInvVar `SME.matMult` thetaVar)
-          return betaVar'
+            $ (rInvVar `SME.matMult` thetaVar)
         return (matVecE thetaVar, matVecE betaVar)
-    SGM.Binary muPriorE epsPriorE -> undefined
+    SGM.Binary muPriorE epsPriorE -> SB.stanBuildError "non-symmetric binary fixed-effects interaction terms not supported!"
 
+
+add2dPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM env d ()
+add2dPrior rttFE colIndexKey groupIndexKey var priorE = do
+  SB.inBlock SB.SBModel
+    $ SB.useDataSetForBindings rttFE
+    $ SB.stanForLoopB "g" Nothing groupIndexKey
+    $ SB.addExprLine "add2dArrayPrior"
+    $ SME.vectorizedOne colIndexKey
+    $ SB.var var `SME.vectorSample` priorE
 
 feNonBinaryInteraction :: FEMatrixes
                        -> SB.GroupTypeTag k
@@ -313,7 +319,33 @@ feNonBinaryInteraction :: FEMatrixes
                        -> SB.StanBuilderM env d ( MakeVecE env d  -- Q * Theta (or X * Beta)
                                                 , MakeVecE env d -- X -> X * beta
                                                 )
-feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = case gm of
-  SGM.NonHierarchical stz betaPriorE -> undefined
-  SGM.Hierarchical stz hps hp -> undefined
-  _ -> SB.stanBuildError $ "FixedEffects.feNonBinaryInteraction called with binary group model"
+feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
+  let xName = SME.varName $ xM feMatrixes
+      gName = SB.taggedGroupName gtt
+      varName x = x <> gName <> fromMaybe "" mVarSuffix <> "_" <> xName
+      modeledIndexKey = SB.dataSetName rttModeled
+      xWalkIndexKey = SB.crosswalkIndexKey rttFE
+  (colDim, rowIndexKey, colIndexKey) <- colDimAndDimKeys feMatrixes
+  let betaType = (SME.StanArray [SME.NamedDim gName] $ SME.StanVector colDim)
+  let vecE xv bv = SME.vectorizedOne colIndexKey $ SME.function "dot_product" $ SB.var xv :| [SB.var bv]
+      matVecE sv ik x = fmap SB.var $ SBB.vectorizeExpr (varName "epsVec") (vecE x sv) ik
+  case gm of
+    SGM.NonHierarchical stz betaPriorE -> case feMatrixes of
+      NoQR _ _ -> do
+        betaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "beta")  betaType ""
+        add2dPrior rttFE colIndexKey gName betaVar betaPriorE
+        return (matVecE betaVar, matVecE betaVar)
+      ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
+        thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") betaType ""
+        add2dPrior rttFE colIndexKey gName thetaVar betaPriorE
+        betaVar <- SB.inBlock SB.SBTransformedParameters $ do
+          bv <- SB.stanDeclare (varName "beta") betaType ""
+          SB.stanForLoopB "g" Nothing gName $ do
+            thetaG <- SB.stanDeclareRHS  "thetaG" (SME.StanVector colDim) "" $ SME.vectorizedOne colIndexKey $ SB.var thetaVar
+            SB.addExprLine "feNonBinaryInteraction"
+              $ SME.vectorizedOne colIndexKey
+              $ SB.var bv `SB.eq` (rInvVar `SME.matMult` thetaG)
+          return bv
+        return (matVecE thetaVar, matVecE betaVar)
+    SGM.Hierarchical stz hps hp -> undefined
+    _ -> SB.stanBuildError $ "FixedEffects.feNonBinaryInteraction called with binary group model"

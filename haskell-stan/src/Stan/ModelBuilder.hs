@@ -444,18 +444,37 @@ addVarInScope sn st = do
     Left errMsg -> stanBuildError errMsg
     Right newBS -> put newBS >> return (SME.StanVar sn st)
 
-
-varLookup :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
-varLookup sd sn = go $ toList dNE where
-  dNE = declarationsInScope sd
-  go [] = Left $ "\"" <> sn <> "\" not declared/in scope."
+varLookupInScope :: ScopedDeclarations -> VariableScope -> SME.StanName -> Either Text StanVar
+varLookupInScope sd sc sn = go $ toList dNE where
+  dNE = declarationsNE sc sd
+  go [] = Left $ "\"" <> sn <> "\" not declared/in scope (stan scope=" <> show sc <> ")."
   go ((DeclarationMap x) : xs) = case Map.lookup sn x of
     Nothing -> go xs
     Just st -> return $ StanVar sn st
 
+varLookup :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
+varLookup sd = varLookupInScope sd (currentScope sd)
+
+varLookupAllScopes :: ScopedDeclarations -> SME.StanName -> Either Text StanVar
+varLookupAllScopes sd sn =
+  case varLookupInScope sd GlobalScope sn of
+    Right x -> Right x
+    Left _ -> case varLookupInScope sd ModelScope sn of
+      Right x -> Right x
+      Left _ -> varLookupInScope sd GQScope sn
+
+
 alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
 alreadyDeclared sd (SME.StanVar sn st) =
   case varLookup sd sn of
+    Right (StanVar _ st') ->  if st == st'
+                              then Left $ sn <> " already declared (with same type)!"
+                              else Left $ sn <> " already declared (with different type)!"
+    Left _ -> return ()
+
+alreadyDeclaredAllScopes :: ScopedDeclarations -> SME.StanVar -> Either Text ()
+alreadyDeclaredAllScopes sd (SME.StanVar sn st) =
+  case varLookupAllScopes sd sn of
     Right (StanVar _ st') ->  if st == st'
                               then Left $ sn <> " already declared (with same type)!"
                               else Left $ sn <> " already declared (with different type)!"
@@ -943,6 +962,14 @@ isDeclared sn  = do
     Left _ -> return False
     Right _ -> return True
 
+isDeclaredAllScopes :: SME.StanName -> StanBuilderM env d Bool
+isDeclaredAllScopes sn  = do
+  sd <- declaredVars <$> get
+  case varLookupAllScopes sd sn of
+    Left _ -> return False
+    Right _ -> return True
+
+
 -- return True if variable is new, False if already declared
 declare :: SME.StanName -> SME.StanType -> StanBuilderM env d Bool
 declare sn st = do
@@ -1012,7 +1039,7 @@ addJsonOnce :: (Typeable d)
                  -> Stan.StanJSONF r Aeson.Series
                  -> StanBuilderM env d SME.StanVar
 addJsonOnce rtt name st sc fld = do
-  alreadyDeclared <- isDeclared name
+  alreadyDeclared <- isDeclaredAllScopes name
   if not alreadyDeclared
     then addJson rtt name st sc fld
     else return $ SME.StanVar name st
@@ -1026,7 +1053,7 @@ addFixedIntJson name mLower n = do
 
 addFixedIntJson' :: forall d env. (Typeable d) => Text -> Maybe Int -> Int -> StanBuilderM env d SME.StanVar
 addFixedIntJson' name mLower n = do
-  alreadyDeclared <- isDeclared name
+  alreadyDeclared <- isDeclaredAllScopes name
   if not alreadyDeclared
     then addFixedIntJson name mLower n
     else return $ SME.StanVar name SME.StanInt

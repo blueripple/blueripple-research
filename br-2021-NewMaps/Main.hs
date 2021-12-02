@@ -391,6 +391,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 --  newMapsBase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
+  oldMapsDRAEduRace <- model2020 (BRE.Model BRE.BaseG BRE.PlusRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
 --  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
@@ -434,7 +435,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
     ("Education", show . F.rgetField @DT.CollegeGradC)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
-    (Just ("logDensity", Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
+    (Just ("logDensity", (\x -> x - 6.5) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
     "By Race and Education"
     (FV.ViewConfig 600 600 5)
     ncRows_dra

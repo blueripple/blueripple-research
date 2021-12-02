@@ -668,6 +668,7 @@ type instance FI.VectorFor GroupModel = Vector.Vector
 
 data DensityModel = BaseD
                   | PlusEduD
+                  | PlusRaceD
                   deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat DensityModel
@@ -794,6 +795,19 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                 bTMultF' ik x = SB.plus <$> betaTMultF' ik x <*> betaEduTMultF ik x
                 bPMultF' ik x = SB.plus <$> betaPMultF' ik x <*> betaEduPMultF ik x
             return (tTMultF', bTMultF', tPMultF', bPMultF')
+          PlusRaceD -> do
+            let raceDensityGM = SB.NonHierarchical SB.STZNone fePrior
+                raceDensityFEM = SFE.InteractingFE True raceGroup raceDensityGM
+            (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors raceDensityFEM feMatrices cdData voteData (Just "T")
+            (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors raceDensityFEM feMatrices cdData voteData (Just "P")
+            let tTMultF' ik x = SB.plus <$> thetaTMultF' ik x <*> thetaRaceTMultF ik x
+                tPMultF' ik x = SB.plus <$> thetaPMultF' ik x <*> thetaRacePMultF ik x
+                bTMultF' ik x = SB.plus <$> betaTMultF' ik x <*> betaRaceTMultF ik x
+                bPMultF' ik x = SB.plus <$> betaPMultF' ik x <*> betaRacePMultF ik x
+            return (tTMultF', bTMultF', tPMultF', bPMultF')
+
+
+
         (q', feCDT, feCDP) <- SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
           q <- SB.stanBuildEither $ SFE.qrM SFE.qM feMatrices
           reIndexedQ <- SFE.reIndex (SB.dataSetName cdData) (SB.crosswalkIndexKey cdData) q

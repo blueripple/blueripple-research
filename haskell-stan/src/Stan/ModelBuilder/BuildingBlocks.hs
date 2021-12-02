@@ -194,6 +194,18 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
+{-
+groupDataSetMembershipMatrix :: SB.IndexKey -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
+groupDataSetMembershipMatrix groupIndexKey rttD = SB.inBlock SB.SBTransformedData $ SB.useDataSetForBindings rttD $ do
+  let dsIndexKey = SB.dataSetName rttD
+      mType = SB.StanMatrix (SB.NamedDim groupKey, SB.NamedDim dsIndexKey)
+      mName = groupIndexKey <> "_" <> dsIndexKey <> "_MM"
+  sv <- SB.stanDeclare mName mType "<lower=0, upper=1>"
+  SB.stanForLoopB "n" Nothing dsIndexKey
+    $ SB.stanForLoopB "g"
+-}
+
+
 
 {-
 addMultiIndex :: SB.RowTypeTag r -> [DHash.Some GroupTypeTag] -> Maybe Text -> SB.StanBuilderM env d SB.StanVar
