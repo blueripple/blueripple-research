@@ -670,6 +670,7 @@ data DensityModel = BaseD
                   | PlusEduD
                   | PlusRaceD
                   | PlusHRaceD
+                  | PlusNCHRaceD
                   deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat DensityModel
@@ -737,6 +738,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
 
         (feMatrices, centerF) <- SFE.addFixedEffectsData cdData  densityRowFromData (Just pplWgtsCD)--(SFE.FixedEffects 1 densityPredictor)
+        (feColDim, _, colIndexKey) <- SFE.colDimAndDimKeys feMatrices
 
         let normal x = SB.normal Nothing $ SB.scalar $ show x
             binaryPrior = normal 2
@@ -813,6 +815,30 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                   ]
                 cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
                 raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+                raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
+            (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
+            (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
+            let tTMultF' ik x = thetaRaceTMultF ik x
+                tPMultF' ik x = thetaRacePMultF ik x
+                bTMultF' ik x = betaRaceTMultF ik x
+                bPMultF' ik x = betaRacePMultF ik x
+            return (tTMultF', bTMultF', tPMultF', bPMultF')
+          PlusNCHRaceD -> do
+            let muV s = SB.StanVar ("muRaceDensity" <> s) (SB.StanVector feColDim)
+                sigmaV s = SB.StanVar ("sigmaRaceDensity" <> s) (SB.StanVector feColDim)
+                hyperParameters s = M.fromList
+                  [
+                  (muV s, ("", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
+                  , (sigmaV s, ("<lower=0>", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
+                  ]
+                rawPrior = SB.stdNormal --SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
+                centerF s bv@(SB.StanVar sn st) brv = do
+                  bv' <- SB.stanDeclare sn st ""
+                  SB.stanForLoopB "k" Nothing colIndexKey
+                    $ SB.stanForLoopB "g" Nothing "Race"
+                    $ SB.addExprLine "PlusNCHRaceD"
+                    $ SB.var bv' `SB.eq` (SB.var (muV s) `SB.plus`  (SB.var (sigmaV s) `SB.times`  SB.var brv))
+                raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.NonCentered rawPrior (centerF s))
                 raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
             (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
             (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
@@ -1067,8 +1093,8 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
     comboDat_C
     stanParallelCfg
     (Just 1000)
-    (Just 0.8)
-    (Just 15)
+    (Just 0.9)
+    (Just 10)
 
 
 type SLDLocation = (Text, ET.DistrictType, Int)

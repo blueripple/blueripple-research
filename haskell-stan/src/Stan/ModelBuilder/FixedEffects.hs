@@ -30,11 +30,11 @@ import qualified Data.Vector as V
 
 --data FixedEffects row = FixedEffects Int (row -> V.Vector Double)
 
-data FixedEffectsModel k = NonInteractingFE Bool SB.StanExpr
-                         | InteractingFE Bool (SB.GroupTypeTag k) (SGM.GroupModel)
+data FixedEffectsModel k env d = NonInteractingFE Bool SB.StanExpr
+                               | InteractingFE Bool (SB.GroupTypeTag k) (SGM.GroupModel env d)
 
 
-thinQR :: FixedEffectsModel k -> Bool
+thinQR :: FixedEffectsModel k env d -> Bool
 thinQR (NonInteractingFE b _) = b
 thinQR (InteractingFE b _ _) = b
 
@@ -65,7 +65,7 @@ qrRInv = qrM rInvM
 type MakeVecE env d = SME.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
 
 addFixedEffects :: forall k rFE rM d env.(Typeable d)
-                => FixedEffectsModel k
+                => FixedEffectsModel k env d
                 -> SB.RowTypeTag rFE
                 -> SB.RowTypeTag rM
                 -> Maybe SB.StanVar
@@ -160,7 +160,7 @@ fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with 
 
 
 addFixedEffectsParametersAndPriors :: forall k r1 r2 d env. (Typeable d)
-                                   => FixedEffectsModel k
+                                   => FixedEffectsModel k env d
                                    -> FEMatrixes
                                    -> SB.RowTypeTag r1
                                    -> SB.RowTypeTag r2
@@ -172,7 +172,7 @@ addFixedEffectsParametersAndPriors feModel feMatrixes rttFE rttModeled mVarSuffi
   = fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix
 
 
-checkModelDataConsistency :: FixedEffectsModel k -> FEMatrixes -> SB.StanBuilderM env d ()
+checkModelDataConsistency :: FixedEffectsModel k env d -> FEMatrixes -> SB.StanBuilderM env d ()
 checkModelDataConsistency model (NoQR _ _) = if thinQR model
                                              then SB.stanBuildError "thinQR is true in model but matrices are NoQR"
                                              else return ()
@@ -181,7 +181,7 @@ checkModelDataConsistency model (ThinQR _ _ _) = if thinQR model
                                                  then return ()
                                                  else SB.stanBuildError "thinQR is false in model but matrices are ThinQR"
 
-fixedEffectsQR_Parameters :: FixedEffectsModel k
+fixedEffectsQR_Parameters :: FixedEffectsModel k env d
                           -> SB.RowTypeTag rFE
                           -> SB.RowTypeTag rM
                           -> FEMatrixes
@@ -253,7 +253,7 @@ feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix = do
 
 feParametersWithInteraction :: FEMatrixes
                             -> SB.GroupTypeTag k
-                            -> SGM.GroupModel
+                            -> SGM.GroupModel env d
                             -> SB.RowTypeTag rFE
                             -> SB.RowTypeTag rM
                             -> Maybe Text
@@ -268,7 +268,7 @@ feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
 
 feBinaryInteraction :: FEMatrixes
                     -> SB.GroupTypeTag k
-                    -> SGM.GroupModel
+                    -> SGM.GroupModel env d
                     -> SB.RowTypeTag rFE
                     -> SB.RowTypeTag rM
                     -> Maybe Text
@@ -303,7 +303,7 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
 
 feNonBinaryInteraction :: FEMatrixes
                        -> SB.GroupTypeTag k
-                       -> SGM.GroupModel
+                       -> SGM.GroupModel env d
                        -> SB.RowTypeTag rFE
                        -> SB.RowTypeTag rM
                        -> Maybe Text

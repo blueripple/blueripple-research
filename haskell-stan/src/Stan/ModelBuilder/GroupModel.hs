@@ -30,24 +30,24 @@ import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
 type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
 
-data HierarchicalParameterization = Centered SB.StanExpr -- beta prior
-                                  | NonCentered SB.StanExpr (SB.StanExpr -> SB.StanExpr) -- beta prior and nonCentered transform
+data HierarchicalParameterization env d = Centered SB.StanExpr -- beta prior
+                                        | NonCentered SB.StanExpr (SB.StanVar -> SB.StanVar -> SB.StanBuilderM env d ()) -- raw prior and declaration of transformed
 
-data GroupModel = BinarySymmetric SB.StanExpr -- epsilon prior
-                | BinaryHierarchical HyperParameters HierarchicalParameterization
-                | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
-                | Hierarchical STZ.SumToZero HyperParameters HierarchicalParameterization
+data GroupModel env d = BinarySymmetric SB.StanExpr -- epsilon prior
+                      | BinaryHierarchical HyperParameters (HierarchicalParameterization env d)
+                      | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
+                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization env d)
 
 
 
-groupModel :: SB.StanVar -> GroupModel -> SB.StanBuilderM env d SB.StanVar
+groupModel :: SB.StanVar -> GroupModel env d -> SB.StanBuilderM env d SB.StanVar
 groupModel bv gm = do
   gmRes <- groupModel' [bv] gm
   case gmRes of
     (x:[]) -> return x
     _ -> SB.stanBuildError "groupModel: Returned a number of variables /= 1.  This should never happen!"
 
-groupModel' :: [SB.StanVar] -> GroupModel -> SB.StanBuilderM env d [SB.StanVar]
+groupModel' :: [SB.StanVar] -> GroupModel env d -> SB.StanBuilderM env d [SB.StanVar]
 groupModel' bvs (BinarySymmetric priorE) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   traverse_ declareOne bvs
@@ -64,7 +64,8 @@ groupModel' bvs (BinaryHierarchical hps (Centered betaPriorE)) = do
 groupModel' bvs (BinaryHierarchical hps (NonCentered rawPriorE nonCenteredF)) = do
   let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   brvs <- traverse declareRaw bvs
-  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+--  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
   traverse_ declareBeta bvs
   addHyperParameters hps
   traverse (\brv -> groupBetaPrior brv rawPriorE) brvs
@@ -89,7 +90,8 @@ groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
   let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   brvs <- traverse declareRaw bvs
   traverse (\brv -> STZ.sumToZero brv stz) brvs -- ?
-  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+--  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
+  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
   traverse_ declareBeta bvs
   addHyperParameters hps
   traverse_ (\brv -> groupBetaPrior brv rawPrior) brvs
@@ -120,16 +122,18 @@ addHyperParameters hps = do
          SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ eF v --SB.var v `SB.vectorSample` e
    traverse_ f $ Map.toList hps
 
-hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
+hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel env d
 hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
   hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   bp = SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
 
-hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel
-hierarchicalNonCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
-  hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
+hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel env d
+hierarchicalNonCenteredFixedMeanNormal mean sigmaVar sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
+  hpps = one (sigmaVar, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   rp = SB.stdNormal
-  ncF brE = brE `SB.times` SB.name sigmaName
+  ncF (SB.StanVar sn st) brv = do
+    SB.stanDeclareRHS sn st "" $ SB.var brv `SB.times` SB.var sigmaVar
+    return ()
 
 {-
 populationBeta :: PopulationModelParameterization -> SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d SB.StanVar

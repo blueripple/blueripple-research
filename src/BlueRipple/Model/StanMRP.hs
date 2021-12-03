@@ -153,7 +153,7 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
 addGroup :: Typeable d
            => SB.RowTypeTag r
            -> SB.StanExpr
-           -> SB.GroupModel
+           -> SB.GroupModel env d
            -> SB.GroupTypeTag k
            -> Maybe Text
            -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
@@ -183,7 +183,7 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
 
 addInteractions2 :: Typeable d
                  => SB.RowTypeTag r
-                 -> SB.GroupModel
+                 -> SB.GroupModel env d
                  -> SB.GroupTypeTag k1
                  -> SB.GroupTypeTag k2
                  -> Maybe Text
@@ -210,7 +210,7 @@ withSome f (DHash.Some gtt) = f gtt
 
 addInteractions :: Typeable d
                  => SB.RowTypeTag r
-                 -> SB.GroupModel
+                 -> SB.GroupModel env d
                  -> DHash.DHashMap SB.GroupTypeTag Phantom
                  -> Int
                  -> Maybe Text
