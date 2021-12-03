@@ -671,6 +671,7 @@ data DensityModel = BaseD
                   | PlusRaceD
                   | PlusHRaceD
                   | PlusNCHRaceD
+                  | PlusHStateD
                   deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat DensityModel
@@ -847,8 +848,24 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                 bTMultF' ik x = betaRaceTMultF ik x
                 bPMultF' ik x = betaRacePMultF ik x
             return (tTMultF', bTMultF', tPMultF', bPMultF')
-
-
+          PlusHStateD -> do
+            let mu s = "muStateDensity" <> s
+                sigma s = "sigmaStateDensity" <> s
+                hyperParameters s = M.fromList
+                  [
+                  (SB.StanVar (mu s) SB.StanReal, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  , (SB.StanVar (sigma s) SB.StanReal, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  ]
+                cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
+                stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+                stateDensityFEM s = SFE.InteractingFE True stateGroup (stateDensityGM s)
+            (thetaStateTMultF, betaStateTMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "T") feMatrices cdData voteData (Just "T")
+            (thetaStatePMultF, betaStatePMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "P") feMatrices cdData voteData (Just "P")
+            let tTMultF' ik x = thetaStateTMultF ik x
+                tPMultF' ik x = thetaStatePMultF ik x
+                bTMultF' ik x = betaStateTMultF ik x
+                bPMultF' ik x = betaStatePMultF ik x
+            return (tTMultF', bTMultF', tPMultF', bPMultF')
 
         (q', feCDT, feCDP) <- SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
           q <- SB.stanBuildEither $ SFE.qrM SFE.qM feMatrices

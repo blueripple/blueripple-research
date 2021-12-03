@@ -351,6 +351,7 @@ newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             -> K.ActionWithCacheTime r (F.FrameRec CDDemographicsR)
             -> K.Sem r ()
 newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -369,7 +370,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   draNC_C <- prepProposedCDData False "model/NewMaps/DRAMaps.bin" censusTables_C
   ncRows_dra <- K.ignoreCacheTime $ fmap onlyNC draNC_C
   K.logLE K.Info "DRA"
-  BR.logFrame ncRows_dra
+--  BR.logFrame ncRows_dra
 --  draNC <- censusDemographicsRecode . BRC.sexEducationRace <$> K.ignoreCacheTime draNC_C
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
@@ -395,31 +396,43 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   oldMapsDRARaceDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRAPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  BR.logFrame oldMapsDRABase
+  oldMapsDRABase_HCStateDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRAPlusStateAndStateRace <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRAPlusStateAndStateRace_RaceDensityNC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  oldMapsDRAPlusStateAndStateRace_StateDensityC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  BR.logFrame oldMapsDRABase
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
                           $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "NC")
                           $ ccesRawByDistrict'
-  BR.logFrame $ ccesRawByDistrict
+--  BR.logFrame $ ccesRawByDistrict
   elections_C <- BR.houseElectionsWithIncumbency
   electionsNC <- fmap onlyNC $ K.ignoreCacheTime elections_C
   flattenedElectionsNC <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                           <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict]) $ F.rcast <$> electionsNC)
-  BR.logFrame flattenedElectionsNC
+--  BR.logFrame flattenedElectionsNC
   let (oldMapsCompare', missing1, missing2)
         = FJ.leftJoin3WithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElectionsNC
           ccesRawByDistrict
-          (oldMapsDRABase <> oldMapsDRAEduDensity <> oldMapsDRARaceDensity <> oldMapsDRARaceDensityNC)
+          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+{-          (oldMapsDRABase
+--            <> oldMapsDRAPlusStateAndStateRace
+--            <> oldMapsDRAEduDensity
+--            <> oldMapsDRARaceDensityNC
+--            <> oldMapsDRABase_HCStateDensity
+            <> oldMapsDRAPlusStateAndStateRace_StateDensityC
+--            <> oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+          )
+-}
   when (not $ null missing1) $ K.knitError $ "Missing keys in join of election results and ccesRaw:" <> show missing1
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and model:" <> show missing2
   let oldMapsCompare
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
-  BR.logFrame oldMapsCompare
+--  BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
-       False
+       True
        ("NC Current Districts: Election vs Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast oldMapsCompare)
@@ -430,7 +443,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
       textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
   K.logLE K.Info "PUMS"
   ncRows_pums <- K.ignoreCacheTime $ fmap (F.filterFrame nc . BRE.pumsRows) $ ccesAndPums2020_C
-  BR.logFrame ncRows_pums
+--  BR.logFrame ncRows_pums
   K.addHvega Nothing Nothing =<<  BRV.demoCompare2
     ("Race", show . F.rgetField @DT.Race5C)
     ("Education", show . F.rgetField @DT.CollegeGradC)
