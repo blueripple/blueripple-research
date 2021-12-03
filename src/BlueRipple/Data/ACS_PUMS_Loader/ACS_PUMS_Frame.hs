@@ -24,29 +24,7 @@ where
 
 import           BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Path
 
-import qualified Knit.Report                   as K
-
-import qualified Control.Foldl                 as FL
-import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Data.List                     as L
-import           Data.Maybe                     ( catMaybes )
-import           Data.Proxy                     ( Proxy(..) )
-import qualified Data.Text                     as T
-import           Data.Text                      ( Text )
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
-import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
-
-import qualified Pipes                         as P
-import qualified Pipes.Prelude                 as P
-
-import qualified Frames.ParseableTypes         as FP
-import qualified Frames.MaybeUtils             as FM
+import qualified Frames.Streamly.TH                     as F
 
 F.tableTypes' pumsACS1YrRowGen
 F.tableTypes' pumsACS1YrRowGen'
-
-

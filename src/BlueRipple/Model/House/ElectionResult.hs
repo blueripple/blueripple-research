@@ -455,9 +455,9 @@ pumsReKey r =
      F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
 
-acsCopy2018to2020 :: F.FrameRec PUMSByCDR -> F.FrameRec PUMSByCDR
-acsCopy2018to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2018 rows) where
-  year2018 r = F.rgetField @BR.Year r == 2018
+acsCopy2019to2020 :: F.FrameRec PUMSByCDR -> F.FrameRec PUMSByCDR
+acsCopy2019to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2019 rows) where
+  year2019 r = F.rgetField @BR.Year r == 2019
   changeYear2020 r = F.rputField @BR.Year 2020 r
 
 type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
@@ -482,7 +482,7 @@ cachedPumsByCD :: forall r.(K.KnitEffects r, BR.CacheEffects r)
                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByCDR))
 cachedPumsByCD pums_C cdFromPUMA_C = do
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
-  fmap (fmap acsCopy2018to2020)
+  fmap (fmap acsCopy2019to2020)
     $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
     $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
 
