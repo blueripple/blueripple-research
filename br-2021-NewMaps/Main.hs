@@ -351,7 +351,6 @@ newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             -> K.ActionWithCacheTime r (F.FrameRec CDDemographicsR)
             -> K.Sem r ()
 newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -429,6 +428,18 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   when (not $ null missing2) $ K.knitError $ "Missing keys in join of ccesRaw and model:" <> show missing2
   let oldMapsCompare
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, ET.DemShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
+  let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
+  K.addHvega Nothing Nothing =<<  BRV.demoCompare2
+    ("Race", show . F.rgetField @DT.Race5C)
+    ("Education", show . F.rgetField @DT.CollegeGradC)
+    (F.rgetField @BRC.Count)
+    ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
+    (Just ("logDensity", (\x -> x - 6.5) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
+    "By Race and Education"
+    (FV.ViewConfig 600 600 5)
+    ncRows_dra
+  BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
 --  BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
@@ -436,11 +447,11 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
        ("NC Current Districts: Election vs Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast oldMapsCompare)
+  BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
 
 
   let nc r = F.rgetField @DT.StateAbbreviation r == "NC"
       nc6or9 r = nc r && F.rgetField @ET.DistrictNumber r `elem` [9,6]
-      textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
   K.logLE K.Info "PUMS"
   ncRows_pums <- K.ignoreCacheTime $ fmap (F.filterFrame nc . BRE.pumsRows) $ ccesAndPums2020_C
 --  BR.logFrame ncRows_pums
