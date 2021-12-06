@@ -339,7 +339,15 @@ comparison mr er t = do
 
 type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.PopPerSqMile]
 type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] V.++ ModelPredictorR V.++ '[BRC.Count]
-type ElexDShare = "ELexDShare" F.:-> Double
+type ElexDShare = "ElexDShare" F.:-> Double
+type TwoPartyDShare = "2-Party DShare" F.:-> Double
+
+twoPartyDShare r =
+  let ds = F.rgetField @ET.DemShare r
+      rs = F.rgetField @ET.RepShare r
+  in FT.recordSingleton @TwoPartyDShare $ ds/(ds + rs)
+
+addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             => Bool
@@ -365,12 +373,13 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if v == 0 then 0 else (realToFrac (F.rgetField @BRE.DVotes r)/realToFrac v))
 --      agg = FL.fold aggregatePredictorsInDistricts -- FL.fold aggregatePredictors . FL.fold aggregateDistricts
   censusTables_C <-  BRC.censusTablesForDRACDs
---  K.ignoreCacheTime censusTables_C >>= BR.logFrame . BRC.sexEducationRace
   draNC_C <- prepProposedCDData False "model/NewMaps/DRAMaps.bin" censusTables_C
   ncRows_dra <- K.ignoreCacheTime $ fmap onlyNC draNC_C
-  K.logLE K.Info "DRA"
---  BR.logFrame ncRows_dra
---  draNC <- censusDemographicsRecode . BRC.sexEducationRace <$> K.ignoreCacheTime draNC_C
+
+  censusTablesProposed_C <- BRC.censusTablesForProposedCDs
+  draNCProp_C <- prepProposedCDData False "model/NewMaps/DRAPropMaps.bin" censusTablesProposed_C
+  ncRowsProp_dra <- K.ignoreCacheTime $ fmap onlyNC draNCProp_C
+
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
                    $ SB.addGroupToSet BRE.raceGroup
@@ -399,6 +408,9 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   oldMapsDRAPlusStateAndStateRace <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRAPlusStateAndStateRace_RaceDensityNC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRAPlusStateAndStateRace_StateDensityC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+  newMapsDRAPlusStateAndStateRace_RaceDensityNC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) "NC_Proposed_DRA" $ (fmap F.rcast <$> draNCProp_C)
+
+
 --  BR.logFrame oldMapsDRABase
   (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
   let ccesRawByDistrict = fmap addDistrict
@@ -435,8 +447,8 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
     ("Education", show . F.rgetField @DT.CollegeGradC)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
-    (Just ("logDensity", (\x -> x - 6.5) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
-    "By Race and Education"
+    (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
+    "NC Old: By Race and Education"
     (FV.ViewConfig 600 600 5)
     ncRows_dra
   BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
@@ -444,120 +456,77 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
        True
-       ("NC Current Districts: Election vs Model")
+       ("NC 2020: Election vs Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast oldMapsCompare)
   BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
-
-
-  let nc r = F.rgetField @DT.StateAbbreviation r == "NC"
-      nc6or9 r = nc r && F.rgetField @ET.DistrictNumber r `elem` [9,6]
-  K.logLE K.Info "PUMS"
-  ncRows_pums <- K.ignoreCacheTime $ fmap (F.filterFrame nc . BRE.pumsRows) $ ccesAndPums2020_C
---  BR.logFrame ncRows_pums
   K.addHvega Nothing Nothing =<<  BRV.demoCompare2
     ("Race", show . F.rgetField @DT.Race5C)
     ("Education", show . F.rgetField @DT.CollegeGradC)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
-    (Just ("logDensity", (\x -> x - 6.5) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
-    "By Race and Education"
+    (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
+    "NC New: By Race and Education"
     (FV.ViewConfig 600 600 5)
-    ncRows_dra
+    ncRowsProp_dra
+  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
+  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
+  davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
+  let (modelAndDaves, missing)
+        = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          newMapsDRAPlusStateAndStateRace_RaceDensityNC
+          davesRedistricting
+  when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."
+  _ <- K.addHvega Nothing Nothing
+       $ modelAndDaveScatterChart
+       True
+       ("NC 2022 (CST-13): DRA vs. Model")
+       (FV.ViewConfig 600 600 5)
+       (fmap F.rcast modelAndDaves)
+  BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
+  let sortedModelAndDRA = reverse $ sortOn (F.rgetField @TwoPartyDShare) $ FL.fold FL.list modelAndDaves
+      longShot ci = MT.ciUpper ci < 0.48
+      leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
+      leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
+      safeD ci = MT.ciLower ci > 0.52
+      mi = F.rgetField @BRE.ModeledShare
+      bordered c = "border: 3px solid " <> c
+      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "Model"
+      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["Model"]
+      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Model"]
+      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Model"
+      dra = F.rgetField @TwoPartyDShare
+      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < 0.45) && h == "DRA"
+      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= 0.45 && dra r < 0.50) && h == "DRA"
+      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < 0.55) && h == "DRA"
+      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "DRA"
+      tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
+  BR.brAddRawHtmlTable "NC 2022: DRA and Blue Ripple Model" (BHA.class_ "brTable") (daveModelColonnade tableCellStyle) sortedModelAndDRA
+  BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
+{-
 
   pums2020 <- K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
   _ <- K.addHvega Nothing Nothing
        $ densityHistogram "density" (FV.ViewConfig 600 600 5) id 5000 $ fmap F.rcast pums2020
   _ <- K.addHvega Nothing Nothing
        $ densityHistogram "log(density)" (FV.ViewConfig 600 600 5) Numeric.log 0.1 $ fmap F.rcast pums2020
-
-
-{-
-  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
-  davesRedistricting <- K.ignoreCacheTime davesRedistrictInfo_C
---  BR.logFrame davesRedistricting
---  BR.logFrame $ F.filterFrame ((==2020) . F.rgetField @BR.Year) ccesRawByState
-
-  let (modelAndDaves, missing)
-        = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          newMapsPlusStateAndStateRace
-          davesRedistricting
-  when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis."
-  _ <- K.addHvega Nothing Nothing
-       $ modelAndDaveScatterChart
-       True
-       ("NC CST-13: Modeled Vs. Dave")
-       (FV.ViewConfig 600 600 5)
-       (fmap F.rcast modelAndDaves)
--}
-
-{-
-  modelBase2020 <- model2020 BRE.Base
-  modelPlusState <- model2018 BRE.PlusState
-  modelPlusState2020 <- model2020 BRE.PlusState
-  modelPlusRaceEdu <- model2018 BRE.PlusRaceEdu
-  modelPlusRaceEdu2020 <- model2020 BRE.PlusRaceEdu
-  modelPlusStateAndStateRace <- model2018 BRE.PlusStateAndStateRace
-  modelPlusStateAndStateRace2020 <- model2020 BRE.PlusStateAndStateRace
-  modelPlusInteractions <- model2018 BRE.PlusInteractions
-  modelPlusInteractions2020 <- model2020 BRE.PlusInteractions
-  modelPlusStateAndStateInteractions <- model2018 BRE.PlusStateAndStateInteractions
-  modelPlusStateAndStateInteractions2020 <- model2020 BRE.PlusStateAndStateInteractions
-  let allModels2018 = modelPlusState
-                      <> modelBase
-                      <> modelPlusRaceEdu
-                      <> modelPlusStateAndStateRace
-                      <> modelPlusInteractions
-                      <> modelPlusStateAndStateInteractions
-      allModels2020 =  modelBase2020
-                       <> modelPlusRaceEdu2020
-                       <> modelPlusStateAndStateRace2020
-                       <> modelPlusInteractions2020
-                       <> modelPlusStateAndStateInteractions2020
-      allResults = vaResults
-                   <> (onlyTXLower txResults)
-                   <> (onlyGALower gaResults)
-                   <> (onlyNVLower nvResults)
-                   <> (onlyOHLower ohResults)
-  let f s = F.filterFrame (\r -> onlyLower r && onlyStates s r)
-      allStates = ["VA","GA","TX","OH"]
-      allModels = [BRE.Base, BRE.PlusState, BRE.PlusRaceEdu, BRE.PlusStateAndStateRace, BRE.PlusInteractions, BRE.PlusStateAndStateInteractions]
-      fPost = f ["VA"]
-  m <- comparison (fPost modelPlusStateAndStateRace) (fPost allResults) "All"
-  m2020 <- comparison (fPost modelPlusStateAndStateRace2020) (fPost allResults) "All"
-
-  BR.brAddPostMarkDownFromFile postPaths "_chartDiscussion"
-
-  let tableNoteName = BR.Used "District_Table"
-  _ <- BR.brNewNote postPaths postInfo tableNoteName "VA Lower House Districts" $ do
-    let -- sorted = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m
-        -- sorted2020 = sortOn ( MT.ciMid . F.rgetField @ModeledShare) $ FL.fold FL.list m2020
-        sorted2018 = sortOn (F.rgetField @ET.DistrictNumber) $ FL.fold FL.list m
-        sorted2020 = sortOn (F.rgetField @ET.DistrictNumber) $ FL.fold FL.list m2020
-        bordered c = "border: 3px solid " <> c
-        dlccChosenCS  = bordered "purple" `BR.cellStyleIf` \r h -> (F.rgetField @ET.DistrictNumber r `elem` dlccDistricts && h == "District")
-        longShot ci = MT.ciUpper ci < 0.48
-        leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
-        leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
-        safeD ci = MT.ciLower ci > 0.52
-        mi = F.rgetField @BRE.ModeledShare
-        eRes = F.rgetField @BR.DShare
-        longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
-        leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
-        leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
-        safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
-        resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
-        resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
-        resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
-        resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
-
-        tableCellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS
-                                 , resLongShotCS, resLeanRCS, resLeanDCS, resSafeDCS
-                                 ]
-    BR.brAddRawHtmlTable "VA Lower Model (2018 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2018
-    BR.brAddRawHtmlTable "VA Lower Model (2020 data)" (BHA.class_ "brTable") (vaLowerColonnade tableCellStyle) sorted2020
 -}
   return ()
+
+daveModelColonnade cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      dNum = F.rgetField @ET.DistrictNumber
+      dave = F.rgetField @TwoPartyDShare
+      share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
+      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
+      share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "DRA" (BR.toCell cas "DRA" "DRA" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
+--     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
+     <> C.headed "Model" (BR.toCell cas "Model" "Model" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+--     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
+--     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
 
 race5FromCPS :: F.Record BRE.CPSVByCDR -> DT.Race5
@@ -595,73 +564,51 @@ modelAndElectionScatter single title vc rows =
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
-      xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
+--      xScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
+--      yScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
+      xScale = GV.PScale [GV.SZero False]
+      yScale = GV.PScale [GV.SZero False]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.X ([GV.PName "Model_Mid"
+      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
+                                     , GV.PAxis [GV.AxTitle "Model"]
                                      , GV.PScale [GV.SZero False]
-
---                                     , xyScale
+                                     , yScale
                                      ]
 
---                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
                                      )
       encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
-                                  , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model_Low"]
---                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
---                                  , GV.PScale [GV.SZero False]
+                                    , GV.PmType GV.Quantitative
+                                    , GV.PAxis [GV.AxTitle "Model (5%)"]
+                                    , yScale
                                   ]
       encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model_High"]
---                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
---                                  , GV.PScale [GV.SZero False]
+                                  , GV.PAxis [GV.AxTitle "Model (95%)"]
+                                  , yScale
                                   ]
-      encElection = GV.position GV.Y [GV.PName "Election Result"
+      encElection = GV.position GV.X [GV.PName "Election Result"
                                      , GV.PmType GV.Quantitative
                                      , GV.PAxis [GV.AxTitle "Election Results"]
-                                       --                               , GV.PScale [GV.SZero False]
-                                       --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
+                                     , xScale
                                   ]
       encSurvey = GV.color [GV.MName "CCES DShare"
                            , GV.MmType GV.Quantitative
-                             --                               , GV.PScale [GV.SZero False]
-                             --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
                            ]
-      enc45 =  GV.position GV.Y [GV.PName "Model_Mid"
+      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
---                                  , xyScale
+                                  , xScale
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       facets = GV.facet [GV.RowBy facetModel]
-      ptEnc = GV.encoding . encModelMid . encElection . encSurvey
+      ptEnc = GV.encoding . encModelMid . encElection -- . encSurvey
       lineEnc = GV.encoding . encModelMid . enc45
       labelEnc = ptEnc . encDistrictName
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
       labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MTooltip GV.TTData], makeDistrictName []]
-
-{-
-      regression p = GV.transform
-                     . GV.filter (GV.FExpr "datum.Election_Result > 1 && datum.Election_Result < 99")
-                     . GV.regression "Model_Mid" "Election_Result" [GV.RgParams p]
-      errorT = GV.transform
-               . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
-               . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
---      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
---      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
-      regressionSpec = GV.asSpec [regression False [], ptEnc [], GV.mark GV.Line [GV.MStroke "red"]]
-      r2Enc = GV.encoding
-              . GV.position GV.X [GV.PNumber 200]
-              . GV.position GV.Y [GV.PNumber 20]
-              . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
-      r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
--}
       finalSpec = if single
---                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
                   then [FV.title title, GV.layer [lineSpec, labelSpec], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
@@ -671,82 +618,64 @@ modelAndElectionScatter single title vc rows =
 modelAndDaveScatterChart :: Bool
                          -> Text
                          -> FV.ViewConfig
-                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, MT.ModelId BRE.Model, BRE.ModeledShare, ET.DemShare])
+                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, MT.ModelId BRE.Model, BRE.ModeledShare, TwoPartyDShare])
                          -> GV.VegaLite
 modelAndDaveScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
-                    V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
-                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
-                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
+                    V.:& FVD.asVLData' [("Model", GV.Number . (*100) . MT.ciMid)
+                                       ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
                                        ]
                     V.:& FVD.asVLData (GV.Number . (*100)) "Dave"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
-      xyScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
+--      xScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
+--      yScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
+      xScale = GV.PScale [GV.SZero False]
+      yScale = GV.PScale [GV.SZero False]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
+      encModelMid = GV.position GV.Y ([GV.PName "Model"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model_Mid"]
-                                     , xyScale
+                                     , GV.PAxis [GV.AxTitle "Model"]
+                                     , GV.PScale [GV.SZero False]
+                                     , yScale
                                      ]
 
 --                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
                                      )
-      encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
+      encModelLo = GV.position GV.Y [GV.PName "Model (5%)"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model_Low"]
---                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
---                                  , GV.PScale [GV.SZero False]
+                                  , yScale
                                   ]
-      encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
+      encModelHi = GV.position GV.Y2 [GV.PName "Model (95%)"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model_High"]
---                                  , GV.PScale [GV.SDomain $ GV.DNumbers [0, 100]]
---                                  , GV.PScale [GV.SZero False]
+                                  , yScale
                                   ]
       encDaves = GV.position GV.X [GV.PName "Dave"
                                   , GV.PmType GV.Quantitative
-                                  , xyScale
-                                    --                               , GV.PScale [GV.SZero False]
-                                  --                                     , GV.PAxis [GV.AxTitle "Dave's D Share"]
+                                  , xScale
+                                  , GV.PAxis [GV.AxTitle "DRA D Share"]
                                   ]
-      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
+      enc45 =  GV.position GV.X [GV.PName "Model"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
-                                  , xyScale
+                                  , yScale
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       facets = GV.facet [GV.RowBy facetModel]
       ptEnc = GV.encoding . encModelMid . encDaves
       lineEnc = GV.encoding . encModelMid . enc45
       labelEnc = ptEnc . encDistrictName
-      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName []]
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MTooltip GV.TTData], makeDistrictName [] ]
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
 
-{-
-      regression p = GV.transform
-                     . GV.filter (GV.FExpr "datum.Election_Result > 1 && datum.Election_Result < 99")
-                     . GV.regression "Model_Mid" "Election_Result" [GV.RgParams p]
-      errorT = GV.transform
-               . GV.calculateAs "datum.Model_Hi - datum.Model_Mid" "E_Model_Hi"
-               . GV.calculateAs "datum.Model_Mid - datum.Model_Lo" "E_Model_Lo"
---      rangeEnc = GV.encoding . encModelLo . encModelHi . encElection
---      rangeSpec = GV.asSpec [rangeEnc [], GV.mark GV.Rule []]
-      regressionSpec = GV.asSpec [regression False [], ptEnc [], GV.mark GV.Line [GV.MStroke "red"]]
-      r2Enc = GV.encoding
-              . GV.position GV.X [GV.PNumber 200]
-              . GV.position GV.Y [GV.PNumber 20]
-              . GV.text [GV.TName "rSquared", GV.TmType GV.Nominal]
-      r2Spec = GV.asSpec [regression True [], r2Enc [], GV.mark GV.Text []]
--}
       finalSpec = if single
---                  then [FV.title title, ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData], vlData] --GV.layer [ptSpec, lineSpec], vlData]
-                  then [FV.title title, GV.layer [ptSpec, lineSpec, labelSpec], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, lineSpec, labelSpec]]), vlData]
+                  then [FV.title title, GV.layer [lineSpec, labelSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
 -- fold CES data over districts

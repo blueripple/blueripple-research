@@ -112,9 +112,9 @@ demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay
   return $ case mOverlay of
     Nothing -> FV.configuredVegaLite vc [FV.title title, barEncoding [], barMark, vlData]
     Just (oLabel, _, _) ->
-      let encOverlay = GV.position GV.Y [GV.PName oLabel, GV.PmType GV.Quantitative, GV.PAxis [GV.AxOrient GV.SRight]]
+      let encOverlay = GV.position GV.Y [GV.PName oLabel, GV.PmType GV.Quantitative, GV.PAxis [GV.AxOrient GV.SRight], GV.PScale [GV.SZero False]]
           overlayEncoding = GV.encoding . encLabel . encOverlay
-          overlayMark = GV.mark GV.Circle []
+          overlayMark = GV.mark GV.Circle [GV.MColor "purple"]
           overlaySpec = GV.asSpec [overlayEncoding [], overlayMark]
           barSpec = GV.asSpec [barEncoding [], barMark]
           resolve = GV.resolve . GV.resolution (GV.RScale [(GV.ChY, GV.Independent)])

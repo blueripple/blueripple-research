@@ -1,6 +1,7 @@
-Just looking at that chart you might have guesses about which of these districts are safely Democratic and which
-might be safely Republican, based solely on the proportion of voters-of-color.  And you’d be mostly correct.
-Below we chart the election results along with our model results as an XY scatter plot with the election result
-on the y-axis, the model result on the x-axis and a line representing where each district would fall if the model
-and election result agreed precisely.  We don’t expect that, of course, but we hope to see reasonable agreement in most
-districts if the model is to be of any use!
+These districts are all majority white, though NC-12 is right on the line. But there are large variations
+in the proportion of voters-of-color and population density among the districts.
+
+Below we chart the election results on the x-axis, our model estimation on the y-axis
+and a line representing where districts would fall on this scatter-plot if the model
+and election result agreed precisely.  In districts left of the line, the model underestimated the D vote share and
+overestimated it in districts to the right.
