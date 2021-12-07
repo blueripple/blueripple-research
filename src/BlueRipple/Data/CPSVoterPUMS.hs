@@ -532,8 +532,8 @@ intToHisp hN
 
 intsToRace5 :: Int -> Int -> BR.Race5
 intsToRace5 hN rN
-  | (hN >= 100) && (hN <= 901) = BR.R5_Latinx
-  | rN == 100 = BR.R5_WhiteNonLatinx
+  | (hN >= 100) && (hN <= 901) = BR.R5_Hispanic
+  | rN == 100 = BR.R5_WhiteNonHispanic
   | rN == 200 = BR.R5_Black
   | rN == 651 = BR.R5_Asian
   | otherwise = BR.R5_Other

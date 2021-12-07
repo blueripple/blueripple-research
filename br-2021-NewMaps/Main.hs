@@ -257,7 +257,7 @@ newMapAnalysis stanParallelCfg parallel = do
 --  cdData_C <- BRC.censusTablesForProposedCDs
   newCDs_C <- prepProposedCDData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
 
-  let newCDPostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let newCDPostInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   newMapsPaths <- postPaths "NewMaps"
   BR.brNewPost newMapsPaths newCDPostInfo "New Maps" $ do
     newMapsTest False stanParallelCfg parallel newMapsPaths newCDPostInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
@@ -390,7 +390,7 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfo name = (mapGroup, name, psGroupSet)
 --      model2018 m name
---        =  K.ignoreCacheTimeM . BRE.electionModel False modelDir m 2018 (psInfo name) ccesAndPums2018_C
+--        =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2018 (psInfo name) ccesAndPums2018_C
       model2020 :: BRE.Model
                 -> Text
                 -> K.ActionWithCacheTime r (F.FrameRec PostStratR)

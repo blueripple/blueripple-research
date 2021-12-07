@@ -429,9 +429,9 @@ raceToSimpleRace _ = DT.NonWhite
 
 
 raceToRace5 :: RaceT -> DT.Race5
-raceToRace5 White = DT.R5_WhiteNonLatinx
+raceToRace5 White = DT.R5_WhiteNonHispanic
 raceToRace5 Black = DT.R5_Black
-raceToRace5 Hispanic = DT.R5_Latinx
+raceToRace5 Hispanic = DT.R5_Hispanic
 raceToRace5 Asian = DT.R5_Asian
 raceToRace5 _ = DT.R5_Other
 

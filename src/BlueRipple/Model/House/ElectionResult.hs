@@ -1176,7 +1176,7 @@ sldKey r = (F.rgetField @BR.StateAbbreviation r
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 --densityRowFromData :: SB.MatrixRowFromData (F.Record q)
@@ -1188,9 +1188,9 @@ densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
 raceAlone4FromRace5 DT.R5_Other = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Black = DT.RA4_Black
-raceAlone4FromRace5 DT.R5_Latinx = DT.RA4_Other
+raceAlone4FromRace5 DT.R5_Hispanic = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Asian = DT.RA4_Asian
-raceAlone4FromRace5 DT.R5_WhiteNonLatinx = DT.RA4_White
+raceAlone4FromRace5 DT.R5_WhiteNonHispanic = DT.RA4_White
 
 indexStanResults :: (Show k, Ord k)
                  => IM.IntMap k

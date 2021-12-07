@@ -362,7 +362,7 @@ type instance FI.VectorFor TurnoutRace = UVec.Vector
 
 type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
-data Race5 = R5_Other | R5_Black | R5_Latinx | R5_Asian | R5_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+data Race5 = R5_Other | R5_Black | R5_Hispanic | R5_Asian | R5_WhiteNonHispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
 instance S.Serialize Race5
 instance B.Binary Race5
 instance Flat.Flat Race5
@@ -381,12 +381,12 @@ instance FV.ToVLDataValue (F.ElField Race5C) where
 simpleRaceFromRace5 :: Race5 -> SimpleRace
 simpleRaceFromRace5 R5_Other = NonWhite
 simpleRaceFromRace5 R5_Black = NonWhite
-simpleRaceFromRace5 R5_Latinx = NonWhite
+simpleRaceFromRace5 R5_Hispanic = NonWhite
 simpleRaceFromRace5 R5_Asian = NonWhite
-simpleRaceFromRace5 R5_WhiteNonLatinx = White
+simpleRaceFromRace5 R5_WhiteNonHispanic = White
 
 
-data Race4 = R4_Other | R4_Black | R4_Latinx | R4_WhiteNonLatinx deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Race4 = R4_Other | R4_Black | R4_Hispanic | R4_WhiteNonHispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Race4
 instance B.Binary Race4
 instance Flat.Flat Race4
@@ -437,15 +437,15 @@ instance FV.ToVLDataValue (F.ElField RaceAlone4C) where
 simpleRaceFromRace4 :: Race4 -> SimpleRace
 simpleRaceFromRace4 R4_Other = NonWhite
 simpleRaceFromRace4 R4_Black = NonWhite
-simpleRaceFromRace4 R4_Latinx = NonWhite
-simpleRaceFromRace4 R4_WhiteNonLatinx = White
+simpleRaceFromRace4 R4_Hispanic = NonWhite
+simpleRaceFromRace4 R4_WhiteNonHispanic = White
 
 race4FromRace5 :: Race5 -> Race4
 race4FromRace5 R5_Other = R4_Other
 race4FromRace5 R5_Asian = R4_Other
 race4FromRace5 R5_Black = R4_Black
-race4FromRace5 R5_Latinx = R4_Latinx
-race4FromRace5 R5_WhiteNonLatinx = R4_WhiteNonLatinx
+race4FromRace5 R5_Hispanic = R4_Hispanic
+race4FromRace5 R5_WhiteNonHispanic = R4_WhiteNonHispanic
 
 simpleRaceFromRaceAlone4 :: RaceAlone4 -> SimpleRace
 simpleRaceFromRaceAlone4 RA4_White = White
@@ -457,23 +457,23 @@ simpleRaceFromRaceAlone4AndHisp True _ _ = NonWhite
 simpleRaceFromRaceAlone4AndHisp False x _ = simpleRaceFromRaceAlone4 x
 
 race5FromRaceAlone4AndHisp :: Bool -> RaceAlone4 -> Hisp -> Race5
-race5FromRaceAlone4AndHisp True _ Hispanic = R5_Latinx
-race5FromRaceAlone4AndHisp True RA4_White NonHispanic = R5_WhiteNonLatinx
+race5FromRaceAlone4AndHisp True _ Hispanic = R5_Hispanic
+race5FromRaceAlone4AndHisp True RA4_White NonHispanic = R5_WhiteNonHispanic
 race5FromRaceAlone4AndHisp True RA4_Black NonHispanic = R5_Black
 race5FromRaceAlone4AndHisp True RA4_Asian NonHispanic = R5_Asian
 race5FromRaceAlone4AndHisp True RA4_Other NonHispanic = R5_Other
-race5FromRaceAlone4AndHisp False RA4_White _ = R5_WhiteNonLatinx
+race5FromRaceAlone4AndHisp False RA4_White _ = R5_WhiteNonHispanic
 race5FromRaceAlone4AndHisp False RA4_Black _ = R5_Black
 race5FromRaceAlone4AndHisp False RA4_Asian _ = R5_Asian
 race5FromRaceAlone4AndHisp False RA4_Other _ = R5_Other
 
 
 race4FromRaceAlone4AndHisp :: Bool -> RaceAlone4 -> Hisp -> Race4
-race4FromRaceAlone4AndHisp True _ Hispanic = R4_Latinx
-race4FromRaceAlone4AndHisp True RA4_White NonHispanic = R4_WhiteNonLatinx
+race4FromRaceAlone4AndHisp True _ Hispanic = R4_Hispanic
+race4FromRaceAlone4AndHisp True RA4_White NonHispanic = R4_WhiteNonHispanic
 race4FromRaceAlone4AndHisp True RA4_Black NonHispanic = R4_Black
 race4FromRaceAlone4AndHisp True _ NonHispanic = R4_Other
-race4FromRaceAlone4AndHisp False RA4_White _ = R4_WhiteNonLatinx
+race4FromRaceAlone4AndHisp False RA4_White _ = R4_WhiteNonHispanic
 race4FromRaceAlone4AndHisp False RA4_Black _ = R4_Black
 race4FromRaceAlone4AndHisp False _ _ = R4_Other
 
