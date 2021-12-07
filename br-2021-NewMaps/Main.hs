@@ -400,14 +400,14 @@ newMapsTest clearCaches stanParallelCfg parallel postPaths postInfo ccesAndPums_
 --  newMapsBase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
 --  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
-  oldMapsDRARaceDensityNC <- model2020 (BRE.Model BRE.BaseG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRARaceDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRABase_HCStateDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRAPlusStateAndStateRace <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRARaceDensityNC <- model2020 (BRE.Model BRE.BaseG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRARaceDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRABase_HCStateDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAPlusStateAndStateRace <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   oldMapsDRAPlusStateAndStateRace_RaceDensityNC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-  oldMapsDRAPlusStateAndStateRace_StateDensityC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
+--  oldMapsDRAPlusStateAndStateRace_StateDensityC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
   newMapsDRAPlusStateAndStateRace_RaceDensityNC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) "NC_Proposed_DRA" $ (fmap F.rcast <$> draNCProp_C)
 
 
