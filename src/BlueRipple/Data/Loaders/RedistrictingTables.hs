@@ -56,6 +56,7 @@ plans :: Map RedistrictingPlanID RedistrictingPlanFiles
 plans = M.fromList
   [
     (redistrictingPlanID "NC" "CST-13" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_NC.csv" "data/redistricting/NC-CST-13.csv")
+  , (redistrictingPlanID "TX" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_TX.csv" "data/redistricting/TX-proposed.csv")
   ]
 
 redistrictingAnalysisCols :: Set FS.HeaderText
@@ -75,6 +76,7 @@ redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "
                                           ,(FS.HeaderText "Asian", FS.ColTypeName "AsianFrac")
                                           ]
 
+-- this assumes these files are all like this one
 redistrictingAnalysisRowGen = FS.modifyColumnSelector modF rg where
   rg = (FS.rowGen "data/redistricting/NC-CST-13.csv") { FS.tablePrefix = ""
                                                       , FS.separator = FS.CharSeparator ','

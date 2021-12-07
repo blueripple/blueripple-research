@@ -173,7 +173,9 @@ censusTablesForProposedCDs :: (K.KnitEffects r
                               , BR.CacheEffects r)
                            => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesForProposedCDs = censusTablesByDistrict fileByYear "proposedCDs" where
-  fileByYear = [(BRC.TY2018, censusDataDir <> "/cD117_NC.csv")]
+  fileByYear = [(BRC.TY2018, censusDataDir <> "/cd117_NC.csv")
+               ,(BRC.TY2018, censusDataDir <> "/cd117_TX.csv")
+               ]
 
 
 censusTablesForSLDs ::  (K.KnitEffects r
