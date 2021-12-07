@@ -256,7 +256,7 @@ newMapAnalysis stanParallelCfg parallel = do
   newCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
   ncPaths <- postPaths "NC_Congressional"
   txPaths <- postPaths "TX_Congressional"
-  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   let ncNMPS = NewMapPostSpec "NC" ncPaths DRADistricts (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   let txNMPS = NewMapPostSpec "TX" txPaths PUMSDistricts (Redistrict.redistrictingPlanID "TX" "Passed" ET.Congressional)
   BR.brNewPost ncPaths postInfo "NC" $ do
@@ -395,9 +395,10 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
+      raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
   K.addHvega Nothing Nothing =<<  BRV.demoCompare2
-    ("Race", show . F.rgetField @DT.Race5C)
-    ("Education", show . F.rgetField @DT.CollegeGradC)
+    ("Race", show . F.rgetField @DT.Race5C, raceSort)
+    ("Education", show . F.rgetField @DT.CollegeGradC, Nothing)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
     (Just ("log(Density)", Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
@@ -411,11 +412,11 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
        True
        (stateAbbr <> " 2020: Election vs Model")
        (FV.ViewConfig 600 600 5)
-       (fmap F.rcast oldMapsCompare)
+       (fmap F.rcast $ oldMapsCompare)
   BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
   K.addHvega Nothing Nothing =<<  BRV.demoCompare2
-    ("Race", show . F.rgetField @DT.Race5C)
-    ("Education", show . F.rgetField @DT.CollegeGradC)
+    ("Race", show . F.rgetField @DT.Race5C, raceSort)
+    ("Education", show . F.rgetField @DT.CollegeGradC, Nothing)
     (F.rgetField @BRC.Count)
     ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
     (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))

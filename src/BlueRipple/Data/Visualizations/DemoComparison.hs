@@ -62,8 +62,8 @@ demoCompare (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) title vc 
 
 
 demoCompare2 :: forall rs f r.(K.KnitEffects r, Foldable f)
-             => (Text, F.Record rs -> Text)
-             -> (Text, F.Record rs -> Text)
+             => (Text, F.Record rs -> Text, Maybe [Text])
+             -> (Text, F.Record rs -> Text, Maybe [Text])
              -> (F.Record rs -> Int)
              -> (Text, F.Record rs -> Text)
              -> Maybe (Text, F.Record rs -> Double, FL.Fold Double Double)
@@ -71,7 +71,7 @@ demoCompare2 :: forall rs f r.(K.KnitEffects r, Foldable f)
              -> FV.ViewConfig
              -> f (F.Record rs)
              -> K.Sem r GV.VegaLite
-demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay title vc rows = do
+demoCompare2 (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (labelName, label) mOverlay title vc rows = do
   let
       catsName = cat1Name <> "-" <> cat2Name
       vlDataRowsM = case mOverlay of
@@ -96,6 +96,8 @@ demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay
               totalsByLabel = FL.fold (FL.premap labeled $ FL.foldByKeyMap FL.sum) $ M.toList totalsByCategory
               toVLDataRowM ((l, c1, c2), (cnt, ox)) = fmap (\x -> GV.dataRow x [])
                                                       $ sequence [Just $ (catsName, GV.Str $ c1 <> "-" <> c2)
+                                                                 , Just $ (cat1Name, GV.Str c1)
+                                                                 , Just $ (cat2Name, GV.Str c2)
                                                                  ,Just $ ("Count", GV.Number $ realToFrac cnt)
                                                                  ,(\x -> ("Pct", GV.Number $ 100 * realToFrac cnt/realToFrac x)) <$> M.lookup l totalsByLabel
                                                                  ,Just $ (labelName, GV.Str l)
@@ -104,10 +106,16 @@ demoCompare2 (cat1Name, cat1) (cat2Name, cat2) count (labelName, label) mOverlay
           in List.concat <$> (traverse toVLDataRowM $ M.toList totalsByCategory)
   vlDataRows <-  K.knitMaybe "Missing label in total.  Which shouldn't happen." vlDataRowsM
   let vlData = GV.dataFromRows [] vlDataRows
-      encCat = GV.color [GV.MName catsName, GV.MmType GV.Nominal]
-      encPct = GV.position GV.Y [GV.PName "Pct", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain (GV.DNumbers [0, 100])], GV.PAxis [GV.AxOrient GV.SLeft]]
+      encCat1 = GV.color ([GV.MName cat1Name, GV.MmType GV.Nominal] ++ maybe [] (\x -> [GV.MSort [GV.CustomSort $ GV.Strings x]]) mCat1Sort)
+      encCat2 = GV.opacity ([GV.MName cat2Name, GV.MmType GV.Nominal] ++ maybe [] (\x -> [GV.MSort [GV.CustomSort $ GV.Strings x]]) mCat2Sort)
+      encPct = GV.position GV.Y [GV.PName "Pct"
+                                , GV.PmType GV.Quantitative
+                                , GV.PScale [GV.SDomain (GV.DNumbers [0, 100])]
+                                , GV.PAxis [GV.AxOrient GV.SLeft]
+                                , GV.PSort [GV.ByChannel GV.ChColor]
+                                ]
       encLabel = GV.position GV.X [GV.PName labelName, GV.PmType GV.Nominal]
-      barEncoding = GV.encoding . encCat . encPct . encLabel
+      barEncoding = GV.encoding . encCat1 . encCat2 . encPct . encLabel
       barMark = GV.mark GV.Bar []
   return $ case mOverlay of
     Nothing -> FV.configuredVegaLite vc [FV.title title, barEncoding [], barMark, vlData]
