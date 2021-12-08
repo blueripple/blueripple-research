@@ -192,7 +192,7 @@ demoCompare3 (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (labe
            in FV.configuredVegaLite vc [FV.title title, stack [], GV.layer [bSpec, oSpec], resolve [], vlData]
 
 
-demoCompareXYs :: forall rs f.(Foldable f)
+demoCompareXYC :: forall rs f.(Foldable f)
                => Text
                -> Text
                -> Text
@@ -201,18 +201,54 @@ demoCompareXYs :: forall rs f.(Foldable f)
                -> FV.ViewConfig
                -> f (Text, Double, Double, Double)
                -> GV.VegaLite
-demoCompareXYs labelName xName yName zName title vc rows =
-  let  colData (l, x, y, z) =  [(labelName, GV.Str l)
+demoCompareXYC labelName xName yName colorName title vc rows =
+  let  colData (l, x, y, c) =  [(labelName, GV.Str l)
                                , (xName, GV.Number x)
                                , (yName, GV.Number y)
-                               , (zName, GV.Number z)
+                               , (colorName, GV.Number c)
+                               --                                  , (sizeName, GV.Number c)
                                ]
 
        vlData = GV.dataFromRows [] $ List.concat $ fmap (\r -> GV.dataRow (colData r) []) $ FL.fold FL.list rows
        encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative]
        encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative]
-       encZ = GV.color [GV.MName zName, GV.MmType GV.Quantitative]
+       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative]
        encLabel = GV.text [GV.TName labelName]
-       encoding = (GV.encoding . encX . encY . encZ . encLabel) []
-       mark = GV.mark GV.Text [GV.MTooltip GV.TTEncoding]
-  in FV.configuredVegaLite vc [FV.title title, encoding, mark, vlData]
+       labels = (GV.encoding . encX . encY . encLabel) []
+       labelMark = GV.mark GV.Text [GV.MdY 20]
+       labelSpec = GV.asSpec [labels, labelMark]
+       circles = (GV.encoding . encX . encY . encC) []
+       circleSpec = GV.asSpec [circles, GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData]
+
+
+demoCompareXYCS :: forall rs f.(Foldable f)
+               => Text
+               -> Text
+               -> Text
+               -> Text
+               -> Text
+               -> Text
+               -> FV.ViewConfig
+               -> f (Text, Double, Double, Double, Double)
+               -> GV.VegaLite
+demoCompareXYCS labelName xName yName colorName sizeName title vc rows =
+  let  colData (l, x, y, c, s) =  [(labelName, GV.Str l)
+                               , (xName, GV.Number x)
+                               , (yName, GV.Number y)
+                               , (colorName, GV.Number c)
+                               , (sizeName, GV.Number s)
+                               ]
+
+       vlData = GV.dataFromRows [] $ List.concat $ fmap (\r -> GV.dataRow (colData r) []) $ FL.fold FL.list rows
+       encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative]
+       encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative]
+       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative]
+       encS = GV.size [GV.MName sizeName, GV.MmType GV.Quantitative]
+       encLabel = GV.text [GV.TName labelName]
+       labels = (GV.encoding . encX . encY . encLabel) []
+       labelMark = GV.mark GV.Text [GV.MdY 20]
+       labelSpec = GV.asSpec [labels, labelMark]
+       circles = (GV.encoding . encX . encY . encC . encS) []
+       circleSpec = GV.asSpec [circles, GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData]

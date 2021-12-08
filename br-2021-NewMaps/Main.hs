@@ -256,7 +256,7 @@ newMapAnalysis stanParallelCfg parallel = do
   newCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
   ncPaths <- postPaths "NC_Congressional"
   txPaths <- postPaths "TX_Congressional"
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   let ncNMPS = NewMapPostSpec "NC" ncPaths DRADistricts (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   let txNMPS = NewMapPostSpec "TX" txPaths PUMSDistricts (Redistrict.redistrictingPlanID "TX" "Passed" ET.Congressional)
   BR.brNewPost ncPaths postInfo "NC" $ do
@@ -424,8 +424,20 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
           gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
           densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
           foldData = (\a wnh grads d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, d)) <$> allF <*> wnhF <*> gradsF <*> densityF
+--      xyFold' :: _ --FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double, Double)]
+      xyFold' = FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, BRC.PWPopPerSqMile, BRE.ModeledShare])
+               (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
+        where
+          allF = FL.premap (F.rgetField @BRC.Count) FL.sum
+          wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
+          gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
+          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
+          modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
+          foldData = (\a wnh grads d m -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, m, d)) <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
   _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYs
+    $ BRV.demoCompareXYC
     "District"
     "% non-white"
     "% college grad"
@@ -456,6 +468,16 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
        (stateAbbr <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
        draProp
+  _ <- K.addHvega Nothing Nothing
+    $ BRV.demoCompareXYC
+    "District"
+    "% non-white"
+    "% college grad"
+    "log density"
+    (stateAbbr <> " demographic scatter")
+    (FV.ViewConfig 600 600 5)
+    (FL.fold xyFold draProp)
+
   BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis redistrictingPlanID
   davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
@@ -464,6 +486,17 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
           newMapsDRAPlusStateAndStateRace_RaceDensityNC
           davesRedistricting
   when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis: " <> show missing
+{-  _ <- K.addHvega Nothing Nothing
+    $ BRV.demoCompareXYCS
+    "District"
+    "% non-white"
+    "% college grad"
+    "Model D-Share"
+    "log density"
+    (stateAbbr <> " demographic scatter")
+    (FV.ViewConfig 600 600 5)
+    (FL.fold xyFold' modelAndDaves)
+-}
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True
