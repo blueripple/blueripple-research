@@ -395,16 +395,44 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
         = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
+      distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
       raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
-  K.addHvega Nothing Nothing =<<  BRV.demoCompare2
-    ("Race", show . F.rgetField @DT.Race5C, raceSort)
-    ("Education", show . F.rgetField @DT.CollegeGradC, Nothing)
-    (F.rgetField @BRC.Count)
-    ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
-    (Just ("log(Density)", Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
-    (stateAbbr <> " Old: By Race and Education")
+      eduSort = Just $ show <$> [DT.NonGrad, DT.Grad]
+      dSortOld = Just
+                 $ (reverse . fmap fst . sortOn snd)
+                 $ fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
+                 $ FL.fold FL.list oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+  _ <- K.addHvega Nothing Nothing
+       $ BRV.demoCompare3
+       ("Race", show . F.rgetField @DT.Race5C, raceSort)
+       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
+       (F.rgetField @BRC.Count)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, dSortOld)
+       (Just ("log(Density)", Numeric.log . F.rgetField @BRC.PWPopPerSqMile))
+       (stateAbbr <> " Old: By Race and Education")
+       (FV.ViewConfig 600 600 5)
+       extant
+  let safeLog x = if x < 1e-12 then 0 else Numeric.log x
+      xyFold :: FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double)]
+      xyFold = FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, BRC.PWPopPerSqMile])
+               (FMR.foldAndLabel foldData (\k (x,y,z) -> (distLabel k, x, y, z)))
+        where
+          allF = FL.premap (F.rgetField @BRC.Count) FL.sum
+          wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
+          gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
+          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
+          foldData = (\a wnh grads d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, d)) <$> allF <*> wnhF <*> gradsF <*> densityF
+  _ <- K.addHvega Nothing Nothing
+    $ BRV.demoCompareXYs
+    "District"
+    "% non-white"
+    "% college grad"
+    "log density"
+    (stateAbbr <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
-    extant
+    (FL.fold xyFold extant)
   BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
 --  BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
@@ -413,16 +441,21 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
        (stateAbbr <> " 2020: Election vs Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast $ oldMapsCompare)
+  let dSortNew =  Just
+                  $ (reverse . fmap fst . sortOn snd)
+                  $ fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
+                  $ FL.fold FL.list newMapsDRAPlusStateAndStateRace_RaceDensityNC
   BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
-  K.addHvega Nothing Nothing =<<  BRV.demoCompare2
-    ("Race", show . F.rgetField @DT.Race5C, raceSort)
-    ("Education", show . F.rgetField @DT.CollegeGradC, Nothing)
-    (F.rgetField @BRC.Count)
-    ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r)
-    (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile, fmap (fromMaybe 0) FL.last))
-    (stateAbbr <> " New: By Race and Education")
-    (FV.ViewConfig 600 600 5)
-    draProp
+  _ <- K.addHvega Nothing Nothing
+       $ BRV.demoCompare3
+       ("Race", show . F.rgetField @DT.Race5C, raceSort)
+       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
+       (F.rgetField @BRC.Count)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, dSortNew)
+       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile))
+       (stateAbbr <> " New: By Race and Education")
+       (FV.ViewConfig 600 600 5)
+       draProp
   BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
   davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis redistrictingPlanID
   davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
@@ -549,24 +582,33 @@ modelAndElectionScatter single title vc rows =
                                      , GV.PAxis [GV.AxTitle "Election Results"]
                                      , xScale
                                   ]
-      encSurvey = GV.color [GV.MName "CCES DShare"
-                           , GV.MmType GV.Quantitative
-                           ]
       enc45 =  GV.position GV.X [GV.PName "Model_Mid"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
                                   , xScale
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
+      encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
+                                , [GV.TName "Election Result", GV.TmType GV.Quantitative]
+                                , [GV.TName "Model_Mid", GV.TmType GV.Quantitative]
+                                ]
+      encCITooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
+                                  , [GV.TName "Election Result", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model_Lower", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model_Mid", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model_Upper", GV.TmType GV.Quantitative]
+                                  ]
+
       facets = GV.facet [GV.RowBy facetModel]
-      ptEnc = GV.encoding . encModelMid . encElection -- . encSurvey
+      ptEnc = GV.encoding . encModelMid . encElection . encTooltips -- . encSurvey
       lineEnc = GV.encoding . encModelMid . enc45
       labelEnc = ptEnc . encDistrictName
-      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+      ciEnc = GV.encoding . encModelLo . encModelHi . encElection . encCITooltips
+      ciSpec = GV.asSpec [ciEnc [], GV.mark GV.ErrorBar [GV.MTicks [GV.MColor "black"]]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
-      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MTooltip GV.TTData], makeDistrictName []]
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName []]
       finalSpec = if single
-                  then [FV.title title, GV.layer [lineSpec, labelSpec], vlData]
+                  then [FV.title title, GV.layer [lineSpec, labelSpec, ciSpec], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
@@ -585,7 +627,7 @@ modelAndDaveScatterChart single title vc rows =
                                        ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
                                        ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
                                        ]
-                    V.:& FVD.asVLData (GV.Number . (*100)) "Dave"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "DRA"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
@@ -611,7 +653,7 @@ modelAndDaveScatterChart single title vc rows =
                                   , GV.PmType GV.Quantitative
                                   , yScale
                                   ]
-      encDaves = GV.position GV.X [GV.PName "Dave"
+      encDaves = GV.position GV.X [GV.PName "DRA"
                                   , GV.PmType GV.Quantitative
                                   , xScale
                                   , GV.PAxis [GV.AxTitle "DRA D Share"]
@@ -622,12 +664,16 @@ modelAndDaveScatterChart single title vc rows =
                                   , yScale
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
+      encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
+                                , [GV.TName "DRA", GV.TmType GV.Quantitative]
+                                , [GV.TName "Model", GV.TmType GV.Quantitative]
+                                ]
       facets = GV.facet [GV.RowBy facetModel]
-      ptEnc = GV.encoding . encModelMid . encDaves
+      ptEnc = GV.encoding . encModelMid . encDaves . encTooltips
       lineEnc = GV.encoding . encModelMid . enc45
-      labelEnc = ptEnc . encDistrictName
-      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MTooltip GV.TTData], makeDistrictName [] ]
-      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle [GV.MTooltip GV.TTData]]
+      labelEnc = ptEnc . encDistrictName . encTooltips
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName [] ]
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
 
       finalSpec = if single
