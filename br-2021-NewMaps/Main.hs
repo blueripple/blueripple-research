@@ -256,7 +256,7 @@ newMapAnalysis stanParallelCfg parallel = do
   newCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
   ncPaths <- postPaths "NC_Congressional"
   txPaths <- postPaths "TX_Congressional"
-  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
   let ncNMPS = NewMapPostSpec "NC" ncPaths DRADistricts (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
   let txNMPS = NewMapPostSpec "TX" txPaths PUMSDistricts (Redistrict.redistrictingPlanID "TX" "Passed" ET.Congressional)
   BR.brNewPost ncPaths postInfo "NC" $ do
@@ -435,18 +435,33 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
           gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
           densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
           modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
-          foldData = (\a wnh grads d m -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, m, d)) <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
+          foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
+                     <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
+  let (demoElexModelExtant, missing1E, missing2E)
+        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          extant
+          flattenedElections
+          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+  when (not $ null missing1E) $ do
+    BR.logFrame extant
+    K.knitError $ "Missing keys in join of extant demographics and election results:" <> show missing1E
+  when (not $ null missing2E) $ K.knitError $ "Missing keys in join of extant demographics and model:" <> show missing2E
   _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYC
+    $ BRV.demoCompareXYCS
     "District"
     "% non-white"
     "% college grad"
     "log density"
+    "Modeled D-Edge"
     (stateAbbr <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold extant)
+    (FL.fold xyFold' demoElexModelExtant)
+  let (oldMapsCompare, missing)
+        = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          flattenedElections
+          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+  when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
   BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
---  BR.logFrame oldMapsCompare
   _ <- K.addHvega Nothing Nothing
        $ modelAndElectionScatter
        True
@@ -468,6 +483,29 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
        (stateAbbr <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
        draProp
+  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis redistrictingPlanID
+  davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
+  let (demoModelAndDaves, missing1, missing2)
+        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          draProp
+          newMapsDRAPlusStateAndStateRace_RaceDensityNC
+          davesRedistricting
+  when (not $ null missing1) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1
+  when (not $ null missing2) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2
+  _ <- K.addHvega Nothing Nothing
+    $ BRV.demoCompareXYCS
+    "District"
+    "% non-white"
+    "% college grad"
+    "Model D-Edge"
+    "log density"
+    (stateAbbr <> " demographic scatter")
+    (FV.ViewConfig 600 600 5)
+    (FL.fold xyFold' demoModelAndDaves)
+  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
+
+
+{-
   _ <- K.addHvega Nothing Nothing
     $ BRV.demoCompareXYC
     "District"
@@ -477,26 +515,12 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
     (stateAbbr <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
     (FL.fold xyFold draProp)
+-}
 
-  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
-  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis redistrictingPlanID
-  davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
   let (modelAndDaves, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           newMapsDRAPlusStateAndStateRace_RaceDensityNC
           davesRedistricting
-  when (not $ null missing) $ K.knitError $ "Missing keys when joining model results and Dave's redistricting analysis: " <> show missing
-{-  _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYCS
-    "District"
-    "% non-white"
-    "% college grad"
-    "Model D-Share"
-    "log density"
-    (stateAbbr <> " demographic scatter")
-    (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold' modelAndDaves)
--}
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True

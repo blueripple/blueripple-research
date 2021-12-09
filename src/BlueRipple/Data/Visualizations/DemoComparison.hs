@@ -210,8 +210,8 @@ demoCompareXYC labelName xName yName colorName title vc rows =
                                ]
 
        vlData = GV.dataFromRows [] $ List.concat $ fmap (\r -> GV.dataRow (colData r) []) $ FL.fold FL.list rows
-       encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative]
-       encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative]
+       encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
+       encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
        encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative]
        encLabel = GV.text [GV.TName labelName]
        labels = (GV.encoding . encX . encY . encLabel) []
@@ -241,10 +241,10 @@ demoCompareXYCS labelName xName yName colorName sizeName title vc rows =
                                ]
 
        vlData = GV.dataFromRows [] $ List.concat $ fmap (\r -> GV.dataRow (colData r) []) $ FL.fold FL.list rows
-       encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative]
-       encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative]
-       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative]
-       encS = GV.size [GV.MName sizeName, GV.MmType GV.Quantitative]
+       encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
+       encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
+       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative, GV.MScale [GV.SZero False, GV.SScheme "redblue" []]]
+       encS = GV.size [GV.MName sizeName, GV.MmType GV.Quantitative, GV.MScale [GV.SZero False]]
        encLabel = GV.text [GV.TName labelName]
        labels = (GV.encoding . encX . encY . encLabel) []
        labelMark = GV.mark GV.Text [GV.MdY 20]
