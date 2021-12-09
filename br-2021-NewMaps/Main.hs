@@ -247,7 +247,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfo "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
