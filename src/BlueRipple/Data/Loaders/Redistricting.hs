@@ -42,12 +42,12 @@ FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 
 type DRAnalysis = F.Record ([DT.StateAbbreviation, PlanName, ET.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
 
-fixRow :: RedistrictingPlanID -> DRAnalysisRaw -> Maybe DRAnalysis
+fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
 fixRow pi r = Just $ pi F.<+> r
 
 -- this will drop lines where district number doesn't parse as an Int
 loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
-                              =>  RedistrictingPlanID
+                              =>  RedistrictingPlanId
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
 loadRedistrictingPlanAnalysis pi = do
   let noPlanErr = "No plan found for info:" <> show pi

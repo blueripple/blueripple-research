@@ -237,32 +237,32 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
 
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do
-{-
-  K.logLE K.Info "PUMS density !!"
---  let pRowsFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateFIPS r == 37
---  pumsRows_C <- PUMS.pumsRowsLoader $ Just pRowsFilter -- by row from NHGIS ACS
---  K.ignoreCacheTime pumsRows_C >>= BR.logFrame
-  pums_C <- PUMS.pumsLoader Nothing  -- by PUMA
---  let pumsFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateFIPS r == 37
---  K.ignoreCacheTime (fmap (F.filterFrame pumsFilter) pums_C) >>= BR.logFrame
-  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  pumsByCD_C <- BRE.cachedPumsByCD pums_C cdFromPUMA_C
-  let pByCDFilter r = F.rgetField @BR.Year r == 2018 && F.rgetField @BR.StateAbbreviation r == "GA"
-  K.ignoreCacheTime (fmap (F.filterFrame pByCDFilter) pumsByCD_C) >>= BR.logFrame
-  K.knitError "STOP"
--}
   ccesAndPums_C <-  BRE.prepCCESAndPums False
---  cdData_C <- BRC.censusTablesForProposedCDs
-  newCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographics.bin" =<< BRC.censusTablesForProposedCDs
-  ncPaths <- postPaths "NC_Congressional"
-  txPaths <- postPaths "TX_Congressional"
+  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
+  let addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
+      addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+      fixPums :: F.Record BRE.PUMSByCDR -> F.Record PostStratR
+      fixPums = F.rcast . addRace5 . addDistrict . addCount
+      onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
+      onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
   let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
-  let ncNMPS = NewMapPostSpec "NC" ncPaths DRADistricts (Redistrict.redistrictingPlanID "NC" "CST-13" ET.Congressional)
-  let txNMPS = NewMapPostSpec "TX" txPaths PUMSDistricts (Redistrict.redistrictingPlanID "TX" "Passed" ET.Congressional)
+  ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfo "NC" $ do
-    newMapsTest False stanParallelCfg parallel ncNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
+    ncNMPS <- NewMapPostSpec "NC" ncPaths
+              <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
+    newMapsTest False stanParallelCfg parallel ncNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
+
+  txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfo "TX" $ do
-    newMapsTest False stanParallelCfg parallel txNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C) (K.liftActionWithCacheTime newCDs_C)
+    txNMPS <- NewMapPostSpec "TX" txPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
+    newMapsTest False stanParallelCfg parallel txNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
+      (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX" . BRE.pumsRows) ccesAndPums_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -295,9 +295,9 @@ twoPartyDShare r =
 
 addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
-data ExtantDistricts = PUMSDistricts | DRADistricts
+--data ExtantDistricts = PUMSDistricts | DRADistricts
 
-data NewMapPostSpec = NewMapPostSpec Text (BR.PostPaths BR.Abs) ExtantDistricts Redistrict.RedistrictingPlanID
+data NewMapPostSpec = NewMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
 newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             => Bool
@@ -306,35 +306,26 @@ newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             -> NewMapPostSpec
             -> BR.PostInfo
             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
-            -> K.ActionWithCacheTime r (F.FrameRec CDDemographicsR)
+            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
+            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
             -> K.Sem r ()
-newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postPaths extantDistricts redistrictingPlanID) postInfo ccesAndPums_C cdData_C = K.wrapPrefix "newMapsTest" $ do
-  let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
+newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
+  let (NewMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
+      ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
-      addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+
+  {-      addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
       fixPums :: F.Record BRE.PUMSByCDR -> F.Record PostStratR
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       fixCensus :: F.Record CDDemographicsR -> F.Record PostStratR
-      fixCensus = F.rcast
+      fixCensus = F.rcast -}
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => F.FrameRec xs -> F.FrameRec xs
       onlyState = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
-
-  extant_C :: K.ActionWithCacheTime r (F.FrameRec CDDemographicsR) <- fmap onlyState <$> case extantDistricts of
-    DRADistricts -> do
-      censusTables_C <-  BRC.censusTablesForDRACDs
-      fmap onlyState <$> prepCensusDistrictData False "model/NewMaps/DRAMaps.bin" censusTables_C
-    PUMSDistricts -> return (fmap F.rcast <$> cdData_C)
-
-  extant <- K.ignoreCacheTime extant_C
-
-  censusTablesProposed_C <- BRC.censusTablesForProposedCDs
-  draProp_C <- fmap onlyState <$> prepCensusDistrictData False "model/NewMaps/DRAPropMaps.bin" censusTablesProposed_C
-  draProp <- K.ignoreCacheTime draProp_C
 
   let psGroupSet = SB.addGroupToSet BRE.sexGroup
                    $ SB.addGroupToSet BRE.educationGroup
@@ -350,69 +341,37 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name) ccesAndPums2020_C
---  newMapsBase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Proposed" $ fmap fixCensus <$> cdData_C
---  newMapsPlusStateAndStateRace <- model2020 BRE.PlusStateAndStateRace "NC_Proposed" $ fmap fixCensus <$> cdData_C
---  oldMapsBase <- model2020 BRE.Base "NC_Extant" $ fmap fixPums . onlyNC . BRE.pumsRows <$> ccesAndPums2020_C
---  oldMapsDRARaceDensityNC <- model2020 (BRE.Model BRE.BaseG BRE.PlusNCHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRARaceDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHRaceD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRABase <- model2020 (BRE.Model BRE.BaseG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRAEduDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusEduD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRABase_HCStateDensity <- model2020 (BRE.Model BRE.BaseG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRAPlusStateAndStateRace <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.BaseD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
---  oldMapsDRAPlusStateAndStateRace_StateDensityC <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusHStateD) "NC_Extant_DRA" $ (fmap F.rcast <$> draNC_C)
-
-  oldMapsDRAPlusStateAndStateRace_RaceDensityNC
-   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Extant_DRA") $ (fmap F.rcast <$> extant_C)
-  newMapsDRAPlusStateAndStateRace_RaceDensityNC
-   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed_DRA") $ (fmap F.rcast <$> draProp_C)
-
-{-
-  (ccesRawByState', ccesRawByDistrict') <- K.ignoreCacheTimeM $ BRE.ccesDiagnostics ccesAndPums_C
-  let ccesRawByDistrict = fmap addDistrict
-                          $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == stateAbbr)
-                          $ ccesRawByDistrict'
---  BR.logFrame $ ccesRawByDistrict
--}
+  extantPlusStateAndStateRace_RaceDensityNC
+   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedPlusStateAndStateRace_RaceDensityNC
+   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
   elections_C <- BR.houseElectionsWithIncumbency
   elections <- fmap onlyState $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
-  let (oldMapsCompare', missing)
-        = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          flattenedElections
-          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
-{-          (oldMapsDRABase
---            <> oldMapsDRAPlusStateAndStateRace
---            <> oldMapsDRAEduDensity
---            <> oldMapsDRARaceDensityNC
---            <> oldMapsDRABase_HCStateDensity
-            <> oldMapsDRAPlusStateAndStateRace_StateDensityC
---            <> oldMapsDRAPlusStateAndStateRace_RaceDensityNC
-          )
--}
-  when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
-  let oldMapsCompare
-        = F.rcast @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, ElexDShare, (MT.ModelId BRE.Model), BRE.ModeledShare] <$> oldMapsCompare'
+
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
       distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
       raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
       eduSort = Just $ show <$> [DT.NonGrad, DT.Grad]
-      dSortOld = Just
-                 $ (reverse . fmap fst . sortOn snd)
-                 $ fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
-                 $ FL.fold FL.list oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+      modelShareSort = reverse . fmap fst . sortOn snd
+                       . fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
+                       . FL.fold FL.list
+      extantByModelShare = modelShareSort extantPlusStateAndStateRace_RaceDensityNC
+  extantDemo <- K.ignoreCacheTime extantDemo_C
   _ <- K.addHvega Nothing Nothing
        $ BRV.demoCompare3
        ("Race", show . F.rgetField @DT.Race5C, raceSort)
        ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
        (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, dSortOld)
-       (Just ("log(Density)", Numeric.log . F.rgetField @BRC.PWPopPerSqMile))
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just extantByModelShare)
+       (Just ("log(Density)", Numeric.log . F.rgetField @DT.PopPerSqMile))
        (stateAbbr <> " Old: By Race and Education")
        (FV.ViewConfig 600 600 5)
-       extant
+       extantDemo
   let safeLog x = if x < 1e-12 then 0 else Numeric.log x
+{-
       xyFold :: FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double)]
       xyFold = FMR.mapReduceFold
                FMR.noUnpack
@@ -424,26 +383,27 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
           gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
           densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
           foldData = (\a wnh grads d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, d)) <$> allF <*> wnhF <*> gradsF <*> densityF
+-}
 --      xyFold' :: _ --FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double, Double)]
       xyFold' = FMR.mapReduceFold
                FMR.noUnpack
-               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, BRC.PWPopPerSqMile, BRE.ModeledShare])
+               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
                (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
         where
           allF = FL.premap (F.rgetField @BRC.Count) FL.sum
           wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
           gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
-          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
+          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @DT.PopPerSqMile) FL.last
           modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
           foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
                      <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
   let (demoElexModelExtant, missing1E, missing2E)
         = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          extant
+          (onlyState extantDemo)
           flattenedElections
-          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+          extantPlusStateAndStateRace_RaceDensityNC
   when (not $ null missing1E) $ do
-    BR.logFrame extant
+    BR.logFrame extantDemo
     K.knitError $ "Missing keys in join of extant demographics and election results:" <> show missing1E
   when (not $ null missing2E) $ K.knitError $ "Missing keys in join of extant demographics and model:" <> show missing2E
   _ <- K.addHvega Nothing Nothing
@@ -459,7 +419,7 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
   let (oldMapsCompare, missing)
         = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           flattenedElections
-          oldMapsDRAPlusStateAndStateRace_RaceDensityNC
+          extantPlusStateAndStateRace_RaceDensityNC
   when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
   BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
   _ <- K.addHvega Nothing Nothing
@@ -467,31 +427,27 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
        True
        (stateAbbr <> " 2020: Election vs Model")
        (FV.ViewConfig 600 600 5)
-       (fmap F.rcast $ oldMapsCompare)
-  let dSortNew =  Just
-                  $ (reverse . fmap fst . sortOn snd)
-                  $ fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
-                  $ FL.fold FL.list newMapsDRAPlusStateAndStateRace_RaceDensityNC
+       (fmap F.rcast oldMapsCompare)
+  let proposedByModelShare = modelShareSort proposedPlusStateAndStateRace_RaceDensityNC
   BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
+  proposedDemo <- K.ignoreCacheTime proposedDemo_C
   _ <- K.addHvega Nothing Nothing
        $ BRV.demoCompare3
        ("Race", show . F.rgetField @DT.Race5C, raceSort)
        ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
        (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, dSortNew)
-       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @BRC.PWPopPerSqMile))
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
+       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
        (stateAbbr <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
-       draProp
-  davesRedistrictInfo_C <- Redistrict.loadRedistrictingPlanAnalysis redistrictingPlanID
-  davesRedistricting <- fmap addTwoPartyDShare <$> K.ignoreCacheTime davesRedistrictInfo_C
-  let (demoModelAndDaves, missing1, missing2)
+       proposedDemo
+  let (demoModelAndDR, missing1P, missing2P)
         = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          draProp
-          newMapsDRAPlusStateAndStateRace_RaceDensityNC
-          davesRedistricting
-  when (not $ null missing1) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1
-  when (not $ null missing2) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2
+          (onlyState proposedDemo)
+          proposedPlusStateAndStateRace_RaceDensityNC
+          (fmap addTwoPartyDShare drAnalysis)
+  when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
+  when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
   _ <- K.addHvega Nothing Nothing
     $ BRV.demoCompareXYCS
     "District"
@@ -501,34 +457,20 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
     "log density"
     (stateAbbr <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold' demoModelAndDaves)
+    (FL.fold xyFold' demoModelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
-
-
-{-
-  _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYC
-    "District"
-    "% non-white"
-    "% college grad"
-    "log density"
-    (stateAbbr <> " demographic scatter")
-    (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold draProp)
--}
-
-  let (modelAndDaves, missing)
+  let (modelAndDR, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          newMapsDRAPlusStateAndStateRace_RaceDensityNC
-          davesRedistricting
+          proposedPlusStateAndStateRace_RaceDensityNC
+          (fmap addTwoPartyDShare drAnalysis)
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True
        (stateAbbr <> " 2022: DRA vs. Model")
        (FV.ViewConfig 600 600 5)
-       (fmap F.rcast modelAndDaves)
+       (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
-  let sortedModelAndDRA = reverse $ sortOn (F.rgetField @TwoPartyDShare) $ FL.fold FL.list modelAndDaves
+  let sortedModelAndDRA = reverse $ sortOn (F.rgetField @TwoPartyDShare) $ FL.fold FL.list modelAndDR
       longShot ci = MT.ciUpper ci < 0.48
       leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
       leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
@@ -551,14 +493,6 @@ newMapsTest clearCaches stanParallelCfg parallel (NewMapPostSpec stateAbbr postP
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
-{-
-
-  pums2020 <- K.ignoreCacheTime $ fmap BRE.pumsRows ccesAndPums2020_C
-  _ <- K.addHvega Nothing Nothing
-       $ densityHistogram "density" (FV.ViewConfig 600 600 5) id 5000 $ fmap F.rcast pums2020
-  _ <- K.addHvega Nothing Nothing
-       $ densityHistogram "log(density)" (FV.ViewConfig 600 600 5) Numeric.log 0.1 $ fmap F.rcast pums2020
--}
   return ()
 
 daveModelColonnade cas =

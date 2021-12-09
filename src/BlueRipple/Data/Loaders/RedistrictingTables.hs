@@ -45,18 +45,19 @@ redistrictingPath = "data/redistricting"
 
 type PlanName = "PlanName" F.:-> Text
 
-type RedistrictingPlanIDR = [DT.StateAbbreviation, PlanName, ET.DistrictTypeC]
-type RedistrictingPlanID = F.Record RedistrictingPlanIDR
+type RedistrictingPlanIdR = [DT.StateAbbreviation, PlanName, ET.DistrictTypeC]
+type RedistrictingPlanId = F.Record RedistrictingPlanIdR
 data RedistrictingPlanFiles = RedistrictingPlanFiles { districtDemographicsFP :: Text, districtAnalysisFP :: Text } deriving (Show)
 
-redistrictingPlanID :: Text -> Text -> ET.DistrictType -> RedistrictingPlanID
-redistrictingPlanID sa name dt = sa F.&: name F.&: dt F.&: V.RNil
+redistrictingPlanId :: Text -> Text -> ET.DistrictType -> RedistrictingPlanId
+redistrictingPlanId sa name dt = sa F.&: name F.&: dt F.&: V.RNil
 
-plans :: Map RedistrictingPlanID RedistrictingPlanFiles
+plans :: Map RedistrictingPlanId RedistrictingPlanFiles
 plans = M.fromList
   [
-    (redistrictingPlanID "NC" "CST-13" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_NC.csv" "data/redistricting/NC-CST-13.csv")
-  , (redistrictingPlanID "TX" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_TX.csv" "data/redistricting/TX-proposed.csv")
+    (redistrictingPlanId "NC" "CST-13" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_NC.csv" "data/redistricting/NC-CST-13.csv")
+  , (redistrictingPlanId "NC" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_NC.csv" "data/redistricting/NC-CST-13.csv")
+  , (redistrictingPlanId "TX" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_TX.csv" "data/redistricting/TX-proposed.csv")
   ]
 
 redistrictingAnalysisCols :: Set FS.HeaderText

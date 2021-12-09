@@ -398,9 +398,6 @@ cesMR earliestYear = BRF.frameCompactMRM
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCESHouseVotesF
 
-
-
-
 cesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
 cesCountedDemHouseVotesByCD clearCaches = do
   ces_C <- CCES.cesLoader
@@ -625,6 +622,7 @@ groupBuilder :: forall rs ks.
                 , F.ElemOf rs DT.CollegeGradC
                 , F.ElemOf rs DT.SexC
                 , F.ElemOf rs DT.Race5C
+                , F.ElemOf rs DT.HispC
                 , ks F.⊆ rs
                 , Show (F.Record ks)
                 , Typeable rs
@@ -641,7 +639,7 @@ groupBuilder psGroup districts states psKeys = do
   SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
+  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum mergeRace5AndHispanic
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
   cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable $ districtRows . fst)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
@@ -693,6 +691,7 @@ electionModel :: forall rs ks r.
                  , F.ElemOf rs DT.CollegeGradC
                  , F.ElemOf rs DT.SexC
                  , F.ElemOf rs DT.Race5C
+                 , F.ElemOf rs DT.HispC
                  , F.ElemOf rs DT.PopPerSqMile
                  , F.ElemOf rs Census.Count
                  ,  (ks V.++ '[MT.ModelId Model, ModeledShare]) F.⊆  (BR.Year : MT.ModelId Model : (ks V.++ '[ModeledShare]))
@@ -1163,6 +1162,13 @@ race5FromCensus r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+-- many many people who identify as hispanic also identify as white. So we need to choose.
+-- Better to model using both
+mergeRace5AndHispanic r =
+  let r5 = F.rgetField @DT.Race5C r
+      h = F.rgetField @DT.HispC r
+  in if (h == DT.Hispanic) then DT.R5_Hispanic else r5
 
 --sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
 sldKey :: (F.ElemOf rs BR.StateAbbreviation
