@@ -196,6 +196,18 @@ debugCES ces = do
       cesByYearAndGender = FL.fold genderFld ces
   BR.logFrame cesByYearAndGender
 
+debugPUMS :: K.KnitEffects r => F.FrameRec BRE.PUMSByCDR -> K.Sem r ()
+debugPUMS pums = do
+  let aggFld :: FL.Fold (F.Record '[PUMS.Citizens, PUMS.NonCitizens]) (F.Record '[PUMS.Citizens, PUMS.NonCitizens])
+      aggFld = FF.foldAllConstrained @Num FL.sum
+      raceFld = FMR.concatFold
+                  $ FMR.mapReduceFold
+                  FMR.noUnpack
+                  (FMR.assignKeysAndData @[BR.Year, DT.RaceAlone4C, DT.HispC])
+                  (FMR.foldAndAddKey aggFld)
+      pumsByYearAndRace = FL.fold raceFld pums
+  BR.logFrame pumsByYearAndRace
+
 {-
 showVACPS :: (K.KnitEffects r, BR.CacheEffects r) => F.FrameRec BRE.CPSVByCDR -> K.Sem r ()
 showVACPS cps = do
@@ -247,7 +259,13 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+
+  pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
+  debugPUMS pumsTX
+  K.knitError "STOP"
+
+
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfo "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
@@ -255,6 +273,7 @@ newMapAnalysis stanParallelCfg parallel = do
     newMapsTest False stanParallelCfg parallel ncNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
+
 
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfo "TX" $ do

@@ -757,7 +757,8 @@ intToRaceAlone4 rN
 
 intToHisp :: Int -> BR.Hisp
 intToHisp n
-  | n < 2 = BR.NonHispanic
+  | n == 0 = BR.NonHispanic
+  | n > 8 = BR.NonHispanic
   | otherwise = BR.Hispanic
 
 -- NB these codes are only right for (unharmonized) ACS PUMS data from 2018.
