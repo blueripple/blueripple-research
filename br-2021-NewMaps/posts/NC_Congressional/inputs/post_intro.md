@@ -28,7 +28,7 @@ expect for a democratic candidate. We’ll call this the
 
 The standard way to predict “partisan lean” for any district, old or new:
 break it into precincts with known voting history (usually a combination of
-recent presidential, house and governor races) and then aggregate those results to
+recent presidential, house and governors races) and then aggregate those results to
 estimate expected results in the district.
 We’ll call this the “historical model.”
 
@@ -51,18 +51,26 @@ since voting history may be less “sticky” there.
 We decided to take your interest in NC as a good excuse to walk carefully through the model
 as applied to a new map, using NC as a test-case.
 
-To start, we first look to the old districts. This serves to orient us and ensure the model makes
-some sense.  Before we apply the model to these districts, let’s look at the demographics.  The chart
-below shows each of NC’s 2020 districts, with the population broken down by race/ethnicity
-(Black, Latinx, Asian, white-non-Latinx and other) and education (College Grad and non-College Grad).
-Each bar also has a dot representing the (logarithmic) population density[^popDens] of the district.
-The scale for that dot is on the right-side axis of the chart.  For reference, a log density of 5 represents
-about 150 people per square mile and a log density of 8 represents about 3000 people per square mile.
+We started by looking at the old districts. This serves to orient us and ensure the model makes
+some sense. If you’re curious, that analysis is [here][old districts].  The upshot is that the
+model holds up fairly well when compared to the 2020 election results, though it is notably
+more optimistic about D share in very Republican districts than it should be and more
+pessimistic about D-share in very Democratic districts.  We suspect this is an issue about
+how we handle population density and we will update this note if we make any improvements.
 
-[^popDens]: We use logarithms here because
-density varies tremendously over districts, from tens to hundreds of thousands of people per square mile.
-We use population-weighting because the resulting average more closely expresses
-the density of where people actually live.  For example, consider a district made up of a high-density
-city where 90% of the population live and then large but low-density exurbs where the other 10% live.
-Most people in that district live at high density and we want our density to reflect that even though
-the unweighted average density (people/district size) might be smaller.
+For brevity’s sake, let’s cut to the chase! Below we chart the model as applied to the *new*
+districts. We compare this to a traditional historical analysis from the
+excellent [“Dave’s Redistricting”][Daves], also the source of our map for the new districts.
+
+[Daves]: https://davesredistricting.org/maps#home
+
+The Dave’s Redistricting “partisan lean” (converted to 2-party D vote share) is on the x-axis
+and our model estimate on the y-axis,
+as well as a line representing where districts would fall on this scatter-plot if the model
+and election result agreed precisely.  We’ve also included confidence intervals from the model.
+In districts left of the line, the model overrestimated the D vote share and
+underestimated it in districts to the right.
+
+NB: For this and all scatter charts to follow, you
+can pan & zoom by dragging with the mouse or moving the scroll wheel.  To reset the chart,
+hold shift and click with the mouse.

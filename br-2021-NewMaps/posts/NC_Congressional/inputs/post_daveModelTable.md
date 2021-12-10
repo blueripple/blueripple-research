@@ -5,6 +5,9 @@ in NC-14, where DRA sees a competitive lean R district and the model says safe R
 NC-12 and NC-10 where the model sees lean R districts and DRA says safe R, though
 we imagine NC-12 is the more interesting play since DRA is very unlikely to that wrong.
 
+More succinctly:
+
+
 As with many gerrymandered maps, this one makes the minority party very safe in their small number
 of districts and the majority somewhat less safe in theirs. The DRA analysis has most of the R districts
 about R+6 to R+10 but the model sees those, with the exception of NC-14, as R+6 to tied.  Which

@@ -259,7 +259,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
@@ -330,16 +330,10 @@ newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             -> K.Sem r ()
 newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
   let (NewMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
-      ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
+  K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
+  let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
-
-  {-      addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
-      fixPums :: F.Record BRE.PUMSByCDR -> F.Record PostStratR
-      fixPums = F.rcast . addRace5 . addDistrict . addCount
-      fixCensus :: F.Record CDDemographicsR -> F.Record PostStratR
-      fixCensus = F.rcast -}
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => F.FrameRec xs -> F.FrameRec xs
       onlyState = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
@@ -368,8 +362,6 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   elections <- fmap onlyState $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
-
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
   let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
       distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
       raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
@@ -377,37 +369,11 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       modelShareSort = reverse . fmap fst . sortOn snd
                        . fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
                        . FL.fold FL.list
-      extantByModelShare = modelShareSort extantPlusStateAndStateRace_RaceDensityNC
-  extantDemo <- K.ignoreCacheTime extantDemo_C
-  _ <- K.addHvega Nothing Nothing
-       $ BRV.demoCompare3
-       ("Race", show . F.rgetField @DT.Race5C, raceSort)
-       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
-       (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just extantByModelShare)
-       (Just ("log(Density)", Numeric.log . F.rgetField @DT.PopPerSqMile))
-       (stateAbbr <> " Old: By Race and Education")
-       (FV.ViewConfig 600 600 5)
-       extantDemo
-  let safeLog x = if x < 1e-12 then 0 else Numeric.log x
-{-
-      xyFold :: FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double)]
-      xyFold = FMR.mapReduceFold
-               FMR.noUnpack
-               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, BRC.PWPopPerSqMile])
-               (FMR.foldAndLabel foldData (\k (x,y,z) -> (distLabel k, x, y, z)))
-        where
-          allF = FL.premap (F.rgetField @BRC.Count) FL.sum
-          wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
-          gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
-          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @BRC.PWPopPerSqMile) FL.last
-          foldData = (\a wnh grads d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, d)) <$> allF <*> wnhF <*> gradsF <*> densityF
--}
---      xyFold' :: _ --FL.Fold (F.Record CDDemographicsR) [(Text, Double, Double, Double, Double)]
+      safeLog x = if x < 1e-12 then 0 else Numeric.log x
       xyFold' = FMR.mapReduceFold
-               FMR.noUnpack
-               (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
-               (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
+                FMR.noUnpack
+                (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
+                (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
         where
           allF = FL.premap (F.rgetField @BRC.Count) FL.sum
           wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
@@ -416,68 +382,58 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
           modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
           foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
                      <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
-  let (demoElexModelExtant, missing1E, missing2E)
-        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          (onlyState extantDemo)
-          flattenedElections
-          extantPlusStateAndStateRace_RaceDensityNC
-  when (not $ null missing1E) $ do
-    BR.logFrame extantDemo
-    K.knitError $ "Missing keys in join of extant demographics and election results:" <> show missing1E
-  when (not $ null missing2E) $ K.knitError $ "Missing keys in join of extant demographics and model:" <> show missing2E
-  _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYCS
-    "District"
-    "% non-white"
-    "% college grad"
-    "log density"
-    "Modeled D-Edge"
-    (stateAbbr <> " demographic scatter")
-    (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold' demoElexModelExtant)
-  let (oldMapsCompare, missing)
-        = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          flattenedElections
-          extantPlusStateAndStateRace_RaceDensityNC
-  when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
-  BR.brAddPostMarkDownFromFile postPaths "_afterDemographics"
-  _ <- K.addHvega Nothing Nothing
-       $ modelAndElectionScatter
-       True
-       (stateAbbr <> " 2020: Election vs Model")
-       (FV.ViewConfig 600 600 5)
-       (fmap F.rcast oldMapsCompare)
-  let proposedByModelShare = modelShareSort proposedPlusStateAndStateRace_RaceDensityNC
-  BR.brAddPostMarkDownFromFile postPaths "_afterModelElection"
-  proposedDemo <- K.ignoreCacheTime proposedDemo_C
-  _ <- K.addHvega Nothing Nothing
-       $ BRV.demoCompare3
-       ("Race", show . F.rgetField @DT.Race5C, raceSort)
-       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
-       (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
-       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
-       (stateAbbr <> " New: By Race and Education")
-       (FV.ViewConfig 600 600 5)
-       proposedDemo
-  let (demoModelAndDR, missing1P, missing2P)
-        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          (onlyState proposedDemo)
-          proposedPlusStateAndStateRace_RaceDensityNC
-          (fmap addTwoPartyDShare drAnalysis)
-  when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
-  when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
-  _ <- K.addHvega Nothing Nothing
-    $ BRV.demoCompareXYCS
-    "District"
-    "% non-white"
-    "% college grad"
-    "Model D-Edge"
-    "log density"
-    (stateAbbr <> " demographic scatter")
-    (FV.ViewConfig 600 600 5)
-    (FL.fold xyFold' demoModelAndDR)
-  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
+      oldDistrictsNoteName = BR.Used "Old_Districts"
+  extantDemo <- K.ignoreCacheTime extantDemo_C
+  mOldDistrictsUrl <- BR.brNewNote postPaths postInfo oldDistrictsNoteName (stateAbbr <> ": Old Districts") $ do
+    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_intro"
+    let extantByModelShare = modelShareSort extantPlusStateAndStateRace_RaceDensityNC
+    _ <- K.addHvega Nothing Nothing
+         $ BRV.demoCompare
+         ("Race", show . F.rgetField @DT.Race5C, raceSort)
+         ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
+         (F.rgetField @BRC.Count)
+         ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just extantByModelShare)
+         (Just ("log(Density)", Numeric.log . F.rgetField @DT.PopPerSqMile))
+         (stateAbbr <> " Old: By Race and Education")
+         (FV.ViewConfig 600 600 5)
+         extantDemo
+    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsBar"
+    let (demoElexModelExtant, missing1E, missing2E)
+          = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+            (onlyState extantDemo)
+            flattenedElections
+            extantPlusStateAndStateRace_RaceDensityNC
+    when (not $ null missing1E) $ do
+      BR.logFrame extantDemo
+      K.knitError $ "Missing keys in join of extant demographics and election results:" <> show missing1E
+    when (not $ null missing2E) $ K.knitError $ "Missing keys in join of extant demographics and model:" <> show missing2E
+    _ <- K.addHvega Nothing Nothing
+      $ BRV.demoCompareXYCS
+      "District"
+      "% non-white"
+      "% college grad"
+      "Modeled D-Edge"
+      "log density"
+      (stateAbbr <> " demographic scatter")
+      (FV.ViewConfig 600 600 5)
+      (FL.fold xyFold' demoElexModelExtant)
+    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsScatter"
+
+    let (oldMapsCompare, missing)
+          = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+            flattenedElections
+            extantPlusStateAndStateRace_RaceDensityNC
+    when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
+    _ <- K.addHvega Nothing Nothing
+         $ modelAndElectionScatter
+         True
+         (stateAbbr <> " 2020: Election vs Model")
+         (FV.ViewConfig 600 600 5)
+         (fmap F.rcast oldMapsCompare)
+    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterModelElection"
+  oldDistrictsNoteUrl <- K.knitMaybe "extant districts Note Url is Nothing" $ mOldDistrictsUrl
+  let oldDistrictsNoteRef = "[old districts]:" <> oldDistrictsNoteUrl
+  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just oldDistrictsNoteRef)
   let (modelAndDR, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           proposedPlusStateAndStateRace_RaceDensityNC
@@ -512,6 +468,39 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
+  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
+  let proposedByModelShare = modelShareSort proposedPlusStateAndStateRace_RaceDensityNC
+  proposedDemo <- K.ignoreCacheTime proposedDemo_C
+  _ <- K.addHvega Nothing Nothing
+       $ BRV.demoCompare
+       ("Race", show . F.rgetField @DT.Race5C, raceSort)
+       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
+       (F.rgetField @BRC.Count)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
+       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
+       (stateAbbr <> " New: By Race and Education")
+       (FV.ViewConfig 600 600 5)
+       proposedDemo
+  let (demoModelAndDR, missing1P, missing2P)
+        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          (onlyState proposedDemo)
+          proposedPlusStateAndStateRace_RaceDensityNC
+          (fmap addTwoPartyDShare drAnalysis)
+  when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
+  when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
+  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographicsBar"
+  _ <- K.addHvega Nothing Nothing
+    $ BRV.demoCompareXYCS
+    "District"
+    "% non-white"
+    "% college grad"
+    "Modeled D-Edge"
+    "log density"
+    (stateAbbr <> " demographic scatter")
+    (FV.ViewConfig 600 600 5)
+    (FL.fold xyFold' demoModelAndDR)
+  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
+
   return ()
 
 daveModelColonnade cas =
@@ -557,7 +546,7 @@ modelAndElectionScatter single title vc rows =
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
-                    V.:& FVD.asVLData' [("Model_Mid", GV.Number . (*100) . MT.ciMid)
+                    V.:& FVD.asVLData' [("Model", GV.Number . (*100) . MT.ciMid)
                                        ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
                                        ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
                                        ]
@@ -569,32 +558,32 @@ modelAndElectionScatter single title vc rows =
       xScale = GV.PScale [GV.SZero False]
       yScale = GV.PScale [GV.SZero False]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model_Mid"
+      encModelMid = GV.position GV.Y ([GV.PName "Model"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model"]
                                      , GV.PScale [GV.SZero False]
                                      , yScale
+                                     , GV.PAxis [GV.AxTitle "Model"]
                                      ]
 
                                      )
       encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
                                     , GV.PmType GV.Quantitative
-                                    , GV.PAxis [GV.AxTitle "Model (5%)"]
+                                    , GV.PAxis [GV.AxTitle "Model"]
                                     , yScale
                                   ]
       encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle "Model (95%)"]
                                   , yScale
                                   ]
       encElection = GV.position GV.X [GV.PName "Election Result"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Election Results"]
+                                     , GV.PAxis [GV.AxTitle "Election D-Share"]
                                      , xScale
                                   ]
-      enc45 =  GV.position GV.X [GV.PName "Model_Mid"
+      enc45 =  GV.position GV.X [GV.PName "Model"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
+                                  , GV.PAxis [GV.AxTitle "Election D-Share"]
                                   , xScale
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
@@ -610,16 +599,18 @@ modelAndElectionScatter single title vc rows =
                                   ]
 
       facets = GV.facet [GV.RowBy facetModel]
+      selection = (GV.selection . GV.select "view" GV.Interval [GV.Encodings [GV.ChX, GV.ChY], GV.BindScales, GV.Clear "click[event.shiftKey]"]) []
       ptEnc = GV.encoding . encModelMid . encElection . encTooltips -- . encSurvey
+      ptSpec = GV.asSpec [selection, ptEnc [], GV.mark GV.Circle [], selection]
       lineEnc = GV.encoding . encModelMid . enc45
       labelEnc = ptEnc . encDistrictName
       ciEnc = GV.encoding . encModelLo . encModelHi . encElection . encCITooltips
       ciSpec = GV.asSpec [ciEnc [], GV.mark GV.ErrorBar [GV.MTicks [GV.MColor "black"]]]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
-      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName []]
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MdX 20], makeDistrictName []]
       finalSpec = if single
-                  then [FV.title title, GV.layer [lineSpec, labelSpec, ciSpec], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
+                  then [FV.title title, GV.layer [lineSpec, labelSpec, ciSpec, ptSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec, ciSpec, ptSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
 
@@ -637,7 +628,7 @@ modelAndDaveScatterChart single title vc rows =
                                        ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
                                        ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
                                        ]
-                    V.:& FVD.asVLData (GV.Number . (*100)) "DRA"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "DR Lean"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
@@ -658,37 +649,50 @@ modelAndDaveScatterChart single title vc rows =
       encModelLo = GV.position GV.Y [GV.PName "Model (5%)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
+                                  , GV.PAxis [GV.AxTitle "Model"]
                                   ]
       encModelHi = GV.position GV.Y2 [GV.PName "Model (95%)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
+                                  , GV.PAxis [GV.AxNoTitle]
                                   ]
-      encDaves = GV.position GV.X [GV.PName "DRA"
+      encDaves = GV.position GV.X [GV.PName "DR Lean"
                                   , GV.PmType GV.Quantitative
                                   , xScale
-                                  , GV.PAxis [GV.AxTitle "DRA D Share"]
+                                  , GV.PAxis [GV.AxTitle "DR Lean"]
                                   ]
       enc45 =  GV.position GV.X [GV.PName "Model"
                                   , GV.PmType GV.Quantitative
-                                  , GV.PAxis [GV.AxTitle ""]
+                                  , GV.PAxis [GV.AxNoTitle]
                                   , yScale
+                                  , GV.PAxis [GV.AxTitle "DR Lean"]
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
-                                , [GV.TName "DRA", GV.TmType GV.Quantitative]
+                                , [GV.TName "DR Lean", GV.TmType GV.Quantitative]
                                 , [GV.TName "Model", GV.TmType GV.Quantitative]
                                 ]
+      encCITooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
+                                  , [GV.TName "DR Lean", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model (5%)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model (95%)", GV.TmType GV.Quantitative]
+                                  ]
+
       facets = GV.facet [GV.RowBy facetModel]
+      selection = (GV.selection . GV.select "view" GV.Interval [GV.Encodings [GV.ChX, GV.ChY], GV.BindScales, GV.Clear "click[event.shiftKey]"]) []
       ptEnc = GV.encoding . encModelMid . encDaves . encTooltips
       lineEnc = GV.encoding . encModelMid . enc45
       labelEnc = ptEnc . encDistrictName . encTooltips
-      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [], makeDistrictName [] ]
-      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
+      ciEnc = GV.encoding . encModelLo . encModelHi . encDaves . encCITooltips
+      ciSpec = GV.asSpec [ciEnc [], GV.mark GV.ErrorBar [GV.MTicks [GV.MColor "black"]]]
+      labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MdX 20], makeDistrictName [] ]
+      ptSpec = GV.asSpec [selection, ptEnc [], GV.mark GV.Circle []]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
-
+      resolve = GV.resolve . GV.resolution (GV.RAxis [(GV.ChY, GV.Shared)])
       finalSpec = if single
-                  then [FV.title title, GV.layer [lineSpec, labelSpec], vlData]
-                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [lineSpec, labelSpec]]), vlData]
+                  then [FV.title title, GV.layer [ciSpec, lineSpec, labelSpec, ptSpec], vlData]
+                  else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, ciSpec, lineSpec, labelSpec]]), vlData]
   in FV.configuredVegaLite vc finalSpec --
 
 -- fold CES data over districts
