@@ -260,11 +260,11 @@ newMapAnalysis stanParallelCfg parallel = do
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
   let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
-
+{-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
   K.knitError "STOP"
-
+-}
 
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfo "NC" $ do
