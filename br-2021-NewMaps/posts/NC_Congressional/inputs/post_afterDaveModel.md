@@ -1,8 +1,25 @@
-A few observations:
+We generally focus our attention on districts that fall in the 47-53% range of Dem share
+in our demographic model. That’s because we think a 3-point gap is one
+that either party could potentially close with some focused energy,
+resources, and strategic thinking.
 
-- Dale, your original question was about the new NC-1. DRA has that district as safe R (R+9), whereas the model has that at lean R (R+4).
-- DRA sees the new map as 3 safe D (NC-5, NC-6 and NC-9), 1 lean D (NC-2), 2 lean R (NC-4 and NC-14) and the remaining 8 as safe R.
-- Our model sees the new map as 3 safe D, 1 lean D (NC-4, not NC-2), *8* lean R (NC-12, NC-10, NC-2, NC-8, NC-1, NC-13, NC-7, NC-11) and two safe R (NC-14 and NC-3).
+With that in mind,  here are a few observations on the new NC districts:
 
+- First, let’s dispense with the obvious ones. Several NC districts are clearly
+far outside the 3-point range and don’t merit serious investment by Dems
+looking to maximize their impact. Both the demographic model and the historical
+model agree that NC-5, NC-6, and NC-9 are safe D.
+Both models also agree that NC-3 and NC-14 are far out of reach for Dems.
+(We actually think NC-14 is worse for Team Blue than what one might think from historical data.)
+- The historical model says that NC-2 is a D+3 district. We’re actually a bit
+worried about it, because the demographic model pegs it as around R+2.
+Conversely, historical data suggest NC-4 leans Republican (R+3),
+but we actually think this is winnable for Dems (D+2).
+- Folks who rely on historical models would say that the other seven NC districts
+look out of reach for Dems (R+3 or more). But of those,
+we think NC-10 and NC-12 are solidly in-reach for Dems based
+on our demographic model.
 
-That’s perhaps best seen in a table (sorted by DRA Dem vote share):
+Here’s a different look at the data, in a table sorted by the Dem share in our demographic model.
+We’ve also included how pundits are rating the districts
+based on historical data and other factors:

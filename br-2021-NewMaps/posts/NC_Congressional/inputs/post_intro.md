@@ -1,75 +1,38 @@
-# Blue Ripple Model and NC’s new Congressional Map
+# New Maps, New Dem Strategy: Our NC Analysis
 
-About a month ago, Frank and I spoke to Dale about, among other things, looking at new
-congressional maps as they come out in case our demographic models are at all
-useful for your candidate selection work.
+The 2022 Congressional elections wwill involve new maps in many key states.
+Districts will be reshaped, created, and eliminated,
+which will change Dems’ odds in each race.
+How can donors figure out which races have the biggest “bang for buck”
+for flipping tenuous GOP seats or protecting vulnerable Dems?
 
-We’ve spent time on this since then, figuring out where to
-find new maps, determining the best sources for good voting-history-based
-analysis of new districts
-and updating each of our data sources where
-applicable. Each election cycle we update our model and workflow. This year is our first with
-newly drawn maps. We can no longer use the congressional district coding
-already present in our turnout and voting data. Instead we turn to shapefiles for the
-new districts and project existing census data onto those regions. Some of those pieces
-of workflow were new to us.
+To help answer that question, we’ve been building and refining a demographic
+model that predicts Democratic lean in each district based on its
+makeup in terms of race, age, education, and population density.
+We then compare those results to an existing model based on historical
+data to help Dem donors identify races that we think deserve support
+for “offense” or “defense”.
 
-Our model is demographic and geographic. We use turnout and voting data
-(from the [CCES survey][CCES]) based on education, sex, race, population density and state
-to estimate expected turnout and voter preference for various types of people in
-each state.  Then we look at the demographics of a particular district (using tract-level census
-data from the [ACS][ACS]), breaking it down
-into the same categories and use our model to estimate the 2-party vote share we
-expect for a democratic candidate. We’ll call this the
-“demographic model”.
+In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
 
-[CCES]: https://cces.gov.harvard.edu
-[ACS]: https://www.census.gov/programs-surveys/acs/
+    1. Dem-lean by district in NC: our demographic model vs. historical data
+    2. Districts worthy of Dem donor support
+    3. Coming next from Blue Ripple
+    4. Coda #1: Demographics of the new vs. old NC districts
+    5. Coda #2: Brief intro to our methods (for non-experts)
 
-The standard way to predict “partisan lean” for any district, old or new:
-break it into precincts with known voting history (usually a combination of
-recent presidential, house and governors races) and then aggregate those results to
-estimate expected results in the district.
-We’ll call this the “historical model.”
+## 1. Dem-lean by district in NC: our demographic model vs. historical data
 
-The historical model is likely to be more accurate as a predictive tool since
-the same people often vote the same way in subsequent elections.
-So why build a demographic model? We’re interested in
-places where the history may be misleading, either because of the specific story
-in a district or because changing politics or demographics may have altered
-the balance of likely voters but one or both parties are not seeing the threat or new
-opportunity.[^empowerment]
-
-[^empowerment]: We’re also interested in voter empowerment strategies.
-In particular, questions about where and among whom, extra turnout might make a difference.
-The historical model is no help here since it does not attempt to figure out who is voting
-or who they are voting for in a demographically specific way.
-
-This sort of analysis is potentially more useful when the districts are new,
-since voting history may be less “sticky” there.
-
-We decided to take your interest in NC as a good excuse to walk carefully through the model
-as applied to a new map, using NC as a test-case.
-
-We started by looking at the old districts. This serves to orient us and ensure the model makes
-some sense. If you’re curious, that analysis is [here][old districts].  The upshot is that the
-model holds up fairly well when compared to the 2020 election results, though it is notably
-more optimistic about D share in very Republican districts than it should be and more
-pessimistic about D-share in very Democratic districts.  We suspect this is an issue about
-how we handle population density and we will update this note if we make any improvements.
-
-For brevity’s sake, let’s cut to the chase! Below we chart the model as applied to the *new*
-districts. We compare this to a traditional historical analysis from the
-excellent [“Dave’s Redistricting”][Daves], also the source of our map for the new districts.
-
-[Daves]: https://davesredistricting.org/maps#home
-
-The Dave’s Redistricting “partisan lean” (converted to 2-party D vote share) is on the x-axis
-and our model estimate on the y-axis,
-as well as a line representing where districts would fall on this scatter-plot if the model
-and election result agreed precisely.  We’ve also included confidence intervals from the model.
-In districts left of the line, the model overrestimated the D vote share and
-underestimated it in districts to the right.
+Our “demographic” model forecasts the potential Democratic lean of each
+new district in NC based on attributes like race, education, age, and
+population density. In the graph and table below,
+we compare our predictions to a “historical” model built up from precinct-level
+results in prior elections. (See methods at the end of this post for more details.)
+The axes show the projected 2-party Dem vote share with each model.
+The diagonal line represents where districts would fall on this scatter-plot
+if the two models agreed precisely. In districts to the left of the line,
+our demographic model thinks the D vote share is higher than historical results,
+and to the right of the line, we think it’s lower than the historical model predicts.
 
 NB: For this and all scatter charts to follow, you
 can pan & zoom by dragging with the mouse or moving the scroll wheel.  To reset the chart,

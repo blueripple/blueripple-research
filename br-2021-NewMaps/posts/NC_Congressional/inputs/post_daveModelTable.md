@@ -1,18 +1,72 @@
-As we said above, we’d trust the DRA result over ours if we had to predict an election outcome.
-If we were looking at places where we might try to have an impact, we’d be ignoring
-the safe D districts and focusing on NC-2 and NC-4. But then we’d try to understand what’s happening
-in NC-14, where DRA sees a competitive lean R district and the model says safe R, as well as
-NC-12 and NC-10 where the model sees lean R districts and DRA says safe R, though
-we imagine NC-12 is the more interesting play since DRA is very unlikely to that wrong.
+## 2. Districts worthy of Dem donor support
+Based on the results above, we think there are four good options
+for Dem donors in NC: NC-2, NC-4, NC-10, and NC-12:
 
-More succinctly:
+- We agree with the pundits that NC-2 is a toss-up that warrants Dem donor support on defense.
+- We think NC-4 is closer than it appears to the pundits who rely on historical data.
+It’s a good Dem donor investment as a possible pick-up opportunity.
+- Even though pundits rank NC-10 and NC-12 as “safe R,” we think they are
+solid donation options for Dems who want to go on offense and invest in the
+party’s long-term success. We’re not sure these will flip in 2022,
+but based on the underlying demographics we think they’re not as far out of
+reach as pundits are claiming. Even if supporting Dems in these districts
+doesn’t flip them in 2022, we think it could lay the groundwork for success in the near future.
 
+As with many gerrymandered maps, this one makes the minority party very
+safe in their small number of districts and the majority somewhat less safe in theirs.
+Although the historical analysis has most of the R districts about
+R+6 to R+10 our demographic model sees most of them (except NC-14) as much closer,
+between R+6 and tied. That means that in a wave election favoring Dems–admittedly
+not likely in 2022, but you never know!–this map might be surprisingly risky for Republicans.
+And for Dem donors, it points to several giving opportunities that could help move
+the needle in 2022 or future elections.
 
-As with many gerrymandered maps, this one makes the minority party very safe in their small number
-of districts and the majority somewhat less safe in theirs. The DRA analysis has most of the R districts
-about R+6 to R+10 but the model sees those, with the exception of NC-14, as R+6 to tied.  Which
-means that in a wave election favoring Dems, admittedly not the likely scenario in 2022, this map
-might be surprisingly risky for the Republicans.
+If the map changes (there is ongoing litigation) or we update the model enough
+to significantly shift our view on any of this, we’ll update this note (and let you know).
 
-If the map changes (there is ongoing litigation) or we update the model enough to significantly shift our
-view on any of this, we’ll update this note (and let you know).
+## 3.	Coming next from Blue Ripple
+
+Here’s where we’re planning to take these analyses over the next few months:
+- We’re going to do the same type analysis in many (all?) of the states,
+in order to identify the best options for Dem donors in 2022 on both
+offense and defense nationwide.
+- We’re going to continue to refine and improve our demographic model–we’ll
+update this post and others as we do so. Feel free to contact us if you want
+more details on the mechanics, or if you’d like to propose changes or improvements.
+- As maps get solidified, we’ll set up ActBlue donation links for candidates
+(after the primaries) to make it easy for you to donate.
+
+If you want to stay up-to-date, please sign up for our email updates!
+We’re also on Twitter, Facebook, and Github.
+
+## 4. Coda #1: Demographics of new vs. old NC districts
+One thing we haven’t seen discussed very much is how redistricting in NC
+has changed the demographics in each district. As a way of putting the
+demographic model results in context, let’s look at the underlying
+population two different ways:
+
+1. The first chart below shows each of NC’s proposed 2022 districts,
+with the population broken down by race/ethnicity (Black, Hispanic, Asian,
+white-non-Hispanic and other) and education (College Grad and non-College Grad).
+Each bar also has a dot representing the (logarithmic) population density[^popDens]
+of the district.
+The scale for that dot is on the right-side axis of the chart.
+For reference, a log density of 5 represents about 150 people per square mile and a
+log density of 8 represents about 3000 people per square mile.
+We’ve ordered the districts by D-share based on our demographic model,
+which is helpful for understanding how the model responds to demographics and density.
+
+[^popDens]: We use logarithms here because
+density varies tremendously over districts, from tens to hundreds of thousands of people per square mile.
+We use population-weighting because the resulting average more closely expresses
+the density of where people actually live.  For example, consider a district made up of a high-density
+city where 90% of the population live and then large but low-density exurbs where the other 10% live.
+Most people in that district live at high density and we want our density to reflect that even though
+the unweighted average density (people/district size) might be smaller.
+
+2. In the second chart, we look at these demographics a different way,
+placing each NC district according to its proportion of college graduates
+and non-white citizens of voting age. We also indicate (logarithmic)
+population density via the size of the circle and modeled D-edge (D-share minus 50%)
+via color. This makes it easier to see that the model predicts larger D vote-share
+as the district becomes more educated, more non-white and more dense.

@@ -1,19 +1,44 @@
-It’s hard to see anything specific from these charts, though I find them extremely useful as I
-try to understand what might be happening in a specific district. Our impression is that this new
-map has made the safe D
-districts safer by adding voters-of-color (mostly Black voters but also some Hispanic and Asian voters)
-and thus made the rest of the districts easier for Republicans to win by removing those same voters from
-places where they might have made districts competitive.
+It’s hard to see anything specific from these charts, though we are
+continuing to examine them as we try to understand what might be happening
+in each specific district. Overall, our impression is that this new map in NC
+has made the safe D districts safer by adding voters-of-color
+(mostly Black voters but also some Hispanic and Asian voters) and thus
+made the rest of the districts easier for Republicans to win by removing those
+same voters from places where they might have made districts competitive
 
-DRA is the best and simplest tool we’ve found for exploring
-history-based analysis of congressional and state-house maps. Their
-analysis of the new NC map is [here][DaveNC]. According to DRA, the new plan
-heavily favors Republicans, with 8 safe R districts, 3 safe D districts and 3
-more competitive districts, 2 of which favor Rs and one which favors Ds.
+## 5. Coda #2: Brief intro to our methods (for non-experts)
+This part of the post contains a general summary of the math behind what we’re
+doing here intended for non-experts. If you want even more technical details,
+check out the links at the end of this section,
+or visit our Github page, or contact us directly.
 
-To visualize the model results on these new districts, we chart the model estimates vs the DRA estimates for
-the new districts, using the same sort of scatter plot as above, replacing election results from 2020 with DRA
-estimates of partisan lean.  Again, the line represents where each district would fall if the model and DRA
-estimate agree precisely.
+As we’ve discussed before, we refer to our model as a demographic model.
+We use turnout and voting data (from the CCES survey) based on education,
+sex, race, population density and state to estimate expected turnout and voter
+preference for various types of people in each state.
+Then we look at the demographics of a particular district
+(using tract-level census data from the ACS), breaking it down into
+the same categories and use our model to estimate the 2-party
+vote share we expect for a Democratic candidate.
 
-[DaveNC]: https://davesredistricting.org/maps#viewmap::6b4ec494-9f6c-4a60-b32a-86a5b19e762d
+This is in contrast to what we call the historical model.
+This is the standard way to predict “partisan lean” for any district,
+old or new: break it into precincts with known voting history
+(usually a combination of recent presidential, house and governors races)
+and then aggregate those results to estimate expected results in the district.
+
+The historical model is likely to be a pretty accurate “predictor” if you think
+the same people will vote the same way in subsequent elections,
+regardless of where the district lines lie. So why did we build a
+demographic model? Three reasons:
+
+1.	We’re interested in places where the history may be misleading, either because of the specific story in a district or because changing politics or demographics may have altered the balance of likely voters but one or both parties are not seeing the threat or new opportunity.1
+
+2.	Our demographic analysis is potentially more useful when the districts are new, since voting history may be less “sticky” there. For example, if I’m a Dem-leaning voter in a strong-D district, I might not have bothered voting much in the past because I figured my vote didn’t matter. But if I now live in a district that’s more competitive in the new map, I might be much more likely to turn out.
+
+3.	We’re fundamentally interested not so much in predicting what will happen in each district, but what plausibly could happen in each district if Dems applied resources in the right way. The historical model is backward-looking, whereas our demographic model is forward-looking and we think it’s a better guide to inform strategy.
+Two final points. First, when it comes to potential Dem share in each district, we’re continuing to improve and refine our demographic model. For more details on how it works and our prior results, see **here,here,here**. Second, for the historical model comparator, we use data from the excellent “Dave’s Redistricting”, which is also the source of our map for the new districts.
+
+
+1.	We’re also interested in voter empowerment strategies. In particular, questions about where and among whom, extra turnout might make a difference. The historical model is no help here since it does not attempt to figure out who is voting or who they are voting for in a demographically specific way.↩︎
+2.	We use logarithms here because density varies tremendously over districts, from tens to hundreds of thousands of people per square mile. We use population-weighting because the resulting average more closely expresses the density of where people actually live. For example, consider a district made up of a high-density city where 90
