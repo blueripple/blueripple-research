@@ -546,9 +546,9 @@ modelAndElectionScatter single title vc rows =
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
                     V.:& FVD.asVLData (GV.Str . show) "Model"
-                    V.:& FVD.asVLData' [("Model", GV.Number . (*100) . MT.ciMid)
-                                       ,("Model_Upper", GV.Number . (*100) . MT.ciUpper)
-                                       ,("Model_Lower", GV.Number . (*100) . MT.ciLower)
+                    V.:& FVD.asVLData' [("Model (50%)", GV.Number . (*100) . MT.ciMid)
+                                       ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
                                        ]
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
@@ -558,7 +558,7 @@ modelAndElectionScatter single title vc rows =
       xScale = GV.PScale [GV.SZero False]
       yScale = GV.PScale [GV.SZero False]
       facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model"
+      encModelMid = GV.position GV.Y ([GV.PName "Model (50%)"
                                      , GV.PmType GV.Quantitative
                                      , GV.PScale [GV.SZero False]
                                      , yScale
@@ -566,12 +566,12 @@ modelAndElectionScatter single title vc rows =
                                      ]
 
                                      )
-      encModelLo = GV.position GV.Y [GV.PName "Model_Lower"
+      encModelLo = GV.position GV.Y [GV.PName "Model (5%)"
                                     , GV.PmType GV.Quantitative
                                     , GV.PAxis [GV.AxTitle "Model"]
                                     , yScale
                                   ]
-      encModelHi = GV.position GV.Y2 [GV.PName "Model_Upper"
+      encModelHi = GV.position GV.Y2 [GV.PName "Model (95%)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
                                   ]
@@ -580,7 +580,7 @@ modelAndElectionScatter single title vc rows =
                                      , GV.PAxis [GV.AxTitle "Election D-Share"]
                                      , xScale
                                   ]
-      enc45 =  GV.position GV.X [GV.PName "Model"
+      enc45 =  GV.position GV.X [GV.PName "Model (50%)"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
                                   , GV.PAxis [GV.AxTitle "Election D-Share"]
@@ -589,13 +589,13 @@ modelAndElectionScatter single title vc rows =
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
                                 , [GV.TName "Election Result", GV.TmType GV.Quantitative]
-                                , [GV.TName "Model_Mid", GV.TmType GV.Quantitative]
+                                , [GV.TName "Model (50%)", GV.TmType GV.Quantitative]
                                 ]
       encCITooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
                                   , [GV.TName "Election Result", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model_Lower", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model_Mid", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model_Upper", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model (5%)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model (50%)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Model (95%)", GV.TmType GV.Quantitative]
                                   ]
 
       facets = GV.facet [GV.RowBy facetModel]
