@@ -21,5 +21,3 @@ we think NC-10 and NC-12 are solidly in-reach for Dems based
 on our demographic model.
 
 Here’s a different look at the data, in a table sorted by the Dem share in our demographic model.
-We’ve also included how pundits are rating the districts
-based on historical data and other factors:

@@ -259,7 +259,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.OnlineDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
@@ -432,8 +432,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
          (fmap F.rcast oldMapsCompare)
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterModelElection"
   oldDistrictsNoteUrl <- K.knitMaybe "extant districts Note Url is Nothing" $ mOldDistrictsUrl
-  let oldDistrictsNoteRef = "[old districts]:" <> oldDistrictsNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just oldDistrictsNoteRef)
+  let oldDistrictsNoteRef = "[oldDistricts]:" <> oldDistrictsNoteUrl
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
   let (modelAndDR, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           proposedPlusStateAndStateRace_RaceDensityNC
@@ -441,11 +441,11 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True
-       (stateAbbr <> " 2022: DRA vs. Model")
+       (stateAbbr <> " 2022: DR vs. Model")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
-  let sortedModelAndDRA = reverse $ sortOn (F.rgetField @TwoPartyDShare) $ FL.fold FL.list modelAndDR
+  let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
       longShot ci = MT.ciUpper ci < 0.48
       leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
       leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
@@ -457,13 +457,13 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Model"]
       safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Model"
       dra = F.rgetField @TwoPartyDShare
-      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < 0.45) && h == "DRA"
-      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= 0.45 && dra r < 0.50) && h == "DRA"
-      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < 0.55) && h == "DRA"
-      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "DRA"
+      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < 0.45) && h == "Historical"
+      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= 0.45 && dra r < 0.50) && h == "Historical"
+      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < 0.55) && h == "Historical"
+      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "Historical"
       tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
-    (stateAbbr <> " 2022: DRA and Blue Ripple Model (sorted by DRA D Share)")
+    (stateAbbr <> " 2022: DR and Blue Ripple Model (sorted by Model D Share)")
     (BHA.class_ "brTable")
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
@@ -499,7 +499,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
     (stateAbbr <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
     (FL.fold xyFold' demoModelAndDR)
-  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographics"
+  BR.brAddPostMarkDownFromFileWith postPaths "_afterNewDemographics" (Just oldDistrictsNoteRef)
 
   return ()
 
@@ -512,9 +512,9 @@ daveModelColonnade cas =
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "DRA" (BR.toCell cas "DRA" "DRA" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
---     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
      <> C.headed "Model" (BR.toCell cas "Model" "Model" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
+--     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
 --     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
 --     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
