@@ -4,7 +4,7 @@ in each specific district. Overall, our impression is that this new map in NC
 has made the safe D districts safer by adding voters-of-color
 (mostly Black voters but also some Hispanic and Asian voters) and thus
 made the rest of the districts easier for Republicans to win by removing those
-same voters from places where they might have made districts competitive
+same voters from places where they might have made districts competitive.
 
 ## 5. Coda #2: Brief intro to our methods (for non-experts)
 This part of the post contains a general summary of the math behind what we’re

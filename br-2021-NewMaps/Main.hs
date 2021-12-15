@@ -274,7 +274,7 @@ newMapAnalysis stanParallelCfg parallel = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-
+{-
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfo "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
@@ -282,6 +282,7 @@ newMapAnalysis stanParallelCfg parallel = do
     newMapsTest False stanParallelCfg parallel txNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX" . BRE.pumsRows) ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
+-}
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -354,10 +355,24 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name) ccesAndPums2020_C
-  extantPlusStateAndStateRace_RaceDensityNC
-   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  extantBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+  extantBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+--  extantBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+--  proposedBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+{-  extantPlusStateAndStateRace_RaceDensityNC
+   <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.PlusNCHRaceD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedPlusStateAndStateRace_RaceDensityNC
-   <- model2020 (BRE.Model BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+   <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+-}
+{-  extantPlusStateAndStateRace_RaceDensityNC
+   <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedPlusStateAndStateRace_RaceDensityNC
+   <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+-}
+  let extantForPost = extantBaseHV
+      proposedForPost = proposedBaseHV
   elections_C <- BR.houseElectionsWithIncumbency
   elections <- fmap onlyState $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
@@ -386,7 +401,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   extantDemo <- K.ignoreCacheTime extantDemo_C
   mOldDistrictsUrl <- BR.brNewNote postPaths postInfo oldDistrictsNoteName (stateAbbr <> ": Old Districts") $ do
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_intro"
-    let extantByModelShare = modelShareSort extantPlusStateAndStateRace_RaceDensityNC
+    let extantByModelShare = modelShareSort extantBaseHV --extantPlusStateAndStateRace_RaceDensityNC
     _ <- K.addHvega Nothing Nothing
          $ BRV.demoCompare
          ("Race", show . F.rgetField @DT.Race5C, raceSort)
@@ -402,7 +417,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
           = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
             (onlyState extantDemo)
             flattenedElections
-            extantPlusStateAndStateRace_RaceDensityNC
+            extantBaseHV
+--            extantPlusStateAndStateRace_RaceDensityNC
     when (not $ null missing1E) $ do
       BR.logFrame extantDemo
       K.knitError $ "Missing keys in join of extant demographics and election results:" <> show missing1E
@@ -422,12 +438,12 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
     let (oldMapsCompare, missing)
           = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
             flattenedElections
-            extantPlusStateAndStateRace_RaceDensityNC
+            extantForPost
     when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
     _ <- K.addHvega Nothing Nothing
          $ modelAndElectionScatter
          True
-         (stateAbbr <> " 2020: Election vs Model")
+         (stateAbbr <> " 2020: Election vs Demographic Model")
          (FV.ViewConfig 600 600 5)
          (fmap F.rcast oldMapsCompare)
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterModelElection"
@@ -436,12 +452,13 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   let (modelAndDR, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          proposedPlusStateAndStateRace_RaceDensityNC
+          proposedForPost
+--          proposedPlusStateAndStateRace_RaceDensityNC
           (fmap addTwoPartyDShare drAnalysis)
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True
-       (stateAbbr <> " 2022: DR vs. Model")
+       (stateAbbr <> " 2022: Historical vs. Demographic models")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
@@ -463,13 +480,13 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "Historical"
       tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
-    (stateAbbr <> " 2022: DR and Blue Ripple Model (sorted by Model D Share)")
+    (stateAbbr <> " 2022: Blue Ripple Demographic Model and Dave's Redistricting Historical Model")
     (BHA.class_ "brTable")
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
   BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
-  let proposedByModelShare = modelShareSort proposedPlusStateAndStateRace_RaceDensityNC
+  let proposedByModelShare = modelShareSort proposedBaseHV --proposedPlusStateAndStateRace_RaceDensityNC
   proposedDemo <- K.ignoreCacheTime proposedDemo_C
   _ <- K.addHvega Nothing Nothing
        $ BRV.demoCompare
@@ -484,7 +501,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   let (demoModelAndDR, missing1P, missing2P)
         = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
           (onlyState proposedDemo)
-          proposedPlusStateAndStateRace_RaceDensityNC
+          proposedForPost
+--          proposedPlusStateAndStateRace_RaceDensityNC
           (fmap addTwoPartyDShare drAnalysis)
   when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
   when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
@@ -512,8 +530,8 @@ daveModelColonnade cas =
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "Model" (BR.toCell cas "Model" "Model" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
-     <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
+     <> C.headed "Demographic Model" (BR.toCell cas "Model" "Model" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "Historical Model" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
 --     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
 --     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
 --     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
@@ -545,10 +563,10 @@ modelAndElectionScatter single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
                     V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
-                    V.:& FVD.asVLData (GV.Str . show) "Model"
-                    V.:& FVD.asVLData' [("Model (50%)", GV.Number . (*100) . MT.ciMid)
-                                       ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
-                                       ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
+                    V.:& FVD.asVLData (GV.Str . show) "Demographic Model Type"
+                    V.:& FVD.asVLData' [("Demographic Model", GV.Number . (*100) . MT.ciMid)
+                                       ,("Demographic Model (95% CI)", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Demographic Model (5% CI)", GV.Number . (*100) . MT.ciLower)
                                        ]
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
@@ -557,21 +575,21 @@ modelAndElectionScatter single title vc rows =
 --      yScale = GV.PScale [GV.SDomain (GV.DNumbers [30, 80])]
       xScale = GV.PScale [GV.SZero False]
       yScale = GV.PScale [GV.SZero False]
-      facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model (50%)"
+      facetModel = [GV.FName "Demographic Model Type", GV.FmType GV.Nominal]
+      encModelMid = GV.position GV.Y ([GV.PName "Demographic Model"
                                      , GV.PmType GV.Quantitative
                                      , GV.PScale [GV.SZero False]
                                      , yScale
-                                     , GV.PAxis [GV.AxTitle "Model"]
+                                     , GV.PAxis [GV.AxTitle "Demographic Model"]
                                      ]
 
                                      )
-      encModelLo = GV.position GV.Y [GV.PName "Model (5%)"
+      encModelLo = GV.position GV.Y [GV.PName "Demographic Model (5% CI)"
                                     , GV.PmType GV.Quantitative
-                                    , GV.PAxis [GV.AxTitle "Model"]
+                                    , GV.PAxis [GV.AxTitle "Demographic Model"]
                                     , yScale
                                   ]
-      encModelHi = GV.position GV.Y2 [GV.PName "Model (95%)"
+      encModelHi = GV.position GV.Y2 [GV.PName "Demographic Model (95% CI)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
                                   ]
@@ -580,7 +598,7 @@ modelAndElectionScatter single title vc rows =
                                      , GV.PAxis [GV.AxTitle "Election D-Share"]
                                      , xScale
                                   ]
-      enc45 =  GV.position GV.X [GV.PName "Model (50%)"
+      enc45 =  GV.position GV.X [GV.PName "Demographic Model"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle ""]
                                   , GV.PAxis [GV.AxTitle "Election D-Share"]
@@ -589,13 +607,13 @@ modelAndElectionScatter single title vc rows =
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
                                 , [GV.TName "Election Result", GV.TmType GV.Quantitative]
-                                , [GV.TName "Model (50%)", GV.TmType GV.Quantitative]
+                                , [GV.TName "Demographic Model", GV.TmType GV.Quantitative]
                                 ]
       encCITooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
                                   , [GV.TName "Election Result", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model (5%)", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model (50%)", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model (95%)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model (5% CI)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model (95% CI)", GV.TmType GV.Quantitative]
                                   ]
 
       facets = GV.facet [GV.RowBy facetModel]
@@ -623,12 +641,12 @@ modelAndDaveScatterChart :: Bool
 modelAndDaveScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
-                    V.:& FVD.asVLData (GV.Str . show) "Model"
-                    V.:& FVD.asVLData' [("Model", GV.Number . (*100) . MT.ciMid)
-                                       ,("Model (95%)", GV.Number . (*100) . MT.ciUpper)
-                                       ,("Model (5%)", GV.Number . (*100) . MT.ciLower)
+                    V.:& FVD.asVLData (GV.Str . show) "Demographic Model Type"
+                    V.:& FVD.asVLData' [("Demographic Model", GV.Number . (*100) . MT.ciMid)
+                                       ,("Demographic Model (95% CI)", GV.Number . (*100) . MT.ciUpper)
+                                       ,("Demographic Model (5% CI)", GV.Number . (*100) . MT.ciLower)
                                        ]
-                    V.:& FVD.asVLData (GV.Number . (*100)) "DR Lean"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Historical Model"
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
@@ -636,47 +654,47 @@ modelAndDaveScatterChart single title vc rows =
 --      yScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
       xScale = GV.PScale [GV.SZero False]
       yScale = GV.PScale [GV.SZero False]
-      facetModel = [GV.FName "Model", GV.FmType GV.Nominal]
-      encModelMid = GV.position GV.Y ([GV.PName "Model"
+      facetModel = [GV.FName "Demographic Model Type", GV.FmType GV.Nominal]
+      encModelMid = GV.position GV.Y ([GV.PName "Demographic Model"
                                      , GV.PmType GV.Quantitative
-                                     , GV.PAxis [GV.AxTitle "Model"]
+                                     , GV.PAxis [GV.AxTitle "Demographic Model"]
                                      , GV.PScale [GV.SZero False]
                                      , yScale
                                      ]
 
 --                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
                                      )
-      encModelLo = GV.position GV.Y [GV.PName "Model (5%)"
+      encModelLo = GV.position GV.Y [GV.PName "Demographic Model (5% CI)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
-                                  , GV.PAxis [GV.AxTitle "Model"]
+                                  , GV.PAxis [GV.AxTitle "Demographic Model"]
                                   ]
-      encModelHi = GV.position GV.Y2 [GV.PName "Model (95%)"
+      encModelHi = GV.position GV.Y2 [GV.PName "Demographic Model (95% CI)"
                                   , GV.PmType GV.Quantitative
                                   , yScale
                                   , GV.PAxis [GV.AxNoTitle]
                                   ]
-      encDaves = GV.position GV.X [GV.PName "DR Lean"
+      encDaves = GV.position GV.X [GV.PName "Historical Model"
                                   , GV.PmType GV.Quantitative
                                   , xScale
-                                  , GV.PAxis [GV.AxTitle "DR Lean"]
+                                  , GV.PAxis [GV.AxTitle "Historical Model"]
                                   ]
-      enc45 =  GV.position GV.X [GV.PName "Model"
+      enc45 =  GV.position GV.X [GV.PName "Demographic Model"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxNoTitle]
                                   , yScale
-                                  , GV.PAxis [GV.AxTitle "DR Lean"]
+                                  , GV.PAxis [GV.AxTitle "Historical Model"]
                                   ]
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
-                                , [GV.TName "DR Lean", GV.TmType GV.Quantitative]
-                                , [GV.TName "Model", GV.TmType GV.Quantitative]
+                                , [GV.TName "Historical Model", GV.TmType GV.Quantitative]
+                                , [GV.TName "Demographic Model", GV.TmType GV.Quantitative]
                                 ]
       encCITooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
-                                  , [GV.TName "DR Lean", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model (5%)", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model", GV.TmType GV.Quantitative]
-                                  , [GV.TName "Model (95%)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Historical", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model (5% CI)", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model", GV.TmType GV.Quantitative]
+                                  , [GV.TName "Demographic Model (95% CI)", GV.TmType GV.Quantitative]
                                   ]
 
       facets = GV.facet [GV.RowBy facetModel]

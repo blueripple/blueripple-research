@@ -19,5 +19,7 @@ but we actually think this is winnable for Dems (D+2).
 look out of reach for Dems (R+3 or more). But of those,
 we think NC-10 and NC-12 are solidly in-reach for Dems based
 on our demographic model.
-
+- In sum, we think there are 3 safe D (NC-5, NC-6, NC-9), 1 D under threat (NC-2),
+1 flippable to D (NC-4), 2 longshots to flip to D (NC-12 and NC-10) and 7 safe R
+(in ascending order of safeness: NC-8, NC-1, NC-13, NC-7, NC-11, NC-3,NC-14)
 Here’s a different look at the data, in a table sorted by the Dem share in our demographic model.

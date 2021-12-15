@@ -27,6 +27,7 @@ to significantly shift our view on any of this, we’ll update this note (and le
 ## 3.	Coming next from Blue Ripple
 
 Here’s where we’re planning to take these analyses over the next few months:
+
 - We’re going to do the same type analysis in many (all?) of the states,
 in order to identify the best options for Dem donors in 2022 on both
 offense and defense nationwide.
@@ -45,7 +46,7 @@ has changed the demographics in each district. As a way of putting the
 demographic model results in context, let’s look at the underlying
 population two different ways:
 
-1. The first chart below shows each of NC’s proposed 2022 districts,
+- The first chart below shows each of NC’s proposed 2022 districts,
 with the population broken down by race/ethnicity (Black, Hispanic, Asian,
 white-non-Hispanic and other) and education (College Grad and non-College Grad).
 Each bar also has a dot representing the (logarithmic) population density[^popDens]
@@ -56,6 +57,13 @@ log density of 8 represents about 3000 people per square mile.
 We’ve ordered the districts by D-share based on our demographic model,
 which is helpful for understanding how the model responds to demographics and density.
 
+- In the second chart, we look at these demographics a different way,
+placing each NC district according to its proportion of college graduates
+and non-white citizens of voting age. We also indicate (logarithmic)
+population density via the size of the circle and modeled D-edge (D-share minus 50%)
+via color. This makes it easier to see that the model predicts larger D vote-share
+as the district becomes more educated, more non-white and more dense.
+
 [^popDens]: We use logarithms here because
 density varies tremendously over districts, from tens to hundreds of thousands of people per square mile.
 We use population-weighting because the resulting average more closely expresses
@@ -63,10 +71,3 @@ the density of where people actually live.  For example, consider a district mad
 city where 90% of the population live and then large but low-density exurbs where the other 10% live.
 Most people in that district live at high density and we want our density to reflect that even though
 the unweighted average density (people/district size) might be smaller.
-
-2. In the second chart, we look at these demographics a different way,
-placing each NC district according to its proportion of college graduates
-and non-white citizens of voting age. We also indicate (logarithmic)
-population density via the size of the circle and modeled D-edge (D-share minus 50%)
-via color. This makes it easier to see that the model predicts larger D vote-share
-as the district becomes more educated, more non-white and more dense.

@@ -27,7 +27,8 @@ In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
 Our “demographic” model forecasts the potential Democratic lean of each
 new district in NC based on attributes like race, education, age, and
 population density. In the graph and table below,
-we compare our predictions to a [“historical” model][DavesR] built up from precinct-level
+we compare our predictions to a “historical” model (from the excellent
+[Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level
 results in prior elections. (See methods at the end of this post for more details.)
 The axes show the projected 2-party Dem vote share with each model.
 The diagonal line represents where districts would fall on this scatter-plot

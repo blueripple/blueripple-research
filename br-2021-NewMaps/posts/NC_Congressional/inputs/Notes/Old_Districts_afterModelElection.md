@@ -8,10 +8,3 @@ In that range the model does pretty well.
 a log scale, the variation is large and very different state-to-state.  We’ve worked on this some
 without any simple solution.
 If we make significant progress there, we’ll update this note.
-
-Let’s turn to the new districts. We got the new map from an excellent web-site called
-[“Dave’s Redistricting”][Daves] (DRA). We’ll talk more about their analysis below.
-First let’s look at the demographic/density breakdown of these new districts using
-the same type of chart as above.
-
-[Daves]: https://davesredistricting.org/maps#home

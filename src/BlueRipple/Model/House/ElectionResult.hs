@@ -121,6 +121,8 @@ type TVotes = "TVotes" F.:-> Int
 type Voted = "Voted" F.:-> Int
 type HouseVotes = "HouseVotes" F.:-> Int
 type HouseDVotes = "HouseDVotes" F.:-> Int
+type PresVotes = "PresVotes" F.:-> Int
+type PresDVotes = "PresDVotes" F.:-> Int
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
@@ -149,7 +151,7 @@ type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
-type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes]
+type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes, PresVotes, PresDVotes]
 type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataR
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
@@ -381,30 +383,37 @@ ccesCountedDemHouseVotesByCD clearCaches = do
     ccesMR 2012 cces
 -}
 
-countCESHouseVotesF :: FL.Fold (F.Record [CCES.CatalistTurnoutC, CCES.MHouseVoteParty]) (F.Record [Surveyed, Voted, HouseVotes, HouseDVotes])
-countCESHouseVotesF =
+countCESVotesF :: FL.Fold
+                  (F.Record [CCES.CatalistTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
+                  (F.Record [Surveyed, Voted, HouseVotes, HouseDVotes, PresVotes, PresDVotes])
+countCESVotesF =
   let houseVote (MT.MaybeData x) = maybe False (const True) x
       houseDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      presVote (MT.MaybeData x) = maybe False (const True) x
+      presDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
       surveyedF = FL.length
       votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
       houseVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MHouseVoteParty) votedF
       houseDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MHouseVoteParty) votedF
-  in (\s v hv hdv -> s F.&: v F.&: hv F.&: hdv F.&: V.RNil) <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF
+      presVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MPresVoteParty) votedF
+      presDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MPresVoteParty) votedF
+  in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
+     <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
 
 -- using each year's common content
-cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESR) -> m (F.FrameRec CCESByCDR)
+cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESByCDR)
 cesMR earliestYear = BRF.frameCompactMRM
                      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
-                     countCESHouseVotesF
+                     countCESVotesF
 
-cesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
-cesCountedDemHouseVotesByCD clearCaches = do
-  ces_C <- CCES.cesLoader
-  let cacheKey = "model/house/cesByCD.bin"
+cesCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
+cesCountedDemVotesByCD clearCaches = do
+  ces2020_C <- CCES.ces20Loader
+  let cacheKey = "model/house/ces20ByCD.bin"
   when clearCaches $  BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces_C $ \ces -> do
-    cesMR 2012 ces
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
+    cesMR 2020 ces
 
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
@@ -490,7 +499,7 @@ prepCCESAndPums clearCache = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
-  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemHouseVotesByCD clearCache
+  countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByCD_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByCD
   K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
   -- first, do the turnout corrections
@@ -675,13 +684,36 @@ data DensityModel = BaseD
 instance Flat.Flat DensityModel
 type instance FI.VectorFor DensityModel = Vector.Vector
 
-data Model = Model { groupModel :: GroupModel, densityModel :: DensityModel}  deriving (Show, Eq, Ord, Generic)
+data VoteSource = HouseVS | PresVS | CompositeVS deriving (Show, Eq, Ord, Generic)
+instance Flat.Flat VoteSource
+type instance FI.VectorFor VoteSource = Vector.Vector
+printVoteSource :: VoteSource -> Text
+printVoteSource HouseVS = "HouseVotes"
+printVoteSource PresVS = "PresVotes"
+printVoteSource CompositeVS = "CompositeVotes"
+
+
+getVotes :: VoteSource -> (F.Record CCESByCDR -> Int, F.Record CCESByCDR -> Int)
+getVotes HouseVS = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
+getVotes PresVS = (F.rgetField @PresVotes, F.rgetField @PresDVotes)
+getVotes CompositeVS =
+  let hv = F.rgetField @HouseVotes
+      hdv = F.rgetField @HouseVotes
+      pv = F.rgetField @PresVotes
+      pdv = F.rgetField @PresDVotes
+      f h p r = round (realToFrac ((hv r * h r) + (pv r * p r))/realToFrac (hv r + pv r))
+  in (f hv pv, f hdv pdv)
+
+data Model = Model { voteSource :: VoteSource
+                   , groupModel :: GroupModel
+                   , densityModel :: DensityModel
+                   }  deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
 
 modelLabel :: Model -> Text
-modelLabel (Model gm dm) = show gm <> "_" <> show dm
+modelLabel (Model vs gm dm) = printVoteSource vs <> "_" <> show gm <> "_" <> show dm
 
 
 electionModel :: forall rs ks r.
@@ -746,17 +778,19 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
             fePrior = normal 2
 
         let simpleGroupModel x = SB.NonHierarchical SB.STZNone (normal x)
-            muH gn s = "mu" <> s <> "_" <> gn
-            sigmaH gn s = "sigma" <> s <> "_" <> gn
-            hierHPs gn s = M.fromList
+            muV gtt s = SB.StanVar ("mu" <> s <> "_" <> SB.taggedGroupName gtt) SB.StanReal
+            sigmaV gtt s = SB.StanVar ("sigma" <> s <> "_" <> SB.taggedGroupName gtt) SB.StanReal
+            hierHPs gtt s = M.fromList
               [
-                (SB.StanVar (muH gn s) SB.StanReal, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
-              , (SB.StanVar (sigmaH gn s) SB.StanReal, ("<lower=0>", \v -> SB.var v `SB.vectorSample` (SB.normal (Just $ SB.scalar "0") (SB.scalar "2"))))
+                (muV gtt s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+              , (sigmaV gtt s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` (SB.normal (Just $ SB.scalar "0") (SB.scalar "2"))))
               ]
-            hierGroupModel' gn s = SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
-            hierGroupModel gtt s = hierGroupModel' (SB.taggedGroupName gtt) s
---              let gn = SB.taggedGroupName gtt
---              in SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
+            hierGroupModel gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.Centered $ SB.normal (Just $ SB.var $ muV gtt s) (SB.var $ sigmaV gtt s))
+            ncGMCenterF gtt s bv@(SB.StanVar sn st) brv = do
+              bv' <- SB.stanDeclare sn st ""
+              SB.addExprLine ("nonCentered for " <> SB.taggedGroupName gtt)
+                $ SB.vectorizedOne (SB.taggedGroupName gtt) (SB.var bv' `SB.eq` (SB.var (muV gtt s) `SB.plus`  (SB.var (sigmaV gtt s) `SB.times`  SB.var brv)))
+            hierGroupModelNC gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.NonCentered SB.stdNormal (ncGMCenterF gtt s))
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
             groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         -- Turnout
@@ -770,8 +804,13 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         let distT = SB.binomialLogitDist cvap
 
         -- Preference
-        hVotes <- SB.addCountData voteData "HVOTES_C" (F.rgetField @HouseVotes)
-        dVotes <- SB.addCountData voteData "HDVOTES_C" (F.rgetField @HouseDVotes)
+        let (votesF, dVotesF) = getVotes $ voteSource model
+        hVotes <- SB.addCountData voteData "VOTES_C" votesF --(F.rgetField @HouseVotes)
+        dVotes <- SB.addCountData voteData "DVOTES_C" dVotesF --(F.rgetField @HouseDVotes)
+        (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
+        (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
+        (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
+        let distP = SB.binomialLogitDist hVotes
 
         (thetaTMultF, betaTMultF, thetaPMultF, betaPMultF) <- case densityModel model of
           BaseD -> do
@@ -873,10 +912,6 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
           feCDP' <- thetaPMultF (SB.dataSetName voteData) reIndexedQ
           return (reIndexedQ, feCDT', feCDP')
 --        SB.stanBuildError $ "Q'="  <> show q'
-        (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
-        (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
-        (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
-        let distP = SB.binomialLogitDist hVotes
 
         (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- case groupModel model of
               BaseG -> return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
@@ -1047,8 +1082,10 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
               SB.addExprLine "ProbsD" $ SB.var pDVar `SB.eq` pDRHS
 -}
 --        let llArgsT =
+{-
         SB.generateLogLikelihood' voteData ((distT, logitT_ps <$> thetaTMultF (SB.dataSetName voteData) q', votes)
                                              :| [(distP, logitP_ps <$> thetaPMultF (SB.dataSetName voteData) q', dVotes)])
+-}
         return ()
 
       addModelIdAndYear :: F.Record (ks V.++ '[ModeledShare])
@@ -1109,7 +1146,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
     comboDat_C
     stanParallelCfg
     (Just 1000)
-    (Just 0.9)
+    (Just 0.8)
     (Just 10)
 
 
