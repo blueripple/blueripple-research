@@ -29,7 +29,7 @@ new district in NC based on attributes like race, education, age, and
 population density. In the graph and table below,
 we compare our predictions to a “historical” model (from the excellent
 [Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level
-results in prior elections. (See methods at the end of this post for more details.)
+results in prior elections[^voteShare]. (See methods at the end of this post for more details.)
 The axes show the projected 2-party Dem vote share with each model.
 The diagonal line represents where districts would fall on this scatter-plot
 if the two models agreed precisely. In districts to the left of the line,
@@ -41,3 +41,9 @@ can pan & zoom by dragging with the mouse or moving the scroll wheel.  To reset 
 hold shift and click with the mouse.
 
 [DavesR]: https://davesredistricting.org/maps#aboutus
+
+[^voteShare]: One important note about the numbers. Dave’s Redistricting gives
+estimates of Democratic candidate votes, Republican candidate votes and votes
+for other candidates.  We’ve taken those numbers and computed 2-party vote share
+for the Democratic candidate, that is, D Votes/(D Votes + R Votes). That makes it
+comparable with the Demographic model which also produces 2-party vote share.

@@ -10,7 +10,7 @@ same voters from places where they might have made districts competitive.
 This part of the post contains a general summary of the math behind what we’re
 doing here intended for non-experts. If you want even more technical details,
 check out the links at the end of this section,
-or visit our Github page, or contact us directly.
+visit our Github page, or contact us directly.
 
 As we’ve discussed before, we refer to our model as a demographic model.
 We use turnout and voting data (from the [CES][CES] survey) based on education,
@@ -25,10 +25,10 @@ to estimate the 2-party vote share we expect for a Democratic candidate.[^old]
 map, this time comparing to the election results.  For those results, and some
 demographic details of the old districts, click [here][oldDistricts].
 
-This is in contrast to what we call the historical model.
-This is the standard way to predict “partisan lean” for any district,
+This is in contrast to what we call the historical model: a
+standard way to predict “partisan lean” for any district,
 old or new: break it into precincts with known voting history
-(usually a combination of recent presidential, house and governors races)
+(usually a combination of recent presidential, senate and governors races)
 and then aggregate those results to estimate expected results in the district.
 
 The historical model is likely to be a pretty accurate “predictor” if you think

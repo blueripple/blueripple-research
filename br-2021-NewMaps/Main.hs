@@ -259,7 +259,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
@@ -357,12 +357,20 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name) ccesAndPums2020_C
   extantBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
-  extantBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+{-
+  extantPlusStateHV
+    <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedPlusStateHV
+    <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+-}
+{-  extantBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
   extantPlusInteractionsGHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedPlusInteractionsGHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
   extantPlusInteractionsGDHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.PlusInteractionsD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedPlusInteractionsGDHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.PlusInteractionsD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+-}
+
 --  extantBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  proposedBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-  extantPlusStateAndStateRace_RaceDensityNC
@@ -375,8 +383,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   proposedPlusStateAndStateRace_RaceDensityNC
    <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 -}
-  let extantForPost = extantPlusInteractionsGDHV
-      proposedForPost = proposedPlusInteractionsGDHV
+  let extantForPost = extantBaseHV
+      proposedForPost = proposedBaseHV
   elections_C <- BR.houseElectionsWithIncumbency
   elections <- fmap onlyState $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
@@ -473,10 +481,10 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       safeD ci = MT.ciLower ci > 0.52
       mi = F.rgetField @BRE.ModeledShare
       bordered c = "border: 3px solid " <> c
-      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "Model"
-      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["Model"]
-      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Model"]
-      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Model"
+      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "Demographic"
+      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["Demographic"]
+      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Demographic"]
+      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Demographic"
       dra = F.rgetField @TwoPartyDShare
       longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < 0.45) && h == "Historical"
       leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= 0.45 && dra r < 0.50) && h == "Historical"
@@ -484,7 +492,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "Historical"
       tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
-    (stateAbbr <> " 2022: Blue Ripple Demographic Model and Dave's Redistricting Historical Model")
+    ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
@@ -510,7 +518,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
           (fmap addTwoPartyDShare drAnalysis)
   when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
   when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
-  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographicsBar"
+--  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographicsBar"
   _ <- K.addHvega Nothing Nothing
     $ BRV.demoCompareXYCS
     "District"
@@ -534,8 +542,9 @@ daveModelColonnade cas =
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "Demographic Model" (BR.toCell cas "Model" "Model" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
-     <> C.headed "Historical Model" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @TwoPartyDShare))
+--     <> C.headed "Model Variation" (BR.toCell cas "ModelId" "ModelId" (BR.textToStyledHtml . BRE.modelLabel . F.rgetField @(MT.ModelId BRE.Model)))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%2.1f" . (100*) . share50))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.1f" . (100*) . F.rgetField @TwoPartyDShare))
 --     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
 --     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
 --     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))

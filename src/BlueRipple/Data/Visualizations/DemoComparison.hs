@@ -134,11 +134,14 @@ demoCompareXYCS labelName xName yName colorName sizeName title vc rows =
                                , (colorName, GV.Number c)
                                , (sizeName, GV.Number s)
                                ]
-
+       maxF = fmap (fromMaybe 0) $ FL.maximum
+       absMinF = fmap (abs . fromMaybe 0) $ FL.minimum
+       colorVal (_, _, _,c, _) = c
+       colorExtent = FL.fold (FL.premap colorVal (max <$> maxF <*> absMinF)) rows
        vlData = GV.dataFromRows [] $ List.concat $ fmap (\r -> GV.dataRow (colData r) []) $ FL.fold FL.list rows
        encX = GV.position GV.X [GV.PName xName, GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
        encY = GV.position GV.Y [GV.PName yName, GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
-       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative, GV.MScale [GV.SZero False, GV.SScheme "redblue" []]]
+       encC = GV.color [GV.MName colorName, GV.MmType GV.Quantitative, GV.MScale [GV.SDomain (GV.DNumbers [negate colorExtent, colorExtent]), GV.SScheme "redblue" []]]
        encS = GV.size [GV.MName sizeName, GV.MmType GV.Quantitative, GV.MScale [GV.SZero False]]
        encLabel = GV.text [GV.TName labelName]
        labels = (GV.encoding . encX . encY . encLabel) []
