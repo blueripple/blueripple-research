@@ -359,6 +359,10 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   proposedBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
   extantBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedBasePV <- model2020 (BRE.Model BRE.PresVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+  extantPlusInteractionsGHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedPlusInteractionsGHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+  extantPlusInteractionsGDHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.PlusInteractionsD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedPlusInteractionsGDHV <- model2020 (BRE.Model BRE.HouseVS BRE.PlusInteractionsG BRE.PlusInteractionsD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 --  extantBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  proposedBaseCV <- model2020 (BRE.Model BRE.CompositeVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-  extantPlusStateAndStateRace_RaceDensityNC
@@ -371,8 +375,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   proposedPlusStateAndStateRace_RaceDensityNC
    <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateAndStateRaceG BRE.PlusNCHRaceD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 -}
-  let extantForPost = extantBaseHV
-      proposedForPost = proposedBaseHV
+  let extantForPost = extantPlusInteractionsGDHV
+      proposedForPost = proposedPlusInteractionsGDHV
   elections_C <- BR.houseElectionsWithIncumbency
   elections <- fmap onlyState $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)

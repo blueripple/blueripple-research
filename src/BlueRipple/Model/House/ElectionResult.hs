@@ -677,6 +677,7 @@ data DensityModel = BaseD
                   | PlusEduD
                   | PlusRaceD
                   | PlusHRaceD
+                  | PlusInteractionsD
                   | PlusNCHRaceD
                   | PlusHStateD
                   deriving (Show, Eq, Ord, Generic)
@@ -845,14 +846,14 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                 bPMultF' ik x = SB.plus <$> betaPMultF' ik x <*> betaRacePMultF ik x
             return (tTMultF', bTMultF', tPMultF', bPMultF')
           PlusHRaceD -> do
-            let mu s = "muRaceDensity" <> s
-                sigma s = "sigmaRaceDensity" <> s
+            let muV s = SB.StanVar ("muRaceDensity" <> s) SB.StanReal
+                sigmaV s = SB.StanVar ("sigmaRaceDensity" <> s) SB.StanReal
                 hyperParameters s = M.fromList
                   [
-                  (SB.StanVar (mu s) SB.StanReal, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
-                  , (SB.StanVar (sigma s) SB.StanReal, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
                   ]
-                cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
+                cPrior s = SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
                 raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
                 raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
             (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
@@ -861,6 +862,33 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                 tPMultF' ik x = thetaRacePMultF ik x
                 bTMultF' ik x = betaRaceTMultF ik x
                 bPMultF' ik x = betaRacePMultF ik x
+            return (tTMultF', bTMultF', tPMultF', bPMultF')
+          PlusInteractionsD -> do
+            let muV s = SB.StanVar ("muRaceDensity" <> s) SB.StanReal
+                sigmaV s = SB.StanVar ("sigmaRaceDensity" <> s) SB.StanReal
+                hyperParameters s = M.fromList
+                  [
+                  (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                  ]
+                cPrior s = SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
+                raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+                raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
+            (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
+            (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
+            let eduDensityGM = SB.BinarySymmetric fePrior
+                eduDensityFEM = SFE.InteractingFE True educationGroup eduDensityGM
+            (thetaEduTMultF, betaEduTMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "T")
+            (thetaEduPMultF, betaEduPMultF) <- SFE.addFixedEffectsParametersAndPriors eduDensityFEM feMatrices cdData voteData (Just "P")
+            let sexDensityGM = SB.BinarySymmetric fePrior
+                sexDensityFEM = SFE.InteractingFE True sexGroup sexDensityGM
+            (thetaSexTMultF, betaSexTMultF) <- SFE.addFixedEffectsParametersAndPriors sexDensityFEM feMatrices cdData voteData (Just "T")
+            (thetaSexPMultF, betaSexPMultF) <- SFE.addFixedEffectsParametersAndPriors sexDensityFEM feMatrices cdData voteData (Just "P")
+            let add3 x y z = SB.multiOp "+" (x :| [y,z])
+                tTMultF' ik x = add3 <$> thetaRaceTMultF ik x <*> thetaEduTMultF ik x <*> thetaSexTMultF ik x
+                tPMultF' ik x = add3 <$> thetaRacePMultF ik x <*> thetaEduPMultF ik x <*> thetaSexPMultF ik x
+                bTMultF' ik x = add3 <$> betaRaceTMultF ik x <*> betaEduTMultF ik x <*> betaSexTMultF ik x
+                bPMultF' ik x = add3 <$> betaRacePMultF ik x <*> betaEduPMultF ik x <*> betaSexPMultF ik x
             return (tTMultF', bTMultF', tPMultF', bPMultF')
           PlusNCHRaceD -> do
             let muV s = SB.StanVar ("muRaceDensity" <> s) (SB.StanVector feColDim)
