@@ -275,11 +275,15 @@ executable haskell-stan-test
    hs-source-dirs: haskell-stan/test
    main-is: Main.hs
    other-modules: Models
+                , KnitEnvironment
    build-depends: base
+                , bytestring
                 , haskell-stan
                 , hs-cmdstan
                 , knit-haskell
+                , flat
                 , Frames
+                , Frames-serialize
                 , Frames-streamly
                 , lens
                 , relude
