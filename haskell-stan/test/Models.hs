@@ -1,6 +1,10 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications     #-}
 
 module Models where
 
@@ -9,60 +13,114 @@ import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Expressions as SE
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelConfig as SC
+import qualified Stan.ModelRunner as SMR
+import qualified Stan.Parameters as SP
+import qualified CmdStan as CS
 
+import qualified Frames as F hiding (tableTypes)
 import qualified Frames.Streamly.TH as F
 import qualified Frames.Streamly.CSV as F
 
 import qualified Knit.Report as K
 
-relDir :: Text = "haskell-stan/" -- change to "" if this becomes it's own project
-F.tableTypes "FB_Results" (relDir <> "data/football.csv")
-F.tableTypes "FB_Matchups" (relDir <> "data/matchups1.csv")
+import Control.Lens ((^.), view)
+import qualified Stan.ModelRunner as CS
 
-data HomeField = FavoriteField | UnderdogField
+-- remove "haskell-stan" from these paths if this becomes it's own project
+F.tableTypes "FB_Result" ("haskell-stan/test/data/football.csv")
+F.tableTypes "FB_Matchup" ("haskell-stan/test/data/matchups1.csv")
 
-homeField :: F.Record FB_Results -> HomeField
-homeField r = if (F.rgetField @Home == 1) then FavoriteField else UnderdogField
+data HomeField = FavoriteField | UnderdogField deriving (Show, Eq, Ord, Enum, Bounded)
 
-homeFieldG :: S.GroupTypeTag HomeField
-homeFieldG = S.GroupTypeTag "HomeField"
+homeField :: FB_Result -> HomeField
+homeField r = if r ^. home then FavoriteField else UnderdogField
 
-favoriteG :: S.GroupTypeTag Text
-favoriteG = S.GroupTypeTag "Favorite"
+homeFieldG :: S.GroupTypeTag HomeField = S.GroupTypeTag "HomeField"
 
-underdogG :: S.GroupTypeTag Text
-underdogG = S.GroupTypeTag "Underdog"
+favoriteG :: S.GroupTypeTag Text = S.GroupTypeTag "Favorite"
 
-spread :: F.Record FB_Results -> Double
-spread = F.rgetField @Spread
+underdogG :: S.GroupTypeTag Text = S.GroupTypeTag "Underdog"
 
-scoreDiff :: F.Record FB_Results -> Double
-scoreDiff r = realToFrac (F.rgetField @Favorite r) - realToFrac (F.rgetField @Underdog r)
+-- spread :: F.Record FB_Results -> Double
+-- spread = F.rgetField @Spread
 
-groupBuilder :: S.StanGroupBuilderM (F.Frame FB_Results, F.Frame FB_Matchups) ()
+scoreDiff :: FB_Result -> Double
+scoreDiff r = realToFrac (r ^. favorite) - realToFrac (r ^. underdog)
+
+spreadDiff :: FB_Result -> Double
+spreadDiff r = r ^. spread - scoreDiff r
+
+groupBuilder :: S.StanGroupBuilderM (F.Frame FB_Result, F.Frame FB_Matchup) ()
 groupBuilder = do
-  resultsData <- SB.addDataSetToGroupBuilder "Results" (SB.ToFoldable fst)
+  resultsData <- S.addDataSetToGroupBuilder "Results" (S.ToFoldable fst)
   S.addGroupIndexForDataSet homeFieldG resultsData $ S.makeIndexFromEnum homeField
 --  S.addGroupIndexForDataSet favoriteG resultsData $ S.makeIndexFromFoldable show (F.rgetField @FavoriteName) teams
 --  S.addGroupIndexForDataSet underdogG resultsData $ S.makeIndexFromFoldable show (F.rgetField @UnderdogName) teams
   return ()
 
 
-dataAndCodeBuilder :: S.StanBuilderM () (F.Frame FB_Results, F.Frame FB_Matchups) ()
+dataAndCodeBuilder :: S.StanBuilderM () (F.Frame FB_Result, F.Frame FB_Matchup) ()
 dataAndCodeBuilder = do
-  resultsData <- S.dataSetTag @FB_Results "Results"
-  spreadsV <- SBB.addRealData resultsData "spr" (Just 0) Nothing spread
-  sDiffV <- SBB.addRealData resultsData "diff" (Just 0) Nothing scoreDiff
+  resultsData <- S.dataSetTag @FB_Result "Results"
+  spreadDiffV <- SBB.addRealData resultsData "diff" (Just 0) Nothing spreadDiff
   let normal x = SD.normal Nothing $ SE.scalar $ show x
-      muPrior = normal 5
-      sigmaPrior = normal 10
-      dist = SD.normalDist
-  (muV, sigmaV) <- S.inBlock S.SBParametersBlock $ do
-    muV' <- SB.stanDeclare "mu" SB.StanReal ""
-    sigmaV' <- SB.stanDeclare "sigma" SB.StanReal ""
+  (muV, sigmaV) <- S.inBlock S.SBParameters $ do
+    muV' <- S.stanDeclare "mu" S.StanReal ""
+    sigmaV' <- S.stanDeclare "sigma" S.StanReal ""
     return (muV', sigmaV')
-  S.sampleDistV resultsData SD.normalDist (muV, sigmaV) sDiff
+  S.inBlock S.SBModel $ S.addExprLines "priors"
+    [
+      SE.var muV `SE.eq` normal 5
+    , SE.var sigmaV `SE.eq` normal 10
+    ]
+  SBB.sampleDistV resultsData SD.normalDist (S.var muV, S.var sigmaV) spreadDiffV
 
+-- the getParameter function feels like an incantation.  Need to simplify.
 extractResults :: K.KnitEffects r => SC.ResultAction r d S.DataSetGroupIntMaps () ([Double], [Double])
 extractResults = SC.UseSummary f where
   f summary _ _ = do
+    let getParameter n = K.knitEither $ SP.getScalar . fmap CS.percents <$> SP.parseScalar n (CS.paramStats summary)
+    (,) <$> getParameter "mu" <*> getParameter "sigma"
+
+-- This whole thing should be wrapped in the core for this very common variation.
+dataWranglerAndCode :: (K.KnitEffects r, Typeable a)
+                    => K.ActionWithCacheTime r a --(F.Frame FB_Result, F.Frame FB_Matchup)
+                    -> S.StanGroupBuilderM a ()
+                    -> S.StanBuilderM () a ()
+                    -> K.Sem r (SC.DataWrangler a S.DataSetGroupIntMaps (), S.StanCode)
+dataWranglerAndCode data_C gb sb = do
+  dat <- K.ignoreCacheTime data_C
+  let builderWithWrangler = do
+        S.buildGroupIndexes
+        sb
+        jsonF <- S.buildJSONFromDataM
+        intMapsBuilder <- S.intMapsBuilder
+        return
+          $ SC.Wrangle SC.TransientIndex
+          $ \d -> (intMapsBuilder d, jsonF)
+      resE = S.runStanBuilder dat () gb builderWithWrangler
+  K.knitEither $ fmap (\(bs, dw) -> (dw, S.code bs)) resE
+
+runModel :: (K.KnitEffects r, Typeable a)
+         => Bool
+         -> Maybe Text
+         -> Text
+         -> Text
+         -> SC.DataWrangler a b ()
+         -> S.StanCode
+         -> Text
+         -> SC.ResultAction r a b () c
+         -> K.ActionWithCacheTime r a
+         -> K.Sem r (K.ActionWithCacheTime r c)
+runModel clearCaches mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C =
+  K.wrapPrefix "haskell-stan-test.runModel" $ do
+  K.logLE K.Info $ "Running: model=" <> modelName <> " using data=" <> dataName
+  let workDir = fromMaybe "stan" mWorkDir
+      outputLabel = modelName <> "_" <> dataName
+      nSamples = 1000
+      stancConfig = CS.makeDefaultStancConfig (toString $ workDir <> "/" <> modelName) {CS.useOpenCL = False}
+      threadsM = Just (-1)
+  stanConfig <-
+    SC.setSigFigs 4
+    . SC.noLogOfSummary
+    <$> SMR.makeDefaultModelRunnerConfig
