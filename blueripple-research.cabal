@@ -270,6 +270,19 @@ library
   default-language:    Haskell2010
 
 
+executable: haskell-stan-test
+   ghc-options: -Wall -O
+   hs-source-dirs: haskell-stan/test
+   main-is: Main.hs
+   other-modules: Models
+   build-depends: base
+                , haskell-stan
+                , Frames
+                , Frames-streamly
+   mixins:  base hiding (Prelude)
+          , relude (Relude as Prelude
+          , Relude.Extra)
+
 --executable dataLoader
 --  import: deps
 --  ghc-options: -O0

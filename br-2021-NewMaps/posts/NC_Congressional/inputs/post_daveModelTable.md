@@ -37,7 +37,8 @@ then donating to a Dem in NC-10 might fit the bill.
 
 A similar argument, but in reverse, pertains to NC-14.  For some reason, there is a large
 discrepancy between the historical voting patterns of the people in NC-14 and what their
-demographic profile suggests. We’d be skeptical of donating here but some understanding of
+demographic profile suggests. Our model makes us skeptical of donating here despite the
+historical closeness, but some understanding of
 the history of recent elections might be clarifying.
 
 Finally, a few overarching observations.

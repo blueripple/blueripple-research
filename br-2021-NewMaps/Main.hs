@@ -88,7 +88,6 @@ import qualified Stan.ModelBuilder.SumToZero as SB
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
-import BlueRipple.Data.DataFrames (totalIneligibleFelon', Internal)
 import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
 
@@ -259,7 +258,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
+  let postInfo = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
