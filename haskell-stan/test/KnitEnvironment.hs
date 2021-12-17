@@ -22,7 +22,7 @@ type CacheData = BS.ByteString
 type CacheEffects r = K.CacheEffects SerializerC CacheData Text r
 
 knitToIO c x = K.knitHtml c x >>= either err knitDoc where
-  knitDoc = KO.writeAndMakePath "haskell-stan-test/html" toStrict
+  knitDoc = KO.writeAndMakePath "haskell-stan/test/test.html" toStrict
   err = putTextLn . ("Knit Error: " <>) . show
 
 

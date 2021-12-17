@@ -14,22 +14,26 @@ import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.RScriptBuilder as SR
+import qualified CmdStan as CS
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K (cacheTime)
 
+import qualified Data.Text as T
 import qualified Flat
-import qualified CmdStan as CS
-
+import qualified Control.Foldl as FL
+import Control.Lens (view)
 
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
   fbResults_C <- fbResults
   fbMatchups_C <- fbMatchups 1
   let data_C = (,) <$> fbResults_C <*> fbMatchups_C
-  (dw, code) <- dataWranglerAndCode data_C groupBuilder spreadDiffNormal
-  (muCI, sigmaCI) <- K.ignoreCacheTimeM $ runModel False (Just "haskell-stan/test/stan") "normalSpreadDiff" "fb" dw code "" normalParamCIs data_C
-  K.logLE K.Info $ "mu: " <> show muCI
+  teams <- FL.fold (FL.premap (view favoriteName) FL.set) <$> K.ignoreCacheTime fbResults_C
+  (dw, code) <- dataWranglerAndCode data_C (groupBuilder teams) spreadDiffNormal
+  (musCI, sigmaMuCI, sigmaCI) <- K.ignoreCacheTimeM $ runModel False (Just "haskell-stan/test/stan") "normalSpreadDiff" "fb" dw code "" normalParamCIs data_C
+  K.logLE K.Info $ "mus: " <> show musCI
+  K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI
   K.logLE K.Info $ "sigma: " <> show sigmaCI
 
 
@@ -96,7 +100,7 @@ runModel clearCaches mWorkDir modelName dataName dataWrangler stanCode ppName re
   K.logLE (K.Debug 1) $ "houseDataDep: " <> show (K.cacheTime data_C)
   let dataModelDep = const <$> modelDep <*> data_C
       getResults s () inputAndIndex_C = return ()
-      unwraps = [SR.UnwrapNamed ppName ppName]
+      unwraps = if T.null ppName then [] else [SR.UnwrapNamed ppName ppName]
   K.retrieveOrMake @KE.SerializerC @KE.CacheData resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
     SMR.runModel @KE.SerializerC @KE.CacheData

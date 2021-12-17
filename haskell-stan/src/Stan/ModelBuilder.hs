@@ -256,6 +256,14 @@ buildIntMapBuilderF eIntF keyF = DataToIntMap $ Foldl.FoldM step (return IntMap.
     Left msg -> Left $ "Indexing error when trying to build IntMap index: " <> msg
     Right n -> Right $ IntMap.insert n (keyF r) im
 
+dataToIntMapFromFoldable :: forall k r f. (Show k, Ord k, Foldable f) => (r -> k) -> f k -> DataToIntMap r k
+dataToIntMapFromFoldable keyF keys = buildIntMapBuilderF lkUp keyF where
+  keysM :: Map k Int = Map.fromList $ zip (Foldl.fold Foldl.list keys) [1..]
+  lkUp k = maybe (Left $ "dataToIntMapFromFoldable.lkUp: " <> show k <> " not found ") Right $ Map.lookup k keysM
+
+dataToIntMapFromEnum :: forall k r f. (Show k, Enum k, Bounded k, Ord k) => (r -> k) -> DataToIntMap r k
+dataToIntMapFromEnum keyF = dataToIntMapFromFoldable keyF [minBound..maxBound]
+
 getGroupIndex :: forall d r k. Typeable k
               => RowTypeTag r
               -> GroupTypeTag k

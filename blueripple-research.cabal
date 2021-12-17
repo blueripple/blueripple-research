@@ -278,6 +278,8 @@ executable haskell-stan-test
                 , KnitEnvironment
    build-depends: base
                 , bytestring
+                , containers
+                , foldl
                 , haskell-stan
                 , hs-cmdstan
                 , knit-haskell
@@ -288,6 +290,7 @@ executable haskell-stan-test
                 , lens
                 , relude
                 , text
+                , vector
    mixins:  base hiding (Prelude)
           , relude (Relude as Prelude
           , Relude.Extra)
