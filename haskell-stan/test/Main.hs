@@ -23,9 +23,14 @@ import qualified CmdStan as CS
 
 
 main :: IO ()
-main = do
-  let knitConfig = K.KnitConfig
-        (Just "haskell-stan-test")
+main = KE.knitToIO KE.defaultConfig $ do
+  fbResults_C <- fbResults
+  fbMatchups_C <- fbMatchups 1
+  let data_C = (,) <$> fbResults_C <*> fbMatchups_C
+  (dw, code) <- dataWranglerAndCode data_C groupBuilder spreadDiffNormal
+  (muCI, sigmaCI) <- K.ignoreCacheTimeM $ runModel False (Just "haskell-stan/test/stan") "normalSpreadDiff" "fb" dw code "" normalParamCIs data_C
+  K.logLE K.Info $ "mu: " <> show muCI
+  K.logLE K.Info $ "sigma: " <> show sigmaCI
 
 
 

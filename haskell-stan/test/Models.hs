@@ -8,6 +8,8 @@
 
 module Models where
 
+import qualified KnitEnvironment as KE
+
 import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Expressions as SE
@@ -18,6 +20,9 @@ import qualified CmdStan as CS
 
 import qualified Frames as F hiding (tableTypes)
 import qualified Frames.Streamly.TH as F
+import qualified Frames.Streamly.LoadInCore as F
+import qualified Frames.Streamly.Streaming.Class as FSC
+import qualified Frames.Streamly.Streaming.Streamly as FS
 
 import qualified Knit.Report as K
 
@@ -26,6 +31,34 @@ import Control.Lens ((^.), view)
 -- remove "haskell-stan" from these paths if this becomes it's own project
 F.tableTypes "FB_Result" ("haskell-stan/test/data/football.csv")
 F.tableTypes "FB_Matchup" ("haskell-stan/test/data/matchups1.csv")
+
+
+fbResults :: forall r.(K.KnitEffects r, KE.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.Frame FB_Result))
+fbResults = do
+  let cacheKey :: Text = "data/fbResults.bin"
+      fp = "haskell-stan/test/data/football.csv"
+  fileDep <- K.fileDependency fp
+  sf <- K.retrieveOrMake @KE.SerializerC @KE.CacheData cacheKey fileDep
+        $ const
+        $ fmap KE.fromFrame
+        $ K.liftKnit -- we have to run this in IO since K.Sem r does not support Monad Control
+        $ FSC.runSafe @F.DefaultStream
+        $ F.loadInCore @F.DefaultStream @IO fB_ResultParser fp Just
+  return $ fmap KE.toFrame sf
+
+fbMatchups :: forall r.(K.KnitEffects r, KE.CacheEffects r) => Int -> K.Sem r (K.ActionWithCacheTime r (F.Frame FB_Matchup))
+fbMatchups n = do
+  let cacheKey :: Text = "data/fbMatchups" <> show n <> ".bin"
+      fp = "haskell-stan/test/data/matchups" <> show n <> ".csv"
+  fileDep <- K.fileDependency fp
+  sf <- K.retrieveOrMake @KE.SerializerC @KE.CacheData cacheKey fileDep
+        $ const
+        $ fmap KE.fromFrame
+        $ K.liftKnit -- we have to run this in IO since K.Sem r does not support Monad Control
+        $ FSC.runSafe @F.DefaultStream
+        $ F.loadInCore @F.DefaultStream @IO fB_MatchupParser fp Just
+  return $ fmap KE.toFrame sf
+
 
 data HomeField = FavoriteField | UnderdogField deriving (Show, Eq, Ord, Enum, Bounded)
 
@@ -55,10 +88,10 @@ groupBuilder = do
 --  S.addGroupIndexForDataSet underdogG resultsData $ S.makeIndexFromFoldable show (F.rgetField @UnderdogName) teams
   return ()
 
-dataAndCodeBuilder :: S.StanBuilderM () (F.Frame FB_Result, F.Frame FB_Matchup) ()
-dataAndCodeBuilder = do
+spreadDiffNormal :: S.StanBuilderM () (F.Frame FB_Result, F.Frame FB_Matchup) ()
+spreadDiffNormal = do
   resultsData <- S.dataSetTag @FB_Result "Results"
-  spreadDiffV <- SBB.addRealData resultsData "diff" (Just 0) Nothing spreadDiff
+  spreadDiffV <- SBB.addRealData resultsData "diff" Nothing Nothing spreadDiff
   let normal x = SD.normal Nothing $ SE.scalar $ show x
   (muV, sigmaV) <- S.inBlock S.SBParameters $ do
     muV' <- S.stanDeclare "mu" S.StanReal ""
@@ -66,14 +99,14 @@ dataAndCodeBuilder = do
     return (muV', sigmaV')
   S.inBlock S.SBModel $ S.addExprLines "priors"
     [
-      SE.var muV `SE.eq` normal 5
-    , SE.var sigmaV `SE.eq` normal 10
+      SE.var muV `SE.vectorSample` normal 5
+    , SE.var sigmaV `SE.vectorSample` normal 10
     ]
   SBB.sampleDistV resultsData SD.normalDist (S.var muV, S.var sigmaV) spreadDiffV
 
 -- the getParameter function feels like an incantation.  Need to simplify.
-extractResults :: K.KnitEffects r => SC.ResultAction r d S.DataSetGroupIntMaps () ([Double], [Double])
-extractResults = SC.UseSummary f where
+normalParamCIs :: K.KnitEffects r => SC.ResultAction r d S.DataSetGroupIntMaps () ([Double], [Double])
+normalParamCIs = SC.UseSummary f where
   f summary _ _ = do
     let getParameter n = K.knitEither $ SP.getScalar . fmap CS.percents <$> SP.parseScalar n (CS.paramStats summary)
     (,) <$> getParameter "mu" <*> getParameter "sigma"
