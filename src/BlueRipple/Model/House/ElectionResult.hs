@@ -643,16 +643,16 @@ groupBuilder :: forall rs ks.
              -> [F.Record ks]
              -> SB.StanGroupBuilderM (CCESAndPUMS, F.FrameRec rs) ()
 groupBuilder psGroup districts states psKeys = do
-  voterData <- SB.addDataSetToGroupBuilder "VoteData" (SB.ToFoldable $ ccesRows . fst)
+  voterData <- SB.addDataSetToGroupBuilder SB.ModelUse "VoteData" (SB.ToFoldable $ ccesRows . fst)
   SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum mergeRace5AndHispanic
   SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
-  cdData <- SB.addDataSetToGroupBuilder "CDData" (SB.ToFoldable $ districtRows . fst)
+  cdData <- SB.addDataSetToGroupBuilder SB.ModelUse "CDData" (SB.ToFoldable $ districtRows . fst)
   SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
-  psData <- SB.addDataSetToGroupBuilder "DistrictPS" (SB.ToFoldable snd)
+  psData <- SB.addDataSetToGroupBuilder SB.GQOnlyUse "DistrictPS" (SB.ToFoldable snd)
   SB.addGroupIndexForDataSet stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForDataSet educationGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
   SB.addGroupIndexForDataSet sexGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
