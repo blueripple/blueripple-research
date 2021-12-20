@@ -16,15 +16,19 @@ import qualified Knit.Effect.Serialize            as K
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Text as T
 
+data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq)
+
+type SamplesPrefixMap = Map SamplesKey Text
 
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
   , mrcStanExeConfig :: CS.StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcModelDir :: T.Text
-  , mrcModel :: T.Text
-  , mrcDatFile :: T.Text
-  , mrcOutputPrefix :: T.Text
+  , mrcModelName :: T.Text
+  , mrcGQName :: Maybe T.Text -- provide if there will be runs differing only in GQ
+  , mrcDataName :: T.Text
+--  , mrcOutputPrefix :: SampleFiles
   , mrcNumChains :: Int
   , mrcNumThreads :: Int
   , mrcAdaptDelta :: Maybe Double
@@ -32,6 +36,23 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcLogSummary :: Bool
   , mrcRunDiagnose :: Bool
   }
+
+samplesPrefixCacheKey :: ModelRunnerConfig -> Text
+samplesPrefixCacheKey config = mrcModelDir config <> "/" <> mrcModelName config <> "/" <> mrcDataName config
+
+modelFileName :: ModelRunnerConfig -> Text
+modelFileName config = mrcModelName config <> ".stan"
+
+modelDependency :: forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
+modelDependency config = K.fileDependency modelFile  where
+  modelFile = addDirFP (toString $ mrcModelDir config) (toString $ modelFileName config)
+
+samplesPrefixCache :: forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r)
+                => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
+samplesPrefixCache config = do
+  let modelDep = K.fi
+  K.retrieveOrMake (samplesPrefixCacheKey config) deps $ \() -> do
+
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }

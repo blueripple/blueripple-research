@@ -1303,8 +1303,8 @@ stanModelAsText gq sm =
              <> genLogLikelihoodBlock sm
              <> "\n"
 
-modelFile :: T.Text -> T.Text
-modelFile modelNameT = modelNameT <> ".stan"
+--modelFile :: T.Text -> T.Text
+--modelFile modelNameT = modelNameT <> ".stan"
 
 -- The file is either not there, there but the same, or there but different so we
 -- need an available file name to proceed
