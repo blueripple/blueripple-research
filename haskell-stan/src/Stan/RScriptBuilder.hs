@@ -54,7 +54,7 @@ rReadStanCSV config fitName =
   in  fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") (SC.stanOutputFiles config) <> ")"
 
 rStanModel :: SC.ModelRunnerConfig -> T.Text
-rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SB.modelFile (SC.mrcModel config) <> ")"
+rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SC.modelFileName config <> ")"
 
 llName :: Text -> Text
 llName = ("ll_" <>)
@@ -74,7 +74,7 @@ rExtract fitName = "extract(" <> fitName <> ")"
 rReadJSON :: SC.ModelRunnerConfig -> T.Text
 rReadJSON config =
   let modelDir = SC.mrcModelDir config
-  in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.mrcDatFile config <> "\")"
+  in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.modelDataFileName config <> "\")"
 
 rMessage :: T.Text -> T.Text
 rMessage t = "sink(stderr())\n" <> rPrint t <> "\nsink()\n"
@@ -144,7 +144,7 @@ looScript config looName nCores =
 
 compareScript :: Foldable f => f SC.ModelRunnerConfig -> Int -> Maybe Text -> Text
 compareScript configs nCores mOutCSV =
-  let  doOne (n, c) = looOne c (SC.mrcOutputPrefix c) (Just $ "model" <> show n) nCores
+  let  doOne (n, c) = looOne c (SC.outputPrefix c) (Just $ "model" <> show n) nCores
        (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
        looScripts = mconcat $ fmap doOne  $ zip [1..] configList
        compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")\n"
