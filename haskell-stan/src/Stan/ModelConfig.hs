@@ -13,7 +13,7 @@ module Stan.ModelConfig where
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Knit.Report as K
-import qualified Knit.Effect.Serialize as K
+--import qualified Knit.Effect.Serialize as K
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -48,7 +48,7 @@ modelFileName config = mrcModelName config <> ".stan"
 addModelDirectory :: ModelRunnerConfig -> Text -> Text
 addModelDirectory config x = mrcModelDir config <> "/" <> x
 
-modelDependency :: forall st cd r. (K.KnitEffects r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
+modelDependency :: K.KnitEffects r => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
 modelDependency config = K.fileDependency (toString modelFile)  where
   modelFile = addModelDirectory config (modelFileName config)
 
@@ -58,7 +58,7 @@ modelDataFileName config = mrcDataName config <> ".json"
 gqDataFileName :: ModelRunnerConfig -> Maybe Text
 gqDataFileName config = fmap (<> ".json") $ mrcGQName config
 
-dataDependency :: forall st cd r. (K.KnitEffects r) => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
+dataDependency :: K.KnitEffects r => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
 dataDependency config = do
   modelDataDep <- K.fileDependency $ (toString $ addModelDirectory config $ ("data/" <> modelDataFileName config))
   case gqDataFileName config of
@@ -67,8 +67,10 @@ dataDependency config = do
       gqDataDep <- K.fileDependency $ (toString $ addModelDirectory config fn)
       return $ const <$> modelDataDep <*> gqDataDep
 
+
+type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
 -- if the cached map is outdated, return an empty one
-samplesPrefixCache :: forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+samplesPrefixCache :: forall st cd r. KnitStan st cd r
                 => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
 samplesPrefixCache config = do
   dataDep <- dataDependency config
@@ -84,7 +86,7 @@ samplesPrefix config =
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
-samplesFileNames ::  forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+samplesFileNames ::  forall st cd r. KnitStan st cd r
                  => ModelRunnerConfig -> SamplesKey -> K.Sem r (K.ActionWithCacheTime r [Text])
 samplesFileNames config key = do
   samplePrefixCache_C <- samplesPrefixCache @st @cd config
@@ -101,13 +103,13 @@ samplesFileNames config key = do
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
-modelSamplesFileNames :: forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+modelSamplesFileNames :: forall st cd r. KnitStan st cd r
                       => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r [Text])
 modelSamplesFileNames config = samplesFileNames @st @cd config ModelSamples
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
-gqSamplesFileNames :: forall st cd r. (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+gqSamplesFileNames :: forall st cd r. KnitStan st cd r
                    => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r [Text])
 gqSamplesFileNames config = do
   case mrcGQName config of

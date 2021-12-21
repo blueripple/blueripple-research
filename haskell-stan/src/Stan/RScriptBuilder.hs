@@ -26,6 +26,8 @@ import qualified System.Process as Process
 import qualified Streamly.Prelude as Streamly
 import qualified Text.Printf as Printf
 import qualified Data.Vinyl as V
+import qualified Knit.Report as K
+
 
 
 type StreamlyS = StreamlyStream SerialT
@@ -48,10 +50,11 @@ rSetWorkingDirectory config dirBase = do
   return $ "setwd(\"" <> cwd <> "\")"
 -}
 
-rReadStanCSV :: SC.ModelRunnerConfig -> T.Text -> T.Text
-rReadStanCSV config fitName =
+rReadStanCSV :: SC.KnitStan st cd r => SC.ModelRunnerConfig -> T.Text -> K.Sem r Text
+rReadStanCSV config fitName = do
   let modelDir = SC.mrcModelDir config
-  in  fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") (SC.stanOutputFiles config) <> ")"
+  modelSamplesFileNames <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames config
+  return $ fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") modelSamplesFileNames <> ")"
 
 rStanModel :: SC.ModelRunnerConfig -> T.Text
 rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SC.modelFileName config <> ")"
@@ -96,8 +99,9 @@ unwrap :: UnwrapJSON -> T.Text
 unwrap (UnwrapNamed jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
 unwrap (UnwrapExpr je rn) = rn <> " <- " <> je <> "\n"
 
-shinyStanScript :: SC.ModelRunnerConfig -> [UnwrapJSON] -> T.Text
-shinyStanScript config unwrapJSONs =
+shinyStanScript :: SC.KnitStan st cd r => SC.ModelRunnerConfig -> [UnwrapJSON] -> K.Sem r T.Text
+shinyStanScript config unwrapJSONs = do
+  readStanCSV <- rReadStanCSV config "stanfit"
   let unwrapCode = if null unwrapJSONs
                    then ""
                    else
@@ -108,12 +112,12 @@ shinyStanScript config unwrapJSONs =
       rScript = addLibs libsForShinyStan
                 <> "\n"
                 <> rMessageText "Loading csv output.  Might take a minute or two..." <> "\n"
-                <> rReadStanCSV config "stanFit" <> "\n"
+                <> readStanCSV <> "\n"
                 <> unwrapCode
 --                <> "stanFit@stanModel <- " <> rStanModel config
                 <> rMessageText "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanFit)\n"
-  in rScript
+  return rScript
 
 looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
 looOne config fitName mLooName nCores =
