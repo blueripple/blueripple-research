@@ -22,15 +22,18 @@ data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq)
 
 type SamplesPrefixMap = Map SamplesKey Text
 
+data RunnerInputNames = RunnerInputNames
+                        { rinModelDir :: Text
+                        , rinModel :: Text
+                        , rinGQ :: Maybe Text
+                        , rinData :: Text
+                        }  deriving (Show, Ord, Eq)
+
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
   , mrcStanExeConfig :: CS.StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
-  , mrcModelDir :: T.Text
-  , mrcModelName :: T.Text
-  , mrcGQName :: Maybe T.Text -- provide if there will be runs differing only in GQ
-  , mrcDataName :: T.Text
---  , mrcOutputPrefix :: SampleFiles
+  , mrcInputNames :: RunnerInputNames
   , mrcNumChains :: Int
   , mrcNumThreads :: Int
   , mrcAdaptDelta :: Maybe Double
@@ -39,67 +42,87 @@ data ModelRunnerConfig = ModelRunnerConfig
   , mrcRunDiagnose :: Bool
   }
 
-samplesPrefixCacheKey :: ModelRunnerConfig -> Text
-samplesPrefixCacheKey config = mrcModelDir config <> "/" <> mrcModelName config <> "/" <> mrcDataName config
+mrcModelDir :: ModelRunnerConfig -> Text
+mrcModelDir = rinModelDir . mrcInputNames
 
-modelFileName :: ModelRunnerConfig -> Text
-modelFileName config = mrcModelName config <> ".stan"
+samplesPrefixCacheKey :: RunnerInputNames -> Text
+samplesPrefixCacheKey rin = rinModelDir rin <> "/" <> rinModel rin <> "/" <> rinData rin
 
-addModelDirectory :: ModelRunnerConfig -> Text -> Text
-addModelDirectory config x = mrcModelDir config <> "/" <> x
+modelFileName :: RunnerInputNames -> Text
+modelFileName rin = rinModel rin <> ".stan"
 
-modelDependency :: K.KnitEffects r => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelDependency config = K.fileDependency (toString modelFile)  where
-  modelFile = addModelDirectory config (modelFileName config)
+addModelDirectory :: RunnerInputNames -> Text -> Text
+addModelDirectory rin x = rinModelDir rin <> "/" <> x
 
-modelDataFileName :: ModelRunnerConfig -> Text
-modelDataFileName config = mrcDataName config <> ".json"
+modelDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelDependency rin = K.fileDependency (toString modelFile)  where
+  modelFile = addModelDirectory rin (modelFileName rin)
 
-gqDataFileName :: ModelRunnerConfig -> Maybe Text
-gqDataFileName config = fmap (<> ".json") $ mrcGQName config
+modelDataFileName :: RunnerInputNames -> Text
+modelDataFileName rin = rinData rin <> ".json"
 
-dataDependency :: K.KnitEffects r => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-dataDependency config = do
-  modelDataDep <- K.fileDependency $ (toString $ addModelDirectory config $ ("data/" <> modelDataFileName config))
-  case gqDataFileName config of
+gqDataFileName :: RunnerInputNames -> Maybe Text
+gqDataFileName rin = fmap (<> ".json") $ rinGQ rin
+
+modelDataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelDataDependency rin = K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> modelDataFileName rin))
+
+gqDataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (Maybe (K.ActionWithCacheTime r ()))
+gqDataDependency rin = case gqDataFileName rin of
+  Nothing -> return Nothing
+  Just gqName -> do
+    dep <- K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> gqName))
+    return $ Just dep
+
+dataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+dataDependency rin = do
+  modelDataDep <- modelDataDependency rin
+  gqDataDepM <- gqDataDependency rin
+  case gqDataDepM of
     Nothing -> return modelDataDep
-    Just fn -> do
-      gqDataDep <- K.fileDependency $ (toString $ addModelDirectory config fn)
-      return $ const <$> modelDataDep <*> gqDataDep
-
+    Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
 
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
 -- if the cached map is outdated, return an empty one
 samplesPrefixCache :: forall st cd r. KnitStan st cd r
-                => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
-samplesPrefixCache config = do
-  dataDep <- dataDependency config
-  modelDep <- modelDependency config
-  let deps = const <$> dataDep <*> modelDep
-  K.retrieveOrMake @st @cd (samplesPrefixCacheKey config) deps $ const $ return mempty
+                   => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
+samplesPrefixCache rin = do
+  modelDataDep <- modelDataDependency rin
+  modelDep <- modelDependency rin
+  let deps = const <$> modelDataDep <*> modelDep
+  K.retrieveOrMake @st @cd (samplesPrefixCacheKey rin) deps $ const $ return mempty
 
-samplesPrefix :: ModelRunnerConfig -> Text
-samplesPrefix config =
-  mrcModelName config
-  <> "_" <> mrcDataName config
-  <> fromMaybe "" (("_" <>) <$> mrcGQName config)
+modelGQName :: RunnerInputNames -> Text
+modelGQName rin =
+  rinModel rin
+  <> "_" <> rinData rin
+  <> fromMaybe "" (("_" <>) <$> rinGQ rin)
+
+-- This is not atomic so care should be used that only one thread uses it at a time.
+-- I should fix this in knit-haskell where I could provide an atomic update.
+samplesPrefix ::  forall st cd r. KnitStan st cd r
+                 => RunnerInputNames -> SamplesKey -> K.Sem r (K.ActionWithCacheTime r Text)
+samplesPrefix rin key = do
+  samplePrefixCache_C <- samplesPrefixCache @st @cd rin
+  samplePrefixCache <- K.ignoreCacheTime samplePrefixCache_C
+  p <- case M.lookup key samplePrefixCache of
+    Nothing -> do -- missing so use prefix from current setup
+      let prefix = modelGQName rin
+      K.store @st @cd (samplesPrefixCacheKey rin) $ M.insert key prefix samplePrefixCache
+      return prefix
+    Just prefix -> return prefix -- exists, so use those files
+  return $ const p <$> samplePrefixCache_C
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesFileNames ::  forall st cd r. KnitStan st cd r
                  => ModelRunnerConfig -> SamplesKey -> K.Sem r (K.ActionWithCacheTime r [Text])
 samplesFileNames config key = do
-  samplePrefixCache_C <- samplesPrefixCache @st @cd config
-  samplePrefixCache <- K.ignoreCacheTime samplePrefixCache_C
-  case M.lookup key samplePrefixCache of
-    Nothing -> do -- missing so use prefix from current setup
-      let prefix = samplesPrefix config
-      K.store @st @cd (samplesPrefixCacheKey config) $ M.insert key prefix samplePrefixCache
-      let files = addModelDirectory config . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..mrcNumChains config]
-      return $ const files <$> samplePrefixCache_C
-    Just prefix -> do -- exists, so use those files
-      let files = addModelDirectory config . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..mrcNumChains config]
-      return $ const files <$> samplePrefixCache_C
+  let rin = mrcInputNames config
+  prefix_C <- samplesPrefix @st @cd rin key
+  prefix <- K.ignoreCacheTime prefix_C
+  let files = addModelDirectory rin . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..mrcNumChains config]
+  return $ const files <$> prefix_C
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
@@ -112,11 +135,9 @@ modelSamplesFileNames config = samplesFileNames @st @cd config ModelSamples
 gqSamplesFileNames :: forall st cd r. KnitStan st cd r
                    => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r [Text])
 gqSamplesFileNames config = do
-  case mrcGQName config of
+  case rinGQ (mrcInputNames config) of
     Nothing -> return $ pure []
     Just gqName -> samplesFileNames @st @cd config (GQSamples gqName)
-
-
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }
@@ -189,7 +210,7 @@ sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe ""
 --stanOutputFiles config = fmap (toText . outputFile (outputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
 
 summaryFileName :: ModelRunnerConfig -> T.Text
-summaryFileName config = samplesPrefix config <> ".json"
+summaryFileName config = modelGQName (mrcInputNames config) <> ".json"
 
 summaryFilePath :: ModelRunnerConfig -> T.Text
-summaryFilePath config = mrcModelDir config <> "/output/" <> summaryFileName config
+summaryFilePath config = rinModelDir (mrcInputNames config) <> "/output/" <> summaryFileName config

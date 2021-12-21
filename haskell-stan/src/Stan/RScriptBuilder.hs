@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -27,13 +28,14 @@ import qualified Streamly.Prelude as Streamly
 import qualified Text.Printf as Printf
 import qualified Data.Vinyl as V
 import qualified Knit.Report as K
+import qualified Stan.ModelConfig as SC
 
 
 
 type StreamlyS = StreamlyStream SerialT
 
-libsForShinyStan = ["rstan", "shinystan", "rjson"]
-libsForLoo = ["rstan", "shinystan", "loo", "bayesplot"]
+libsForShinyStan :: [Text] = ["rstan", "shinystan", "rjson"]
+libsForLoo :: [Text] = ["rstan", "shinystan", "loo", "bayesplot"]
 
 addLibs :: [T.Text] -> T.Text
 addLibs = foldMap addOneLib where
@@ -50,14 +52,16 @@ rSetWorkingDirectory config dirBase = do
   return $ "setwd(\"" <> cwd <> "\")"
 -}
 
-rReadStanCSV :: SC.KnitStan st cd r => SC.ModelRunnerConfig -> T.Text -> K.Sem r Text
+rReadStanCSV :: forall st cd r. SC.KnitStan st cd r => SC.ModelRunnerConfig -> T.Text -> K.Sem r Text
 rReadStanCSV config fitName = do
   let modelDir = SC.mrcModelDir config
-  modelSamplesFileNames <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames config
+  modelSamplesFileNames <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames @st @cd config
   return $ fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") modelSamplesFileNames <> ")"
 
 rStanModel :: SC.ModelRunnerConfig -> T.Text
-rStanModel config = "stan_model(" <> SC.mrcModelDir config <> "/" <> SC.modelFileName config <> ")"
+rStanModel config =
+  let rin = SC.mrcInputNames config
+      in "stan_model(" <> SC.rinModelDir rin <> "/" <> SC.modelFileName rin <> ")"
 
 llName :: Text -> Text
 llName = ("ll_" <>)
@@ -77,7 +81,7 @@ rExtract fitName = "extract(" <> fitName <> ")"
 rReadJSON :: SC.ModelRunnerConfig -> T.Text
 rReadJSON config =
   let modelDir = SC.mrcModelDir config
-  in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.modelDataFileName config <> "\")"
+  in "jsonData <- fromJSON(file = \"" <> modelDir <> "/data/" <> SC.modelDataFileName (SC.mrcInputNames config) <> "\")"
 
 rMessage :: T.Text -> T.Text
 rMessage t = "sink(stderr())\n" <> rPrint t <> "\nsink()\n"
@@ -99,9 +103,9 @@ unwrap :: UnwrapJSON -> T.Text
 unwrap (UnwrapNamed jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
 unwrap (UnwrapExpr je rn) = rn <> " <- " <> je <> "\n"
 
-shinyStanScript :: SC.KnitStan st cd r => SC.ModelRunnerConfig -> [UnwrapJSON] -> K.Sem r T.Text
+shinyStanScript :: forall st cd r. SC.KnitStan st cd r => SC.ModelRunnerConfig -> [UnwrapJSON] -> K.Sem r T.Text
 shinyStanScript config unwrapJSONs = do
-  readStanCSV <- rReadStanCSV config "stanfit"
+  readStanCSV <- rReadStanCSV @st @cd config "stanfit"
   let unwrapCode = if null unwrapJSONs
                    then ""
                    else
@@ -119,13 +123,14 @@ shinyStanScript config unwrapJSONs = do
                 <> "launch_shinystan(stanFit)\n"
   return rScript
 
-looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
-looOne config fitName mLooName nCores =
+looOne :: forall st cd r. SC.KnitStan st cd r => SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> K.Sem r Text
+looOne config fitName mLooName nCores = do
+  readStanCSV <- rReadStanCSV @st @cd config fitName
   let psisName = "psis_" <> fitName
       looName = fromMaybe ("loo_" <> fitName) mLooName
       samplesName = "samples_" <> fitName
       rScript =  rMessageText ("Loading csv output for " <> fitName <> ".  Might take a minute or two...") <> "\n"
-                 <> rReadStanCSV config fitName <> "\n"
+                 <> readStanCSV <> "\n"
                  <> rMessageText "Extracting log likelihood for loo..." <> "\n"
                  <> llName fitName <> " <-" <> rExtractLogLikelihood fitName <> "\n"
                  <> rMessageText "Computing r_eff for loo..." <> "\n"
@@ -138,24 +143,25 @@ looOne config fitName mLooName nCores =
                  <> rMessageText ("Placing samples in " <> samplesName) <> "\n"
                  <> samplesName <> " <- " <> rExtract fitName <> "\n"
                  <> rMessageText ("E.g., 'ppc_loo_pit_qq(y,as.matrix(" <> samplesName <> "$y_ppred)," <> psisName <> "$log_weights)'") <> "\n"
-  in rScript
+  return rScript
 
-looScript :: SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
-looScript config looName nCores =
-  let justLoo = looOne config "stanFit" (Just looName) nCores
-  in addLibs libsForLoo <> justLoo
+looScript ::  forall st cd r. SC.KnitStan st cd r => SC.ModelRunnerConfig -> T.Text-> Int -> K.Sem r T.Text
+looScript config looName nCores = do
+  justLoo <- looOne @st @cd config "stanFit" (Just looName) nCores
+  return $  addLibs libsForLoo <> justLoo
 
 
-compareScript :: Foldable f => f SC.ModelRunnerConfig -> Int -> Maybe Text -> Text
-compareScript configs nCores mOutCSV =
-  let  doOne (n, c) = looOne c (SC.outputPrefix c) (Just $ "model" <> show n) nCores
+compareScript ::  forall st cd r f. (SC.KnitStan st cd r, Foldable f)
+              => f SC.ModelRunnerConfig -> Int -> Maybe Text -> K.Sem r Text
+compareScript configs nCores mOutCSV = do
+  let  doOne (n, c) = looOne @st @cd c (SC.modelGQName $ SC.mrcInputNames c) (Just $ "model" <> show n) nCores
        (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
-       looScripts = mconcat $ fmap doOne  $ zip [1..] configList
        compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")\n"
        writeTable = rMessage "c,simplify=FALSE" <> "\n"
        writeCSV = "write.csv(c" <> maybe ")\n" (\csvName -> "," <> csvName <> ")\n") mOutCSV
-       rScript = addLibs libsForLoo <> looScripts  <> compare <> writeTable <> writeCSV
-  in rScript
+  looScripts <- mconcat <$> (traverse doOne  $ zip [1..] configList)
+  let  rScript = addLibs libsForLoo <> looScripts  <> compare <> writeTable <> writeCSV
+  return rScript
 
 -- The below requires Frames and thus adds a dependency
 
@@ -172,15 +178,17 @@ type SE_LOOIC = "se_looic" F.:-> Double
 type LOO_DataR = [ELPD_Diff, SE_Diff, ELPD_Loo, SE_ELPD_Loo, P_Loo, SE_P_Loo, LOOIC, SE_LOOIC]
 type LOO_R = Model : LOO_DataR
 
-compareModels :: (Foldable f, Functor f) => f (Text, SC.ModelRunnerConfig) -> Int -> IO (F.FrameRec LOO_R)
+compareModels :: forall st cd r f. (SC.KnitStan st cd r, Traversable f)
+              => f (Text, SC.ModelRunnerConfig) -> Int -> K.Sem r (F.FrameRec LOO_R)
 compareModels configs nCores = do
-  let script = compareScript (snd <$> configs) nCores Nothing
-      cp = Process.proc "R" ["BATCH", "--no-save", "--no-restore"]
-  putTextLn "Running R for loo comparisons..."
-  rOut <- toText <$> Process.readCreateProcess cp (toString script)
+  script <- compareScript @st @cd (snd <$> configs) nCores Nothing
+  let cp = Process.proc "R" ["BATCH", "--no-save", "--no-restore"]
+  K.liftKnit  @IO $ putTextLn "Running R for loo comparisons..."
+  rOut <- toText <$> (K.liftKnit $ Process.readCreateProcess cp (toString script))
   putTextLn "R finished."
   let sRText = Streamly.filter (not . T.isPrefixOf ">") $ Streamly.fromList $ lines rOut
-  fLooRaw :: F.FrameRec LOO_R <- FStreamly.inCoreAoS @_ @_ @StreamlyS
+  fLooRaw :: F.FrameRec LOO_R <- K.liftKnit @IO
+                                 $ FStreamly.inCoreAoS @_ @_ @StreamlyS
                                  $ FStreamly.streamTable
                                  $ StreamlyStream
                                  $ Streamly.map (T.split (== ','))
