@@ -38,6 +38,8 @@ import qualified Stan.RScriptBuilder as SR
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
+import System.Process (runInteractiveCommand)
+import Stan.ModelConfig (modelDataDependency)
 
 makeDefaultModelRunnerConfig :: K.KnitEffects r
   => SC.RunnerInputNames
@@ -62,10 +64,17 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
                               <> newName <> "\"."
 --  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDir modelName)
-  modelFileDep <- SC.modelDependency
-  modelSamplesPrefixDep <- SC.samplesPrefix runnerInputNames SC.ModelSamples
-  outputPrefix <- SC.samplesPrefix
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
+
+
+
+  modelFileDep <- SC.modelDependency runnerInputNames
+  modelDataDep <- SC.modelDataDependency runnerInputNames
+  let modelSamplesDeps = (,) <$> modelFileDep <*> modelDataDep
+  modelSamplesFileNames <- SC.modelSamplesFileNames runnerInputNames
+  let stanExeConfig = if modelSamplesFileNames >
+  outputPrefix <- SC.samplesPrefix
+
       stanExeConfig =
         (CS.makeDefaultSample (T.unpack modelNameT) Nothing)
           { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS),
@@ -96,6 +105,14 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
       maxTreeDepthM
       True
       True
+
+
+runSamplerExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
+runSamplerExeConfig = undefined
+
+runGQExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
+runGQExeConfig = undefined
+
 
 modelCacheTime :: forall r. (K.KnitEffects r)
                => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
