@@ -200,8 +200,8 @@ addDirT dir fp = dir <> "/" <> fp
 addDirFP :: FilePath -> FilePath -> FilePath
 addDirFP dir fp = dir ++ "/" ++ fp
 
-defaultDatFile :: T.Text -> FilePath
-defaultDatFile modelNameT = toString modelNameT ++ ".json"
+defaultDataFileName :: T.Text -> T.Text
+defaultDataFileName modelNameT = modelNameT <> ".json"
 
 sampleFile :: T.Text -> Maybe Int -> FilePath
 sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"

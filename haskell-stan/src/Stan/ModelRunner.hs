@@ -47,6 +47,7 @@ makeDefaultModelRunnerConfig ::
   Maybe (SB.GeneratedQuantities, SB.StanModel) ->
   Maybe T.Text ->
   Maybe T.Text ->
+  Maybe T.Text ->
   Int ->
   Maybe Int ->
   Maybe Int ->
@@ -55,7 +56,9 @@ makeDefaultModelRunnerConfig ::
   Maybe Int ->
   Maybe CS.StancConfig ->
   K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM outputFilePrefixM numChains numThreadsM numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
+makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM gqFileM outputFilePrefixM numChains numThreadsM numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
+  let datFileNameT =  fromMaybe (SC.defaultDataFileName modelNameT) datFileM
+      runnerInputNames = SC.RunnerInputNames modelDirT modelNameT gqFileM dataFileNameT
   let modelDirS = T.unpack modelDirT
       outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
       numThreads = fromMaybe numChains numThreadsM -- default to one thread per chain
