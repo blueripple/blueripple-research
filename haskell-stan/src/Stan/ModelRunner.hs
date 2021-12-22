@@ -39,40 +39,32 @@ import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
 
-makeDefaultModelRunnerConfig ::
-  K.KnitEffects r =>
-  T.Text ->
-  T.Text ->
+makeDefaultModelRunnerConfig :: K.KnitEffects r
+  => SC.RunnerInputNames
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
-  Maybe (SB.GeneratedQuantities, SB.StanModel) ->
-  Maybe T.Text ->
-  Maybe T.Text ->
-  Maybe T.Text ->
-  Int ->
-  Maybe Int ->
-  Maybe Int ->
-  Maybe Int ->
-  Maybe Double ->
-  Maybe Int ->
-  Maybe CS.StancConfig ->
-  K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig modelDirT modelNameT modelM datFileM gqFileM outputFilePrefixM numChains numThreadsM numWarmupM numSamplesM adaptDeltaM maxTreeDepthM stancConfigM = do
-  let datFileNameT =  fromMaybe (SC.defaultDataFileName modelNameT) datFileM
-      runnerInputNames = SC.RunnerInputNames modelDirT modelNameT gqFileM dataFileNameT
-  let modelDirS = T.unpack modelDirT
-      outputFilePrefix = fromMaybe modelNameT outputFilePrefixM
-      numThreads = fromMaybe numChains numThreadsM -- default to one thread per chain
+  -> Maybe (SB.GeneratedQuantities, SB.StanModel)
+  -> SC.StanMCParameters
+  -> Maybe CS.StancConfig
+  -> K.Sem r SC.ModelRunnerConfig
+makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfigM = do
+  let modelDir = SC.rinModelDir runnerInputNames
+      modelName = SC.rinModel runnerInputNames
   case modelM of
     Nothing -> return ()
     Just (gq, m) -> do
-      createDirIfNecessary modelDirT
-      modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDirT modelNameT
+      createDirIfNecessary modelDir
+      modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDir modelName
       case modelState of
         SB.New -> K.logLE K.Diagnostic "Given model was new."
         SB.Same -> K.logLE K.Diagnostic "Given model was the same as existing model file."
-        SB.Updated newName -> K.logLE K.Diagnostic $ "Given model was different from exisiting.  Old one was moved to \"" <> newName <> "\"."
-  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
-  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDirT modelNameT)
+        SB.Updated newName -> K.logLE K.Diagnostic
+                              $ "Given model was different from exisiting.  Old one was moved to \""
+                              <> newName <> "\"."
+--  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
+  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDir modelName)
+  modelFileDep <- SC.modelDependency
+  modelSamplesPrefixDep <- SC.samplesPrefix runnerInputNames SC.ModelSamples
+  outputPrefix <- SC.samplesPrefix
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
       stanExeConfig =
         (CS.makeDefaultSample (T.unpack modelNameT) Nothing)

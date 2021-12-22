@@ -23,21 +23,27 @@ data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq)
 type SamplesPrefixMap = Map SamplesKey Text
 
 data RunnerInputNames = RunnerInputNames
-                        { rinModelDir :: Text
-                        , rinModel :: Text
-                        , rinGQ :: Maybe Text
-                        , rinData :: Text
-                        }  deriving (Show, Ord, Eq)
+  { rinModelDir :: Text
+  , rinModel :: Text
+  , rinGQ :: Maybe Text
+  , rinData :: Text
+  }  deriving (Show, Ord, Eq)
+
+data StanMCParameters = StanMCParameters
+  { smcNumChains :: Int
+  , smcNumThreads :: Int
+  , smcNumWarmupM :: Maybe Int
+  , smcNumSamplesM :: Maybe Int
+  , smcAdaptDeltaM :: Maybe Double
+  , smcMaxTreeDepth :: Maybe Int
+  } deriving (Show, Eq, Ord)
 
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
   , mrcStanExeConfig :: CS.StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcInputNames :: RunnerInputNames
-  , mrcNumChains :: Int
-  , mrcNumThreads :: Int
-  , mrcAdaptDelta :: Maybe Double
-  , mrcMaxTreeDepth :: Maybe Int
+  , mrcStanMCParameters :: StanMCParameters
   , mrcLogSummary :: Bool
   , mrcRunDiagnose :: Bool
   }
@@ -83,9 +89,11 @@ dataDependency rin = do
     Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
 
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+
 -- if the cached map is outdated, return an empty one
 samplesPrefixCache :: forall st cd r. KnitStan st cd r
-                   => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
+                   => RunnerInputNames
+                   -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
 samplesPrefixCache rin = do
   modelDataDep <- modelDataDependency rin
   modelDep <- modelDependency rin
@@ -96,12 +104,14 @@ modelGQName :: RunnerInputNames -> Text
 modelGQName rin =
   rinModel rin
   <> "_" <> rinData rin
-  <> fromMaybe "" (("_" <>) <$> rinGQ rin)
+  <> maybe "" ("_" <>) (rinGQ rin)
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesPrefix ::  forall st cd r. KnitStan st cd r
-                 => RunnerInputNames -> SamplesKey -> K.Sem r (K.ActionWithCacheTime r Text)
+              => RunnerInputNames
+              -> SamplesKey
+              -> K.Sem r (K.ActionWithCacheTime r Text)
 samplesPrefix rin key = do
   samplePrefixCache_C <- samplesPrefixCache @st @cd rin
   samplePrefixCache <- K.ignoreCacheTime samplePrefixCache_C
@@ -111,29 +121,34 @@ samplesPrefix rin key = do
       K.store @st @cd (samplesPrefixCacheKey rin) $ M.insert key prefix samplePrefixCache
       return prefix
     Just prefix -> return prefix -- exists, so use those files
-  return $ const p <$> samplePrefixCache_C
+  return $ p <$ samplePrefixCache_C
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesFileNames ::  forall st cd r. KnitStan st cd r
-                 => ModelRunnerConfig -> SamplesKey -> K.Sem r (K.ActionWithCacheTime r [Text])
+                 => ModelRunnerConfig
+                 -> SamplesKey
+                 -> K.Sem r (K.ActionWithCacheTime r [Text])
 samplesFileNames config key = do
   let rin = mrcInputNames config
+      numChains = smcNumChains $ mrcStanMCParameters config
   prefix_C <- samplesPrefix @st @cd rin key
   prefix <- K.ignoreCacheTime prefix_C
-  let files = addModelDirectory rin . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..mrcNumChains config]
-  return $ const files <$> prefix_C
+  let files = addModelDirectory rin . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
+  return $ files <$ prefix_C
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 modelSamplesFileNames :: forall st cd r. KnitStan st cd r
-                      => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r [Text])
+                      => ModelRunnerConfig
+                      -> K.Sem r (K.ActionWithCacheTime r [Text])
 modelSamplesFileNames config = samplesFileNames @st @cd config ModelSamples
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 gqSamplesFileNames :: forall st cd r. KnitStan st cd r
-                   => ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r [Text])
+                   => ModelRunnerConfig
+                   -> K.Sem r (K.ActionWithCacheTime r [Text])
 gqSamplesFileNames config = do
   case rinGQ (mrcInputNames config) of
     Nothing -> return $ pure []
