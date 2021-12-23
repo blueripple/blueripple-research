@@ -65,14 +65,13 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
 --  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDir modelName)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
-
-
-
   modelFileDep <- SC.modelDependency runnerInputNames
   modelDataDep <- SC.modelDataDependency runnerInputNames
-  let modelSamplesDeps = (,) <$> modelFileDep <*> modelDataDep
+  let sampleConfigDeps = (,) <$> modelFileDep <*> modelDataDep
   modelSamplesFileNames <- SC.modelSamplesFileNames runnerInputNames
-  let stanExeConfig = if modelSamplesFileNames >
+  stanExeConfig = if (K.cacheTime modelSamplesFileNames > K.cacheTime sampleConfigDeps)
+                  then gqExeConfig
+                  else sampleExeConfig
   outputPrefix <- SC.samplesPrefix
 
       stanExeConfig =
@@ -107,11 +106,20 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
       True
 
 
-runSamplerExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
-runSamplerExeConfig = undefined
+sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
+sampleExeConfig rin smp =  (CS.makeDefaultSample (T.unpack modelNameT) Nothing)
+  { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS)
+  , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing)
+  , CS.numChains = Just numChains
+  , CS.numThreads = Just numThreads
+  , CS.numSamples = numSamplesM
+  , CS.numWarmup = numWarmupM
+  , CS.adaptDelta = adaptDeltaM
+  , CS.maxTreeDepth = maxTreeDepthM
+  }
 
-runGQExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
-runGQExeConfig = undefined
+gqExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
+gqExeConfig = undefined
 
 
 modelCacheTime :: forall r. (K.KnitEffects r)

@@ -14,6 +14,7 @@ import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Knit.Report as K
 --import qualified Knit.Effect.Serialize as K
+import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -79,6 +80,32 @@ gqDataDependency rin = case gqDataFileName rin of
   Just gqName -> do
     dep <- K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> gqName))
     return $ Just dep
+
+combinedDataFileName :: RunnerInputNames -> Text
+combinedDataFileName rin = rinData rin <> maybe "" ("_" <>) (rinGQ rin) <> ".json"
+
+combineData :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+combineData rin = do
+  modelDataDep <- modelDataDependency rin
+  gqDataDependencyM <- gqDataDependency rin
+  case gqDataFileName of
+    Nothing -> return modelDataDep
+    Just gqName -> do
+      let gqFP = addModelDirectory rin $ gqName rin
+      gqDep <- K.fileDependency $ toString $ gqFP
+      let deps = (,) <$> modelDataDep <*> gqDep
+          comboFP = toString $ addModelDirectory rin $ combinedDataFileName rin
+--      comboDep <- K.fileDependency $ combinedDataFileName rin
+      K.loadOrMakeFile comboFP (const $ return ()) deps $ const $ do
+          modelDataE :: A.Object <- K.liftKnit
+            $ A.eitherDecodeFileStrict $ toString $ addModelDirectory rin $ modelDataFileName rin
+          modelData <- K.knitEither modelDataE
+          gqDataE :: A.Object <- K.liftKnit $ A.eitherDecodeFileStrict gqFP
+          gqData <- K.knitEither gqDataE
+          K.liftKnit $ A.encodeFile comboFP (modelData <> gqData)
+          K.fileDependency comboFP
+
+
 
 dataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 dataDependency rin = do
