@@ -41,6 +41,8 @@ import qualified Relude.Extra as Relude
 import System.Process (runInteractiveCommand)
 import Stan.ModelConfig (modelDataDependency)
 
+
+
 makeDefaultModelRunnerConfig :: K.KnitEffects r
   => SC.RunnerInputNames
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
@@ -69,23 +71,11 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
   modelDataDep <- SC.modelDataDependency runnerInputNames
   let sampleConfigDeps = (,) <$> modelFileDep <*> modelDataDep
   modelSamplesFileNames <- SC.modelSamplesFileNames runnerInputNames
-  stanExeConfig = if (K.cacheTime modelSamplesFileNames > K.cacheTime sampleConfigDeps)
-                  then gqExeConfig
-                  else sampleExeConfig
-  outputPrefix <- SC.samplesPrefix
-
-      stanExeConfig =
-        (CS.makeDefaultSample (T.unpack modelNameT) Nothing)
-          { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS),
-            CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing),
-            CS.numChains = Just numChains,
-            CS.numThreads = Just numThreads,
-            CS.numSamples = numSamplesM,
-            CS.numWarmup = numWarmupM,
-            CS.adaptDelta = adaptDeltaM,
-            CS.maxTreeDepth = maxTreeDepthM
-          }
-  let stanOutputFiles = fmap (SC.outputFile outputFilePrefix) $ Just <$> [1 .. numChains]
+  let stanExeConfig = if (K.cacheTime modelSamplesFileNames > K.cacheTime sampleConfigDeps)
+                      then gqExeConfig
+                      else sampleExeConfig
+  samplesPrefix <- SC.samplesPrefix
+  let stanSamplesFiles = fmap (SC.sampleFile samplesPrefix) $ Just <$> [1 .. numChains]
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (SC.addDirFP (modelDirS ++ "/output")) stanOutputFiles)
@@ -94,32 +84,39 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
       stanMakeConfig
       stanExeConfig
       stanSummaryConfig
-      modelDirT
-      modelNameT
-      (T.pack datFileS)
-      outputFilePrefix
-      numChains
-      numThreads
-      adaptDeltaM
-      maxTreeDepthM
+      runnerInputNames
+      stanMCParameters
       True
       True
 
+sampleExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
+sampleExeConfig rin smp =  do
+  samplesPrefix <- SC.samplesPrefix rin
+  return $ SC.SampleConfig
+    $ (CS.makeDefaultSample (toString $  modelName rin) Nothing)
+    { CS.inputData = Just (SC.dataDirPath $ SC.rinData rin)
+    , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.samplesFile outputFilePrefix Nothing)
+    , CS.numChains = Just $ SC.smcNumChains smp
+    , CS.numThreads = Just numThreads
+    , CS.numSamples = numSamplesM
+    , CS.numWarmup = numWarmupM
+    , CS.adaptDelta = adaptDeltaM
+    , CS.maxTreeDepth = maxTreeDepthM
+    }
 
-sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
-sampleExeConfig rin smp =  (CS.makeDefaultSample (T.unpack modelNameT) Nothing)
-  { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS)
-  , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing)
-  , CS.numChains = Just numChains
-  , CS.numThreads = Just numThreads
-  , CS.numSamples = numSamplesM
-  , CS.numWarmup = numWarmupM
-  , CS.adaptDelta = adaptDeltaM
-  , CS.maxTreeDepth = maxTreeDepthM
-  }
-
-gqExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
-gqExeConfig = undefined
+gqExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
+gqExeConfig = do
+  return $ SC.GQConfig
+    $ \n -> (CS.makeDefaultGenerateQuantities (T.unpack modelNameT) n)
+    { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS)
+    , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing)
+    , CS.numChains = Just numChains
+    , CS.numThreads = Just numThreads
+    , CS.numSamples = numSamplesM
+    , CS.numWarmup = numWarmupM
+    , CS.adaptDelta = adaptDeltaM
+    , CS.maxTreeDepth = maxTreeDepthM
+    }
 
 
 modelCacheTime :: forall r. (K.KnitEffects r)

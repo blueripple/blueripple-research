@@ -30,6 +30,19 @@ data RunnerInputNames = RunnerInputNames
   , rinData :: Text
   }  deriving (Show, Ord, Eq)
 
+
+dirPath :: RunnerInputNames -> Text -> Text -> FilePath
+dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
+
+outputDirPath :: RunnerInputNames -> Text -> FilePath
+outputDirPath rin = dirPath rin "output"
+
+dataDirPath :: RunnerInputNames -> Text -> FilePath
+dataDirPath rin = dirPath rin "data"
+
+rDirPath :: RunnerInputNames -> Text -> FilePath
+rDirPath rin = dirPath rin "R"
+
 data StanMCParameters = StanMCParameters
   { smcNumChains :: Int
   , smcNumThreads :: Int
@@ -39,9 +52,11 @@ data StanMCParameters = StanMCParameters
   , smcMaxTreeDepth :: Maybe Int
   } deriving (Show, Eq, Ord)
 
+data StanExeConfig = SampleConfig CS.StanExeConfig | GQConfig (Int -> CS.StanExeConfig)
+
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeConfig :: CS.StanExeConfig
+  , mrcStanExeConfig :: StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcInputNames :: RunnerInputNames
   , mrcStanMCParameters :: StanMCParameters
@@ -88,22 +103,22 @@ combineData :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCache
 combineData rin = do
   modelDataDep <- modelDataDependency rin
   gqDataDependencyM <- gqDataDependency rin
-  case gqDataFileName of
+  case gqDataFileName rin of
     Nothing -> return modelDataDep
     Just gqName -> do
-      let gqFP = addModelDirectory rin $ gqName rin
+      let gqFP = addModelDirectory rin gqName
       gqDep <- K.fileDependency $ toString $ gqFP
       let deps = (,) <$> modelDataDep <*> gqDep
           comboFP = toString $ addModelDirectory rin $ combinedDataFileName rin
 --      comboDep <- K.fileDependency $ combinedDataFileName rin
       K.loadOrMakeFile comboFP (const $ return ()) deps $ const $ do
-          modelDataE :: A.Object <- K.liftKnit
-            $ A.eitherDecodeFileStrict $ toString $ addModelDirectory rin $ modelDataFileName rin
-          modelData <- K.knitEither modelDataE
-          gqDataE :: A.Object <- K.liftKnit $ A.eitherDecodeFileStrict gqFP
-          gqData <- K.knitEither gqDataE
-          K.liftKnit $ A.encodeFile comboFP (modelData <> gqData)
-          K.fileDependency comboFP
+          modelDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString $ addModelDirectory rin $ modelDataFileName rin
+          modelData <- K.knitEither $ first toText modelDataE
+          gqDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString gqFP
+          gqData <- K.knitEither $ first toText gqDataE
+          let combined :: A.Object = modelData <> gqData
+          K.liftKnit $ A.encodeFile comboFP combined
+          return ()
 
 
 
