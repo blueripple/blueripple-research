@@ -217,13 +217,15 @@ data Cacheable st b where
   Cacheable :: st (Either Text b) => Cacheable st b
   UnCacheable :: Cacheable st b
 
+data JSONSeries = JSONSeries { modelSeries :: A.Series, gqSeries :: A.Series}
+
 data DataWrangler a b p where
   Wrangle :: DataIndexerType b
-          -> (a -> (Either T.Text b, a -> Either T.Text A.Series))
+          -> (a -> (Either T.Text b, a -> Either T.Text JSONSeries)
           -> DataWrangler a b ()
   WrangleWithPredictions :: DataIndexerType b
-                         -> (a -> (Either T.Text b, a -> Either T.Text A.Series))
-                         -> (Either T.Text b -> p -> Either T.Text A.Series)
+                         -> (a -> (Either T.Text b, a -> Either T.Text JSONSeries))
+                         -> (Either T.Text b -> p -> Either T.Text JSONSeries)
                          -> DataWrangler a b p
 
 noPredictions :: DataWrangler a b p -> DataWrangler a b ()
@@ -235,7 +237,7 @@ dataIndexerType :: DataWrangler a b p -> DataIndexerType b
 dataIndexerType (Wrangle i _) = i
 dataIndexerType (WrangleWithPredictions i _ _) = i
 
-indexerAndEncoder :: DataWrangler a b p -> a -> (Either T.Text b, a -> Either T.Text A.Series)
+indexerAndEncoder :: DataWrangler a b p -> a -> (Either T.Text b, a -> Either T.Text JSONSeries)
 indexerAndEncoder (Wrangle _ x) = x
 indexerAndEncoder (WrangleWithPredictions _ x _) = x
 

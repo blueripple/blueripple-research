@@ -91,51 +91,55 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
 
 sampleExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
 sampleExeConfig rin smp =  do
-  samplesPrefix <- SC.samplesPrefix rin
+  let samplesKey = maybe SC.ModelSamples SC.GQSamples $ SC.rinGQ rin
+  modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix rin samplesKey
   return $ SC.SampleConfig
     $ (CS.makeDefaultSample (toString $  modelName rin) Nothing)
-    { CS.inputData = Just (SC.dataDirPath $ SC.rinData rin)
-    , CS.output = Just (SC.outputDirPath $ SC.samplesFile samplesPrefix Nothing)
+    { CS.inputData = Just (SC.dataDirPath $ SC.combinedDataFileName rin)
+    , CS.output = Just (SC.outputDirPath $ modelSamplesPrefix <> ".csv")
     , CS.numChains = Just $ SC.smcNumChains smp
-    , CS.numThreads = Just numThreads
-    , CS.numSamples = numSamplesM
-    , CS.numWarmup = numWarmupM
-    , CS.adaptDelta = adaptDeltaM
-    , CS.maxTreeDepth = maxTreeDepthM
+    , CS.numThreads = Just $ SC.smcNumThreads smp
+    , CS.numSamples = SC.smcNumSamplesM smp
+    , CS.numWarmup = SC.smcNumWarmupM smp
+    , CS.adaptDelta = SC.smcAdaptDeltaM smp
+    , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     }
 
 gqExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
 gqExeConfig rin smp = do
+  gqName <- K.knitMaybe "gqExeConfig: RunnerInputNames.rinGQ is Nothing" $ SC.rinGQ rin
+  gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix rin (SC.GQSamples gqName)
+  modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix rin SC.ModelSamples
+  when (gqSamplesPrefix == modelSamplesPrefix)
+    $ K.knitError "gqExeConfig: model samples and gq samples have same prefix!"
   return $ SC.GQConfig
-    $ \n -> (CS.makeDefaultGenerateQuantities (T.unpack modelNameT) n)
-    { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS)
-    , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.outputFile outputFilePrefix Nothing)
-    , CS.numChains = Just numChains
-    , CS.numThreads = Just numThreads
-    , CS.numSamples = numSamplesM
-    , CS.numWarmup = numWarmupM
-    , CS.adaptDelta = adaptDeltaM
-    , CS.maxTreeDepth = maxTreeDepthM
+    $ \n -> (CS.makeDefaultGenerateQuantities (toString $ modelName rin) n)
+    { CS.inputData = Just (SC.dataDirPath $ SC.combinedDataFileName rin)
+    , CS.fittedParams = Just (SC.outputDirPath $ modelSamplesPrefix <> "_" <> show n <> ".csv")
+    , CS.output = Just (SC.outputDirPath $ gqSamplesPrefix <> "_" <> show n <> ".csv")
+    , CS.numChains = Just $ SC.smcNumChains smp
+    , CS.numThreads = Just $ SC.smcNumThreads smp
+    , CS.numSamples = SC.smcNumSamplesM smp
+    , CS.numWarmup = SC.smcNumWarmupM smp
+    , CS.adaptDelta = SC.smcAdaptDeltaM smp
+    , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     }
 
-
-modelCacheTime :: forall r. (K.KnitEffects r)
-               => SC.ModelRunnerConfig -> K.Sem r (K.ActionWithCacheTime r ())
-modelCacheTime config = K.wrapPrefix "modelCacheTime" $ do
-  let modelFile = T.unpack $ SC.addDirT (SC.mrcModelDir config) $ SB.modelFile $ SC.mrcModel config
-      dataFile = jsonFP config
-  K.logLE K.Diagnostic $ "Building dependency info for model (" <> T.pack modelFile <> ") and data (" <> T.pack dataFile <> ")"
-  modelFileDep <- K.fileDependency modelFile
-  jsonDataDep <- K.fileDependency dataFile
-  return $ (\_ _ -> ()) <$> modelFileDep <*> jsonDataDep
+inputsCacheTime :: forall r. (K.KnitEffects r)
+               => SC.ModelRunnerConfig
+               -> K.Sem r (K.ActionWithCacheTime r ())
+inputsCacheTime config = K.wrapPrefix "modelCacheTime" $ do
+  dataDep <- dataDependency $ SC.mrcInputNames config
+  modelDep <- modelDependency $ SC.mrcInputNames config
+  return $ (\_ _ -> ()) <$> modelDep <*> dataDep
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
-writeRScripts :: RScripts -> SC.ModelRunnerConfig -> IO ()
+writeRScripts :: K.KnitEffects r => RScripts -> SC.ModelRunnerConfig -> K.Sem r ()
 writeRScripts rScripts config = do
-  let modelDir = SC.mrcModelDir config
-      scriptPrefix = SC.mrcOutputPrefix config
-      write mSuffix t =  writeFileText (toString $ modelDir <> "/R/" <> scriptPrefix <> fromMaybe "" mSuffix <> ".R") t
+  let samplesKey = maybe SC.ModelSamples SC.GQSamples $ SC.rinGQ rin
+  samplesPrefix <- SC.samplesPrefix (SC.mrcInputNames config) samplesKey
+  let write mSuffix t =  writeFileText (SC.rDirPath $ samplesPrefix <> fromMaybe "" mSuffix <> ".R") t
       writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
       writeLoo = write Nothing $ SR.looScript config scriptPrefix 10
   case rScripts of
@@ -147,7 +151,6 @@ writeRScripts rScripts config = do
 wrangleDataWithoutPredictions :: forall st cd a b r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
---  , st b
   )
   => SC.ModelRunnerConfig
   -> SC.DataWrangler a b ()
@@ -159,7 +162,6 @@ wrangleDataWithoutPredictions config dw cb a = wrangleData @st @cd config dw cb 
 wrangleData :: forall st cd a b p r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
---  , st b
   )
   => SC.ModelRunnerConfig
   -> SC.DataWrangler a b p
