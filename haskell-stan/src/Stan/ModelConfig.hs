@@ -6,6 +6,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 module Stan.ModelConfig where
@@ -205,11 +206,13 @@ noLogOfSummary sc = sc { mrcLogSummary = False }
 noDiagnose :: ModelRunnerConfig -> ModelRunnerConfig
 noDiagnose sc = sc { mrcRunDiagnose = False }
 
+data InputDataType = ModelData | GQData deriving (Show, Eq, Ord)
+
 -- produce indexes and json producer from the data as well as a data-set to predict.
 data DataIndexerType (b :: Type) where
   NoIndex :: DataIndexerType ()
   TransientIndex :: DataIndexerType b
-  CacheableIndex :: (ModelRunnerConfig -> T.Text) -> DataIndexerType b
+  CacheableIndex :: (ModelRunnerConfig -> InputDataType -> Text) -> DataIndexerType b
 
 -- pattern matching on the first brings the constraint into scope
 -- This allows us to choose to not have the constraint unless we need it.
@@ -219,27 +222,39 @@ data Cacheable st b where
 
 data JSONSeries = JSONSeries { modelSeries :: A.Series, gqSeries :: A.Series}
 
-data DataWrangler a b p where
+type Wrangler a b = a -> (Either T.Text b, a -> Either T.Text A.Series)
+
+unitWrangle :: Wrangler () b
+unitWrangle _ = (Left "Wrangle Error. Attempt to build index using a \"Wrangle () _\""
+                , const $ Left "Wrangle Error. Attempt to build json using a \"Wrangle () _\""
+                )
+
+data DataWrangler md gq b p where
   Wrangle :: DataIndexerType b
-          -> (a -> (Either T.Text b, a -> Either T.Text JSONSeries)
-          -> DataWrangler a b ()
+          -> Wrangler md b
+          -> Maybe (Wrangler gq b)
+          -> DataWrangler md gq b ()
   WrangleWithPredictions :: DataIndexerType b
-                         -> (a -> (Either T.Text b, a -> Either T.Text JSONSeries))
-                         -> (Either T.Text b -> p -> Either T.Text JSONSeries)
-                         -> DataWrangler a b p
+                         -> Wrangler md b
+                         -> Maybe (Wrangler gq b)
+                         -> (Either T.Text b -> p -> Either T.Text A.Series)
+                         -> DataWrangler md gq b p
 
-noPredictions :: DataWrangler a b p -> DataWrangler a b ()
-noPredictions w@(Wrangle _ _) = w
-noPredictions (WrangleWithPredictions x y _) = Wrangle x y
+noPredictions :: DataWrangler md gq b p -> DataWrangler md gq b ()
+noPredictions w@(Wrangle _ _ _) = w
+noPredictions (WrangleWithPredictions x y z _) = Wrangle x y z
 
+dataIndexerType :: DataWrangler md gq b p -> DataIndexerType b
+dataIndexerType (Wrangle i _ _) = i
+dataIndexerType (WrangleWithPredictions i _ _ _) = i
 
-dataIndexerType :: DataWrangler a b p -> DataIndexerType b
-dataIndexerType (Wrangle i _) = i
-dataIndexerType (WrangleWithPredictions i _ _) = i
+modelWrangler :: DataWrangler md gq b p -> Wrangler md b -- -> (Either T.Text b, a -> Either T.Text JSONSeries)
+modelWrangler (Wrangle _ x _) = x
+modelWrangler (WrangleWithPredictions _ x _ _) = x
 
-indexerAndEncoder :: DataWrangler a b p -> a -> (Either T.Text b, a -> Either T.Text JSONSeries)
-indexerAndEncoder (Wrangle _ x) = x
-indexerAndEncoder (WrangleWithPredictions _ x _) = x
+mGQWrangler :: DataWrangler md gq b p -> Maybe (Wrangler gq b)  -- -> (Either T.Text b, a -> Either T.Text JSONSeries)
+mGQWrangler (Wrangle _ _ x) = x
+mGQWrangler (WrangleWithPredictions _ _ x _) = x
 
 -- produce a result of type b from the data and the model summary
 -- NB: the cache time will give you newest of data, indices and stan output

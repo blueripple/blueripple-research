@@ -40,6 +40,8 @@ import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
 import System.Process (runInteractiveCommand)
 import Stan.ModelConfig (modelDataDependency)
+import Knit.Report (confusing)
+import System.Process.Internals (ProcessHandle(mb_delegate_ctlc))
 
 
 
@@ -151,6 +153,7 @@ writeRScripts rScripts config = do
 wrangleDataWithoutPredictions :: forall st cd a b r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
+  , Monoid b
   )
   => SC.ModelRunnerConfig
   -> SC.DataWrangler a b ()
@@ -159,28 +162,68 @@ wrangleDataWithoutPredictions :: forall st cd a b r.
   -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
 wrangleDataWithoutPredictions config dw cb a = wrangleData @st @cd config dw cb a ()
 
-wrangleData :: forall st cd a b p r.
+wrangleData :: forall st cd md gq b p r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
   )
   => SC.ModelRunnerConfig
-  -> SC.DataWrangler a b p
+  -> SC.DataWrangler md gq b p
   -> SC.Cacheable st b
-  -> K.ActionWithCacheTime r a
+  -> K.ActionWithCacheTime r md
+  -> K.ActionWithCacheTime r gq
   -> p
-  -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
-wrangleData config (SC.Wrangle indexType indexAndEncoder) cb cachedA _ = do
+  -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b), K.ActionWithCacheTime r (Either T.Text b))
+wrangleData config w {- (SC.Wrangle indexerType modelIndexAndEncoder mGQIndexAndEncoder) -} cb md_C gq_C p = do
+  let (indexerType, modelIndexAndEncoder, mGQIndexAndEncoder, mEncodeToPredict) = case w of
+        SC.Wrangle x y z -> (x, y, z, Nothing)
+        SC.WrangleWithPredictions x y z te -> (x, y, z, Just te)
+  curModelData_C <- modelDataDependency $ SC.mrcInputNames config
+  (newModelData_C, modelIndexes_C) <- wranglerPrep config SC.ModelData indexerType modelIndexAndEncoder cb md_C
+  modelJSON_C <- K.updateIf curModelData_C newModelData_C $ \e -> do
+    let modelDataFileName = SC.modelDataFileName $ SC.mrcInputNames config
+    K.logLE K.Diagnostic $ "existing model json (" <> modelDataFileName  <> ") appears older than cached data."
+    jsonEncoding <- K.knitEither e
+    K.liftKnit . BL.writeFile (SC.dataDirPath (SC.mrcInputNames config) modelDataFileName)
+      $ A.encodingToLazyByteString $ A.pairs jsonEncoding
+  model_C <- const <$> modelIndexes_C <*> modelJSON_C
+  gq_C <- case mGQIndexAndEncoder of
+    Nothing -> return $ pure $ Left "wrangleData: Attempt to use GQ indexes but No GQ wrangler given."
+    Just gqIndexAndEncoder -> do
+      mGQData_C <- SC.gqDataDependency $ SC.mrcInputNames config
+      case curGQData_C of
+        Nothing -> return $ pure $ Left "wrangleData: Attempt to wrangle GQ data but config.mrcInputNames.rinQG is Nothing."
+        Just gqData_C -> do
+          (newGQData_C, gqIndexes_C) <- wranglerPrep config SC.GQData indexerType gqIndexAndEncoder cb gq_C
+          let gqJSONDeps = (,) <$> newGQData_C <*> gqIndexes_C
+          gqJSON_C <- K.updateIf curGQData_C gqJSONDeps $ \(e, eb) -> do
+            gqDataFileName <- K.knitMaybe "Attempt to build gq json but rinGQ is Nothing." $ SC.gqDataFileName $ SC.mrcInputNames config
+            K.logLE K.Diagnostic $ "existing GQ json (" <> gqDataFileName  <> ") appears older than cached data."
+            jsonEncoding <- K.knitEither e
+            indexEncoding <- case mEncodeToPredict of
+              Nothing -> return mempty
+              Just encodeToPredict -> K.knitEither $ encodeToPredict eb p
+            K.liftKnit . BL.writeFile (SC.dataDirPath (SC.mrcInputNames config) gqDataFileName)
+              $ A.encodingToLazyByteString $ A.pairs (jsonEncoding <> indexEncoding)
+          return $ const <$> gqIndexes_C <*> gqJSON_C
+  return (model_C, gq_C)
+
+
+{-
+{-
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
       eb_C = fmap fst indexAndEncoder_C
       encoder_C = fmap snd indexAndEncoder_C
   index_C <- manageIndex @st @cd config indexType cb eb_C
   curJSON_C <- K.fileDependency $ jsonFP config
   let newJSON_C = encoder_C <*> cachedA
+
+  (curJSON_C, newJSON_C, index_C) <- wrangleDataPrep config indexType indexAndEncoder cb a_C
   updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
     K.logLE K.Diagnostic $ "existing json (" <> T.pack (jsonFP config) <> ") appears older than cached data."
     jsonEncoding <- K.knitEither e
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
+-}
 
 wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeToPredict) cb cachedA p = do
   let indexAndEncoder_C = fmap indexAndEncoder cachedA
@@ -197,33 +240,79 @@ wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeTo
     toPredictEncoding <- K.knitEither $ encodeToPredict eb p
     K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
   return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
+-}
+-- create function to rebuild json along with time stamp from data used
+wranglerPrep :: forall st cd a b r.
+  (
+    K.KnitEffects r
+  , K.CacheEffects st cd Text r
+  )
+  => SC.ModelRunnerConfig
+  -> SC.InputDataType
+  -> SC.DataIndexerType b
+  -> SC.Wrangler a
+  -> SC.Cacheable st b
+  -> K.ActionWithCacheTime r a
+  -> K.Sem r (K.ActionWithCacheTime r (), K.ActionWithCacheTime r (Either T.Text b))
+wranglerPrep config inputDataType indexerType wrangler cb a_C = do
+  let indexAndEncoder_C = fmap wrangler a_C
+      eb_C = fmap fst indexAndEncoder_C
+      encoder_C = fmap snd indexAndEncoder_C
+  index_C <- manageIndex @st @cd config inputDataType indexerType cb eb_C
+  let newJSON_C = encoder_C <*> a_C
+  return (newJSON_C, index_C)
+
+{-
+wrangleDataPrep :: forall st cd md gq b r.
+  (
+    K.KnitEffects r
+  , K.CacheEffects st cd Text r
+  )
+  => SC.ModelRunnerConfig
+  -> SC.DataIndexerType b
+  -> SC.Wrangler md
+  -> Maybe (SC.Wrangle gq)
+  -> SC.Cacheable st b
+  -> K.ActionWithCacheTime r md
+  -> K.ActionWithCacheTime r gq
+  -> K.Sem r (JSONCacheTimes r, JSONCacheTimes r, K.ActionWithCacheTime r (Either T.Text b))
+wrangleDataPrep config indexType modelWrangler mGQWrangler cb md_C gq_C = do
+  let modelIndexAndEncoder_C = fmap modelWrangler a_C
+      eb_C = fmap fst indexAndEncoder_C
+      modelEncoder_C = fmap snd modelIndexAndEncoder_C
+  index_C <- manageIndex @st @cd config indexType cb eb_C
+  curJSON_C <- K.fileDependency $ jsonFP config
+  let newJSON_C = encoder_C <*> a_C
+  return (curJSON_C, newJSON_C, index_C)
+-}
 
 manageIndex :: forall st cd b r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
---  , st b
   )
   => SC.ModelRunnerConfig
+  -> SC.InputDataType
   -> SC.DataIndexerType b
   -> SC.Cacheable st b
   -> K.ActionWithCacheTime r (Either T.Text b)
   -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
-manageIndex config dataIndexer cb ebFromA_C = do
+manageIndex config inputDataType dataIndexer cb ebFromA_C = do
   case dataIndexer of
     SC.CacheableIndex indexCacheKey ->
       case cb of
         SC.Cacheable -> do
           curJSON_C <- K.fileDependency $ jsonFP config
-          when (Maybe.isNothing $ K.cacheTime curJSON_C) $ do
+          when (isNothing $ K.cacheTime curJSON_C) $ do
             K.logLE (K.Debug 1)  $ "JSON data (\"" <> T.pack (jsonFP config) <> "\") is missing.  Deleting cached indices to force rebuild."
-            K.clearIfPresent @Text @cd (indexCacheKey config)
-          K.retrieveOrMake @st @cd (indexCacheKey config) ebFromA_C return
+            K.clearIfPresent @Text @cd (indexCacheKey config inputDataType)
+          K.retrieveOrMake @st @cd (indexCacheKey config inputDataType) ebFromA_C return
         _ -> K.knitError "Cacheable index type provided but b is Uncacheable."
     _ -> return ebFromA_C
 
+{-
 jsonFP :: SC.ModelRunnerConfig -> FilePath
 jsonFP config = SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.unpack $ SC.mrcDatFile config
-
+-}
 
 
 runModel :: forall st cd a b p c r.
