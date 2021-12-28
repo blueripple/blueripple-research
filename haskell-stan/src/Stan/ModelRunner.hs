@@ -65,15 +65,15 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
                               $ "Given model was different from exisiting.  Old one was moved to \""
                               <> newName <> "\"."
 --  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
-  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (T.unpack $ SC.addDirT modelDir modelName)
+  stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.addDirT modelDir modelName)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
   modelFileDep <- SC.modelDependency runnerInputNames
   modelDataDep <- SC.modelDataDependency runnerInputNames
   let sampleConfigDeps = (,) <$> modelFileDep <*> modelDataDep
   modelSamplesFileNames <- SC.modelSamplesFileNames runnerInputNames
   let stanExeConfig = if (K.cacheTime modelSamplesFileNames > K.cacheTime sampleConfigDeps)
-                      then gqExeConfig
-                      else sampleExeConfig
+                      then gqExeConfig runnerInputNames stanMCParameters
+                      else sampleExeConfig runnerInputNames stanMCParameters
   samplesPrefix <- SC.samplesPrefix
   let stanSamplesFiles = fmap (SC.sampleFile samplesPrefix) $ Just <$> [1 .. numChains]
   stanSummaryConfig <-
@@ -95,7 +95,7 @@ sampleExeConfig rin smp =  do
   return $ SC.SampleConfig
     $ (CS.makeDefaultSample (toString $  modelName rin) Nothing)
     { CS.inputData = Just (SC.dataDirPath $ SC.rinData rin)
-    , CS.output = Just (SC.addDirFP (modelDirS ++ "/output") $ SC.samplesFile outputFilePrefix Nothing)
+    , CS.output = Just (SC.outputDirPath $ SC.samplesFile samplesPrefix Nothing)
     , CS.numChains = Just $ SC.smcNumChains smp
     , CS.numThreads = Just numThreads
     , CS.numSamples = numSamplesM
@@ -105,7 +105,7 @@ sampleExeConfig rin smp =  do
     }
 
 gqExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
-gqExeConfig = do
+gqExeConfig rin smp = do
   return $ SC.GQConfig
     $ \n -> (CS.makeDefaultGenerateQuantities (T.unpack modelNameT) n)
     { CS.inputData = Just (SC.addDirFP (modelDirS ++ "/data") datFileS)
