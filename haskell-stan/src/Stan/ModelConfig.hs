@@ -32,6 +32,12 @@ data RunnerInputNames = RunnerInputNames
   }  deriving (Show, Ord, Eq)
 
 
+modelDirPath :: RunnerInputNames -> Text -> FilePath
+modelDirPath rin fName = toString $ rinModelDir rin <> "/" <> fName
+
+modelPath :: RunnerInputNames -> FilePath
+modelPath rin = modelDirPath rin $ rinModel rin
+
 dirPath :: RunnerInputNames -> Text -> Text -> FilePath
 dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
 
@@ -44,6 +50,7 @@ dataDirPath rin = dirPath rin "data"
 rDirPath :: RunnerInputNames -> Text -> FilePath
 rDirPath rin = dirPath rin "R"
 
+
 data StanMCParameters = StanMCParameters
   { smcNumChains :: Int
   , smcNumThreads :: Int
@@ -53,11 +60,10 @@ data StanMCParameters = StanMCParameters
   , smcMaxTreeDepth :: Maybe Int
   } deriving (Show, Eq, Ord)
 
-data StanExeConfig = SampleConfig CS.StanExeConfig | GQConfig (Int -> CS.StanExeConfig)
-
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeConfig :: StanExeConfig
+  , mrcStanExeModelConfig :: CS.StanExeConfig
+  , mrcStanExeGQConfigM :: Maybe (Int -> CS.StanExeConfig)
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcInputNames :: RunnerInputNames
   , mrcStanMCParameters :: StanMCParameters
@@ -121,8 +127,6 @@ combineData rin = do
           K.liftKnit $ A.encodeFile comboFP combined
           return ()
 
-
-
 dataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 dataDependency rin = do
   modelDataDep <- modelDataDependency rin
@@ -171,27 +175,27 @@ samplesPrefix rin key = do
 samplesFileNames ::  forall st cd r. KnitStan st cd r
                  => ModelRunnerConfig
                  -> SamplesKey
-                 -> K.Sem r (K.ActionWithCacheTime r [Text])
+                 -> K.Sem r (K.ActionWithCacheTime r [FilePath])
 samplesFileNames config key = do
   let rin = mrcInputNames config
       numChains = smcNumChains $ mrcStanMCParameters config
   prefix_C <- samplesPrefix @st @cd rin key
   prefix <- K.ignoreCacheTime prefix_C
-  let files = addModelDirectory rin . (\n -> "output/" <> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
+  let files = outputDirPath rin . (\n -> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
   return $ files <$ prefix_C
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 modelSamplesFileNames :: forall st cd r. KnitStan st cd r
                       => ModelRunnerConfig
-                      -> K.Sem r (K.ActionWithCacheTime r [Text])
+                      -> K.Sem r (K.ActionWithCacheTime r [FilePath])
 modelSamplesFileNames config = samplesFileNames @st @cd config ModelSamples
 
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 gqSamplesFileNames :: forall st cd r. KnitStan st cd r
                    => ModelRunnerConfig
-                   -> K.Sem r (K.ActionWithCacheTime r [Text])
+                   -> K.Sem r (K.ActionWithCacheTime r [FilePath])
 gqSamplesFileNames config = do
   case rinGQ (mrcInputNames config) of
     Nothing -> return $ pure []
@@ -228,7 +232,6 @@ unitWrangle :: Wrangler () b
 unitWrangle _ = (Left "Wrangle Error. Attempt to build index using a \"Wrangle () _\""
                 , const $ Left "Wrangle Error. Attempt to build json using a \"Wrangle () _\""
                 )
-
 data DataWrangler md gq b p where
   Wrangle :: DataIndexerType b
           -> Wrangler md b
@@ -260,19 +263,25 @@ mGQWrangler (WrangleWithPredictions _ _ x _) = x
 -- NB: the cache time will give you newest of data, indices and stan output
 --type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
 
-data ResultAction r a b p c where
-  UseSummary :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (a, Either T.Text b) -> K.Sem r c) -> ResultAction r a b p c
-  SkipSummary :: (p -> K.ActionWithCacheTime r (a, Either T.Text b) -> K.Sem r c) -> ResultAction r a b p c
-  DoNothing :: ResultAction r a b c ()
+type ResultF r md gq b p c
+  = p -> K.ActionWithCacheTime r (md, Either T.Text b) -> Maybe (K.ActionWithCacheTime r (gq, Either T.Text b)) -> K.Sem r c
 
-emptyResult :: ResultAction r a b p ()
-emptyResult = SkipSummary $ \_ _ -> return ()
+data ResultAction r md gq b p c where
+  UseSummary :: (CS.StanSummary -> ResultF r md gq b p c) -> ResultAction r md gq b p c
+  UseSummaryGQ  :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (gq, Either T.Text b) -> K.Sem r c) -> ResultAction r md gq b p c
+  SkipSummary :: ResultF r md gq b p c -> ResultAction r md gq b p c
+  DoNothing :: ResultAction r md gq b p ()
 
+emptyResult :: ResultAction r md gq b p ()
+emptyResult = SkipSummary $ \_ _ _ -> return ()
+
+{-
 addDirT :: T.Text -> T.Text -> T.Text
 addDirT dir fp = dir <> "/" <> fp
 
 addDirFP :: FilePath -> FilePath -> FilePath
 addDirFP dir fp = dir ++ "/" ++ fp
+-}
 
 defaultDataFileName :: T.Text -> T.Text
 defaultDataFileName modelNameT = modelNameT <> ".json"
