@@ -174,9 +174,9 @@ wrangleData :: forall st cd md gq b p r.
   -> p
   -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b), K.ActionWithCacheTime r (Either T.Text b))
 wrangleData config w {- (SC.Wrangle indexerType modelIndexAndEncoder mGQIndexAndEncoder) -} cb md_C gq_C p = do
-  let (indexerType, modelIndexAndEncoder, mGQIndexAndEncoder, mEncodeToPredict) = case w of
-        SC.Wrangle x y z -> (x, y, z, Nothing)
-        SC.WrangleWithPredictions x y z te -> (x, y, z, Just te)
+  let (indexerType, modelIndexAndEncoder, mGQIndexAndEncoder) = case w of
+        SC.Wrangle x y z -> (x, y, z)
+        SC.WrangleWithPredictions x y z _ -> (x, y, z)
   curModelData_C <- modelDataDependency $ SC.mrcInputNames config
   (newModelData_C, modelIndexes_C) <- wranglerPrep config SC.ModelData indexerType modelIndexAndEncoder cb md_C
   modelJSON_C <- K.updateIf curModelData_C newModelData_C $ \e -> do
@@ -199,48 +199,14 @@ wrangleData config w {- (SC.Wrangle indexerType modelIndexAndEncoder mGQIndexAnd
             gqDataFileName <- K.knitMaybe "Attempt to build gq json but rinGQ is Nothing." $ SC.gqDataFileName $ SC.mrcInputNames config
             K.logLE K.Diagnostic $ "existing GQ json (" <> gqDataFileName  <> ") appears older than cached data."
             jsonEncoding <- K.knitEither e
-            indexEncoding <- case mEncodeToPredict of
-              Nothing -> return mempty
-              Just encodeToPredict -> K.knitEither $ encodeToPredict eb p
+            indexEncoding <- case w of
+              SC.Wrangle _ _ _ -> return mempty
+              SC.WrangleWithPredictions _ _ _ encodeToPredict -> K.knitEither $ encodeToPredict eb p
             K.liftKnit . BL.writeFile (SC.dataDirPath (SC.mrcInputNames config) gqDataFileName)
               $ A.encodingToLazyByteString $ A.pairs (jsonEncoding <> indexEncoding)
           return $ const <$> gqIndexes_C <*> gqJSON_C
   return (model_C, gq_C)
 
-
-{-
-{-
-  let indexAndEncoder_C = fmap indexAndEncoder cachedA
-      eb_C = fmap fst indexAndEncoder_C
-      encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex @st @cd config indexType cb eb_C
-  curJSON_C <- K.fileDependency $ jsonFP config
-  let newJSON_C = encoder_C <*> cachedA
-
-  (curJSON_C, newJSON_C, index_C) <- wrangleDataPrep config indexType indexAndEncoder cb a_C
-  updatedJSON_C <- K.updateIf curJSON_C newJSON_C $ \e -> do
-    K.logLE K.Diagnostic $ "existing json (" <> T.pack (jsonFP config) <> ") appears older than cached data."
-    jsonEncoding <- K.knitEither e
-    K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs jsonEncoding
-  return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
--}
-
-wrangleData config (SC.WrangleWithPredictions indexType indexAndEncoder encodeToPredict) cb cachedA p = do
-  let indexAndEncoder_C = fmap indexAndEncoder cachedA
-      eb_C = fmap fst indexAndEncoder_C
-      encoder_C = fmap snd indexAndEncoder_C
-  index_C <- manageIndex @st @cd config indexType cb eb_C
-  curJSON_C <- K.fileDependency $ jsonFP config
-  let newJSON_C = encoder_C <*> cachedA
-      jsonDeps = (,) <$> newJSON_C <*> index_C
-  updatedJSON_C <- K.updateIf curJSON_C jsonDeps $ \(e, eb) -> do
-    K.logLE K.Diagnostic $ "existing json (" <> show (jsonFP config) <> ") appears older than cached data."
---    b <- K.knitEither eb
-    dataEncoding <- K.knitEither e
-    toPredictEncoding <- K.knitEither $ encodeToPredict eb p
-    K.liftKnit . BL.writeFile (jsonFP config) $ A.encodingToLazyByteString $ A.pairs (dataEncoding <> toPredictEncoding)
-  return $ const <$> index_C <*> updatedJSON_C -- if json is newer than index, use that time, esp when no index
--}
 -- create function to rebuild json along with time stamp from data used
 wranglerPrep :: forall st cd a b r.
   (
@@ -261,30 +227,6 @@ wranglerPrep config inputDataType indexerType wrangler cb a_C = do
   index_C <- manageIndex @st @cd config inputDataType indexerType cb eb_C
   let newJSON_C = encoder_C <*> a_C
   return (newJSON_C, index_C)
-
-{-
-wrangleDataPrep :: forall st cd md gq b r.
-  (
-    K.KnitEffects r
-  , K.CacheEffects st cd Text r
-  )
-  => SC.ModelRunnerConfig
-  -> SC.DataIndexerType b
-  -> SC.Wrangler md
-  -> Maybe (SC.Wrangle gq)
-  -> SC.Cacheable st b
-  -> K.ActionWithCacheTime r md
-  -> K.ActionWithCacheTime r gq
-  -> K.Sem r (JSONCacheTimes r, JSONCacheTimes r, K.ActionWithCacheTime r (Either T.Text b))
-wrangleDataPrep config indexType modelWrangler mGQWrangler cb md_C gq_C = do
-  let modelIndexAndEncoder_C = fmap modelWrangler a_C
-      eb_C = fmap fst indexAndEncoder_C
-      modelEncoder_C = fmap snd modelIndexAndEncoder_C
-  index_C <- manageIndex @st @cd config indexType cb eb_C
-  curJSON_C <- K.fileDependency $ jsonFP config
-  let newJSON_C = encoder_C <*> a_C
-  return (curJSON_C, newJSON_C, index_C)
--}
 
 manageIndex :: forall st cd b r.
   (K.KnitEffects r
@@ -308,12 +250,6 @@ manageIndex config inputDataType dataIndexer cb ebFromA_C = do
           K.retrieveOrMake @st @cd (indexCacheKey config inputDataType) ebFromA_C return
         _ -> K.knitError "Cacheable index type provided but b is Uncacheable."
     _ -> return ebFromA_C
-
-{-
-jsonFP :: SC.ModelRunnerConfig -> FilePath
-jsonFP config = SC.addDirFP (T.unpack (SC.mrcModelDir config) ++ "/data") $ T.unpack $ SC.mrcDatFile config
--}
-
 
 runModel :: forall st cd a b p c r.
   (K.KnitEffects r
