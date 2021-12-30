@@ -322,6 +322,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."
       K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
       K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
+      SC.combineData (SC.mrcInputNames config)
       res_C <- runModel
       when (SC.mrcRunDiagnose config) $ do
         K.logLE K.Info "Running stan diagnostics"
@@ -336,6 +337,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency gqSamplesFileNames
         K.updateIf gqSamplesFileDep runGQDeps $ \_ -> do
           K.logLE K.Diagnostic "Stan GQ outputs older than model input data, GQ input data or model code. Running GQ."
+          SC.combineData (SC.mrcInputNames config)
           mRes_C <- maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneGQ [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.ignoreCacheTime mRes_C >>= K.knitMaybe "There was an error running GQ for a chain."
           return $ Just mRes_C

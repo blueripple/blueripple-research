@@ -115,10 +115,10 @@ combineData rin = do
     Just gqName -> do
       let gqFP = addModelDirectory rin gqName
       gqDep <- K.fileDependency $ toString $ gqFP
-      let deps = (,) <$> modelDataDep <*> gqDep
+      let comboDeps = (,) <$> modelDataDep <*> gqDep
           comboFP = toString $ addModelDirectory rin $ combinedDataFileName rin
---      comboDep <- K.fileDependency $ combinedDataFileName rin
-      K.loadOrMakeFile comboFP (const $ return ()) deps $ const $ do
+      comboFileDep <- K.fileDependency comboFP
+      K.updateIf comboFileDep comboDeps $ const $ do
           modelDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString $ addModelDirectory rin $ modelDataFileName rin
           modelData <- K.knitEither $ first toText modelDataE
           gqDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString gqFP
