@@ -55,7 +55,7 @@ rSetWorkingDirectory config dirBase = do
 rReadStanCSV :: forall st cd r. SC.KnitStan st cd r => SC.ModelRunnerConfig -> T.Text -> K.Sem r Text
 rReadStanCSV config fitName = do
   let modelDir = SC.mrcModelDir config
-  modelSamplesFileNames <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames @st @cd config
+  modelSamplesFileNames <- fmap toText <$> (K.ignoreCacheTimeM $ SC.modelSamplesFileNames @st @cd config)
   return $ fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> modelDir <> "/output/" <> x <> "\"") modelSamplesFileNames <> ")"
 
 rStanModel :: SC.ModelRunnerConfig -> T.Text

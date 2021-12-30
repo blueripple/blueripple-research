@@ -55,7 +55,7 @@ makeDefaultModelRunnerConfig :: K.KnitEffects r
 makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfigM = do
   let modelDir = SC.rinModelDir runnerInputNames
       modelName = SC.rinModel runnerInputNames
-  writeModel config modelM
+  writeModel runnerInputNames modelM
   --  let datFileS = maybe (SC.defaultDatFile modelNameT) T.unpack datFileM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString SC.modelPath)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
@@ -68,16 +68,20 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
                       then gqExeConfig runnerInputNames stanMCParameters
                       else sampleExeConfig runnerInputNames stanMCParameters
 -}
-  samplesPrefix <- SC.samplesPrefix
-  let stanSamplesFiles = fmap (SC.sampleFile samplesPrefix) $ Just <$> [1 .. numChains]
+--  samplesPrefix <- SC.samplesPrefix
+--  let stanSamplesFiles = fmap (SC.sampleFile samplesPrefix) $ Just <$> [1 .. numChains]
   stanSummaryConfig <-
     K.liftKnit $
-      CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig $ fmap (SC.outputDirPath rin) stanSamplesFiles)
+      CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig []) -- $ fmap (SC.outputDirPath rin) stanSamplesFiles)
+  sampleExe <- sampleExeConfig runnerInputNames stanMCParameters
+  mGQExe <- case SC.rinGQ runnerInputNames of
+    Nothing -> return Nothing
+    Just _ -> Just <$> gqExeConfig runnerInputNames stanMCParameters
   return $
     SC.ModelRunnerConfig
       stanMakeConfig
-      (sampleExeConfig runnerInputNames stanMCParameters)
-      (gqExeConfig runnerInputNames stanMCParameters <$ mrc.rinQG runnerInputNames)
+      sampleExe
+      mGQExe
       stanSummaryConfig
       runnerInputNames
       stanMCParameters
@@ -88,7 +92,8 @@ writeModel ::  K.KnitEffects r
   => SC.RunnerInputNames
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
   -> Maybe (SB.GeneratedQuantities, SB.StanModel)
-writeModel config modelM = do
+  -> K.Sem r ()
+writeModel runnerInputNames modelM = do
   let modelDir = SC.rinModelDir runnerInputNames
       modelName = SC.rinModel runnerInputNames
   case modelM of
@@ -103,12 +108,12 @@ writeModel config modelM = do
                               $ "Given model was different from exisiting.  Old one was moved to \""
                               <> newName <> "\"."
 
-sampleExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r SC.StanExeConfig
+sampleExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r CS.StanExeConfig
 sampleExeConfig rin smp =  do
   let samplesKey = SC.ModelSamples
   modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix rin samplesKey
   return
-    $ (CS.makeDefaultSample (toString $  modelName rin) Nothing)
+    $ (CS.makeDefaultSample (toString $  SC.rinModel rin) Nothing)
     { CS.inputData = Just (SC.dataDirPath $ SC.combinedDataFileName rin)
     , CS.output = Just (SC.outputDirPath $ modelSamplesPrefix <> ".csv")
     , CS.numChains = Just $ SC.smcNumChains smp
@@ -119,7 +124,7 @@ sampleExeConfig rin smp =  do
     , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     }
 
-gqExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r (Int -> SC.StanExeConfig)
+gqExeConfig :: K.KnitEffects r => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r (Int -> CS.StanExeConfig)
 gqExeConfig rin smp = do
   gqName <- K.knitMaybe "gqExeConfig: RunnerInputNames.rinGQ is Nothing" $ SC.rinGQ rin
   gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix rin (SC.GQSamples gqName)
@@ -162,17 +167,18 @@ writeRScripts rScripts config = do
     Loo -> writeLoo
     Both ujs -> writeShiny ujs >> writeLoo
 
-wrangleDataWithoutPredictions :: forall st cd a b r.
+wrangleDataWithoutPredictions :: forall st cd md gq b r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
   , Monoid b
   )
   => SC.ModelRunnerConfig
-  -> SC.DataWrangler a b ()
+  -> SC.DataWrangler md gq b ()
   -> SC.Cacheable st b
-  -> K.ActionWithCacheTime r a
+  -> K.ActionWithCacheTime r md
+  -> K.ActionWithCacheTime r gq
   -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b))
-wrangleDataWithoutPredictions config dw cb a = wrangleData @st @cd config dw cb a ()
+wrangleDataWithoutPredictions config dw cb md_C gq_C = wrangleData @st @cd config dw cb md_C gq_C ()
 
 wrangleData :: forall st cd md gq b p r.
   (K.KnitEffects r
@@ -228,7 +234,7 @@ wranglerPrep :: forall st cd a b r.
   => SC.ModelRunnerConfig
   -> SC.InputDataType
   -> SC.DataIndexerType b
-  -> SC.Wrangler a
+  -> SC.Wrangler a b
   -> SC.Cacheable st b
   -> K.ActionWithCacheTime r a
   -> K.Sem r (K.ActionWithCacheTime r (), K.ActionWithCacheTime r (Either T.Text b))
@@ -263,6 +269,7 @@ manageIndex config inputDataType dataIndexer cb ebFromA_C = do
         _ -> K.knitError "Cacheable index type provided but b is Uncacheable."
     _ -> return ebFromA_C
 
+-- where do we combine data??
 runModel :: forall st cd md gq b p c r.
   (K.KnitEffects r
   , K.CacheEffects st cd Text r
@@ -277,8 +284,8 @@ runModel :: forall st cd md gq b p c r.
   -> K.ActionWithCacheTime r gq
   -> K.Sem r c
 runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C = K.wrapPrefix "Stan.ModelRunner.runModel" $ do
-  let modelNameS = toString $ SC.mrcModel config
-      modelDirS = toString $ SC.mrcModelDir config
+--  let modelNameS = toString $ SC.mrcModel config
+--      modelDirS = toString $ SC.mrcModelDir config
   K.logLE K.Info "running Model (if necessary)"
   modelSamplesFileNames <- SC.modelSamplesFileNames runnerInputNames
 --  let outputFiles = toString <$> SC.stanOutputFiles config --fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
@@ -319,6 +326,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
       when (SC.mrcRunDiagnose config) $ do
         K.logLE K.Info "Running stan diagnostics"
         K.liftKnit $ CS.diagnoseCSD modelSamplesFileNames
+      K.logLE K.Diagnostic "writing R scripts for new model run."
+      K.liftKnit $ writeRScripts rScriptsToWrite config
       return res_C
     mGQRes <- case SC.mrcStanExeGQConfigM config of
       Nothing -> return Nothing
@@ -329,86 +338,84 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
           K.logLE K.Diagnostic "Stan GQ outputs older than model input data, GQ input data or model code. Running GQ."
           mRes_C <- maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneGQ [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.ignoreCacheTime mRes_C >>= K.knitMaybe "There was an error running GQ for a chain."
-{-          when (SC.mrcRunDiagnose config) $ do
-            K.logLE K.Info "Running stan diagnostics (GQ)"
-            K.liftKnit $ CS.diagnoseCSD gqSamplesFileNames
--}
           return $ Just mRes_C
-
-    K.logLE K.Diagnostic "writing R scripts"
-    K.liftKnit $ writeRScripts rScriptsToWrite config
-
     return (modelRes_C, mGQRes)
   let (outputDep, outputFileNames) = case mGQRes of
         Nothing -> (modelResDep, modelSamplesFileNames)
         Just gqResDep -> (const <$> gqResDep <*> modelResDep, gqSamplesFileNames)
-  let makeSummaryFromCSVs = do
-        K.logLE K.Diagnostic "Stan summary older than model output.  Re-summarizing."
-        summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config {CS.sampleFiles = outputFileNames})
-        P.embed $ A.encodeFile (toString $ SC.summaryFilePath config) summary
+      makeSummaryFromCSVs csvFileNames summaryPath = do
+        K.logLE K.Diagnostic "Stan summary older output.  Re-summarizing."
+        K.logLE (K.Debug 1) $
+          "Summary command: "
+          <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+          <> " "
+          <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
+        summary <- K.liftKnit $ CS.stansummary (SC.mrcStanSummaryConfig config {CS.sampleFiles = csvFileNames})
+        P.embed $ A.encodeFile summaryPath summary
         return summary
+      getSummary csvFileNames summaryPath = do
+        K.ignoreCacheTimeM
+          $ K.loadOrMakeFile
+          summaryPath
+          ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
+          outputDep -- this only is here to carry the timing to compare the output file with
+          (const $ makeSummaryFromCSVs csvFileNames summaryPath)
+      combineSummaries modelS mGQS = modelS { CS.paramStats = modelPS <> gqPS}
+        where
+          modelPS = CS.paramStats modelS
+          gqPS = maybe mempty CS.paramStats mGQS
       modelResultDeps = (\a b _ -> (a, b)) <$> md_C <*> modelIndices_C <*> modelResDep
       mGQResultDeps = case mGQResDep of
         Nothing -> Nothing
         Just gqResDep -> Just $ (\a b _ -> (a, b)) <$> gq_C <*> gqIndices_C <*> gqResDep
   case makeResult of
     SC.UseSummary f -> do
-      K.logLE (K.Debug 1) $
-        "Summary command: "
-        <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
-        <> " "
-        <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
-      summary_C <- K.loadOrMakeFile
-                   (toString $ SC.summaryFilePath config)
-                   ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
-                   outputDep -- this only is here to carry the timing to compare the output file with
-                   (const makeSummaryFromCSVs)
-      summaryE <- K.ignoreCacheTime summary_C
-      summary <- K.knitEither $ first toText $ summaryE
+      modelSummary <-  K.ignoreCacheTimeM
+                       $ getSummary modelSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) (SC.modelSummaryFileName config))
+      mGQSummary <- case SC.gqSummaryFileName config of
+        Nothing -> return Nothing
+        Just gqSummaryFileName -> fmap Just
+                                  $ K.ignoreCacheTimeM
+                                  $ getSummary gqSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) gqSummaryFileName)
+      let summary = combineSummaries modelSummary mGQSummary
+--      summaryE <- K.ignoreCacheTime summary_C
+--      summary <- K.knitEither $ first toText $ summaryE
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
         Say.say $ toText (CS.unparsed summary)
       f summary toPredict modelResultDeps mGQResultDeps
     SC.UseSummaryGQ f -> do
-      K.logLE (K.Debug 1) $
-        "Summary command: "
-        <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
-        <> " "
-        <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
-      summary_C <- K.loadOrMakeFile
-                   (toString $ SC.summaryFilePath config)
-                   ((K.knitEither =<<) . P.embed . Relude.firstF toText . A.eitherDecodeFileStrict . toString)
-                   outputDep -- this only is here to carry the timing to compare the output file with
-                   (const makeSummaryFromCSVs)
-      summaryE <- K.ignoreCacheTime summary_C
-      summary <- K.knitEither $ first toText $ summaryE
+      gqSummary <- case SC.gqSummaryFileName config of
+        Nothing -> K.knitError "runModel.UseSumamryGQ called with no GQ result."
+        Just gqSummaryFileName -> K.ignoreCacheTimeM $ getSummary gqSamplesFileNames gqSummaryFileName
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
-        Say.say $ toText (CS.unparsed summary)
+        Say.say $ toText (CS.unparsed gqSummary)
       case mGQResultDeps of
         Nothing -> K.knitError "UseSumamryGQ: No GQ results!"
-        Just gqResultDeps ->  f summary toPredict gqResultDeps
+        Just gqResultDeps ->  f gqSummary toPredict gqResultDeps
     SC.SkipSummary f -> f toPredict resultDeps mGQResultDeps
     SC.DoNothing -> return ()
 
 data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord)
 
-deleteStaleFiles :: SC.ModelRunnerConfig -> [StaleFiles] -> IO ()
+deleteStaleFiles :: K.KnitEffects r => SC.ModelRunnerConfig -> [StaleFiles] -> K.Sem r ()
 deleteStaleFiles config staleFiles = do
-   let
-       modelDirS = toString $ SC.mrcModelDir config
-       outputCSVPaths = SC.addDirFP (modelDirS ++ "/output") . toString <$> SC.stanOutputFiles config
-       summaryFilePath = toString $ SC.summaryFilePath config
-       dataPath = jsonFP config
-       toDelete x = case x of
-         StaleData -> [dataPath]
-         StaleOutput -> outputCSVPaths
-         StaleSummary -> [summaryFilePath]
-       exists fp = Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
-       filesToDelete = ordNub $ concat $ toDelete <$> staleFiles
-   extantPaths <- catMaybes <$> traverse exists filesToDelete
-   Say.say $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
-   traverse_ Dir.removeFile extantPaths
+  modelSamplesFilePaths <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames config
+  gqSamplesFilePaths <- K.ignoreCacheTimeM $ SC.gqSamplesFileNames config
+  let modelSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.modelSummaryFileName config
+      mGQSummaryPath = SC.outputDirPath (SC.mrcInputNames config) <$> SC.gqSummaryFileName config
+      modelDataPath = SC.dataDirPath (SC.mrcInputNames config) $ SC.modelDataFileName $ SC.mrcInputNames config
+      mGQDataPath = SC.dataDirPath (SC.mrcInputNames config) <$> SC.gqDataFileName $ SC.mrcInputNames config
+      toDelete x = case x of
+        StaleData -> [modelDataPath] ++ fromMaybe [] [] mGQDataPath
+        StaleOutput -> modelSamplesFilePaths ++ gqSamplesFilePaths
+        StaleSummary -> [modelSummaryPath] ++ fromMaybe [] [] mGQSummaryPath
+      exists fp = Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
+      filesToDelete = ordNub $ concat $ toDelete <$> staleFiles
+  extantPaths <- catMaybes <$> traverse exists filesToDelete
+  Say.say $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
+  traverse_ Dir.removeFile extantPaths
 
 
 checkClangEnv :: (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) => K.Sem r ()

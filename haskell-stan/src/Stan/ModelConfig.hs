@@ -292,8 +292,17 @@ sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe ""
 --stanOutputFiles :: ModelRunnerConfig -> [T.Text]
 --stanOutputFiles config = fmap (toText . outputFile (outputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
 
-summaryFileName :: ModelRunnerConfig -> T.Text
-summaryFileName config = modelGQName (mrcInputNames config) <> ".json"
+modelSummaryFileName :: ModelRunnerConfig -> T.Text
+modelSummaryFileName config = rinModel (mrcInputNames config) <> "_summary.json"
 
+gqSummaryFileName :: ModelRunnerConfig -> Maybe T.Text
+gqSummaryFileName config = case rinGQ inputNames of
+  Nothing -> Nothing
+  Just gqName -> Just $ rinModel inputNames <> "_" <> gqName <> "_summary.json"
+  where
+    inputNames = mrcInputNames config
+
+{-
 summaryFilePath :: ModelRunnerConfig -> T.Text
 summaryFilePath config = rinModelDir (mrcInputNames config) <> "/output/" <> summaryFileName config
+-}
