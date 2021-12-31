@@ -53,10 +53,10 @@ import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
 import qualified Data.GADT.Show as GADT
-import Knit.Report.Input.Visualization.Diagrams (ReifiedIndexedLens')
 import Frames.Streamly.TH (declareColumnType)
-import Frames.Streamly.OrMissing (derivingOrMissingUnboxVectorFor')
 import Text.Printf (errorMissingArgument)
+import Stan.ModelConfig (InputDataType(..))
+import Knit.Report (crimson)
 
 type FunctionsBlock = T.Text
 
@@ -536,60 +536,88 @@ scoped x = do
   dropScope
   return a
 
-data BuilderState d = BuilderState { declaredVars :: !ScopedDeclarations
-                                   , indexBindings :: !SME.VarBindingStore
-                                   , rowBuilders :: !(RowInfos d)
-                                   , constJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
-                                   , hasFunctions :: !(Set.Set Text)
-                                   , code :: !StanCode
-                                   }
+data BuilderState md gq = BuilderState { declaredVars :: !ScopedDeclarations
+                                       , indexBindings :: !SME.VarBindingStore
+                                       , modelRowBuilders :: !(RowInfos md)
+                                       , gqRowBuilders :: !(RowInfos gq)
+                                       , constJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
+                                       , hasFunctions :: !(Set.Set Text)
+                                       , code :: !StanCode
+                                       }
 
-dumpBuilderState :: BuilderState d -> Text
-dumpBuilderState (BuilderState dvs ibs ris js hf c) =
-  "Declared Vars: " <> show dvs
-  <> "\n index-bindings: " <> show ibs
-  <> "\n row-info-keys: " <> show (DHash.keys ris)
+dumpBuilderState :: BuilderState md gq -> Text
+dumpBuilderState bs = -- (BuilderState dvs ibs ris js hf c) =
+  "Declared Vars: " <> show (declaredVars bs)
+  <> "\n index-bindings: " <> show (indexBindinggs bs)
+  <> "\n model row-info-keys: " <> show (DHash.keys $ modelRowBuilders bs)
+  <> "\n gq row-info-keys: " <> show (DHash.keys $ gqRowBuilders bs)
   <> "\n functions: " <> show hf
 
 
-getDataSetBindings :: RowTypeTag r -> StanBuilderM env d (Map SME.IndexKey SME.StanExpr)
-getDataSetBindings rtt = do
-  rowInfos <- rowBuilders <$> get
+--getRowInfo :: InputDataType -> RowTypeTag r
+
+withRowInfo :: Text -> (forall x.RowInfo x r -> StanBuilderM md gq y) -> InputDataType -> RowTypeTag r -> StanBuilderM md gq y
+withRowInfo ctxt f idt rtt =
+  case idt of
+    ModelData -> do
+      rowInfos <- modelRowBuilders <$> get
+      case DHash.lookup rtt rowInfos of
+        Nothing -> stanBuildError $ "withRowInfo (" <> ctxt <> "): Data-set=\"" <> dataSetName rtt <> "\" is not present in modelRowBuilders."
+        Just ri -> f ri
+    GQData -> do
+      rowInfos <- gqRowBuilders <$> get
+      case DHash.lookup rtt rowInfos of
+        Nothing -> stanBuildError $ "withRowInfo (" <> ctxt <> "): Data-set=\"" <> dataSetName rtt <> "\" is not present in modelRowBuilders."
+        Just ri -> f ri
+
+getDataSetBindings :: InputDataType -> RowTypeTag r -> StanBuilderM md gq (Map SME.IndexKey SME.StanExpr)
+getDataSetBindings = withRowInfo "getDataSetBindings" (return . expressionBindings)
+
+{-
+getModelDataSetBindings :: RowTypeTag r -> StanBuilderM md gq (Map SME.IndexKey SME.StanExpr)
+getModelDataSetBindings rtt = do
+  rowInfos <- modelRowBuilders <$> get
   case DHash.lookup rtt rowInfos of
-    Nothing -> stanBuildError $ "getDataSetForBindings: Data-set=\"" <> dataSetName rtt <> "\" is not present in rowBuilders."
+    Nothing -> stanBuildError $ "getModelDataSetBindings: Data-set=\"" <> dataSetName rtt <> "\" is not present in modelRowBuilders."
     Just ri -> return $ expressionBindings ri
 
+getGQDataSetBindings :: RowTypeTag r -> StanBuilderM md gq (Map SME.IndexKey SME.StanExpr)
+getGQDataSetBindings rtt = do
+  rowInfos <- gqRowBuilders <$> get
+  case DHash.lookup rtt rowInfos of
+    Nothing -> stanBuildError $ "getGQDataSetFBindings: Data-set=\"" <> dataSetName rtt <> "\" is not present in gqRowBuilders."
+    Just ri -> return $ expressionBindings ri
+-}
 
-setDataSetForBindings :: RowTypeTag r -> StanBuilderM env d ()
-setDataSetForBindings rtt = do
-  newUseBindings <- getDataSetBindings rtt
+setDataSetForBindings :: InputDataType -> RowTypeTag r -> StanBuilderM md gq ()
+setDataSetForBindings = do
+  newUseBindings <- getDataSetBindings idt rtt
   modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbm) -> SME.VarBindingStore newUseBindings dbm)
 
-useDataSetForBindings :: RowTypeTag r -> StanBuilderM env d a -> StanBuilderM env d a
-useDataSetForBindings rtt x = getDataSetBindings rtt >>= flip withUseBindings x
+useDataSetForBindings :: InputDataType -> RowTypeTag r -> StanBuilderM md gq a -> StanBuilderM md gq a
+useDataSetForBindings idt rtt x = getDataSetBindings idt rtt >>= flip withUseBindings x
 
-
-modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState d -> BuilderState d
-modifyDeclaredVars f (BuilderState dv vbs rb cj hf c) = BuilderState (f dv) vbs rb cj hf c
+modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState md gq -> BuilderState md gq
+modifyDeclaredVars f (BuilderState dv vbs mrb gqrb cj hf c) = BuilderState (f dv) vbs mrb gqrb cj hf c
 
 modifyDeclaredVarsA :: Applicative t
                     => (ScopedDeclarations -> t ScopedDeclarations)
-                    -> BuilderState d
-                    -> t (BuilderState d)
-modifyDeclaredVarsA f (BuilderState dv vbs rb cj hf c) = (\x -> BuilderState x vbs rb cj hf c) <$> f dv
+                    -> BuilderState md gq
+                    -> t (BuilderState md gq)
+modifyDeclaredVarsA f (BuilderState dv vbs mrb gqrb cj hf c) = (\x -> BuilderState x vbs mrb gqrb cj hf c) <$> f dv
 
 modifyIndexBindings :: (VarBindingStore -> VarBindingStore)
-                    -> BuilderState d
-                    -> BuilderState d
-modifyIndexBindings f (BuilderState dv vbs rb cj hf c) = BuilderState dv (f vbs) rb cj hf c
+                    -> BuilderState md gq
+                    -> BuilderState md gq
+modifyIndexBindings f (BuilderState dv vbs mrb gqrb cj hf c) = BuilderState dv (f vbs) mrb gqrb cj hf c
 
 modifyIndexBindingsA :: Applicative t
                      => (VarBindingStore -> t VarBindingStore)
-                     -> BuilderState d
-                     -> t (BuilderState d)
-modifyIndexBindingsA f (BuilderState dv vbs rb cj hf c) = (\x -> BuilderState dv x rb cj hf c) <$> f vbs
+                     -> BuilderState md gq
+                     -> t (BuilderState md gq)
+modifyIndexBindingsA f (BuilderState dv vbs mrb gqrb cj hf c) = (\x -> BuilderState dv x mrb gqrb cj hf c) <$> f vbs
 
-withUseBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
+withUseBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM md gq a -> StanBuilderM md gq a
 withUseBindings ubs m = do
   oldBindings <- indexBindings <$> get
   modify $ modifyIndexBindings (\(SME.VarBindingStore _ dbs) -> SME.VarBindingStore ubs dbs)
@@ -606,103 +634,145 @@ addScopedDeclBindings dbs' m = do
   return a
 
 
-modifyRowInfosA :: Applicative t
-                   => (RowInfos d -> t (RowInfos d))
-                   -> BuilderState d
-                   -> t (BuilderState d)
-modifyRowInfosA f (BuilderState dv vbs rb cj hf c) = (\x -> BuilderState dv vbs x cj hf c) <$> f rb
+modifyModelRowInfosA :: Applicative t
+                   => (RowInfos md -> t (RowInfos md))
+                   -> BuilderState md gq
+                   -> t (BuilderState md gq)
+modifyModelRowInfosA f (BuilderState dv vbs mrb gqrb cj hf c) = (\x -> BuilderState dv vbs x gqrb cj hf c) <$> f mrb
+
+modifyGQRowInfosA :: Applicative t
+                   => (RowInfos gq -> t (RowInfos gq))
+                   -> BuilderState md gq
+                   -> t (BuilderState md gq)
+modifyGQRowInfosA f (BuilderState dv vbs mrb gqrb cj hf c) = (\x -> BuilderState dv vbs mrb x cj hf c) <$> f gqrb
 
 
-modifyConstJson :: (JSONSeriesFold () -> JSONSeriesFold ()) -> BuilderState d -> BuilderState d
+modifyConstJson :: (JSONSeriesFold () -> JSONSeriesFold ()) -> BuilderState md gq -> BuilderState md gq
 modifyConstJson f (BuilderState dvs ibs rbs cj hfs c) = BuilderState dvs ibs rbs (f cj) hfs c
 
-addConstJson :: JSONSeriesFold () -> BuilderState d -> BuilderState d
+addConstJson :: JSONSeriesFold () -> BuilderState md gq -> BuilderState md gq
 addConstJson jf = modifyConstJson (<> jf)
 
-modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState d -> BuilderState d
-modifyFunctionNames f (BuilderState dv vbs rb cj hf c) = BuilderState dv vbs rb cj (f hf) c
+modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState md gq -> BuilderState md gq
+modifyFunctionNames f (BuilderState dv vbs mrb gqrb cj hf c) = BuilderState dv vbs mrb gqrb cj (f hf) c
 
-initialBuilderState :: Typeable d => RowInfos d -> BuilderState d
-initialBuilderState rowInfos =
+initialBuilderState :: Typeable md => RowInfos md -> RowInfos gq -> BuilderState md gq
+initialBuilderState modelRowInfos gqRowInfos =
   BuilderState
   initialScopedDeclarations
   SME.noBindings
-  rowInfos
+  modelRowInfos
+  gqRowInfos
   mempty
   Set.empty
   emptyStanCode
 
 type RowInfoMakers d = DHash.DHashMap RowTypeTag (GroupIndexAndIntMapMakers d)
 
-newtype StanGroupBuilderM d a
-  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (RowInfoMakers d)) a }
-  deriving (Functor, Applicative, Monad, MonadState (RowInfoMakers d))
+data GroupBuilderS md gq = GroupBuilderS { gbModelS :: RowInfoMakers md, gbGQS :: RowInfoMakers gq}
 
-stanGroupBuildError :: Text -> StanGroupBuilderM d a
+modifyGBModelS :: (RowInfoMakers md -> RowInfoMakers md) -> GroupBuilderS md gq -> GroupBuilderS md gq
+modifyGBModelS f (GroupBuilderS mRims gqRims) = GroupBuilderS (f mRims) gqRims
+
+modifyGBGQS :: (RowInfoMakers gq -> RowInfoMakers gq) -> GroupBuilderS md gq -> GroupBuilderS md gq
+modifyGBGQS f (GroupBuilderS mRims gqRims) = GroupBuilderS mRims (f gqRims)
+
+newtype StanGroupBuilderM md gq a
+  = StanGroupBuilderM { unStanGroupBuilderM :: ExceptT Text (State (GroupBuilderS md gq)) a }
+  deriving (Functor, Applicative, Monad, MonadState (GroupBuilderS md gq))
+
+stanGroupBuildError :: Text -> StanGroupBuilderM md gq a
 stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
 
-getDataSetTag :: forall r d. Typeable r => Text -> StanGroupBuilderM d (RowTypeTag r)
-getDataSetTag name = do
-  let rtt = RowTypeTag @r name
-  infoMakers <- get
-  case DHash.lookup rtt infoMakers of
-    Nothing -> stanGroupBuildError $ "getDataSetTag: No data-set \"" <> name <> "\" found in group builder."
-    Just _ -> return rtt
+withRowInfoMakers :: (forall x. RowInfoMakers x -> StanGroupBuilderM md gq (Maybe RowInfoMakers x, y)) -> InputDataType -> StanGroupBuilderM md gq y
+withRowInfoMakers f idt =
+  case idt of
+    ModelData -> do
+      rims <- gets gbModelS
+      (mRims, y) <- f rims
+      case mRims of
+        Nothing -> return ()
+        Just newRims -> modify $ modifyGBModelS $ const newRims
+      return y
+    GQData -> do
+      rims <- gets gbGQS
+      (mRims, y) <- f rims
+      case mRims of
+        Nothing -> return ()
+        Just newRims -> modify $ modifyGBModelS $ const newRims
+      return y
 
-addDataSetToGroupBuilder :: forall d r. Typeable r
-                         => DataSetUse
-                         -> Text
-                         -> ToFoldable d r
-                         -> StanGroupBuilderM d (RowTypeTag r)
-addDataSetToGroupBuilder dsu dsName tf = do
-  rims <- get
+getDataSetTag :: forall r md gq. Typeable r => InputDataType -> Text -> StanGroupBuilderM md gq (RowTypeTag r)
+getDataSetTag idt t = withRowInfoMakers f idt where
+  f infoMakers = do
+    let rtt = RowTypeTag @r name
+    case DHash.lookup rtt infoMakers of
+      Nothing -> stanGroupBuildError $ "getModelDataSetTag: No data-set \"" <> name <> "\" found in group builder."
+      Just _ -> return (Nothing, rtt)
+
+
+-- HERE
+--addDataToGroupBuilder ::
+
+addModelDataToGroupBuilder :: forall md gq r. Typeable r
+                         => Text
+                         -> ToFoldable md r
+                         -> StanGroupBuilderM md gq (RowTypeTag r)
+addModelDataToGroupBuilder dsu dsName tf = do
+  rims <- gets gbModelS
   let rtt = RowTypeTag @r dsName
   case DHash.lookup rtt rims of
     Nothing -> do
-      put $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rims
+      modify $ modifyGBModelS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty))
       return rtt
-    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder"
+    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (Model)"
 
 
+addGQDataToGroupBuilder :: forall md gq r. Typeable r
+                         => Text
+                         -> ToFoldable gq r
+                         -> StanGroupBuilderM md gq (RowTypeTag r)
+addGQDataToGroupBuilder dsu dsName tf = do
+  rims <- gets gbGQS
+  let rtt = RowTypeTag @r dsName
+  case DHash.lookup rtt rims of
+    Nothing -> do
+      modify $ modifyGBGQS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty))
+      return rtt
+    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (GQ)"
 
-addGroupIndexForDataSet :: forall r k d.Typeable k
+addGroupIndexForModelData :: forall r k md gq.Typeable k
                         => GroupTypeTag k
                         -> RowTypeTag r
                         -> MakeIndex r k
-                        -> StanGroupBuilderM d ()
-addGroupIndexForDataSet gtt rtt mkIndex = do
-  rims <- get
+                        -> StanGroupBuilderM md gq ()
+addGroupIndexForModelData gtt rtt mkIndex = do
+  rims <- gets gbModelS
   case DHash.lookup rtt rims of
-    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
+    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added to Model data before groups can be added to it."
     Just (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
-      Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
-      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+      Nothing -> modify $ modifyGBModelS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs)
+      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for model row=" <> dataSetName rtt
 
-{-
-addGroupIndexForDataSet' :: forall r k d.Typeable k
-                         => GroupTypeTag k
-                         -> RowTypeTag r
-                         -> Maybe Text
-                         -> MakeIndex r k
-                         -> StanGroupBuilderM d ()
-addGroupIndexForDataSet' gtt rtt mBinding mkIndex = do
-  rims <- get
+addGroupIndexForGQData :: forall r k md gq.Typeable k
+                        => GroupTypeTag k
+                        -> RowTypeTag r
+                        -> MakeIndex r k
+                        -> StanGroupBuilderM md gq ()
+addGroupIndexForGQData gtt rtt mkIndex = do
+  rims <- gets gbGQS
   case DHash.lookup rtt rims of
-    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
-    Just (GroupIndexAndIntMapMakers tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
-      Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rims
-      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
-  case mBinding of
-    Nothing -> return ()
-    Just b -> addUseBindingToDataSet rtt b (SME.name $ taggedGroupName gtt)
--}
+    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added to GQ data before groups can be added to it."
+    Just (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
+      Nothing -> modify $ modifyGBGQS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs)
+      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for GQ row=" <> dataSetName rtt
 
-addGroupIndexForCrosswalk :: forall k r d.
-                          Typeable k
-                          => RowTypeTag r
-                          -> MakeIndex r k
-                          -> StanGroupBuilderM d ()
-addGroupIndexForCrosswalk rtt mkIndex = do
+addGroupIndexForModelCrosswalk :: forall k r md gq.
+                                  Typeable k
+                               => RowTypeTag r
+                               -> MakeIndex r k
+                               -> StanGroupBuilderM d ()
+addGroupIndexForModelCrosswalk rtt mkIndex = do
   let gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rtt)
   addGroupIndexForDataSet gttX rtt mkIndex
 
@@ -724,8 +794,8 @@ runStanGroupBuilder sgb d =
   in initialBuilderState rowInfos
 
 
-newtype StanBuilderM env d a = StanBuilderM { unStanBuilderM :: ExceptT Text (ReaderT env (State (BuilderState d))) a }
-                             deriving (Functor, Applicative, Monad, MonadReader env, MonadState (BuilderState d))
+newtype StanBuilderM md gq a = StanBuilderM { unStanBuilderM :: ExceptT Text (State (BuilderState md gq)) a }
+                             deriving (Functor, Applicative, Monad, MonadState (BuilderState md gq))
 
 askUserEnv :: StanBuilderM env d env
 askUserEnv = ask
