@@ -684,7 +684,7 @@ newtype StanGroupBuilderM md gq a
 stanGroupBuildError :: Text -> StanGroupBuilderM md gq a
 stanGroupBuildError t = StanGroupBuilderM $ ExceptT (pure $ Left t)
 
-withRowInfoMakers :: (forall x. RowInfoMakers x -> StanGroupBuilderM md gq (Maybe RowInfoMakers x, y)) -> InputDataType -> StanGroupBuilderM md gq y
+withRowInfoMakers :: (forall x. RowInfoMakers x -> StanGroupBuilderM md gq (Maybe (RowInfoMakers x), y)) -> InputDataType -> StanGroupBuilderM md gq y
 withRowInfoMakers f idt =
   case idt of
     ModelData -> do
@@ -704,105 +704,98 @@ withRowInfoMakers f idt =
 
 getDataSetTag :: forall r md gq. Typeable r => InputDataType -> Text -> StanGroupBuilderM md gq (RowTypeTag r)
 getDataSetTag idt t = withRowInfoMakers f idt where
-  f infoMakers = do
+  f rowInfoMakers = do
     let rtt = RowTypeTag @r name
-    case DHash.lookup rtt infoMakers of
+    case DHash.lookup rtt rowInfoMakers of
       Nothing -> stanGroupBuildError $ "getModelDataSetTag: No data-set \"" <> name <> "\" found in group builder."
       Just _ -> return (Nothing, rtt)
-
-
--- HERE
---addDataToGroupBuilder ::
 
 addModelDataToGroupBuilder :: forall md gq r. Typeable r
                          => Text
                          -> ToFoldable md r
                          -> StanGroupBuilderM md gq (RowTypeTag r)
-addModelDataToGroupBuilder dsu dsName tf = do
-  rims <- gets gbModelS
-  let rtt = RowTypeTag @r dsName
-  case DHash.lookup rtt rims of
-    Nothing -> do
-      modify $ modifyGBModelS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty))
-      return rtt
-    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (Model)"
-
+addModelDataToGroupBuilder dsu dsName tf = withRowInfoMakers f ModelData where
+  f rowInfoMakers = do
+    let rtt = RowTypeTag @r dsName
+    case DHash.lookup rtt rowInfoMakers of
+      Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (Model)"
+      Nothing -> do
+        let newRims = DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rowInfoMakers
+        return (Just newRims, rtt)
 
 addGQDataToGroupBuilder :: forall md gq r. Typeable r
                          => Text
                          -> ToFoldable gq r
                          -> StanGroupBuilderM md gq (RowTypeTag r)
-addGQDataToGroupBuilder dsu dsName tf = do
-  rims <- gets gbGQS
-  let rtt = RowTypeTag @r dsName
-  case DHash.lookup rtt rims of
-    Nothing -> do
-      modify $ modifyGBGQS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty))
-      return rtt
-    Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (GQ)"
+addGQDataToGroupBuilder dsu dsName tf = withRowInfoMakers f GQData where
+  f rowInfoMakers = do
+    let rtt = RowTypeTag @r dsName
+    case DHash.lookup rtt rowInfoMakers of
+      Just _ -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" already set up in Group Builder (GQ)"
+      Nothing -> do
+        let newRims = DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers DHash.empty) (GroupIntMapBuilders DHash.empty)) rowInfoMakers
+        return (Just newRims, rtt)
 
-addGroupIndexForModelData :: forall r k md gq.Typeable k
+addGroupIndexForData :: forall r k md gq.Typeable k
                         => GroupTypeTag k
+                        -> InputDataType
                         -> RowTypeTag r
                         -> MakeIndex r k
                         -> StanGroupBuilderM md gq ()
-addGroupIndexForModelData gtt rtt mkIndex = do
-  rims <- gets gbModelS
-  case DHash.lookup rtt rims of
-    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added to Model data before groups can be added to it."
-    Just (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
-      Nothing -> modify $ modifyGBModelS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs)
-      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for model row=" <> dataSetName rtt
-
-addGroupIndexForGQData :: forall r k md gq.Typeable k
-                        => GroupTypeTag k
-                        -> RowTypeTag r
-                        -> MakeIndex r k
-                        -> StanGroupBuilderM md gq ()
-addGroupIndexForGQData gtt rtt mkIndex = do
-  rims <- gets gbGQS
-  case DHash.lookup rtt rims of
-    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added to GQ data before groups can be added to it."
-    Just (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
-      Nothing -> modify $ modifyGBGQS $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs)
-      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for GQ row=" <> dataSetName rtt
+addGroupIndexForData gtt idt rtt mkIndex = withRowInfoMakers f idt where
+  f rowInfoMakers = do
+    case DHash.lookup rtt rowInfoMakers of
+      Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added to " <> show idt <> " before groups can be added to it."
+      Just (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers gims) gimbs) -> case DHash.lookup gtt gims of
+        Just _ -> stanGroupBuildError
+                  $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for " <> show idt <> " row=" <> dataSetName rtt
+        Nothing -> do
+          let newRims = DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf (GroupIndexMakers $ DHash.insert gtt mkIndex gims) gimbs) rowInfoMakers
+          return (Just newRims, ())
 
 addGroupIndexForModelCrosswalk :: forall k r md gq.
                                   Typeable k
-                               => RowTypeTag r
+                               => InputDataType
+                               -> RowTypeTag r
                                -> MakeIndex r k
-                               -> StanGroupBuilderM d ()
-addGroupIndexForModelCrosswalk rtt mkIndex = do
+                               -> StanGroupBuilderM md gq ()
+addGroupIndexForModelCrosswalk idt rtt mkIndex = do
   let gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rtt)
-  addGroupIndexForDataSet gttX rtt mkIndex
+  addGroupIndexForData gttX idt rtt mkIndex
 
-
-addGroupIntMapForDataSet :: forall r k d.Typeable k => GroupTypeTag k -> RowTypeTag r -> DataToIntMap r k -> StanGroupBuilderM d ()
-addGroupIntMapForDataSet gtt rtt mkIntMap = do
-  rims <- get
-  case DHash.lookup rtt rims of
-    Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
-    Just (GroupIndexAndIntMapMakers dsu tf gims (GroupIntMapBuilders gimbs)) -> case DHash.lookup gtt gimbs of
-      Nothing -> put $ DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf gims (GroupIntMapBuilders $ DHash.insert gtt mkIntMap gimbs)) rims
-      Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+addGroupIntMapForDataSet :: forall r k md gq.Typeable k
+                         => GroupTypeTag k
+                         -> InputDataType
+                         -> RowTypeTag r
+                         -> DataToIntMap r k
+                         -> StanGroupBuilderM md gq ()
+addGroupIntMapForDataSet gtt idt rtt mkIntMap = withRowInfoMakers f idt where
+  f rowInfoMakers = do
+    case DHash.lookup rtt rowInfoMakers of
+      Nothing -> stanGroupBuildError $ "Data-set \"" <> dataSetName rtt <> "\" needs to be added before groups can be added to it."
+      Just (GroupIndexAndIntMapMakers dsu tf gims (GroupIntMapBuilders gimbs)) -> case DHash.lookup gtt gimbs of
+        Just _ -> stanGroupBuildError $ "Attempt to add a second group (\"" <> taggedGroupName gtt <> "\") at the same type for row=" <> dataSetName rtt
+        Nothing -> do
+          let newRims = DHash.insert rtt (GroupIndexAndIntMapMakers dsu tf gims (GroupIntMapBuilders $ DHash.insert gtt mkIntMap gimbs)) rowInfoMakers
+          return (Just newRims, ())
 
 -- This builds the indexes but not the IntMaps.  Those need to be built at the end.
-runStanGroupBuilder :: Typeable d=> StanGroupBuilderM d () -> d -> BuilderState d
+runStanGroupBuilder :: (Typeable md, Typeable gq) => StanGroupBuilderM md gq () -> md -> gq -> BuilderState md gq
 runStanGroupBuilder sgb d =
-  let (resE, rims) = usingState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
-      rowInfos = DHash.mapWithKey (buildRowInfo d) rims
-  in initialBuilderState rowInfos
+  let (resE, gbs) = usingState DHash.empty $ runExceptT $ unStanGroupBuilderM sgb
+      modelRowInfos = DHash.mapWithKey (buildRowInfo md) $ gbModelS gbs
+      gqRowInfos = DHash.mapWithKey (buildRowInfo gq) $ gbGQS gbs
+  in initialBuilderState modelRowInfos gqRowInfos
 
 
 newtype StanBuilderM md gq a = StanBuilderM { unStanBuilderM :: ExceptT Text (State (BuilderState md gq)) a }
                              deriving (Functor, Applicative, Monad, MonadState (BuilderState md gq))
 
-askUserEnv :: StanBuilderM env d env
-askUserEnv = ask
-
-dataSetTag :: forall r env d. Typeable r => Text -> StanBuilderM env d (RowTypeTag r)
-dataSetTag name = do
+dataSetTag :: forall r env md gq. Typeable r => InputDataType -> Text -> StanBuilderM md gq (RowTypeTag r)
+dataSetTag idt name = do
   let rtt :: RowTypeTag r = RowTypeTag name
+  withRowInfo "dataSetTag" (const $ return rtt) idt rtt
+{-
   rowInfos <- rowBuilders <$> get
   case DHash.lookup rtt rowInfos of
     Nothing -> stanBuildError
@@ -811,6 +804,7 @@ dataSetTag name = do
                <> " is missing from row builders. Perhaps you forgot to add it in the groupBuilder or model code?"
                <> "\n data-sets=" <> show (DHash.keys rowInfos)
     Just _ -> return rtt
+-}
 
 addFunctionsOnce :: Text -> StanBuilderM env d () -> StanBuilderM env d ()
 addFunctionsOnce functionsName fCode = do
