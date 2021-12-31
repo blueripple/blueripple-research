@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
@@ -19,6 +20,7 @@ import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Map as M
 import qualified Data.Text as T
+import Data.Hashable()
 
 data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq)
 
@@ -210,7 +212,8 @@ noLogOfSummary sc = sc { mrcLogSummary = False }
 noDiagnose :: ModelRunnerConfig -> ModelRunnerConfig
 noDiagnose sc = sc { mrcRunDiagnose = False }
 
-data InputDataType = ModelData | GQData deriving (Show, Eq, Ord)
+data InputDataType = ModelData | GQData deriving (Show, Eq, Ord, Enum, Bounded, Generic)
+instance Hashable InputDataType
 
 -- produce indexes and json producer from the data as well as a data-set to predict.
 data DataIndexerType (b :: Type) where
