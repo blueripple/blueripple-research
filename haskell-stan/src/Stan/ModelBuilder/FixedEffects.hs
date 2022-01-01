@@ -62,18 +62,18 @@ qrR = qrM rM
 qrRInv :: FEMatrixes -> Either Text SME.StanVar
 qrRInv = qrM rInvM
 
-type MakeVecE env d = SME.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
+type MakeVecE md gq = SME.IndexKey -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 
-addFixedEffects :: forall k rFE rM d env.(Typeable d)
-                => FixedEffectsModel k env d
+addFixedEffects :: forall k rFE rM md gq.(Typeable md, Typeable gq)
+                => FixedEffectsModel k md gq
                 -> SB.RowTypeTag rFE
                 -> SB.RowTypeTag rM
                 -> Maybe SB.StanVar
                 -> SB.MatrixRowFromData rFE
                 -> Maybe Text
-                -> SB.StanBuilderM env d ( MakeVecE env d  -- Q -> Q * theta (or key -> X -> m (X * beta))
-                                         , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- Y -> Y - mean(X)
-                                         , MakeVecE env d  -- Y -> m (Y * beta)
+                -> SB.StanBuilderM md gq ( MakeVecE md gq  -- Q -> Q * theta (or key -> X -> m (X * beta))
+                                         , SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- Y -> Y - mean(X)
+                                         , MakeVecE md gq  -- Y -> m (Y * beta)
                                          )
 addFixedEffects feModel rttFE rttModeled mWgtsV matrixRowFromData mVarSuffix = do
   (xV, f) <- addFixedEffectsData rttFE matrixRowFromData mWgtsV
@@ -82,12 +82,12 @@ addFixedEffects feModel rttFE rttModeled mWgtsV matrixRowFromData mVarSuffix = d
 
 
 
-addFixedEffectsData :: forall r d env. (Typeable d)
+addFixedEffectsData :: forall r md gq. (Typeable md, Typeable gq)
                     => SB.RowTypeTag r
                     -> SB.MatrixRowFromData r
                     -> Maybe SME.StanVar
-                    -> SB.StanBuilderM env d (FEMatrixes
-                                             , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- Y -> Y - mean(X)
+                    -> SB.StanBuilderM md gq (FEMatrixes
+                                             , SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- Y -> Y - mean(X)
                                              )
 addFixedEffectsData rttFE matrixRowFromData mWgtsV = do
   let feDataSetName = SB.dataSetName rttFE
