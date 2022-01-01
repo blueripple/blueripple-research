@@ -48,7 +48,7 @@ allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cere
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hs-cmdstan
-  tag: 65a3352673d9e775ab50592694d3b88989a516fd
+  tag: 851d56cc524edd020054e6f9fe2b9a456772c2ae
 
 source-repository-package
   type: git

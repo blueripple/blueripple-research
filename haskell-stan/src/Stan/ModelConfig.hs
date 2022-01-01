@@ -15,6 +15,8 @@ module Stan.ModelConfig where
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Knit.Report as K
+import qualified Flat
+import qualified Data.Serialize as Cereal
 --import qualified Knit.Effect.Serialize as K
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
@@ -22,7 +24,10 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Hashable()
 
-data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq)
+data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq, Generic)
+
+instance Flat.Flat SamplesKey
+--instance Cereal.Serialize SamplesKey
 
 type SamplesPrefixMap = Map SamplesKey Text
 
@@ -115,13 +120,13 @@ combineData rin = do
   case gqDataFileName rin of
     Nothing -> return modelDataDep
     Just gqName -> do
-      let gqFP = addModelDirectory rin gqName
+      let gqFP = dataDirPath rin gqName
       gqDep <- K.fileDependency $ toString $ gqFP
       let comboDeps = (,) <$> modelDataDep <*> gqDep
-          comboFP = toString $ addModelDirectory rin $ combinedDataFileName rin
+          comboFP = dataDirPath rin $ combinedDataFileName rin
       comboFileDep <- K.fileDependency comboFP
       K.updateIf comboFileDep comboDeps $ const $ do
-          modelDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString $ addModelDirectory rin $ modelDataFileName rin
+          modelDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ dataDirPath rin $ modelDataFileName rin
           modelData <- K.knitEither $ first toText modelDataE
           gqDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString gqFP
           gqData <- K.knitEither $ first toText gqDataE

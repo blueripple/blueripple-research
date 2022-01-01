@@ -118,21 +118,12 @@ gqExeConfig rin smp = do
   gqName <- K.knitMaybe "gqExeConfig: RunnerInputNames.rinGQ is Nothing" $ SC.rinGQ rin
   gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd rin (SC.GQSamples gqName)
   modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd rin SC.ModelSamples
-  when (gqSamplesPrefix == modelSamplesPrefix)
-    $ K.knitError "gqExeConfig: model samples and gq samples have same prefix!"
   return
     $ \n -> (CS.makeDefaultGenerateQuantities (toString $ SC.rinModel rin) n)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
     , CS.fittedParams = Just (SC.outputDirPath rin $ modelSamplesPrefix <> "_" <> show n <> ".csv")
     , CS.output = Just (SC.outputDirPath rin $ gqSamplesPrefix <> "_" <> show n <> ".csv")
-    , CS.numChains = Just $ SC.smcNumChains smp
-    , CS.numThreads = Just $ SC.smcNumThreads smp
-    , CS.numSamples = SC.smcNumSamplesM smp
-    , CS.numWarmup = SC.smcNumWarmupM smp
-    , CS.adaptDelta = SC.smcAdaptDeltaM smp
-    , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     }
-
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
