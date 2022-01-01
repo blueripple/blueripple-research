@@ -377,7 +377,7 @@ buildJSONFromRows rowFoldMap d = do
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
 -- The Maybe return values are there just to satisfy the (returned) type of DHash.traverseWithKey
-buildGroupIndexes :: (Typeable d) => StanBuilderM env d ()
+buildGroupIndexes :: (Typeable md, Typeable gq) => StanBuilderM md gq ()
 buildGroupIndexes = do
   let buildIndexJSONFold :: (Typeable md, Typeable gq) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM md gq (Maybe k)
       buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
@@ -818,7 +818,7 @@ newtype StanBuilderM md gq a = StanBuilderM { unStanBuilderM :: ExceptT Text (St
 dataSetTag :: forall r env md gq. Typeable r => InputDataType -> Text -> StanBuilderM md gq (RowTypeTag r)
 dataSetTag idt name = do
   let rtt :: RowTypeTag r = RowTypeTag idt name
-      err = stanBuildError $ "Data-set " <> show rtt <> " not found in row builders."
+      err = stanBuildError $ "dataSetTag: Data-set " <> name <> " not found in " <> show idt <> " row builders."
   withRowInfo err (const $ return rtt) rtt
 {-
   rowInfos <- rowBuilders <$> get
@@ -833,7 +833,8 @@ dataSetTag idt name = do
 
 addFunctionsOnce :: Text -> StanBuilderM md gq () -> StanBuilderM md gq ()
 addFunctionsOnce functionsName fCode = do
-  (BuilderState vars ibs rowBuilders cj fsNames code) <- get
+--  (BuilderState vars ibs rowBuilders cj fsNames code) <- get
+  fsNames <- gets hasFunctions
   if functionsName `Set.member` fsNames
     then return ()
     else (do
@@ -842,36 +843,32 @@ addFunctionsOnce functionsName fCode = do
          )
 
 -- TODO: We should error if added twice but that doesn't quite work with post-stratifation code now.  Fix.
-addIntMapBuilder :: RowTypeTag r
+addIntMapBuilder :: forall r k md gq.
+                    RowTypeTag r
                  -> GroupTypeTag k
                  -> DataToIntMap r k
                  -> StanBuilderM md gq ()
-addIntMapBuilder idt rtt gtt dim = withRowInfo err f rtt
-  where
-    idt = inputDataType rtt
-    err = stanBuildError $ "addIntMapBuilder: Data-set \"" <> dataSetName rtt <> " not present in " <> show idt <> "rowBuilders."
-    f rowInfo = do
+addIntMapBuilder rtt gtt dim = do
+  let idt = inputDataType rtt
+      err :: StanBuilderM md gq a
+      err = stanBuildError $ "addIntMapBuilder: Data-set \"" <> dataSetName rtt <> " not present in " <> show idt <> "rowBuilders."
+  case idt of
+    ModelData -> do
+      rowInfo <- whenNothingM (DHash.lookup rtt <$> gets modelRowBuilders) err
       let (GroupIntMapBuilders gimbs) = groupIntMapBuilders rowInfo
-      case DHash.lookup gtt  of
-        Just _ -> return ()
-        Nothing -> do
-          let newRowInfo = rowInfo {groupIntMapBuilders = GroupIntMapBuilders $ DHash.insert gtt dim gimbs}
-              newRowInfoF = DHash.insert rtt newRowInfo
-              modAF = case idt of
-                ModelData -> modifyModelRowInfosA
-                GQData -> modifyGQRowInfosA
-          modify $ runIdentity . modAF (Identity . newRowInfoF)
-{-
-  BuilderState vars ib rowInfos jf hf code <- get
-  case DHash.lookup rtt rowInfos of
-    Nothing -> stanBuildError $ "addIntMapBuilders: Data-set \"" <> dataSetName rtt <> " not present in rowBuilders."
-    Just (RowInfo tf ebs gis (GroupIntMapBuilders gimbs) js dsu) -> case DHash.lookup gtt gimbs of
-      Just _ -> return () --stanBuildError $ "addIntMapBuilder: Group \"" <> taggedGroupName gtt <> "\" is already present for data-set \"" <> dataSetName rtt <> "\"."
-      Nothing -> do
-        let newRowInfo = RowInfo tf ebs gis (GroupIntMapBuilders $ DHash.insert gtt dim gimbs) js dsu
-            newRowInfos = DHash.insert rtt newRowInfo rowInfos
-        put $ BuilderState vars ib newRowInfos jf hf code
--}
+      whenNothing_ (DHash.lookup gtt gimbs) $ do
+        let newRowInfo = rowInfo {groupIntMapBuilders = GroupIntMapBuilders $ DHash.insert gtt dim gimbs}
+            newRowInfoF = DHash.insert rtt newRowInfo
+        modify $ runIdentity . modifyModelRowInfosA (Identity . newRowInfoF)
+        return ()
+    GQData -> do
+      rowInfo <- whenNothingM (DHash.lookup rtt <$> gets gqRowBuilders) err
+      let (GroupIntMapBuilders gimbs) = groupIntMapBuilders rowInfo
+      whenNothing_ (DHash.lookup gtt gimbs) $ do
+        let newRowInfo = rowInfo {groupIntMapBuilders = GroupIntMapBuilders $ DHash.insert gtt dim gimbs}
+            newRowInfoF = DHash.insert rtt newRowInfo
+        modify $ runIdentity . modifyGQRowInfosA (Identity . newRowInfoF)
+        return ()
 
 modelIntMapsBuilder :: forall md gq. StanBuilderM md gq (md -> Either Text DataSetGroupIntMaps)
 modelIntMapsBuilder = intMapsFromRowInfos . modelRowBuilders <$> get
@@ -882,10 +879,10 @@ gqIntMapsBuilder = intMapsFromRowInfos . gqRowBuilders <$> get
 intMapsFromRowInfos :: RowInfos d -> d -> Either Text DataSetGroupIntMaps
 intMapsFromRowInfos rowInfos d =
   let f :: d -> RowInfo d r -> Either Text (GroupIntMaps r)
-      f d (RowInfo (ToFoldable h) _ _ gims _ _) = Foldl.foldM (intMapsForDataSetFoldM gims) (h d)
+      f d (RowInfo (ToFoldable h) _ _ gims _) = Foldl.foldM (intMapsForDataSetFoldM gims) (h d)
   in DHash.traverse (f d) rowInfos
 
-addModelDataSet :: Typeable r
+addModelDataSet :: forall md gq r.Typeable r
                 => Text
                 -> ToFoldable md r
                 -> StanBuilderM md gq (RowTypeTag r)
@@ -894,8 +891,9 @@ addModelDataSet name toFoldable = do
       alreadyPresent _ = stanBuildError "Attempt to add 2nd data set with same type and name in ModelData"
       add = do
         let rowInfo = unIndexedRowInfo toFoldable name
-            newRowInfoF = DHash.insert rtt newRowInfo
-        modify $ runIdentity . modifyModelRowsA (Identity . newRowInfoF)
+            newRowInfoF = DHash.insert rtt rowInfo
+        modify $ runIdentity . modifyModelRowInfosA (Identity . newRowInfoF)
+        return rtt
   withRowInfo add alreadyPresent rtt
 
 addGQDataSet :: Typeable r
@@ -907,8 +905,9 @@ addGQDataSet name toFoldable = do
       alreadyPresent _ = stanBuildError "Attempt to add 2nd data set with same type and name in ModelData"
       add = do
         let rowInfo = unIndexedRowInfo toFoldable name
-            newRowInfoF = DHash.insert rtt newRowInfo
-        modify $ runIdentity . modifyModelRowsA (Identity . newRowInfoF)
+            newRowInfoF = DHash.insert rtt rowInfo
+        modify $ runIdentity . modifyGQRowInfosA (Identity . newRowInfoF)
+        return rtt
   withRowInfo add alreadyPresent rtt
 
 {-
@@ -938,14 +937,18 @@ crosswalkIndexKey rttTo = "XWalkTo_" <> dataSetName rttTo
 -- build an index from each data-sets relationship to the common group.
 -- only works when both data sets are model data or both are GQ data.
 -- add Json and use-binding
-addDataSetsCrosswalk :: forall k rFrom rTo md gq.(Typeable md, Typeable k)
+addDataSetsCrosswalk :: forall k rFrom rTo md gq.(Typeable md, Typeable gq, Typeable k)
                      => RowTypeTag rFrom
                      -> RowTypeTag rTo
                      -> GroupTypeTag k
                      -> StanBuilderM md gq ()
-addDataSetsCrosswalk  idt rttFrom rttTo gtt = do
-  when (inputDataType rFrom /= inputDataType rTo)
-    $ stanBuildError $ "addDataSetsCrosswalk: From=" <> show rttFrom <> " and to=" <> show rttTo <> " have different input data types (Model/GQ)"
+addDataSetsCrosswalk  rttFrom rttTo gtt = do
+  when (inputDataType rttFrom /= inputDataType rttTo)
+    $ stanBuildError
+    $ "addDataSetsCrosswalk: From=" <> dataSetName rttFrom
+    <> " (" <> show (inputDataType rttFrom) <> ")  and to="
+    <> dataSetName rttTo <> " (" <> show (inputDataType rttTo)
+    <> ") have different input data types (Model/GQ)"
   let idt = inputDataType rttFrom
       gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rttTo)
   fromToGroup <- rowToGroup <$> indexMap rttFrom gtt -- rFrom -> k
@@ -994,11 +997,12 @@ gqRowInfo rtt = do
     Nothing -> stanBuildError $ "gqRowInfo: data-set=" <> dataSetName rtt <> " not found in " <> show (inputDataType rtt) <> " rowBuilders."
     Just ri -> return ri
 
-indexMap :: RowTypeTag r -> GroupTypeTag k -> StanBuilderM md gq (IndexMap r k)
+indexMap :: forall r k md gq.RowTypeTag r -> GroupTypeTag k -> StanBuilderM md gq (IndexMap r k)
 indexMap rtt gtt = withRowInfo err f rtt where
   err = stanBuildError $ "ModelBuilder.indexMap: \"" <> dataSetName rtt <> "\" not present in row builders."
+  f :: forall x. RowInfo x r -> StanBuilderM md gq (IndexMap r k)
   f rowInfo = do
-    case DHash.lookup gtt ((\(GroupIndexes x) -> x) $ groupIndexes ri) of
+    case DHash.lookup gtt ((\(GroupIndexes x) -> x) $ groupIndexes rowInfo) of
       Nothing -> stanBuildError
                  $ "ModelBuilder.indexMap: \""
                  <> taggedGroupName gtt
@@ -1061,7 +1065,7 @@ addUseBinding' k e = modify $ modifyIndexBindings f where
 addUseBinding :: IndexKey -> SME.StanVar -> StanBuilderM md gq ()
 addUseBinding k sv = addUseBinding' k (SME.var sv)
 
-addUseBindingToDataSet' :: RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM md gq ()
+addUseBindingToDataSet' :: forall r md gq.RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM md gq ()
 addUseBindingToDataSet' rtt key e = do
   let dataNotFoundErr = "addUseBindingToDataSet: Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
       bindingChanged newExpr oldExpr = when (newExpr /= oldExpr)
@@ -1072,11 +1076,12 @@ addUseBindingToDataSet' rtt key e = do
                                        <> show oldExpr
                                        <> "; new expression="
                                        <> show newExpr
+      f :: forall x. RowInfos x -> Either Text (RowInfos x)
       f rowInfos = do
-        (RowInfo tf ebs gis gimbs js dsu) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
+        (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
         maybe (Right ()) (bindingChanged e) $ Map.lookup key ebs
         let ebs' = Map.insert key e ebs
-        return $ DHash.insert rtt (RowInfo tf ebs' gis gimbs js dsu) rowInfos
+        return $ DHash.insert rtt (RowInfo tf ebs' gis gimbs js) rowInfos
   bs <- get
   bs' <- stanBuildEither
          $ case inputDataType rtt of
@@ -1151,7 +1156,7 @@ typeForName sn = do
   dvs <- declaredVars <$> get
   stanBuildEither $ (\(SME.StanVar _ st) -> st) <$> varLookup dvs sn
 
-addJson :: (Typeable md, Typeable gq)
+addJson :: forall r md gq. (Typeable md, Typeable gq)
         => RowTypeTag r
         -> SME.StanName
         -> SME.StanType
@@ -1159,15 +1164,18 @@ addJson :: (Typeable md, Typeable gq)
         -> Stan.StanJSONF r Aeson.Series
         -> StanBuilderM md gq SME.StanVar
 addJson rtt name st sc fld = do
-  inBlock SBData $ stanDeclare name st sc
-  let addFold rowInfos = case addFoldToDBuilder rtt fld rowInfos of
+  v <- inBlock SBData $ stanDeclare name st sc
+  let addFold :: Typeable x => RowInfos x -> StanBuilderM md gq (RowInfos x)
+      addFold rowInfos = case addFoldToDBuilder rtt fld rowInfos of
         Nothing -> stanBuildError $ "Attempt to add Json to an uninitialized dataset (" <> dataSetName rtt <> ")"
         Just x -> return x
   bs <- get
   newBS <- case inputDataType rtt of
-    ModelData -> modifyModelRowInfosA addFold
-    GQData -> modifyGQRowInfosA addFold
+    ModelData -> modifyModelRowInfosA addFold bs
+    GQData -> modifyGQRowInfosA addFold bs
   put newBS
+  return v
+
 {-
   (BuilderState declared ib rowBuilders modelExprs code ims) <- get
 --  when (Set.member name un) $ stanBuildError $ "Duplicate name in json builders: \"" <> name <> "\""
@@ -1368,7 +1376,7 @@ stanForLoop :: Text -- counter
             -> Maybe Text -- start, if not 1
             -> Text -- end, if
             -> (Text -> StanBuilderM md gq a)
-            -> StanBuilderM env d a
+            -> StanBuilderM md gq a
 stanForLoop counter mStart end loopF = do
   let start = fromMaybe "1" mStart
   addLine $ "for (" <> counter <> " in " <> start <> ":" <> end <> ")"
