@@ -23,7 +23,13 @@ commentLine :: Parser Text
 commentLine = (\c t e -> toText ([c] ++ t) <> e) <$> char '#' <*> many alphaNumChar <*> eol
 
 commentSection :: Parser Text
-commentSection = fmap mconcat $ many commentLine
+commentSection = fmap mconcat $ some commentLine
 
-csvLine :: Parser [a]
-csvLine
+commaFirst :: Parser a -> Parser a
+commaFirst p = flip const <$> char ',' <*> p
+
+csvLine :: Parser a -> Parser [a]
+csvLine p = (\h t _ -> h:t) <$> p <*> many (commaFirst p) <*> eol
+
+headerLine :: Parser [Text]
+headerLine = csvLine
