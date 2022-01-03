@@ -20,7 +20,7 @@ house_model
 *.ps
 *.aux
 *.png
-.Rdata
+.RData
 .Rhistory
 .DS_Store
 reports/MRP/data
@@ -33,6 +33,7 @@ bigData
 testbed/*.csv
 GA.html
 stan.html
+stan
 /stan/house/*
 /stan/voterPref/*
 stan/voterPref/*
