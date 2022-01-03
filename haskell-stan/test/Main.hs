@@ -28,7 +28,7 @@ import Control.Lens (view)
 
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
-  let mf = 2
+  let mf = 1
   fbResults_C <- fbResults
   fbMatchups_C <- fbMatchups mf
 --  let modelData = fbResults_C <*> fbMatchups_C

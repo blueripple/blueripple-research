@@ -276,7 +276,7 @@ type ResultF r md gq b p c
 
 data ResultAction r md gq b p c where
   UseSummary :: (CS.StanSummary -> ResultF r md gq b p c) -> ResultAction r md gq b p c
-  UseSummaryGQ  :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (gq, Either T.Text b) -> K.Sem r c) -> ResultAction r md gq b p c
+--  UseSummaryGQ  :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (gq, Either T.Text b) -> K.Sem r c) -> ResultAction r md gq b p c
   SkipSummary :: ResultF r md gq b p c -> ResultAction r md gq b p c
   DoNothing :: ResultAction r md gq b p ()
 

@@ -282,16 +282,22 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         runOneGQ n = case SC.mrcStanExeGQConfigM config of
           Nothing -> K.knitError "Attempt to run Stan in GQ mode with no GQ setup (mrcStanExeGQConfigM is Nothing)"
           Just gqExeConfigF -> do
+            let gqExeConfig = gqExeConfigF n
             gqName <- case SC.rinGQ (SC.mrcInputNames config) of
               Nothing -> K.knitError "runModel.runGQ: Trying to run GQ setup but GQ name not set (rinGQ is Nothing)"
               Just name -> return name
             K.logLE K.Diagnostic $ "Running GQ: " <> gqName
             K.logLE K.Diagnostic $ "Using results from model " <> SC.rinModel (SC.mrcInputNames config)
-            K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ gqExeConfigF n)
-            K.liftKnit $ CS.stan (SC.modelPath $ SC.mrcInputNames config) (gqExeConfigF n)
+            K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ gqExeConfig)
+            K.liftKnit $ CS.stan (SC.modelPath $ SC.mrcInputNames config) gqExeConfig
             K.logLE K.Diagnostic $ "Finished GQ: " <> gqName
             K.logLE K.Diagnostic $ "Merging samples..."
---            let samplerCSVFP = CS.fittedParams gqExeConfig
+            samplesFP <- K.knitMaybe "runModel.runOneGQ: fittedParams field is Nothing in gq StanExeConfig" $ CS.fittedParams gqExeConfig
+            gqFP <- K.knitMaybe "runModel.runOneGQ: output field is Nothing in gq StanExeConfig" $ CS.output gqExeConfig
+            mergedFP <- do
+              gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd (SC.mrcInputNames config) (SC.GQSamples gqName)
+              return $ SC.outputDirPath (SC.mrcInputNames config) $ gqSamplesPrefix <> "_" <> show n <> ".csv"
+            K.liftKnit $ SCSV.mergeSamplerAndGQCSVs samplesFP gqFP mergedFP
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."
@@ -348,17 +354,26 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         Just gqResDep -> Just $ (\a b _ -> (a, b)) <$> gq_C <*> gqIndices_C <*> gqResDep
   case makeResult of
     SC.UseSummary f -> do
-      modelSummary <-  getSummary modelSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) (SC.modelSummaryFileName config))
-      mGQSummary <- case SC.gqSummaryFileName config of
+      let summaryFileName = fromMaybe (SC.modelSummaryFileName config) $ SC.gqSummaryFileName config
+          samplesFileNames = case SC.rinGQ (SC.mrcInputNames config) of
+            Nothing -> modelSamplesFileNames
+            Just _ -> gqSamplesFileNames
+      summary <-  getSummary samplesFileNames (SC.outputDirPath (SC.mrcInputNames config) summaryFileName)
+{-
+--      modelSummary <-  getSummary modelSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) (SC.modelSummaryFileName config))
+      gqSummaryFileName <- K.knitMaybe "runModel: gqSummary" $ SC.gqSummaryFileName config
+      summary <- case SC.gqSummaryFileName config of
         Nothing -> return Nothing
         Just gqSummaryFileName -> Just <$> getSummary gqSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) gqSummaryFileName)
-      let summary = combineSummaries modelSummary mGQSummary
+--      let summary = combineSummaries modelSummary mGQSummary
 --      summaryE <- K.ignoreCacheTime summary_C
 --      summary <- K.knitEither $ first toText $ summaryE
+-}
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
         Say.say $ toText (CS.unparsed summary)
       f summary toPredict modelResultDeps mGQResultDeps
+{-
     SC.UseSummaryGQ f -> do
       gqSummary <- case SC.gqSummaryFileName config of
         Nothing -> K.knitError "runModel.UseSumamryGQ called with no GQ result."
@@ -369,6 +384,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
       case mGQResultDeps of
         Nothing -> K.knitError "UseSumamryGQ: No GQ results!"
         Just gqResultDeps ->  f gqSummary toPredict gqResultDeps
+-}
     SC.SkipSummary f -> f toPredict modelResultDeps mGQResultDeps
     SC.DoNothing -> return ()
 

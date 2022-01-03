@@ -34,31 +34,31 @@ import GHC.IO.Exception (userError)
 type Parser  = Parsec Void Text
 
 commentLine :: Parser Text
-commentLine = (\c t e -> toText ([c] ++ t) <> e) <$> char '#' <*> many alphaNumChar <*> eol
+commentLine = (\c t -> toText ([c] ++ t)) <$> char '#' <*> manyTill anySingle eol
 
 commentSection :: Parser Text
 commentSection = fmap mconcat $ some commentLine
 
 untilComma :: Parser Text
-untilComma = takeWhileP (Just "non-comma") (/= ',')
+untilComma = takeWhileP (Just "non-comma") (\x -> not $ x `elem` [',','\n'])
 
 --commaFirst :: Parser a -> Parser a
 --commaFirst p = flip const <$> char ',' <*> p
 
 csvLine :: Parser a -> Parser [a]
-csvLine p = sepEndBy1 p (void (char ',') <|> void eol)
+csvLine p = const <$> sepBy1 p (char ',') <*> eol
 
 headerLine :: Parser [Text]
-headerLine = csvLine untilComma
+headerLine = fmap T.pack <$> csvLine (many $ alphaNumChar <|> punctuationChar)
 
 dataLine :: Parser [Double]
-dataLine = csvLine L.float
+dataLine = csvLine $ L.signed space L.float
 
 type SampleCol r = M.Vector r Double
 type Samples r = M.Array r M.Ix2 Double
 
 samples :: Parser (Samples M.U)
-samples = M.fromLists' M.Seq <$> many dataLine
+samples = M.fromLists' M.Seq <$> some dataLine
 
 data SamplerCSV r = SamplerCSV
   { samplerDetails :: Text
@@ -75,7 +75,8 @@ samplerCSV = do
   aDetails <- commentSection
   sSamples <- samples
   tDetails <- commentSection
-  eol
+  _ <- takeRest
+--  eof
   return $ SamplerCSV sDetails aDetails tDetails header sSamples
 
 data GQCSV r = GQCSV
@@ -90,6 +91,7 @@ gqCSV = do
   details <- commentSection
   header <- headerLine
   gqSamples <- samples
+  _ <- takeRest
   return $ GQCSV details header gqSamples
 
 mergeSamplerAndGQCSVs :: FilePath -> FilePath -> FilePath -> IO ()
@@ -100,7 +102,7 @@ mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
     >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " does not exist!")
   --Dir.doesFileExist mergedFP
   --    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " already exists!")
-  let handleParse = either (M.throwM . userError . show) return
+  let handleParse = either (M.throwM . userError . errorBundlePretty) return
   s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
   gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
   s' <- addReplaceGQToSamplerCSV gq s
