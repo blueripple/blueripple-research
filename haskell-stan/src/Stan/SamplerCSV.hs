@@ -88,4 +88,7 @@ headerText :: [Text] -> Text
 headerText = T.intercalate ","
 
 samplesText :: Samples -> [Text]
-samplesText = undefined
+samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
+
+samplerCSVText :: SamplerCSV -> Text
+samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
