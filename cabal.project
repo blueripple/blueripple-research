@@ -115,7 +115,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/data-science-utils
-  tag: cedfd4041c26a85fb94199c634da4a1f179c2905
+  tag: af09df26bc9f64c5a95d9d0d4ed1830e1e8e59e2
 
 source-repository-package
   type: git
@@ -130,7 +130,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/tsne
-  tag: 0ecec75d904482e0171a618a72d6bd3a3a94440a
+  tag: 89c131b4ca5aa5250fae2cc8b11dbad6fb8079fe
 
 --source-repository-package
 --  type: git

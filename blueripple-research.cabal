@@ -47,7 +47,7 @@ common deps
                , knit-haskell >= 0.8.0 && < 0.11
                , lens
                , lucid
-               , massiv >= 0.5.4 && < 0.7
+               , massiv >= 1.0.0 && < 1.1
                , microlens-platform >= 0.4.0 && < 0.5
                , map-reduce-folds >= 0.1.0.1
                , optics >= 0.3 && < 0.5
@@ -95,7 +95,7 @@ library  haskell-stan
                , hs-cmdstan >= 0.1 && < 0.2
                , here
                , knit-haskell >= 0.9 && < 0.11
-               , massiv >= 0.6.0 && < 0.7
+               , massiv >= 1.0 && < 1.1
                , megaparsec >= 9.0.0 && < 10.0
                , monadic-recursion-schemes >= 0.1.11 && < 0.2
                , parser-combinators > 1.0.0 && < 2.0

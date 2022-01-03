@@ -1,4 +1,5 @@
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Stan.SamplerCSV where
 
@@ -11,6 +12,7 @@ import qualified Data.Massiv.Vector as MV
 import qualified Data.Massiv.Array as M
 
 import qualified Data.Text as T
+import qualified Data.List as L
 
 --import Control.Applicative.Combinators
 
@@ -47,20 +49,21 @@ headerLine = csvLine untilComma
 dataLine :: Parser [Double]
 dataLine = csvLine L.float
 
-type Samples = M.Array M.U M.Ix2 Double
+type SampleCol r = M.Vector r Double
+type Samples r = M.Array r M.Ix2 Double
 
-samples :: Parser Samples
+samples :: Parser (Samples M.U)
 samples = M.fromLists' M.Seq <$> many dataLine
 
-data SamplerCSV = SamplerCSV
+data SamplerCSV r = SamplerCSV
   { samplerDetails :: Text
   , adaptDetails :: Text
   , timeDetails :: Text
   , samplerHeader :: [Text]
-  , samplerSamples :: Samples
+  , samplerSamples :: Samples r
   }
 
-samplerCSV :: Parser SamplerCSV
+samplerCSV :: Parser (SamplerCSV M.U)
 samplerCSV = do
   sDetails <- commentSection
   header <- headerLine
@@ -70,14 +73,14 @@ samplerCSV = do
   eol
   return $ SamplerCSV sDetails aDetails tDetails header sSamples
 
-data GQCSV = GQCSV
+data GQCSV r = GQCSV
   {
     gqDetails :: Text
   , gqHeader :: [Text]
-  , gqSamples :: Samples
+  , gqSamples :: Samples r
   }
 
-gqCSV :: Parser GQCSV
+gqCSV :: Parser (GQCSV M.U)
 gqCSV = do
   details <- commentSection
   header <- headerLine
@@ -87,8 +90,32 @@ gqCSV = do
 headerText :: [Text] -> Text
 headerText = T.intercalate ","
 
-samplesText :: Samples -> [Text]
+samplesText :: Samples M.U -> [Text]
 samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
 
-samplerCSVText :: SamplerCSV -> Text
+samplerCSVText :: SamplerCSV M.U -> Text
 samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
+
+replaceColumn :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
+              => Text -> SampleCol r' -> SamplerCSV r -> m (SamplerCSV M.DL)
+replaceColumn  h c s =
+  case L.elemIndex h (samplerHeader s) of
+    Nothing -> do
+      newSamples <- addColumnAtEnd c (samplerSamples s)
+      return $ s { samplerSamples = newSamples
+                 , samplerHeader = (samplerHeader s) ++ [h]
+                 }
+    Just cIndex -> do
+      newSamples <- replaceColumnByIndex cIndex c (samplerSamples s)
+      return $ s { samplerSamples = newSamples }
+
+replaceColumnByIndex :: (M.Source r Double, M.Source r' Double, M.MonadThrow m) => Int -> SampleCol r' -> Samples r -> m (Samples M.DL)
+replaceColumnByIndex = M.replaceSlice (M.Dim 2)
+
+addColumnAtEnd :: (M.Source r Double, M.Source r' Double, M.MonadThrow m) => SampleCol r' -> Samples r -> m (Samples M.DL)
+addColumnAtEnd c m = do
+  cMat <- vecToMatrix c
+  M.appendM (M.Dim 2) cMat m
+
+vecToMatrix :: (M.MonadThrow m, M.Size r) => SampleCol r -> m (Samples r)
+vecToMatrix c = let rows = M.unSz (M.size c) in M.resizeM (M.Sz2 rows 1) c

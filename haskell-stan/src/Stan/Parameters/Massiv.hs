@@ -109,7 +109,7 @@ parse4D name m = do
 -- we compute before indexing since we will need the actual values to put in the map(s)
 -- Also simplifies the constraints
 
-index1D :: (Show k, Ord k, M.Load r M.Ix1  a)
+index1D :: (Show k, Ord k, M.Load r M.Ix1  a, M.Size r)
         => IntMap.IntMap k
         -> M.Vector r a
         -> Either Text (Map k a)
@@ -121,7 +121,7 @@ index1D im v = do
     <> show ni <> " results and IntMap = " <> show im
   return $ Map.fromList $ zip (IntMap.elems im) (M.toList $ M.compute @M.B v)
 
-addIndexedMapLayer :: (Ord ka, Ord kb, Ord kc, M.Load r M.Ix1  (Map kb a))
+addIndexedMapLayer :: (Ord ka, Ord kb, Ord kc, M.Load r M.Ix1  (Map kb a), M.Size r)
               => (ka -> kb -> kc)
               -> IntMap.IntMap ka
               -> M.Vector r (Map kb a)
@@ -142,7 +142,7 @@ index2D :: forall ki kj r a.
            , Ord ki
            , Show kj
            , Ord kj
-           , M.Load (M.R r) M.Ix1 a
+--           , M.Load (M.R r) M.Ix1 a
            , M.Load r M.Ix2 a
            )
         => IntMap.IntMap ki
@@ -158,7 +158,7 @@ index2D' :: forall ki kj r a.
            , Ord ki
            , Show kj
            , Ord kj
-           , M.Load (M.R r) M.Ix1 a
+--           , M.Load (M.R r) M.Ix1 a
            , M.Load r M.Ix2 a
            )
         => IntMap.IntMap ki
@@ -176,8 +176,8 @@ index3D :: forall ki kj kk r a.
            , Ord kj
            , Show kk
            , Ord kk
-           , M.Load (M.R (M.R r)) M.Ix1 a
-           , M.Load (M.R r) M.Ix2 a
+--           , M.Load (M.R (M.R r)) M.Ix1 a
+--           , M.Load (M.R r) M.Ix2 a
            , M.Load r M.Ix3 a
            )
         => IntMap.IntMap ki
@@ -197,9 +197,9 @@ index4D :: forall ki kj kk kl r a.
            , Ord kk
            , Show kl
            , Ord kl
-           , M.Load (M.R (M.R (M.R r))) M.Ix1 a
-           , M.Load (M.R (M.R r)) M.Ix2 a
-           , M.Load (M.R r) M.Ix3 a
+--           , M.Load (M.R (M.R (M.R r))) M.Ix1 a
+--           , M.Load (M.R (M.R r)) M.Ix2 a
+--           , M.Load (M.R r) M.Ix3 a
            , M.Load r M.Ix4 a
            )
         => IntMap.IntMap ki
