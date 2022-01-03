@@ -35,6 +35,7 @@ import qualified Say
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
+import qualified Stan.SamplerCSV as SCSV
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
@@ -122,7 +123,7 @@ gqExeConfig rin smp = do
     $ \n -> (CS.makeDefaultGenerateQuantities (toString $ SC.rinModel rin) n)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
     , CS.fittedParams = Just (SC.outputDirPath rin $ modelSamplesPrefix <> "_" <> show n <> ".csv")
-    , CS.output = Just (SC.outputDirPath rin $ gqSamplesPrefix <> "_" <> show n <> ".csv")
+    , CS.output = Just (SC.outputDirPath rin $ gqSamplesPrefix <> "_gq" <> show n <> ".csv")
     }
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
@@ -289,6 +290,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
             K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ gqExeConfigF n)
             K.liftKnit $ CS.stan (SC.modelPath $ SC.mrcInputNames config) (gqExeConfigF n)
             K.logLE K.Diagnostic $ "Finished GQ: " <> gqName
+            K.logLE K.Diagnostic $ "Merging samples..."
+--            let samplerCSVFP = CS.fittedParams gqExeConfig
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."
@@ -334,10 +337,11 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
                     outputDep -- this only is here to carry the timing to compare the output file with
                     (const $ makeSummaryFromCSVs csvFileNames summaryPath)
         K.knitEither $ first toText $ summaryE
-      combineSummaries modelS mGQS = modelS { CS.paramStats = modelPS <> gqPS}
+{-      combineSummaries modelS mGQS = modelS { CS.paramStats = modelPS <> gqPS}
         where
           modelPS = CS.paramStats modelS
           gqPS = maybe mempty CS.paramStats mGQS
+-}
       modelResultDeps = (\a b _ -> (a, b)) <$> md_C <*> modelIndices_C <*> modelResDep
       mGQResultDeps = case mGQResDep of
         Nothing -> Nothing

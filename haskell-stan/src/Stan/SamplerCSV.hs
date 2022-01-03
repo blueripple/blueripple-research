@@ -11,8 +11,13 @@ import qualified Text.Megaparsec.Char.Lexer as L
 import qualified Data.Massiv.Vector as MV
 import qualified Data.Massiv.Array as M
 
+import qualified Control.Foldl as FL
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import qualified Data.List as L
+import qualified System.Directory as Dir
+import Control.Exception (throwIO)
+import GHC.IO.Exception (userError)
 
 --import Control.Applicative.Combinators
 
@@ -87,6 +92,29 @@ gqCSV = do
   gqSamples <- samples
   return $ GQCSV details header gqSamples
 
+mergeSamplerAndGQCSVs :: FilePath -> FilePath -> FilePath -> IO ()
+mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
+  fmap not (Dir.doesFileExist samplerFP)
+    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ samplerFP ++ " does not exist!")
+  fmap not (Dir.doesFileExist gqFP)
+    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " does not exist!")
+  --Dir.doesFileExist mergedFP
+  --    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " already exists!")
+  let handleParse = either (M.throwM . userError . show) return
+  s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
+  gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
+  s' <- addReplaceGQToSamplerCSV gq s
+  writeFileText mergedFP $ samplerCSVText s'
+
+addReplaceGQToSamplerCSV :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
+addReplaceGQToSamplerCSV gq s = do
+  let doOne x (hText, gqIndex) = replaceOrAddColumn hText (gqSamples gq M.<!> (M.Dim 2, gqIndex)) (asU x)
+      asDL x = x { samplerSamples = M.toLoadArray $ samplerSamples x}
+      asU x = x { samplerSamples = M.computeAs M.U $ samplerSamples x}
+      fldM :: M.MonadThrow  m => FL.FoldM m (Text, Int) (SamplerCSV M.U)
+      fldM = FL.FoldM doOne (return $ asDL s) (return . asU)
+  FL.foldM fldM $ zip (gqHeader gq) [0..]
+
 headerText :: [Text] -> Text
 headerText = T.intercalate ","
 
@@ -96,9 +124,9 @@ samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
 samplerCSVText :: SamplerCSV M.U -> Text
 samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
 
-replaceColumn :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
-              => Text -> SampleCol r' -> SamplerCSV r -> m (SamplerCSV M.DL)
-replaceColumn  h c s =
+replaceOrAddColumn :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
+                   => Text -> SampleCol r' -> SamplerCSV r -> m (SamplerCSV M.DL)
+replaceOrAddColumn  h c s =
   case L.elemIndex h (samplerHeader s) of
     Nothing -> do
       newSamples <- addColumnAtEnd c (samplerSamples s)
@@ -109,10 +137,12 @@ replaceColumn  h c s =
       newSamples <- replaceColumnByIndex cIndex c (samplerSamples s)
       return $ s { samplerSamples = newSamples }
 
-replaceColumnByIndex :: (M.Source r Double, M.Source r' Double, M.MonadThrow m) => Int -> SampleCol r' -> Samples r -> m (Samples M.DL)
+replaceColumnByIndex :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
+                     => Int -> SampleCol r' -> Samples r -> m (Samples M.DL)
 replaceColumnByIndex = M.replaceSlice (M.Dim 2)
 
-addColumnAtEnd :: (M.Source r Double, M.Source r' Double, M.MonadThrow m) => SampleCol r' -> Samples r -> m (Samples M.DL)
+addColumnAtEnd :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
+               => SampleCol r' -> Samples r -> m (Samples M.DL)
 addColumnAtEnd c m = do
   cMat <- vecToMatrix c
   M.appendM (M.Dim 2) cMat m
