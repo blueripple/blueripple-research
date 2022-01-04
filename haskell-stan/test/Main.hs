@@ -37,8 +37,8 @@ main = KE.knitToIO KE.defaultConfig $ do
   (musCI, sigmaMuCI, sigmaCI) <-
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
-    False
-    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu" <> show mf) "fb")
+    True
+    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just "mu1") "fb")
     dw
     code
     ""
@@ -48,6 +48,25 @@ main = KE.knitToIO KE.defaultConfig $ do
   K.logLE K.Info $ "mus: " <> show musCI
   K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI
   K.logLE K.Info $ "sigma: " <> show sigmaCI
+
+  let rin = SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu2") "fb"
+      outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
+  K.clearIfPresent @Text @KE.CacheData $ "stan/test/result/" <> outputLabel <> ".bin"
+  (musCI', sigmaMuCI', sigmaCI') <-
+    K.ignoreCacheTimeM
+    $ runModel @KE.SerializerC @KE.CacheData
+    False
+    rin
+    dw
+    code
+    ""
+    normalParamCIs
+    fbResults_C
+    fbMatchups_C
+  K.logLE K.Info $ "mus: " <> show musCI'
+  K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI'
+  K.logLE K.Info $ "sigma: " <> show sigmaCI'
+
 
 -- This whole thing should be wrapped in the core for this very common variation.
 dataWranglerAndCode :: forall md gq r. (K.KnitEffects r, Typeable md, Typeable gq)

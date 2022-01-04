@@ -14,6 +14,7 @@ import qualified Data.Massiv.Array as M
 import qualified Control.Foldl as FL
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Scientific as SCI
 import qualified Data.List as L
 import qualified System.Directory as Dir
 import Control.Exception (throwIO)
@@ -34,31 +35,35 @@ import GHC.IO.Exception (userError)
 type Parser  = Parsec Void Text
 
 commentLine :: Parser Text
-commentLine = (\c t -> toText ([c] ++ t)) <$> char '#' <*> manyTill anySingle eol
+commentLine = (\c t -> toText ([c] ++ t ++ "\n")) <$> char '#' <*> manyTill anySingle eol
 
 commentSection :: Parser Text
 commentSection = fmap mconcat $ some commentLine
 
 untilComma :: Parser Text
-untilComma = takeWhileP (Just "non-comma") (\x -> not $ x `elem` [',','\n'])
+untilComma = takeWhileP (Just "non-comma") f where
+  f x = x /= ',' && x /= 'n'
 
 --commaFirst :: Parser a -> Parser a
 --commaFirst p = flip const <$> char ',' <*> p
 
-csvLine :: Parser a -> Parser [a]
-csvLine p = const <$> sepBy1 p (char ',') <*> eol
+csvLines :: Parser a -> Parser [[a]]
+csvLines p = line `endBy` eol where
+  line = p `sepBy` (char ',')
+
+  --const <$> sepBy1 p (char ',') <*> eol
 
 headerLine :: Parser [Text]
-headerLine = fmap T.pack <$> csvLine (many $ alphaNumChar <|> punctuationChar)
+headerLine = fmap T.pack <$> (const <$> (many $ noneOf [',','\n','\r']) `sepBy` (char ',') <*> eol)
 
-dataLine :: Parser [Double]
-dataLine = csvLine $ L.signed space L.float
+--dataLine :: Parser [Double]
+--dataLine = csvLine $ L.signed space L.float
 
 type SampleCol r = M.Vector r Double
 type Samples r = M.Array r M.Ix2 Double
 
 samples :: Parser (Samples M.U)
-samples = M.fromLists' M.Seq <$> some dataLine
+samples = M.fromLists' M.Seq . (fmap (fmap SCI.toRealFloat)) <$> csvLines (L.signed hspace L.scientific)
 
 data SamplerCSV r = SamplerCSV
   { samplerDetails :: Text
@@ -104,13 +109,15 @@ mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
   --    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " already exists!")
   let handleParse = either (M.throwM . userError . errorBundlePretty) return
   s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
+  putTextLn $ "Parsed samplerCSV. Samples have size" <> show (M.size $ samplerSamples s)
   gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
+  putTextLn $ "Parsed gqCSV. Samples have size" <> show (M.size $ gqSamples gq)
   s' <- addReplaceGQToSamplerCSV gq s
   writeFileText mergedFP $ samplerCSVText s'
 
 addReplaceGQToSamplerCSV :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
 addReplaceGQToSamplerCSV gq s = do
-  let doOne x (hText, gqIndex) = replaceOrAddColumn hText (gqSamples gq M.<!> (M.Dim 2, gqIndex)) (asU x)
+  let doOne x (hText, gqIndex) = replaceOrAddColumn hText (gqSamples gq M.<!> (M.Dim 1, gqIndex)) (asU x)
       asDL x = x { samplerSamples = M.toLoadArray $ samplerSamples x}
       asU x = x { samplerSamples = M.computeAs M.U $ samplerSamples x}
       fldM :: M.MonadThrow  m => FL.FoldM m (Text, Int) (SamplerCSV M.U)
@@ -141,13 +148,13 @@ replaceOrAddColumn  h c s =
 
 replaceColumnByIndex :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
                      => Int -> SampleCol r' -> Samples r -> m (Samples M.DL)
-replaceColumnByIndex = M.replaceSlice (M.Dim 2)
+replaceColumnByIndex = M.replaceSlice (M.Dim 1)
 
 addColumnAtEnd :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
                => SampleCol r' -> Samples r -> m (Samples M.DL)
 addColumnAtEnd c m = do
   cMat <- vecToMatrix c
-  M.appendM (M.Dim 2) cMat m
+  M.appendM (M.Dim 1) cMat m
 
 vecToMatrix :: (M.MonadThrow m, M.Size r) => SampleCol r -> m (Samples r)
 vecToMatrix c = let rows = M.unSz (M.size c) in M.resizeM (M.Sz2 rows 1) c
