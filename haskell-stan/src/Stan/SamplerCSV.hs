@@ -35,14 +35,14 @@ import GHC.IO.Exception (userError)
 type Parser  = Parsec Void Text
 
 commentLine :: Parser Text
-commentLine = (\c t -> toText ([c] ++ t ++ "\n")) <$> char '#' <*> manyTill anySingle eol
+commentLine = (\c t -> toText ([c] ++ t)) <$> char '#' <*> manyTill anySingle eol
 
 commentSection :: Parser Text
-commentSection = fmap mconcat $ some commentLine
+commentSection = T.intercalate "\n" <$> some commentLine
 
 untilComma :: Parser Text
 untilComma = takeWhileP (Just "non-comma") f where
-  f x = x /= ',' && x /= 'n'
+  f x = x /= ',' && x /= '\n'
 
 --commaFirst :: Parser a -> Parser a
 --commaFirst p = flip const <$> char ',' <*> p

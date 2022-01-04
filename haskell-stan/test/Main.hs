@@ -28,44 +28,47 @@ import Control.Lens (view)
 
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
-  let mf = 1
   fbResults_C <- fbResults
-  fbMatchups_C <- fbMatchups mf
+  fbMatchups1_C <- fbMatchups 1
+  fbMatchups2_C <- fbMatchups 2
 --  let modelData = fbResults_C <*> fbMatchups_C
   teams <- FL.fold (FL.premap (view favoriteName) FL.set) <$> K.ignoreCacheTime fbResults_C
-  (dw, code) <- dataWranglerAndCode fbResults_C fbMatchups_C (groupBuilder teams) spreadDiffNormal
-  (musCI, sigmaMuCI, sigmaCI) <-
+  (dw1, code1) <- dataWranglerAndCode fbResults_C fbMatchups1_C (groupBuilder teams) spreadDiffNormal
+  (musCI, sigmaMuCI, sigmaCI, eScoreDiff) <- do
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
     True
     (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just "mu1") "fb")
-    dw
-    code
+    dw1
+    code1
     ""
     normalParamCIs
     fbResults_C
-    fbMatchups_C
+    fbMatchups1_C
   K.logLE K.Info $ "mus: " <> show musCI
   K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI
   K.logLE K.Info $ "sigma: " <> show sigmaCI
+  K.logLE K.Info $ "eScoreDiff: " <> show eScoreDiff
 
   let rin = SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu2") "fb"
       outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
   K.clearIfPresent @Text @KE.CacheData $ "stan/test/result/" <> outputLabel <> ".bin"
-  (musCI', sigmaMuCI', sigmaCI') <-
+  (dw2, code2) <- dataWranglerAndCode fbResults_C fbMatchups2_C (groupBuilder teams) spreadDiffNormal
+  (musCI2, sigmaMuCI2, sigmaCI2, eScoreDiff2) <-
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
     False
     rin
-    dw
-    code
+    dw2
+    code2
     ""
     normalParamCIs
     fbResults_C
-    fbMatchups_C
-  K.logLE K.Info $ "mus: " <> show musCI'
-  K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI'
-  K.logLE K.Info $ "sigma: " <> show sigmaCI'
+    fbMatchups2_C
+  K.logLE K.Info $ "mus (matchups=2): " <> show musCI2
+  K.logLE K.Info $ "sigma_mu_fav (matchups=2): " <> show sigmaMuCI2
+  K.logLE K.Info $ "sigma (matchups=2): " <> show sigmaCI2
+  K.logLE K.Info $ "eScoreDiff2 (matchups=2): " <> show eScoreDiff2
 
 
 -- This whole thing should be wrapped in the core for this very common variation.

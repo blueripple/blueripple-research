@@ -117,7 +117,7 @@ spreadDiffNormal = do
       return ()
 
 -- the getParameter function feels like an incantation.  Need to simplify.
-type ModelReturn = ([(Text, [Double])],[Double], [Double])
+type ModelReturn = ([(Text, [Double])],[Double], [Double],[(Text, [Double])])
 normalParamCIs :: K.KnitEffects r => SC.ResultAction r md gq S.DataSetGroupIntMaps () ModelReturn
 normalParamCIs = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_C = do
@@ -129,4 +129,4 @@ normalParamCIs = SC.UseSummary f where
     let getScalar n = K.knitEither $ SP.getScalar . fmap CS.percents <$> SP.parseScalar n (CS.paramStats summary)
         getVector n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
         addTeams = fmap (zip teamList . Vec.toList)
-    (,,) <$> addTeams (getVector "mu_fav") <*> getScalar "sigma_mu_fav" <*> getScalar "sigma"
+    (,,,) <$> addTeams (getVector "mu_fav") <*> getScalar "sigma_mu_fav" <*> getScalar "sigma" <*> addTeams (getVector "eScoreDiff")
