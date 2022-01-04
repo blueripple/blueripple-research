@@ -343,11 +343,6 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
                     outputDep -- this only is here to carry the timing to compare the output file with
                     (const $ makeSummaryFromCSVs csvFileNames summaryPath)
         K.knitEither $ first toText $ summaryE
-{-      combineSummaries modelS mGQS = modelS { CS.paramStats = modelPS <> gqPS}
-        where
-          modelPS = CS.paramStats modelS
-          gqPS = maybe mempty CS.paramStats mGQS
--}
       modelResultDeps = (\a b _ -> (a, b)) <$> md_C <*> modelIndices_C <*> modelResDep
       mGQResultDeps = case mGQResDep of
         Nothing -> Nothing
@@ -359,32 +354,10 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
             Nothing -> modelSamplesFileNames
             Just _ -> gqSamplesFileNames
       summary <-  getSummary samplesFileNames (SC.outputDirPath (SC.mrcInputNames config) summaryFileName)
-{-
---      modelSummary <-  getSummary modelSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) (SC.modelSummaryFileName config))
-      gqSummaryFileName <- K.knitMaybe "runModel: gqSummary" $ SC.gqSummaryFileName config
-      summary <- case SC.gqSummaryFileName config of
-        Nothing -> return Nothing
-        Just gqSummaryFileName -> Just <$> getSummary gqSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) gqSummaryFileName)
---      let summary = combineSummaries modelSummary mGQSummary
---      summaryE <- K.ignoreCacheTime summary_C
---      summary <- K.knitEither $ first toText $ summaryE
--}
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
         Say.say $ toText (CS.unparsed summary)
       f summary toPredict modelResultDeps mGQResultDeps
-{-
-    SC.UseSummaryGQ f -> do
-      gqSummary <- case SC.gqSummaryFileName config of
-        Nothing -> K.knitError "runModel.UseSumamryGQ called with no GQ result."
-        Just gqSummaryFileName -> getSummary gqSamplesFileNames (SC.outputDirPath (SC.mrcInputNames config) gqSummaryFileName)
-      when (SC.mrcLogSummary config) $ do
-        K.logLE K.Info $ "Stan Summary:\n"
-        Say.say $ toText (CS.unparsed gqSummary)
-      case mGQResultDeps of
-        Nothing -> K.knitError "UseSumamryGQ: No GQ results!"
-        Just gqResultDeps ->  f gqSummary toPredict gqResultDeps
--}
     SC.SkipSummary f -> f toPredict modelResultDeps mGQResultDeps
     SC.DoNothing -> return ()
 

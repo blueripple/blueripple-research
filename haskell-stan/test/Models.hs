@@ -91,6 +91,8 @@ groupBuilder teams = do
   S.addGroupIntMapForDataSet favoriteG resultsData $ S.dataToIntMapFromFoldable (F.rgetField @FavoriteName) teams
   matchupData <- S.addGQDataToGroupBuilder "Matchups" (S.ToFoldable id)
   S.addGroupIndexForData favoriteG matchupData $ S.makeIndexFromFoldable show (F.rgetField @FavoriteName) teams
+--  S.addRowKeyIntMapToGroupBuilder matchupData favoriteG (F.rgetField @FavoriteName)
+
 --  S.addGroupIndexForDataSet underdogG resultsData $ S.makeIndexFromFoldable show (F.rgetField @UnderdogName) teams
   return ()
 
@@ -110,6 +112,7 @@ spreadDiffNormal = do
   SBB.sampleDistV resultsData SD.normalDist (S.var mu_favV, S.var sigmaV) spreadDiffV
   S.inBlock S.SBGeneratedQuantities $ do
     matchups <- S.dataSetTag @FB_Matchup SC.GQData "Matchups"
+    S.addRowKeyIntMap matchups favoriteG (F.rgetField @FavoriteName)
     S.useDataSetForBindings matchups $ do
       S.stanDeclareRHS "eScoreDiff" (S.StanVector $ S.NamedDim "Matchups") ""
         $ SE.vectorizedOne "Matchups"
@@ -120,13 +123,23 @@ spreadDiffNormal = do
 type ModelReturn = ([(Text, [Double])],[Double], [Double],[(Text, [Double])])
 normalParamCIs :: K.KnitEffects r => SC.ResultAction r md gq S.DataSetGroupIntMaps () ModelReturn
 normalParamCIs = SC.UseSummary f where
-  f summary _ modelDataAndIndexes_C gqDataAndIndexes_C = do
-    indexesE <- K.ignoreCacheTime $ fmap snd modelDataAndIndexes_C
-    teamResultIM <- K.knitEither $ do
-      groupIndexes <- indexesE
-      S.getGroupIndex (S.RowTypeTag @FB_Result SC.ModelData "Results") favoriteG groupIndexes
-    let teamList = fmap snd $ IM.toAscList teamResultIM
+  f summary _ modelDataAndIndexes_C mGQDataAndIndexes_C = do
+    resultIndexesE <- K.ignoreCacheTime $ fmap snd modelDataAndIndexes_C
+    teamResultIM <- K.knitEither
+      $  resultIndexesE >>= S.getGroupIndex (S.RowTypeTag @FB_Result SC.ModelData "Results") favoriteG
+
+
+    gqDataAndIndexes_C <- K.knitMaybe "normalParamCIs: No GQ data/indices provided!" mGQDataAndIndexes_C
+    matchupIndexesE <- K.ignoreCacheTime $ fmap snd gqDataAndIndexes_C
+    teamMatchupIM <- K.knitEither
+                     $ matchupIndexesE >>= S.getGroupIndex (S.RowTypeTag @FB_Matchup SC.GQData "Matchups") favoriteG
+    K.logLE K.Diagnostic $ "MatchupIM: " <> show teamMatchupIM
+    let resultsTeamList = fmap snd $ IM.toAscList teamResultIM
+        matchupsTeamList = fmap snd $ IM.toAscList teamMatchupIM
     let getScalar n = K.knitEither $ SP.getScalar . fmap CS.percents <$> SP.parseScalar n (CS.paramStats summary)
         getVector n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
-        addTeams = fmap (zip teamList . Vec.toList)
-    (,,,) <$> addTeams (getVector "mu_fav") <*> getScalar "sigma_mu_fav" <*> getScalar "sigma" <*> addTeams (getVector "eScoreDiff")
+        addTeams t = fmap (zip t . Vec.toList)
+    (,,,) <$> addTeams resultsTeamList (getVector "mu_fav")
+      <*> getScalar "sigma_mu_fav"
+      <*> getScalar "sigma"
+      <*> addTeams matchupsTeamList (getVector "eScoreDiff")

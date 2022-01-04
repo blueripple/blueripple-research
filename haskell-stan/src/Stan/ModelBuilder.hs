@@ -265,6 +265,35 @@ dataToIntMapFromFoldable keyF keys = buildIntMapBuilderF lkUp keyF where
 dataToIntMapFromEnum :: forall k r f. (Show k, Enum k, Bounded k, Ord k) => (r -> k) -> DataToIntMap r k
 dataToIntMapFromEnum keyF = dataToIntMapFromFoldable keyF [minBound..maxBound]
 
+dataToIntMapFromKeyedRow :: (r -> k) -> DataToIntMap r k
+dataToIntMapFromKeyedRow key = DataToIntMap $ Foldl.generalize fld where
+  fld = fmap (IntMap.fromList . zip [1..]) $ Foldl.premap key Foldl.list
+
+
+addRowKeyIntMapToGroupBuilder :: Typeable k => RowTypeTag r -> GroupTypeTag k -> (r -> k) ->  StanGroupBuilderM md gq ()
+addRowKeyIntMapToGroupBuilder rtt gtt = addGroupIntMapForDataSet gtt rtt . dataToIntMapFromKeyedRow
+
+addRowKeyIntMap :: Typeable k => RowTypeTag r -> GroupTypeTag k -> (r -> k) ->  StanBuilderM md gq ()
+addRowKeyIntMap rtt gtt = addIntMapBuilder rtt gtt . dataToIntMapFromKeyedRow
+
+addIntMapFromGroup :: RowTypeTag r -> GroupTypeTag k -> (r -> k) -> StanBuilderM md gq ()
+addIntMapFromGroup rtt gtt rowToGroup = do
+  let dataMissingErr = "addIntMapFromGroup: data-set "
+                         <> dataSetName rtt
+                         <> " is missing from " <> show (inputDataType rtt) <> " rowBuilders."
+      groupIndexMissingErr =  "addIntMapFromGroup: group "
+                              <> taggedGroupName gtt
+                              <> " is missing from " <> show (inputDataType rtt)
+                              <> "data-set ("
+                              <> dataSetName rtt
+                              <> ")."
+  let f :: RowInfo x r -> StanBuilderM md gq ()
+      f rowInfo = do
+        let (GroupIndexes gis) = groupIndexes rowInfo
+        kToIntE <- groupKeyToGroupIndex <$> stanBuildMaybe groupIndexMissingErr (DHash.lookup gtt gis)
+        addIntMapBuilder rtt gtt $  buildIntMapBuilderF kToIntE rowToGroup -- for extracting results
+  withRowInfo (stanBuildError dataMissingErr) f rtt
+
 getGroupIndex :: forall d r k. Typeable k
               => RowTypeTag r
               -> GroupTypeTag k
