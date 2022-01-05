@@ -57,7 +57,7 @@ main = KE.knitToIO KE.defaultConfig $ do
   (musCI2, sigmaMuCI2, sigmaCI2, eScoreDiff2) <-
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
-    True
+    False
     rin
     dw2
     code2
@@ -131,7 +131,7 @@ runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C g
     <$> SMR.makeDefaultModelRunnerConfig @st @cd
     rin
     (Just (S.All, S.stanCodeToStanModel stanCode))
-    (SC.StanMCParameters 4 4 Nothing Nothing Nothing Nothing Nothing)
+    (SC.StanMCParameters 4 4 Nothing Nothing Nothing Nothing (Just 1))
     (Just stancConfig)
   let resultCacheKey = "stan/test/result/" <> outputLabel <> ".bin"
   when clearCaches $ do

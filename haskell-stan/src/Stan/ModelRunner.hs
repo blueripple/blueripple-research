@@ -60,7 +60,7 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
   stanSummaryConfig <-
     K.liftKnit $
-      CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig []) -- $ fmap (SC.outputDirPath rin) stanSamplesFiles)
+      CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig [])
   return $
     SC.ModelRunnerConfig
       stanMakeConfig
@@ -123,8 +123,6 @@ data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] de
 -- But that's almost always what we want: for diagnostics and comparison.
 writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.ModelRunnerConfig -> K.Sem r ()
 writeRScripts rScripts config = do
---  let samplesKey = maybe SC.ModelSamples SC.GQSamples $ SC.rinGQ $ SC.mrcInputNames config
---  samplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd (SC.mrcInputNames config) SC.ModelSamples
   let rSamplesPrefix = SC.finalPrefix (SC.mrcInputNames config)
   let write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) rSamplesPrefix  <> fromMaybe "" mSuffix <> ".R") t
       writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
@@ -136,9 +134,7 @@ writeRScripts rScripts config = do
     Both ujs -> writeShiny ujs >> writeLoo
 
 wrangleDataWithoutPredictions :: forall st cd md gq b r.
-  (SC.KnitStan st cd r
---  , Monoid b
-  )
+  (SC.KnitStan st cd r)
   => SC.ModelRunnerConfig
   -> SC.DataWrangler md gq b ()
   -> SC.Cacheable st b
@@ -248,12 +244,8 @@ runModel :: forall st cd md gq b p c r.
   -> K.ActionWithCacheTime r gq
   -> K.Sem r c
 runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C = K.wrapPrefix "Stan.ModelRunner.runModel" $ do
---  let modelNameS = toString $ SC.mrcModel config
---      modelDirS = toString $ SC.mrcModelDir config
   K.logLE K.Info "running Model (if necessary)"
   let modelSamplesFileNames = SC.modelSamplesFileNames config
-
---  let outputFiles = toString <$> SC.stanOutputFiles config --fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
   checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!"
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
@@ -261,6 +253,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   (modelIndices_C, gqIndices_C) <- wrangleData @st @cd config dataWrangler cb md_C gq_C toPredict
   curModel_C <- SC.modelDependency $ SC.mrcInputNames config
+  -- run model and/or build gq samples as necessary
   (modelResDep, mGQResDep) <- do
     let runModelDeps = (,) <$> modelIndices_C <*> curModel_C -- indices carries data update time
         runModel = do

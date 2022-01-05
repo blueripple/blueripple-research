@@ -144,17 +144,7 @@ dataDependency rin = do
     Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
 
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
-{-
--- if the cached map is outdated, return an empty one
-samplesPrefixCache :: forall st cd r. KnitStan st cd r
-                   => RunnerInputNames
-                   -> K.Sem r (K.ActionWithCacheTime r SamplesPrefixMap)
-samplesPrefixCache rin = do
-  modelDataDep <- modelDataDependency rin
-  modelDep <- modelDependency rin
-  let deps = const <$> modelDataDep <*> modelDep
-  K.retrieveOrMake @st @cd (samplesPrefixCacheKey rin) deps $ const $ return mempty
--}
+
 modelPrefix :: RunnerInputNames -> Text
 modelPrefix rin = rinModel rin <> "_" <> rinData rin
 
@@ -164,42 +154,6 @@ gqPrefix rin = fmap (\t -> modelPrefix rin <> "_" <> t) $ rinGQ rin
 finalPrefix :: RunnerInputNames -> Text
 finalPrefix rin = modelPrefix rin <> (maybe "" ("_" <>) $ rinGQ rin)
 
-{-
--- This is not atomic so care should be used that only one thread uses it at a time.
--- I should fix this in knit-haskell where I could provide an atomic update.
-samplesPrefix ::  forall st cd r. KnitStan st cd r
-              => RunnerInputNames
-              -> SamplesKey
-              -> K.Sem r (K.ActionWithCacheTime r Text)
-samplesPrefix rin key = do
-  samplePrefixCache_C <- samplesPrefixCache @st @cd rin
-  samplePrefixCache <- K.ignoreCacheTime samplePrefixCache_C
-  p <- case M.lookup key samplePrefixCache of
-    Nothing -> do -- missing so use prefix from current setup
-      let prefix = case key of
-            ModelSamples -> rinModel rin <> "_" <> rinData rin
-            GQSamples _ -> modelGQName rin
-      K.store @st @cd (samplesPrefixCacheKey rin) $ M.insert key prefix samplePrefixCache
-      return prefix
-    Just prefix -> return prefix -- exists, so use those files
-  return $ p <$ samplePrefixCache_C
--}
-
-{-
--- This is not atomic so care should be used that only one thread uses it at a time.
--- I should fix this in knit-haskell where I could provide an atomic update.
-samplesFileNames ::  forall st cd r. KnitStan st cd r
-                 => ModelRunnerConfig
-                 -> SamplesKey
-                 -> K.Sem r (K.ActionWithCacheTime r [FilePath])
-samplesFileNames config key = do
-  let rin = mrcInputNames config
-      numChains = smcNumChains $ mrcStanMCParameters config
-  prefix_C <- samplesPrefix @st @cd rin key
-  prefix <- K.ignoreCacheTime prefix_C
-  let files = outputDirPath rin . (\n -> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
-  return $ files <$ prefix_C
--}
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesFileNames :: ModelRunnerConfig -> Text -> [FilePath]
@@ -216,18 +170,6 @@ gqSamplesFileNames config = fmap (samplesFileNames config) (gqPrefix $ mrcInputN
 
 finalSamplesFileNames :: ModelRunnerConfig -> [FilePath]
 finalSamplesFileNames config = samplesFileNames config (finalPrefix $ mrcInputNames config)
-
-{-
--- This is not atomic so care should be used that only one thread uses it at a time.
--- I should fix this in knit-haskell where I could provide an atomic update.
-gqSamplesFileNames :: forall st cd r. KnitStan st cd r
-                   => ModelRunnerConfig
-                   -> K.Sem r (K.ActionWithCacheTime r [FilePath])
-gqSamplesFileNames config = do
-  case rinGQ (mrcInputNames config) of
-    Nothing -> return $ pure []
-    Just gqName -> samplesFileNames @st @cd config (GQSamples gqName)
--}
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }
@@ -304,14 +246,6 @@ data ResultAction r md gq b p c where
 emptyResult :: ResultAction r md gq b p ()
 emptyResult = SkipSummary $ \_ _ _ -> return ()
 
-{-
-addDirT :: T.Text -> T.Text -> T.Text
-addDirT dir fp = dir <> "/" <> fp
-
-addDirFP :: FilePath -> FilePath -> FilePath
-addDirFP dir fp = dir ++ "/" ++ fp
--}
-
 defaultDataFileName :: T.Text -> T.Text
 defaultDataFileName modelNameT = modelNameT <> ".json"
 
@@ -322,16 +256,7 @@ sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe ""
 --stanOutputFiles config = fmap (toText . outputFile (outputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
 
 modelSummaryFileName :: ModelRunnerConfig -> T.Text
-modelSummaryFileName config = rinModel (mrcInputNames config) <> "_summary.json"
+modelSummaryFileName config = modelPrefix (mrcInputNames config) <> "_summary.json"
 
 gqSummaryFileName :: ModelRunnerConfig -> Maybe T.Text
-gqSummaryFileName config = case rinGQ inputNames of
-  Nothing -> Nothing
-  Just gqName -> Just $ rinModel inputNames <> "_" <> gqName <> "_summary.json"
-  where
-    inputNames = mrcInputNames config
-
-{-
-summaryFilePath :: ModelRunnerConfig -> T.Text
-summaryFilePath config = rinModelDir (mrcInputNames config) <> "/output/" <> summaryFileName config
--}
+gqSummaryFileName config = fmap (<> "_summary.json") $ gqPrefix (mrcInputNames config)
