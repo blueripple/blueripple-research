@@ -641,23 +641,23 @@ groupBuilder :: forall rs ks.
              -> [Text]
              -> [Text]
              -> [F.Record ks]
-             -> SB.StanGroupBuilderM (CCESAndPUMS, F.FrameRec rs) ()
+             -> SB.StanGroupBuilderM CCESAndPUMS (F.FrameRec rs) ()
 groupBuilder psGroup districts states psKeys = do
-  voterData <- SB.addDataSetToGroupBuilder SB.ModelUse "VoteData" (SB.ToFoldable $ ccesRows . fst)
-  SB.addGroupIndexForDataSet cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet raceGroup voterData $ SB.makeIndexFromEnum mergeRace5AndHispanic
-  SB.addGroupIndexForDataSet hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
-  cdData <- SB.addDataSetToGroupBuilder SB.ModelUse "CDData" (SB.ToFoldable $ districtRows . fst)
-  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
-  psData <- SB.addDataSetToGroupBuilder SB.GQOnlyUse "DistrictPS" (SB.ToFoldable snd)
-  SB.addGroupIndexForDataSet stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet educationGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet sexGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet raceGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
-  SB.addGroupIndexForDataSet psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
+  voterData <- SB.addModelDataToGroupBuilder "VoteData" (SB.ToFoldable ccesRows)
+  SB.addGroupIndexForData cdGroup voterData $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForData stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData sexGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForData educationGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForData raceGroup voterData $ SB.makeIndexFromEnum mergeRace5AndHispanic
+  SB.addGroupIndexForData hispanicGroup voterData $ SB.makeIndexFromEnum (F.rgetField @DT.HispC)
+  cdData <- SB.addModelDataToGroupBuilder "CDData" (SB.ToFoldable districtRows)
+  SB.addGroupIndexForModelCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+  psData <- SB.addGQDataToGroupBuilder "DistrictPS" (SB.ToFoldable id)
+  SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData educationGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForData sexGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForData raceGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
+  SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
   return ()
 
 
@@ -760,12 +760,12 @@ electionModel :: forall rs ks r.
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
 electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
-  let jsonDataName = psDataSetName <> "_" <> modelLabel model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
-      dataAndCodeBuilder :: MRP.BuilderM (CCESAndPUMS, F.FrameRec rs) ()
+  let jsonDataName = modelLabel model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+      dataAndCodeBuilder :: MRP.BuilderM CCESAndPUMS (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
-        voteData <- SB.dataSetTag @(F.Record CCESByCDR) "VoteData"
-        cdData <- SB.dataSetTag @(F.Record DistrictDemDataR) "CDData"
+        voteData <- SB.dataSetTag @(F.Record CCESByCDR) SC.ModelData "VoteData"
+        cdData <- SB.dataSetTag @(F.Record DistrictDemDataR) SC.ModelData "CDData"
         SB.addDataSetsCrosswalk voteData cdData cdGroup
         SB.setDataSetForBindings voteData
         pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
@@ -1059,7 +1059,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
 
         if parallel then parallelSample else serialSample
 
-        psData <- SB.dataSetTag @(F.Record rs) "DistrictPS"
+        psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
 
 --        SB.addUseBindingToDataSet psData
 --        SB.stanBuildError $ "mv=" <> show mv
@@ -1081,7 +1081,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
 --            pDExprF ik = SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP ik $ logitP_ps densityPE
 
         let postStrat =
-              MRP.addPostStratification @(CCESAndPUMS, F.FrameRec rs)
+              MRP.addPostStratification -- @(CCESAndPUMS, F.FrameRec rs)
               (psPreCompute, psExprF)
               Nothing
               voteData
@@ -1093,24 +1093,6 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
         postStrat
 
 {-
-  -- raw probabilities
-        SB.inBlock SB.SBGeneratedQuantities $ do
-          let pArrayDims =
-                [ SB.NamedDim $ SB.taggedGroupName sexGroup,
-                  SB.NamedDim $ SB.taggedGroupName educationGroup,
-                  SB.NamedDim $ SB.taggedGroupName raceGroup
-                ]
-              pTRHS = SB.familyExp distT "" $ logitT_ps densityTE
-              pDRHS = SB.familyExp distT "" $ logitP_ps densityPE
-          pTVar <- SB.stanDeclare "probT" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
-          pDVar <- SB.stanDeclare "probD" (SB.StanArray pArrayDims SB.StanReal) "<lower=0, upper=1>"
-          SB.useDataSetForBindings sldData $ do
-            SB.stanForLoopB "n" Nothing "SLD_Demographics" $ do
-              SB.addExprLine "ProbsT" $ SB.var pTVar `SB.eq` pTRHS
-              SB.addExprLine "ProbsD" $ SB.var pDVar `SB.eq` pDRHS
--}
---        let llArgsT =
-{-
         SB.generateLogLikelihood' voteData ((distT, logitT_ps <$> thetaTMultF (SB.dataSetName voteData) q', votes)
                                              :| [(distP, logitP_ps <$> thetaPMultF (SB.dataSetName voteData) q', dVotes)])
 -}
@@ -1120,17 +1102,17 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                         -> F.Record (ModelResultsR ks)
       addModelIdAndYear r = F.rcast $ FT.recordSingleton @BR.Year datYear F.<+> FT.recordSingleton @(MT.ModelId Model) model F.<+> r
       extractResults :: K.KnitEffects r
-                     => SC.ResultAction r d SB.DataSetGroupIntMaps () (FS.SFrameRec (ModelResultsR ks))
+                     => SC.ResultAction r md gq SB.DataSetGroupIntMaps () (FS.SFrameRec (ModelResultsR ks))
       extractResults = SC.UseSummary f where
-        f summary _ aAndEb_C = do
-          let eb_C = fmap snd aAndEb_C
-          eb <- K.ignoreCacheTime eb_C
+        f summary _ modelDataAndIndex_C mGQDataAndIndex_C = do
+          gqIndexes_C <- K.knitMaybe "StanMRP.extractResults: gqDataAndIndex is Nothing" $ mGQDataAndIndex_C
+          gqIndexesE <- K.ignoreCacheTime $ fmap snd gqIndexes_C
           resultsMap <- K.knitEither $ do
-            groupIndexes <- eb
+            gqIndexes <- gqIndexesE
             psIndexIM <- SB.getGroupIndex
-              (SB.RowTypeTag @(F.Record rs) "DistrictPS")
+              (SB.RowTypeTag @(F.Record rs) SC.GQData "DistrictPS")
               psGroup
-              groupIndexes
+              gqIndexes
             let parseAndIndexPctsWith idx g vn = do
                   v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                   indexStanResults idx $ Vector.map g v
@@ -1139,44 +1121,39 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
                                                          $ MT.keyedCIsToFrame @ModeledShare id
                                                          $ M.toList resultsMap
           return $ FS.SFrame $ fmap addModelIdAndYear res
-      dataWranglerAndCode :: K.ActionWithCacheTime r (CCESAndPUMS, F.FrameRec rs)
-                          -> K.Sem r (SC.DataWrangler (CCESAndPUMS, F.FrameRec rs) SB.DataSetGroupIntMaps (), SB.StanCode)
-      dataWranglerAndCode data_C = do
-        dat <-  K.ignoreCacheTime data_C
+      dataWranglerAndCode :: K.ActionWithCacheTime r CCESAndPUMS
+                          -> K.ActionWithCacheTime r (F.FrameRec rs)
+                          -> K.Sem r (SC.DataWrangler CCESAndPUMS (F.FrameRec rs) SB.DataSetGroupIntMaps (), SB.StanCode)
+      dataWranglerAndCode modelData_C gqData_C = do
+        modelData <-  K.ignoreCacheTime modelData_C
+        gqData <-  K.ignoreCacheTime gqData_C
         K.logLE K.Info
           $ "Voter data (CCES) has "
-          <> show (FL.fold FL.length $ ccesRows $ fst dat)
+          <> show (FL.fold FL.length $ ccesRows $ modelData)
           <> " rows."
         let (districts, states) = FL.fold
                                   ((,)
                                    <$> (FL.premap districtKey FL.list)
                                    <*> (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
                                   )
-                                  $ districtRows $ fst dat
-            psKeys = FL.fold (FL.premap F.rcast FL.list) $ snd dat
+                                  $ districtRows modelData
+            psKeys = FL.fold (FL.premap F.rcast FL.list) gqData
             groups = groupBuilder psGroup districts states psKeys
---            builderText = SB.dumpBuilderState $ SB.runStanGroupBuilder groups dat
---        K.logLE K.Diagnostic $ "Initial Builder: " <> builderText
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
-        K.knitEither $ MRP.buildDataWranglerAndCode groups () dataAndCodeBuilder dat
-  let comboDat_C = (,)  <$> dat_C <*> psDat_C
-  (dw, stanCode) <- dataWranglerAndCode comboDat_C
+        MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
+  (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (fmap FS.unSFrame)
     $ MRP.runMRPModel
     clearCaches
-    (Just modelDir)
-    ("LegDistricts_" <> modelLabel model <> if parallel then "_P" else "")
-    jsonDataName
+    (SC.RunnerInputNames modelDir  ("LegDistricts_" <> modelLabel model <> if parallel then "_P" else "") (Just psDataSetName) jsonDataName)
+    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
+    stanParallelCfg
     dw
     stanCode
     "DVOTES_C"
     extractResults
-    comboDat_C
-    stanParallelCfg
-    (Just 1000)
-    (Just 0.8)
-    (Just 10)
-
+    dat_C
+    psDat_C
 
 type SLDLocation = (Text, ET.DistrictType, Int)
 

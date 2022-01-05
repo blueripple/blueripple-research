@@ -65,7 +65,7 @@ import qualified Stan.ModelConfig as SM
 
 type BuilderM md gq = SB.StanBuilderM md gq
 
-buildDataWranglerAndCode :: forall md gq st cd r.(SC.KnitStan st cd r, Typeable md, Typeable gq)
+buildDataWranglerAndCode :: forall st cd md gq r.(SC.KnitStan st cd r, Typeable md, Typeable gq)
                          => SB.StanGroupBuilderM md gq ()
                          -> SB.StanBuilderM md gq ()
                          -> K.ActionWithCacheTime r md
@@ -120,7 +120,7 @@ runMRPModel :: (K.KnitEffects r
             -> K.ActionWithCacheTime r md
             -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode ppName resultAction modeData_C gqData_C =
+runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode ppName resultAction modelData_C gqData_C =
   K.wrapPrefix "StanMRP.runModel" $ do
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
@@ -137,23 +137,23 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
     SC.setSigFigs 4
     . SC.noLogOfSummary
 --    . SC.noDiagnose
-    <$> SM.makeDefaultModelRunnerConfig @st @cd
+    <$> SM.makeDefaultModelRunnerConfig @BR.SerializerC @BR.CacheData
     runnerInputNames
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
     smcParameters
     (Just stancConfig)
   let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
   when clearCache $ do
-    K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
+    SM.deleteStaleFiles  @BR.SerializerC @BR.CacheData stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
-  modelDep <- SM.modelDependency $ SC.mrcInputNames config
+  modelDep <- SM.modelDependency runnerInputNames
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
   K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
   K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)
-  let dataModelDep = const <$> modelDep <*> modelData_C <*> gqData_C
+  let dataModelDep = (,,) <$> modelDep <*> modelData_C <*> gqData_C
       getResults s () inputAndIndex_C = return ()
       unwraps = [SR.UnwrapNamed ppName ppName]
-  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
+  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \_ -> do
     K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
     SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
@@ -266,91 +266,6 @@ choices (x:xs) n = if (n > length (x:xs))
 
 type GroupName = Text
 
---data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
-
---emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag SB.FixedEffects
---emptyFixedEffects = DHash.empty
-
-{-
--- returns
--- 'X * beta' (or 'Q * theta') model term expression
--- VarX -> 'VarX * beta' and just 'beta' for post-stratification
--- The latter is for use in post-stratification at fixed values of the fixed effects.
-addFixedEffects :: forall r1 r2 d.(Typeable d)
-                => Bool
-                -> SB.StanExpr
-                -> SB.RowTypeTag r1
-                -> SB.RowTypeTag r2
-                -> Maybe SB.StanVar
-                -> SB.FixedEffects r1
-                -> BuilderM d ( SB.StanExpr
-                              , SB.StanVar -> BuilderM d SB.StanVar
-                              , SB.StanExpr)
-addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (SB.FixedEffects n vecF) = do
-  let feDataSetName = SB.dataSetName rttFE
-      uSuffix = SB.underscoredIf feDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
-      colKey = "X_" <> feDataSetName <> "_Cols"
-  xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix xV mWgtsV
-  -- model
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffects" e
-  let eQ = SB.var qVar
-      eQTheta = SB.matMult qVar thetaVar
-      xName = if T.null feDataSetName then "centered_X" else "centered_X" <> uSuffix
-      xVar = SB.StanVar xName (SB.varType qVar)
-      eX = SB.var xVar
-      eBeta = SB.var betaVar --SB.name $ "betaX" <> uSuffix
-      eXBeta = SB.matMult xVar betaVar
-      feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, f, eBeta)
-
-
-addFixedEffectsData :: forall r d. (Typeable d)
-                    => SB.RowTypeTag r
-                    -> Maybe SME.StanVar
-                    -> FixedEffects r
-                    -> BuilderM d (SB.StanVar, SB.StanVar -> BuilderM d SB.StanVar)
-addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
-  let feDataSetName = SB.dataSetName feRTT
-      uSuffix = SB.underscoredIf feDataSetName
-  xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR_Data uSuffix xV mWgtsV
-
-
-addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
-                                   => Bool
-                                   -> SB.StanExpr
-                                   -> SB.RowTypeTag r1
-                                   -> SB.RowTypeTag r2
-                                   -> Maybe Text
-                                   -> BuilderM d (SB.StanExpr, SB.StanVar)
-addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
-  let feDataSetName = SB.dataSetName rttFE
-      modeledDataSetName = fromMaybe "" mVarSuffix
-      pSuffix = SB.underscoredIf feDataSetName
-      uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
-      colIndexKey =  "X" <> pSuffix <> "_Cols"
-      xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
-  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters xVar Nothing
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffectsParametersAndPriors" e
-  let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
-      qName = "Q" <> pSuffix <> "_ast"
-      qVar = SB.StanVar qName xType
-      eQTheta = SB.matMult qVar thetaVar
-      xName = "centered_X" <> pSuffix
-      xVar = SB.StanVar xName xType
-      eXBeta = SB.matMult xVar betaVar
-  let feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, betaVar)
--}
-
-
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
   step im r = case eIntF $ keyF r of
@@ -383,18 +298,19 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
       indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
   SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
   modelRowInfos <- SB.modelRowBuilders <$> get
+  gqRowInfos <- SB.gqRowBuilders <$> get
   modelGroupsDHM <- do
-    case DHash.lookup rttModel rowInfos of
-      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
+    case DHash.lookup rttModel modelRowInfos of
+      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in model rowBuilders."
       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
   psGroupsDHM <- do
-     case DHash.lookup rttPS rowInfos of
-       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in rowBuilders."
+     case DHash.lookup rttPS gqRowInfos of
+       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
        Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
   checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
   checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
-  toFoldable <- case DHash.lookup rttPS rowInfos of
-    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
+  toFoldable <- case DHash.lookup rttPS gqRowInfos of
+    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
   case mPSGroup of
     Nothing -> do
