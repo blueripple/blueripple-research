@@ -12,6 +12,7 @@ import qualified Data.Massiv.Vector as MV
 import qualified Data.Massiv.Array as M
 
 import qualified Control.Foldl as FL
+import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Scientific as SCI
@@ -123,6 +124,20 @@ addReplaceGQToSamplerCSV gq s = do
       fldM :: M.MonadThrow  m => FL.FoldM m (Text, Int) (SamplerCSV M.U)
       fldM = FL.FoldM doOne (return $ asDL s) (return . asU)
   FL.foldM fldM $ zip (gqHeader gq) [0..]
+
+addReplaceGQToSamplerCSV' :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
+addReplaceGQToSamplerCSV' gq s = do
+  let m = Map.fromList $ zip (samplerHeader s) $ zip [0..] (Left <$> [0..])
+      replaceOrAdd m (h, n) = case Map.lookup h m of
+        Nothing -> Map.insert h (Map.size m, Right n) m
+        Just (i, _) -> Map.insert h (i, Right n) m
+      dropIndex (h, (_, c)) = (h, c)
+      index = fst . snd
+      colChoiceMap = FL.fold (FL.Fold replaceOrAdd m id) $ zip (gqHeader gq) [0..]
+      (newHeader, colChoices) = unzip $ fmap dropIndex $ sortOn index $ Map.toList colChoiceMap
+  slices <- traverse (either (samplerSamples s M.<!?) (gqSamples gq M.<!?)) colChoices
+  newSamples <- M.computeAs M.U <$> M.stackSlicesM 1 slices
+  return $ s { samplerHeader = newHeader, samplerSamples = newSamples}
 
 headerText :: [Text] -> Text
 headerText = T.intercalate ","

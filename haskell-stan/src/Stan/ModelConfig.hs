@@ -143,7 +143,7 @@ dataDependency rin = do
     Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
 
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
-
+{-
 -- if the cached map is outdated, return an empty one
 samplesPrefixCache :: forall st cd r. KnitStan st cd r
                    => RunnerInputNames
@@ -153,13 +153,17 @@ samplesPrefixCache rin = do
   modelDep <- modelDependency rin
   let deps = const <$> modelDataDep <*> modelDep
   K.retrieveOrMake @st @cd (samplesPrefixCacheKey rin) deps $ const $ return mempty
+-}
+modelPrefix :: RunnerInputNames -> Text
+modelPrefix rin = rinModel rin <> "_" <> rinData rin
 
-modelGQName :: RunnerInputNames -> Text
-modelGQName rin =
-  rinModel rin
-  <> "_" <> rinData rin
-  <> maybe "" ("_" <>) (rinGQ rin)
+gqPrefix :: RunnerInputNames -> Maybe Text
+gqPrefix rin = fmap (\t -> modelPrefix rin <> "_" <> t) $ rinGQ rin
 
+finalPrefix :: RunnerInputNames -> Text
+finalPrefix rin = modelPrefix rin <> (maybe "" ("_" <>) $ rinGQ rin)
+
+{-
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesPrefix ::  forall st cd r. KnitStan st cd r
@@ -171,12 +175,16 @@ samplesPrefix rin key = do
   samplePrefixCache <- K.ignoreCacheTime samplePrefixCache_C
   p <- case M.lookup key samplePrefixCache of
     Nothing -> do -- missing so use prefix from current setup
-      let prefix = modelGQName rin
+      let prefix = case key of
+            ModelSamples -> rinModel rin <> "_" <> rinData rin
+            GQSamples _ -> modelGQName rin
       K.store @st @cd (samplesPrefixCacheKey rin) $ M.insert key prefix samplePrefixCache
       return prefix
     Just prefix -> return prefix -- exists, so use those files
   return $ p <$ samplePrefixCache_C
+-}
 
+{-
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 samplesFileNames ::  forall st cd r. KnitStan st cd r
@@ -190,14 +198,25 @@ samplesFileNames config key = do
   prefix <- K.ignoreCacheTime prefix_C
   let files = outputDirPath rin . (\n -> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
   return $ files <$ prefix_C
-
+-}
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
-modelSamplesFileNames :: forall st cd r. KnitStan st cd r
-                      => ModelRunnerConfig
-                      -> K.Sem r (K.ActionWithCacheTime r [FilePath])
-modelSamplesFileNames config = samplesFileNames @st @cd config ModelSamples
+samplesFileNames :: ModelRunnerConfig -> Text -> [FilePath]
+samplesFileNames config prefix =
+  let rin = mrcInputNames config
+      numChains = smcNumChains $ mrcStanMCParameters config
+  in outputDirPath rin . (\n -> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
 
+modelSamplesFileNames :: ModelRunnerConfig -> [FilePath]
+modelSamplesFileNames config = samplesFileNames config (modelPrefix $ mrcInputNames config)
+
+gqSamplesFileNames :: ModelRunnerConfig -> Maybe [FilePath]
+gqSamplesFileNames config = fmap (samplesFileNames config) (gqPrefix $ mrcInputNames config)
+
+finalSamplesFileNames :: ModelRunnerConfig -> [FilePath]
+finalSamplesFileNames config = samplesFileNames config (finalPrefix $ mrcInputNames config)
+
+{-
 -- This is not atomic so care should be used that only one thread uses it at a time.
 -- I should fix this in knit-haskell where I could provide an atomic update.
 gqSamplesFileNames :: forall st cd r. KnitStan st cd r
@@ -207,6 +226,7 @@ gqSamplesFileNames config = do
   case rinGQ (mrcInputNames config) of
     Nothing -> return $ pure []
     Just gqName -> samplesFileNames @st @cd config (GQSamples gqName)
+-}
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }

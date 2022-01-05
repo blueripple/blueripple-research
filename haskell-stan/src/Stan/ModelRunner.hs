@@ -61,15 +61,11 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig []) -- $ fmap (SC.outputDirPath rin) stanSamplesFiles)
-  sampleExe <- sampleExeConfig @st @cd runnerInputNames stanMCParameters
-  mGQExe <- case SC.rinGQ runnerInputNames of
-    Nothing -> return Nothing
-    Just _ -> Just <$> gqExeConfig @st @cd runnerInputNames stanMCParameters
   return $
     SC.ModelRunnerConfig
       stanMakeConfig
-      sampleExe
-      mGQExe
+      (sampleExeConfig runnerInputNames stanMCParameters)
+      (mGQExeConfig runnerInputNames stanMCParameters)
       stanSummaryConfig
       runnerInputNames
       stanMCParameters
@@ -96,15 +92,11 @@ writeModel runnerInputNames modelM = do
                               $ "Given model was different from exisiting.  Old one was moved to \""
                               <> newName <> "\"."
 
-sampleExeConfig :: forall st cd r.SC.KnitStan st cd r
-                => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r CS.StanExeConfig
-sampleExeConfig rin smp =  do
-  let samplesKey = SC.ModelSamples
-  modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd rin samplesKey
-  return
-    $ (CS.makeDefaultSample (toString $  SC.rinModel rin) Nothing)
+sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
+sampleExeConfig rin smp =
+    (CS.makeDefaultSample (toString $  SC.rinModel rin) Nothing)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
-    , CS.output = Just (SC.outputDirPath rin $ modelSamplesPrefix <> ".csv")
+    , CS.output = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> ".csv")
     , CS.numChains = Just $ SC.smcNumChains smp
     , CS.numThreads = Just $ SC.smcNumThreads smp
     , CS.numSamples = SC.smcNumSamplesM smp
@@ -113,17 +105,14 @@ sampleExeConfig rin smp =  do
     , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     }
 
-gqExeConfig :: forall st cd r.SC.KnitStan st cd r
-            => SC.RunnerInputNames -> SC.StanMCParameters -> K.Sem r (Int -> CS.StanExeConfig)
-gqExeConfig rin smp = do
-  gqName <- K.knitMaybe "gqExeConfig: RunnerInputNames.rinGQ is Nothing" $ SC.rinGQ rin
-  gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd rin (SC.GQSamples gqName)
-  modelSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd rin SC.ModelSamples
+mGQExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> Maybe (Int -> CS.StanExeConfig)
+mGQExeConfig rin smp = do
+  gqPrefix <- SC.gqPrefix rin
   return
     $ \n -> (CS.makeDefaultGenerateQuantities (toString $ SC.rinModel rin) n)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
-    , CS.fittedParams = Just (SC.outputDirPath rin $ modelSamplesPrefix <> "_" <> show n <> ".csv")
-    , CS.output = Just (SC.outputDirPath rin $ gqSamplesPrefix <> "_gq" <> show n <> ".csv")
+    , CS.fittedParams = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> "_" <> show n <> ".csv")
+    , CS.output = Just (SC.outputDirPath rin $ gqPrefix <> "_gq" <> show n <> ".csv")
     }
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
@@ -133,10 +122,11 @@ data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] de
 writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.ModelRunnerConfig -> K.Sem r ()
 writeRScripts rScripts config = do
 --  let samplesKey = maybe SC.ModelSamples SC.GQSamples $ SC.rinGQ $ SC.mrcInputNames config
-  samplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd (SC.mrcInputNames config) SC.ModelSamples
-  let write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) $ samplesPrefix <> fromMaybe "" mSuffix <> ".R") t
-      writeShiny ujs = SR.shinyStanScript @st @cd config ujs >>= write (Just "_shinystan")
-      writeLoo = SR.looScript @st @cd config samplesPrefix 10 >>= write Nothing
+--  samplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd (SC.mrcInputNames config) SC.ModelSamples
+  let rSamplesPrefix = SC.finalPrefix (SC.mrcInputNames config)
+  let write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) rSamplesPrefix  <> fromMaybe "" mSuffix <> ".R") t
+      writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
+      writeLoo = write Nothing $ SR.looScript config rSamplesPrefix 10
   case rScripts of
     None -> return ()
     ShinyStan ujs -> writeShiny ujs
@@ -259,8 +249,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
 --  let modelNameS = toString $ SC.mrcModel config
 --      modelDirS = toString $ SC.mrcModelDir config
   K.logLE K.Info "running Model (if necessary)"
-  modelSamplesFileNames <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames @st @cd $ config
-  gqSamplesFileNames <- K.ignoreCacheTimeM $ SC.gqSamplesFileNames @st @cd config
+  let modelSamplesFileNames = SC.modelSamplesFileNames config
 
 --  let outputFiles = toString <$> SC.stanOutputFiles config --fmap (SC.outputFile (SC.mrcOutputPrefix config)) [1 .. (SC.mrcNumChains config)]
   checkClangEnv
@@ -294,9 +283,9 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
             K.logLE K.Diagnostic $ "Merging samples..."
             samplesFP <- K.knitMaybe "runModel.runOneGQ: fittedParams field is Nothing in gq StanExeConfig" $ CS.fittedParams gqExeConfig
             gqFP <- K.knitMaybe "runModel.runOneGQ: output field is Nothing in gq StanExeConfig" $ CS.output gqExeConfig
-            mergedFP <- do
-              gqSamplesPrefix <- K.ignoreCacheTimeM $ SC.samplesPrefix @st @cd (SC.mrcInputNames config) (SC.GQSamples gqName)
-              return $ SC.outputDirPath (SC.mrcInputNames config) $ gqSamplesPrefix <> "_" <> show n <> ".csv"
+            mergedFP <- K.knitMaybe "runModel.runOneGQ: gqPrefix returned Nothing when building mergedFP" $ do
+              gqPrefix <- SC.gqPrefix (SC.mrcInputNames config)
+              return $ SC.outputDirPath (SC.mrcInputNames config) $ gqPrefix <> "_" <> show n <> ".csv"
             K.liftKnit $ SCSV.mergeSamplerAndGQCSVs samplesFP gqFP mergedFP
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
@@ -314,6 +303,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
     mGQRes_C <- case SC.mrcStanExeGQConfigM config of
       Nothing -> return Nothing
       Just _ -> do
+        gqSamplesFileNames <- K.knitMaybe "runModel: GQ samples file names are Nothing but the exeConfig isn't!" $ SC.gqSamplesFileNames config
         gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency gqSamplesFileNames
         res_C <- K.updateIf gqSamplesFileDep runGQDeps $ const $ do
           K.logLE K.Diagnostic "Stan GQ outputs older than model input data, GQ input data or model code. Running GQ."
@@ -322,9 +312,10 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
           K.knitMaybe "There was an error running GQ for a chain." mRes
         return $ Just res_C
     return (modelRes_C, mGQRes_C)
-  let (outputDep, outputFileNames) = case mGQResDep of
-        Nothing -> (modelResDep, modelSamplesFileNames)
-        Just gqResDep -> (const <$> gqResDep <*> modelResDep, gqSamplesFileNames)
+  let outputFileNames = SC.finalSamplesFileNames config
+      outputDep = case mGQResDep of
+        Nothing -> modelResDep
+        Just gqResDep -> const <$> gqResDep <*> modelResDep
       makeSummaryFromCSVs csvFileNames summaryPath = do
         K.logLE K.Diagnostic "Stan summary older output.  Re-summarizing."
         K.logLE (K.Debug 1) $
@@ -350,9 +341,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
   case makeResult of
     SC.UseSummary f -> do
       let summaryFileName = fromMaybe (SC.modelSummaryFileName config) $ SC.gqSummaryFileName config
-          samplesFileNames = case SC.rinGQ (SC.mrcInputNames config) of
-            Nothing -> modelSamplesFileNames
-            Just _ -> gqSamplesFileNames
+          samplesFileNames = SC.finalSamplesFileNames config
       summary <-  getSummary samplesFileNames (SC.outputDirPath (SC.mrcInputNames config) summaryFileName)
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"

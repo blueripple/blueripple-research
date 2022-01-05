@@ -57,7 +57,7 @@ main = KE.knitToIO KE.defaultConfig $ do
   (musCI2, sigmaMuCI2, sigmaCI2, eScoreDiff2) <-
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
-    False
+    True
     rin
     dw2
     code2
