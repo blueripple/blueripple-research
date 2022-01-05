@@ -258,7 +258,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
+  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
@@ -345,7 +345,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
                    $ SB.addGroupToSet BRE.raceGroup
                    $ SB.addGroupToSet BRE.stateGroup
                    $ SB.emptyGroupSet
-      modelDir =  "br-2021-NewMaps/stan"
+      modelDir =  "br-2021-NewMaps/stanGQ"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfo name = (mapGroup, name, psGroupSet)
       model2020 :: BRE.Model

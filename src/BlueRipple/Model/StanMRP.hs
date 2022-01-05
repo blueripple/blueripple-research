@@ -125,11 +125,10 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
     <> maybe "" (" and GQ data=" <>) (SC.rinGQ runnerInputNames)
-  let outputLabel = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
+  let --outputLabel = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
       stancConfig =
         (SM.makeDefaultStancConfig (toString $ SC.rinModelDir runnerInputNames
                                      <> "/" <> SC.rinModel runnerInputNames)) {CS.useOpenCL = False}
---        (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
       threadsM = Just $ case BR.cores stanParallel of
         BR.MaxCores -> -1
         BR.FixedCores n -> n
@@ -142,7 +141,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
     smcParameters
     (Just stancConfig)
-  let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
+  let resultCacheKey = "stan/MRP/result/" <> SC.finalPrefix runnerInputNames <> ".bin"
   when clearCache $ do
     SM.deleteStaleFiles  @BR.SerializerC @BR.CacheData stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
