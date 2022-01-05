@@ -5,31 +5,19 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
 module Stan.ModelConfig where
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Knit.Report as K
-import qualified Flat
 import qualified Data.Serialize as Cereal
---import qualified Knit.Effect.Serialize as K
 import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Map as M
 import qualified Data.Text as T
-import Data.Hashable()
-
-data SamplesKey = ModelSamples | GQSamples Text deriving (Show, Ord, Eq, Generic)
-
-instance Flat.Flat SamplesKey
---instance Cereal.Serialize SamplesKey
-
-type SamplesPrefixMap = Map SamplesKey Text
 
 data RunnerInputNames = RunnerInputNames
   { rinModelDir :: Text
@@ -56,7 +44,6 @@ dataDirPath rin = dirPath rin "data"
 
 rDirPath :: RunnerInputNames -> Text -> FilePath
 rDirPath rin = dirPath rin "R"
-
 
 data StanMCParameters = StanMCParameters
   { smcNumChains :: Int
@@ -143,7 +130,7 @@ dataDependency rin = do
     Nothing -> return modelDataDep
     Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
 
-type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r, st SamplesPrefixMap)
+type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r)
 
 modelPrefix :: RunnerInputNames -> Text
 modelPrefix rin = rinModel rin <> "_" <> rinData rin
@@ -154,8 +141,6 @@ gqPrefix rin = fmap (\t -> modelPrefix rin <> "_" <> t) $ rinGQ rin
 finalPrefix :: RunnerInputNames -> Text
 finalPrefix rin = modelPrefix rin <> (maybe "" ("_" <>) $ rinGQ rin)
 
--- This is not atomic so care should be used that only one thread uses it at a time.
--- I should fix this in knit-haskell where I could provide an atomic update.
 samplesFileNames :: ModelRunnerConfig -> Text -> [FilePath]
 samplesFileNames config prefix =
   let rin = mrcInputNames config
@@ -203,6 +188,7 @@ unitWrangle :: Wrangler () b
 unitWrangle _ = (Left "Wrangle Error. Attempt to build index using a \"Wrangle () _\""
                 , const $ Left "Wrangle Error. Attempt to build json using a \"Wrangle () _\""
                 )
+
 data DataWrangler md gq b p where
   Wrangle :: DataIndexerType b
           -> Wrangler md b
@@ -232,28 +218,22 @@ mGQWrangler (WrangleWithPredictions _ _ x _) = x
 
 -- produce a result of type b from the data and the model summary
 -- NB: the cache time will give you newest of data, indices and stan output
---type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
-
 type ResultF r md gq b p c
-  = p -> K.ActionWithCacheTime r (md, Either T.Text b) -> Maybe (K.ActionWithCacheTime r (gq, Either T.Text b)) -> K.Sem r c
+  = p
+    -> K.ActionWithCacheTime r (md, Either T.Text b)
+    -> Maybe (K.ActionWithCacheTime r (gq, Either T.Text b))
+    -> K.Sem r c
 
 data ResultAction r md gq b p c where
   UseSummary :: (CS.StanSummary -> ResultF r md gq b p c) -> ResultAction r md gq b p c
---  UseSummaryGQ  :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (gq, Either T.Text b) -> K.Sem r c) -> ResultAction r md gq b p c
   SkipSummary :: ResultF r md gq b p c -> ResultAction r md gq b p c
   DoNothing :: ResultAction r md gq b p ()
 
 emptyResult :: ResultAction r md gq b p ()
 emptyResult = SkipSummary $ \_ _ _ -> return ()
 
-defaultDataFileName :: T.Text -> T.Text
-defaultDataFileName modelNameT = modelNameT <> ".json"
-
 sampleFile :: T.Text -> Maybe Int -> FilePath
 sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"
-
---stanOutputFiles :: ModelRunnerConfig -> [T.Text]
---stanOutputFiles config = fmap (toText . outputFile (outputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
 
 modelSummaryFileName :: ModelRunnerConfig -> T.Text
 modelSummaryFileName config = modelPrefix (mrcInputNames config) <> "_summary.json"

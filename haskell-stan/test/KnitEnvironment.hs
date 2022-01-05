@@ -5,15 +5,12 @@
 module KnitEnvironment where
 
 import qualified Knit.Report as K
---import qualified Knit.Report.EffectStack as K
 import qualified Knit.Effect.AtomicCache as KA
 import qualified Knit.Effect.Serialize as KS
 import qualified Knit.Report.Output as KO
 import qualified Frames.Serialize as FS
 import qualified Flat
 import qualified Data.ByteString as BS
-
---import Data.Text.Lazy (toStrict)
 
 type SerializerC = Flat.Flat
 type RecSerializerC rs = FS.RecFlat rs
@@ -35,8 +32,6 @@ defaultConfig =
       , K.serializeDict = flatSerializeDict
       , K.persistCache = KA.persistStrictByteString (\t -> toString (cacheDir <> t))
       }
-
-
 
 fromFrame = FS.SFrame
 toFrame = FS.unSFrame

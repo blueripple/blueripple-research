@@ -21,54 +21,40 @@ import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K (cacheTime)
 
 import qualified Data.Text as T
---import qualified Flat
 import qualified Control.Foldl as FL
 import Control.Lens (view)
---import Stan.ModelConfig (modelWrangler)
 
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
-  fbResults_C <- fbResults
-  fbMatchups1_C <- fbMatchups 1
-  fbMatchups2_C <- fbMatchups 2
---  let modelData = fbResults_C <*> fbMatchups_C
+  runMatchupsModel True 1
+  runMatchupsModel False 2
+  runMatchupsModel True 2
+  runMatchupsModel False 1
+  runMatchupsModel False 1
+  runMatchupsModel False 2
+
+runMatchupsModel :: forall st cd r.(K.KnitEffects r, KE.CacheEffects r) => Bool -> Int -> K.Sem r ()
+runMatchupsModel clearCaches matchupsId = do
+  fbResults_C <- fbResults @r
+  fbMatchups_C <- fbMatchups matchupsId
   teams <- FL.fold (FL.premap (view favoriteName) FL.set) <$> K.ignoreCacheTime fbResults_C
-  (dw1, code1) <- dataWranglerAndCode fbResults_C fbMatchups1_C (groupBuilder teams) spreadDiffNormal
+  (dw, code) <- dataWranglerAndCode fbResults_C fbMatchups_C (groupBuilder teams) spreadDiffNormal
   (musCI, sigmaMuCI, sigmaCI, eScoreDiff) <- do
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
-    True
-    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just "mu1") "fb")
-    dw1
-    code1
+    clearCaches
+    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu" <> show matchupsId) "fb")
+    dw
+    code
     ""
     normalParamCIs
     fbResults_C
-    fbMatchups1_C
+    fbMatchups_C
+  K.logLE K.Info $ "Matchups=" <> show matchupsId
   K.logLE K.Info $ "mus: " <> show musCI
   K.logLE K.Info $ "sigma_mu_fav: " <> show sigmaMuCI
   K.logLE K.Info $ "sigma: " <> show sigmaCI
   K.logLE K.Info $ "eScoreDiff: " <> show eScoreDiff
-
-  let rin = SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu2") "fb"
-      outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
-  K.clearIfPresent @Text @KE.CacheData $ "stan/test/result/" <> outputLabel <> ".bin"
-  (dw2, code2) <- dataWranglerAndCode fbResults_C fbMatchups2_C (groupBuilder teams) spreadDiffNormal
-  (musCI2, sigmaMuCI2, sigmaCI2, eScoreDiff2) <-
-    K.ignoreCacheTimeM
-    $ runModel @KE.SerializerC @KE.CacheData
-    False
-    rin
-    dw2
-    code2
-    ""
-    normalParamCIs
-    fbResults_C
-    fbMatchups2_C
-  K.logLE K.Info $ "mus (matchups=2): " <> show musCI2
-  K.logLE K.Info $ "sigma_mu_fav (matchups=2): " <> show sigmaMuCI2
-  K.logLE K.Info $ "sigma (matchups=2): " <> show sigmaCI2
-  K.logLE K.Info $ "eScoreDiff2 (matchups=2): " <> show eScoreDiff2
 
 
 -- This whole thing should be wrapped in the core for this very common variation.

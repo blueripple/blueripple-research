@@ -10,7 +10,6 @@
 module Stan.ModelRunner
   ( module Stan.ModelRunner,
     module CmdStan,
-    --  , module CmdStan.Types
   )
 where
 
@@ -39,11 +38,6 @@ import qualified Stan.SamplerCSV as SCSV
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
-import GHC.Arr (thawSTArray)
-import Stan.ModelConfig (ModelRunnerConfig(mrcInputNames))
---import System.Process (runInteractiveCommand)
-
-
 
 makeDefaultModelRunnerConfig :: forall st cd r. SC.KnitStan st cd r
   => SC.RunnerInputNames
@@ -53,8 +47,6 @@ makeDefaultModelRunnerConfig :: forall st cd r. SC.KnitStan st cd r
   -> Maybe CS.StancConfig
   -> K.Sem r SC.ModelRunnerConfig
 makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfigM = do
-  let modelDir = SC.rinModelDir runnerInputNames
-      modelName = SC.rinModel runnerInputNames
   writeModel runnerInputNames modelM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelPath runnerInputNames)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
@@ -71,6 +63,7 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
       stanMCParameters
       True
       True
+{-# INLINEABLE makeDefaultModelRunnerConfig #-}
 
 writeModel ::  K.KnitEffects r
   => SC.RunnerInputNames
@@ -91,6 +84,7 @@ writeModel runnerInputNames modelM = do
         SB.Updated newName -> K.logLE K.Diagnostic
                               $ "Given model was different from exisiting.  Old one was moved to \""
                               <> newName <> "\"."
+{-# INLINEABLE writeModel #-}
 
 sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
 sampleExeConfig rin smp =
@@ -105,6 +99,7 @@ sampleExeConfig rin smp =
     , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
     , CS.randomSeed = SC.smcRandomSeed smp
     }
+{-# INLINEABLE sampleExeConfig #-}
 
 mGQExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> Maybe (Int -> CS.StanExeConfig)
 mGQExeConfig rin smp = do
@@ -116,11 +111,10 @@ mGQExeConfig rin smp = do
     , CS.output = Just (SC.outputDirPath rin $ gqPrefix <> "_gq" <> show n <> ".csv")
     , CS.randomSeed = SC.smcRandomSeed smp
     }
+{-# INLINEABLE mGQExeConfig #-}
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
--- NB: This writes scripts for the model samples.  GQ won't be in there (mostly).
--- But that's almost always what we want: for diagnostics and comparison.
 writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.ModelRunnerConfig -> K.Sem r ()
 writeRScripts rScripts config = do
   let rSamplesPrefix = SC.finalPrefix (SC.mrcInputNames config)
@@ -128,10 +122,11 @@ writeRScripts rScripts config = do
       writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
       writeLoo = write Nothing $ SR.looScript config rSamplesPrefix 10
   case rScripts of
-    None -> return ()
+    None -> pure ()
     ShinyStan ujs -> writeShiny ujs
     Loo -> writeLoo
     Both ujs -> writeShiny ujs >> writeLoo
+{-# INLINEABLE writeRScripts #-}
 
 wrangleDataWithoutPredictions :: forall st cd md gq b r.
   (SC.KnitStan st cd r)
@@ -142,6 +137,7 @@ wrangleDataWithoutPredictions :: forall st cd md gq b r.
   -> K.ActionWithCacheTime r gq
   -> K.Sem r (K.ActionWithCacheTime r (Either T.Text b), K.ActionWithCacheTime r (Either T.Text b))
 wrangleDataWithoutPredictions config dw cb md_C gq_C = wrangleData @st @cd config dw cb md_C gq_C ()
+{-# INLINE wrangleDataWithoutPredictions #-}
 
 wrangleData :: forall st cd md gq b p r.SC.KnitStan st cd r
   => SC.ModelRunnerConfig
@@ -180,10 +176,11 @@ wrangleData config w cb md_C gq_C p = do
             indexEncoding <- case w of
               SC.Wrangle _ _ _ -> return mempty
               SC.WrangleWithPredictions _ _ _ encodeToPredict -> K.knitEither $ encodeToPredict eb p
-            K.liftKnit . BL.writeFile (SC.dataDirPath (SC.mrcInputNames config) gqDataFileName)
+            writeFileLBS (SC.dataDirPath (SC.mrcInputNames config) gqDataFileName)
               $ A.encodingToLazyByteString $ A.pairs (jsonEncoding <> indexEncoding)
           return $ const <$> gqIndexes_C <*> gqJSON_C
   return (model_C, gq_C)
+{-# INLINEABLE wrangleData #-}
 
 -- create function to rebuild json along with time stamp from data used
 wranglerPrep :: forall st cd a b r.
@@ -202,7 +199,11 @@ wranglerPrep config inputDataType indexerType wrangler cb a_C = do
   index_C <- manageIndex @st @cd config inputDataType indexerType cb eb_C
   let newJSON_C = encoder_C <*> a_C
   return (newJSON_C, index_C)
+{-# INLINEABLE wranglerPrep #-}
 
+-- if we are caching the index (not sure this is ever worth it!)
+-- here is where we check if that cache needs updating.  Otherwise we
+-- just return it
 manageIndex :: forall st cd b r.
   SC.KnitStan st cd r
   => SC.ModelRunnerConfig
@@ -229,7 +230,8 @@ manageIndex config inputDataType dataIndexer cb ebFromA_C = do
             K.clearIfPresent @Text @cd (indexCacheKey config inputDataType)
           K.retrieveOrMake @st @cd (indexCacheKey config inputDataType) ebFromA_C return
         _ -> K.knitError "Cacheable index type provided but b is Uncacheable."
-    _ -> return ebFromA_C
+    _ -> pure ebFromA_C
+{-# INLINEABLE manageIndex #-}
 
 -- where do we combine data??
 runModel :: forall st cd md gq b p c r.
@@ -295,8 +297,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
       K.logLE K.Diagnostic "writing R scripts for new model run."
       writeRScripts @st @cd rScriptsToWrite config
       return res
-    mGQRes_C <- case SC.mrcStanExeGQConfigM config of
-      Nothing -> return Nothing
+    mGQRes_C <- case (SC.mrcStanExeGQConfigM config) of
+      Nothing -> pure Nothing
       Just _ -> do
         gqSamplesFileNames <- K.knitMaybe "runModel: GQ samples file names are Nothing but the exeConfig isn't!" $ SC.gqSamplesFileNames config
         gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency gqSamplesFileNames
@@ -344,6 +346,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
       f summary toPredict modelResultDeps mGQResultDeps
     SC.SkipSummary f -> f toPredict modelResultDeps mGQResultDeps
     SC.DoNothing -> return ()
+{-# INLINEABLE runModel #-}
 
 data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord)
 
@@ -364,6 +367,8 @@ deleteStaleFiles config staleFiles = do
   extantPaths <- catMaybes <$> traverse exists filesToDelete
   Say.say $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
   traverse_ (K.liftKnit. Dir.removeFile) extantPaths
+{-# INLINEABLE deleteStaleFiles #-}
+
 
 checkClangEnv :: (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) => K.Sem r ()
 checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
@@ -374,6 +379,7 @@ checkClangEnv = K.wrapPrefix "checkClangEnv" $ do
       curPath <- K.liftKnit $ Env.getEnv "PATH"
       K.logLE K.Diagnostic $ "Current path: " <> show curPath <> ".  Adding " <> show clangBinDir <> " for llvm clang."
       K.liftKnit $ Env.setEnv "PATH" (clangBinDir ++ ":" ++ curPath)
+{-# INLINEABLE checkClangEnv #-}
 
 createDirIfNecessary ::
   (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) =>
@@ -413,3 +419,4 @@ checkDir dir = K.wrapPrefix "checkDir" $ do
              K.logLE (K.Debug 1) $ "\"" <> dir <> "\" is missing."
              return Nothing
          )
+{-# INLINEABLE checkDir #-}
