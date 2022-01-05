@@ -65,6 +65,7 @@ data StanMCParameters = StanMCParameters
   , smcNumSamplesM :: Maybe Int
   , smcAdaptDeltaM :: Maybe Double
   , smcMaxTreeDepth :: Maybe Int
+  , smcRandomSeed :: Maybe Int
   } deriving (Show, Eq, Ord)
 
 data ModelRunnerConfig = ModelRunnerConfig

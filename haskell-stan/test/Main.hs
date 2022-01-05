@@ -131,7 +131,7 @@ runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C g
     <$> SMR.makeDefaultModelRunnerConfig @st @cd
     rin
     (Just (S.All, S.stanCodeToStanModel stanCode))
-    (SC.StanMCParameters 4 4 Nothing Nothing Nothing Nothing)
+    (SC.StanMCParameters 4 4 Nothing Nothing Nothing Nothing Nothing)
     (Just stancConfig)
   let resultCacheKey = "stan/test/result/" <> outputLabel <> ".bin"
   when clearCaches $ do

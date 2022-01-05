@@ -103,6 +103,7 @@ sampleExeConfig rin smp =
     , CS.numWarmup = SC.smcNumWarmupM smp
     , CS.adaptDelta = SC.smcAdaptDeltaM smp
     , CS.maxTreeDepth = SC.smcMaxTreeDepth smp
+    , CS.randomSeed = SC.smcRandomSeed smp
     }
 
 mGQExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> Maybe (Int -> CS.StanExeConfig)
@@ -113,6 +114,7 @@ mGQExeConfig rin smp = do
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
     , CS.fittedParams = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> "_" <> show n <> ".csv")
     , CS.output = Just (SC.outputDirPath rin $ gqPrefix <> "_gq" <> show n <> ".csv")
+    , CS.randomSeed = SC.smcRandomSeed smp
     }
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
@@ -354,22 +356,21 @@ data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord
 
 deleteStaleFiles :: forall st cd r.SC.KnitStan st cd r => SC.ModelRunnerConfig -> [StaleFiles] -> K.Sem r ()
 deleteStaleFiles config staleFiles = do
-  modelSamplesFilePaths <- K.ignoreCacheTimeM $ SC.modelSamplesFileNames @st @cd config
-  gqSamplesFilePaths <- K.ignoreCacheTimeM $ SC.gqSamplesFileNames @st @cd config
-  let modelSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.modelSummaryFileName config
+  let modelSamplesFilePaths = SC.modelSamplesFileNames config
+      gqSamplesFilePaths = SC.gqSamplesFileNames config
+      modelSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.modelSummaryFileName config
       mGQSummaryPath = SC.outputDirPath (SC.mrcInputNames config) <$> SC.gqSummaryFileName config
       modelDataPath = SC.dataDirPath (SC.mrcInputNames config) $ SC.modelDataFileName $ SC.mrcInputNames config
       mGQDataPath = SC.dataDirPath (SC.mrcInputNames config) <$> (SC.gqDataFileName $ SC.mrcInputNames config)
       toDelete x = case x of
         StaleData -> [modelDataPath] ++ maybe [] one mGQDataPath
-        StaleOutput -> modelSamplesFilePaths ++ gqSamplesFilePaths
+        StaleOutput -> modelSamplesFilePaths ++ fromMaybe [] gqSamplesFilePaths
         StaleSummary -> [modelSummaryPath] ++ maybe [] one mGQSummaryPath
       exists fp = K.liftKnit $ Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
       filesToDelete = ordNub $ concat $ toDelete <$> staleFiles
   extantPaths <- catMaybes <$> traverse exists filesToDelete
   Say.say $ "Deleting output files: " <> T.intercalate "," (toText <$> extantPaths)
   traverse_ (K.liftKnit. Dir.removeFile) extantPaths
-
 
 checkClangEnv :: (P.Member (P.Embed IO) r, K.LogWithPrefixesLE r) => K.Sem r ()
 checkClangEnv = K.wrapPrefix "checkClangEnv" $ do

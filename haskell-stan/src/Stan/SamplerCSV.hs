@@ -118,15 +118,6 @@ mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
 
 addReplaceGQToSamplerCSV :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
 addReplaceGQToSamplerCSV gq s = do
-  let doOne x (hText, gqIndex) = replaceOrAddColumn hText (gqSamples gq M.<!> (M.Dim 1, gqIndex)) (asU x)
-      asDL x = x { samplerSamples = M.toLoadArray $ samplerSamples x}
-      asU x = x { samplerSamples = M.computeAs M.U $ samplerSamples x}
-      fldM :: M.MonadThrow  m => FL.FoldM m (Text, Int) (SamplerCSV M.U)
-      fldM = FL.FoldM doOne (return $ asDL s) (return . asU)
-  FL.foldM fldM $ zip (gqHeader gq) [0..]
-
-addReplaceGQToSamplerCSV' :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
-addReplaceGQToSamplerCSV' gq s = do
   let m = Map.fromList $ zip (samplerHeader s) $ zip [0..] (Left <$> [0..])
       replaceOrAdd m (h, n) = case Map.lookup h m of
         Nothing -> Map.insert h (Map.size m, Right n) m
@@ -147,6 +138,16 @@ samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
 
 samplerCSVText :: SamplerCSV M.U -> Text
 samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
+
+{-
+addReplaceGQToSamplerCSV' :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
+addReplaceGQToSamplerCSV' gq s = do
+  let doOne x (hText, gqIndex) = replaceOrAddColumn hText (gqSamples gq M.<!> (M.Dim 1, gqIndex)) (asU x)
+      asDL x = x { samplerSamples = M.toLoadArray $ samplerSamples x}
+      asU x = x { samplerSamples = M.computeAs M.U $ samplerSamples x}
+      fldM :: M.MonadThrow  m => FL.FoldM m (Text, Int) (SamplerCSV M.U)
+      fldM = FL.FoldM doOne (return $ asDL s) (return . asU)
+  FL.foldM fldM $ zip (gqHeader gq) [0..]
 
 replaceOrAddColumn :: (M.Source r Double, M.Source r' Double, M.MonadThrow m)
                    => Text -> SampleCol r' -> SamplerCSV r -> m (SamplerCSV M.DL)
@@ -173,3 +174,4 @@ addColumnAtEnd c m = do
 
 vecToMatrix :: (M.MonadThrow m, M.Size r) => SampleCol r -> m (Samples r)
 vecToMatrix c = let rows = M.unSz (M.size c) in M.resizeM (M.Sz2 rows 1) c
+-}
